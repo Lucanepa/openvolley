@@ -126,6 +126,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const saved = localStorage.getItem('liberoEntrySuggestion')
     return saved !== 'false' // default true
   })
+  const [lfpTrackingEnabled, setLfpTrackingEnabled] = useState(() => {
+    return localStorage.getItem('lfpTrackingEnabled') === 'true' // default false
+  })
+  const [lfpMinimumOnCourt, setLfpMinimumOnCourt] = useState(() => {
+    const saved = localStorage.getItem('lfpMinimumOnCourt')
+    return saved ? parseInt(saved, 10) : 3 // default 3
+  })
   const [setIntervalDuration, setSetIntervalDuration] = useState(() => {
     const saved = localStorage.getItem('setIntervalDuration')
     return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
@@ -263,6 +270,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
   const [benchPlayerActionMenu, setBenchPlayerActionMenu] = useState(null) // { team: 'home'|'away', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, courtPlayerToSwapWith?: { number: number, position: string } } | null
+  const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
+
   const [benchSubExpanded, setBenchSubExpanded] = useState(false) // Track if substitution list is expanded in bench player menu
   const [courtSubExpanded, setCourtSubExpanded] = useState(false) // Track if substitution list is expanded in court player menu
   const [courtSanctionExpanded, setCourtSanctionExpanded] = useState(false) // Track if sanction list is expanded in court player menu
@@ -1101,13 +1110,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           const isCaptain = !!(captainNum && String(captainNum) === playerNumStr)
           // Only show court captain badge if team captain is NOT on court
           const isCourtCaptain = !captainOnCourt && !!(courtCaptainNum && String(courtCaptainNum) === playerNumStr)
+          const isLfp = !!(player && (player.isLfp || player.is_lfp))
 
           const positionData = {
             number: Number(playerNum),
             isSubstituted,
             hasSanction,
             isCaptain,
-            isCourtCaptain
+            isCourtCaptain,
+            isLfp
           }
 
           if (position === 'I') {
@@ -3201,7 +3212,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           isCourtCaptain: isCourtCaptain,
           isLibero: isLibero || !!liberoSub,
           substitutedPlayerNumber: liberoSub?.playerNumber || null,
-          liberoType: liberoSub?.liberoType || (isLibero ? player.libero : null)
+          liberoType: liberoSub?.liberoType || (isLibero ? player.libero : null),
+          isLfp: player?.isLfp || player?.is_lfp || false
         }
         return playerData
       })
@@ -7679,6 +7691,79 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return null
   }, [getTeamLineupState])
 
+  // Count LFP (locally formed players) currently on court for a team
+  // Implements Swiss Volleyball libero counting rules:
+  // - If only 1 libero on match sheet AND that libero is LFP → always counts as +1
+  // - If 2 liberos on match sheet AND both are LFP → always counts as +1
+  // - A player replaced by a libero still counts as on court for LFP purposes
+  // - Regular substitutions: player off court does NOT count
+  const getLfpCountOnCourt = useCallback((teamKey) => {
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    if (!teamPlayers) return 0
+
+    // Get the 6 players currently on court
+    const { currentLineup } = getTeamLineupState(teamKey)
+    if (!currentLineup) return 0
+
+    const courtNumbers = Object.values(currentLineup).map(n => String(n))
+
+    // Count LFP among the 6 players on court (including libero if on court)
+    let lfpCount = 0
+    for (const num of courtNumbers) {
+      const player = teamPlayers.find(p => String(p.number) === num)
+      if (player?.isLfp || player?.is_lfp) lfpCount++
+    }
+
+    // Libero rules: check if a libero is on court
+    const liberoOnCourt = getLiberoOnCourt(teamKey)
+    if (liberoOnCourt) {
+      // A libero is on court, replacing another player
+      const replacedPlayerNum = String(liberoOnCourt.playerNumber)
+      const replacedPlayer = teamPlayers.find(p => String(p.number) === replacedPlayerNum)
+      const liberoPlayer = teamPlayers.find(p => String(p.number) === String(liberoOnCourt.liberoNumber))
+
+      // The replaced player still counts for LFP purposes (they're "on the field" per regulations)
+      // But they're NOT in the court lineup (the libero is), so we need to add them back
+      if (replacedPlayer?.isLfp || replacedPlayer?.is_lfp) {
+        // The replaced player is LFP - they still count even though physically on bench
+        // But we already counted the libero (who may or may not be LFP)
+        // We need: count the replaced player's LFP status instead of just what's on court
+        // Since the libero was already counted if LFP, and replaced player wasn't counted,
+        // add the replaced player's contribution
+        lfpCount++ // replaced LFP player still counts
+      }
+
+      // Now handle the libero's own LFP status based on designation rules
+      const allLiberos = teamPlayers.filter(p =>
+        p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated'
+      )
+      const lfpLiberos = allLiberos.filter(p => p.isLfp || p.is_lfp)
+
+      // Rule: Libero always counts as +1 LFP if:
+      // (a) only 1 libero on match sheet AND that libero is LFP, OR
+      // (b) 2+ liberos on match sheet AND all are LFP
+      const liberoAlwaysCounts = (allLiberos.length === 1 && lfpLiberos.length === 1) ||
+                                  (allLiberos.length >= 2 && lfpLiberos.length === allLiberos.length)
+
+      if (liberoAlwaysCounts) {
+        // The libero's LFP status was already counted when we iterated court numbers
+        // (since the libero IS on court), so no additional action needed IF the libero is LFP.
+        // But if we already counted the libero as LFP in the court loop, we don't double-count.
+        // The +1 for the replaced player above handles the case where an LFP player was replaced.
+        // No additional adjustment needed here.
+      } else if (liberoPlayer?.isLfp || liberoPlayer?.is_lfp) {
+        // Libero is LFP but doesn't qualify for "always counts" rule
+        // The libero was already counted in the court loop, so no change needed
+        // But we should NOT count the libero's LFP status since the rule doesn't apply
+        // Actually, the libero is physically on court so they DO count normally
+        // The "always counts" rule means they count even when NOT on court
+        // Since they ARE on court, they count regardless
+      }
+    }
+
+    return lfpCount
+  }, [data?.homePlayers, data?.awayPlayers, getTeamLineupState, getLiberoOnCourt])
+
   // Debug helper - expose libero status to console
   useEffect(() => {
     window.debugLiberoStatus = () => {
@@ -11480,8 +11565,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const sanctionButtonStyles = useMemo(() => ({
     improper: {
       flex: 1,
-      fontSize: '10px',
-      padding: '8px 4px',
+      fontSize: '4.65cqw',
+      padding: '2.5cqw 1.25cqw',
       background: 'rgba(156, 163, 175, 0.25)',
       border: '1px solid rgba(156, 163, 175, 0.5)',
       color: '#d1d5db',
@@ -11490,8 +11575,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     },
     delayWarning: {
       flex: 1,
-      fontSize: '10px',
-      padding: '8px 4px',
+      fontSize: '4.65cqw',
+      padding: '2.5cqw 1.25cqw',
       background: 'rgba(234, 179, 8, 0.2)',
       border: '1px solid rgba(234, 179, 8, 0.4)',
       color: '#facc15',
@@ -11500,8 +11585,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     },
     delayPenalty: {
       flex: 1,
-      fontSize: '10px',
-      padding: '8px 4px',
+      fontSize: '4.65cqw',
+      padding: '2.5cqw 1.25cqw',
       background: 'rgba(239, 68, 68, 0.2)',
       border: '1px solid rgba(239, 68, 68, 0.4)',
       color: '#f87171',
@@ -12291,7 +12376,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)}>
         {/* Column 1: Date/Time */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-          <span className="toolbar-clock" style={{ fontSize: isCompactMode ? '11px' : '14px' }}>{formatTimestamp(now)}</span>
+          <span className="toolbar-clock" style={{ fontSize: '1.28cqw' }}>{formatTimestamp(now)}</span>
         </div>
 
         {/* Column 2: Left team OR Rally status (compact/laptop) */}
@@ -12300,7 +12385,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div
               onClick={() => setRallyStatusExpanded(!rallyStatusExpanded)}
               style={{
-                fontSize: isCompactMode ? '10px' : '11px',
+                fontSize: '1.02cqw',
                 color: rallyStatus === 'in_play' ? '#4ade80' : '#fb923c',
                 cursor: 'pointer',
                 textAlign: 'center',
@@ -12317,11 +12402,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '0.68cqw',
               overflow: 'hidden'
             }}>
               <span style={{
-                fontSize: '13px',
+                fontSize: '1.19cqw',
                 fontWeight: 600,
                 color: 'var(--text)',
                 overflow: 'hidden',
@@ -12331,9 +12416,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {leftTeam.name || (leftIsHome ? 'Home' : 'Away')}
               </span>
               <div style={{
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '11px',
+                padding: '0.17cqw 0.51cqw',
+                borderRadius: '0.26cqw',
+                fontSize: '1.02cqw',
                 fontWeight: 700,
                 background: leftTeam.color || '#ef4444',
                 color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
@@ -12350,12 +12435,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: isCompactMode ? '6px' : '12px'
+          gap: '1.02cqw'
         }}>
           <span style={{
-            padding: isCompactMode ? '2px 6px' : '4px 10px',
-            borderRadius: '4px',
-            fontSize: isCompactMode ? '12px' : '16px',
+            padding: '0.26cqw 0.85cqw',
+            borderRadius: '0.26cqw',
+            fontSize: '1.45cqw',
             fontWeight: 700,
             background: leftTeam?.color || '#ef4444',
             color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff'
@@ -12366,15 +12451,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            fontSize: isCompactMode ? '10px' : '14px'
+            fontSize: '1.28cqw'
           }}>
             <span style={{ color: 'var(--muted)', fontWeight: 600 }}>SET</span>
             <span style={{ fontWeight: 700 }}>{data?.set?.index || 1}</span>
           </div>
           <span style={{
-            padding: isCompactMode ? '2px 6px' : '4px 10px',
-            borderRadius: '4px',
-            fontSize: isCompactMode ? '12px' : '16px',
+            padding: '0.26cqw 0.85cqw',
+            borderRadius: '0.26cqw',
+            fontSize: '1.45cqw',
             fontWeight: 700,
             background: rightTeam?.color || '#3b82f6',
             color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff'
@@ -12509,13 +12594,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '0.68cqw',
               overflow: 'hidden'
             }}>
               <div style={{
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '11px',
+                padding: '0.17cqw 0.51cqw',
+                borderRadius: '0.26cqw',
+                fontSize: '1.02cqw',
                 fontWeight: 700,
                 background: rightTeam.color || '#3b82f6',
                 color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
@@ -12524,7 +12609,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {teamBLabel}
               </div>
               <span style={{
-                fontSize: '13px',
+                fontSize: '1.19cqw',
                 fontWeight: 600,
                 color: 'var(--text)',
                 overflow: 'hidden',
@@ -12538,7 +12623,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </div>
 
         {/* Right: Scoresheet, Menu (Home button moved to MainHeader) */}
-        <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isCompactMode ? '4px' : '12px' }}>
+        <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.85cqw' }}>
           {/* Scoresheet dropdown menu */}
           <MenuList
             buttonLabel="📄"
@@ -12549,8 +12634,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               background: '#22c55e',
               color: '#000',
               fontWeight: 600,
-              padding: '6px 10px',
-              fontSize: '16px'
+              padding: '0.34cqw 0.6cqw',
+              fontSize: '1.28cqw'
             }}
             showArrow={true}
             position="right"
@@ -12707,9 +12792,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               background: '#22c55e',
               color: '#000',
               fontWeight: 600,
-              width: isCompactMode ? 'auto' : 'auto',
-              padding: isCompactMode ? '4px 8px' : (isNarrowMode ? '4px 8px' : '8px 16px'),
-              fontSize: isCompactMode ? '14px' : (isNarrowMode ? '12px' : '14px'),
+              width: 'auto',
+              padding: '0.43cqw 0.85cqw',
+              fontSize: '1.28cqw',
               textAlign: 'center'
             }}
             showArrow={false}
@@ -13873,9 +13958,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={() => setSet5CoinTossDraft(prev => ({ ...prev, sideA: prev.sideA === 'left' ? 'right' : 'left' }))}
                                   style={{
                                     padding: '12px',
-                                    background: 'rgba(255,255,255,0.1)',
+                                    background: '#000',
                                     color: '#fff',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid rgba(255,255,255,0.3)',
                                     borderRadius: '8px',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -13893,9 +13978,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={() => setSet5CoinTossDraft(prev => ({ ...prev, serve: prev.serve === 'A' ? 'B' : 'A' }))}
                                   style={{
                                     padding: '12px',
-                                    background: 'rgba(255,255,255,0.1)',
+                                    background: '#000',
                                     color: '#fff',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid rgba(255,255,255,0.3)',
                                     borderRadius: '8px',
                                     cursor: 'pointer'
                                   }}
@@ -14360,7 +14445,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: '2.5cqw' }}>
               <div
                 onClick={() => {
                   // Clicking calls timeout if available
@@ -14377,8 +14462,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || isRallyReplayed
                       ? 'rgba(255, 255, 255, 0.05)'
                       : 'rgba(34, 197, 94, 0.2)'),
-                  borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
-                  padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
+                  borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
+                  padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
                   textAlign: 'center',
                   border: getTimeoutsUsed('left') >= 2
                     ? '1px solid rgba(239, 68, 68, 0.4)'
@@ -14388,9 +14473,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.to')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
-                  fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
+                  fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
                   color: getTimeoutsUsed('left') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
                 }}>{getTimeoutsUsed('left')}</div>
@@ -14410,8 +14495,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : getSubstitutionsUsed('left') >= 5
                       ? 'rgba(234, 179, 8, 0.2)'
                       : 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
-                  padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
+                  borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
+                  padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
                   textAlign: 'center',
                   border: getSubstitutionsUsed('left') >= 6
                     ? '1px solid rgba(239, 68, 68, 0.4)'
@@ -14421,9 +14506,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.sub')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
                 <div className="to-sub-value" style={{
-                  fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
+                  fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
                   color: getSubstitutionsUsed('left') >= 6 ? '#ef4444' : getSubstitutionsUsed('left') >= 5 ? '#eab308' : 'inherit'
                 }}>{getSubstitutionsUsed('left')}</div>
@@ -14449,7 +14534,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               if (needsRedesignation) {
                 const lastUnable = unableLiberos[unableLiberos.length - 1]
                 return (
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+                  <div style={{ display: 'flex', gap: '2.5cqw', marginBottom: '2.5cqw', width: '100%' }}>
                     <button
                       onClick={() => {
                         setLiberoRedesignationModal({
@@ -14461,8 +14546,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       disabled={rallyStatus === 'in_play' || isRallyReplayed}
                       style={{
                         flex: 1,
-                        fontSize: '10px',
-                        padding: '8px 4px',
+                        fontSize: '4.65cqw',
+                        padding: '2.5cqw 1.25cqw',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -14483,15 +14568,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
             {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
             {isNarrowMode ? (
-              <div style={{ marginTop: '4px' }}>
+              <div style={{ marginTop: '1.25cqw' }}>
                 <button
                   onClick={() => setLeftDelaysDropdownOpen(!leftDelaysDropdownOpen)}
-                  style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ width: '100%', fontSize: '4.65cqw', padding: '2.5cqw 1.25cqw', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   {t('scoreboard.sanctions.irAndDelays')} {leftDelaysDropdownOpen ? '▲' : '▼'}
                 </button>
                 {leftDelaysDropdownOpen && (
-                  <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ marginTop: '1.25cqw', display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
                     {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
                       <button
                         onClick={() => { handleImproperRequest('left'); setLeftDelaysDropdownOpen(false) }}
@@ -14522,7 +14607,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', gap: '1.25cqw', marginTop: '2.5cqw' }}>
                 {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
                   <button
                     onClick={() => handleImproperRequest('left')}
@@ -14553,14 +14638,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             )}
 
             {/* Status boxes for team sanctions */}
-            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ marginTop: '2.5cqw', display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
               {data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
                 <div style={{
-                  padding: '4px 8px',
-                  fontSize: '12px',
+                  padding: '1.25cqw 2.5cqw',
+                  fontSize: '5.6cqw',
                   background: 'rgba(156, 163, 175, 0.15)',
                   border: '1px solid rgba(156, 163, 175, 0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '1.25cqw',
                   color: '#d1d5db'
                 }}>
                   {t('scoreboard.sanctions.sanctionedImproperRequest')}
@@ -14568,11 +14653,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
               {data?.match?.sanctions?.[leftIsHome ? 'delayWarningHome' : 'delayWarningAway'] && (
                 <div style={{
-                  padding: '4px 8px',
-                  fontSize: '12px',
+                  padding: '1.25cqw 2.5cqw',
+                  fontSize: '5.6cqw',
                   background: 'rgba(234, 179, 8, 0.15)',
                   border: '1px solid rgba(234, 179, 8, 0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '1.25cqw',
                   color: '#facc15'
                 }}>
                   {t('scoreboard.sanctions.sanctionedDelayWarning')}
@@ -14580,11 +14665,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
               {teamHasFormalWarning(leftIsHome ? 'home' : 'away') && (
                 <div style={{
-                  padding: '4px 8px',
-                  fontSize: '12px',
+                  padding: '1.25cqw 2.5cqw',
+                  fontSize: '5.6cqw',
                   background: 'rgba(250, 204, 21, 0.15)',
                   border: '1px solid rgba(250, 204, 21, 0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '1.25cqw',
                   color: '#fde047'
                 }}>
                   {t('scoreboard.sanctions.sanctionedFormalWarning')} 🟨
@@ -14594,15 +14679,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
             {/* Bench Players, Liberos, and Bench Officials */}
-            <div style={{ marginTop: isCompactMode ? '12px' : '24px', paddingTop: isCompactMode ? '12px' : '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               {/* Bench Players */}
               {leftTeamBench.benchPlayers.length > 0 && (
-                <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainBenchExpanded(!leftMainBenchExpanded)}
                     style={{
-                      margin: '0 0 8px',
-                      fontSize: '12px',
+                      margin: '0 0 2.5cqw',
+                      fontSize: '5.6cqw',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       cursor: isCompactMode ? 'pointer' : 'default',
@@ -14612,10 +14697,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   >
                     <span>{t('scoreboard.roster.bench')}</span>
-                    {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainBenchExpanded ? '▲' : '▼'}</span>}
+                    {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{leftMainBenchExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainBenchExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
                       {leftTeamBench.benchPlayers.map(player => {
                         const teamKey = leftIsHome ? 'home' : 'away'
                         const canComeBack = canPlayerComeBack(teamKey, player.number)
@@ -14681,6 +14766,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+                        // Check if bench player is injured
+                        const isBenchInjured = data?.events?.some(e =>
+                          e.type === 'bench_injury' &&
+                          e.payload?.team === teamKey &&
+                          String(e.payload?.playerNumber) === String(player.number)
+                        )
 
                         // Determine if bench player can substitute (LEFT TEAM)
                         // Case 1: Player was substituted out - can only come back for the player who replaced them
@@ -14761,7 +14853,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: '5px 10px',
+                              padding: '1.6cqw 3.1cqw',
                               touchAction: (canSubBenchPlayer || isSubstitutedByLibero) ? 'none' : undefined,
                               background: isTouchDropTarget
                                 ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
@@ -14772,11 +14864,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     : (wasSubstitutedOut && !showX && !hasComeBack)
                                       ? '#0f172a'  // Black bg for substituted-out (only if can still sub back)
                                       : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
-                              borderRadius: '4px',
-                              fontSize: '14px',
+                              borderRadius: '1.25cqw',
+                              fontSize: '6.6cqw',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px',
+                              gap: '1.25cqw',
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #fde047' : undefined),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
@@ -14787,16 +14879,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           >
                             <span style={{ fontWeight: 600 }}>{player.number}</span>
                             {player.isCaptain && (
-                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : 'var(--accent)'), fontSize: '10px', fontWeight: 700 }}>C</span>
+                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
                             )}
                             {isSubstitutedByLibero && (
                               <span style={{
-                                fontSize: '9px',
+                                fontSize: '4.2cqw',
                                 fontWeight: 700,
                                 color: '#000',
                                 background: 'rgba(0, 0, 0, 0.1)',
-                                padding: '1px 3px',
-                                borderRadius: '2px'
+                                padding: '0.3cqw 0.9cqw',
+                                borderRadius: '0.6cqw'
                               }}>
                                 {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : player.substitutedByLibero.liberoType === 'redesignated' ? 'LR' : 'L2'}
                               </span>
@@ -14804,18 +14896,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {showX && (
                               <span
                                 style={{
-                                  fontSize: '9px',
+                                  fontSize: '4.2cqw',
                                   lineHeight: '1',
                                   background: 'rgba(15, 23, 42, 0.95)',
                                   color: '#ef4444',
                                   fontWeight: 700,
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
+                                  padding: '0.3cqw 0.9cqw',
+                                  borderRadius: '0.6cqw',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  minWidth: '12px',
-                                  minHeight: '12px',
+                                  minWidth: '3.75cqw',
+                                  minHeight: '3.75cqw',
                                   border: '1px solid rgba(255, 255, 255, 0.2)'
                                 }}
                                 title={
@@ -14834,18 +14926,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: '9px',
+                                  fontSize: '4.2cqw',
                                   lineHeight: '1',
                                   background: 'rgba(15, 23, 42, 0.95)',
                                   color: '#ef4444',
                                   fontWeight: 700,
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
+                                  padding: '0.3cqw 0.9cqw',
+                                  borderRadius: '0.6cqw',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  minWidth: '12px',
-                                  minHeight: '12px',
+                                  minWidth: '3.75cqw',
+                                  minHeight: '3.75cqw',
                                   border: '1px solid rgba(255, 255, 255, 0.2)'
                                 }}
                               >
@@ -14855,16 +14947,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: '7px',
+                                  fontSize: '3.3cqw',
                                   lineHeight: '1',
                                   display: 'flex',
                                   flexDirection: 'row',
                                   alignItems: 'center',
-                                  gap: '2px',
+                                  gap: '0.6cqw',
                                   background: 'rgba(15, 23, 42, 0.95)',
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
-                                  minHeight: '12px',
+                                  padding: '0.3cqw 0.9cqw',
+                                  borderRadius: '0.6cqw',
+                                  minHeight: '3.75cqw',
                                   justifyContent: 'center',
                                   border: '1px solid rgba(255, 255, 255, 0.2)',
                                   opacity: waitingForPoint ? 0.5 : 1
@@ -14875,9 +14967,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {playerWhoReplacedThem && (
                                   <span style={{
                                     color: 'rgba(255, 255, 255, 0.8)',
-                                    fontSize: '8px',
+                                    fontSize: '5.6cqw',
                                     fontWeight: 600,
-                                    marginLeft: '2px'
+                                    marginLeft: '0.6cqw'
                                   }}>
                                     {playerWhoReplacedThem}
                                   </span>
@@ -14886,16 +14978,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             )}
                             {sanctions.length > 0 && (
                               <span style={{
-                                fontSize: '8px',
+                                fontSize: '5.6cqw',
                                 display: 'flex',
-                                gap: '1px',
+                                gap: '0.3cqw',
                                 alignItems: 'center'
                               }}>
                                 {hasExpulsion ? (
-                                  <div style={{ position: 'relative', width: '9px', height: '9px' }}>
+                                  <div style={{ position: 'relative', width: '2.8cqw', height: '2.8cqw' }}>
                                     <div className="sanction-card yellow" style={{
-                                      width: '6px',
-                                      height: '8px',
+                                      width: '1.9cqw',
+                                      height: '2.5cqw',
                                       position: 'absolute',
                                       left: '0',
                                       top: '0',
@@ -14903,8 +14995,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       zIndex: 1
                                     }}></div>
                                     <div className="sanction-card red" style={{
-                                      width: '6px',
-                                      height: '8px',
+                                      width: '1.9cqw',
+                                      height: '2.5cqw',
                                       position: 'absolute',
                                       right: '0',
                                       top: '0',
@@ -14915,14 +15007,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ) : (
                                   <>
                                     {(hasWarning || hasDisqualification) && (
-                                      <div className="sanction-card yellow" style={{ width: '6px', height: '8px' }}></div>
+                                      <div className="sanction-card yellow" style={{ width: '1.9cqw', height: '2.5cqw' }}></div>
                                     )}
                                     {(hasPenalty || hasDisqualification) && (
-                                      <div className="sanction-card red" style={{ width: '6px', height: '8px' }}></div>
+                                      <div className="sanction-card red" style={{ width: '1.9cqw', height: '2.5cqw' }}></div>
                                     )}
                                   </>
                                 )}
                               </span>
+                            )}
+                            {isBenchInjured && (
+                              <span style={{ color: '#ef4444', fontSize: '4.65cqw', fontWeight: 700 }} title="Injured on bench">✚</span>
                             )}
                           </div>
                         )
@@ -14934,12 +15029,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Liberos */}
               {leftTeamBench.liberos.length > 0 && (
-                <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainLiberosExpanded(!leftMainLiberosExpanded)}
                     style={{
-                      margin: '0 0 8px',
-                      fontSize: '12px',
+                      margin: '0 0 2.5cqw',
+                      fontSize: '5.6cqw',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       cursor: isCompactMode ? 'pointer' : 'default',
@@ -14949,10 +15044,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   >
                     <span>{t('scoreboard.roster.liberos')}</span>
-                    {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainLiberosExpanded ? '▲' : '▼'}</span>}
+                    {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{leftMainLiberosExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainLiberosExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
                       {leftTeamBench.liberos.map(player => {
                         const teamKey = leftIsHome ? 'home' : 'away'
                         const isUnable = isLiberoUnable(teamKey, player.number)
@@ -14982,7 +15077,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '1.25cqw'
                             }}
                           >
                             <div
@@ -15015,16 +15110,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
                               }}
                               style={{
-                                padding: '5px 10px',
+                                padding: '1.6cqw 3.1cqw',
                                 touchAction: canDragLibero ? 'none' : undefined,
                                 background: isTouchDropTargetLibero
                                   ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
                                   : isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                                borderRadius: '4px',
-                                fontSize: '14px',
+                                borderRadius: '1.25cqw',
+                                fontSize: '6.6cqw',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px',
+                                gap: '1.25cqw',
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
                                 cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
@@ -15032,7 +15127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                             >
                               <span style={{ fontWeight: 600 }}>{player.number}</span>
-                              <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
+                              <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '5.6cqw', fontWeight: 700 }}>
                                 {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                               </span>
                               {/* Captain badge for libero-captain on bench (left team) */}
@@ -15041,44 +15136,44 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   background: '#fff',
                                   color: '#10b981',
                                   border: '1px solid #10b981',
-                                  borderRadius: '3px',
-                                  padding: '0 3px',
-                                  fontSize: '10px',
+                                  borderRadius: '0.9cqw',
+                                  padding: '0 0.9cqw',
+                                  fontSize: '4.65cqw',
                                   fontWeight: 700
                                 }}>C</span>
                               )}
                               {sanctions.length > 0 && (
-                                <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+                                <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
-                                    <div style={{ position: 'relative', width: '9px', height: '9px' }}>
+                                    <div style={{ position: 'relative', width: '2.8cqw', height: '2.8cqw' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         left: '0',
                                         top: '1px',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         right: '0',
                                         top: '1px',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                     </div>
                                   ) : (
                                     <>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                     </>
                                   )}
@@ -15096,21 +15191,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     handleExchangeLibero('left')
                                   }}
                                   style={{
-                                    padding: '4px 8px',
+                                    padding: '1.25cqw 2.5cqw',
                                     background: '#fff',
                                     color: '#000',
                                     border: '1px solid #ccc',
-                                    borderRadius: '4px',
-                                    fontSize: '11px',
+                                    borderRadius: '1.25cqw',
+                                    fontSize: '5.1cqw',
                                     fontWeight: 600,
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '4px'
+                                    gap: '1.25cqw'
                                   }}
                                   title="Exchange liberos (swap L1 ↔ L2)"
                                 >
-                                  <span style={{ fontSize: '12px' }}>⇄</span>
+                                  <span style={{ fontSize: '5.6cqw' }}>⇄</span>
                                   Exch.
                                 </button>
                               )}
@@ -15143,17 +15238,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               })
                             }}
                             style={{
-                              padding: '6px 12px',
+                              padding: '1.9cqw 3.75cqw',
                               background: '#f97316',
                               color: '#000',
                               border: 'none',
-                              borderRadius: '4px',
-                              fontSize: '11px',
+                              borderRadius: '1.25cqw',
+                              fontSize: '5.1cqw',
                               fontWeight: 600,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '1.25cqw'
                             }}
                           >
                             <span>🔄</span> Redesignate Libero
@@ -15171,8 +15266,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <h4
                     onClick={() => isCompactMode && setLeftMainOfficialsExpanded(!leftMainOfficialsExpanded)}
                     style={{
-                      margin: '0 0 8px',
-                      fontSize: '12px',
+                      margin: '0 0 2.5cqw',
+                      fontSize: '5.6cqw',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       cursor: isCompactMode ? 'pointer' : 'default',
@@ -15182,10 +15277,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   >
                     <span>{t('scoreboard.roster.benchOfficials')}</span>
-                    {isCompactMode && <span style={{ fontSize: '10px' }}>{leftMainOfficialsExpanded ? '▲' : '▼'}</span>}
+                    {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{leftMainOfficialsExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || leftMainOfficialsExpanded) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
                       {leftTeamBench.benchOfficials.map((official, idx) => {
                         const teamKey = leftIsHome ? 'home' : 'away'
 
@@ -15214,18 +15309,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: '4px 8px',
+                              padding: '1.25cqw 2.5cqw',
                               background: 'rgba(255,255,255,0.05)',
-                              borderRadius: '4px',
-                              fontSize: '11px',
+                              borderRadius: '1.25cqw',
+                              fontSize: '5.1cqw',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '6px',
+                              gap: '1.9cqw',
                               cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontWeight: 600, color: 'var(--muted)', minWidth: '30px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--muted)', minWidth: '9.4cqw' }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -15234,37 +15329,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </span>
                               <span>{official.lastName || ''} {official.firstName || ''}</span>
                               {sanctions.length > 0 && (
-                                <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+                                <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
-                                    <div style={{ position: 'relative', width: '9px', height: '9px' }}>
+                                    <div style={{ position: 'relative', width: '2.8cqw', height: '2.8cqw' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         left: '0',
                                         top: '1px',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         right: '0',
                                         top: '1px',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                     </div>
                                   ) : (
                                     <>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                     </>
                                   )}
@@ -15783,6 +15878,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 </span>
                               )}
                               <span className="court-player-position">{player.position}</span>
+                              {/* LFP indicator (top-center) */}
+                              {lfpTrackingEnabled && !player.isPlaceholder && player.number && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '1cqh',
+                                  left: '50%',
+                                  transform: 'translateX(-50%)',
+                                  fontSize: '2.5cqh',
+                                  fontWeight: 700,
+                                  padding: '0.5cqh 1.5cqh',
+                                  borderRadius: '2cqh',
+                                  background: player.isLfp ? 'rgba(249, 115, 22, 0.9)' : 'rgba(147, 51, 234, 0.9)',
+                                  color: '#fff',
+                                  lineHeight: 1,
+                                  whiteSpace: 'nowrap',
+                                  zIndex: 2
+                                }}>
+                                  {player.isLfp ? 'LFP' : '!LFP'}
+                                </span>
+                              )}
                               {/* Captain indicator - show C for captain (including libero-captain) */}
                               {player.isCaptain && (() => {
                                 if (player.isLibero) {
@@ -16056,6 +16171,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 </span>
                               )}
                               <span className="court-player-position">{player.position}</span>
+                              {/* LFP indicator (top-center) */}
+                              {lfpTrackingEnabled && !player.isPlaceholder && player.number && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '1cqh',
+                                  left: '50%',
+                                  transform: 'translateX(-50%)',
+                                  fontSize: '2.5cqh',
+                                  fontWeight: 700,
+                                  padding: '0.5cqh 1.5cqh',
+                                  borderRadius: '2cqh',
+                                  background: player.isLfp ? 'rgba(249, 115, 22, 0.9)' : 'rgba(147, 51, 234, 0.9)',
+                                  color: '#fff',
+                                  lineHeight: 1,
+                                  whiteSpace: 'nowrap',
+                                  zIndex: 2
+                                }}>
+                                  {player.isLfp ? 'LFP' : '!LFP'}
+                                </span>
+                              )}
                               {/* Captain indicator - show C for captain (including libero-captain) */}
                               {player.isCaptain && (() => {
                                 if (player.isLibero) {
@@ -16323,6 +16458,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 </span>
                               )}
                               <span className="court-player-position">{player.position}</span>
+                              {/* LFP indicator (top-center) */}
+                              {lfpTrackingEnabled && !player.isPlaceholder && player.number && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '1cqh',
+                                  left: '50%',
+                                  transform: 'translateX(-50%)',
+                                  fontSize: '2.5cqh',
+                                  fontWeight: 700,
+                                  padding: '0.5cqh 1.5cqh',
+                                  borderRadius: '2cqh',
+                                  background: player.isLfp ? 'rgba(249, 115, 22, 0.9)' : 'rgba(147, 51, 234, 0.9)',
+                                  color: '#fff',
+                                  lineHeight: 1,
+                                  whiteSpace: 'nowrap',
+                                  zIndex: 2
+                                }}>
+                                  {player.isLfp ? 'LFP' : '!LFP'}
+                                </span>
+                              )}
                               {/* Bottom-left indicators: Captain C (including libero-captain) */}
                               {player.isCaptain && (() => {
                                 if (player.isLibero) {
@@ -16595,6 +16750,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 </span>
                               )}
                               <span className="court-player-position">{player.position}</span>
+                              {/* LFP indicator (top-center) */}
+                              {lfpTrackingEnabled && !player.isPlaceholder && player.number && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '1cqh',
+                                  left: '50%',
+                                  transform: 'translateX(-50%)',
+                                  fontSize: '2.5cqh',
+                                  fontWeight: 700,
+                                  padding: '0.5cqh 1.5cqh',
+                                  borderRadius: '2cqh',
+                                  background: player.isLfp ? 'rgba(249, 115, 22, 0.9)' : 'rgba(147, 51, 234, 0.9)',
+                                  color: '#fff',
+                                  lineHeight: 1,
+                                  whiteSpace: 'nowrap',
+                                  zIndex: 2
+                                }}>
+                                  {player.isLfp ? 'LFP' : '!LFP'}
+                                </span>
+                              )}
                               {/* Captain indicator - show C for captain (including libero-captain) */}
                               {player.isCaptain && (() => {
                                 if (player.isLibero) {
@@ -16827,6 +17002,45 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 </div>
 
+                {/* LFP counters at bottom corners of court */}
+                {lfpTrackingEnabled && (leftTeamLineupSet || rightTeamLineupSet) && (
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '2px 4px', marginTop: '-2px'
+                  }}>
+                    {leftTeamLineupSet ? (() => {
+                      const leftTeamKey = leftIsHome ? 'home' : 'away'
+                      const lfpCount = getLfpCountOnCourt(leftTeamKey)
+                      const isBelowMin = lfpCount < lfpMinimumOnCourt
+                      return (
+                        <span style={{
+                          fontSize: '10px', fontWeight: 600,
+                          color: isBelowMin ? '#ef4444' : 'rgba(255,255,255,0.5)',
+                          background: isBelowMin ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+                          padding: '2px 6px', borderRadius: '3px', whiteSpace: 'nowrap'
+                        }}>
+                          LFP: {lfpCount}/{lfpMinimumOnCourt}
+                        </span>
+                      )
+                    })() : <span />}
+                    {rightTeamLineupSet ? (() => {
+                      const rightTeamKey = leftIsHome ? 'away' : 'home'
+                      const lfpCount = getLfpCountOnCourt(rightTeamKey)
+                      const isBelowMin = lfpCount < lfpMinimumOnCourt
+                      return (
+                        <span style={{
+                          fontSize: '10px', fontWeight: 600,
+                          color: isBelowMin ? '#ef4444' : 'rgba(255,255,255,0.5)',
+                          background: isBelowMin ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+                          padding: '2px 6px', borderRadius: '3px', whiteSpace: 'nowrap'
+                        }}>
+                          LFP: {lfpCount}/{lfpMinimumOnCourt}
+                        </span>
+                      )
+                    })() : <span />}
+                  </div>
+                )}
+
                 {/* 2nd Referee - below court, or spacer if no 2R */}
                 {!isCompactMode && (() => {
                   const ref2 = data?.match?.officials?.find(o => o.role === '2nd referee' || o.role === '2nd Referee')
@@ -16856,18 +17070,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
             <div style={{
               display: 'flex',
-              alignItems: 'stretch',
-              gap: isCompactMode ? '8px' : '16px',
+              flexDirection: (data?.set?.index === 5 && !set5SetupConfirmed) ? 'column' : 'row',
+              alignItems: (data?.set?.index === 5 && !set5SetupConfirmed) ? 'center' : 'stretch',
+              gap: isCompactMode ? 'calc(8px * var(--scale-factor))' : 'calc(16px * var(--scale-factor))',
               width: '100%',
-              minHeight: isCompactMode ? '100px' : '200px'
+              minHeight: isCompactMode ? 'calc(100px * var(--scale-factor))' : 'calc(200px * var(--scale-factor))'
             }}>
-              {/* Set Results Table - Left Team (hidden in compact mode - shown in team column instead) */}
-              {!isCompactMode && (
+              {/* Set Results Table - Left Team (hidden in compact mode and set 5 setup - shown below instead) */}
+              {!isCompactMode && !(data?.set?.index === 5 && !set5SetupConfirmed) && (
                 <div style={{
-                  flex: '0 0 auto',
+                  flex: '1 1 0',
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'center'
+                  justifyContent: 'flex-start',
+                  minWidth: 0,
+                  overflow: 'hidden'
                 }}>
                   {(() => {
                     // Get current left team
@@ -16889,32 +17106,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
                     return (
-                      <div style={{
-                        background: 'rgba(15, 23, 42, 0.6)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        fontSize: '10px',
-                        minWidth: '140px'
-                      }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>
+                      <div
+                        onClick={() => setSummaryTableZoom({ side: 'left', teamKey: currentLeftTeamKey })}
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: `calc(8px * var(--scale-factor))`,
+                          padding: `calc(12px * var(--scale-factor))`,
+                          fontSize: `calc(15px * var(--scale-factor))`,
+                          width: '100%',
+                          cursor: 'pointer'
+                        }}>
+                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
+                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            borderRadius: `calc(4px * var(--scale-factor))`,
+                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             background: leftTeamColor,
                             color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                           }}>{leftTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>Set</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>P</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>W</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>S</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>T</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -16941,11 +17161,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid rgba(255,255,255,0.1)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftPoints}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{leftPoints}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
@@ -16958,7 +17178,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
 
               {/* Rally Controls - Center */}
-              <div className="rally-controls" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: '12px' }}>
+              <div className="rally-controls" style={{ flex: (data?.set?.index === 5 && !set5SetupConfirmed) ? '1 1 auto' : '2 1 0', width: (data?.set?.index === 5 && !set5SetupConfirmed) ? '100%' : undefined, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: 'calc(12px * var(--scale-factor))', minWidth: 0 }}>
                 {/* Show timeout countdown if timeout is active */}
                 {timeoutModal && timeoutModal.started ? (
                   <>
@@ -17015,8 +17235,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '10px',
+                      alignItems: 'stretch',
+                      gap: 'calc(10px * var(--scale-factor))',
+                      width: '100%',
                       marginTop: vmin(10)
                     }}>
                       <button
@@ -17028,20 +17249,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '12px',
-                          padding: '16px 0',
-                          fontSize: '18px',
+                          gap: 'calc(12px * var(--scale-factor))',
+                          padding: 'calc(16px * var(--scale-factor)) 0',
+                          fontSize: 'calc(20px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#22c55e',
+                          background: '#000',
                           color: '#fff',
-                          border: 'none',
-                          borderRadius: '12px',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          borderRadius: 'calc(12px * var(--scale-factor))',
                           cursor: 'pointer',
-                          width: '300px',
-                          height: '56px'
+                          width: '100%',
+                          minHeight: 'calc(40px * var(--scale-factor))'
                         }}
                       >
-                        <span style={{ fontSize: '24px' }}>↔</span>
+                        <span style={{ fontSize: '1.5em' }}>⇄</span>
                         {t('scoreboard.buttons.switchSides')}
                       </button>
                       <button
@@ -17053,20 +17274,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '12px',
-                          padding: '16px 0',
-                          fontSize: '18px',
+                          gap: 'calc(12px * var(--scale-factor))',
+                          padding: 'calc(16px * var(--scale-factor)) 0',
+                          fontSize: 'calc(20px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#22c55e',
+                          background: '#000',
                           color: '#fff',
-                          border: 'none',
-                          borderRadius: '12px',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          borderRadius: 'calc(12px * var(--scale-factor))',
                           cursor: 'pointer',
-                          width: '300px',
-                          height: '56px'
+                          width: '100%',
+                          minHeight: 'calc(40px * var(--scale-factor))'
                         }}
                       >
-                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: 32, height: 32, objectFit: 'contain' }} />
+                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '2.5em', height: '2.5em', objectFit: 'contain' }} />
                         {t('scoreboard.buttons.switchServe')}
                       </button>
                       <button
@@ -17078,17 +17299,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '12px',
-                          padding: '16px 0',
-                          fontSize: '18px',
+                          gap: 'calc(12px * var(--scale-factor))',
+                          padding: 'calc(16px * var(--scale-factor)) 0',
+                          fontSize: 'calc(18px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#3b82f6',
+                          background: '#22c55e',
                           color: '#fff',
                           border: 'none',
-                          borderRadius: '12px',
+                          borderRadius: 'calc(12px * var(--scale-factor))',
                           cursor: 'pointer',
-                          width: '300px',
-                          height: '56px'
+                          width: '100%',
+                          minHeight: 'calc(40px * var(--scale-factor))'
                         }}
                       >
                         {t('scoreboard.buttons.confirmSet5Setup')}
@@ -17097,9 +17318,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     {/* Countdown beneath buttons - only shown if active */}
                     {betweenSetsCountdown && (
-                      <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                      <div style={{ marginTop: 'calc(20px * var(--scale-factor))', textAlign: 'center', width: '100%' }}>
                         <div style={{
-                          fontSize: '49px',
+                          fontSize: 'calc(49px * var(--scale-factor))',
                           fontWeight: 700,
                           color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : 'var(--accent)',
                           fontFamily: getScoreFont()
@@ -17309,13 +17530,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
 
-              {/* Set Results Table - Right Team (hidden in compact mode - shown in team column instead) */}
-              {!isCompactMode && (
+              {/* Set Results Table - Right Team (hidden in compact mode and set 5 setup - shown below instead) */}
+              {!isCompactMode && !(data?.set?.index === 5 && !set5SetupConfirmed) && (
                 <div style={{
-                  flex: '0 0 auto',
+                  flex: '1 1 0',
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'center'
+                  justifyContent: 'flex-start',
+                  minWidth: 0,
+                  overflow: 'hidden'
                 }}>
                   {(() => {
                     // Get current right team
@@ -17337,32 +17560,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
 
                     return (
-                      <div style={{
-                        background: 'rgba(15, 23, 42, 0.6)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        fontSize: '10px',
-                        minWidth: '140px'
-                      }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>
+                      <div
+                        onClick={() => setSummaryTableZoom({ side: 'right', teamKey: currentRightTeamKey })}
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: `calc(8px * var(--scale-factor))`,
+                          padding: `calc(12px * var(--scale-factor))`,
+                          fontSize: `calc(15px * var(--scale-factor))`,
+                          width: '100%',
+                          cursor: 'pointer'
+                        }}>
+                        <h4 style={{ margin: `0 0 calc(8px * var(--scale-factor))`, fontSize: `calc(18px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
                           <span style={{
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
+                            padding: `calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor))`,
+                            borderRadius: `calc(4px * var(--scale-factor))`,
+                            fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
                             background: rightTeamColor,
                             color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
                           }}>{rightTeamLabel}</span>
                         </h4>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>Set</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>P</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>W</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>S</th>
-                              <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '9px' }}>T</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>S</th>
+                              <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>T</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -17389,11 +17615,168 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderBottom: '1px solid rgba(255,255,255,0.1)',
                                   color: rowColor
                                 }}>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightPoints}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{won}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{substitutions}</td>
-                                  <td style={{ padding: '4px 2px', textAlign: 'center' }}>{timeouts}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{rightPoints}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{timeouts}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+
+              {/* Summary tables row - shown beneath Set 5 buttons when in set 5 setup mode */}
+              {!isCompactMode && (data?.set?.index === 5 && !set5SetupConfirmed) && (
+                <div style={{
+                  display: 'flex',
+                  gap: 'calc(16px * var(--scale-factor))',
+                  width: '100%',
+                  maxWidth: 'calc(500px * var(--scale-factor))'
+                }}>
+                  {/* Left team summary */}
+                  {(() => {
+                    const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
+                    const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
+                    const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
+                    const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
+                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const currentSetIndex = data?.set?.index || 1
+                    const setsByIndex = new Map()
+                    allSets.forEach(set => { if (set.index <= currentSetIndex) setsByIndex.set(set.index, set) })
+                    const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+                    return (
+                      <div
+                        onClick={() => setSummaryTableZoom({ side: 'left', teamKey: currentLeftTeamKey })}
+                        style={{
+                          flex: '1 1 0',
+                          minWidth: 0,
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: `calc(8px * var(--scale-factor))`,
+                          padding: `calc(8px * var(--scale-factor))`,
+                          fontSize: `calc(13px * var(--scale-factor))`,
+                          cursor: 'pointer'
+                        }}>
+                        <h4 style={{ margin: `0 0 calc(4px * var(--scale-factor))`, fontSize: `calc(14px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                          <span style={{
+                            padding: `calc(2px * var(--scale-factor)) calc(6px * var(--scale-factor))`,
+                            borderRadius: `calc(4px * var(--scale-factor))`,
+                            fontSize: `calc(12px * var(--scale-factor))`,
+                            fontWeight: 700,
+                            background: leftTeamColor,
+                            color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                          }}>{leftTeamLabel}</span>
+                        </h4>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(12px * var(--scale-factor))` }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>Set</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>P</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>W</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>S</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>T</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleSets.map(set => {
+                              const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
+                              const rightPoints = currentLeftTeamKey === 'home' ? set.awayPoints : set.homePoints
+                              const won = leftPoints > rightPoints ? 1 : 0
+                              const substitutions = (data?.events || []).filter(e =>
+                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
+                              ).length
+                              const timeouts = (data?.events || []).filter(e =>
+                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
+                              ).length
+                              let rowColor = 'inherit'
+                              if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
+                              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
+                              return (
+                                <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{leftPoints}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{timeouts}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
+                  {/* Right team summary */}
+                  {(() => {
+                    const currentRightTeamKey = leftIsHome ? 'away' : 'home'
+                    const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
+                    const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
+                    const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
+                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const currentSetIndex = data?.set?.index || 1
+                    const setsByIndex = new Map()
+                    allSets.forEach(set => { if (set.index <= currentSetIndex) setsByIndex.set(set.index, set) })
+                    const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+                    return (
+                      <div
+                        onClick={() => setSummaryTableZoom({ side: 'right', teamKey: currentRightTeamKey })}
+                        style={{
+                          flex: '1 1 0',
+                          minWidth: 0,
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: `calc(8px * var(--scale-factor))`,
+                          padding: `calc(8px * var(--scale-factor))`,
+                          fontSize: `calc(13px * var(--scale-factor))`,
+                          cursor: 'pointer'
+                        }}>
+                        <h4 style={{ margin: `0 0 calc(4px * var(--scale-factor))`, fontSize: `calc(14px * var(--scale-factor))`, fontWeight: 600, textAlign: 'center' }}>
+                          <span style={{
+                            padding: `calc(2px * var(--scale-factor)) calc(6px * var(--scale-factor))`,
+                            borderRadius: `calc(4px * var(--scale-factor))`,
+                            fontSize: `calc(12px * var(--scale-factor))`,
+                            fontWeight: 700,
+                            background: rightTeamColor,
+                            color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                          }}>{rightTeamLabel}</span>
+                        </h4>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(12px * var(--scale-factor))` }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>Set</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>P</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>W</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>S</th>
+                              <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>T</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleSets.map(set => {
+                              const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
+                              const leftPoints = currentRightTeamKey === 'home' ? set.awayPoints : set.homePoints
+                              const won = rightPoints > leftPoints ? 1 : 0
+                              const substitutions = (data?.events || []).filter(e =>
+                                e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
+                              ).length
+                              const timeouts = (data?.events || []).filter(e =>
+                                e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
+                              ).length
+                              let rowColor = 'inherit'
+                              if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
+                              const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
+                              return (
+                                <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{rightPoints}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{won}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{substitutions}</td>
+                                  <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{timeouts}</td>
                                 </tr>
                               )
                             })}
@@ -17445,7 +17828,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: (isCompactMode || isShortHeight) ? '4px' : '8px' }}>
+            <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw' }}>
               <div
                 onClick={() => {
                   // Clicking calls timeout if available
@@ -17462,8 +17845,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || isRallyReplayed
                       ? 'rgba(255, 255, 255, 0.05)'
                       : 'rgba(34, 197, 94, 0.2)'),
-                  borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
-                  padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
+                  borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
+                  padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
                   textAlign: 'center',
                   border: getTimeoutsUsed('right') >= 2
                     ? '1px solid rgba(239, 68, 68, 0.4)'
@@ -17473,9 +17856,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.to')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
-                  fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
+                  fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
                   color: getTimeoutsUsed('right') >= 2 ? '#ef4444' : (!(rallyStatus === 'in_play' || isRallyReplayed) ? '#22c55e' : 'inherit')
                 }}>{getTimeoutsUsed('right')}</div>
@@ -17495,8 +17878,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : getSubstitutionsUsed('right') >= 5
                       ? 'rgba(234, 179, 8, 0.2)'
                       : 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: (isCompactMode || isShortHeight) ? '4px' : '8px',
-                  padding: (isCompactMode || isShortHeight) ? '4px' : '12px',
+                  borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
+                  padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
                   textAlign: 'center',
                   border: getSubstitutionsUsed('right') >= 6
                     ? '1px solid rgba(239, 68, 68, 0.4)'
@@ -17506,9 +17889,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '8px' : '11px', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '1px' : '4px' }}>{t('scoreboard.labels.sub')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
                 <div className="to-sub-value" style={{
-                  fontSize: (isCompactMode || isShortHeight) ? '14px' : '24px',
+                  fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
                   color: getSubstitutionsUsed('right') >= 6 ? '#ef4444' : getSubstitutionsUsed('right') >= 5 ? '#eab308' : 'inherit'
                 }}>{getSubstitutionsUsed('right')}</div>
@@ -17534,7 +17917,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               if (needsRedesignation) {
                 const lastUnable = unableLiberos[unableLiberos.length - 1]
                 return (
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', width: '100%' }}>
+                  <div style={{ display: 'flex', gap: '2.5cqw', marginBottom: '2.5cqw', width: '100%' }}>
                     <button
                       onClick={() => {
                         setLiberoRedesignationModal({
@@ -17546,8 +17929,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       disabled={rallyStatus === 'in_play' || isRallyReplayed}
                       style={{
                         flex: 1,
-                        fontSize: '10px',
-                        padding: '8px 4px',
+                        fontSize: '4.65cqw',
+                        padding: '2.5cqw 1.25cqw',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -17568,15 +17951,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
             {/* Sanctions: Improper Request, Delay Warning, Delay Penalty */}
             {isNarrowMode ? (
-              <div style={{ marginTop: '4px' }}>
+              <div style={{ marginTop: '1.25cqw' }}>
                 <button
                   onClick={() => setRightDelaysDropdownOpen(!rightDelaysDropdownOpen)}
-                  style={{ width: '100%', fontSize: '10px', padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ width: '100%', fontSize: '4.65cqw', padding: '2.5cqw 1.25cqw', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   {t('scoreboard.sanctions.irAndDelays')} {rightDelaysDropdownOpen ? '▲' : '▼'}
                 </button>
                 {rightDelaysDropdownOpen && (
-                  <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ marginTop: '1.25cqw', display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
                     {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
                       <button
                         onClick={() => { handleImproperRequest('right'); setRightDelaysDropdownOpen(false) }}
@@ -17607,7 +17990,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', gap: '1.25cqw', marginTop: '2.5cqw' }}>
                 {!data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
                   <button
                     onClick={() => handleImproperRequest('right')}
@@ -17638,14 +18021,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             )}
 
             {/* Status boxes for team sanctions */}
-            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ marginTop: '2.5cqw', display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
               {data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
                 <div style={{
-                  padding: '4px 8px',
-                  fontSize: '12px',
+                  padding: '1.25cqw 2.5cqw',
+                  fontSize: '5.6cqw',
                   background: 'rgba(156, 163, 175, 0.15)',
                   border: '1px solid rgba(156, 163, 175, 0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '1.25cqw',
                   color: '#d1d5db'
                 }}>
                   {t('scoreboard.sanctions.sanctionedImproperRequest')}
@@ -17653,11 +18036,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
               {data?.match?.sanctions?.[leftIsHome ? 'delayWarningAway' : 'delayWarningHome'] && (
                 <div style={{
-                  padding: '4px 8px',
-                  fontSize: '12px',
+                  padding: '1.25cqw 2.5cqw',
+                  fontSize: '5.6cqw',
                   background: 'rgba(234, 179, 8, 0.15)',
                   border: '1px solid rgba(234, 179, 8, 0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '1.25cqw',
                   color: '#facc15'
                 }}>
                   {t('scoreboard.sanctions.sanctionedDelayWarning')}
@@ -17665,11 +18048,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
               {teamHasFormalWarning(leftIsHome ? 'away' : 'home') && (
                 <div style={{
-                  padding: '4px 8px',
-                  fontSize: '12px',
+                  padding: '1.25cqw 2.5cqw',
+                  fontSize: '5.6cqw',
                   background: 'rgba(250, 204, 21, 0.15)',
                   border: '1px solid rgba(250, 204, 21, 0.3)',
-                  borderRadius: '4px',
+                  borderRadius: '1.25cqw',
                   color: '#fde047'
                 }}>
                   {t('scoreboard.sanctions.sanctionedFormalWarning')} 🟨
@@ -17679,15 +18062,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
             {/* Bench Players, Liberos, and Bench Officials */}
-            <div style={{ marginTop: isCompactMode ? '12px' : '24px', paddingTop: isCompactMode ? '12px' : '24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               {/* Bench Players */}
               {rightTeamBench.benchPlayers.length > 0 && (
-                <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainBenchExpanded(!rightMainBenchExpanded)}
                     style={{
-                      margin: '0 0 8px',
-                      fontSize: '12px',
+                      margin: '0 0 2.5cqw',
+                      fontSize: '5.6cqw',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       cursor: isCompactMode ? 'pointer' : 'default',
@@ -17697,10 +18080,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   >
                     <span>{t('scoreboard.roster.bench')}</span>
-                    {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainBenchExpanded ? '▲' : '▼'}</span>}
+                    {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{rightMainBenchExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainBenchExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
                       {rightTeamBench.benchPlayers.map(player => {
                         const teamKey = leftIsHome ? 'away' : 'home'
                         const canComeBack = canPlayerComeBack(teamKey, player.number)
@@ -17766,6 +18149,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
                         const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
                         const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+                        // Check if bench player is injured
+                        const isBenchInjured = data?.events?.some(e =>
+                          e.type === 'bench_injury' &&
+                          e.payload?.team === teamKey &&
+                          String(e.payload?.playerNumber) === String(player.number)
+                        )
 
                         // Determine if bench player can substitute (RIGHT TEAM)
                         // Case 1: Player was substituted out - can only come back for the player who replaced them
@@ -17846,7 +18236,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: '5px 10px',
+                              padding: '1.6cqw 3.1cqw',
                               touchAction: (canSubBenchPlayer || isSubstitutedByLibero) ? 'none' : undefined,
                               background: isTouchDropTarget
                                 ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
@@ -17857,11 +18247,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     : (wasSubstitutedOut && !showX && !hasComeBack)
                                       ? '#0f172a'  // Black bg for substituted-out (only if can still sub back)
                                       : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
-                              borderRadius: '4px',
-                              fontSize: '14px',
+                              borderRadius: '1.25cqw',
+                              fontSize: '6.6cqw',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px',
+                              gap: '1.25cqw',
                               position: 'relative',
                               border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #fde047' : undefined),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
@@ -17872,16 +18262,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           >
                             <span style={{ fontWeight: 600 }}>{player.number}</span>
                             {player.isCaptain && (
-                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : 'var(--accent)'), fontSize: '10px', fontWeight: 700 }}>C</span>
+                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
                             )}
                             {isSubstitutedByLibero && (
                               <span style={{
-                                fontSize: '9px',
+                                fontSize: '4.2cqw',
                                 fontWeight: 700,
                                 color: '#000',
                                 background: 'rgba(0, 0, 0, 0.1)',
-                                padding: '1px 3px',
-                                borderRadius: '2px'
+                                padding: '0.3cqw 0.9cqw',
+                                borderRadius: '0.6cqw'
                               }}>
                                 {player.substitutedByLibero.liberoType === 'libero1' ? 'L1' : player.substitutedByLibero.liberoType === 'redesignated' ? 'LR' : 'L2'}
                               </span>
@@ -17889,18 +18279,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {showX && (
                               <span
                                 style={{
-                                  fontSize: '9px',
+                                  fontSize: '4.2cqw',
                                   lineHeight: '1',
                                   background: 'rgba(15, 23, 42, 0.95)',
                                   color: '#ef4444',
                                   fontWeight: 700,
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
+                                  padding: '0.3cqw 0.9cqw',
+                                  borderRadius: '0.6cqw',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  minWidth: '12px',
-                                  minHeight: '12px',
+                                  minWidth: '3.75cqw',
+                                  minHeight: '3.75cqw',
                                   border: '1px solid rgba(255, 255, 255, 0.2)'
                                 }}
                                 title={
@@ -17919,18 +18309,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: '9px',
+                                  fontSize: '4.2cqw',
                                   lineHeight: '1',
                                   background: 'rgba(15, 23, 42, 0.95)',
                                   color: '#ef4444',
                                   fontWeight: 700,
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
+                                  padding: '0.3cqw 0.9cqw',
+                                  borderRadius: '0.6cqw',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  minWidth: '12px',
-                                  minHeight: '12px',
+                                  minWidth: '3.75cqw',
+                                  minHeight: '3.75cqw',
                                   border: '1px solid rgba(255, 255, 255, 0.2)'
                                 }}
                               >
@@ -17940,16 +18330,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: '7px',
+                                  fontSize: '3.3cqw',
                                   lineHeight: '1',
                                   display: 'flex',
                                   flexDirection: 'row',
                                   alignItems: 'center',
-                                  gap: '2px',
+                                  gap: '0.6cqw',
                                   background: 'rgba(15, 23, 42, 0.95)',
-                                  padding: '1px 3px',
-                                  borderRadius: '2px',
-                                  minHeight: '12px',
+                                  padding: '0.3cqw 0.9cqw',
+                                  borderRadius: '0.6cqw',
+                                  minHeight: '3.75cqw',
                                   justifyContent: 'center',
                                   border: '1px solid rgba(255, 255, 255, 0.2)',
                                   opacity: waitingForPoint ? 0.5 : 1
@@ -17960,9 +18350,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {playerWhoReplacedThem && (
                                   <span style={{
                                     color: 'rgba(255, 255, 255, 0.8)',
-                                    fontSize: '8px',
+                                    fontSize: '5.6cqw',
                                     fontWeight: 600,
-                                    marginLeft: '2px'
+                                    marginLeft: '0.6cqw'
                                   }}>
                                     {playerWhoReplacedThem}
                                   </span>
@@ -17971,16 +18361,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             )}
                             {sanctions.length > 0 && (
                               <span style={{
-                                fontSize: '8px',
+                                fontSize: '5.6cqw',
                                 display: 'flex',
-                                gap: '1px',
+                                gap: '0.3cqw',
                                 alignItems: 'center'
                               }}>
                                 {hasExpulsion ? (
-                                  <div style={{ position: 'relative', width: '9px', height: '9px' }}>
+                                  <div style={{ position: 'relative', width: '2.8cqw', height: '2.8cqw' }}>
                                     <div className="sanction-card yellow" style={{
-                                      width: '6px',
-                                      height: '8px',
+                                      width: '1.9cqw',
+                                      height: '2.5cqw',
                                       position: 'absolute',
                                       left: '0',
                                       top: '0',
@@ -17988,8 +18378,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       zIndex: 1
                                     }}></div>
                                     <div className="sanction-card red" style={{
-                                      width: '6px',
-                                      height: '8px',
+                                      width: '1.9cqw',
+                                      height: '2.5cqw',
                                       position: 'absolute',
                                       right: '0',
                                       top: '0',
@@ -18000,14 +18390,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 ) : (
                                   <>
                                     {(hasWarning || hasDisqualification) && (
-                                      <div className="sanction-card yellow" style={{ width: '6px', height: '8px' }}></div>
+                                      <div className="sanction-card yellow" style={{ width: '1.9cqw', height: '2.5cqw' }}></div>
                                     )}
                                     {(hasPenalty || hasDisqualification) && (
-                                      <div className="sanction-card red" style={{ width: '6px', height: '8px' }}></div>
+                                      <div className="sanction-card red" style={{ width: '1.9cqw', height: '2.5cqw' }}></div>
                                     )}
                                   </>
                                 )}
                               </span>
+                            )}
+                            {isBenchInjured && (
+                              <span style={{ color: '#ef4444', fontSize: '4.65cqw', fontWeight: 700 }} title="Injured on bench">✚</span>
                             )}
                           </div>
                         )
@@ -18019,12 +18412,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Liberos */}
               {rightTeamBench.liberos.length > 0 && (
-                <div style={{ marginBottom: isCompactMode ? '8px' : '16px' }}>
+                <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainLiberosExpanded(!rightMainLiberosExpanded)}
                     style={{
-                      margin: '0 0 8px',
-                      fontSize: '12px',
+                      margin: '0 0 2.5cqw',
+                      fontSize: '5.6cqw',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       cursor: isCompactMode ? 'pointer' : 'default',
@@ -18034,10 +18427,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   >
                     <span>{t('scoreboard.roster.liberos')}</span>
-                    {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainLiberosExpanded ? '▲' : '▼'}</span>}
+                    {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{rightMainLiberosExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainLiberosExpanded) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.9cqw' }}>
                       {rightTeamBench.liberos.map(player => {
                         const teamKey = leftIsHome ? 'away' : 'home'
                         const isUnable = isLiberoUnable(teamKey, player.number)
@@ -18062,7 +18455,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '1.25cqw'
                             }}
                           >
                             <div
@@ -18088,13 +18481,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
                               }}
                               style={{
-                                padding: '5px 10px',
+                                padding: '1.6cqw 3.1cqw',
                                 background: isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                                borderRadius: '4px',
-                                fontSize: '14px',
+                                borderRadius: '1.25cqw',
+                                fontSize: '6.6cqw',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px',
+                                gap: '1.25cqw',
                                 border: isLiberoDropTarget ? '2px solid #3b82f6' : `1px solid ${isUnable ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                                 boxShadow: isLiberoDropTarget ? '0 0 8px rgba(59, 130, 246, 0.5)' : undefined,
                                 cursor: canDragLibero ? 'grab' : (rallyStatus === 'idle' && !isUnable) ? 'pointer' : 'default',
@@ -18102,7 +18495,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                             >
                               <span style={{ fontWeight: 600 }}>{player.number}</span>
-                              <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '12px', fontWeight: 700 }}>
+                              <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '5.6cqw', fontWeight: 700 }}>
                                 {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                               </span>
                               {/* Captain badge for libero-captain on bench (right team) */}
@@ -18111,44 +18504,44 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   background: '#fff',
                                   color: '#10b981',
                                   border: '1px solid #10b981',
-                                  borderRadius: '3px',
-                                  padding: '0 3px',
-                                  fontSize: '10px',
+                                  borderRadius: '0.9cqw',
+                                  padding: '0 0.9cqw',
+                                  fontSize: '4.65cqw',
                                   fontWeight: 700
                                 }}>C</span>
                               )}
                               {sanctions.length > 0 && (
-                                <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+                                <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
-                                    <div style={{ position: 'relative', width: '9px', height: '9px' }}>
+                                    <div style={{ position: 'relative', width: '2.8cqw', height: '2.8cqw' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         left: '0',
                                         top: '1px',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         right: '0',
                                         top: '1px',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                     </div>
                                   ) : (
                                     <>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                     </>
                                   )}
@@ -18166,21 +18559,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     handleExchangeLibero('right')
                                   }}
                                   style={{
-                                    padding: '4px 8px',
+                                    padding: '1.25cqw 2.5cqw',
                                     background: '#fff',
                                     color: '#000',
                                     border: '1px solid #ccc',
-                                    borderRadius: '4px',
-                                    fontSize: '11px',
+                                    borderRadius: '1.25cqw',
+                                    fontSize: '5.1cqw',
                                     fontWeight: 600,
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '4px'
+                                    gap: '1.25cqw'
                                   }}
                                   title="Exchange liberos (swap L1 ↔ L2)"
                                 >
-                                  <span style={{ fontSize: '12px' }}>⇄</span>
+                                  <span style={{ fontSize: '5.6cqw' }}>⇄</span>
                                   Exch.
                                 </button>
                               )}
@@ -18213,17 +18606,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               })
                             }}
                             style={{
-                              padding: '6px 12px',
+                              padding: '1.9cqw 3.75cqw',
                               background: '#f97316',
                               color: '#000',
                               border: 'none',
-                              borderRadius: '4px',
-                              fontSize: '11px',
+                              borderRadius: '1.25cqw',
+                              fontSize: '5.1cqw',
                               fontWeight: 600,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '1.25cqw'
                             }}
                           >
                             <span>🔄</span> Redesignate Libero
@@ -18241,8 +18634,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <h4
                     onClick={() => isCompactMode && setRightMainOfficialsExpanded(!rightMainOfficialsExpanded)}
                     style={{
-                      margin: '0 0 8px',
-                      fontSize: '12px',
+                      margin: '0 0 2.5cqw',
+                      fontSize: '5.6cqw',
                       fontWeight: 600,
                       color: 'var(--muted)',
                       cursor: isCompactMode ? 'pointer' : 'default',
@@ -18252,10 +18645,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                   >
                     <span>{t('scoreboard.roster.benchOfficials')}</span>
-                    {isCompactMode && <span style={{ fontSize: '10px' }}>{rightMainOfficialsExpanded ? '▲' : '▼'}</span>}
+                    {isCompactMode && <span style={{ fontSize: '4.65cqw' }}>{rightMainOfficialsExpanded ? '▲' : '▼'}</span>}
                   </h4>
                   {(!isCompactMode || rightMainOfficialsExpanded) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25cqw' }}>
                       {rightTeamBench.benchOfficials.map((official, idx) => {
                         const teamKey = leftIsHome ? 'away' : 'home'
 
@@ -18284,18 +18677,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: '4px 8px',
+                              padding: '1.25cqw 2.5cqw',
                               background: 'rgba(255,255,255,0.05)',
-                              borderRadius: '4px',
-                              fontSize: '11px',
+                              borderRadius: '1.25cqw',
+                              fontSize: '5.1cqw',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '6px',
+                              gap: '1.9cqw',
                               cursor: rallyStatus === 'idle' ? 'pointer' : 'default'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontWeight: 600, color: 'var(--muted)', minWidth: '30px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--muted)', minWidth: '9.4cqw' }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -18304,37 +18697,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </span>
                               <span>{official.lastName || ''} {official.firstName || ''}</span>
                               {sanctions.length > 0 && (
-                                <span style={{ display: 'flex', gap: '1px', alignItems: 'center' }}>
+                                <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
-                                    <div style={{ position: 'relative', width: '9px', height: '9px' }}>
+                                    <div style={{ position: 'relative', width: '2.8cqw', height: '2.8cqw' }}>
                                       <div className="sanction-card yellow" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         left: '0',
                                         top: '1px',
                                         transform: 'rotate(-8deg)',
                                         zIndex: 1,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                       <div className="sanction-card red" style={{
-                                        width: '5px',
-                                        height: '7px',
+                                        width: '1.6cqw',
+                                        height: '2.2cqw',
                                         position: 'absolute',
                                         right: '0',
                                         top: '1px',
                                         transform: 'rotate(8deg)',
                                         zIndex: 2,
-                                        borderRadius: '1px'
+                                        borderRadius: '0.3cqw'
                                       }}></div>
                                     </div>
                                   ) : (
                                     <>
                                       {(hasWarning || hasDisqualification) && (
-                                        <div className="sanction-card yellow" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card yellow" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                       {(hasPenalty || hasDisqualification) && (
-                                        <div className="sanction-card red" style={{ width: '6px', height: '8px', borderRadius: '1px' }}></div>
+                                        <div className="sanction-card red" style={{ width: '1.9cqw', height: '2.5cqw', borderRadius: '0.3cqw' }}></div>
                                       )}
                                     </>
                                   )}
@@ -18920,7 +19313,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           scoreFont,
           setScoreFont,
           keybindingsEnabled,
-          setKeybindingsEnabled
+          setKeybindingsEnabled,
+          lfpTrackingEnabled,
+          setLfpTrackingEnabled,
+          lfpMinimumOnCourt,
+          setLfpMinimumOnCourt
         }}
         displayOptions={{
           displayMode,
@@ -22769,6 +23166,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         lineup={lineupModal.lineup}
         teamAKey={teamAKey}
         teamBKey={teamBKey}
+        lfpTrackingEnabled={lfpTrackingEnabled}
+        lfpMinimumOnCourt={lfpMinimumOnCourt}
         onClose={() => setLineupModal(null)}
         onSave={async () => {
           const teamKey = lineupModal.team
@@ -22824,6 +23223,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Get available substitutes for this player
         const { team, position, playerNumber } = playerActionMenu
         const availableSubs = playerActionMenu.canSubstitute ? getAvailableSubstitutes(team, playerNumber) : []
+        const teamPlayersForMenu = team === 'home' ? data?.homePlayers : data?.awayPlayers
+        const playerForMenu = (teamPlayersForMenu || []).find(p => String(p.number) === String(playerNumber))
+        const playerNameForMenu = playerForMenu ? [playerForMenu.firstName, playerForMenu.lastName].filter(Boolean).join(' ') : ''
 
         // Get sanction availability
         const teamWarning = teamHasFormalWarning(team)
@@ -22888,11 +23290,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '6px'
+                  gap: '6px',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textAlign: 'center', marginBottom: '4px' }}>
-                  # {playerNumber}
+                  # {playerNumber}{playerNameForMenu ? ` ${playerNameForMenu}` : ''}
                 </div>
                 {/* Substitution - auto-fire if only 1 legal substitute, otherwise expandable */}
                 {playerActionMenu.canSubstitute && availableSubs.length > 0 && (
@@ -23509,6 +23913,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {substitutionDropdown && (() => {
         const teamKey = substitutionDropdown.team
         const teamData = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
+        const subDropdownPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+        const subDropdownPlayer = (subDropdownPlayers || []).find(p => String(p.number) === String(substitutionDropdown.playerNumber))
+        const subDropdownPlayerName = subDropdownPlayer ? [subDropdownPlayer.firstName, subDropdownPlayer.lastName].filter(Boolean).join(' ') : ''
 
         // Check if substitution is legal
         const isLegal = isSubstitutionLegal(teamKey, substitutionDropdown.playerNumber)
@@ -23610,9 +24017,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   border: '2px solid rgba(255, 255, 255, 0.2)',
                   borderRadius: '8px',
                   padding: '8px',
-                  minWidth: '80px',
-                  maxWidth: '100px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                  minWidth: '120px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
@@ -23721,6 +24129,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {liberoDropdown && (() => {
         const teamKey = liberoDropdown.team
         const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+        const libDropdownPlayer = (teamPlayers || []).find(p => String(p.number) === String(liberoDropdown.playerNumber))
+        const libDropdownPlayerName = libDropdownPlayer ? [libDropdownPlayer.firstName, libDropdownPlayer.lastName].filter(Boolean).join(' ') : ''
         const allLiberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
 
         // Check if a libero is already on court
@@ -23805,14 +24215,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '8px',
                   minWidth: '80px',
                   maxWidth: '100px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: '#000', textAlign: 'center', borderBottom: '1px solid rgba(0, 0, 0, 0.1)', paddingBottom: '8px' }}>
                   Libero
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', textAlign: 'center' }}>
-                  # {liberoDropdown.playerNumber} out
+                  # {liberoDropdown.playerNumber}{libDropdownPlayerName ? ` ${libDropdownPlayerName}` : ''} out
                 </div>
                 {liberos.length === 0 ? (
                   <div style={{ padding: '8px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
@@ -23853,7 +24265,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           e.currentTarget.style.transform = 'scale(1)'
                         }}
                       >
-                        {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'} # {player.number}
+                        {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'} # {player.number}{(player.firstName || player.lastName) ? ` ${[player.firstName, player.lastName].filter(Boolean).join(' ')}` : ''}
                       </button>
                     ))}
                   </div>
@@ -23867,6 +24279,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {liberoInDropdown && (() => {
         const teamKey = liberoInDropdown.team
         const { playersOnCourt } = getTeamLineupState(teamKey)
+        const libInTeamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
 
         // Get eligible players (I if not serving, II, III)
         const currentServe = getCurrentServe()
@@ -23922,7 +24335,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '8px',
                   minWidth: '120px',
                   maxWidth: '150px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: '#000', textAlign: 'center', borderBottom: '1px solid rgba(0, 0, 0, 0.1)', paddingBottom: '8px' }}>
@@ -23968,7 +24383,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         }}
                       >
                         <span style={{ fontSize: '10px', opacity: 0.7 }}>Pos {player.position}:</span>
-                        <span>#{player.number}</span>
+                        <span>#{player.number}{(() => { const p = (libInTeamPlayers || []).find(tp => String(tp.number) === String(player.number)); return (p?.firstName || p?.lastName) ? ` ${[p?.firstName, p?.lastName].filter(Boolean).join(' ')}` : ''; })()}</span>
                       </button>
                     ))}
                   </div>
@@ -23980,6 +24395,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })()}
 
       {sanctionDropdown && (() => {
+        const sanctionTeamPlayers = sanctionDropdown.team === 'home' ? data?.homePlayers : data?.awayPlayers
+        const sanctionPlayer = sanctionDropdown.playerNumber ? (sanctionTeamPlayers || []).find(p => String(p.number) === String(sanctionDropdown.playerNumber)) : null
+        const sanctionPlayerName = sanctionPlayer ? [sanctionPlayer.firstName, sanctionPlayer.lastName].filter(Boolean).join(' ') : ''
+        const sanctionOfficials = sanctionDropdown.team === 'home' ? (data?.match?.bench_home || []) : (data?.match?.bench_away || [])
+        const sanctionOfficial = sanctionDropdown.role ? sanctionOfficials.find(o => o.role === sanctionDropdown.role) : null
+        const sanctionOfficialName = sanctionOfficial ? [sanctionOfficial.firstName, sanctionOfficial.lastName].filter(Boolean).join(' ') : ''
         // Get element position - use stored coordinates if available
         // For left side teams, menu opens to the right (use left CSS)
         // For right side teams, menu opens to the left (use right CSS)
@@ -24037,7 +24458,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '160px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '6px' }}>
@@ -24050,11 +24473,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           role === 'Assistant Coach 2' ? 'AC2' :
                             role === 'Physiotherapist' ? 'P' :
                               role === 'Medic' ? 'M' : role
-                      return `Sanction for ${roleAbbr}`
+                      return `Sanction for ${roleAbbr}${sanctionOfficialName ? ` ${sanctionOfficialName}` : ''}`
                     } else if (type === 'bench' && playerNumber) {
-                      return `Actions for # ${playerNumber}`
+                      return `Actions for # ${playerNumber}${sanctionPlayerName ? ` ${sanctionPlayerName}` : ''}`
                     } else if (playerNumber) {
-                      return `Sanction for ${playerNumber}`
+                      return `Sanction for # ${playerNumber}${sanctionPlayerName ? ` ${sanctionPlayerName}` : ''}`
                     } else {
                       return 'Sanction'
                     }
@@ -24268,6 +24691,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         const { team, playerNumber, canSubstitute, courtPlayerToSwapWith, neverPlayed } = benchPlayerActionMenu
+        const benchMenuPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+        const benchMenuPlayer = (benchMenuPlayers || []).find(p => String(p.number) === String(playerNumber))
+        const benchMenuPlayerName = benchMenuPlayer ? [benchMenuPlayer.firstName, benchMenuPlayer.lastName].filter(Boolean).join(' ') : ''
 
         // For "never played" bench players, get available court players to substitute
         // Filter out liberos - cannot substitute for a libero on court
@@ -24324,11 +24750,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '6px'
+                  gap: '6px',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textAlign: 'center', marginBottom: '4px' }}>
-                  # {playerNumber}
+                  # {playerNumber}{benchMenuPlayerName ? ` ${benchMenuPlayerName}` : ''}
                 </div>
                 {/* Substitution Button - for returning players */}
                 {courtPlayerToSwapWith && (
@@ -24614,17 +25042,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Injury Button */}
                 <button
                   onClick={async () => {
-                    // For bench player injury, just add a remark (no substitution needed since they're not on court)
-                    const remarks = data?.match?.remarks || ''
-                    const now = new Date()
-                    const timestamp = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`
-                    const teamName = team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
-                    const newRemark = `[${timestamp}] Injury: ${teamName} #${playerNumber} (bench)`
-                    const updatedRemarks = remarks ? `${remarks}\n${newRemark}` : newRemark
+                    // For bench player injury, add a remark with time, set, score (team first), team, number
+                    try {
+                      const setIndex = data?.set?.index || 1
+                      const teamLabel = team === teamAKey ? 'A' : 'B'
+                      const now = new Date()
+                      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+                      const teamScore = team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
+                      const opponentScore = team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
+                      const scoreStr = `${teamScore}:${opponentScore}`
 
-                    await db.matches.update(matchId, { remarks: updatedRemarks })
-                    setBenchPlayerActionMenu(null)
-                    setConfirmMessage(`Injury recorded for #${playerNumber}`)
+                      const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerNumber} injured on bench`
+                      const currentRemarks = data?.match?.remarks || ''
+                      const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
+                      await db.matches.update(matchId, { remarks: newRemarks })
+
+                      // Log as event so we can track and show red cross
+                      if (logEventRef.current) {
+                        await logEventRef.current('bench_injury', {
+                          team,
+                          playerNumber,
+                          setIndex
+                        })
+                      }
+
+                      setBenchPlayerActionMenu(null)
+                      setConfirmMessage(`Injury recorded for #${playerNumber} (bench)`)
+                    } catch (err) {
+                      console.error('Failed to record bench injury:', err)
+                      setBenchPlayerActionMenu(null)
+                    }
                   }}
                   style={{
                     padding: '8px 12px',
@@ -24663,6 +25110,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
       {injuryDropdown && (() => {
+        const injTeamPlayers = injuryDropdown.team === 'home' ? data?.homePlayers : data?.awayPlayers
+        const injPlayer = (injTeamPlayers || []).find(p => String(p.number) === String(injuryDropdown.playerNumber))
+        const injPlayerName = injPlayer ? [injPlayer.firstName, injPlayer.lastName].filter(Boolean).join(' ') : ''
         // Get element position - use stored coordinates if available
         // For left side teams, menu opens to the right (use left CSS)
         // For right side teams, menu opens to the left (use right CSS)
@@ -24727,14 +25177,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)'
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  transform: 'scale(1.5)',
+                  transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '6px' }}>
                   Injury
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
-                  # {injuryDropdown.playerNumber}
+                  # {injuryDropdown.playerNumber}{injPlayerName ? ` ${injPlayerName}` : ''}
                 </div>
                 <button
                   onClick={handleInjury}
@@ -24762,6 +25214,106 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 >
                   Substitute
                 </button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+
+      {/* Summary Table Zoom Popup */}
+      {summaryTableZoom && (() => {
+        const teamKey = summaryTableZoom.teamKey
+        const teamData = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
+        const teamColor = teamData?.color || (teamKey === 'home' ? '#ef4444' : '#3b82f6')
+        const teamLabel = teamKey === teamAKey ? 'A' : 'B'
+        const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+        const currentSetIndex = data?.set?.index || 1
+        const setsByIndex = new Map()
+        allSets.forEach(set => {
+          if (set.index <= currentSetIndex) {
+            setsByIndex.set(set.index, set)
+          }
+        })
+        const visibleSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+        const isLeftTeam = (teamKey === 'home' && leftIsHome) || (teamKey === 'away' && !leftIsHome)
+
+        return (
+          <>
+            <div
+              onClick={() => setSummaryTableZoom(null)}
+              style={{
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0, 0, 0, 0.6)',
+                zIndex: 2000,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '12px',
+                  padding: '24px',
+                  fontSize: '16px',
+                  minWidth: '300px',
+                  boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
+                  transform: 'scale(2)',
+                  transformOrigin: 'center center'
+                }}
+              >
+                <h4 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
+                  <span style={{
+                    padding: '3px 12px',
+                    borderRadius: '4px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    background: teamColor,
+                    color: isBrightColor(teamColor) ? '#000' : '#fff'
+                  }}>{teamLabel}</span>
+                  <span style={{ marginLeft: '8px', color: 'var(--text)' }}>{teamData?.name || ''}</span>
+                </h4>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                      <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>Set</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>P</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>W</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>S</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>T</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleSets.map(set => {
+                      const teamPoints = teamKey === 'home' ? set.homePoints : set.awayPoints
+                      const oppPoints = teamKey === 'home' ? set.awayPoints : set.homePoints
+                      const won = teamPoints > oppPoints ? 1 : 0
+                      const substitutions = (data?.events || []).filter(e =>
+                        e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === teamKey
+                      ).length
+                      const timeouts = (data?.events || []).filter(e =>
+                        e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === teamKey
+                      ).length
+                      let rowColor = 'inherit'
+                      if (set.finished) {
+                        rowColor = won === 1 ? '#22c55e' : '#ef4444'
+                      }
+                      const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
+                      return (
+                        <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                          <td style={{ padding: '6px 4px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
+                          <td style={{ padding: '6px 4px', textAlign: 'center' }}>{teamPoints}</td>
+                          <td style={{ padding: '6px 4px', textAlign: 'center' }}>{won}</td>
+                          <td style={{ padding: '6px 4px', textAlign: 'center' }}>{substitutions}</td>
+                          <td style={{ padding: '6px 4px', textAlign: 'center' }}>{timeouts}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>
@@ -27934,7 +28486,10 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
 
 function ScoreboardTeamColumn({ side, children }) {
   return (
-    <aside className="team-controls" data-side={side}>
+    <aside
+      className="team-controls"
+      data-side={side}
+    >
       {children}
     </aside>
   )
@@ -27944,7 +28499,7 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, onClose, onSave, onLineupSaved }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, onClose, onSave, onLineupSaved }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -28247,6 +28802,19 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
     if (Object.keys(newErrors).length > 0) {
       return
+    }
+
+    // Check LFP count (non-blocking warning)
+    if (lfpTrackingEnabled) {
+      const lfpInLineup = lineupNumbers.filter(num => {
+        if (num === null) return false
+        const player = players?.find(p => Number(p.number) === num)
+        return player?.isLfp || player?.is_lfp
+      }).length
+      if (lfpInLineup < lfpMinimumOnCourt) {
+        const proceed = window.confirm(`Warning: Only ${lfpInLineup} LFP player(s) in lineup (minimum: ${lfpMinimumOnCourt}). Continue anyway?`)
+        if (!proceed) return
+      }
     }
 
     // Check if captain is in court
@@ -28804,11 +29372,53 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     C
                   </span>
                 )}
+                {lfpTrackingEnabled && (p.isLfp || p.is_lfp) && (
+                  <span style={{
+                    position: 'absolute',
+                    bottom: '-4px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    padding: '0 3px',
+                    height: '12px',
+                    background: 'rgba(249, 115, 22, 0.95)',
+                    borderRadius: '3px',
+                    fontSize: '7px',
+                    fontWeight: 700,
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    LFP
+                  </span>
+                )}
                 {p.number}
               </div>
             ))}
           </div>
         </div>
+
+        {/* LFP count in lineup */}
+        {lfpTrackingEnabled && (() => {
+          const lfpInLineup = lineup.filter(numStr => {
+            if (!numStr) return false
+            const player = players?.find(p => String(p.number) === String(numStr))
+            return player?.isLfp || player?.is_lfp
+          }).length
+          return (
+            <div style={{
+              fontSize: '12px', fontWeight: 600,
+              color: lfpInLineup < lfpMinimumOnCourt ? '#ef4444' : '#4ade80',
+              background: lfpInLineup < lfpMinimumOnCourt ? 'rgba(239, 68, 68, 0.1)' : 'rgba(74, 222, 128, 0.1)',
+              padding: '6px 12px', borderRadius: '6px',
+              textAlign: 'center', marginBottom: '12px'
+            }}>
+              LFP on court: {lfpInLineup} / {lfpMinimumOnCourt} required
+            </div>
+          )
+        })()}
 
         {/* Instruction text */}
         <div style={{

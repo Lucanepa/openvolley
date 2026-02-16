@@ -321,7 +321,11 @@ export default function HomeOptionsModal({
     setIntervalDuration,
     setSetIntervalDuration,
     keybindingsEnabled,
-    setKeybindingsEnabled
+    setKeybindingsEnabled,
+    lfpTrackingEnabled,
+    setLfpTrackingEnabled,
+    lfpMinimumOnCourt,
+    setLfpMinimumOnCourt
   } = matchOptions
 
   const {
@@ -595,6 +599,50 @@ export default function HomeOptionsModal({
                 }}
               />
             </div>
+          </Row>
+
+          <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable LFP tracking</div>
+                <InfoDot title="Track locally-formed players (LFP/LAS/JFL/GFL) on court. When enabled, shows LFP status on player circles and warns if minimum count is not met." />
+              </div>
+              {lfpTrackingEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Minimum LFPs on court:</span>
+                  <select
+                    value={lfpMinimumOnCourt}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10)
+                      setLfpMinimumOnCourt(val)
+                      localStorage.setItem('lfpMinimumOnCourt', String(val))
+                    }}
+                    style={{
+                      padding: '4px 4px',
+                      fontSize: '12px',
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      textAlign: 'center',
+                      width: '44px'
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5, 6].map(n => (
+                      <option key={n} value={n} style={{ background: '#1e293b', color: '#fff' }}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <ToggleSwitch
+              value={lfpTrackingEnabled}
+              onToggle={() => {
+                const newValue = !lfpTrackingEnabled
+                setLfpTrackingEnabled(newValue)
+                localStorage.setItem('lfpTrackingEnabled', String(newValue))
+              }}
+            />
           </Row>
         </Section>
 
