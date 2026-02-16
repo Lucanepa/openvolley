@@ -128,50 +128,37 @@ function Section({ title, children, borderBottom = true }) {
   )
 }
 
-function Stepper({ value, onDecrement, onIncrement, label }) {
+function DurationInput({ value, onChange, label }) {
+  const minutes = Math.floor(value / 60)
+  const seconds = value % 60
+  const handleMinutes = (e) => {
+    const m = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0))
+    const newVal = Math.max(60, Math.min(600, m * 60 + seconds))
+    onChange(newVal)
+  }
+  const handleSeconds = (e) => {
+    const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0))
+    const newVal = Math.max(60, Math.min(600, minutes * 60 + s))
+    onChange(newVal)
+  }
+  const inputStyle = {
+    width: '36px',
+    padding: '4px',
+    fontSize: '14px',
+    fontFamily: 'monospace',
+    fontWeight: 600,
+    textAlign: 'center',
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '6px',
+    color: 'var(--text)'
+  }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
-      <button
-        onClick={onDecrement}
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '6px',
-          border: 'none',
-          background: 'rgba(255,255,255,0.1)',
-          color: 'var(--text)',
-          fontSize: '18px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        aria-label={`Decrease ${label}`}
-      >
-        -
-      </button>
-      <span style={{ minWidth: '80px', textAlign: 'center', fontFamily: 'monospace', fontSize: '14px', fontWeight: 600 }}>
-        {Math.floor(value / 60)}' {(value % 60).toString().padStart(2, '0')}''
-      </span>
-      <button
-        onClick={onIncrement}
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '6px',
-          border: 'none',
-          background: 'rgba(255,255,255,0.1)',
-          color: 'var(--text)',
-          fontSize: '18px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        aria-label={`Increase ${label}`}
-      >
-        +
-      </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '16px' }}>
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} style={inputStyle} aria-label={`${label} minutes`} />
+      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>'</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} style={inputStyle} aria-label={`${label} seconds`} />
+      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>''</span>
     </div>
   )
 }
@@ -293,8 +280,8 @@ export default function HomeOptionsModal({
         localStorage.clear()
       }
 
-      // Reload to apply changes
-      window.location.reload()
+      // Force reload bypassing browser HTTP cache
+      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     } catch (error) {
       console.error('Error clearing cache:', error)
       showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')
@@ -349,7 +336,7 @@ export default function HomeOptionsModal({
       open={true}
       title=""
       onClose={onClose}
-      width={500}
+      width={750}
       hideCloseButton={true}
     >
       {/* Sticky Header */}
@@ -550,23 +537,17 @@ export default function HomeOptionsModal({
               <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.setIntervalDuration')}</div>
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
-            <Stepper
+            <DurationInput
               value={setIntervalDuration}
               label={t('options.setIntervalDurationLabel', 'set interval duration')}
-              onDecrement={() => {
-                const newVal = Math.max(60, setIntervalDuration - 15)
-                setSetIntervalDuration(newVal)
-                localStorage.setItem('setIntervalDuration', String(newVal))
-              }}
-              onIncrement={() => {
-                const newVal = Math.min(600, setIntervalDuration + 15)
+              onChange={(newVal) => {
                 setSetIntervalDuration(newVal)
                 localStorage.setItem('setIntervalDuration', String(newVal))
               }}
             />
           </Row>
 
-          <Row>
+          <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.keyboardShortcuts')}</div>
               <InfoDot title={t('options.keyboardShortcutsInfo')} />
@@ -601,15 +582,15 @@ export default function HomeOptionsModal({
             </div>
           </Row>
 
-          <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
+          <Row style={{ alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable LFP tracking</div>
-                <InfoDot title="Track locally-formed players (LFP/LAS/JFL/GFL) on court. When enabled, shows LFP status on player circles and warns if minimum count is not met." />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableLfpTracking')}</div>
+                <InfoDot title={t('options.lfpTrackingInfo')} />
               </div>
               {lfpTrackingEnabled && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Minimum LFPs on court:</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
                     onChange={(e) => {
@@ -969,38 +950,40 @@ export default function HomeOptionsModal({
           </Section>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <button
-            onClick={() => {
-              onClose?.()
-              onOpenConnectionSetup?.()
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-              color: 'var(--text)',
-              border: '1px solid rgba(59, 130, 246, 0.4)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              width: '100%',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
-            }}
-          >
-            <span style={{ fontSize: '20px' }}>📡</span>
-            <span>{t('options.setupConnections')}</span>
-          </button>
-        </div>
+        {onOpenConnectionSetup && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+            <button
+              onClick={() => {
+                onClose?.()
+                onOpenConnectionSetup?.()
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                fontSize: '16px',
+                fontWeight: 600,
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                color: 'var(--text)',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                width: '100%',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
+              }}
+            >
+              <span style={{ fontSize: '20px' }}>📡</span>
+              <span>{t('options.setupConnections')}</span>
+            </button>
+          </div>
+        )}
 
         {activeDisplayMode === 'desktop' && (
           <Section title={t('options.downloadDesktopApp')} borderBottom={false}>
@@ -1036,79 +1019,7 @@ export default function HomeOptionsModal({
           </Section>
         )}
 
-        <Section title={t('options.environment')}>
-          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
-            {t('options.environmentDesc')}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[
-              { path: '/', name: t('options.scoreboard'), desc: t('options.scoreboardDesc') },
-              { path: '/referee/index.html', name: t('header.referee'), desc: t('options.refereeDesc') },
-              { path: '/bench/index.html', name: t('header.bench'), desc: t('options.benchDesc') },
-              { path: '/livescore/index.html', name: t('options.livescore'), desc: t('options.livescoreDesc') },
-              { path: '/upload_roster/index.html', name: t('options.uploadRoster'), desc: t('options.uploadRosterDesc') }
-            ].map(page => (
-              <a
-                key={page.path}
-                href={`https://app.openvolley.app${page.path}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 14px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  textDecoration: 'none',
-                  color: 'var(--text)',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>
-                    {page.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>
-                    {page.desc}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
-                  <code style={{
-                    fontSize: '10px',
-                    padding: '3px 6px',
-                    background: 'rgba(0,0,0,0.3)',
-                    borderRadius: '4px',
-                    color: 'rgba(255,255,255,0.6)'
-                  }}>
-                    {page.path === '/' ? '/' : page.path}
-                  </code>
-                  <span style={{ fontSize: '12px', opacity: 0.5 }}>↗</span>
-                </div>
-              </a>
-            ))}
-          </div>
-          <div style={{
-            marginTop: '12px',
-            padding: '10px 12px',
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
-            borderRadius: '6px',
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.7)'
-          }}>
-            <strong style={{ color: '#3b82f6' }}>{t('common.tip', 'Tip:')}</strong> {t('options.environmentTip')}
-          </div>
-        </Section>
+      
 
         {backup && (
           <Section title={t('options.backup')}>

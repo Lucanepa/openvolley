@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import useServiceWorker from '../hooks/useServiceWorker'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
 
 /**
- * Banner that shows when a new version of the app is available
- * Place this on home/landing pages where it's safe to refresh
+ * Modal popup that shows when a new version of the app is available
  */
 export default function UpdateBanner() {
+  const { t } = useTranslation()
   const { needRefresh, updateServiceWorker, dismissUpdate } = useServiceWorker()
   const [newVersion, setNewVersion] = useState(null)
 
@@ -22,89 +23,134 @@ export default function UpdateBanner() {
     }
   }, [needRefresh])
 
-  // Don't show banner if no refresh needed or if versions are the same
+  // Don't show if no refresh needed or if versions are the same
   if (!needRefresh) return null
   if (newVersion && newVersion === currentVersion) return null
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 10000,
-      background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-      padding: '12px 16px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '16px',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-      flexWrap: 'wrap'
-    }}>
-      <div style={{
+    <div
+      onClick={dismissUpdate}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.7)',
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
-        color: '#fff',
-        fontSize: '14px',
-        fontWeight: 500
-      }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        <span>{currentVersion} → {newVersion || 'New version'} available!</span>
-      </div>
+        justifyContent: 'center',
+        zIndex: 10000
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#1f2937',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '12px',
+          padding: '32px',
+          maxWidth: '380px',
+          width: '90%',
+          textAlign: 'center',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+        }}
+      >
+        {/* Icon */}
+        <div style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '50%',
+          background: 'rgba(59, 130, 246, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0 auto 16px'
+        }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </div>
 
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          onClick={() => updateServiceWorker()}
-          style={{
-            padding: '8px 16px',
-            fontSize: '13px',
-            fontWeight: 600,
-            background: '#fff',
-            color: '#1d4ed8',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            transition: 'transform 0.1s, box-shadow 0.1s'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'scale(1.02)'
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)'
-            e.currentTarget.style.boxShadow = 'none'
-          }}
-        >
-          Refresh to Update
-        </button>
-        <button
-          onClick={dismissUpdate}
-          style={{
-            padding: '8px 12px',
-            fontSize: '13px',
-            fontWeight: 500,
-            background: 'rgba(255, 255, 255, 0.2)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            transition: 'background 0.1s'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-          }}
-        >
-          Later
-        </button>
+        {/* Title */}
+        <h3 style={{
+          margin: '0 0 8px 0',
+          fontSize: '18px',
+          fontWeight: 600,
+          color: '#fff'
+        }}>
+          {t('options.updateAvailable', 'Update Available!')}
+        </h3>
+
+        {/* Version info */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '6px 14px',
+          background: 'rgba(59, 130, 246, 0.15)',
+          borderRadius: '6px',
+          marginBottom: '16px',
+          fontSize: '14px',
+          fontFamily: 'monospace',
+          color: 'rgba(255, 255, 255, 0.8)'
+        }}>
+          <span>{currentVersion}</span>
+          <span style={{ color: '#3b82f6' }}>→</span>
+          <span style={{ color: '#22c55e', fontWeight: 600 }}>{newVersion || '?'}</span>
+        </div>
+
+        {/* Description */}
+        <p style={{
+          margin: '0 0 24px 0',
+          fontSize: '13px',
+          color: 'rgba(255, 255, 255, 0.6)',
+          lineHeight: 1.5
+        }}>
+          {t('options.updateDescription', 'A new version is available. Refresh to get the latest features and fixes.')}
+        </p>
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button
+            onClick={dismissUpdate}
+            style={{
+              padding: '10px 20px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: 'rgba(255, 255, 255, 0.8)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)' }}
+          >
+            {t('common.later', 'Later')}
+          </button>
+          <button
+            onClick={() => updateServiceWorker()}
+            style={{
+              padding: '10px 20px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: '#3b82f6',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#2563eb' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#3b82f6' }}
+          >
+            {t('options.refreshToUpdate', 'Refresh to Update')}
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -121,50 +121,37 @@ function Section({ title, children, borderBottom = true, paddingBottom = '24px' 
   )
 }
 
-function Stepper({ value, onDecrement, onIncrement, label }) {
+function DurationInput({ value, onChange, label }) {
+  const minutes = Math.floor(value / 60)
+  const seconds = value % 60
+  const handleMinutes = (e) => {
+    const m = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0))
+    const newVal = Math.max(60, Math.min(600, m * 60 + seconds))
+    onChange(newVal)
+  }
+  const handleSeconds = (e) => {
+    const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0))
+    const newVal = Math.max(60, Math.min(600, minutes * 60 + s))
+    onChange(newVal)
+  }
+  const inputStyle = {
+    width: '36px',
+    padding: '4px',
+    fontSize: '14px',
+    fontFamily: 'monospace',
+    fontWeight: 600,
+    textAlign: 'center',
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '6px',
+    color: 'var(--text)'
+  }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
-      <button
-        onClick={onDecrement}
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '6px',
-          border: 'none',
-          background: 'rgba(255,255,255,0.1)',
-          color: 'var(--text)',
-          fontSize: '18px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        aria-label={`Decrease ${label}`}
-      >
-        -
-      </button>
-      <span style={{ minWidth: '80px', textAlign: 'center', fontFamily: 'monospace', fontSize: '14px', fontWeight: 600 }}>
-        {Math.floor(value / 60)}' {(value % 60).toString().padStart(2, '0')}''
-      </span>
-      <button
-        onClick={onIncrement}
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '6px',
-          border: 'none',
-          background: 'rgba(255,255,255,0.1)',
-          color: 'var(--text)',
-          fontSize: '18px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        aria-label={`Increase ${label}`}
-      >
-        +
-      </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '16px' }}>
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} style={inputStyle} aria-label={`${label} minutes`} />
+      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>'</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} style={inputStyle} aria-label={`${label} seconds`} />
+      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>''</span>
     </div>
   )
 }
@@ -257,8 +244,8 @@ export default function ScoreboardOptionsModal({
         localStorage.clear()
       }
 
-      // Reload to apply changes
-      window.location.reload()
+      // Force reload bypassing browser HTTP cache
+      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     } catch (error) {
       console.error('Error clearing cache:', error)
       showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')
@@ -321,7 +308,7 @@ export default function ScoreboardOptionsModal({
       title=""
       open={true}
       onClose={onClose}
-      width={600}
+      width={900}
       hideCloseButton={true}
     >
       {/* Sticky Header */}
@@ -615,16 +602,10 @@ export default function ScoreboardOptionsModal({
               <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.setIntervalDuration')}</div>
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
-            <Stepper
+            <DurationInput
               value={setIntervalDuration}
               label={t('options.setIntervalDurationLabel', 'set interval duration')}
-              onDecrement={() => {
-                const newVal = Math.max(60, setIntervalDuration - 15)
-                setSetIntervalDuration(newVal)
-                localStorage.setItem('setIntervalDuration', String(newVal))
-              }}
-              onIncrement={() => {
-                const newVal = Math.min(600, setIntervalDuration + 15)
+              onChange={(newVal) => {
                 setSetIntervalDuration(newVal)
                 localStorage.setItem('setIntervalDuration', String(newVal))
               }}
@@ -776,15 +757,15 @@ export default function ScoreboardOptionsModal({
             />
           </Row>
 
-          <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
+          <Row style={{ alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable LFP tracking</div>
-                <InfoDot title="Track locally-formed players (LFP/LAS/JFL/GFL) on court. When enabled, shows LFP status on player circles and warns if minimum count is not met." />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableLfpTracking')}</div>
+                <InfoDot title={t('options.lfpTrackingInfo')} />
               </div>
               {lfpTrackingEnabled && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>Minimum LFPs on court:</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
                     onChange={(e) => {

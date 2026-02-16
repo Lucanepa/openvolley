@@ -126,12 +126,12 @@ export function useServiceWorker() {
         registration.waiting.postMessage({ type: 'SKIP_WAITING' })
       }
 
-      // Force reload from server (bypass cache)
-      window.location.reload()
+      // Force reload from server (bypass browser HTTP cache)
+      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     } catch (error) {
       console.error('[SW] Update error:', error)
       // Still reload even if cache clearing fails
-      window.location.reload()
+      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     }
   }, [registration])
 

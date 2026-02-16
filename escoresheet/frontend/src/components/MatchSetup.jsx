@@ -1393,7 +1393,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       try {
         const command = 'npm run start:prod'
         await navigator.clipboard.writeText(command)
-        setNoticeModal({ message: 'Command copied to clipboard! Run "npm run start:prod" in the frontend directory terminal.' })
+        setNoticeModal({ message: t('matchSetup.commandCopied') })
       } catch (err) {
         // Fallback if clipboard API not available
         const textArea = document.createElement('textarea')
@@ -1404,9 +1404,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         textArea.select()
         try {
           document.execCommand('copy')
-          setNoticeModal({ message: 'Command copied to clipboard! Run "npm run start:prod" in the frontend directory terminal.' })
+          setNoticeModal({ message: t('matchSetup.commandCopied') })
         } catch (e) {
-          setNoticeModal({ message: 'Please run manually in terminal: npm run start:prod' })
+          setNoticeModal({ message: t('matchSetup.pleaseRunManually') })
         }
         document.body.removeChild(textArea)
       }
@@ -1422,10 +1422,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // Register as main instance
         await registerAsMainInstance()
       } else {
-        setNoticeModal({ message: `Failed to start server: ${result.error}` })
+        setNoticeModal({ message: t('matchSetup.serverStartFailed', { error: result.error }) })
       }
     } catch (error) {
-      setNoticeModal({ message: `Error starting server: ${error.message}` })
+      setNoticeModal({ message: t('matchSetup.serverStartError', { error: error.message }) })
     } finally {
       setServerLoading(false)
     }
@@ -1444,7 +1444,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         }
       }
     } catch (error) {
-      setNoticeModal({ message: `Error stopping server: ${error.message}` })
+      setNoticeModal({ message: t('matchSetup.serverStopError', { error: error.message }) })
     } finally {
       setServerLoading(false)
     }
@@ -1624,7 +1624,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             // For explicit saves, show error to user
             if (!silent) {
               console.error('[MatchSetup] Date/time validation error:', err.message)
-              setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+              setNoticeModal({ message: t('matchSetup.invalidDateTime', { error: err.message }) })
               return // Don't save with invalid data
             }
             console.warn('[MatchSetup] Auto-save skipping invalid date/time:', err.message)
@@ -1731,7 +1731,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     } catch (error) {
       console.error('Error saving draft:', error)
       if (!silent) {
-        setNoticeModal({ message: 'Error saving data. Please try again.' })
+        setNoticeModal({ message: t('matchSetup.errorSavingData') })
       }
       return false
     }
@@ -1893,19 +1893,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     // Validate required fields
     if (!home || !home.trim()) {
-      setNoticeModal({ message: 'Home team name is required' })
+      setNoticeModal({ message: t('matchSetup.homeTeamNameRequired') })
       return
     }
     if (!away || !away.trim()) {
-      setNoticeModal({ message: 'Away team name is required' })
+      setNoticeModal({ message: t('matchSetup.awayTeamNameRequired') })
       return
     }
     if (dateError) {
-      setNoticeModal({ message: `Invalid date: ${dateError}` })
+      setNoticeModal({ message: t('matchSetup.invalidDate', { error: dateError }) })
       return
     }
     if (timeError) {
-      setNoticeModal({ message: `Invalid time: ${timeError}` })
+      setNoticeModal({ message: t('matchSetup.invalidTime', { error: timeError }) })
       return
     }
 
@@ -2127,7 +2127,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       checkSyncStatus()
     } catch (error) {
       console.error('Error confirming match info:', error)
-      setNoticeModal({ message: `Error: ${error.message}`, type: 'error' })
+      setNoticeModal({ message: t('matchSetup.errorGeneric', { error: error.message }), type: 'error' })
     }
   }
 
@@ -2167,11 +2167,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   async function createMatch() {
     // Check for existing validation errors
     if (dateError) {
-      setNoticeModal({ message: `Invalid date: ${dateError}` })
+      setNoticeModal({ message: t('matchSetup.invalidDate', { error: dateError }) })
       return
     }
     if (timeError) {
-      setNoticeModal({ message: `Invalid time: ${timeError}` })
+      setNoticeModal({ message: t('matchSetup.invalidTime', { error: timeError }) })
       return
     }
 
@@ -2180,7 +2180,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     try {
       scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
     } catch (err) {
-      setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+      setNoticeModal({ message: t('matchSetup.invalidDateTime', { error: err.message }) })
       return
     }
 
@@ -2189,12 +2189,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const awayHasCaptain = awayRoster.some(p => p.isCaptain)
 
     if (!homeHasCaptain) {
-      setNoticeModal({ message: 'Home team must have at least one captain.' })
+      setNoticeModal({ message: t('matchSetup.homeCaptainRequired') })
       return
     }
 
     if (!awayHasCaptain) {
-      setNoticeModal({ message: 'Away team must have at least one captain.' })
+      setNoticeModal({ message: t('matchSetup.awayCaptainRequired') })
       return
     }
 
@@ -2205,7 +2205,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (homeDuplicates.length > 0) {
       const dupNumbers = [...new Set(homeDuplicates.map(p => p.number))].join(', ')
       setNoticeModal({
-        message: `${home || 'Home'} team has duplicate player numbers: #${dupNumbers}\n\nPlease fix duplicate numbers before proceeding.`
+        message: t('validation.duplicateNumbersDetailed', { team: home || t('common.home'), numbers: dupNumbers })
       })
       return
     }
@@ -2216,7 +2216,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (awayDuplicates.length > 0) {
       const dupNumbers = [...new Set(awayDuplicates.map(p => p.number))].join(', ')
       setNoticeModal({
-        message: `${away || 'Away'} team has duplicate player numbers: #${dupNumbers}\n\nPlease fix duplicate numbers before proceeding.`
+        message: t('validation.duplicateNumbersDetailed', { team: away || t('common.away'), numbers: dupNumbers })
       })
       return
     }
@@ -2229,7 +2229,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (playersWithBadDate.length > 0) {
       const badNames = playersWithBadDate.map(p => `${p.lastName || ''} ${p.firstName || ''} (#${p.number})`).join('\n')
       setNoticeModal({
-        message: `Some players have invalid birthdate (01.01.1900):\n\n${badNames}\n\nPlease correct these dates before proceeding.`
+        message: t('validation.invalidBirthdatesDetailed', { names: badNames })
       })
       return
     }
@@ -2272,7 +2272,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // Generate match PIN code (for opening/continuing match)
       const matchPin = prompt('Enter a PIN code to protect this match (required):')
       if (!matchPin || matchPin.trim() === '') {
-        setNoticeModal({ message: 'Match PIN code is required. Please enter a PIN code to create the match.' })
+        setNoticeModal({ message: t('matchSetup.matchPinRequired') })
         return
       }
 
@@ -2460,12 +2460,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // Don't start match yet - go to coin toss first
       // Check if team names and short names are set
       if (!home || home.trim() === '' || home === 'Home' || !away || away.trim() === '' || away === 'Away') {
-        setNoticeModal({ message: 'Please set both team names before proceeding to coin toss.' })
+        setNoticeModal({ message: t('matchSetup.teamNamesRequired') })
         return
       }
 
       if (!homeShortName || homeShortName.trim() === '' || !awayShortName || awayShortName.trim() === '') {
-        setNoticeModal({ message: 'Please set both team short names before proceeding to coin toss.' })
+        setNoticeModal({ message: t('matchSetup.teamShortNamesRequired') })
         return
       }
 
@@ -2498,13 +2498,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Open scoresheet in a new window
   async function openScoresheet() {
     if (!matchId) {
-      setNoticeModal({ message: 'No match data available.' })
+      setNoticeModal({ message: t('matchSetup.noMatchData') })
       return
     }
 
     const matchData = await db.matches.get(matchId)
     if (!matchData) {
-      setNoticeModal({ message: 'Match not found.' })
+      setNoticeModal({ message: t('matchSetup.matchNotFound') })
       return
     }
 
@@ -2542,7 +2542,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const scoresheetWindow = window.open(`/scoresheet?matchId=${matchId}`, '_blank', 'width=1200,height=900')
 
     if (!scoresheetWindow) {
-      setNoticeModal({ message: 'Please allow popups to view the scoresheet.' })
+      setNoticeModal({ message: t('matchSetup.allowPopups') })
     }
   }
 
@@ -2551,7 +2551,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Only check signatures for official matches, skip for test matches
     if (!match?.test) {
       if (!homeCoachSignature || !homeCaptainSignature || !awayCoachSignature || !awayCaptainSignature) {
-        setNoticeModal({ message: 'Please complete all signatures before confirming the coin toss.' })
+        setNoticeModal({ message: t('matchSetup.completeSignatures') })
         return
       }
     }
@@ -3312,7 +3312,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <h2 style={{ marginTop: 0, marginBottom: 24, textAlign: 'center', fontSize: '24px', fontWeight: 700 }}>{t('matchSetup.teams').toUpperCase()}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               {/* Home Team */}
-              <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
+              <div data-help-id="setup-home-team-card" style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
                 {/* Header row: Trikot container + Title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
                   {/* Trikot container */}
@@ -3400,7 +3400,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
 
               {/* Away Team */}
-              <div style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
+              <div data-help-id="setup-away-team-card" style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
                 {/* Header row: Trikot container + Title */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
 
@@ -3954,6 +3954,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   style={{ display: 'none' }}
                 />
                 <button
+                  data-help-id="setup-pdf-import"
                   type="button"
                   className="secondary"
                   onClick={() => {
@@ -4297,13 +4298,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             marginBottom: '8px',
           }}>
             <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{t('matchSetup.addNewPlayer')}</div>
-            <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+            <div data-help-id="setup-add-player" className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
 
               <input className="w-num" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
               <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
               <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
               <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <select className="w-90" value={homeLibero} onChange={e => {
+              <select data-help-id="setup-libero-toggle" className="w-90" value={homeLibero} onChange={e => {
                 let newValue = e.target.value
                 // If L2 is selected but no L1 exists, automatically change L2 to L1
                 if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
@@ -4319,7 +4320,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <option value="libero2">{t('matchSetup.libero2')}</option>
                 )}
               </select>
-              <div className="w-captain">
+              <div data-help-id="setup-captain-toggle" className="w-captain">
                 <div
                   onClick={() => setHomeCaptain(!homeCaptain)}
                   style={{
@@ -4563,7 +4564,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             )
           })}
         </div>
-        <h4>{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
+        <h4 data-help-id="setup-bench-officials">{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
         {/* Bench Header Row */}
         <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
           <div className="w-220">{t('matchSetup.role')}</div>
@@ -6787,7 +6788,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })
 
           // Show syncing modal and poll for completion
-          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
           let attempts = 0
           const maxAttempts = 20
           const interval = setInterval(async () => {
@@ -6852,7 +6853,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })
 
           // Show syncing modal and poll for completion
-          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
           let attempts = 0
           const maxAttempts = 20
           const interval = setInterval(async () => {
@@ -6917,7 +6918,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })
 
           // Show syncing modal and poll for completion
-          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
           let attempts = 0
           const maxAttempts = 20
           const interval = setInterval(async () => {
@@ -6999,7 +7000,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })
 
           // Show syncing modal and poll for completion
-          setNoticeModal({ message: 'Syncing to database...', type: 'success', syncing: true })
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
           let attempts = 0
           const maxAttempts = 20
           const interval = setInterval(async () => {
@@ -7249,7 +7250,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       </div>
       <div className="setup-cards-grid setup-section">
         {/* Match Info Card */}
-        <div className="card" style={{ padding: s(20), ...(!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}) }}>
+        <div data-help-id="setup-match-info-card" className="card" style={{ padding: s(20), ...(!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}) }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: s(4) }}>
@@ -7666,6 +7667,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <button onClick={onReturn} style={{ padding: `${s(10)}px ${s(20)}px`, fontSize: s(14) }}>{t('scoreboard.returnToMatch')}</button>
         ) : (
           <button
+            data-help-id="setup-proceed-cointoss"
             disabled={!canProceedToCoinToss}
             style={{
               opacity: canProceedToCoinToss ? 1 : 0.5,
@@ -7682,11 +7684,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 if (hasNoData) {
                   // Check for existing validation errors
                   if (dateError) {
-                    setNoticeModal({ message: `Invalid date: ${dateError}` })
+                    setNoticeModal({ message: t('matchSetup.invalidDate', { error: dateError }) })
                     return
                   }
                   if (timeError) {
-                    setNoticeModal({ message: `Invalid time: ${timeError}` })
+                    setNoticeModal({ message: t('matchSetup.invalidTime', { error: timeError }) })
                     return
                   }
 
@@ -7695,7 +7697,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   try {
                     scheduledAt = createScheduledAt(date, time, { allowEmpty: false })
                   } catch (err) {
-                    setNoticeModal({ message: `Invalid date/time: ${err.message}` })
+                    setNoticeModal({ message: t('matchSetup.invalidDateTime', { error: err.message }) })
                     return
                   }
 

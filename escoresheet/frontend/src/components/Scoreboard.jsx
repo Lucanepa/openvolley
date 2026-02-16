@@ -4332,7 +4332,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const renderScoreDisplay = useCallback(
     (style = {}) => (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
+      <div data-help-id="scoreboard-score-display" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ...style }}>
         {/* Score display container - all elements absolute, colon at center */}
         <div
           className="set-score-display"
@@ -12244,15 +12244,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           fontWeight: 600,
           marginBottom: '12px',
           color: '#f59e0b'
-        }}>Scoresheet Already Open</h1>
+        }}>{t('scoreboard.duplicateTabTitle')}</h1>
         <p style={{
           fontSize: '16px',
           color: 'rgba(255,255,255,0.7)',
           marginBottom: '24px',
           maxWidth: '400px'
         }}>
-          This match scoresheet is already open in another tab or browser window.
-          Please close this tab and use the existing one to avoid data conflicts.
+          {t('scoreboard.duplicateTabMessage')}
         </p>
         <button
           onClick={() => window.close()}
@@ -12267,7 +12266,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             cursor: 'pointer'
           }}
         >
-          Close This Tab
+          {t('scoreboard.closeThisTab')}
         </button>
       </div>
     )
@@ -12362,14 +12361,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }}
           >
             <span>⛶</span>
-            <span>Enter Fullscreen</span>
+            <span>{t('scoreboard.enterFullscreen')}</span>
           </button>
           <p style={{
             fontSize: '12px',
             color: '#6b7280',
             marginTop: '12px'
           }}>
-            Fullscreen removes browser headers to maximize screen space.
+            {t('scoreboard.buttons.fullscreenHint')}
           </p>
         </div>
       )}
@@ -12431,7 +12430,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </div>
 
         {/* Column 3: Set Counter (centered) */}
-        <div style={{
+        <div data-help-id="scoreboard-set-display" style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -14102,6 +14101,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
+                          data-help-id="scoreboard-timeout-left"
                           onClick={() => handleTimeout(leftIsHome ? 'home' : 'away')}
                           disabled={leftTimeouts >= 2}
                           style={{
@@ -14137,6 +14137,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           Undo
                         </button>
                         <button
+                          data-help-id="scoreboard-timeout-right"
                           onClick={() => handleTimeout(leftIsHome ? 'away' : 'home')}
                           disabled={rightTimeouts >= 2}
                           style={{
@@ -14682,7 +14683,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               {/* Bench Players */}
               {leftTeamBench.benchPlayers.length > 0 && (
-                <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
+                <div data-help-id="scoreboard-bench-left" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainBenchExpanded(!leftMainBenchExpanded)}
                     style={{
@@ -15787,7 +15788,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       )}
                     </>
                   )}
-                  <div className="court-side court-side-left">
+                  <div data-help-id="scoreboard-court-left" className="court-side court-side-left">
                     <div className="court-team court-team-left">
                       <div className="court-row court-row-front">
                         {leftTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
@@ -16391,7 +16392,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   </div>
                   <div className="court-net" />
-                  <div className="court-side court-side-right">
+                  <div data-help-id="scoreboard-court-right" className="court-side court-side-right">
                     <div className="court-team court-team-right">
                       <div className="court-row court-row-front">
                         {rightTeam.playersOnCourt.slice(0, 3).map((player, idx) => {
@@ -17393,6 +17394,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <>
                     {rallyStatus === 'idle' ? (
                       <button
+                        data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button"
                         onClick={handleStartRally}
                         disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
@@ -17402,10 +17404,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ) : (
                       <>
                         <div className="rally-controls-row" style={{ gap: '5px' }}>
-                          <button className="rally-point-button" onClick={() => handlePoint('left')}>
+                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => handlePoint('left')}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
-                          <button className="rally-point-button" onClick={() => handlePoint('right')}>
+                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={() => handlePoint('right')}>
                             {t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
                           </button>
                         </div>
@@ -17440,6 +17442,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </button>
                       )}
                       <button
+                        data-help-id="scoreboard-undo"
                         className="danger"
                         onClick={showUndoConfirm}
                         disabled={!canUndo}
@@ -18065,7 +18068,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               {/* Bench Players */}
               {rightTeamBench.benchPlayers.length > 0 && (
-                <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
+                <div data-help-id="scoreboard-bench-right" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainBenchExpanded(!rightMainBenchExpanded)}
                     style={{
@@ -19517,8 +19520,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   case 'point': return 'Point'
                   case 'timeout': return 'Timeout'
                   case 'substitution': return event.payload?.isExceptional ? 'Exc. Sub' : 'Substitution'
-                  case 'set_start': return 'Set Start'
-                  case 'set_end': return 'Set End'
+                  case 'set_start': return t('scoreboard.actionLog.setStart')
+                  case 'set_end': return t('scoreboard.actionLog.setEnd')
                   case 'rally_start': return 'Rally'
                   case 'replay': return 'Replay'
                   case 'decision_change': return 'Decision'
@@ -20033,7 +20036,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               {leftIsServing && <span style={{ fontSize: '20px' }}>🏐</span>}
                               <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontWeight: 700, fontSize: '14px' }}>{leftTeamName}</div>
-                                <div style={{ fontSize: '10px', opacity: 0.8 }}>{leftIsHome ? 'HOME' : 'AWAY'}</div>
+                                <div style={{ fontSize: '10px', opacity: 0.8 }}>{leftIsHome ? t('common.home').toUpperCase() : t('common.away').toUpperCase()}</div>
                               </div>
                             </div>
 
@@ -20059,7 +20062,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}>
                               <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontWeight: 700, fontSize: '14px' }}>{rightTeamName}</div>
-                                <div style={{ fontSize: '10px', opacity: 0.8 }}>{rightIsHome ? 'HOME' : 'AWAY'}</div>
+                                <div style={{ fontSize: '10px', opacity: 0.8 }}>{rightIsHome ? t('common.home').toUpperCase() : t('common.away').toUpperCase()}</div>
                               </div>
                               {rightIsServing && <span style={{ fontSize: '20px' }}>🏐</span>}
                             </div>
@@ -20778,7 +20781,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 borderRadius: '4px',
                                 fontSize: '11px'
                               }}>
-                                <span style={{ minWidth: '60px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '60px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
@@ -20804,7 +20807,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this point event?`)) {
+                                    if (confirm(t('scoreboard.actionLog.deletePointEvent'))) {
                                       await db.events.delete(event.id)
                                       notifyScoresheetUpdate('delete_point_event')
                                     }
@@ -20881,7 +20884,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
                               }}>
-                                <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
@@ -20906,7 +20909,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this timeout event?`)) {
+                                    if (confirm(t('scoreboard.actionLog.deleteTimeoutEvent'))) {
                                       await db.events.delete(event.id)
                                     }
                                   }}
@@ -20985,7 +20988,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
                               }}>
-                                <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
@@ -21127,7 +21130,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this substitution event? The lineup will be restored (player OUT returns to court).`)) {
+                                    if (confirm(t('scoreboard.actionLog.deleteSubstitutionEvent'))) {
                                       const subTeam = event.payload?.team
                                       const subPosition = event.payload?.position
                                       const subPlayerOut = event.payload?.playerOut
@@ -21261,7 +21264,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
                               }}>
-                                <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
@@ -21385,7 +21388,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this sanction event?`)) {
+                                    if (confirm(t('scoreboard.actionLog.deleteSanctionEvent'))) {
                                       await db.events.delete(event.id)
                                     }
                                   }}
@@ -21468,7 +21471,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
                               }}>
-                                <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <span style={{ fontSize: '9px', fontWeight: 600, minWidth: '70px' }}>
                                   {eventType === 'libero_entry' ? 'Libero Entry' : eventType === 'libero_exit' ? 'Libero Exit' : 'Libero Unable'}
                                 </span>
@@ -21659,7 +21662,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this ${eventType} event?`)) {
+                                    if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
                                       await db.events.delete(event.id)
                                     }
                                   }}
@@ -21723,7 +21726,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
                               }}>
-                                <span style={{ minWidth: '40px' }}>Set {setIndex}</span>
+                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
@@ -21763,7 +21766,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this lineup event?`)) {
+                                    if (confirm(t('scoreboard.actionLog.deleteLineupEvent'))) {
                                       await db.events.delete(event.id)
                                     }
                                   }}
@@ -21845,7 +21848,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             background: 'rgba(255,255,255,0.03)',
                             borderRadius: '6px'
                           }}>
-                            <div style={{ fontWeight: 600, fontSize: '12px' }}>Set {set.index}</div>
+                            <div style={{ fontWeight: 600, fontSize: '12px' }}>{t('common.setIndex', { index: set.index })}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <label style={{ fontSize: '11px', minWidth: '80px' }}>Start Time:</label>
@@ -21953,8 +21956,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <option value="libero_unable" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Unable</option>
                           <option value="replay" style={{ background: '#1e293b', color: 'var(--text)' }}>Replay</option>
                           <option value="rally_start" style={{ background: '#1e293b', color: 'var(--text)' }}>Rally Start</option>
-                          <option value="set_start" style={{ background: '#1e293b', color: 'var(--text)' }}>Set Start</option>
-                          <option value="set_end" style={{ background: '#1e293b', color: 'var(--text)' }}>Set End</option>
+                          <option value="set_start" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.actionLog.setStart')}</option>
+                          <option value="set_end" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.actionLog.setEnd')}</option>
                         </select>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -21972,7 +21975,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                         >
                           {data?.sets?.sort((a, b) => a.index - b.index).map(set => (
-                            <option key={set.id} value={set.index} style={{ background: '#1e293b', color: 'var(--text)' }}>Set {set.index}</option>
+                            <option key={set.id} value={set.index} style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.setIndex', { index: set.index })}</option>
                           ))}
                         </select>
                       </div>
@@ -22114,12 +22117,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontSize: '11px'
                               }}>
                                 <span>
-                                  Set {setIndex} - {description}
+                                  {t('common.setIndex', { index: setIndex })} - {description}
                                 </span>
                                 <button
                                   className="danger"
                                   onClick={async () => {
-                                    if (confirm(`Delete this ${eventType} event?`)) {
+                                    if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
                                       await db.events.delete(event.id)
                                     }
                                   }}
@@ -22876,13 +22879,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
                                   {matchEndTime ? `${String(matchEndTime.getUTCHours()).padStart(2, '0')}:${String(matchEndTime.getUTCMinutes()).padStart(2, '0')}:${String(matchEndTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
                                 </td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match duration:</td>
+                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>{t('scoreboard.matchDuration')}</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
                                   {matchDurationMin > 0 ? `${matchDurationMin} min` : '—'}
                                 </td>
                               </tr>
                               <tr>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Winner:</td>
+                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>{t('scoreboard.winnerLabel')}</td>
                                 <td colSpan="5" style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
                                   {winnerTeamName} ({winnerScore})
                                 </td>
@@ -28812,7 +28815,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         return player?.isLfp || player?.is_lfp
       }).length
       if (lfpInLineup < lfpMinimumOnCourt) {
-        const proceed = window.confirm(`Warning: Only ${lfpInLineup} LFP player(s) in lineup (minimum: ${lfpMinimumOnCourt}). Continue anyway?`)
+        const proceed = window.confirm(t('scoreboard.lfpWarning', { count: lfpInLineup, minimum: lfpMinimumOnCourt }))
         if (!proceed) return
       }
     }

@@ -8,7 +8,8 @@ import CoinToss from './components/CoinToss'
 import MatchEnd from './components/MatchEnd'
 import ManualAdjustments from './components/ManualAdjustments'
 import Modal from './components/Modal'
-import InteractiveGuide from './components/InteractiveGuide'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
+import SpotlightOverlay from './components/help/SpotlightOverlay'
 import ConnectionStatus from './components/ConnectionStatus'
 import MainHeader from './components/MainHeader'
 import BackupTable from './components/BackupTable'
@@ -89,18 +90,30 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
-  const [interactiveGuideOpen, setInteractiveGuideOpen] = useState(false)
+  const [helpPanelOpen, setHelpPanelOpen] = useState(false)
+  const [spotlightTarget, setSpotlightTarget] = useState(null)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
   const backup = useAutoBackup(matchId)
   const canUseSupabase = Boolean(supabase)
 
-  // Dashboard Server state
+  // Compute current page for contextual help
+  const currentPage = useMemo(() => {
+    if (showManualAdjustments && matchId) return 'manualAdjustments'
+    if (showMatchEnd && matchId) return 'matchEnd'
+    if (showCoinToss && matchId) return 'coinToss'
+    if (showMatchSetup && matchId) return 'matchSetup'
+    if (matchId) return 'scoreboard'
+    return 'home'
+  }, [matchId, showMatchSetup, showCoinToss, showMatchEnd, showManualAdjustments])
+
+  // Dashboard Server state (only available in Electron desktop app)
+  const isElectron = typeof window !== 'undefined' && !!window.electronAPI
   const [dashboardServerEnabled, setDashboardServerEnabled] = useState(
     () => localStorage.getItem('dashboardServerEnabled') === 'true'
   )
   const dashboardServerData = useDashboardServer({
-    enabled: dashboardServerEnabled,
+    enabled: isElectron && dashboardServerEnabled,
     matchId: matchId
   })
   const [serverStatus, setServerStatus] = useState(null)
@@ -3015,7 +3028,7 @@ export default function App() {
             onOpenSetup={openMatchSetup}
             queueStats={syncStatus}
             onRetryErrors={retryErrors}
-            dashboardServer={dashboardServerEnabled ? {
+            dashboardServer={isElectron && dashboardServerEnabled ? {
               enabled: dashboardServerEnabled,
               dashboardCount: dashboardServerData.dashboardCount,
               refereePin: currentMatch?.refereePin,
@@ -3071,7 +3084,9 @@ export default function App() {
               }
             }}
             alarmEnabled={currentMatch?.refereeConnectionEnabled === true}
-            onOpenGuide={() => setInteractiveGuideOpen(true)}
+            currentPage={currentPage}
+            onToggleHelp={() => setHelpPanelOpen(prev => !prev)}
+            helpPanelOpen={helpPanelOpen}
           />
           <div className="container" style={{
             minHeight: 0,
@@ -4070,7 +4085,7 @@ export default function App() {
             <HomeOptionsModal
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
-              onOpenConnectionSetup={() => setConnectionSetupModal(true)}
+              onOpenConnectionSetup={isElectron ? () => setConnectionSetupModal(true) : null}
               matchOptions={{
                 checkAccidentalRallyStart,
                 setCheckAccidentalRallyStart,
@@ -4108,7 +4123,7 @@ export default function App() {
                 toggleWakeLock
               }}
               backup={backup}
-              dashboardServer={{
+              dashboardServer={isElectron ? {
                 enabled: dashboardServerEnabled,
                 onToggle: () => {
                   const newValue = !dashboardServerEnabled
@@ -4122,14 +4137,26 @@ export default function App() {
                 refereeCount: dashboardServerData.refereeCount,
                 benchCount: dashboardServerData.benchCount,
                 connectedDashboards: dashboardServerData.connectedDashboards
-              }}
+              } : null}
             />
 
-            {/* Interactive Guide Modal */}
-            <InteractiveGuide
-              open={interactiveGuideOpen}
-              onClose={() => setInteractiveGuideOpen(false)}
+            {/* Contextual Help Panel */}
+            <ContextualHelpPanel
+              open={helpPanelOpen}
+              onClose={() => setHelpPanelOpen(false)}
+              currentPage={currentPage}
+              onShowMe={(helpId, tooltipKey) => {
+                setHelpPanelOpen(false)
+                setSpotlightTarget({ helpId, tooltipKey })
+              }}
             />
+            {spotlightTarget && (
+              <SpotlightOverlay
+                targetHelpId={spotlightTarget.helpId}
+                tooltipKey={spotlightTarget.tooltipKey}
+                onDismiss={() => setSpotlightTarget(null)}
+              />
+            )}
 
             {/* Connection Setup Modal */}
             <ConnectionSetupModal

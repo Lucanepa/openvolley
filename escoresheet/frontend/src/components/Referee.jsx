@@ -2101,7 +2101,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 cursor: 'pointer',
                 lineHeight: 1
               }}
-              title="Exit"
+              title={t('header.exit')}
             >
               ✕
             </button>
@@ -2507,8 +2507,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Match finished info - use liveState sets won for accurate data
   const matchWinner = isMatchFinished && data
     ? (liveStateSetsWonHome > liveStateSetsWonAway
-      ? (data.homeTeam?.name || 'Home')
-      : (data.awayTeam?.name || 'Away'))
+      ? (data.homeTeam?.name || t('common.home'))
+      : (data.awayTeam?.name || t('common.away')))
     : ''
 
   const matchResult = isMatchFinished
@@ -3268,7 +3268,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       zIndex: 10,
                       transition: 'all 0.2s'
                     }}
-                    title={receptionMode.left === 'reception' ? 'Switch to standard view' : 'Switch to reception formation'}
+                    title={receptionMode.left === 'reception' ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')}
                   >
                     🔄
                   </button>
@@ -3432,7 +3432,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       zIndex: 10,
                       transition: 'all 0.2s'
                     }}
-                    title={receptionMode.right === 'reception' ? 'Switch to standard view' : 'Switch to reception formation'}
+                    title={receptionMode.right === 'reception' ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')}
                   >
                     🔄
                   </button>
@@ -3667,7 +3667,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       color: '#fff',
                       padding: '1px 6px',
                       borderRadius: '3px'
-                    }}>Improper Request</span>
+                    }}>{t('scoreboard.sanctions.improperRequest')}</span>
                   )}
                 </div>
               )}
@@ -3707,7 +3707,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         color: '#000',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>D W</span>
+                      }}>{t('refereeDashboard.delayWarningShort')}</span>
                     )}
                   </div>
                   {/* Column 2: Penalties (P) + Delay Penalty */}
@@ -3734,7 +3734,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         textAlign: 'center',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>D P</span>
+                      }}>{t('refereeDashboard.delayPenaltyShort')}</span>
                     )}
                   </div>
                   {/* Column 3: Expulsions (E) */}
@@ -3855,7 +3855,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       color: '#fff',
                       padding: '1px 6px',
                       borderRadius: '3px'
-                    }}>Improper Request</span>
+                    }}>{t('scoreboard.sanctions.improperRequest')}</span>
                   )}
                 </div>
               )}
@@ -3895,7 +3895,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         color: '#000',
                         padding: '1px 4px',
                         borderRadius: '3px'
-                      }}>D W</span>
+                      }}>{t('refereeDashboard.delayWarningShort')}</span>
                     )}
                   </div>
                   {/* Column 2: Penalties (P) + Delay Penalty */}
@@ -3922,7 +3922,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         width: '50px',
                         textAlign: 'center',
                         borderRadius: '3px'
-                      }}>D P</span>
+                      }}>{t('refereeDashboard.delayPenaltyShort')}</span>
                     )}
                   </div>
                   {/* Column 3: Expulsions (E) */}
@@ -4033,7 +4033,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   {(() => {
                     // lastEvent.team is 'home' or 'away', need to map to display values
                     const teamLbl = lastEvent.team === 'home' ? homeLabel : lastEvent.team === 'away' ? awayLabel : ''
-                    const teamShort = lastEvent.team === 'home' ? (data?.match?.homeShortName || data?.homeTeam?.name || 'Home') : lastEvent.team === 'away' ? (data?.match?.awayShortName || data?.awayTeam?.name || 'Away') : ''
+                    const teamShort = lastEvent.team === 'home' ? (data?.match?.homeShortName || data?.homeTeam?.name || t('common.home')) : lastEvent.team === 'away' ? (data?.match?.awayShortName || data?.awayTeam?.name || t('common.away')) : ''
                     const scoreStr = `(${leftDisplayScore}-${rightDisplayScore})`
                     const teamInfo = teamLbl ? `${teamLbl} ${teamShort} ${scoreStr}` : ''
 

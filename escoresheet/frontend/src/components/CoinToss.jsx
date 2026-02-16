@@ -553,7 +553,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
     if (!matchId) {
       console.error('[CoinToss] No match ID available')
-      setNoticeModal({ message: 'Error: No match ID found. Please try again.' })
+      setNoticeModal({ message: t('validation.noMatchId') })
       return
     }
 
@@ -1341,6 +1341,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       {/* Switch buttons row */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
         <button
+          data-help-id="cointoss-team-selector"
           onClick={switchTeams}
           style={{
             padding: '8px 20px', fontSize: '1.5em', fontWeight: 800,
@@ -1352,6 +1353,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           <span style={{ fontSize: '1.5em' }}>⇄</span> {t('coinToss.switchTeams')}
         </button>
         <button
+          data-help-id="cointoss-serve-selector"
           onClick={switchServe}
           style={{
             padding: '8px 20px', fontSize: '1.5em', fontWeight: 800,
@@ -1364,7 +1366,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
+      <div data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
         {/* Team A */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
           {/* Row 1: Team label + Team name bar */}
@@ -1573,7 +1575,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
           ]}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: isCompact ? 4 : 8, paddingBottom: isCompact ? 12 : 20, flexShrink: 0 }}>
+      <div data-help-id="cointoss-confirm-button" style={{ display: 'flex', justifyContent: 'center', marginTop: isCompact ? 4 : 8, paddingBottom: isCompact ? 12 : 20, flexShrink: 0 }}>
         {isCoinTossConfirmed ? (
           <button onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont }}>
             {t('coinToss.returnToMatch')}
@@ -2136,7 +2138,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
 
         return (
           <Modal
-            title="Delete Player"
+            title={t('modal.deletePlayer')}
             open={true}
             onClose={() => setDeletePlayerModal(null)}
             width={400}
@@ -2164,7 +2166,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       {/* Notice Modal */}
       {noticeModal && (
         <Modal
-          title="Notice"
+          title={t('matchSetup.modals.notice')}
           open={true}
           onClose={() => setNoticeModal(null)}
           width={400}
@@ -2284,7 +2286,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
       {/* Birthdate Confirmation Modal */}
       {birthdateConfirmModal && (
         <Modal
-          title="Confirm Birthdates"
+          title={t('coinToss.confirmBirthdates')}
           open={true}
           onClose={() => setBirthdateConfirmModal(null)}
           width={500}
