@@ -1581,6 +1581,13 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindungsproblem erkannt"
   },
+  "startupConnectivity": {
+    "connecting": "Verbindung wird hergestellt...",
+    "goOffline": "Offline gehen",
+    "continueAnyway": "Trotzdem fortfahren",
+    "someConnectionsFailed": "Einige Verbindungen konnten nicht hergestellt werden. Sie können mit eingeschränkter Funktionalität fortfahren oder offline gehen.",
+    "allConnected": "Alle Dienste verbunden!"
+  },
   "dashboardOptions": {
     "supabase": "Supabase",
     "webSocket": "WebSocket",

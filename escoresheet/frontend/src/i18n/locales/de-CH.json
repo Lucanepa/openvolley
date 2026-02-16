@@ -1581,6 +1581,13 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindigsproblem erkannt"
   },
+  "startupConnectivity": {
+    "connecting": "Verbindig wird hergstellt...",
+    "goOffline": "Offline gah",
+    "continueAnyway": "Trotzdem witerfahre",
+    "someConnectionsFailed": "Es paar Verbindige hend nöd chönne hergstellt werde. Du chasch mit iigschränkter Funktionalität witerfahre oder offline gah.",
+    "allConnected": "Alli Dienscht verbunde!"
+  },
   "dashboardOptions": {
     "supabase": "Supabase",
     "webSocket": "WebSocket",

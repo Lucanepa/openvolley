@@ -1581,6 +1581,13 @@
     "messageLabel": "Message :",
     "connectionIssueDetected": "Problème de connexion détecté"
   },
+  "startupConnectivity": {
+    "connecting": "Connexion en cours...",
+    "goOffline": "Passer hors ligne",
+    "continueAnyway": "Continuer quand même",
+    "someConnectionsFailed": "Certaines connexions n'ont pas pu être établies. Vous pouvez continuer avec des fonctionnalités limitées ou passer hors ligne.",
+    "allConnected": "Tous les services sont connectés !"
+  },
   "dashboardOptions": {
     "supabase": "Supabase",
     "webSocket": "WebSocket",
