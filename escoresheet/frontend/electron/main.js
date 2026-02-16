@@ -217,10 +217,3 @@ ipcMain.handle('server:status', async () => {
   return serverManager.getServerStatus()
 })
 
-// Security: Prevent new window creation
-app.on('web-contents-created', (event, contents) => {
-  contents.on('new-window', (event, navigationUrl) => {
-    event.preventDefault()
-    require('electron').shell.openExternal(navigationUrl)
-  })
-})

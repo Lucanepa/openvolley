@@ -1,7 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import * as htmlToImage from 'html-to-image';
-import { jsPDF } from 'jspdf';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { SetFive } from './components/SetFive';
@@ -2419,6 +2417,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       // Wait for zoom to apply and fonts to load
       await new Promise(resolve => setTimeout(resolve, 200));
       await document.fonts.ready;
+
+      // Lazy-load PDF libraries (only needed when generating PDF)
+      const [htmlToImage, { jsPDF }] = await Promise.all([
+        import('html-to-image'),
+        import('jspdf')
+      ]);
 
       // Capture using html-to-image toCanvas
       // pixelRatio: 2 provides good quality for A3 print (300 DPI equivalent) while keeping file size reasonable

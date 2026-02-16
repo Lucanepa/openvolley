@@ -281,13 +281,19 @@ export default defineConfig({
       },
       output: {
         format: 'es',
-        // Keep React and Dexie in separate chunks to avoid initialization issues
+        // Split vendor libraries into separate cached chunks
         manualChunks: (id) => {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
             return 'react-vendor'
           }
           if (id.includes('node_modules/dexie')) {
             return 'dexie-vendor'
+          }
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html-to-image')) {
+            return 'pdf-vendor'
+          }
+          if (id.includes('node_modules/i18next') || id.includes('node_modules/react-i18next')) {
+            return 'i18n-vendor'
           }
         }
       }
