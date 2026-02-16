@@ -728,6 +728,38 @@
     "captainOnCourt": {
       "designate": "Spielkapitän",
       "selectTitle": "Spielführer"
+    },
+    "duplicateTabTitle": "Matchblatt bereits geöffnet",
+    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Bitte schliessen Sie diesen Tab und verwenden Sie den bestehenden, um Datenkonflikte zu vermeiden.",
+    "closeThisTab": "Diesen Tab schliessen",
+    "rotateDeviceTitle": "Bitte drehen Sie Ihr Gerät",
+    "rotateDeviceMessage": "Das Scoreboard funktioniert am besten im Querformat. Bitte drehen Sie Ihr Gerät horizontal, um fortzufahren.",
+    "rotateDeviceTip": "Tipp: Für automatische Backup-Funktionen verwenden Sie Chrome oder Edge auf einem Desktop-/Laptop-Computer.",
+    "enterFullscreen": "Vollbild aktivieren",
+    "injuredOnBench": "Verletzt auf der Bank",
+    "exchangeLiberos": "Liberos tauschen (L1 ↔ L2 wechseln)",
+    "matchDuration": "Spieldauer:",
+    "winnerLabel": "Gewinner:",
+    "captainLabel": "Kapitän {{team}}",
+    "sign": "Unterschreiben",
+    "searchEvents": "Ereignisse suchen...",
+    "recordRemarks": "Spielbemerkungen aufzeichnen…",
+    "lfpWarning": "Warnung: Nur {{count}} LFP-Spieler in der Aufstellung (Minimum: {{minimum}}). Trotzdem fortfahren?",
+    "exceptionalSubRequired": "Ausserordentlicher Wechsel erforderlich",
+    "substitutionRequired": "Wechsel erforderlich",
+    "duplicateJersey": "Doppelte Trikotnummer!",
+    "complete": "Vollständig",
+    "readyToConfirm": "Bereit zur Bestätigung",
+    "incomplete": "Unvollständig",
+    "actionLog": {
+      "deletePointEvent": "Dieses Punktereignis löschen?",
+      "deleteTimeoutEvent": "Dieses Auszeit-Ereignis löschen?",
+      "deleteSubstitutionEvent": "Dieses Wechselereignis löschen? Die Aufstellung wird wiederhergestellt (ausgewechselter Spieler kehrt aufs Feld zurück).",
+      "deleteSanctionEvent": "Diese Sanktion löschen?",
+      "deleteEvent": "Dieses {{type}}-Ereignis löschen?",
+      "deleteLineupEvent": "Dieses Aufstellungsereignis löschen?",
+      "setStart": "Satzanfang",
+      "setEnd": "Satzende"
     }
   },
   "settings": {

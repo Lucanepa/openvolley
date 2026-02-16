@@ -33,7 +33,12 @@
     "screenTooSmall": "Bildschirm zu klein",
     "screenTooSmallMessage": "Diese App erfordert eine Mindestbildschirmbreite von 357 Pixel. Bitte verwenden Sie ein Gerät mit einem breiteren Bildschirm oder drehen Sie Ihr Gerät ins Querformat.",
     "tryFullscreen": "Versuchen Sie den Vollbildmodus",
-    "fullscreenHint": "Der Vollbildmodus kann mehr Platz bieten, indem er die Benutzeroberfläche des Browsers ausblendet."
+    "fullscreenHint": "Der Vollbildmodus kann mehr Platz bieten, indem er die Benutzeroberfläche des Browsers ausblendet.",
+    "setIndex": "Satz {{index}}",
+    "servingTeam": "Aufschlagteam",
+    "signature": "Unterschrift",
+    "timeLabel": "Uhrzeit (24h, HH:mm)",
+    "dateFormatPlaceholder": "TT/MM/JJJJ"
   },
   "alert": {
     "error": "Fähler",
@@ -71,7 +76,8 @@
     "matchInitialized": "Spiil initialisiert!",
     "initialized": "Spiil initialisiert",
     "initError": "Initialisierigsfähler",
-    "initializing": "Spiil wird initialisiert"
+    "initializing": "Spiil wird initialisiert",
+    "confirmBirthdates": "Geburtsdaten bestätigen"
   },
   "roster": {
     "title": "Roster",
@@ -143,7 +149,9 @@
     "invalidJerseyNumbers": "Team {{team}} hät ungültigi Trikotnummere (muess 1-99 sii): {{numbers}}",
     "playersWithoutNumbers": "Team {{team}} hät {{count}} Spieler ohni Trikotnummere",
     "completeSignatures": "Bitte alli Underschrifte vor Bestätigung vo de Sitewahl vervollständige.",
-    "noMatchId": "Fähler: Spiil-ID nöd gfunde. Bitte nomal probiere."
+    "noMatchId": "Fähler: Spiil-ID nöd gfunde. Bitte nomal probiere.",
+    "duplicateNumbersDetailed": "Team {{team}} hat doppelte Trikotnummern: #{{numbers}}\n\nBitte korrigieren Sie die doppelten Nummern bevor Sie fortfahren.",
+    "invalidBirthdatesDetailed": "Einige Spieler haben ein ungültiges Geburtsdatum (01.01.1900):\n\n{{names}}\n\nBitte korrigieren Sie diese Daten bevor Sie fortfahren."
   },
   "errors": {
     "databaseWriteError": "Datenbank-Schreibfehler",
@@ -364,6 +372,28 @@
     "coinToss": "Usloosig",
     "chooseTeamColor": "Farb für Team {{team}} wähle",
     "chooseTeamColour": "Farb für {{team}} wähle",
+    "errorSavingData": "Fehler beim Speichern. Bitte erneut versuchen.",
+    "homeTeamNameRequired": "Heimteam-Name ist erforderlich",
+    "awayTeamNameRequired": "Gastteam-Name ist erforderlich",
+    "invalidDate": "Ungültiges Datum: {{error}}",
+    "invalidTime": "Ungültige Uhrzeit: {{error}}",
+    "invalidDateTime": "Ungültiges Datum/Uhrzeit: {{error}}",
+    "errorGeneric": "Fehler: {{error}}",
+    "homeCaptainRequired": "Das Heimteam muss mindestens einen Kapitän haben.",
+    "awayCaptainRequired": "Das Gastteam muss mindestens einen Kapitän haben.",
+    "matchPinRequired": "Spiel-PIN-Code ist erforderlich. Bitte geben Sie einen PIN-Code ein, um das Spiel zu erstellen.",
+    "enterPinPrompt": "Geben Sie einen PIN-Code ein, um dieses Spiel zu schützen (erforderlich):",
+    "commandCopied": "Befehl in die Zwischenablage kopiert! Führen Sie \"npm run start:prod\" im Terminal des Frontend-Verzeichnisses aus.",
+    "pleaseRunManually": "Bitte manuell im Terminal ausführen: npm run start:prod",
+    "serverStartFailed": "Serverstart fehlgeschlagen: {{error}}",
+    "serverStartError": "Fehler beim Serverstart: {{error}}",
+    "serverStopError": "Fehler beim Serverstopp: {{error}}",
+    "placeholders": {
+      "hhMm": "HH:MM",
+      "lastName": "Nachname",
+      "firstName": "Vorname",
+      "pinCode": "000000"
+    },
     "syncStatus": {
       "notSynced": "Nöd synchronisiert",
       "offline": "Offline",
@@ -698,6 +728,38 @@
     "captainOnCourt": {
       "designate": "Spiilcaptain",
       "selectTitle": "Spielführer"
+    },
+    "duplicateTabTitle": "Matchblatt bereits geöffnet",
+    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Bitte schliessen Sie diesen Tab und verwenden Sie den bestehenden, um Datenkonflikte zu vermeiden.",
+    "closeThisTab": "Diesen Tab schliessen",
+    "rotateDeviceTitle": "Bitte drehen Sie Ihr Gerät",
+    "rotateDeviceMessage": "Das Scoreboard funktioniert am besten im Querformat. Bitte drehen Sie Ihr Gerät horizontal, um fortzufahren.",
+    "rotateDeviceTip": "Tipp: Für automatische Backup-Funktionen verwenden Sie Chrome oder Edge auf einem Desktop-/Laptop-Computer.",
+    "enterFullscreen": "Vollbild aktivieren",
+    "injuredOnBench": "Verletzt auf der Bank",
+    "exchangeLiberos": "Liberos tauschen (L1 ↔ L2 wechseln)",
+    "matchDuration": "Spieldauer:",
+    "winnerLabel": "Gewinner:",
+    "captainLabel": "Kapitän {{team}}",
+    "sign": "Unterschreiben",
+    "searchEvents": "Ereignisse suchen...",
+    "recordRemarks": "Spielbemerkungen aufzeichnen…",
+    "lfpWarning": "Warnung: Nur {{count}} LFP-Spieler in der Aufstellung (Minimum: {{minimum}}). Trotzdem fortfahren?",
+    "exceptionalSubRequired": "Ausserordentlicher Wechsel erforderlich",
+    "substitutionRequired": "Wechsel erforderlich",
+    "duplicateJersey": "Doppelte Trikotnummer!",
+    "complete": "Vollständig",
+    "readyToConfirm": "Bereit zur Bestätigung",
+    "incomplete": "Unvollständig",
+    "actionLog": {
+      "deletePointEvent": "Dieses Punktereignis löschen?",
+      "deleteTimeoutEvent": "Dieses Auszeit-Ereignis löschen?",
+      "deleteSubstitutionEvent": "Dieses Wechselereignis löschen? Die Aufstellung wird wiederhergestellt (ausgewechselter Spieler kehrt aufs Feld zurück).",
+      "deleteSanctionEvent": "Diese Sanktion löschen?",
+      "deleteEvent": "Dieses {{type}}-Ereignis löschen?",
+      "deleteLineupEvent": "Dieses Aufstellungsereignis löschen?",
+      "setStart": "Satzanfang",
+      "setEnd": "Satzende"
     }
   },
   "settings": {
@@ -768,7 +830,12 @@
     "preview": "Vorschau",
     "print": "Drucke",
     "savePdf": "PDF speichere",
-    "allowPopups": "Bitte erlaubed Sie Popups, um s eMatchblatt aazeige"
+    "allowPopups": "Bitte erlaubed Sie Popups, um s eMatchblatt aazeige",
+    "showHeader": "Kopfzeile anzeigen",
+    "hideHeader": "Kopfzeile ausblenden",
+    "menuTitle": "Menü",
+    "alarmBellNotify": "Alarmglocke: Schiedsrichter benachrichtigen",
+    "clickToEditViewport": "Klicken um Fenstergrösse zu bearbeiten"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -975,6 +1042,10 @@
     "backupSetScore": "Satz {{setIndex}}: {{homePoints}} - {{awayPoints}}",
     "unknownTime": "Unbekannti Ziit",
     "autoWithMode": "Auto ({{mode}})",
+    "enableLfpTracking": "LFP-Tracking aktivieren",
+    "lfpTrackingInfo": "Verfolge lokal ausgebildete Spieler (LFP/LAS/JFL/GFL) auf dem Feld. Wenn aktiviert, zeigt LFP-Status auf den Spielerkreisen und warnt, wenn die Mindestanzahl nicht erreicht wird.",
+    "minimumLfpsOnCourt": "Minimum LFP auf dem Feld:",
+    "clearCacheConfirm": "Cache leeren und neu laden?",
     "alerts": {
       "noMatchId": "Kei Spiil-ID verfügbar",
       "failedToLoadBackups": "Cloud-Backups händ nöd chönne glade werde",
@@ -1295,7 +1366,11 @@
       "sanction": "Sanktion",
       "courtCaptainDesignation": "Hofkapitän",
       "noAction": "Kei Aktion"
-    }
+    },
+    "delayWarningShort": "V V",
+    "delayPenaltyShort": "V S",
+    "switchToStandard": "Zur Standardansicht wechseln",
+    "switchToReception": "Zur Annahmeformation wechseln"
   },
   "connection": {
     "title": "Verbindigsiirichtig",
