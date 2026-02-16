@@ -1,0 +1,258 @@
+import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+
+const TRACKED_KEYS = ['api', 'server', 'websocket', 'scoreboard', 'db', 'supabase']
+
+const isStatusOk = (status) => {
+  return status === 'connected' ||
+    status === 'live' ||
+    status === 'scheduled' ||
+    status === 'synced' ||
+    status === 'syncing' ||
+    status === 'test_mode' ||
+    status === 'not_applicable' ||
+    status === 'not_available' ||
+    status === 'not_configured' ||
+    status === 'no_match'
+}
+
+export default function StartupConnectivityModal({
+  open,
+  connectionStatuses = {},
+  onDismiss,
+  onGoOffline
+}) {
+  const { t } = useTranslation()
+  const hasAutoDismissed = useRef(false)
+
+  // Reset when modal opens fresh
+  useEffect(() => {
+    if (open) {
+      hasAutoDismissed.current = false
+    }
+  }, [open])
+
+  const allOk = TRACKED_KEYS.every(key => isStatusOk(connectionStatuses[key]))
+  const allChecked = TRACKED_KEYS.every(key => connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting')
+  const hasErrors = allChecked && TRACKED_KEYS.some(key => !isStatusOk(connectionStatuses[key]))
+
+  // Auto-dismiss after all connections are OK
+  useEffect(() => {
+    if (!open || !allOk || hasAutoDismissed.current) return
+
+    const timer = setTimeout(() => {
+      if (!hasAutoDismissed.current) {
+        hasAutoDismissed.current = true
+        onDismiss?.()
+      }
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [open, allOk, onDismiss])
+
+  if (!open) return null
+
+  const labelMap = {
+    api: t('connectionStatus.api', 'API'),
+    server: t('connectionStatus.server', 'Server'),
+    websocket: t('connectionStatus.webSocket', 'WebSocket'),
+    scoreboard: t('connectionStatus.scoreboard', 'Scoreboard'),
+    db: t('connectionStatus.database', 'Database'),
+    supabase: t('connectionStatus.supabase', 'Supabase')
+  }
+
+  const getStatusIcon = (status) => {
+    if (status === 'unknown' || status === 'connecting') {
+      return (
+        <span
+          style={{
+            display: 'inline-block',
+            width: 20,
+            height: 20,
+            border: '2px solid #3b82f6',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'startup-spin 1s linear infinite'
+          }}
+        />
+      )
+    }
+    if (status === 'not_available' || status === 'not_configured') {
+      return <span style={{ color: '#9ca3af', fontSize: 20, lineHeight: '20px' }}>—</span>
+    }
+    if (isStatusOk(status)) {
+      return <span style={{ color: '#22c55e', fontSize: 20 }}>✓</span>
+    }
+    return <span style={{ color: '#ef4444', fontSize: 20 }}>✗</span>
+  }
+
+  const getStatusText = (status) => {
+    if (status === 'unknown' || status === 'connecting') return t('connectionStatus.connecting', 'Connecting')
+    if (status === 'connected' || status === 'synced' || status === 'syncing' || status === 'live') return t('connectionStatus.connected', 'Connected')
+    if (status === 'not_available') return t('connectionStatus.naStatic', 'N/A (Static)')
+    if (status === 'not_configured') return t('connectionStatus.notConfigured', 'Not Configured')
+    if (status === 'disconnected') return t('connectionStatus.disconnected', 'Disconnected')
+    if (status === 'error') return t('connectionStatus.error', 'Error')
+    if (status === 'offline') return t('connectionStatus.offline', 'Offline')
+    return t('connectionStatus.unknown', 'Unknown')
+  }
+
+  const getTextColor = (status) => {
+    if (status === 'unknown' || status === 'connecting') return '#3b82f6'
+    if (status === 'not_available' || status === 'not_configured') return '#9ca3af'
+    if (isStatusOk(status)) return '#22c55e'
+    return '#ef4444'
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.9)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 2000,
+        pointerEvents: 'auto'
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <style>
+        {`
+          @keyframes startup-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+
+      <div
+        style={{
+          background: '#111827',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 16,
+          padding: 32,
+          minWidth: 320,
+          maxWidth: '90vw'
+        }}
+      >
+        <h3 style={{
+          margin: '0 0 24px 0',
+          textAlign: 'center',
+          color: '#fff',
+          fontSize: 18
+        }}>
+          {allOk
+            ? t('startupConnectivity.allConnected', 'All services connected!')
+            : t('startupConnectivity.connecting', 'Connecting...')}
+        </h3>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {TRACKED_KEYS.map((key) => {
+            const status = connectionStatuses[key] || 'unknown'
+            return (
+              <div
+                key={key}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  opacity: status === 'unknown' ? 0.7 : 1,
+                  transition: 'opacity 0.3s'
+                }}
+              >
+                <div style={{ width: 24, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                  {getStatusIcon(status)}
+                </div>
+                <span style={{ fontWeight: 600, color: '#fff', fontSize: 14, minWidth: 90 }}>
+                  {labelMap[key] || key}
+                </span>
+                <span style={{
+                  color: getTextColor(status),
+                  fontSize: 13,
+                  marginLeft: 'auto'
+                }}>
+                  {getStatusText(status)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Warning when some connections failed */}
+        {hasErrors && (
+          <div style={{
+            marginTop: 20,
+            padding: 12,
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: 8,
+            color: '#f59e0b',
+            fontSize: 13,
+            textAlign: 'center'
+          }}>
+            {t('startupConnectivity.someConnectionsFailed', 'Some connections could not be established. You can continue with limited functionality or go offline.')}
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div style={{
+          marginTop: 24,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          alignItems: 'center'
+        }}>
+          {/* Continue Anyway - only when there are errors */}
+          {hasErrors && (
+            <button
+              onClick={onDismiss}
+              style={{
+                padding: '10px 24px',
+                background: '#f59e0b',
+                color: '#000',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                width: '100%',
+                maxWidth: 240
+              }}
+            >
+              {t('startupConnectivity.continueAnyway', 'Continue Anyway')}
+            </button>
+          )}
+
+          {/* Go Offline - always visible */}
+          <button
+            onClick={onGoOffline}
+            style={{
+              padding: '10px 24px',
+              background: 'transparent',
+              color: '#ef4444',
+              border: '1px solid rgba(239, 68, 68, 0.5)',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              width: '100%',
+              maxWidth: 240,
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            {t('startupConnectivity.goOffline', 'Go Offline')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
