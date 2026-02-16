@@ -388,6 +388,7 @@
     "serverStartFailed": "Échec du démarrage du serveur : {{error}}",
     "serverStartError": "Erreur de démarrage du serveur : {{error}}",
     "serverStopError": "Erreur d'arrêt du serveur : {{error}}",
+    "selectPdfFirst": "Veuillez d'abord sélectionner un fichier PDF",
     "placeholders": {
       "hhMm": "HH:MM",
       "lastName": "Nom",
@@ -751,6 +752,7 @@
     "complete": "Complet",
     "readyToConfirm": "Prêt à confirmer",
     "incomplete": "Incomplet",
+    "confirmStartTimeForSet": "Confirmez l'heure de début pour {{set}} :",
     "actionLog": {
       "deletePointEvent": "Supprimer cet événement de point ?",
       "deleteTimeoutEvent": "Supprimer cet événement de temps mort ?",
@@ -835,7 +837,9 @@
     "hideHeader": "Masquer l'en-tête",
     "menuTitle": "Menu",
     "alarmBellNotify": "Cloche d'alarme : Notifier l'arbitre",
-    "clickToEditViewport": "Cliquer pour modifier et redimensionner la fenêtre"
+    "clickToEditViewport": "Cliquer pour modifier et redimensionner la fenêtre",
+    "scale": "Échelle",
+    "default": "Par défaut"
   },
   "home": {
     "title": "Openvolley e-Feuille",
@@ -1051,7 +1055,8 @@
       "failedToLoadBackups": "Échec du chargement des sauvegardes dans le nuage",
       "failedToLoadBackupData": "Échec du chargement des données de sauvegarde",
       "failedToRestoreBackup": "Échec de la restauration de la sauvegarde : {{error}}",
-      "failedToClearCache": "Échec de l'effacement du cache : {{error}}"
+      "failedToClearCache": "Échec de l'effacement du cache : {{error}}",
+      "someItemsFailedToClear": "Certains éléments n'ont pas pu être effacés : {{errors}}"
     }
   },
   "matchEnd": {
@@ -1238,7 +1243,13 @@
     "signaturesDescription": "Facultatif : L'entraîneur et le capitaine peuvent signer la liste avant de la soumettre.",
     "coachSignature": "Signature de l'entraîneur",
     "captainSignature": "Signature du capitaine",
-    "tapToSign": "Tapez pour signer"
+    "tapToSign": "Tapez pour signer",
+    "failedToLoadRoster": "Échec du chargement de la liste. Assurez-vous que la feuille de match principale est en cours d'exécution.",
+    "failedToDeletePlayer": "Échec de la suppression du joueur",
+    "failedToParsePdf": "Échec de l'analyse du PDF : {{message}}",
+    "selectPdfFirst": "Veuillez d'abord sélectionner un fichier PDF",
+    "teamIdNotFound": "Identifiant de l'équipe introuvable",
+    "failedToSaveRoster": "Échec de l'enregistrement de la liste"
   },
   "uploadRoster": {
     "title": "Envoyer l'effectif",
@@ -1427,7 +1438,8 @@
     "today": "Aujourd'hui",
     "tomorrow": "Demain",
     "clearFilter": "Effacer filtre",
-    "noMatchesForFilter": "Aucun match trouvé pour ce filtre"
+    "noMatchesForFilter": "Aucun match trouvé pour ce filtre",
+    "failedToLoadLeagues": "Échec du chargement des ligues"
   },
   "livescore": {
     "title": "Score en direct",
@@ -1470,10 +1482,8 @@
     "lastName": "Nom",
     "country": "Pays",
     "dob": "Date de naissance",
-    "roles": "Rôles",
-    "rolesLabel": "Je suis :",
+    "roles": "Rôle",
     "roleScorer": "Marqueur",
-    "roleReferee": "Arbitre",
     "createAccount": "Créer un compte",
     "creatingAccount": "Création du compte...",
     "saveProfile": "Enregistrer le profil",

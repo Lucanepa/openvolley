@@ -388,6 +388,7 @@
     "serverStartFailed": "Serverstart fehlgeschlagen: {{error}}",
     "serverStartError": "Fehler beim Serverstart: {{error}}",
     "serverStopError": "Fehler beim Serverstopp: {{error}}",
+    "selectPdfFirst": "Bitte wählen Sie zuerst eine PDF-Datei aus",
     "placeholders": {
       "hhMm": "HH:MM",
       "lastName": "Nachname",
@@ -751,6 +752,7 @@
     "complete": "Vollständig",
     "readyToConfirm": "Bereit zur Bestätigung",
     "incomplete": "Unvollständig",
+    "confirmStartTimeForSet": "Startzeit für {{set}} bestätigen:",
     "actionLog": {
       "deletePointEvent": "Dieses Punktereignis löschen?",
       "deleteTimeoutEvent": "Dieses Auszeit-Ereignis löschen?",
@@ -835,7 +837,9 @@
     "hideHeader": "Kopfzeile ausblenden",
     "menuTitle": "Menü",
     "alarmBellNotify": "Alarmglocke: Schiedsrichter benachrichtigen",
-    "clickToEditViewport": "Klicken um Fenstergrösse zu bearbeiten"
+    "clickToEditViewport": "Klicken um Fenstergrösse zu bearbeiten",
+    "scale": "Skalierung",
+    "default": "Standard"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -1051,7 +1055,8 @@
       "failedToLoadBackups": "Cloud-Backups konnten nicht geladen werden",
       "failedToLoadBackupData": "Backup-Daten konnten nicht geladen werden",
       "failedToRestoreBackup": "Backup konnte nicht wiederhergestellt werden: {{error}}",
-      "failedToClearCache": "Cache konnte nicht geleert werden: {{error}}"
+      "failedToClearCache": "Cache konnte nicht geleert werden: {{error}}",
+      "someItemsFailedToClear": "Einige Elemente konnten nicht gelöscht werden: {{errors}}"
     }
   },
   "matchEnd": {
@@ -1238,7 +1243,13 @@
     "signaturesDescription": "Optional: Trainer und Kapitän können den Kader vor dem Einreichen unterschreiben.",
     "coachSignature": "Trainer-Unterschrift",
     "captainSignature": "Kapitän-Unterschrift",
-    "tapToSign": "Tippen zum Unterschreiben"
+    "tapToSign": "Tippen zum Unterschreiben",
+    "failedToLoadRoster": "Aufstellung konnte nicht geladen werden. Stellen Sie sicher, dass das Hauptspielprotokoll läuft.",
+    "failedToDeletePlayer": "Spieler konnte nicht gelöscht werden",
+    "failedToParsePdf": "PDF konnte nicht analysiert werden: {{message}}",
+    "selectPdfFirst": "Bitte wählen Sie zuerst eine PDF-Datei aus",
+    "teamIdNotFound": "Team-ID nicht gefunden",
+    "failedToSaveRoster": "Aufstellung konnte nicht gespeichert werden"
   },
   "uploadRoster": {
     "title": "Kader hochladen",
@@ -1427,7 +1438,8 @@
     "today": "Heute",
     "tomorrow": "Morgen",
     "clearFilter": "Filter löschen",
-    "noMatchesForFilter": "Keine Spiele für diesen Filter gefunden"
+    "noMatchesForFilter": "Keine Spiele für diesen Filter gefunden",
+    "failedToLoadLeagues": "Ligen konnten nicht geladen werden"
   },
   "livescore": {
     "title": "Live-Ergebnis",
@@ -1470,10 +1482,8 @@
     "lastName": "Nachname",
     "country": "Land",
     "dob": "Geburtsdatum",
-    "roles": "Rollen",
-    "rolesLabel": "Ich bin:",
+    "roles": "Rolle",
     "roleScorer": "Schreiber",
-    "roleReferee": "Schiedsrichter",
     "createAccount": "Konto erstellen",
     "creatingAccount": "Konto wird erstellt...",
     "saveProfile": "Profil speichern",

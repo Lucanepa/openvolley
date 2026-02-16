@@ -444,7 +444,7 @@ export function DashboardOptionsMenu({
                 fontSize: '11px',
                 color: '#ef4444'
               }}>
-                Some items failed to clear: {clearResult.errors?.join(', ')}
+                {t('options.alerts.someItemsFailedToClear', { errors: clearResult.errors?.join(', ') })}
               </div>
             )}
           </div>

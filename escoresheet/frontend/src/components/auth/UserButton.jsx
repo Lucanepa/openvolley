@@ -204,25 +204,19 @@ export default function UserButton({ style = {}, fullWidth = false }) {
                 <div style={{ color: '#9ca3af', fontSize: fullWidth ? 14 : 12, marginTop: 2 }}>
                   {user.email}
                 </div>
-                {profile?.roles && profile.roles.length > 0 && (
-                  <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
-                    {profile.roles.map(role => (
-                      <span
-                        key={role}
-                        style={{
-                          padding: '2px 6px',
-                          background: role === 'admin' || role === 'super_admin' ? '#7c3aed' : '#22c55e',
-                          color: '#fff',
-                          borderRadius: 4,
-                          fontSize: fullWidth ? 12 : 10,
-                          textTransform: 'capitalize'
-                        }}
-                      >
-                        {role.replace('_', ' ')}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
+                  <span
+                    style={{
+                      padding: '2px 6px',
+                      background: '#22c55e',
+                      color: '#fff',
+                      borderRadius: 4,
+                      fontSize: fullWidth ? 12 : 10
+                    }}
+                  >
+                    {t('auth.roleScorer', 'Scorer')}
+                  </span>
+                </div>
               </div>
 
               {/* Menu items */}

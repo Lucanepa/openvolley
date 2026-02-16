@@ -354,31 +354,25 @@ export default function ProfileModal({ open, onClose }) {
             )}
           </div>
 
-          {/* Roles (read-only) */}
-          {profile?.roles && profile.roles.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                {t('auth.roles', 'Roles')}
-              </label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {profile.roles.map(role => (
-                  <span
-                    key={role}
-                    style={{
-                      padding: '6px 12px',
-                      background: role === 'admin' || role === 'super_admin' ? '#7c3aed' : '#22c55e',
-                      color: '#fff',
-                      borderRadius: 6,
-                      fontSize: 13,
-                      textTransform: 'capitalize'
-                    }}
-                  >
-                    {role.replace('_', ' ')}
-                  </span>
-                ))}
-              </div>
+          {/* Role (read-only) */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+              {t('auth.roles', 'Role')}
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <span
+                style={{
+                  padding: '6px 12px',
+                  background: '#22c55e',
+                  color: '#fff',
+                  borderRadius: 6,
+                  fontSize: 13
+                }}
+              >
+                {t('auth.roleScorer', 'Scorer')}
+              </span>
             </div>
-          )}
+          </div>
 
           <form onSubmit={handleSubmit}>
             {/* Name fields */}
