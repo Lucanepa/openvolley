@@ -139,7 +139,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
         updateFromMatchData(result)
       } catch (err) {
         console.error('Error loading roster:', err)
-        setError('Failed to load roster. Make sure the main scoresheet is running.')
+        setError(t('rosterSetup.failedToLoadRoster'))
       }
     }
 
@@ -385,7 +385,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       // Delete from database
       db.players.delete(player.id).catch(err => {
         console.error('Error deleting player:', err)
-        setError('Failed to delete player')
+        setError(t('rosterSetup.failedToDeletePlayer'))
       })
     }
     setPlayers(players.filter((_, i) => i !== index))
@@ -513,7 +513,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       }
     } catch (err) {
       console.error('Error parsing PDF:', err)
-      setError(`Failed to parse PDF: ${err.message}`)
+      setError(t('rosterSetup.failedToParsePdf', { message: err.message }))
     } finally {
       setLoading(false)
     }
@@ -537,13 +537,13 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
     if (pdfFile) {
       await handlePdfUpload(pdfFile)
     } else {
-      setError('Please select a PDF file first')
+      setError(t('rosterSetup.selectPdfFirst'))
     }
   }
 
   const handleSave = async (overwrite = false) => {
     if (!teamId) {
-      setError('Team ID not found')
+      setError(t('rosterSetup.teamIdNotFound'))
       return
     }
 
@@ -724,7 +724,7 @@ export default function RosterSetup({ matchId, team, onBack, embedded = false, u
       }
     } catch (err) {
       console.error('Error saving roster:', err)
-      setError('Failed to save roster')
+      setError(t('rosterSetup.failedToSaveRoster'))
     } finally {
       setLoading(false)
     }

@@ -388,6 +388,7 @@
     "serverStartFailed": "Avvio del server fallito: {{error}}",
     "serverStartError": "Errore nell'avvio del server: {{error}}",
     "serverStopError": "Errore nell'arresto del server: {{error}}",
+    "selectPdfFirst": "Seleziona prima un file PDF",
     "placeholders": {
       "hhMm": "HH:MM",
       "lastName": "Cognome",
@@ -751,6 +752,7 @@
     "complete": "Completo",
     "readyToConfirm": "Pronto per la conferma",
     "incomplete": "Incompleto",
+    "confirmStartTimeForSet": "Conferma l'orario di inizio per {{set}}:",
     "actionLog": {
       "deletePointEvent": "Eliminare questo evento punto?",
       "deleteTimeoutEvent": "Eliminare questo evento time-out?",
@@ -835,7 +837,9 @@
     "hideHeader": "Nascondi intestazione",
     "menuTitle": "Menu",
     "alarmBellNotify": "Campana d'allarme: Avvisa l'arbitro",
-    "clickToEditViewport": "Clicca per modificare e ridimensionare la finestra"
+    "clickToEditViewport": "Clicca per modificare e ridimensionare la finestra",
+    "scale": "Scala",
+    "default": "Predefinito"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -1051,7 +1055,8 @@
       "failedToLoadBackups": "Impossibile caricare i backup nel cloud",
       "failedToLoadBackupData": "Impossibile caricare i dati di backup",
       "failedToRestoreBackup": "Non è stato possibile ripristinare il backup: {{error}}",
-      "failedToClearCache": "Cancellazione della cache fallita: {{error}}"
+      "failedToClearCache": "Cancellazione della cache fallita: {{error}}",
+      "someItemsFailedToClear": "Alcuni elementi non sono stati cancellati: {{errors}}"
     }
   },
   "matchEnd": {
@@ -1238,7 +1243,13 @@
     "signaturesDescription": "Facoltativo: L'allenatore e il capitano possono firmare la lista prima di inviarla.",
     "coachSignature": "Firma dell'allenatore",
     "captainSignature": "Firma del capitano",
-    "tapToSign": "Toccare per firmare"
+    "tapToSign": "Toccare per firmare",
+    "failedToLoadRoster": "Caricamento della lista fallito. Assicurati che il foglio di gara principale sia in esecuzione.",
+    "failedToDeletePlayer": "Eliminazione del giocatore fallita",
+    "failedToParsePdf": "Analisi del PDF fallita: {{message}}",
+    "selectPdfFirst": "Seleziona prima un file PDF",
+    "teamIdNotFound": "ID squadra non trovato",
+    "failedToSaveRoster": "Salvataggio della lista fallito"
   },
   "uploadRoster": {
     "title": "Carica Rosa",
@@ -1427,7 +1438,8 @@
     "today": "Oggi",
     "tomorrow": "Domani",
     "clearFilter": "Cancella filtro",
-    "noMatchesForFilter": "Nessuna partita trovata per questo filtro"
+    "noMatchesForFilter": "Nessuna partita trovata per questo filtro",
+    "failedToLoadLeagues": "Caricamento delle leghe fallito"
   },
   "livescore": {
     "title": "Punteggio Live",
@@ -1470,10 +1482,8 @@
     "lastName": "Cognome",
     "country": "Paese",
     "dob": "Data di nascita",
-    "roles": "Ruoli",
-    "rolesLabel": "Sono un:",
+    "roles": "Ruolo",
     "roleScorer": "Segnapunti",
-    "roleReferee": "Arbitro",
     "createAccount": "Crea account",
     "creatingAccount": "Creazione account...",
     "saveProfile": "Salva profilo",

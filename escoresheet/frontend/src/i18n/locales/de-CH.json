@@ -388,6 +388,7 @@
     "serverStartFailed": "Serverstart fehlgeschlagen: {{error}}",
     "serverStartError": "Fehler beim Serverstart: {{error}}",
     "serverStopError": "Fehler beim Serverstopp: {{error}}",
+    "selectPdfFirst": "Bitte wähl zersch e PDF-Datei us",
     "placeholders": {
       "hhMm": "HH:MM",
       "lastName": "Nachname",
@@ -751,6 +752,7 @@
     "complete": "Vollständig",
     "readyToConfirm": "Bereit zur Bestätigung",
     "incomplete": "Unvollständig",
+    "confirmStartTimeForSet": "Startzeit für {{set}} bestätigen:",
     "actionLog": {
       "deletePointEvent": "Dieses Punktereignis löschen?",
       "deleteTimeoutEvent": "Dieses Auszeit-Ereignis löschen?",
@@ -835,7 +837,9 @@
     "hideHeader": "Kopfzeile ausblenden",
     "menuTitle": "Menü",
     "alarmBellNotify": "Alarmglocke: Schiedsrichter benachrichtigen",
-    "clickToEditViewport": "Klicken um Fenstergrösse zu bearbeiten"
+    "clickToEditViewport": "Klicken um Fenstergrösse zu bearbeiten",
+    "scale": "Skalierung",
+    "default": "Standard"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -1051,7 +1055,8 @@
       "failedToLoadBackups": "Cloud-Backups händ nöd chönne glade werde",
       "failedToLoadBackupData": "Backup-Date händ nöd chönne glade werde",
       "failedToRestoreBackup": "Backup hät nöd chönne wiederhergstellt werde: {{error}}",
-      "failedToClearCache": "Cache hät nöd chönne gleert werde: {{error}}"
+      "failedToClearCache": "Cache hät nöd chönne gleert werde: {{error}}",
+      "someItemsFailedToClear": "Einigi Element händ nöd chönne glöscht werde: {{errors}}"
     }
   },
   "matchEnd": {
@@ -1238,7 +1243,13 @@
     "signaturesDescription": "Optional: Trainer und Captain chönd s Kader vor em Abschicke unterschriibe.",
     "coachSignature": "Trainer-Underschrift",
     "captainSignature": "Captain-Underschrift",
-    "tapToSign": "Tippe zum unterschriibe"
+    "tapToSign": "Tippe zum unterschriibe",
+    "failedToLoadRoster": "Ufstellig hät nöd chönne glade werde. Stell sicher, dass s Hauptspiilprotokoll lauft.",
+    "failedToDeletePlayer": "Spiiler hät nöd chönne glöscht werde",
+    "failedToParsePdf": "PDF hät nöd chönne analysiert werde: {{message}}",
+    "selectPdfFirst": "Bitte wähl zersch e PDF-Datei us",
+    "teamIdNotFound": "Team-ID nöd gfunde",
+    "failedToSaveRoster": "Ufstellig hät nöd chönne gspeichert werde"
   },
   "uploadRoster": {
     "title": "Kader ufelade",
@@ -1427,7 +1438,8 @@
     "today": "Hüt",
     "tomorrow": "Morn",
     "clearFilter": "Filter lösche",
-    "noMatchesForFilter": "Kei Spiil für dä Filter gfunde"
+    "noMatchesForFilter": "Kei Spiil für dä Filter gfunde",
+    "failedToLoadLeagues": "Lige händ nöd chönne glade werde"
   },
   "livescore": {
     "title": "Live-Ergebnis",
@@ -1471,9 +1483,7 @@
     "country": "Land",
     "dob": "Geburtsdatum",
     "roles": "Rolle",
-    "rolesLabel": "Ich bin:",
     "roleScorer": "Schreiber",
-    "roleReferee": "Schiri",
     "createAccount": "Konto erstelle",
     "creatingAccount": "Konto wird erstellt...",
     "saveProfile": "Profil speichere",

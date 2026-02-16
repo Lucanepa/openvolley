@@ -388,6 +388,7 @@
     "serverStartFailed": "Failed to start server: {{error}}",
     "serverStartError": "Error starting server: {{error}}",
     "serverStopError": "Error stopping server: {{error}}",
+    "selectPdfFirst": "Please select a PDF file first",
     "placeholders": {
       "hhMm": "HH:MM",
       "lastName": "Last Name",
@@ -836,7 +837,9 @@
     "hideHeader": "Hide header",
     "menuTitle": "Menu",
     "alarmBellNotify": "Alarm Bell: Notify Referee",
-    "clickToEditViewport": "Click to edit and resize viewport"
+    "clickToEditViewport": "Click to edit and resize viewport",
+    "scale": "Scale",
+    "default": "Default"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -1052,7 +1055,8 @@
       "failedToLoadBackups": "Failed to load cloud backups",
       "failedToLoadBackupData": "Failed to load backup data",
       "failedToRestoreBackup": "Failed to restore backup: {{error}}",
-      "failedToClearCache": "Failed to clear cache: {{error}}"
+      "failedToClearCache": "Failed to clear cache: {{error}}",
+      "someItemsFailedToClear": "Some items failed to clear: {{errors}}"
     }
   },
   "matchEnd": {
@@ -1239,7 +1243,13 @@
     "signaturesDescription": "Optional: Coach and captain can sign the roster before submitting.",
     "coachSignature": "Coach Signature",
     "captainSignature": "Captain Signature",
-    "tapToSign": "Tap to sign"
+    "tapToSign": "Tap to sign",
+    "failedToLoadRoster": "Failed to load roster. Make sure the main scoresheet is running.",
+    "failedToDeletePlayer": "Failed to delete player",
+    "failedToParsePdf": "Failed to parse PDF: {{message}}",
+    "selectPdfFirst": "Please select a PDF file first",
+    "teamIdNotFound": "Team ID not found",
+    "failedToSaveRoster": "Failed to save roster"
   },
   "uploadRoster": {
     "title": "Upload Roster",
@@ -1428,7 +1438,8 @@
     "today": "Today",
     "tomorrow": "Tomorrow",
     "clearFilter": "Clear filter",
-    "noMatchesForFilter": "No matches found for this filter"
+    "noMatchesForFilter": "No matches found for this filter",
+    "failedToLoadLeagues": "Failed to load leagues"
   },
   "livescore": {
     "title": "Live Scoring",
@@ -1471,10 +1482,8 @@
     "lastName": "Last name",
     "country": "Country",
     "dob": "Date of birth",
-    "roles": "Roles",
-    "rolesLabel": "I am a:",
+    "roles": "Role",
     "roleScorer": "Scorer",
-    "roleReferee": "Referee",
     "createAccount": "Create Account",
     "creatingAccount": "Creating account...",
     "saveProfile": "Save Profile",

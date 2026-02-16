@@ -190,7 +190,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       if (data.success) {
         setAllLeagues(data.leagues || [])
       } else {
-        setError(data.error || 'Failed to load leagues')
+        setError(data.error || t('loadOfficialMatch.failedToLoadLeagues'))
       }
     } catch (err) {
       console.error('Failed to fetch leagues config:', err)

@@ -2859,7 +2859,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (homePdfFile) {
       await handleHomePdfUpload(homePdfFile)
     } else {
-      setHomePdfError('Please select a PDF file first')
+      setHomePdfError(t('matchSetup.selectPdfFirst'))
     }
   }
 
@@ -2867,7 +2867,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (awayPdfFile) {
       await handleAwayPdfUpload(awayPdfFile)
     } else {
-      setAwayPdfError('Please select a PDF file first')
+      setAwayPdfError(t('matchSetup.selectPdfFirst'))
     }
   }
 
