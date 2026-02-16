@@ -9,6 +9,11 @@ import { AuthProvider } from './contexts/AuthContext'
 import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
 
+// Clean up cache_bust query parameter (added by cache clear / update flow)
+if (window.location.search.includes('cache_bust')) {
+  window.history.replaceState(null, '', window.location.pathname)
+}
+
 // Initialize logger to capture console output
 initLogger()
 

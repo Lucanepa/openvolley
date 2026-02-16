@@ -777,11 +777,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Show results when match is finished
   if (isMatchFinished) {
     const teamAShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
+      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
     const teamBShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
-      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
+      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
 
     return (
       <div style={{
@@ -1005,7 +1005,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             gap: '8px',
             fontSize: '14px'
           }}>
-            <span style={{ color: 'var(--muted)' }}>Set {data?.set?.index || 1}</span>
+            <span style={{ color: 'var(--muted)' }}>{t('common.setIndex', { index: data?.set?.index || 1 })}</span>
             <span style={{
               fontWeight: 700,
               color: '#22c55e',

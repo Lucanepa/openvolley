@@ -58,6 +58,7 @@ export default function HomePage({
           {/* New Match Button with Collapsible Menu */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: tinyGap }}>
             <button
+              data-help-id="home-new-match-button"
               onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
               style={{
                 width: buttonWidth,
@@ -155,6 +156,7 @@ export default function HomePage({
             {/* Continue Match Button - only show when there's a match */}
             {(currentOfficialMatch || currentTestMatch) && (
               <button
+                data-help-id="home-continue-button"
                 onClick={() => {
                   if (currentOfficialMatch) {
                     continueMatch(currentOfficialMatch.id)
@@ -190,6 +192,7 @@ export default function HomePage({
             {/* Delete Match Button - only show when there's a match */}
             {(currentOfficialMatch || currentTestMatch) && (
               <button
+                data-help-id="home-delete-button"
                 onClick={() => {
                   if (currentOfficialMatch) {
                     showDeleteMatchModal()
@@ -224,6 +227,7 @@ export default function HomePage({
 
           {/* Restore Match Button */}
           <button
+            data-help-id="home-restore-button"
             onClick={onRestoreMatch}
             style={{
               width: buttonWidth,

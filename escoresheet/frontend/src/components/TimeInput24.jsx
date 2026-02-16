@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const defaultInputStyle = {
   width: '5em',
@@ -33,6 +34,7 @@ function formatHHmm(hour, minute) {
  * Single field like a normal time input, e.g. "08:30" or "20:45".
  */
 export function TimeInput24({ value = '', onChange, style, className, ...rest }) {
+  const { t } = useTranslation()
   const normalized = formatHHmm(parseHHmm(value).hour, parseHHmm(value).minute)
   const [local, setLocal] = useState(normalized || '00:00')
   const lastSentRef = useRef(normalized || '00:00')
@@ -70,7 +72,7 @@ export function TimeInput24({ value = '', onChange, style, className, ...rest })
     <input
       type="text"
       inputMode="numeric"
-      placeholder="HH:mm"
+      placeholder={t('matchSetup.placeholders.hhMm')}
       value={local}
       onChange={handleChange}
       onBlur={handleBlur}
@@ -78,7 +80,7 @@ export function TimeInput24({ value = '', onChange, style, className, ...rest })
       maxLength={5}
       className={className}
       style={inputStyle}
-      aria-label="Time (24h, HH:mm)"
+      aria-label={t('common.timeLabel')}
       {...rest}
     />
   )

@@ -71,7 +71,20 @@ export default function SimpleHeader({
   const [menuOpen, setMenuOpen] = useState(false)
   const [versionExpanded, setVersionExpanded] = useState(false)
   const [languageExpanded, setLanguageExpanded] = useState(false)
+  const [confirmingClearCache, setConfirmingClearCache] = useState(false)
   const currentVersion = version || __APP_VERSION__
+
+  const handleClearCache = async () => {
+    if ('caches' in window) {
+      const cacheNames = await caches.keys()
+      await Promise.all(cacheNames.map(name => caches.delete(name)))
+    }
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(registrations.map(reg => reg.unregister()))
+    }
+    window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
+  }
 
   // Close menu on outside click
   useEffect(() => {
@@ -161,13 +174,13 @@ export default function SimpleHeader({
           position: 'relative'
         }}
       >
-        {menuItems.length > 0 && (
-          <>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setMenuOpen(!menuOpen)
-              }}
+        {/* Always show hamburger - at minimum has language, version, and clear cache */}
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen(!menuOpen)
+            }}
               style={{
                 padding: '6px 14px',
                 fontSize: '16px',
@@ -183,7 +196,7 @@ export default function SimpleHeader({
                 minWidth: '44px',
                 transition: 'all 0.15s'
               }}
-              title="Menu"
+              title={t('header.menu')}
             >
               {menuOpen ? '✕' : '☰'}
             </button>
@@ -348,7 +361,7 @@ export default function SimpleHeader({
                   })}
 
                   {/* Language selector */}
-                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  {menuItems.length > 0 && <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -454,12 +467,84 @@ export default function SimpleHeader({
                     <span style={{ flex: 1 }}>Version {currentVersion}</span>
                   </button>
 
-                  {/* Version history removed */}
+                  {/* Clear Cache */}
+                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  {!confirmingClearCache ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingClearCache(true)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        width: '100%',
+                        padding: '10px 14px',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        background: 'transparent',
+                        color: '#ef4444',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>🗑️</span>
+                      <span style={{ flex: 1 }}>{t('options.clearCache', 'Clear Cache')}</span>
+                    </button>
+                  ) : (
+                    <div style={{ padding: '10px 14px' }}>
+                      <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)', marginBottom: '8px' }}>
+                        {t('options.clearCacheConfirm', 'Clear cache and reload?')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleClearCache()
+                          }}
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: '#ef4444',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('common.yes', 'Yes')}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConfirmingClearCache(false)
+                          }}
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('common.cancel', 'Cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}
           </>
-        )}
       </div>
 
       {/* RIGHT: Fullscreen Button */}

@@ -750,9 +750,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }
 
   const tabs = [
-    { id: 'scores', label: t('manualAdjustmentsEditor.tabScores', 'Scores') },
-    { id: 'teams', label: t('manualAdjustmentsEditor.tabTeams', 'Teams & Players') },
-    { id: 'events', label: t('manualAdjustmentsEditor.tabEvents', 'Timeouts & Subs') },
+    { id: 'scores', label: t('manualAdjustmentsEditor.tabScores', 'Scores'), helpId: 'manual-scores-tab' },
+    { id: 'teams', label: t('manualAdjustmentsEditor.tabTeams', 'Teams & Players'), helpId: 'manual-teams-tab' },
+    { id: 'events', label: t('manualAdjustmentsEditor.tabEvents', 'Timeouts & Subs'), helpId: 'manual-events-tab' },
     { id: 'info', label: t('manualAdjustmentsEditor.tabInfo', 'Match Info') }
   ]
 
@@ -842,6 +842,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <button
             onClick={handleSave}
             disabled={saving || changes.length === 0}
+            data-help-id="manual-save-button"
             style={{
               padding: '10px 20px',
               fontSize: '14px',
@@ -872,6 +873,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
+            {...(tab.helpId ? { 'data-help-id': tab.helpId } : {})}
             style={{
               padding: '10px 20px',
               fontSize: '14px',
@@ -909,10 +911,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     ...cardStyle
                   }}
                 >
-                  <div style={{ fontWeight: 600 }}>Set {set.index}</div>
+                  <div style={{ fontWeight: 600 }}>{t('common.setIndex', { index: set.index })}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: 'rgba(255,255,255,0.6)', minWidth: '80px' }}>
-                      {editedHomeTeam?.name || 'Home'}:
+                      {editedHomeTeam?.name || t('common.home')}:
                     </span>
                     <input
                       type="number"
@@ -924,7 +926,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>vs</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: 'rgba(255,255,255,0.6)', minWidth: '80px' }}>
-                      {editedAwayTeam?.name || 'Away'}:
+                      {editedAwayTeam?.name || t('common.away')}:
                     </span>
                     <input
                       type="number"
@@ -1073,7 +1075,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                               <span key={s.id} style={{ fontSize: '11px', color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                                 onClick={() => setEditingSanction({ ...s, type: s.payload?.sanctionType || s.payload?.type, scoreA: s.stateSnapshot?.pointsA ?? s.stateSnapshot?.scoreA ?? 0, scoreB: s.stateSnapshot?.pointsB ?? s.stateSnapshot?.scoreB ?? 0 })}
                               >
-                                {s.payload?.sanctionType || s.payload?.type} (Set {s.setIndex})
+                                {s.payload?.sanctionType || s.payload?.type} ({t('common.setIndex', { index: s.setIndex })})
                                 <button onClick={(e) => { e.stopPropagation(); deleteEvent(s.id) }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontSize: '10px' }}>×</button>
                               </span>
                             ))}
@@ -1268,7 +1270,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                               <span key={s.id} style={{ fontSize: '11px', color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                                 onClick={() => setEditingSanction({ ...s, type: s.payload?.sanctionType || s.payload?.type, scoreA: s.stateSnapshot?.pointsA ?? s.stateSnapshot?.scoreA ?? 0, scoreB: s.stateSnapshot?.pointsB ?? s.stateSnapshot?.scoreB ?? 0 })}
                               >
-                                {s.payload?.sanctionType || s.payload?.type} (Set {s.setIndex})
+                                {s.payload?.sanctionType || s.payload?.type} ({t('common.setIndex', { index: s.setIndex })})
                                 <button onClick={(e) => { e.stopPropagation(); deleteEvent(s.id) }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontSize: '10px' }}>×</button>
                               </span>
                             ))}
@@ -1371,8 +1373,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
                 {timeoutEvents.map(event => (
                   <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '4px' }}>
-                    <span style={{ fontSize: '13px' }}>Set {event.setIndex}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || 'Home' : editedAwayTeam?.name || 'Away'}</span>
+                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
                     <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
@@ -1399,8 +1401,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 80px 40px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '4px', cursor: 'pointer' }}
                     onClick={() => setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
                   >
-                    <span style={{ fontSize: '13px' }}>Set {event.setIndex}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || 'Home' : editedAwayTeam?.name || 'Away'}</span>
+                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
                     <span style={{ fontSize: '13px' }}>
                       #{event.payload?.playerOut} → #{event.payload?.playerIn}
                     </span>
@@ -1431,8 +1433,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     style={{ display: 'grid', gridTemplateColumns: '80px 80px 120px 100px 100px 1fr 40px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px', cursor: 'pointer' }}
                     onClick={() => setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
                   >
-                    <span style={{ fontSize: '13px' }}>Set {event.setIndex}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || 'Home' : editedAwayTeam?.name || 'Away'}</span>
+                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
                     <span style={{ fontSize: '13px', textTransform: 'capitalize', color: '#ef4444' }}>
                       {event.payload?.sanctionType || event.payload?.type}
                     </span>
@@ -1746,7 +1748,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>Set {s.index}</option>
+                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
                   ))}
                 </select>
               </div>
@@ -1856,7 +1858,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>Set {s.index}</option>
+                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
                   ))}
                 </select>
               </div>
@@ -1949,8 +1951,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   onChange={(e) => setNewTimeoutData(prev => ({ ...prev, team: e.target.value }))}
                   style={{ ...inputStyle, width: '100%' }}
                 >
-                  <option value="home">{editedHomeTeam?.name || 'Home'}</option>
-                  <option value="away">{editedAwayTeam?.name || 'Away'}</option>
+                  <option value="home">{editedHomeTeam?.name || t('common.home')}</option>
+                  <option value="away">{editedAwayTeam?.name || t('common.away')}</option>
                 </select>
               </div>
               <div>
@@ -1961,7 +1963,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>Set {s.index}</option>
+                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
                   ))}
                 </select>
               </div>
@@ -2057,8 +2059,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   onChange={(e) => setNewSubData(prev => ({ ...prev, team: e.target.value, playerOut: '', playerIn: '' }))}
                   style={{ ...inputStyle, width: '100%' }}
                 >
-                  <option value="home">{editedHomeTeam?.name || 'Home'}</option>
-                  <option value="away">{editedAwayTeam?.name || 'Away'}</option>
+                  <option value="home">{editedHomeTeam?.name || t('common.home')}</option>
+                  <option value="away">{editedAwayTeam?.name || t('common.away')}</option>
                 </select>
               </div>
               <div>
@@ -2069,7 +2071,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>Set {s.index}</option>
+                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
                   ))}
                 </select>
               </div>
@@ -2202,7 +2204,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>Set {s.index}</option>
+                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
                   ))}
                 </select>
               </div>

@@ -538,7 +538,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
   const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
   // Winner info
-  const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || 'Home') : (awayTeam?.name || 'Away')
+  const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || t('common.home')) : (awayTeam?.name || t('common.away'))
   const winnerLabel = homeSetsWon > awaySetsWon ? homeLabel : awayLabel
   const result = `3:${Math.min(homeSetsWon, awaySetsWon)}`
 
@@ -683,7 +683,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
           {signatureData ? (
             <img
               src={signatureData}
-              alt="Signature"
+              alt={t('common.signature')}
               style={{
                 maxWidth: '100%',
                 maxHeight: '56px',
@@ -746,7 +746,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       const matchDate = match.scheduledAt
         ? new Date(match.scheduledAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }).replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
-      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.json`
+      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.json`
 
       // Mark JSON as ready
       setDownloadProgress(prev => ({ ...prev, json: true }))
@@ -794,7 +794,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet }) {
       zip.file(pdfResult.filename, pdfResult.blob)
 
       const zipBlob = await zip.generateAsync({ type: 'blob' })
-      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.zip`
+      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
 
       // Upload PDF to Supabase storage "scoresheets" bucket
       // Path format: {scheduled_date}/game{n}.pdf

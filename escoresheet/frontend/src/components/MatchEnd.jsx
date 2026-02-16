@@ -542,7 +542,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
 
   // Winner info
-  const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || 'Home') : (awayTeam?.name || 'Away')
+  const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || t('common.home')) : (awayTeam?.name || t('common.away'))
 
   // Match time info - duration is matchEnd - matchStart
   const matchStartDate = match?.scheduledAt ? new Date(match.scheduledAt) : null
@@ -686,7 +686,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           {signatureData ? (
             <img
               src={signatureData}
-              alt="Signature"
+              alt={t('common.signature')}
               style={{
                 maxWidth: '100%',
                 maxHeight: '56px',
@@ -765,7 +765,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const matchDate = match.scheduledAt
         ? new Date(match.scheduledAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }).replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
-      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.json`
+      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.json`
 
       // Mark JSON as ready
       setDownloadProgress(prev => ({ ...prev, json: true }))
@@ -833,7 +833,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' })
-      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || 'Home')}_vs_${sanitizeForFilename(awayTeam?.name || 'Away')}_${matchDate}.zip`
+      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
 
       // Upload PDF and final JSON to Supabase storage "scoresheets" bucket
       if (supabase && !match?.test) {
@@ -1161,6 +1161,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         {/* Results Card */}
         <div
           className="card"
+          data-help-id="matchend-results-table"
           style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('results')}
         >
@@ -1195,7 +1196,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       {/* Captain Signatures */}
       {!isApproved && (
-        <div className="card" style={{ marginBottom: '16px' }}>
+        <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <SignatureBox role="captain-a" />
@@ -1306,6 +1307,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               onClick={handleApprove}
               disabled={isSaving || (!match.test && !allSignaturesDone)}
               className="primary"
+              data-help-id="matchend-export-json"
               style={{
                 flex: 1,
                 minWidth: '150px',
@@ -1320,6 +1322,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <button
               onClick={() => setShowReopenConfirm(true)}
               className="secondary"
+              data-help-id="matchend-reopen-set"
               style={{
                 padding: '14px 20px',
                 fontSize: '15px',
@@ -1339,20 +1342,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             >
               {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
             </button>
-            <MenuList
-              buttonLabel={`📄 ${t('matchEnd.scoresheet')}`}
-              buttonClassName="secondary"
-              buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
-              showArrow={true}
-              position="right"
-              vertical="top"
-              items={[
-                { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
-                { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
-                { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
-                { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
-              ]}
-            />
+            <div data-help-id="matchend-export-pdf">
+              <MenuList
+                buttonLabel={`📄 ${t('matchEnd.scoresheet')}`}
+                buttonClassName="secondary"
+                buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
+                showArrow={true}
+                position="right"
+                vertical="top"
+                items={[
+                  { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
+                  { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
+                  { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
+                  { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
+                ]}
+              />
+            </div>
           </>
         )}
       </div>

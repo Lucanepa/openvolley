@@ -8,7 +8,7 @@ import { createServer as createHttpServer } from 'http'
 import { createServer as createHttpsServer } from 'https'
 import { readFileSync, existsSync, statSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join, extname } from 'path'
+import { dirname, join, extname, basename } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
 
@@ -665,7 +665,9 @@ const requestHandler = (req, res) => {
     
     res.writeHead(200, { 
       'Content-Type': contentType,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000'
+      'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
+        ? 'no-cache'
+        : 'public, max-age=31536000'
     })
     res.end(content)
   } catch (err) {

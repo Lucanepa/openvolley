@@ -110,7 +110,9 @@ export default function MainHeader({
   collapsible = false, // Only allow collapsing on Scoreboard page
   onTriggerAlarm = null, // Trigger scorer attention alarm
   alarmEnabled = false, // Only show alarm when sync/dashboard is active
-  onOpenGuide = null, // Open the interactive app guide
+  currentPage = 'home',
+  onToggleHelp = null,
+  helpPanelOpen = false,
 }) {
   const { t } = useTranslation()
   const { scaleFactor, userScaleOverride, setUserScaleOverride } = useScaledLayout()
@@ -476,7 +478,7 @@ export default function MainHeader({
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
             }}
-            title={isCollapsed ? 'Show header' : 'Hide header'}
+            title={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
           >
             <span style={{ transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>▲</span>
           </button>
@@ -586,7 +588,7 @@ export default function MainHeader({
                 e.stopPropagation()
                 onTriggerAlarm()
               }}
-              title="Alarm Bell: Notify Referee"
+              title={t('header.alarmBellNotify')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -628,9 +630,9 @@ export default function MainHeader({
                   fontWeight: 600,
                   background: dashboardServer.dashboardCount > 0
                     ? 'rgba(34, 197, 94, 0.15)'
-                    : 'rgba(255, 255, 255, 0.08)',
-                  color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.7)',
-                  border: `1px solid ${dashboardServer.dashboardCount > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 255, 255, 0.15)'}`,
+                    : 'rgba(59, 130, 246, 0.15)',
+                  color: dashboardServer.dashboardCount > 0 ? '#22c55e' : '#3b82f6',
+                  border: `1px solid ${dashboardServer.dashboardCount > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
                   borderRadius: '6px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
@@ -639,17 +641,21 @@ export default function MainHeader({
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = dashboardServer.dashboardCount > 0
                     ? 'rgba(34, 197, 94, 0.25)'
-                    : 'rgba(255, 255, 255, 0.15)'
+                    : 'rgba(59, 130, 246, 0.25)'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = dashboardServer.dashboardCount > 0
                     ? 'rgba(34, 197, 94, 0.15)'
-                    : 'rgba(255, 255, 255, 0.08)'
+                    : 'rgba(59, 130, 246, 0.15)'
                 }}
               >
-                <span style={{ fontSize: '12px' }}>&#128225;</span>
-                <span>{dashboardServer.dashboardCount || 0}</span>
-                {dashboardServer.refereePin && (
+                <span style={{ fontSize: '12px' }}>📡</span>
+                {dashboardServer.dashboardCount > 0 ? (
+                  <span>{dashboardServer.dashboardCount}</span>
+                ) : (
+                  <span>{t('header.connectDevices')}</span>
+                )}
+                {dashboardServer.refereePin && dashboardServer.dashboardCount > 0 && (
                   <span style={{
                     padding: '2px 6px',
                     background: 'rgba(59, 130, 246, 0.2)',
@@ -856,6 +862,34 @@ export default function MainHeader({
           {/* Compact Mode: Collapsible Actions Menu */}
           {isCompactMode ? (
             <>
+              {/* Help Button */}
+              {onToggleHelp && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleHelp()
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '32px',
+                    height: '32px',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    background: helpPanelOpen ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                    color: helpPanelOpen ? '#60a5fa' : '#fff',
+                    border: `1px solid ${helpPanelOpen ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.2)'}`,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title={t('contextHelp.helpButton', 'Help')}
+                >
+                  ?
+                </button>
+              )}
+
               {/* User Button - hidden in offline mode */}
               {!offlineMode && <UserButton />}
 
@@ -1207,42 +1241,6 @@ export default function MainHeader({
                       </button>
                     )}
 
-                    {/* App Guide Action */}
-                    {onOpenGuide && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onOpenGuide()
-                          setActionsMenuOpen(false)
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '8px 12px',
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          background: 'transparent',
-                          color: '#60a5fa',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          textAlign: 'left'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(96, 165, 250, 0.15)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent'
-                        }}
-                      >
-                        <span>📖</span>
-                        <span>{t('interactiveGuide.title', 'App Guide')}</span>
-                      </button>
-                    )}
-
                     {/* Version history removed */}
                   </div>
                 )}
@@ -1325,12 +1323,40 @@ export default function MainHeader({
                         e.currentTarget.style.background = 'transparent'
                         e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
                       }}
-                      title="Click to edit and resize viewport"
+                      title={t('header.clickToEditViewport')}
                     >
                       {viewportSize.width} × {viewportSize.height}
                     </span>
                   )}
                 </div>
+              )}
+
+              {/* Help Button */}
+              {onToggleHelp && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleHelp()
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '32px',
+                    height: '32px',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    background: helpPanelOpen ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
+                    color: helpPanelOpen ? '#60a5fa' : '#fff',
+                    border: `1px solid ${helpPanelOpen ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.2)'}`,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title={t('contextHelp.helpButton', 'Help')}
+                >
+                  ?
+                </button>
               )}
 
               {/* Unified Menu Button (hamburger) */}
@@ -1426,42 +1452,6 @@ export default function MainHeader({
                       >
                         <span>🏠</span>
                         <span>{t('common.home')}</span>
-                      </button>
-                    )}
-
-                    {/* App Guide Action */}
-                    {onOpenGuide && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onOpenGuide()
-                          setActionsMenuOpen(false)
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '10px 14px',
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          background: 'transparent',
-                          color: '#60a5fa',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          textAlign: 'left'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(96, 165, 250, 0.15)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent'
-                        }}
-                      >
-                        <span>📖</span>
-                        <span>{t('interactiveGuide.title', 'App Guide')}</span>
                       </button>
                     )}
 
