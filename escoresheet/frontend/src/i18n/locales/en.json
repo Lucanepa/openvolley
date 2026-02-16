@@ -751,6 +751,7 @@
     "complete": "Complete",
     "readyToConfirm": "Ready to confirm",
     "incomplete": "Incomplete",
+    "confirmStartTimeForSet": "Confirm the start time for {{set}}:",
     "actionLog": {
       "deletePointEvent": "Delete this point event?",
       "deleteTimeoutEvent": "Delete this timeout event?",

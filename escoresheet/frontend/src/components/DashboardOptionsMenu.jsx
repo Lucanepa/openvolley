@@ -214,7 +214,7 @@ export function DashboardOptionsMenu({
           borderRadius: '6px',
           cursor: 'pointer'
         }}
-        title="Options"
+        title={t('options.title')}
       >
         <span style={{ fontSize: '14px' }}>&#9881;</span>
       </button>

@@ -411,8 +411,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const missing = []
     if (!home?.trim()) missing.push(t('matchSetup.homeTeamName') || 'Home team')
     if (!away?.trim()) missing.push(t('matchSetup.awayTeamName') || 'Away team')
-    if (!homeShortName?.trim()) missing.push(`${t('common.home') || 'Home'} ${t('matchSetup.short') || 'short'}`)
-    if (!awayShortName?.trim()) missing.push(`${t('common.away') || 'Away'} ${t('matchSetup.short') || 'short'}`)
+    if (!homeShortName?.trim()) missing.push(`${t('common.home')} ${t('matchSetup.short')}`)
+    if (!awayShortName?.trim()) missing.push(`${t('common.away')} ${t('matchSetup.short')}`)
     if (!date?.trim()) missing.push(t('matchSetup.date') || 'Date')
     else if (dateError) missing.push(t('matchSetup.date') + ' (invalid)')
     if (!time?.trim()) missing.push(t('matchSetup.time') || 'Time')
@@ -916,13 +916,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 match_type_3_other: match.match_type_3_other || ''
               },
               home_team: {
-                name: homeTeam?.name || home || 'Home',
-                short_name: homeTeam?.shortName || match.homeShortName || generateShortName(homeTeam?.name || home || 'Home'),
+                name: homeTeam?.name || home || t('common.home'),
+                short_name: homeTeam?.shortName || match.homeShortName || generateShortName(homeTeam?.name || home || t('common.home')),
                 color: homeTeam?.color || homeColor
               },
               away_team: {
-                name: awayTeam?.name || away || 'Away',
-                short_name: awayTeam?.shortName || match.awayShortName || generateShortName(awayTeam?.name || away || 'Away'),
+                name: awayTeam?.name || away || t('common.away'),
+                short_name: awayTeam?.shortName || match.awayShortName || generateShortName(awayTeam?.name || away || t('common.away')),
                 color: awayTeam?.color || awayColor
               },
               bench_home: match.bench_home || benchHome || [],
@@ -2270,7 +2270,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
 
       // Generate match PIN code (for opening/continuing match)
-      const matchPin = prompt('Enter a PIN code to protect this match (required):')
+      const matchPin = prompt(t('matchSetup.enterPinPrompt'))
       if (!matchPin || matchPin.trim() === '') {
         setNoticeModal({ message: t('matchSetup.matchPinRequired') })
         return
@@ -3213,7 +3213,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 type="text"
                 value={time}
                 onChange={e => handleTimeChange(e.target.value)}
-                placeholder="HH:MM"
+                placeholder={t('matchSetup.placeholders.hhMm')}
                 style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
               />
               {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
@@ -4426,7 +4426,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     border: '2px solid #ef4444',
                     color: '#ef4444'
                   } : undefined}
-                  title={isDuplicate ? 'Duplicate jersey number!' : undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -4448,7 +4448,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 />
                 <input
                   className="w-name capitalize"
-                  placeholder="Last Name"
+                  placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onChange={e => {
@@ -4459,7 +4459,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 />
                 <input
                   className="w-name capitalize"
-                  placeholder="First Name"
+                  placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onChange={e => {
@@ -4671,7 +4671,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }}
               >
                 {homeCoachSignature ? (
-                  <img src={homeCoachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={homeCoachSignature} alt={t('matchSetup.coachSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -4718,7 +4718,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }}
               >
                 {homeCaptainSignature ? (
-                  <img src={homeCaptainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={homeCaptainSignature} alt={t('matchSetup.captainSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -5758,7 +5758,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     border: '2px solid #ef4444',
                     color: '#ef4444'
                   } : undefined}
-                  title={isDuplicate ? 'Duplicate jersey number!' : undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -5780,7 +5780,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 />
                 <input
                   className="w-name capitalize"
-                  placeholder="Last Name"
+                  placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onChange={e => {
@@ -5791,7 +5791,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 />
                 <input
                   className="w-name capitalize"
-                  placeholder="First Name"
+                  placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onChange={e => {
@@ -6003,7 +6003,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }}
               >
                 {awayCoachSignature ? (
-                  <img src={awayCoachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={awayCoachSignature} alt={t('matchSetup.coachSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -6050,7 +6050,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }}
               >
                 {awayCaptainSignature ? (
-                  <img src={awayCaptainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={awayCaptainSignature} alt={t('matchSetup.captainSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -6556,8 +6556,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         fontSize: s(14),
         marginRight: s(8)
       }}
-      aria-label={ready ? 'Complete' : pending ? 'Ready to confirm' : 'Incomplete'}
-      title={ready ? 'Complete' : pending ? 'Ready to confirm' : 'Incomplete'}
+      aria-label={ready ? t('scoreboard.complete') : pending ? t('scoreboard.readyToConfirm') : t('scoreboard.incomplete')}
+      title={ready ? t('scoreboard.complete') : pending ? t('scoreboard.readyToConfirm') : t('scoreboard.incomplete')}
     >
       {ready ? '✓' : pending ? '●' : '!'}
     </span>
@@ -8579,7 +8579,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setPinError('')
                   }
                 }}
-                placeholder="000000"
+                placeholder={t('matchSetup.placeholders.pinCode')}
                 maxLength={6}
                 style={{
                   width: '100%',

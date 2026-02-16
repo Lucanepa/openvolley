@@ -422,14 +422,14 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
         ])
 
         if (homeTeam) {
-          setHome(homeTeam.name || 'Home')
+          setHome(homeTeam.name || t('common.home'))
           // Use team shortName, or match-level shortName as fallback
           setHomeShortName(homeTeam.shortName || match.homeShortName || '')
         } else if (match.homeShortName) {
           setHomeShortName(match.homeShortName)
         }
         if (awayTeam) {
-          setAway(awayTeam.name || 'Away')
+          setAway(awayTeam.name || t('common.away'))
           // Use team shortName, or match-level shortName as fallback
           setAwayShortName(awayTeam.shortName || match.awayShortName || '')
         } else if (match.awayShortName) {

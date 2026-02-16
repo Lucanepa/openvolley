@@ -5040,8 +5040,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (pointEvent) {
         // Simple description for decision change confirmation
         const teamName = pointEvent.payload?.team === 'home'
-          ? (data?.homeTeam?.name || 'Home')
-          : (data?.awayTeam?.name || 'Away')
+          ? (data?.homeTeam?.name || t('common.home'))
+          : (data?.awayTeam?.name || t('common.away'))
         const description = `Point for ${teamName}`
         setReplayRallyConfirm({ event: pointEvent, description, selectedOption: 'swap' }) // Default to swap
       }
@@ -5910,9 +5910,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!event || !data) return 'Unknown action'
 
     const teamName = event.payload?.team === 'home'
-      ? (data.homeTeam?.name || 'Home')
+      ? (data.homeTeam?.name || t('common.home'))
       : event.payload?.team === 'away'
-        ? (data.awayTeam?.name || 'Away')
+        ? (data.awayTeam?.name || t('common.away'))
         : null
 
     // Determine team labels (A or B)
@@ -5942,11 +5942,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     let eventDescription = ''
     if (event.type === 'coin_toss') {
       const teamAName = event.payload?.teamA === 'home'
-        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-        : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
+        : (data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
       const teamBName = event.payload?.teamB === 'home'
-        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-        : (data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
+        : (data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
       // Determine if first serve is Team A or Team B
       const firstServeLabel = event.payload?.firstServe === event.payload?.teamA ? 'A' : 'B'
       eventDescription = `Coin toss - A: ${teamAName}, B: ${teamBName}, First serve: ${firstServeLabel}`
@@ -5986,8 +5986,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         eventDescription = 'Rally replayed'
       }
     } else if (event.type === 'decision_change') {
-      const fromTeam = event.payload?.fromTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
-      const toTeam = event.payload?.toTeam === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
+      const fromTeam = event.payload?.fromTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+      const toTeam = event.payload?.toTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
       eventDescription = `Decision change — Point swapped from ${fromTeam} to ${toTeam}`
     } else if (event.type === 'lineup') {
       // Only show initial lineups, not rotation lineups or libero substitution lineups
@@ -9429,7 +9429,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }, 3000)
 
       // Send substitution action to referee to show modal
-      const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home' : data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
+      const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home') : data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
       sendActionToReferee('substitution', {
         team,
         teamName,
@@ -11965,260 +11965,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     ? (data?.match?.awayShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
     : (data?.match?.homeShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
 
-  // Help content function
-  const getHelpContent = (topicId) => {
-    switch (topicId) {
-      case 'recording-points':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Recording Points</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you record a point:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>The score updates automatically for the team that scored</li>
-                <li>The point is logged in the event history</li>
-                <li>The serving team indicator updates</li>
-                <li>If a team reaches 25 points (or 15 in set 5) with a 2-point lead, you'll be prompted to end the set</li>
-                <li>All actions are saved automatically to the database</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Keyboard Shortcuts:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li><strong>Space</strong>: Award point to home team</li>
-                <li><strong>Enter</strong>: Award point to away team</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'timeouts':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Timeouts</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you request a timeout:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>A 30-second countdown timer starts automatically</li>
-                <li>The timeout is recorded in the event log</li>
-                <li>Each team is limited to 2 timeouts per set</li>
-                <li>The timeout countdown is displayed on screen</li>
-                <li>You can see timeout history in the timeout details panel</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Important Notes:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Timeouts cannot be requested if the team has already used both timeouts in the set</li>
-                <li>The timer continues even if you navigate away from the scoreboard</li>
-                <li>Timeouts are automatically saved to the database</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'substitutions':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Substitutions</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you make a substitution:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Click on the player position on the court to open substitution options</li>
-                <li>Select the player going out and the player coming in</li>
-                <li>The substitution is recorded with the current score</li>
-                <li>The lineup updates immediately on the scoreboard</li>
-                <li>Substitution history is tracked and can be viewed</li>
-                <li>Each team has unlimited substitutions per set</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Special Cases:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li><strong>Injury Substitution</strong>: Mark as injury if a player is injured</li>
-                <li><strong>Exceptional Substitution</strong>: For expelled/disqualified players</li>
-                <li><strong>Libero Substitution</strong>: Special rules apply for libero exchanges</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'libero':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Libero Substitutions</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens with libero substitutions:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Liberos can only replace back-row players</li>
-                <li>Libero exchanges don't count as regular substitutions</li>
-                <li>Each team can have up to 2 liberos (Libero 1 and Libero 2)</li>
-                <li>Libero exchanges are unlimited but must follow rotation rules</li>
-                <li>The libero must exit before the next serve</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Libero Rules:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Libero cannot serve (except in specific situations)</li>
-                <li>Libero cannot attack from front row</li>
-                <li>Libero redesignation is possible if a libero becomes unable to play</li>
-                <li>All libero actions are automatically tracked</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'sanctions':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Sanctions</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you record a sanction:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li><strong>Warning (Yellow Card)</strong>: First offense, no point penalty</li>
-                <li><strong>Penalty (Red Card)</strong>: Second offense, point awarded to opponent</li>
-                <li><strong>Expulsion</strong>: Player must leave the set, can return next set</li>
-                <li><strong>Disqualification</strong>: Player must leave the match entirely</li>
-                <li>Sanctions are recorded with the score at the time of the sanction</li>
-                <li>All sanctions appear in the sanctions table on the match end screen</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Who Can Receive Sanctions:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Players on the court</li>
-                <li>Bench players</li>
-                <li>Coaches and bench officials</li>
-                <li>Team (delay warnings/penalties)</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'ending-set':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Ending a Set</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you end a set:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>You'll be prompted to confirm the set end time</li>
-                <li>The set is marked as finished in the database</li>
-                <li>Set statistics are calculated (timeouts, substitutions, duration)</li>
-                <li>If it's set 4, you'll be asked to choose sides and first serve for set 5</li>
-                <li>If it's set 5, the match ends automatically</li>
-                <li>If a team wins 3 sets, the match ends and you go to the Match End screen</li>
-                <li>Otherwise, the next set begins automatically</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Set End Conditions:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li><strong>Sets 1-4</strong>: First team to 25 points with 2-point lead</li>
-                <li><strong>Set 5</strong>: First team to 15 points with 2-point lead</li>
-                <li>No cap - sets continue until a team wins by 2 points</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'match-end':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Match End</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when the match ends:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>The match status is automatically set to "final"</li>
-                <li>You're taken to the Match End screen</li>
-                <li>All match data is preserved (sets, events, players, teams)</li>
-                <li>For official matches, the match is queued for sync to Supabase</li>
-                <li>The session lock is released</li>
-                <li>You can review results, sanctions, and match statistics</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Match End Screen:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>View final score and set-by-set breakdown</li>
-                <li>Review all sanctions issued</li>
-                <li>Collect signatures from captains and officials</li>
-                <li>Approve and export match data (PDF, JPG, JSON)</li>
-                <li>Return to home screen when done</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'undo':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Undo Actions</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you undo an action:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>The last action is reversed (point, substitution, timeout, etc.)</li>
-                <li>The score or state returns to what it was before</li>
-                <li>The undo event is logged in the action history</li>
-                <li>You can undo multiple actions in sequence</li>
-                <li>Undo works for most actions except set/match end</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>How to Undo:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Click the <strong>Undo</strong> button in the rally controls</li>
-                <li>Or use the keyboard shortcut (if available)</li>
-                <li>Confirm the undo action when prompted</li>
-                <li>Check the action log to see undo history</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Limitations:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Cannot undo set end or match end</li>
-                <li>Cannot undo actions from previous sets</li>
-                <li>Undo only affects the current set</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'lineup':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Setting Lineup</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens when you set the lineup:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>You assign 6 players to court positions (I, II, III, IV, V, VI)</li>
-                <li>The lineup determines the serving order</li>
-                <li>Players rotate positions when they win the serve back</li>
-                <li>The lineup is saved and used throughout the set</li>
-                <li>You can set lineup manually or use automatic lineup</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Lineup Rules:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>Must have exactly 6 players on court</li>
-                <li>Liberos cannot be in the initial lineup</li>
-                <li>Lineup must be set before the set starts</li>
-                <li>Lineup can be adjusted manually if needed</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      case 'set-5':
-        return (
-          <div>
-            <h3 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '16px' }}>Set 5 (Tie-break)</h3>
-            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>What happens in Set 5:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>First team to 15 points wins (instead of 25)</li>
-                <li>Must win by 2 points (no cap)</li>
-                <li>Teams switch sides when one team reaches 8 points</li>
-                <li>You'll be prompted to choose which team is on which side</li>
-                <li>First serve is determined by coin toss result or set 4 outcome</li>
-                <li>All other rules remain the same (timeouts, substitutions, etc.)</li>
-              </ul>
-              <h4 style={{ fontSize: '18px', fontWeight: 600, marginTop: '20px', marginBottom: '12px' }}>Court Switch at 8 Points:</h4>
-              <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-                <li>When a team reaches 8 points, the app will prompt for court switch</li>
-                <li>You'll confirm which team is now on which side</li>
-                <li>The scoreboard updates to reflect the new positions</li>
-                <li>Play continues without interruption</li>
-              </ul>
-            </div>
-          </div>
-        )
-
-      default:
-        return <div>Topic not found</div>
-    }
+  // Help content function - deprecated, interactive help system replaces this
+  const getHelpContent = () => {
+    return null
   }
 
   // Show duplicate tab error if scoresheet is already open in another tab
@@ -12784,8 +12533,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           />
           <MenuList
             buttonLabel="☰"
-            buttonTitle="Menu"
-            menuTitle="Menu"
+            buttonTitle={t('header.menu')}
+            menuTitle={t('header.menu')}
             buttonClassName="secondary"
             buttonStyle={{
               background: '#22c55e',
@@ -13846,7 +13595,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         textAlign: 'center',
                         marginBottom: '8px'
                       }}>
-                        Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}
+                        Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
                       </div>
                       <div style={{
                         fontSize: '32px',
@@ -13934,8 +13683,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             const teamAKey = data?.match?.coinTossTeamA || 'home'
                             const teamBKey = teamAKey === 'home' ? 'away' : 'home'
                             // Names
-                            const teamAName = teamAKey === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')
-                            const teamBName = teamAKey === 'home' ? (data?.awayTeam?.name || 'Away') : (data?.homeTeam?.name || 'Home')
+                            const teamAName = teamAKey === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+                            const teamBName = teamAKey === 'home' ? (data?.awayTeam?.name || t('common.away')) : (data?.homeTeam?.name || t('common.home'))
 
                             // Draft State
                             const draftSideA = set5CoinTossDraft.sideA // 'left' or 'right'
@@ -15018,7 +14767,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </span>
                             )}
                             {isBenchInjured && (
-                              <span style={{ color: '#ef4444', fontSize: '4.65cqw', fontWeight: 700 }} title="Injured on bench">✚</span>
+                              <span style={{ color: '#ef4444', fontSize: '4.65cqw', fontWeight: 700 }} title={t('scoreboard.injuredOnBench')}>✚</span>
                             )}
                           </div>
                         )
@@ -15204,7 +14953,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     alignItems: 'center',
                                     gap: '1.25cqw'
                                   }}
-                                  title="Exchange liberos (swap L1 ↔ L2)"
+                                  title={t('scoreboard.exchangeLiberos')}
                                 >
                                   <span style={{ fontSize: '5.6cqw' }}>⇄</span>
                                   Exch.
@@ -15491,7 +15240,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       return (
                         <img
                           src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                          alt="Serving team"
+                          alt={t('common.servingTeam')}
                           style={{
                             ...serveBallBaseStyle,
                             width: vmin(8),
@@ -15553,7 +15302,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       return (
                         <img
                           src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                          alt="Serving team"
+                          alt={t('common.servingTeam')}
                           style={{
                             ...serveBallBaseStyle,
                             width: vmin(8),
@@ -17190,7 +16939,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       textAlign: 'center',
                       marginBottom: '8px'
                     }}>
-                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}
+                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
                     </div>
                     <div style={{
                       fontSize: '48px',
@@ -18403,7 +18152,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </span>
                             )}
                             {isBenchInjured && (
-                              <span style={{ color: '#ef4444', fontSize: '4.65cqw', fontWeight: 700 }} title="Injured on bench">✚</span>
+                              <span style={{ color: '#ef4444', fontSize: '4.65cqw', fontWeight: 700 }} title={t('scoreboard.injuredOnBench')}>✚</span>
                             )}
                           </div>
                         )
@@ -18574,7 +18323,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     alignItems: 'center',
                                     gap: '1.25cqw'
                                   }}
-                                  title="Exchange liberos (swap L1 ↔ L2)"
+                                  title={t('scoreboard.exchangeLiberos')}
                                 >
                                   <span style={{ fontSize: '5.6cqw' }}>⇄</span>
                                   Exch.
@@ -19469,7 +19218,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ marginBottom: '16px' }}>
               <input
                 type="text"
-                placeholder="Search events..."
+                placeholder={t('scoreboard.menu.searchEvents')}
                 value={logSearchQuery}
                 onChange={(e) => setLogSearchQuery(e.target.value)}
                 style={{
@@ -19605,9 +19354,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 const getTeamShortName = (teamKey) => {
                   if (!teamKey) return ''
                   if (teamKey === 'home') {
-                    return data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'
+                    return data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')
                   } else {
-                    return data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
+                    return data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
                   }
                 }
                 const teamShortName = event.payload?.team ? getTeamShortName(event.payload.team) : ''
@@ -19986,8 +19735,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const servingTeam = data.match.firstServe || 'home'
                     const leftTeamKey = leftIsHome ? 'home' : 'away'
                     const rightTeamKey = leftIsHome ? 'away' : 'home'
-                    const leftTeamName = leftIsHome ? (data.homeTeam?.shortName || data.homeTeam?.name || 'Home') : (data.awayTeam?.shortName || data.awayTeam?.name || 'Away')
-                    const rightTeamName = leftIsHome ? (data.awayTeam?.shortName || data.awayTeam?.name || 'Away') : (data.homeTeam?.shortName || data.homeTeam?.name || 'Home')
+                    const leftTeamName = leftIsHome ? (data.homeTeam?.shortName || data.homeTeam?.name || t('common.home')) : (data.awayTeam?.shortName || data.awayTeam?.name || t('common.away'))
+                    const rightTeamName = leftIsHome ? (data.awayTeam?.shortName || data.awayTeam?.name || t('common.away')) : (data.homeTeam?.shortName || data.homeTeam?.name || t('common.home'))
                     const leftTeamColor = leftIsHome ? (data.homeTeam?.color || '#3b82f6') : (data.awayTeam?.color || '#ef4444')
                     const rightTeamColor = leftIsHome ? (data.awayTeam?.color || '#ef4444') : (data.homeTeam?.color || '#3b82f6')
                     const leftIsServing = servingTeam === leftTeamKey
@@ -20800,8 +20549,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     minWidth: '80px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
                                 <button
@@ -20902,8 +20651,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 <button
@@ -21006,8 +20755,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 <select
@@ -21282,8 +21031,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
                                 </select>
                                 <select
                                   value={sanctionType || 'warning'}
@@ -21492,8 +21241,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 {eventType === 'libero_entry' && (
@@ -21744,8 +21493,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>Home</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>Away</option>
+                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
                                   {lineup.I || '-'}/{lineup.II || '-'}/{lineup.III || '-'}/{lineup.IV || '-'}/{lineup.V || '-'}/{lineup.VI || '-'}
@@ -21993,8 +21742,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             color: 'var(--text)'
                           }}
                         >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>Home</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>Away</option>
+                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
+                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
                         </select>
                       </div>
                       <button
@@ -22316,11 +22065,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
             <section className="panel">
-              <h3>Remarks</h3>
+              <h3>{t('scoreboard.remarks.title')}</h3>
               <textarea
                 ref={remarksTextareaRef}
                 className="remarks-area"
-                placeholder="Record match remarks…"
+                placeholder={t('scoreboard.remarks.placeholder')}
                 value={remarksText}
                 onChange={e => {
                   setRemarksText(e.target.value)
@@ -22565,7 +22314,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', overflowX: 'auto' }}>
                 {/* Left half: Sanctions */}
                 <div>
-                  <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>Sanctions</h4>
+                  <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.sanctions')}</h4>
                   {/* Improper Request Row */}
                   <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ fontWeight: 600, fontSize: '12px', minWidth: '100px' }}>Improper Request:</div>
@@ -22706,7 +22455,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {/* Right half: Results */}
                 <div>
-                  <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>Results</h4>
+                  <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.results')}</h4>
                   {(() => {
                     // Get current left and right teams
                     const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
@@ -22897,11 +22646,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <div style={{ marginTop: '16px', display: 'flex', gap: '16px', justifyContent: 'space-around' }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>
-                                {data?.homeTeam?.name || 'Home'} Captain
+                                {t('scoreboard.captainLabel', { team: data?.homeTeam?.name || t('common.home') })}
                               </div>
                               {homeCaptainSignature ? (
                                 <div style={{ border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'rgba(255,255,255,0.05)' }}>
-                                  <img src={homeCaptainSignature} alt="Signature" style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
+                                  <img src={homeCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
                                 </div>
                               ) : (
                                 <button
@@ -22917,17 +22666,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     cursor: 'pointer'
                                   }}
                                 >
-                                  Sign
+                                  {t('scoreboard.sign')}
                                 </button>
                               )}
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>
-                                {data?.awayTeam?.name || 'Away'} Captain
+                                {t('scoreboard.captainLabel', { team: data?.awayTeam?.name || t('common.away') })}
                               </div>
                               {awayCaptainSignature ? (
                                 <div style={{ border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'rgba(255,255,255,0.05)' }}>
-                                  <img src={awayCaptainSignature} alt="Signature" style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
+                                  <img src={awayCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
                                 </div>
                               ) : (
                                 <button
@@ -22943,7 +22692,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     cursor: 'pointer'
                                   }}
                                 >
-                                  Sign
+                                  {t('scoreboard.sign')}
                                 </button>
                               )}
                             </div>
@@ -23069,7 +22818,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {/* Remarks section */}
               {data?.match?.remarks && (
                 <div style={{ marginTop: '24px' }}>
-                  <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>Remarks</h4>
+                  <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.remarks')}</h4>
                   <div style={{
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid rgba(255,255,255,0.2)',
@@ -23092,7 +22841,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Timeout confirmation modal - only show before timeout starts, not during countdown */}
       {timeoutModal && !timeoutModal.started && (
         <Modal
-          title={`Time-out — ${timeoutModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')}`}
+          title={`Time-out — ${timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}`}
           open={true}
           onClose={cancelTimeout}
           width={400}
@@ -24027,7 +23776,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
-                  {isExceptional ? 'Exceptional Substitution' : 'Substitution'}
+                  {isExceptional ? t('scoreboard.modals.exceptionalSubstitution') : t('scoreboard.substitution')}
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
                   # {substitutionDropdown.playerNumber} out
@@ -25526,7 +25275,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.confirm.pointAwardedQuickly')}
             </p>
             <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-              {t('scoreboard.confirm.areYouSureAwardPoint', { team: accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away') })}
+              {t('scoreboard.confirm.areYouSureAwardPoint', { team: accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
@@ -25580,8 +25329,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </p>
             <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
               {t('scoreboard.confirm.areYouSureAnotherTimeout', {
-                team: duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away'),
-                defaultValue: `${duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')} already has a timeout with no points since. Are you sure you want another timeout?`
+                team: duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
+                defaultValue: `${duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))} already has a timeout with no points since. Are you sure you want another timeout?`
               })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -25746,7 +25495,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ padding: '29px', textAlign: 'center' }}>
               {substitutionConfirm.isExceptional && (
                 <div style={{ marginBottom: '19px', padding: '10px', background: 'rgba(234, 179, 8, 0.2)', border: '1px solid rgba(234, 179, 8, 0.4)', borderRadius: '7px', fontSize: '14px', color: '#facc15', fontWeight: 600 }}>
-                  Exceptional Substitution - Player cannot take part anymore
+                  {t('scoreboard.modals.exceptionalSubPlayerCantPlay')}
                 </div>
               )}
               {/* Display current score - requesting team on left */}
@@ -27033,8 +26782,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--muted)' }}>
                 {liberoReminder.teams.map((team, idx) => {
                   const teamName = team === 'home'
-                    ? (data?.homeTeam?.name || 'Home')
-                    : (data?.awayTeam?.name || 'Away')
+                    ? (data?.homeTeam?.name || t('common.home'))
+                    : (data?.awayTeam?.name || t('common.away'))
                   return (
                     <span key={team}>
                       {teamName}
@@ -27125,8 +26874,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           teamAKey={teamAKey}
           leftIsHome={leftIsHome}
           isMatchEnd={setEndTimeModal.isMatchEnd}
-          homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'}
-          awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'}
+          homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}
+          awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}
           homeColor={data?.match?.homeColor || '#ef4444'}
           awayColor={data?.match?.awayColor || '#3b82f6'}
           onConfirm={confirmSetEndTime}
@@ -27454,7 +27203,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     setPinError('')
                   }
                 }}
-                placeholder="000000"
+                placeholder={t('matchSetup.placeholders.pinCode')}
                 maxLength={6}
                 style={{
                   width: '100%',
@@ -27532,9 +27281,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </p>
             <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <span style={{ background: data?.homeTeam?.color || '#ef4444', color: isBrightColor(data?.homeTeam?.color || '#ef4444') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
-              <span>{data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'}</span>
+              <span>{data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}</span>
               <strong style={{ fontSize: '20px' }}>{courtSwitchModal.homePoints} : {courtSwitchModal.awayPoints}</strong>
-              <span>{data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'}</span>
+              <span>{data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}</span>
               <span style={{ background: data?.awayTeam?.color || '#3b82f6', color: isBrightColor(data?.awayTeam?.color || '#3b82f6') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -27632,10 +27381,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }}
                     >
                       <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-                        Exceptional Substitution
+                        {t('scoreboard.modals.exceptionalSubstitution')}
                       </div>
                       <div style={{ fontSize: '13px', opacity: 0.8 }}>
-                        Substitute with any eligible player on the bench (excluding liberos, expelled/disqualified players, and player #{playerOut}). Player #{playerOut} cannot take part in the game anymore.
+                        {t('scoreboard.modals.substituteWithEligible')} (excluding liberos, expelled/disqualified players, and player #{playerOut}). Player #{playerOut} cannot take part in the game anymore.
                       </div>
                     </button>
                     <button
@@ -27701,7 +27450,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         return (
           <Modal
-            title={isExceptional ? 'Exceptional Substitution Required' : 'Substitution Required'}
+            title={isExceptional ? t('scoreboard.exceptionalSubRequired') : t('scoreboard.substitutionRequired')}
             open={true}
             onClose={() => { }}
             width={450}
@@ -27876,7 +27625,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {leftIsServing && (
                       <img
                         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                        alt="Serving team"
+                        alt={t('common.servingTeam')}
                         style={{
                           width: vmin(5),
                           height: vmin(5),
@@ -27908,7 +27657,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {rightIsServing && (
                       <img
                         src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-                        alt="Serving team"
+                        alt={t('common.servingTeam')}
                         style={{
                           width: vmin(5),
                           height: vmin(5),
@@ -28224,8 +27973,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const replayAwayPoints = oldTeam === 'away' ? currentAwayPoints - 1 : currentAwayPoints
 
         // Get team names for display
-        const homeTeamName = data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home'
-        const awayTeamName = data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away'
+        const homeTeamName = data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')
+        const awayTeamName = data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
         const oldTeamName = oldTeam === 'home' ? homeTeamName : awayTeamName
         const newTeamName = newTeam === 'home' ? homeTeamName : awayTeamName
 
@@ -28409,7 +28158,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       {postMatchSignature && (
         <Modal
-          title={`${postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || 'Home') : (data?.awayTeam?.name || 'Away')} Captain Signature`}
+          title={t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')}
           open={true}
           onClose={() => setPostMatchSignature(null)}
           width={500}
@@ -29633,7 +29382,7 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
     >
       <div style={{ padding: '24px', textAlign: 'center' }}>
         <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-          Confirm the start time for Set {setIndex}:
+          {t('scoreboard.confirmStartTimeForSet', { set: t('common.setIndex', { index: setIndex }) })}
         </p>
         <div
           style={{
