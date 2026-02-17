@@ -23,10 +23,10 @@ import { useDashboardServer } from './hooks/useDashboardServer'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
-const ballImage = '/ball.png'
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 
 // Logo for dark background (HomePage)
-const openvolleyLogo = '/openvolley_dark_bg.png'
+const openvolleyLogo = `${import.meta.env.BASE_URL}openvolley_dark_bg.png`
 import {
   TEST_REFEREE_SEED_DATA,
   TEST_SCORER_SEED_DATA,

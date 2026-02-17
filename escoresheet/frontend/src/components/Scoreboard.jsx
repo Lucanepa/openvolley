@@ -20,7 +20,7 @@ import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
-const ballImage = '/ball.png'
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { supabase } from '../lib/supabaseClient'

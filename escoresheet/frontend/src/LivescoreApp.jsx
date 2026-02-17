@@ -6,7 +6,7 @@ import DashboardHeader from './components/DashboardHeader'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
-const ballImage = '/ball.png'
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 
 /**
  * Simplified Livescore App

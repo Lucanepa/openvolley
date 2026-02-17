@@ -51,7 +51,7 @@ export default function HomePage({
           width: `${Math.round(200 * scaleFactor)}px`,
           margin: `${Math.round(8 * scaleFactor)}px 0`
         }}>
-          <img src={'/openvolley_no_bg.png'} alt="Openvolley" />
+          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="Openvolley" />
         </div>
 
         <div className="home-match-section" style={{ margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap }}>
