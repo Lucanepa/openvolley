@@ -186,6 +186,7 @@ interface ResultsProps {
   winner?: string;
   result?: string;
   coinTossConfirmed?: boolean;
+  bestOf?: number;
 }
 
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
@@ -204,8 +205,13 @@ export const Results: React.FC<ResultsProps> = ({
   matchDuration = '',
   winner = '',
   result = '',
-  coinTossConfirmed = false
+  coinTossConfirmed = false,
+  bestOf = 5
 }) => {
+    // For best-of-3: show 3 rows (sets 1, 2, and the deciding set which is stored at index 5)
+    // For best-of-5: show 5 rows (sets 1-5)
+    const isBestOf3 = bestOf === 3;
+    const displaySets = isBestOf3 ? [1, 2, 5] : [1, 2, 3, 4, 5];
     return (
         <div className="border border-r-0 border-black bg-white flex flex-col mr-1 h-full">
             <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
@@ -220,7 +226,7 @@ export const Results: React.FC<ResultsProps> = ({
                         <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div >P</div>
                     </div>
                     <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => {
+                        {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamATimeouts !== null;
                             return (
@@ -266,13 +272,15 @@ export const Results: React.FC<ResultsProps> = ({
                          <span className="flex-1">Time</span>
                      </div>
                      <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => {
+                        {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
-                            // Only show set 4 and 5 numbers if they were actually played
-                            const showSetNumber = set <= 3 || (setData && setData.teamATimeouts !== null);
+                            // For best-of-3, the deciding set is stored at index 5
+                            const displayLabel = isBestOf3 && set === 5 ? "5'" : set;
+                            // Only show set 4 and 5 labels (in best-of-5) if they were actually played
+                            const showSetNumber = isBestOf3 || set <= 3 || (setData && setData.teamATimeouts !== null);
                             return (
                             <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                                <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? set : ''}</div>
+                                <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? displayLabel : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
                                 </div>
@@ -307,7 +315,7 @@ export const Results: React.FC<ResultsProps> = ({
                         <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div className="border-r border-black">T</div>
                     </div>
                     <div className="flex-1 flex flex-col border-r border-black">
-                        {[1,2,3,4,5].map(set => {
+                        {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamBTimeouts !== null;
                             return (

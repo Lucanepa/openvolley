@@ -2110,30 +2110,35 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         uploadLogsToCloud(matchId, gameN || null)
       }).catch(err => console.warn('[MatchSetup] Cloud backup failed:', err))
 
-      // Poll to check when sync completes
-      const checkSyncStatus = async () => {
-        let attempts = 0
-        const maxAttempts = 20 // 10 seconds max
-        const interval = setInterval(async () => {
-          attempts++
-          try {
-            const job = await db.sync_queue.get(syncJobId)
-            if (!job || job.status === 'sent') {
+      // Poll to check when sync completes (only if Supabase is configured)
+      if (supabase) {
+        const checkSyncStatus = async () => {
+          let attempts = 0
+          const maxAttempts = 20 // 10 seconds max
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const job = await db.sync_queue.get(syncJobId)
+              if (!job || job.status === 'sent') {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
+              } else if (job.status === 'error') {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+              }
+            } catch (err) {
               clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
-            } else if (job.status === 'error') {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
-            } else if (attempts >= maxAttempts) {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
             }
-          } catch (err) {
-            clearInterval(interval)
-          }
-        }, 500)
+          }, 500)
+        }
+        checkSyncStatus()
+      } else {
+        // No Supabase — show immediate success without waiting for sync
+        setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
       }
-      checkSyncStatus()
     } catch (error) {
       console.error('Error confirming match info:', error)
       setNoticeModal({ message: t('matchSetup.errorGeneric', { error: error.message }), type: 'error' })
@@ -3877,29 +3882,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 })
               }
 
-              setNoticeModal({ message: t('matchSetup.officialsSaved'), type: 'success', syncing: true })
-
-              // Poll to check when sync completes
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
+              // Poll to check when sync completes (only if Supabase is configured)
+              if (supabase) {
+                setNoticeModal({ message: t('matchSetup.officialsSaved'), type: 'success', syncing: true })
+                const checkSyncStatus = async () => {
+                  let attempts = 0
+                  const maxAttempts = 20
+                  const interval = setInterval(async () => {
+                    attempts++
+                    try {
+                      const queued = await db.sync_queue.where('status').equals('queued').count()
+                      if (queued === 0) {
+                        clearInterval(interval)
+                        setNoticeModal({ message: t('matchSetup.officialsSynced'), type: 'success' })
+                      } else if (attempts >= maxAttempts) {
+                        clearInterval(interval)
+                        setNoticeModal({ message: t('matchSetup.officialsSavedLocal'), type: 'success' })
+                      }
+                    } catch (err) {
                       clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.officialsSynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.officialsSavedLocal'), type: 'success' })
                     }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
+                  }, 500)
+                }
+                checkSyncStatus()
+              } else {
+                setNoticeModal({ message: t('matchSetup.officialsSavedLocal'), type: 'success' })
               }
-              checkSyncStatus()
             }
             setCurrentView('main')
           }}>{t('common.confirm')}</button>
@@ -4991,29 +4999,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
-
-              // Poll to check when sync completes
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
+              // Poll to check when sync completes (only if Supabase is configured)
+              if (supabase) {
+                setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
+                const checkSyncStatus = async () => {
+                  let attempts = 0
+                  const maxAttempts = 20
+                  const interval = setInterval(async () => {
+                    attempts++
+                    try {
+                      const queued = await db.sync_queue.where('status').equals('queued').count()
+                      if (queued === 0) {
+                        clearInterval(interval)
+                        setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
+                      } else if (attempts >= maxAttempts) {
+                        clearInterval(interval)
+                        setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
+                      }
+                    } catch (err) {
                       clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
                     }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
+                  }, 500)
+                }
+                checkSyncStatus()
+              } else {
+                setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
               }
-              checkSyncStatus()
             }
             setCurrentView('main')
           }}>{t('common.confirm')}</button>
@@ -6352,29 +6363,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
-
-              // Poll to check when sync completes
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
+              // Poll to check when sync completes (only if Supabase is configured)
+              if (supabase) {
+                setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
+                const checkSyncStatus = async () => {
+                  let attempts = 0
+                  const maxAttempts = 20
+                  const interval = setInterval(async () => {
+                    attempts++
+                    try {
+                      const queued = await db.sync_queue.where('status').equals('queued').count()
+                      if (queued === 0) {
+                        clearInterval(interval)
+                        setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
+                      } else if (attempts >= maxAttempts) {
+                        clearInterval(interval)
+                        setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
+                      }
+                    } catch (err) {
                       clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
                     }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
+                  }, 500)
+                }
+                checkSyncStatus()
+              } else {
+                setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
               }
-              checkSyncStatus()
             }
             setCurrentView('main')
           }}>{t('common.confirm')}</button>
@@ -6875,25 +6889,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
+          // Show syncing modal and poll for completion (only if Supabase is configured)
+          if (supabase) {
+            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+            let attempts = 0
+            const maxAttempts = 20
+            const interval = setInterval(async () => {
+              attempts++
+              try {
+                const queued = await db.sync_queue.where('status').equals('queued').count()
+                if (queued === 0) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+                } else if (attempts >= maxAttempts) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+                }
+              } catch (err) {
                 clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
+            }, 500)
+          } else {
+            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+          }
         }
       }
     } catch (error) {
@@ -6940,25 +6958,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
+          // Show syncing modal and poll for completion (only if Supabase is configured)
+          if (supabase) {
+            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+            let attempts = 0
+            const maxAttempts = 20
+            const interval = setInterval(async () => {
+              attempts++
+              try {
+                const queued = await db.sync_queue.where('status').equals('queued').count()
+                if (queued === 0) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+                } else if (attempts >= maxAttempts) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+                }
+              } catch (err) {
                 clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
+            }, 500)
+          } else {
+            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+          }
         }
       }
     } catch (error) {
@@ -7005,25 +7027,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
+          // Show syncing modal and poll for completion (only if Supabase is configured)
+          if (supabase) {
+            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+            let attempts = 0
+            const maxAttempts = 20
+            const interval = setInterval(async () => {
+              attempts++
+              try {
+                const queued = await db.sync_queue.where('status').equals('queued').count()
+                if (queued === 0) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+                } else if (attempts >= maxAttempts) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+                }
+              } catch (err) {
                 clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
+            }, 500)
+          } else {
+            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+          }
         }
       }
     } catch (error) {
@@ -7087,25 +7113,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
+          // Show syncing modal and poll for completion (only if Supabase is configured)
+          if (supabase) {
+            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+            let attempts = 0
+            const maxAttempts = 20
+            const interval = setInterval(async () => {
+              attempts++
+              try {
+                const queued = await db.sync_queue.where('status').equals('queued').count()
+                if (queued === 0) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+                } else if (attempts >= maxAttempts) {
+                  clearInterval(interval)
+                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+                }
+              } catch (err) {
                 clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
+            }, 500)
+          } else {
+            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+          }
         }
       }
     } catch (error) {

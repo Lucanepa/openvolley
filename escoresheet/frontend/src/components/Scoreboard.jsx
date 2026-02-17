@@ -3864,6 +3864,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return change
   }, [matchId, data?.match, supabase, notifyScoresheetUpdate])
 
+  const logManualChangeWithRemark = useCallback(async (category, field, before, after, description, { setIndex, scoreStr } = {}) => {
+    logManualChange(category, field, before, after, description)
+    const now = new Date()
+    const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+    const si = setIndex ?? data?.set?.index ?? '?'
+    const sc = scoreStr ?? `${data?.set?.homePoints ?? '?'}-${data?.set?.awayPoints ?? '?'}`
+    const remark = `Manual edit (Set ${si}, ${sc}, ${timeStr}): ${description}`
+    const currentRemarks = data?.match?.remarks || ''
+    const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
+    await db.matches.update(matchId, { remarks: newRemarks })
+  }, [logManualChange, matchId, data?.set?.index, data?.set?.homePoints, data?.set?.awayPoints, data?.match?.remarks])
+
   // ==================== REOPEN ROSTER HELPERS ====================
 
   // Diff original vs edited roster and return { changes, remarkLines }
@@ -4100,21 +4112,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
         console.log(`[PERF] After db.events.add: +${(performance.now() - _t0).toFixed(0)}ms`)
 
-        // Capture FULL state snapshot AFTER the event is applied
-        // This is the key to the snapshot-based undo system
-        // Also returns raw queried data (_rawEvents, _rawSets, _rawMatch) for reuse below
-        const snapshotResult = await captureFullStateSnapshot()
-        const stateSnapshot = snapshotResult?.snapshot || null
-        const snapshotEvents = snapshotResult?._rawEvents || []
-        const snapshotSets = snapshotResult?._rawSets || []
-        const snapshotMatch = snapshotResult?._rawMatch || null
-        console.log(`[PERF] After captureFullStateSnapshot: +${(performance.now() - _t0).toFixed(0)}ms`)
+        // Lightweight events (rally_start, replay) skip snapshot and sync queue for speed
+        const lightweightEvents = ['rally_start', 'replay']
+        const isLightweight = lightweightEvents.includes(type)
 
-        // Update the event with the snapshot
-        if (stateSnapshot) {
-          await db.events.update(eventId, { stateSnapshot })
+        let stateSnapshot = null
+        let snapshotEvents = []
+        let snapshotSets = []
+        let snapshotMatch = null
+
+        if (!isLightweight) {
+          // Capture FULL state snapshot AFTER the event is applied
+          // This is the key to the snapshot-based undo system
+          // Also returns raw queried data (_rawEvents, _rawSets, _rawMatch) for reuse below
+          const snapshotResult = await captureFullStateSnapshot()
+          stateSnapshot = snapshotResult?.snapshot || null
+          snapshotEvents = snapshotResult?._rawEvents || []
+          snapshotSets = snapshotResult?._rawSets || []
+          snapshotMatch = snapshotResult?._rawMatch || null
+          console.log(`[PERF] After captureFullStateSnapshot: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+          // Update the event with the snapshot
+          if (stateSnapshot) {
+            await db.events.update(eventId, { stateSnapshot })
+          }
+          console.log(`[PERF] After db.events.update (snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
         }
-        console.log(`[PERF] After db.events.update (snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
 
         // Log the event with state snapshots
         debugLogger.log('EVENT_CREATED', {
@@ -4126,13 +4149,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           hasSnapshot: !!stateSnapshot
         })
 
-        // Reuse match from snapshot (avoids redundant db.matches.get)
+        // Reuse match from snapshot or fetch fresh (lightweight events need it for isTest check)
         const match = snapshotMatch || await db.matches.get(matchId)
         const isTest = match?.test || false
         console.log(`[PERF] After match.get: +${(performance.now() - _t0).toFixed(0)}ms`)
 
         // Only sync official matches to Supabase, not test matches
-        if (!isTest) {
+        // Lightweight events skip sync queue (no state change to sync)
+        if (!isTest && !isLightweight) {
           // Reuse events from snapshot (avoids redundant db.events.where({matchId}).toArray())
           const allEventsForSync = snapshotEvents
           console.log(`[PERF] After allEventsForSync (reused from snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
@@ -4480,12 +4504,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const currentServeTeam = data?.set ? getCurrentServe() : null
 
-  // Hide serve indicator while rotation is being written to DB (prevents wrong server flash)
+  // Detect if a sideout rotation is pending (point written but rotation not yet in data.events)
+  // This prevents showing the wrong server number for a split second during sideout
+  const isRotationPending = useMemo(() => {
+    if (!data?.events || !data?.set) return false
+    const setEvents = data.events.filter(e => e.setIndex === data.set.index)
+    // Find the last point event
+    const lastPoint = setEvents
+      .filter(e => e.type === 'point')
+      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+    if (!lastPoint) return false
+
+    // Check if this was a sideout: the scoring team is different from the previous server
+    const pointsBefore = setEvents
+      .filter(e => e.type === 'point' && (e.seq || 0) < (lastPoint.seq || 0))
+      .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+    const previousServer = pointsBefore.length > 0 ? pointsBefore[0].payload?.team : null
+    // If no previous point, first serve team had serve — sideout if scoring team differs
+    if (previousServer === lastPoint.payload?.team) return false // Not a sideout
+
+    // It's a sideout — check if rotation event exists (sub-event of the point, e.g., 7.1)
+    const pointBaseSeq = Math.floor(lastPoint.seq || 0)
+    const hasRotation = setEvents.some(e =>
+      e.type === 'lineup' &&
+      Math.floor(e.seq || 0) === pointBaseSeq &&
+      (e.seq || 0) !== pointBaseSeq // Has decimal part (sub-event)
+    )
+    return !hasRotation
+  }, [data?.events, data?.set])
+
+  // Hide serve indicator while rotation is pending (prevents wrong server flash)
   // Show serve on left as placeholder before coin toss or before set starts
-  const leftServing = pendingRotationRef.current ? false
+  const leftServing = (isRotationPending || pendingRotationRef.current) ? false
     : (isBeforeCoinToss || hasNoSet) ? true
     : (data?.set ? currentServeTeam === leftServeTeamKey : false)
-  const rightServing = pendingRotationRef.current ? false
+  const rightServing = (isRotationPending || pendingRotationRef.current) ? false
     : (isBeforeCoinToss || hasNoSet) ? false
     : (data?.set ? currentServeTeam === rightServeTeamKey : false)
 
@@ -20130,7 +20183,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       createdAt: new Date().toISOString()
                                     })
                                   }
-                                  logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set 5)`)
+                                  logManualChangeWithRemark('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set 5)`)
                                   // Sync updated side to Supabase live state
                                   syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
                                 } else {
@@ -20168,7 +20221,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     console.log('[SwitchSides] Queued coin_toss sync:', { newTeamA, newTeamB, firstServeTeam })
                                   }
 
-                                  logManualChange('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set ${setIdx})`)
+                                  logManualChangeWithRemark('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set ${setIdx})`)
                                   // Sync updated side to Supabase live state
                                   syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
                                 }
@@ -20229,7 +20282,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     console.log('[SwitchServe] Queued coin_toss sync:', { coinTossTeamA, coinTossServeA, firstServe: newServe })
                                   }
                                 }
-                                logManualChange('Teams Setup', 'First Serve', oldServing, newServing, `Changed first serve from ${oldServing} to ${newServing}`)
+                                logManualChangeWithRemark('Teams Setup', 'First Serve', oldServing, newServing, `Changed first serve from ${oldServing} to ${newServing}`)
                                 // Sync updated serve to Supabase live state
                                 syncLiveStateToSupabase('manual_serve_change', null, { oldServe: oldServing, newServe: newServing })
                               }}
@@ -20327,6 +20380,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   max="99"
                                   value={(leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
                                   onChange={async (e) => {
+                                    const oldPoints = (leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                     const update = leftIsHome ? { homePoints: newPoints } : { awayPoints: newPoints }
                                     await db.sets.update(data.set.id, update)
@@ -20339,6 +20393,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       } catch (err) { /* ignore */ }
                                     }
 
+                                    const teamSide = leftIsHome ? 'Home' : 'Away'
+                                    logManualChangeWithRemark('Score', `${teamSide} Points Set ${data.set.index}`, oldPoints, newPoints,
+                                      `${teamSide} score changed from ${oldPoints} to ${newPoints} in Set ${data.set.index}`)
                                     // Update Live State immediately
                                     syncLiveStateToSupabase('manual_score_update')
                                     notifyScoresheetUpdate('manual_score_update_left')
@@ -20365,6 +20422,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   max="99"
                                   value={(rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
                                   onChange={async (e) => {
+                                    const oldPoints = (rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                     const update = rightIsHome ? { homePoints: newPoints } : { awayPoints: newPoints }
                                     await db.sets.update(data.set.id, update)
@@ -20377,6 +20435,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       } catch (err) { /* ignore */ }
                                     }
 
+                                    const teamSide = rightIsHome ? 'Home' : 'Away'
+                                    logManualChangeWithRemark('Score', `${teamSide} Points Set ${data.set.index}`, oldPoints, newPoints,
+                                      `${teamSide} score changed from ${oldPoints} to ${newPoints} in Set ${data.set.index}`)
                                     // Update Live State immediately
                                     syncLiveStateToSupabase('manual_score_update')
                                     notifyScoresheetUpdate('manual_score_update_right')
@@ -20512,6 +20573,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   max="99"
                                   value={set.homePoints || 0}
                                   onChange={async (e) => {
+                                    const oldPoints = set.homePoints || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                     await db.sets.update(set.id, { homePoints: newPoints })
                                     // Sync to Supabase
@@ -20520,6 +20582,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         await supabase.from('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
+                                    logManualChangeWithRemark('Score', `Home Points Set ${set.index}`, oldPoints, newPoints,
+                                      `Home score changed from ${oldPoints} to ${newPoints} in Set ${set.index}`,
+                                      { setIndex: set.index, scoreStr: `${newPoints}-${set.awayPoints || 0}` })
                                     notifyScoresheetUpdate('edit_all_sets_home')
                                   }}
                                   style={{
@@ -20541,6 +20606,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   max="99"
                                   value={set.awayPoints || 0}
                                   onChange={async (e) => {
+                                    const oldPoints = set.awayPoints || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                     await db.sets.update(set.id, { awayPoints: newPoints })
                                     // Sync to Supabase
@@ -20549,6 +20615,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         await supabase.from('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
+                                    logManualChangeWithRemark('Score', `Away Points Set ${set.index}`, oldPoints, newPoints,
+                                      `Away score changed from ${oldPoints} to ${newPoints} in Set ${set.index}`,
+                                      { setIndex: set.index, scoreStr: `${set.homePoints || 0}-${newPoints}` })
                                     notifyScoresheetUpdate('edit_all_sets_away')
                                   }}
                                   style={{
@@ -20568,13 +20637,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   type="checkbox"
                                   checked={set.finished || false}
                                   onChange={async (e) => {
-                                    await db.sets.update(set.id, { finished: e.target.checked })
+                                    const oldFinished = set.finished || false
+                                    const newFinished = e.target.checked
+                                    await db.sets.update(set.id, { finished: newFinished })
                                     // Sync to Supabase
                                     if (supabase && data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ finished: e.target.checked, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await supabase.from('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
+                                    logManualChangeWithRemark('Score', `Set ${set.index} Finished`, oldFinished, newFinished,
+                                      `Set ${set.index} finished flag changed from ${oldFinished} to ${newFinished}`,
+                                      { setIndex: set.index, scoreStr: `${set.homePoints || 0}-${set.awayPoints || 0}` })
                                     notifyScoresheetUpdate('edit_all_sets_finished')
                                   }}
                                   style={{
@@ -20651,6 +20725,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <select
                             value={data.match.status || 'live'}
                             onChange={async (e) => {
+                              const oldStatus = data.match.status || 'live'
                               const newStatus = e.target.value
                               // Update local IndexedDB
                               await db.matches.update(matchId, { status: newStatus })
@@ -20666,6 +20741,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   // Failed to sync status to Supabase
                                 }
                               }
+                              logManualChangeWithRemark('Match', 'Status', oldStatus, newStatus,
+                                `Match status changed from "${oldStatus}" to "${newStatus}"`)
                             }}
                             style={{
                               flex: 1,
@@ -20689,7 +20766,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <select
                               value={data.match.set5FirstServe || 'A'}
                               onChange={async (e) => {
-                                await db.matches.update(matchId, { set5FirstServe: e.target.value })
+                                const oldVal = data.match.set5FirstServe || 'A'
+                                const newVal = e.target.value
+                                await db.matches.update(matchId, { set5FirstServe: newVal })
+                                logManualChangeWithRemark('Match', 'Set 5 First Serve', oldVal, newVal,
+                                  `Set 5 first serve changed from Team ${oldVal} to Team ${newVal}`)
                               }}
                               style={{
                                 flex: 1,
@@ -20807,9 +20888,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
+                                    const oldTeam = team || 'home'
+                                    const newTeam = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, team: newTeam }
                                     })
+                                    logManualChangeWithRemark('Point', 'Team', oldTeam, newTeam,
+                                      `Point team changed from ${oldTeam} to ${newTeam}`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     notifyScoresheetUpdate('edit_point_team')
                                   }}
                                   style={{
@@ -20830,7 +20916,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deletePointEvent'))) {
+                                      const deletedTeam = team || '?'
                                       await db.events.delete(event.id)
+                                      logManualChangeWithRemark('Point', 'Delete',
+                                        `${deletedTeam} point at ${homeScore}-${awayScore}`, null,
+                                        `Deleted ${deletedTeam} point (Set ${setIndex}, ${homeScore}-${awayScore})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       notifyScoresheetUpdate('delete_point_event')
                                     }
                                   }}
@@ -20910,9 +21001,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
+                                    const oldTeam = team || 'home'
+                                    const newTeam = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, team: newTeam }
                                     })
+                                    logManualChangeWithRemark('Timeout', 'Team', oldTeam, newTeam,
+                                      `Timeout team changed from ${oldTeam} to ${newTeam}`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -20932,7 +21028,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteTimeoutEvent'))) {
+                                      const deletedTeam = team || '?'
                                       await db.events.delete(event.id)
+                                      logManualChangeWithRemark('Timeout', 'Delete',
+                                        `${deletedTeam} timeout at ${homeScore}-${awayScore}`, null,
+                                        `Deleted ${deletedTeam} timeout (Set ${setIndex}, ${homeScore}-${awayScore})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
                                   style={{
@@ -21014,9 +21115,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
+                                    const oldTeam = team || 'home'
+                                    const newTeam = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, team: newTeam }
                                     })
+                                    logManualChangeWithRemark('Substitution', 'Team', oldTeam, newTeam,
+                                      `Sub team changed from ${oldTeam} to ${newTeam} (#${playerOut}->#${playerIn})`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -21035,9 +21141,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={position || 'I'}
                                   onChange={async (e) => {
+                                    const oldPos = position || 'I'
+                                    const newPos = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, position: e.target.value }
+                                      payload: { ...event.payload, position: newPos }
                                     })
+                                    logManualChangeWithRemark('Substitution', 'Position', oldPos, newPos,
+                                      `Sub position changed from ${oldPos} to ${newPos} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -21060,10 +21171,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   max="99"
                                   value={playerOut || ''}
                                   onChange={async (e) => {
+                                    const oldVal = playerOut || null
                                     const val = parseInt(e.target.value) || null
                                     await db.events.update(event.id, {
                                       payload: { ...event.payload, playerOut: val }
                                     })
+                                    logManualChangeWithRemark('Substitution', 'PlayerOut', oldVal, val,
+                                      `Sub playerOut changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     width: '40px',
@@ -21082,10 +21197,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   max="99"
                                   value={playerIn || ''}
                                   onChange={async (e) => {
+                                    const oldVal = playerIn || null
                                     const val = parseInt(e.target.value) || null
                                     await db.events.update(event.id, {
                                       payload: { ...event.payload, playerIn: val }
                                     })
+                                    logManualChangeWithRemark('Substitution', 'PlayerIn', oldVal, val,
+                                      `Sub playerIn changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     width: '40px',
@@ -21102,9 +21221,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     type="checkbox"
                                     checked={event.payload?.isInjury || false}
                                     onChange={async (e) => {
+                                      const oldVal = event.payload?.isInjury || false
+                                      const newVal = e.target.checked
                                       await db.events.update(event.id, {
-                                        payload: { ...event.payload, isInjury: e.target.checked }
+                                        payload: { ...event.payload, isInjury: newVal }
                                       })
+                                      logManualChangeWithRemark('Substitution', 'IsInjury', oldVal, newVal,
+                                        `Sub injury flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }}
                                     style={{ width: '12px', height: '12px', cursor: 'pointer' }}
                                   />
@@ -21115,9 +21239,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     type="checkbox"
                                     checked={event.payload?.isExceptional || false}
                                     onChange={async (e) => {
+                                      const oldVal = event.payload?.isExceptional || false
+                                      const newVal = e.target.checked
                                       await db.events.update(event.id, {
-                                        payload: { ...event.payload, isExceptional: e.target.checked }
+                                        payload: { ...event.payload, isExceptional: newVal }
                                       })
+                                      logManualChangeWithRemark('Substitution', 'IsExceptional', oldVal, newVal,
+                                        `Sub exceptional flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }}
                                     style={{ width: '12px', height: '12px', cursor: 'pointer' }}
                                   />
@@ -21128,9 +21257,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     type="checkbox"
                                     checked={event.payload?.isExpelled || false}
                                     onChange={async (e) => {
+                                      const oldVal = event.payload?.isExpelled || false
+                                      const newVal = e.target.checked
                                       await db.events.update(event.id, {
-                                        payload: { ...event.payload, isExpelled: e.target.checked }
+                                        payload: { ...event.payload, isExpelled: newVal }
                                       })
+                                      logManualChangeWithRemark('Substitution', 'IsExpelled', oldVal, newVal,
+                                        `Sub expelled flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }}
                                     style={{ width: '12px', height: '12px', cursor: 'pointer' }}
                                   />
@@ -21141,9 +21275,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     type="checkbox"
                                     checked={event.payload?.isDisqualified || false}
                                     onChange={async (e) => {
+                                      const oldVal = event.payload?.isDisqualified || false
+                                      const newVal = e.target.checked
                                       await db.events.update(event.id, {
-                                        payload: { ...event.payload, isDisqualified: e.target.checked }
+                                        payload: { ...event.payload, isDisqualified: newVal }
                                       })
+                                      logManualChangeWithRemark('Substitution', 'IsDisqualified', oldVal, newVal,
+                                        `Sub disqualified flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }}
                                     style={{ width: '12px', height: '12px', cursor: 'pointer' }}
                                   />
@@ -21160,6 +21299,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                                       // Delete the substitution event
                                       await db.events.delete(event.id)
+                                      logManualChangeWithRemark('Substitution', 'Delete',
+                                        `Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position}`, null,
+                                        `Deleted substitution (Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position})`,
+                                        { setIndex: subSetIndex, scoreStr: `${homeScore}-${awayScore}` })
 
                                       // Find and delete the lineup event created by this substitution
                                       // Then restore the previous lineup with the original player
@@ -21290,9 +21433,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
+                                    const oldTeam = team || 'home'
+                                    const newTeam = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, team: newTeam }
                                     })
+                                    logManualChangeWithRemark('Sanction', 'Team', oldTeam, newTeam,
+                                      `Sanction team changed from ${oldTeam} to ${newTeam} (${sanctionType}, #${playerNumber ?? '?'})`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -21310,9 +21458,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={sanctionType || 'warning'}
                                   onChange={async (e) => {
+                                    const oldType = sanctionType || 'warning'
+                                    const newType = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, type: e.target.value }
+                                      payload: { ...event.payload, type: newType }
                                     })
+                                    logManualChangeWithRemark('Sanction', 'Type', oldType, newType,
+                                      `Sanction type changed from ${oldType} to ${newType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -21342,10 +21495,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       max="99"
                                       value={playerNumber || ''}
                                       onChange={async (e) => {
+                                        const oldNum = playerNumber || null
                                         const val = parseInt(e.target.value) || null
                                         await db.events.update(event.id, {
                                           payload: { ...event.payload, playerNumber: val }
                                         })
+                                        logManualChangeWithRemark('Sanction', 'PlayerNumber', oldNum, val,
+                                          `Sanction player changed from #${oldNum ?? '?'} to #${val ?? '?'} (Team ${teamLabel}, ${sanctionType})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         width: '40px',
@@ -21363,9 +21520,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   <select
                                     value={position || 'I'}
                                     onChange={async (e) => {
+                                      const oldPos = position || 'I'
+                                      const newPos = e.target.value
                                       await db.events.update(event.id, {
-                                        payload: { ...event.payload, position: e.target.value }
+                                        payload: { ...event.payload, position: newPos }
                                       })
+                                      logManualChangeWithRemark('Sanction', 'Position', oldPos, newPos,
+                                        `Sanction position changed from ${oldPos} to ${newPos} (Team ${teamLabel}, ${sanctionType}, #${playerNumber ?? '?'})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }}
                                     style={{
                                       padding: '4px',
@@ -21386,9 +21548,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   <select
                                     value={role || 'Coach'}
                                     onChange={async (e) => {
+                                      const oldRole = role || 'Coach'
+                                      const newRole = e.target.value
                                       await db.events.update(event.id, {
-                                        payload: { ...event.payload, role: e.target.value }
+                                        payload: { ...event.payload, role: newRole }
                                       })
+                                      logManualChangeWithRemark('Sanction', 'Role', oldRole, newRole,
+                                        `Sanction role changed from ${oldRole} to ${newRole} (Team ${teamLabel}, ${sanctionType})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }}
                                     style={{
                                       padding: '4px',

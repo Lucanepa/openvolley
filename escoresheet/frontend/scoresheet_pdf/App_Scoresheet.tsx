@@ -1194,13 +1194,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   // Set 1: shows when coin toss is confirmed
   // Set 2: shows when Set 1 is finished
   // Set 3: shows when Set 2 is finished
+  // For best-of-3: Sets 3 and 4 are never played (deciding set uses Set 5 tiebreak format),
+  // so they should always remain blank — no team labels, S/R, or X
+  const isBestOf3 = (match?.bestOf || 5) === 3;
   const shouldShowSet1 = coinTossConfirmed;
   const shouldShowSet2 = isSetFinished(1);
-  const shouldShowSet3 = isSetFinished(2);
+  const shouldShowSet3 = isBestOf3 ? false : isSetFinished(2);
 
   // Calculate set wins to determine if Set 4 should be displayed
   // Set 4 should only be filled if both teams have won at least one set
-  // (This calculation is also used later for match results, so we calculate it once here)
+  // For best-of-3: Set 4 is never played, always blank
   const finishedSetsForSet4Check = sets?.filter(s => s.finished) || [];
   const teamASetsWonForSet4Check = finishedSetsForSet4Check.filter(s => {
     const teamAPoints = teamAKey === 'home' ? (s.homePoints || 0) : (s.awayPoints || 0);
@@ -1214,7 +1217,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   }).length;
 
   // Set 4 should only be displayed if both teams have won at least one set
-  const shouldShowSet4 = teamASetsWonForSet4Check >= 1 && teamBSetsWonForSet4Check >= 1;
+  // For best-of-3: Set 4 is never played, always blank
+  const shouldShowSet4 = isBestOf3 ? false : (teamASetsWonForSet4Check >= 1 && teamBSetsWonForSet4Check >= 1);
 
   // For set 5, determine which team is on left based on set5LeftTeam
   // If set5LeftTeam is 'B', then Team B is on left, otherwise Team A is on left
@@ -3039,6 +3043,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       winner={winner}
                       result={result}
                       coinTossConfirmed={coinTossConfirmed}
+                      bestOf={bestOf}
                     />
                   </div>
                 </div>
