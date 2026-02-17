@@ -9698,6 +9698,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             liberoType: outPlayer.libero,
             reason: 'injury'
           }, { skipMutex: true })
+          const libTeamLabel = team === teamAKey ? 'A' : 'B'
+          logManualChange('Libero', 'Unable', `#${playerOut} active`, `#${playerOut} unable`,
+            `Libero #${playerOut} becomes unable to play (injury) (Team ${libTeamLabel}, Set ${data.set.index})`)
           // Check if redesignation is needed and prompt user
           // Use isLiberoUnable to properly check events, not just database field
           const activeLiberos = teamPlayers?.filter(p =>
@@ -9720,7 +9723,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, teamAKey, checkLiberoRedesignation, sendActionToReferee])
+  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee])
 
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
@@ -10087,6 +10090,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           liberoType: player.libero,
           reason: sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
         })
+        const libTeamLabel = team === teamAKey ? 'A' : 'B'
+        const sanctionReason = sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
+        logManualChange('Libero', 'Unable', `#${playerNumber} active`, `#${playerNumber} unable`,
+          `Libero #${playerNumber} unable due to ${sanctionReason} (Team ${libTeamLabel}, Set ${data.set.index})`)
 
         // Get current lineup and find the original player who was replaced by libero
         const lineupEvents = (data.events || [])
@@ -10342,6 +10349,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             liberoType: liberoPlayer.libero,
             reason: sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
           })
+          const libTeamLabel = team === teamAKey ? 'A' : 'B'
+          const sanctionReason = sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
+          logManualChange('Libero', 'Unable', `#${playerNumber} active`, `#${playerNumber} unable`,
+            `Libero #${playerNumber} unable due to ${sanctionReason} (Team ${libTeamLabel}, Set ${data.set.index})`)
           // Check if redesignation is needed and prompt user
           // Use isLiberoUnable to properly check events, not just database field
           const activeLiberos = teamPlayers?.filter(p =>
@@ -10404,7 +10415,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setSanctionConfirmModal(null)
       }
     }
-  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, handleForfait, getLiberoOnCourt])
+  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, handleForfait, getLiberoOnCourt, teamAKey])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
@@ -11379,8 +11390,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
     await db.matches.update(matchId, { remarks: newRemarks })
 
+    logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
+      `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
+
     setLiberoRedesignationModal(null)
-  }, [liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, teamAKey, matchId])
+  }, [liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
 
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(async () => {
@@ -11465,6 +11479,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const currentRemarks = data?.match?.remarks || ''
         const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
         await db.matches.update(matchId, { remarks: newRemarks })
+
+        logManualChange('Libero', 'Unable', `#${liberoNumber} active`, `#${liberoNumber} unable`,
+          `Libero #${liberoNumber} ${reasonText} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
       }
 
       // Check if redesignation is needed - if so, show prompt in same modal
@@ -11485,7 +11502,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } catch (error) {
       // Silently handle error
     }
-  }, [liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, checkLiberoRedesignation, getLiberoOnCourt, teamAKey, teamBKey, matchId])
+  }, [liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, logManualChange, checkLiberoRedesignation, getLiberoOnCourt, teamAKey, teamBKey, matchId])
 
   // Handle libero in button click
   const handleLiberoIn = useCallback((side, event) => {
@@ -21579,6 +21596,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteSanctionEvent'))) {
                                       await db.events.delete(event.id)
+                                      logManualChangeWithRemark('Sanction', 'Delete',
+                                        `${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`, null,
+                                        `Deleted sanction ${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
                                   style={{
@@ -21667,9 +21688,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <select
                                   value={team || 'home'}
                                   onChange={async (e) => {
+                                    const oldTeam = team || 'home'
+                                    const newTeam = e.target.value
                                     await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
+                                      payload: { ...event.payload, team: newTeam }
                                     })
+                                    logManualChangeWithRemark('Libero', 'Team', oldTeam, newTeam,
+                                      `${eventType} team changed from ${oldTeam} to ${newTeam}`,
+                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                   }}
                                   style={{
                                     padding: '4px 6px',
@@ -21694,10 +21720,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       max="99"
                                       value={event.payload?.liberoIn || ''}
                                       onChange={async (e) => {
+                                        const oldVal = event.payload?.liberoIn || null
                                         const val = parseInt(e.target.value) || null
                                         await db.events.update(event.id, {
                                           payload: { ...event.payload, liberoIn: val }
                                         })
+                                        logManualChangeWithRemark('Libero', 'LiberoIn', oldVal, val,
+                                          `Libero entry liberoIn changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         width: '40px',
@@ -21716,10 +21746,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       max="99"
                                       value={event.payload?.playerOut || ''}
                                       onChange={async (e) => {
+                                        const oldVal = event.payload?.playerOut || null
                                         const val = parseInt(e.target.value) || null
                                         await db.events.update(event.id, {
                                           payload: { ...event.payload, playerOut: val }
                                         })
+                                        logManualChangeWithRemark('Libero', 'PlayerOut', oldVal, val,
+                                          `Libero entry playerOut changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         width: '40px',
@@ -21734,9 +21768,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     <select
                                       value={event.payload?.liberoType || 'libero1'}
                                       onChange={async (e) => {
+                                        const oldType = event.payload?.liberoType || 'libero1'
+                                        const newType = e.target.value
                                         await db.events.update(event.id, {
-                                          payload: { ...event.payload, liberoType: e.target.value }
+                                          payload: { ...event.payload, liberoType: newType }
                                         })
+                                        logManualChangeWithRemark('Libero', 'LiberoType', oldType, newType,
+                                          `Libero type changed from ${oldType} to ${newType} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         padding: '4px',
@@ -21762,10 +21801,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       max="99"
                                       value={event.payload?.liberoOut || ''}
                                       onChange={async (e) => {
+                                        const oldVal = event.payload?.liberoOut || null
                                         const val = parseInt(e.target.value) || null
                                         await db.events.update(event.id, {
                                           payload: { ...event.payload, liberoOut: val }
                                         })
+                                        logManualChangeWithRemark('Libero', 'LiberoOut', oldVal, val,
+                                          `Libero exit liberoOut changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         width: '40px',
@@ -21784,10 +21827,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       max="99"
                                       value={event.payload?.playerIn || ''}
                                       onChange={async (e) => {
+                                        const oldVal = event.payload?.playerIn || null
                                         const val = parseInt(e.target.value) || null
                                         await db.events.update(event.id, {
                                           payload: { ...event.payload, playerIn: val }
                                         })
+                                        logManualChangeWithRemark('Libero', 'PlayerIn', oldVal, val,
+                                          `Libero exit playerIn changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         width: '40px',
@@ -21810,10 +21857,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       max="99"
                                       value={event.payload?.liberoNumber || ''}
                                       onChange={async (e) => {
+                                        const oldVal = event.payload?.liberoNumber || null
                                         const val = parseInt(e.target.value) || null
                                         await db.events.update(event.id, {
                                           payload: { ...event.payload, liberoNumber: val }
                                         })
+                                        logManualChangeWithRemark('Libero', 'LiberoNumber', oldVal, val,
+                                          `Libero unable number changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         width: '40px',
@@ -21828,9 +21879,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     <select
                                       value={event.payload?.reason || 'injury'}
                                       onChange={async (e) => {
+                                        const oldReason = event.payload?.reason || 'injury'
+                                        const newReason = e.target.value
                                         await db.events.update(event.id, {
-                                          payload: { ...event.payload, reason: e.target.value }
+                                          payload: { ...event.payload, reason: newReason }
                                         })
+                                        logManualChangeWithRemark('Libero', 'Reason', oldReason, newReason,
+                                          `Libero unable reason changed from ${oldReason} to ${newReason} (Team ${teamLabel})`,
+                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                       }}
                                       style={{
                                         padding: '4px 6px',
@@ -21853,6 +21909,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
                                       await db.events.delete(event.id)
+                                      logManualChangeWithRemark('Libero', 'Delete',
+                                        `${eventType} (Team ${teamLabel})`, null,
+                                        `Deleted ${eventType} event (Team ${teamLabel})`,
+                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
                                   style={{
@@ -22313,6 +22373,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
                                       await db.events.delete(event.id)
+                                      logManualChangeWithRemark('Event', 'Quick Delete',
+                                        `${description} (Set ${setIndex})`, null,
+                                        `Quick deleted ${description} (Set ${setIndex})`,
+                                        { setIndex })
                                     }
                                   }}
                                   style={{
