@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g., v0.1.0)'
+        description: 'Version tag (e.g., v1.3.0)'
         required: true
         type: string
   push:
@@ -12,65 +12,29 @@ on:
       - 'v*'
 
 jobs:
-  # Check if major version changed (only for push to main, not tags)
   check-version:
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
-      is_tag: ${{ steps.check.outputs.is_tag }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2  # Need previous commit to compare
 
-      - name: Check version change
+      - name: Determine version
         id: check
         run: |
-          # If this is a tag push, always release
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             VERSION="${{ github.ref_name }}"
-            echo "is_tag=true" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "Tag push detected: $VERSION - will release"
-            exit 0
-          fi
-
-          # If this is a manual dispatch, always release
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             VERSION="${{ github.event.inputs.version }}"
-            echo "is_tag=false" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "Manual dispatch: $VERSION - will release"
+          else
+            echo "Unexpected trigger — skipping"
+            echo "should_release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          echo "is_tag=false" >> $GITHUB_OUTPUT
-
-          # Get current version from package.json
-          CURRENT_VERSION=$(cat escoresheet/frontend/package.json | grep '"version"' | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
-          CURRENT_MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-
-          # Get previous version from the commit before
-          git show HEAD~1:escoresheet/frontend/package.json > /tmp/old_package.json 2>/dev/null || echo '{"version": "0.0.0"}' > /tmp/old_package.json
-          PREVIOUS_VERSION=$(cat /tmp/old_package.json | grep '"version"' | head -1 | sed 's/.*"version": "\(.*\)".*/\1/' || echo "0.0.0")
-          PREVIOUS_MAJOR=$(echo $PREVIOUS_VERSION | cut -d. -f1)
-
-          echo "Previous version: $PREVIOUS_VERSION (major: $PREVIOUS_MAJOR)"
-          echo "Current version: $CURRENT_VERSION (major: $CURRENT_MAJOR)"
-
-          # Check if major version changed
-          if [[ "$CURRENT_MAJOR" != "$PREVIOUS_MAJOR" ]]; then
-            echo "Major version changed from $PREVIOUS_MAJOR to $CURRENT_MAJOR - WILL RELEASE"
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "version=v$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          else
-            echo "Major version unchanged ($CURRENT_MAJOR) - skipping release"
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            echo "version=v$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          fi
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Will release: $VERSION"
 
   build-windows:
     needs: check-version
@@ -78,24 +42,24 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: escoresheet/frontend/package-lock.json
-      
+
       - name: Install dependencies
         working-directory: escoresheet/frontend
         run: npm ci
-      
-      - name: Remove canvas native dependency (not needed for html2canvas in Electron)
+
+      - name: Remove canvas native dependency
         working-directory: escoresheet/frontend
         run: |
           if (Test-Path "node_modules\canvas") {
             Remove-Item -Recurse -Force "node_modules\canvas"
           }
-      
+
       - name: Build Electron app (Windows)
         working-directory: escoresheet/frontend
         env:
@@ -104,7 +68,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run electron:build:win -- --publish never
-      
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -120,25 +84,25 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: escoresheet/frontend/package-lock.json
-      
+
       - name: Install dependencies
         working-directory: escoresheet/frontend
         run: npm ci
-      
-      - name: Remove canvas native dependency (not needed for html2canvas in Electron)
+
+      - name: Remove canvas native dependency
         working-directory: escoresheet/frontend
         run: |
           if [ -d "node_modules/canvas" ]; then
             rm -rf node_modules/canvas
           fi
-      
-      - name: Build Electron app (macOS) [WIP]
+
+      - name: Build Electron app (macOS)
         working-directory: escoresheet/frontend
         env:
           ELECTRON: 'true'
@@ -146,7 +110,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run electron:build:mac -- --publish never
-      
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -163,25 +127,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: escoresheet/frontend/package-lock.json
-      
+
       - name: Install dependencies
         working-directory: escoresheet/frontend
         run: npm ci
-      
-      - name: Remove canvas native dependency (not needed for html2canvas in Electron)
+
+      - name: Remove canvas native dependency
         working-directory: escoresheet/frontend
         run: |
           if [ -d "node_modules/canvas" ]; then
             rm -rf node_modules/canvas
           fi
-      
-      - name: Build Electron app (Linux) [WIP]
+
+      - name: Build Electron app (Linux)
         working-directory: escoresheet/frontend
         env:
           ELECTRON: 'true'
@@ -189,7 +153,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run electron:build:linux -- --publish never
-      
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -216,38 +180,28 @@ jobs:
           echo "Artifact structure:"
           find artifacts -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" | head -20
 
-      - name: Get version
-        id: get_version
-        run: |
-          # Use version from check-version job
-          VERSION="${{ needs.check-version.outputs.version }}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          name: Openvolley eScoresheet ${{ steps.get_version.outputs.version }}
+          tag_name: ${{ needs.check-version.outputs.version }}
+          name: Openvolley eScoresheet ${{ needs.check-version.outputs.version }}
           draft: false
           prerelease: false
           body: |
             ## Downloads
-            
-            ### Windows ✅
+
+            ### Windows
             - **Installer**: `Openvolley eScoresheet Setup X.X.X.exe` - Recommended for most users
             - **Portable**: `Openvolley eScoresheet X.X.X.exe` - No installation required
-            
-            ### macOS 🚧 (WIP)
+
+            ### macOS
             - **DMG**: `Openvolley eScoresheet-X.X.X.dmg` - Drag to Applications
             - **ZIP**: `Openvolley eScoresheet-X.X.X-mac.zip` - Extract and run
-            
-            ### Linux 🚧 (WIP)
+
+            ### Linux
             - **AppImage**: `Openvolley eScoresheet-X.X.X.AppImage` - Make executable and run
             - **DEB**: For Debian/Ubuntu
             - **RPM**: For Fedora/RHEL
-            
-            ---
-            *Note: macOS and Linux builds are work in progress and may require additional testing.*
           files: |
             artifacts/**/*.exe
             artifacts/**/*.exe.blockmap
