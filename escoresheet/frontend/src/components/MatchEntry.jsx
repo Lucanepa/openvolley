@@ -9,6 +9,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
+import { setsToWin } from '../utils/matchFormat'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const { t } = useTranslation()
@@ -264,9 +265,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }, [data?.allSets, team])
 
   // Check if match is finished
+  const matchBestOf = data?.match?.bestOf ?? 5
   const isMatchFinished = useMemo(() => {
-    return setsWon.team === 3 || setsWon.opponent === 3
-  }, [setsWon])
+    const needed = setsToWin(matchBestOf)
+    return setsWon.team >= needed || setsWon.opponent >= needed
+  }, [setsWon, matchBestOf])
 
   // Calculate set results for Results component
   const calculateSetResults = useMemo(() => {
@@ -352,8 +355,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
   const matchResult = useMemo(() => {
     if (!isMatchFinished) return ''
-    return `3:${Math.min(setsWon.team, setsWon.opponent)}`
-  }, [isMatchFinished, setsWon])
+    return `${setsToWin(matchBestOf)}:${Math.min(setsWon.team, setsWon.opponent)}`
+  }, [isMatchFinished, setsWon, matchBestOf])
 
   // Get timeouts used in current set
   const timeoutsUsed = useMemo(() => {

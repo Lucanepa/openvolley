@@ -13,6 +13,7 @@ export interface Player {
   lastName?: string;
   libero?: string;
   isCaptain?: boolean;
+  isLfp?: boolean;
 }
 
 // Sub event structure for the UI

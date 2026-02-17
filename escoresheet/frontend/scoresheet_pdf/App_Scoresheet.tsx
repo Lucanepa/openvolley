@@ -52,6 +52,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       dob: p.dob,
       libero: p.libero,
       isCaptain: p.isCaptain,
+      isLfp: p.isLfp || p.is_lfp || false,
       license: p.license || '',
       role: p.role
     }));
@@ -1514,24 +1515,26 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     return teamBPoints > teamAPoints;
   }).length;
 
-  // Match is finished if a team has won 3 sets
-  const isMatchFinished = teamASetsWon >= 3 || teamBSetsWon >= 3;
+  // Match is finished if a team has won enough sets
+  const bestOf = match?.bestOf || 5;
+  const neededToWin = bestOf === 3 ? 2 : 3;
+  const isMatchFinished = teamASetsWon >= neededToWin || teamBSetsWon >= neededToWin;
 
   // Winner: full team name (only if match is finished)
   const winner = isMatchFinished
-    ? (teamASetsWon >= 3
+    ? (teamASetsWon >= neededToWin
       ? teamAName
-      : teamBSetsWon >= 3
+      : teamBSetsWon >= neededToWin
         ? teamBName
         : '')
     : '';
 
-  // Result: always format as 3:X where X is sets won by loser (only if match is finished)
+  // Result: format as W-L where W is sets needed to win (only if match is finished)
   const result = isMatchFinished
-    ? (teamASetsWon >= 3
-      ? `3-${teamBSetsWon}`
-      : teamBSetsWon >= 3
-        ? `3-${teamASetsWon}`
+    ? (teamASetsWon >= neededToWin
+      ? `${teamASetsWon}-${teamBSetsWon}`
+      : teamBSetsWon >= neededToWin
+        ? `${teamBSetsWon}-${teamASetsWon}`
         : '')
     : '';
 

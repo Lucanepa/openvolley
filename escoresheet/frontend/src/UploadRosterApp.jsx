@@ -1638,7 +1638,7 @@ export default function UploadRosterApp() {
                 {t('rosterSetup.signatures', 'Signatures')}
               </h2>
               <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '20px' }}>
-                {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+                {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
               </p>
               <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                 {/* Coach Signature */}

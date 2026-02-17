@@ -693,7 +693,10 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                                 </svg>
                             )}
                         </div>
-                        <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center">{player?.name || ''}</div>
+                        <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
+                            <span>{player?.name || ''}</span>
+                            {player?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
+                        </div>
                     </div>
                 )})}
             </div>
@@ -709,7 +712,10 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                         <div key={i} className={`${gridClass} ${rowHeight} text-[9px]`}>
                             <div className="border-r border-black text-center flex items-center justify-center">{libero?.dob || ''}</div>
                             <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
-                            <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center">{liberoName}</div>
+                            <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
+                                <span>{liberoName}</span>
+                                {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
+                            </div>
                         </div>
                     );
                 })}

@@ -270,4 +270,25 @@ db.version(15).stores({
   interaction_logs: 'id,ts,gameNumber,category,sessionId'
 })
 
+// Version 16: Add bestOf field to matches (default 5 for best-of-5)
+// bestOf is not indexed — only read when a match is loaded
+db.version(16).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot,[matchId+seq],[matchId+setIndex]',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt',
+  interaction_logs: 'id,ts,gameNumber,category,sessionId'
+}).upgrade(tx => {
+  return tx.table('matches').toCollection().modify(match => {
+    if (match.bestOf === undefined) {
+      match.bestOf = 5
+    }
+  })
+})
+
 
