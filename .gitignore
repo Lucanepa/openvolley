@@ -14,7 +14,7 @@ key.pem
 .claude/settings.local.json
 .claude/plans/
 nul
-
+CLAUDE.md
 # Dependencies
 node_modules/
 package-lock.json
