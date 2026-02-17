@@ -446,6 +446,8 @@ button:disabled {
   background: var(--panel);
   padding: calc(16px * var(--scale-factor));
   margin: 0 auto;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .setup>* {

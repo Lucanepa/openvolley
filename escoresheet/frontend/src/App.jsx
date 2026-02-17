@@ -3118,8 +3118,12 @@ export default function App() {
               } : {}),
               // MatchSetup fills available space
               ...(showMatchSetup ? {
-                display: 'block',
-                padding: '10px'
+                display: 'flex',
+                flexDirection: 'column',
+                padding: '10px',
+                overflowY: 'hidden',
+                height: '0px',
+                flexGrow: 1
               } : {}),
               // Scoreboard active: flex column so match-record height: 100% resolves correctly
               ...(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd ? {
