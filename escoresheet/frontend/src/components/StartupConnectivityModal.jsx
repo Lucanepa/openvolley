@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const TRACKED_KEYS = ['api', 'server', 'websocket', 'scoreboard', 'db', 'supabase']
+// Primary services shown to the user — these are what matters
+const PRIMARY_KEYS = ['db', 'supabase']
+// Fallback services — only shown when they're connected (hidden otherwise)
+const FALLBACK_KEYS = ['api', 'server', 'websocket', 'scoreboard']
+const ALL_KEYS = [...PRIMARY_KEYS, ...FALLBACK_KEYS]
 
 const isStatusOk = (status) => {
   return status === 'connected' ||
@@ -32,13 +36,14 @@ export default function StartupConnectivityModal({
     }
   }, [open])
 
-  const allOk = TRACKED_KEYS.every(key => isStatusOk(connectionStatuses[key]))
-  const allChecked = TRACKED_KEYS.every(key => connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting')
-  const hasErrors = allChecked && TRACKED_KEYS.some(key => !isStatusOk(connectionStatuses[key]))
+  // Only primary services gate dismissal
+  const primaryOk = PRIMARY_KEYS.every(key => isStatusOk(connectionStatuses[key]))
+  const primaryChecked = PRIMARY_KEYS.every(key => connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting')
+  const hasErrors = primaryChecked && PRIMARY_KEYS.some(key => !isStatusOk(connectionStatuses[key]))
 
-  // Auto-dismiss after all connections are OK
+  // Auto-dismiss once primary services are OK (don't wait for fallback server)
   useEffect(() => {
-    if (!open || !allOk || hasAutoDismissed.current) return
+    if (!open || !primaryOk || hasAutoDismissed.current) return
 
     const timer = setTimeout(() => {
       if (!hasAutoDismissed.current) {
@@ -48,9 +53,15 @@ export default function StartupConnectivityModal({
     }, 1000)
 
     return () => clearTimeout(timer)
-  }, [open, allOk, onDismiss])
+  }, [open, primaryOk, onDismiss])
 
   if (!open) return null
+
+  // Only show fallback services if they're connected — hide them otherwise
+  const visibleKeys = [
+    ...PRIMARY_KEYS,
+    ...FALLBACK_KEYS.filter(key => connectionStatuses[key] === 'connected')
+  ]
 
   const labelMap = {
     api: t('connectionStatus.api', 'API'),
@@ -144,13 +155,13 @@ export default function StartupConnectivityModal({
           color: '#fff',
           fontSize: 18
         }}>
-          {allOk
+          {primaryOk
             ? t('startupConnectivity.allConnected', 'All services connected!')
             : t('startupConnectivity.connecting', 'Connecting...')}
         </h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {TRACKED_KEYS.map((key) => {
+          {visibleKeys.map((key) => {
             const status = connectionStatuses[key] || 'unknown'
             return (
               <div
@@ -181,7 +192,7 @@ export default function StartupConnectivityModal({
           })}
         </div>
 
-        {/* Warning when some connections failed */}
+        {/* Info when some connections failed */}
         {hasErrors && (
           <div style={{
             marginTop: 20,
@@ -191,9 +202,14 @@ export default function StartupConnectivityModal({
             borderRadius: 8,
             color: '#f59e0b',
             fontSize: 13,
-            textAlign: 'center'
+            textAlign: 'center',
+            lineHeight: 1.5
           }}>
-            {t('startupConnectivity.someConnectionsFailed', 'Some connections could not be established. You can continue with limited functionality or go offline.')}
+            {t('startupConnectivity.serverUnavailable', 'Scoring works fully offline. Referee, bench, and livescore sync via Supabase — server is only needed as fallback.')}
+            <br />
+            <span style={{ color: '#9ca3af', fontSize: 12 }}>
+              {t('startupConnectivity.backgroundRetry', 'Connection will keep retrying in the background.')}
+            </span>
           </div>
         )}
 

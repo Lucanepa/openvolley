@@ -468,18 +468,13 @@ export default function App() {
     }
   }, [])
 
-  // Check connection statuses
+  // Check connection statuses — updates progressively as each check resolves
   const checkConnectionStatuses = useCallback(async () => {
-    const statuses = {
-      api: 'unknown',
-      server: 'unknown',
-      websocket: 'unknown',
-      scoreboard: 'unknown',
-      match: 'unknown',
-      db: 'unknown',
-      supabase: 'unknown'
+    // Helper to update individual statuses as they resolve
+    const updateStatus = (key, status, debug) => {
+      setConnectionStatuses(prev => ({ ...prev, [key]: status }))
+      setConnectionDebugInfo(prev => ({ ...prev, [key]: debug }))
     }
-    const debugInfo = {}
 
     // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
     const isStaticDeployment = !import.meta.env.DEV && (
@@ -487,252 +482,233 @@ export default function App() {
       window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
     )
 
-    // Check if we have a configured backend URL (Railway/cloud backend)
+    // Check if we have a configured backend URL (cloud backend)
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
-    // Check API/Server connection
-    if (isStaticDeployment && !hasBackendUrl) {
-      // No backend configured - pure standalone mode
-      statuses.api = 'not_available'
-      statuses.server = 'not_available'
-      debugInfo.api = { status: 'not_available', message: 'API not available in static deployment (using local database only)' }
-      debugInfo.server = { status: 'not_available', message: 'Server not available in static deployment (using local database only)' }
-    } else if (hasBackendUrl) {
-      // Backend URL configured - check Railway backend health
-      try {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL
-        const response = await fetch(`${backendUrl}/health`)
-        if (response.ok) {
-          const data = await response.json()
-          statuses.api = 'connected'
-          statuses.server = 'connected'
-          debugInfo.api = { status: 'connected', message: `Cloud backend responding (${data.mode} mode)` }
-          debugInfo.server = { status: 'connected', message: `Backend healthy, ${data.connections} connections, ${data.activeRooms} active rooms` }
-        } else {
-          statuses.api = 'disconnected'
-          statuses.server = 'disconnected'
-          debugInfo.api = { status: 'disconnected', message: `Backend returned status ${response.status}` }
-          debugInfo.server = { status: 'disconnected', message: `Backend returned status ${response.status}` }
-        }
-      } catch (err) {
-        statuses.api = 'disconnected'
-        statuses.server = 'disconnected'
-        debugInfo.api = { status: 'disconnected', message: `Backend unreachable: ${err.message}` }
-        debugInfo.server = { status: 'disconnected', message: `Backend unreachable: ${err.message}` }
-      }
-    } else {
-      try {
-        const response = await fetch('/api/match/list')
-        if (response.ok) {
-          statuses.api = 'connected'
-          statuses.server = 'connected'
-          debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
-          debugInfo.server = { status: 'connected', message: 'Server is reachable' }
-        } else {
-          statuses.api = 'disconnected'
-          statuses.server = 'disconnected'
-          debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
-          debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
-        }
-      } catch (err) {
-        statuses.api = 'disconnected'
-        statuses.server = 'disconnected'
-        const errMsg = import.meta.env.DEV
-          ? `Network error: ${err.message || 'Failed to connect to API'}`
-          : 'Server not available (running in standalone mode)'
-        debugInfo.api = { status: 'disconnected', message: errMsg }
-        debugInfo.server = { status: 'disconnected', message: errMsg }
-      }
-    }
-
-    // Check WebSocket server availability
-    // Skip WebSocket check for static deployments without backend URL
-    if (isStaticDeployment && !hasBackendUrl) {
-      statuses.websocket = 'not_available'
-      debugInfo.websocket = {
-        status: 'not_available',
-        message: 'WebSocket not available in static deployment (using local database only)'
-      }
-    } else if (typeof wsRef !== 'undefined' && wsRef.current?.readyState === WebSocket.OPEN) {
-      // Reuse main WebSocket connection status - no need to create test connection
-      statuses.websocket = 'connected'
-      debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable (active connection)' }
-    } else {
-      try {
-        // Check if we have a configured backend URL (Railway/cloud backend)
-        const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-        let wsUrl
-        if (backendUrl) {
-          // Use configured backend (Railway cloud)
-          const url = new URL(backendUrl)
-          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-          wsUrl = `${protocol}//${url.host}`
-        } else {
-          // Fallback to local WebSocket server
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-          const hostname = window.location.hostname
-          const wsPort = serverStatus?.wsPort || 8080
-          wsUrl = `${protocol}://${hostname}:${wsPort}`
-        }
-
-        const wsTest = new WebSocket(wsUrl)
-        let resolved = false
-        let errorMessage = ''
-
-        // Use longer timeout for cloud backends (Railway needs more time to wake up)
-        const connectionTimeout = backendUrl ? 10000 : 2000
-
-        await new Promise((resolve) => {
-          const timeout = setTimeout(() => {
-            if (!resolved) {
-              resolved = true
-              console.log(`⏱️  WebSocket connection timeout after ${connectionTimeout / 1000}s, readyState:`, wsTest.readyState)
-              try {
-                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                  wsTest.close()
-                }
-              } catch (e) {
-                // Ignore errors when closing
-              }
-              statuses.websocket = 'disconnected'
-              debugInfo.websocket = {
-                status: 'disconnected',
-                message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
-                details: `Attempted to connect to ${wsUrl}, readyState: ${wsTest.readyState}`
-              }
-              resolve()
-            }
-          }, connectionTimeout)
-
-          wsTest.onopen = () => {
-            if (!resolved) {
-              resolved = true
-              clearTimeout(timeout)
-              try {
-                wsTest.close()
-              } catch (e) {
-                // Ignore errors when closing
-              }
-              statuses.websocket = 'connected'
-              debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
-              resolve()
-            }
-          }
-
-          wsTest.onerror = () => {
-            if (!resolved) {
-              resolved = true
-              clearTimeout(timeout)
-              try {
-                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                  wsTest.close()
-                }
-              } catch (e) {
-                // Ignore errors when closing
-              }
-              statuses.websocket = 'disconnected'
-              debugInfo.websocket = {
-                status: 'disconnected',
-                message: `WebSocket connection error. Server may not be available.`,
-                details: `Failed to connect to ${wsUrl}`
-              }
-              console.log('❌ WebSocket test error - server may not be available')
-              resolve()
-            }
-          }
-
-          wsTest.onclose = (event) => {
-            if (!resolved) {
-              resolved = true
-              clearTimeout(timeout)
-              statuses.websocket = 'disconnected'
-              if (!debugInfo.websocket) {
-                debugInfo.websocket = {
-                  status: 'disconnected',
-                  message: `Connection closed unexpectedly (code: ${event.code}).`,
-                  details: `WebSocket server on port ${wsPort} may not be running`
-                }
-              }
-              resolve()
-            }
-          }
-        })
-      } catch (err) {
-        statuses.websocket = 'disconnected'
-        debugInfo.websocket = {
-          status: 'disconnected',
-          message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
-          details: 'Check if WebSocket server is running'
-        }
-      }
-    } // end of else block for static deployment check
-
-    // Check Scoreboard connection (same as server for now)
-    statuses.scoreboard = statuses.server
-    debugInfo.scoreboard = debugInfo.server
-
-    // Check Match status (both official and test matches)
+    // --- Check Match status (instant) ---
     if (currentMatch) {
-      statuses.match = currentMatch.status === 'live' ? 'live' : currentMatch.status === 'scheduled' ? 'scheduled' : currentMatch.status === 'final' ? 'final' : 'unknown'
-      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match} (${currentMatch.test ? 'Test' : 'Official'} match)` }
+      const matchStatus = currentMatch.status === 'live' ? 'live' : currentMatch.status === 'scheduled' ? 'scheduled' : currentMatch.status === 'final' ? 'final' : 'unknown'
+      updateStatus('match', matchStatus, { status: matchStatus, message: `Match status: ${matchStatus} (${currentMatch.test ? 'Test' : 'Official'} match)` })
     } else {
-      statuses.match = 'no_match'
-      debugInfo.match = { status: 'no_match', message: 'No match found. Create a new match to start.' }
+      updateStatus('match', 'no_match', { status: 'no_match', message: 'No match found. Create a new match to start.' })
     }
 
-    // Check DB (IndexedDB)
-    try {
-      await db.matches.count()
-      statuses.db = 'connected'
-      debugInfo.db = { status: 'connected', message: 'IndexedDB is accessible' }
-    } catch (err) {
-      statuses.db = 'disconnected'
-      debugInfo.db = { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }
-    }
-
-    // Check Supabase status (based on syncStatus and canUseSupabase)
-    // First check if Supabase is configured at all
+    // --- Check Supabase status (instant — based on existing syncStatus state) ---
     if (!canUseSupabase) {
-      statuses.supabase = 'not_configured'
       const envUrl = import.meta.env.VITE_SUPABASE_URL
       const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      debugInfo.supabase = {
+      updateStatus('supabase', 'not_configured', {
         status: 'not_configured',
         message: 'Supabase is not configured',
         details: `Environment variables missing: ${!envUrl ? 'VITE_SUPABASE_URL' : ''}${!envUrl && !envKey ? ' and ' : ''}${!envKey ? 'VITE_SUPABASE_ANON_KEY' : ''}. Set these in your .env file to enable Supabase sync.`
-      }
+      })
     } else if (syncStatus === 'synced' || syncStatus === 'syncing') {
-      statuses.supabase = 'connected'
-      debugInfo.supabase = { status: 'connected', message: 'Supabase is connected and syncing' }
+      updateStatus('supabase', 'connected', { status: 'connected', message: 'Supabase is connected and syncing' })
     } else if (syncStatus === 'online_no_supabase') {
-      // This shouldn't happen if canUseSupabase is true, but handle it anyway
-      statuses.supabase = 'not_configured'
-      debugInfo.supabase = {
+      updateStatus('supabase', 'not_configured', {
         status: 'not_configured',
         message: 'Supabase client not initialized',
         details: 'Supabase environment variables may be set but client failed to initialize. Check your .env file.'
-      }
+      })
     } else if (syncStatus === 'connecting') {
-      statuses.supabase = 'connecting'
-      debugInfo.supabase = { status: 'connecting', message: 'Connecting to Supabase...' }
+      updateStatus('supabase', 'connecting', { status: 'connecting', message: 'Connecting to Supabase...' })
     } else if (syncStatus === 'error') {
-      statuses.supabase = 'error'
-      debugInfo.supabase = {
+      updateStatus('supabase', 'error', {
         status: 'error',
         message: 'Supabase connection error',
         details: 'Check your Supabase credentials and network connection'
-      }
+      })
     } else if (syncStatus === 'offline') {
-      statuses.supabase = 'offline'
-      debugInfo.supabase = { status: 'offline', message: 'Device is offline or Supabase is unreachable' }
+      updateStatus('supabase', 'offline', { status: 'offline', message: 'Device is offline or Supabase is unreachable' })
     } else {
-      statuses.supabase = 'unknown'
-      debugInfo.supabase = { status: 'unknown', message: 'Supabase status unknown' }
+      updateStatus('supabase', 'unknown', { status: 'unknown', message: 'Supabase status unknown' })
     }
 
-    setConnectionStatuses(statuses)
-    setConnectionDebugInfo(debugInfo)
+    // --- Run async checks in parallel ---
+    const asyncChecks = []
+
+    // DB check (IndexedDB — fast)
+    asyncChecks.push(
+      db.matches.count()
+        .then(() => updateStatus('db', 'connected', { status: 'connected', message: 'IndexedDB is accessible' }))
+        .catch(err => updateStatus('db', 'disconnected', { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }))
+    )
+
+    // API/Server + Scoreboard check
+    const checkApiServer = async () => {
+      if (isStaticDeployment && !hasBackendUrl) {
+        updateStatus('api', 'not_available', { status: 'not_available', message: 'API not available in static deployment (using local database only)' })
+        updateStatus('server', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
+        updateStatus('scoreboard', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
+      } else if (hasBackendUrl) {
+        try {
+          const backendUrl = import.meta.env.VITE_BACKEND_URL
+          const controller = new AbortController()
+          const fetchTimeout = setTimeout(() => controller.abort(), 5000)
+          const response = await fetch(`${backendUrl}/health`, { signal: controller.signal })
+          clearTimeout(fetchTimeout)
+          if (response.ok) {
+            const data = await response.json()
+            const apiDebug = { status: 'connected', message: `Cloud backend responding (${data.mode} mode)` }
+            const serverDebug = { status: 'connected', message: `Backend healthy, ${data.connections} connections, ${data.activeRooms} active rooms` }
+            updateStatus('api', 'connected', apiDebug)
+            updateStatus('server', 'connected', serverDebug)
+            updateStatus('scoreboard', 'connected', serverDebug)
+          } else {
+            const debug = { status: 'disconnected', message: `Backend returned status ${response.status}` }
+            updateStatus('api', 'disconnected', debug)
+            updateStatus('server', 'disconnected', debug)
+            updateStatus('scoreboard', 'disconnected', debug)
+          }
+        } catch (err) {
+          const message = err.name === 'AbortError' ? 'Backend request timed out (5s)' : `Backend unreachable: ${err.message}`
+          const debug = { status: 'disconnected', message }
+          updateStatus('api', 'disconnected', debug)
+          updateStatus('server', 'disconnected', debug)
+          updateStatus('scoreboard', 'disconnected', debug)
+        }
+      } else {
+        try {
+          const controller = new AbortController()
+          const fetchTimeout = setTimeout(() => controller.abort(), 5000)
+          const response = await fetch('/api/match/list', { signal: controller.signal })
+          clearTimeout(fetchTimeout)
+          if (response.ok) {
+            updateStatus('api', 'connected', { status: 'connected', message: 'API endpoint responding' })
+            updateStatus('server', 'connected', { status: 'connected', message: 'Server is reachable' })
+            updateStatus('scoreboard', 'connected', { status: 'connected', message: 'Server is reachable' })
+          } else {
+            const debug = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
+            updateStatus('api', 'disconnected', debug)
+            updateStatus('server', 'disconnected', debug)
+            updateStatus('scoreboard', 'disconnected', debug)
+          }
+        } catch (err) {
+          const errMsg = err.name === 'AbortError'
+            ? 'Server request timed out (5s)'
+            : import.meta.env.DEV
+              ? `Network error: ${err.message || 'Failed to connect to API'}`
+              : 'Server not available (running in standalone mode)'
+          const debug = { status: 'disconnected', message: errMsg }
+          updateStatus('api', 'disconnected', debug)
+          updateStatus('server', 'disconnected', debug)
+          updateStatus('scoreboard', 'disconnected', debug)
+        }
+      }
+    }
+    asyncChecks.push(checkApiServer())
+
+    // WebSocket check
+    const checkWebSocket = async () => {
+      if (isStaticDeployment && !hasBackendUrl) {
+        updateStatus('websocket', 'not_available', {
+          status: 'not_available',
+          message: 'WebSocket not available in static deployment (using local database only)'
+        })
+      } else if (typeof wsRef !== 'undefined' && wsRef.current?.readyState === WebSocket.OPEN) {
+        updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable (active connection)' })
+      } else {
+        try {
+          const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+          let wsUrl
+          if (backendUrl) {
+            const url = new URL(backendUrl)
+            const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+            wsUrl = `${protocol}//${url.host}`
+          } else {
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+            const hostname = window.location.hostname
+            const wsPort = serverStatus?.wsPort || 8080
+            wsUrl = `${protocol}://${hostname}:${wsPort}`
+          }
+
+          const wsTest = new WebSocket(wsUrl)
+          let resolved = false
+
+          const connectionTimeout = backendUrl ? 5000 : 2000
+
+          await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                resolved = true
+                console.log(`⏱️  WebSocket connection timeout after ${connectionTimeout / 1000}s, readyState:`, wsTest.readyState)
+                try {
+                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                    wsTest.close()
+                  }
+                } catch (e) {
+                  // Ignore errors when closing
+                }
+                updateStatus('websocket', 'disconnected', {
+                  status: 'disconnected',
+                  message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
+                  details: `Attempted to connect to ${wsUrl}, readyState: ${wsTest.readyState}`
+                })
+                resolve()
+              }
+            }, connectionTimeout)
+
+            wsTest.onopen = () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                try {
+                  wsTest.close()
+                } catch (e) {
+                  // Ignore errors when closing
+                }
+                updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable' })
+                resolve()
+              }
+            }
+
+            wsTest.onerror = () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                try {
+                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                    wsTest.close()
+                  }
+                } catch (e) {
+                  // Ignore errors when closing
+                }
+                updateStatus('websocket', 'disconnected', {
+                  status: 'disconnected',
+                  message: `WebSocket connection error. Server may not be available.`,
+                  details: `Failed to connect to ${wsUrl}`
+                })
+                console.log('❌ WebSocket test error - server may not be available')
+                resolve()
+              }
+            }
+
+            wsTest.onclose = (event) => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                updateStatus('websocket', 'disconnected', {
+                  status: 'disconnected',
+                  message: `Connection closed unexpectedly (code: ${event.code}).`,
+                  details: `WebSocket server may not be running`
+                })
+                resolve()
+              }
+            }
+          })
+        } catch (err) {
+          updateStatus('websocket', 'disconnected', {
+            status: 'disconnected',
+            message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
+            details: 'Check if WebSocket server is running'
+          })
+        }
+      }
+    }
+    asyncChecks.push(checkWebSocket())
+
+    await Promise.all(asyncChecks)
   }, [currentMatch, syncStatus, serverStatus])
 
   // Periodically check connection statuses
