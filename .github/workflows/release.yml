@@ -10,10 +10,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - main
-    paths:
-      - 'escoresheet/frontend/package.json'
 
 jobs:
   # Check if major version changed (only for push to main, not tags)

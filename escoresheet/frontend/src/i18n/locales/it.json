@@ -745,7 +745,7 @@
     "sign": "Firma",
     "searchEvents": "Cerca eventi...",
     "recordRemarks": "Registra le note della partita…",
-    "lfpWarning": "Attenzione: Solo {{count}} giocatore/i LFP nella formazione (minimo: {{minimum}}). Continuare comunque?",
+    "lfpWarning": "Attenzione: Solo {{count}} giocatore/i GFL nella formazione (minimo: {{minimum}}). Continuare comunque?",
     "exceptionalSubRequired": "Sostituzione eccezionale richiesta",
     "substitutionRequired": "Sostituzione richiesta",
     "duplicateJersey": "Numero di maglia duplicato!",
@@ -838,7 +838,7 @@
     "menuTitle": "Menu",
     "alarmBellNotify": "Campana d'allarme: Avvisa l'arbitro",
     "clickToEditViewport": "Clicca per modificare e ridimensionare la finestra",
-    "scale": "Scala",
+    "scale": "Zoom",
     "default": "Predefinito"
   },
   "home": {
@@ -1046,9 +1046,9 @@
     "backupSetScore": "Impostare {{setIndex}}: {{homePoints}} - {{awayPoints}}",
     "unknownTime": "Ora sconosciuta",
     "autoWithMode": "Automatico ({{mode}})",
-    "enableLfpTracking": "Abilita tracciamento LFP",
-    "lfpTrackingInfo": "Monitora i giocatori formati localmente (LFP/LAS/JFL/GFL) in campo. Quando attivato, mostra lo stato LFP sui cerchi dei giocatori e avvisa se il numero minimo non è raggiunto.",
-    "minimumLfpsOnCourt": "Minimo LFP in campo:",
+    "enableLfpTracking": "Abilita tracciamento GFL",
+    "lfpTrackingInfo": "Monitora i Giocatori Formati Localmente (GFL) in campo. Quando attivato, mostra lo stato GFL sui cerchi dei giocatori e avvisa se il numero minimo non è raggiunto.",
+    "minimumLfpsOnCourt": "Minimo GFL in campo:",
     "clearCacheConfirm": "Svuotare la cache e ricaricare?",
     "alerts": {
       "noMatchId": "Non è disponibile alcun ID di corrispondenza",
@@ -1155,7 +1155,7 @@
     "types": {
       "support": "Supporto",
       "feedback": "Feedback",
-      "request": "Richiesta funzionalita"
+      "request": "Richiesta funzionalità"
     },
     "areaLabel": "Quale area riguarda?",
     "selectArea": "Seleziona area...",
@@ -1179,11 +1179,11 @@
       "bug": "Segnalazione bug",
       "help": "Aiuto / Domanda"
     },
-    "severityLabel": "Quanto e grave questo problema?",
-    "selectSeverity": "Seleziona gravita...",
+    "severityLabel": "Quanto è grave questo problema?",
+    "selectSeverity": "Seleziona gravità...",
     "severities": {
       "severity1": "1 - Lo strumento non funziona",
-      "severity2": "2 - Funzionalita molto limitata",
+      "severity2": "2 - Funzionalità molto limitata",
       "severity3": "3 - Inconveniente",
       "severity4": "4 - Nice-to-have"
     },
@@ -1196,9 +1196,9 @@
     "send": "Invia",
     "sending": "Invio in corso...",
     "sent": "Messaggio inviato!",
-    "thankYouSupport": "Grazie per la segnalazione. La esaminer il prima possibile e ti contattero se avro domande.",
+    "thankYouSupport": "Grazie per la segnalazione. La esaminerò il prima possibile e ti contatterò se avrò domande.",
     "thankYouFeedback": "Grazie per il tuo feedback! Il tuo contributo aiuta a migliorare questo strumento.",
-    "thankYouRequest": "Grazie per la tua richiesta di funzionalita! La considerer per i futuri aggiornamenti.",
+    "thankYouRequest": "Grazie per la tua richiesta di funzionalità! La considererò per i futuri aggiornamenti.",
     "fillRequired": "Compila tutti i campi obbligatori.",
     "sendError": "Invio del messaggio fallito. Riprova o invia un'email direttamente."
   },
@@ -1220,7 +1220,7 @@
     "parsingPdf": "Analisi PDF e importazione dati...",
     "players": "Giocatori",
     "addPlayer": "+ Aggiungi giocatore",
-    "benchOfficials": "Ufficiali di panchina",
+    "benchOfficials": "Ufficiali ammessi in panchina",
     "addOfficial": "+ Aggiungi ufficiale",
     "number": "Numero",
     "firstName": "Nome",
