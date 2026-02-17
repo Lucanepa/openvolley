@@ -1,3 +1,32 @@
+@font-face {
+  font-family: 'Aptos Display';
+  src: url('/fonts/AptosDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aptos Display';
+  src: url('/fonts/AptosDisplay-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aptos Display';
+  src: url('/fonts/AptosDisplay-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aptos Display';
+  src: url('/fonts/AptosDisplay-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   --bg: #0b1220;
   --panel: #111827;
@@ -23,7 +52,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Aptos Display', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
   line-height: 1.3;
   -webkit-font-smoothing: antialiased;
@@ -316,7 +345,7 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: "Aptos", system-ui, sans-serif;
+  font-family: 'Aptos Display', system-ui, sans-serif;
   font-weight: 800;
   color: #ffffff;
   font-size: calc(18px * var(--scale-factor));
@@ -453,6 +482,123 @@ button:disabled {
 .setup>* {
   min-width: auto;
 }
+
+/* === ROSTER / BENCH GRID (subgrid) === */
+
+/* Player roster grid: 8 columns
+   Badge  |  #  |  Last Name  |  First Name  |  DOB  |  Libero  |  Captain  |  Action */
+.roster-grid {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto auto auto auto;
+  row-gap: calc(8px * var(--scale-factor));
+  width: max-content;
+  margin: 0 auto;
+}
+
+/* With LFP column enabled: 9 columns */
+.roster-grid.has-lfp {
+  grid-template-columns: auto auto auto auto auto auto auto auto auto;
+}
+
+/* Bench officials grid: 5 columns
+   Role  |  Last Name  |  First Name  |  DOB  |  Action */
+.bench-grid {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto;
+  row-gap: calc(8px * var(--scale-factor));
+  width: max-content;
+  margin: 0 auto;
+}
+
+/* Subgrid row — spans all parent columns, inherits column tracks */
+.roster-grid-row,
+.bench-grid-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  gap: calc(8px * var(--scale-factor));
+  padding: calc(6px * var(--scale-factor)) calc(8px * var(--scale-factor));
+  border: 2px solid transparent;
+  border-radius: calc(6px * var(--scale-factor));
+  box-sizing: border-box;
+}
+
+/* Inputs/selects in grid: size to content, not 100% */
+.roster-grid-row input,
+.roster-grid-row select,
+.bench-grid-row input,
+.bench-grid-row select {
+  width: auto;
+  min-width: calc(80px * var(--scale-factor));
+  box-sizing: border-box;
+}
+
+/* Number input constraints */
+.roster-grid-row input[type="number"] {
+  min-width: calc(45px * var(--scale-factor));
+  max-width: calc(60px * var(--scale-factor));
+  text-align: center;
+  font-weight: 600;
+  font-size: calc(16px * var(--scale-factor));
+}
+
+/* Captain/action cells centered */
+.roster-grid-row .cell-captain,
+.roster-grid-row .cell-action,
+.bench-grid-row .cell-action {
+  display: flex;
+  justify-content: center;
+}
+
+/* Role badge (C, L1, L2) to the left of jersey number */
+.roster-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  min-width: calc(24px * var(--scale-factor));
+  font-size: calc(11px * var(--scale-factor));
+  font-weight: 700;
+  border-radius: calc(4px * var(--scale-factor));
+  padding: calc(2px * var(--scale-factor)) calc(4px * var(--scale-factor));
+  line-height: 1;
+  user-select: none;
+}
+
+.roster-badge.badge-captain {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid #22c55e;
+}
+
+.roster-badge.badge-libero {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Section divider heading (e.g. "Bench Officials — Home") */
+.section-divider {
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  margin: calc(16px * var(--scale-factor)) 0 calc(8px * var(--scale-factor));
+  padding: calc(6px * var(--scale-factor)) calc(12px * var(--scale-factor));
+  border-radius: calc(6px * var(--scale-factor));
+  font-size: calc(14px * var(--scale-factor));
+  font-weight: 600;
+}
+
+/* Header row styling */
+.roster-grid-row.grid-header,
+.bench-grid-row.grid-header {
+  font-weight: 600;
+  font-size: calc(12px * var(--scale-factor));
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* === END ROSTER / BENCH GRID === */
 
 /* Setup pages now fill available space - no max-width restriction */
 

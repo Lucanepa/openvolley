@@ -174,7 +174,7 @@ function isEqual(a, b) {
 function hasMatchInfoChanged(original, current) {
   if (!original) return true // No original, consider it changed
   const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-    'type2', 'type3', 'type3Other', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
+    'type2', 'type3', 'type3Other', 'bestOf', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
   }
@@ -348,7 +348,7 @@ function formatDobForSync(dob) {
   return null // Unknown format, don't sync
 }
 
-export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile } = useAuth()
@@ -376,6 +376,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [type2, setType2] = useState('men') // men | women
   const [type3, setType3] = useState('senior') // senior | U23 | U19 | other
   const [type3Other, setType3Other] = useState('') // For "other" level
+  const [bestOf, setBestOf] = useState(5) // 3 or 5
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState('#ef4444')
@@ -437,6 +438,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [homeDob, setHomeDob] = useState('')
   const [homeLibero, setHomeLibero] = useState('') // '', 'libero1', 'libero2'
   const [homeCaptain, setHomeCaptain] = useState(false)
+  const [homeLfp, setHomeLfp] = useState(false)
 
   const [awayNum, setAwayNum] = useState('')
   const [awayFirst, setAwayFirst] = useState('')
@@ -444,6 +446,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [awayDob, setAwayDob] = useState('')
   const [awayLibero, setAwayLibero] = useState('')
   const [awayCaptain, setAwayCaptain] = useState(false)
+  const [awayLfp, setAwayLfp] = useState(false)
 
   // Officials
   const [ref1First, setRef1First] = useState('')
@@ -709,7 +712,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (currentView === 'info') {
       originalMatchInfoRef.current = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-        type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+        type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
       }
     } else if (currentView === 'officials') {
       originalOfficialsRef.current = {
@@ -913,7 +916,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 match_type_1_other: match.match_type_1_other || '',
                 match_type_2: match.match_type_2 || '',
                 match_type_3: match.match_type_3 || '',
-                match_type_3_other: match.match_type_3_other || ''
+                match_type_3_other: match.match_type_3_other || '',
+                best_of: match.bestOf || 5
               },
               home_team: {
                 name: homeTeam?.name || home || t('common.home'),
@@ -967,7 +971,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!o) return
     setDate(o.date); setTime(o.time); setHall(o.hall); setCity(o.city)
     setType1(o.type1); setType1Other(o.type1Other); setChampionshipType(o.championshipType); setChampionshipTypeOther(o.championshipTypeOther)
-    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setGameN(o.gameN); setLeague(o.league)
+    setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? 5); setGameN(o.gameN); setLeague(o.league)
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
     setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
   }
@@ -1084,6 +1088,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (match.match_type_2) setType2(match.match_type_2)
         if (match.match_type_3) setType3(match.match_type_3)
         if (match.match_type_3_other) setType3Other(match.match_type_3_other)
+        if (match.bestOf) setBestOf(match.bestOf)
         // The placeholder will show a suggestion, but won't auto-fill a value
         if (match.homeShortName && match.homeShortName.trim()) {
           setHomeShortName(match.homeShortName)
@@ -1510,6 +1515,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           if (draft.type2 !== undefined) setType2(draft.type2)
           if (draft.type3 !== undefined) setType3(draft.type3)
           if (draft.type3Other !== undefined) setType3Other(draft.type3Other)
+          if (draft.bestOf !== undefined) setBestOf(draft.bestOf)
           if (draft.homeShortName !== undefined) setHomeShortName(draft.homeShortName)
           if (draft.awayShortName !== undefined) setAwayShortName(draft.awayShortName)
           if (draft.gameN !== undefined) setGameN(draft.gameN)
@@ -1571,6 +1577,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         type2,
         type3,
         type3Other,
+        bestOf,
         gameN,
         league,
         homeColor,
@@ -1912,7 +1919,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Check if any changes were made (skip sync if no changes)
     const currentMatchInfo = {
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-      type2, type3, type3Other, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
+      type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
     }
     const hasChanges = isCreating || hasMatchInfoChanged(originalMatchInfoRef.current, currentMatchInfo)
 
@@ -1999,6 +2006,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         match_type_2: type2 || null,
         match_type_3: type3 || null,
         match_type_3_other: type3Other || null,
+        bestOf,
         sport_type: 'indoor',
         game_n: gameN ? parseInt(gameN, 10) : null,
         seed_key: matchSeedKey, // Ensure seed_key is set
@@ -2029,7 +2037,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           match_type_1_other: type1Other || '',
           match_type_2: type2 || '',
           match_type_3: type3 || '',
-          match_type_3_other: type3Other || ''
+          match_type_3_other: type3Other || '',
+          best_of: bestOf
         },
         home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
         away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
@@ -2828,6 +2837,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setChampionshipType(matchData.championshipType)
     setType2(matchData.type2)
     setType3(matchData.type3)
+    if (matchData.bestOf) setBestOf(matchData.bestOf)
     setGameN(matchData.gameN)
     setLeague(matchData.league)
     setHome(matchData.home)
@@ -3235,7 +3245,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {citiesZurich.map(c => <option key={c} value={c} />)}
               </datalist>
             </div>
-            <div className="field"><label>{t('matchSetup.hall')}</label><input className="w-200 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.hall')}</label><input className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
           </div>
 
           <div className="card">
@@ -3305,6 +3315,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <h3 style={{ marginTop: 0 }}>{t('matchSetup.gameDetails')}</h3>
             <div className="field"><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
             <div className="field"><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
+            <div className="field">
+              <label>{t('matchSetup.matchFormat')}</label>
+              <select style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
+                <option value={5}>{t('matchSetup.bestOf5')}</option>
+                <option value={3}>{t('matchSetup.bestOf3')}</option>
+              </select>
+            </div>
           </div>
 
           {/* Teams Card - Full width row at bottom */}
@@ -3591,6 +3608,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button
+            style={{
+              padding: `${s(10)}px ${s(20)}px`,
+              fontSize: s(14),
+              opacity: !canConfirmMatchInfo ? 0.5 : 1,
+              cursor: !canConfirmMatchInfo ? 'not-allowed' : 'pointer'
+            }}
             onClick={(e) => {
               if (!canConfirmMatchInfo) {
                 e.preventDefault()
@@ -4296,82 +4319,110 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)',
             marginBottom: '8px',
+            width: 'max-content',
+            margin: '0 auto 8px',
           }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{t('matchSetup.addNewPlayer')}</div>
-            <div data-help-id="setup-add-player" className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-
-              <input className="w-num" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <select data-help-id="setup-libero-toggle" className="w-90" value={homeLibero} onChange={e => {
-                let newValue = e.target.value
-                // If L2 is selected but no L1 exists, automatically change L2 to L1
-                if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
-                  newValue = 'libero1'
-                }
-                setHomeLibero(newValue)
-              }}>
-                <option value=""></option>
-                {!homeRoster.some(p => p.libero === 'libero1') && (
-                  <option value="libero1">{t('matchSetup.libero1')}</option>
+            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>{t('matchSetup.addNewPlayer')}</div>
+            <div data-help-id="setup-add-player" className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
+              <div className="roster-grid-row" style={{ border: 'none' }}>
+                <div></div>
+                <input placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <select data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
+                  let newValue = e.target.value
+                  if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
+                    newValue = 'libero1'
+                  }
+                  setHomeLibero(newValue)
+                }}>
+                  <option value=""></option>
+                  {!homeRoster.some(p => p.libero === 'libero1') && (
+                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                  )}
+                  {!homeRoster.some(p => p.libero === 'libero2') && (
+                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                  )}
+                </select>
+                <div data-help-id="setup-captain-toggle" className="cell-captain">
+                  <div
+                    onClick={() => setHomeCaptain(!homeCaptain)}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: homeCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      background: homeCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: homeCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      userSelect: 'none'
+                    }}
+                  >C</div>
+                </div>
+                {lfpTrackingEnabled && (
+                  <div className="cell-captain">
+                    <div
+                      onClick={() => setHomeLfp(!homeLfp)}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        border: homeLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        background: homeLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: homeLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        userSelect: 'none'
+                      }}
+                    >{homeLfp ? 'LFP' : '\u2014'}</div>
+                  </div>
                 )}
-                {!homeRoster.some(p => p.libero === 'libero2') && (
-                  <option value="libero2">{t('matchSetup.libero2')}</option>
-                )}
-              </select>
-              <div data-help-id="setup-captain-toggle" className="w-captain">
-                <div
-                  onClick={() => setHomeCaptain(!homeCaptain)}
-                  style={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '4px',
-                    border: homeCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
-                    background: homeCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    color: homeCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
-                    userSelect: 'none',
-                    flexShrink: 0
-                  }}
-                >C</div>
-              </div>
-              <div className="w-action">
-                <button type="button" className="secondary" onClick={() => {
-                  if (!homeLast || !homeFirst) return
-                  const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain, isLfp: false }
-                  setHomeRoster(list => {
-                    const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                    const next = [...cleared, newPlayer].sort((a, b) => {
-                      const an = a.number ?? 999
-                      const bn = b.number ?? 999
-                      return an - bn
+                <div className="cell-action">
+                  <button type="button" className="secondary" onClick={() => {
+                    if (!homeLast || !homeFirst) return
+                    const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain, isLfp: homeLfp }
+                    setHomeRoster(list => {
+                      const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                      const next = [...cleared, newPlayer].sort((a, b) => {
+                        const an = a.number ?? 999
+                        const bn = b.number ?? 999
+                        return an - bn
+                      })
+                      return next
                     })
-                    return next
-                  })
-                  setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
-                }}>{t('common.add')}</button>
+                    setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false); setHomeLfp(false)
+                  }}>{t('common.add')}</button>
+                </div>
               </div>
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
           {/* Roster Header Row */}
-          <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
-            <div className="w-num" style={{ textAlign: 'center' }}>#</div>
-            <div className="w-name">{t('matchSetup.lastName')}</div>
-            <div className="w-name">{t('matchSetup.firstName')}</div>
-            <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
-            <div className="w-90" style={{ textAlign: 'center' }}>{t('matchSetup.role')}</div>
-            <div className="w-captain">C</div>
-            <div className="w-action"></div>
+          <div className="roster-grid-row grid-header">
+            <div></div>
+            <div style={{ textAlign: 'center' }}>#</div>
+            <div>{t('matchSetup.lastName')}</div>
+            <div>{t('matchSetup.firstName')}</div>
+            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
+            <div className="cell-captain">C</div>
+            {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
+            <div></div>
           </div>
-          {homeRoster.map((p, i) => {
+          {(() => {
+            const homeLiberoCount = homeRoster.filter(p => p.libero).length
+            return homeRoster.map((p, i) => {
             // Check if this player's number is a duplicate
             const isDuplicate = p.number != null && p.number !== '' &&
               homeRoster.some((other, idx) => idx !== i && other.number === p.number)
@@ -4379,42 +4430,31 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             // Determine border style based on captain/libero status
             const isCaptain = p.isCaptain || false
             const isLibero = !!p.libero
-            // Base style for all rows (transparent border for alignment)
-            let borderStyle = {
-              borderRadius: '6px',
-              padding: '6px 8px',
-              border: '2px solid transparent'
-            }
+            let borderStyle = {}
             if (isCaptain && isLibero) {
-              // Both: alternating green/white striped border
               borderStyle = {
-                padding: '6px 8px',
                 background: 'rgba(34, 197, 94, 0.05)',
                 border: '2px solid',
                 borderImage: 'repeating-linear-gradient(90deg, #22c55e 0, #22c55e 6px, #ffffff 6px, #ffffff 12px) 1'
               }
             } else if (isCaptain) {
-              // Captain only: green border
               borderStyle = {
                 border: '2px solid #22c55e',
-                borderRadius: '6px',
-                padding: '6px 8px',
                 background: 'rgba(34, 197, 94, 0.1)'
               }
             } else if (isLibero) {
-              // Libero only: white border
               borderStyle = {
                 border: '2px solid rgba(255, 255, 255, 0.8)',
-                borderRadius: '6px',
-                padding: '6px 8px',
                 background: 'rgba(255, 255, 255, 0.05)'
               }
             }
 
             return (
-              <div key={`h-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
+              <div key={`h-${i}`} className="roster-grid-row" style={borderStyle}>
+                <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
+                  {isCaptain ? 'C' : p.libero === 'libero1' ? (homeLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (homeLiberoCount > 1 ? 'L2' : 'L') : ''}
+                </div>
                 <input
-                  className="w-num"
                   placeholder="#"
                   type="number"
                   inputMode="numeric"
@@ -4447,7 +4487,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
-                  className="w-name capitalize"
+                  className="capitalize"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4458,7 +4498,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
-                  className="w-name capitalize"
+                  className="capitalize"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4469,7 +4509,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
-                  className="w-dob"
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
                   type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -4481,7 +4520,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <select
-                  className="w-90"
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...homeRoster]
@@ -4524,7 +4562,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <option value="libero2">{t('matchSetup.libero2')}</option>
                   )}
                 </select>
-                <div className="w-captain">
+                <div className="cell-captain">
                   <div
                     onClick={() => {
                       const updated = homeRoster.map((player, idx) => ({
@@ -4546,12 +4584,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       fontSize: '12px',
                       fontWeight: 700,
                       color: (p.isCaptain || false) ? '#22c55e' : 'rgba(255,255,255,0.3)',
-                      userSelect: 'none',
-                      flexShrink: 0
+                      userSelect: 'none'
                     }}
                   >C</div>
                 </div>
-                <div className="w-action">
+                {lfpTrackingEnabled && (
+                  <div className="cell-captain">
+                    <div
+                      onClick={() => {
+                        const updated = [...homeRoster]
+                        updated[i] = { ...updated[i], isLfp: !p.isLfp }
+                        setHomeRoster(updated)
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        border: p.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        background: p.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: p.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        userSelect: 'none'
+                      }}
+                    >{p.isLfp ? 'LFP' : '\u2014'}</div>
+                  </div>
+                )}
+                <div className="cell-action">
                   <button
                     type="button"
                     className="secondary"
@@ -4562,77 +4625,74 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </div>
               </div>
             )
-          })}
+            })
+          })()}
         </div>
-        <h4 data-help-id="setup-bench-officials">{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
-        {/* Bench Header Row */}
-        <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
-          <div className="w-220">{t('matchSetup.role')}</div>
-          <div className="w-name">{t('matchSetup.lastName')}</div>
-          <div className="w-name">{t('matchSetup.firstName')}</div>
-          <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
-          <div className="w-action"></div>
-        </div>
-        {sortBenchByHierarchy(benchHome).map((m, i) => {
-          const originalIdx = benchHome.findIndex(b => b === m)
-          return (
-            <div key={`bh-${originalIdx}`} className="row bench-row" style={{ alignItems: 'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
-              <select className="w-220" value={m.role || 'Coach'} onChange={e => {
-                const newRole = e.target.value || 'Coach'
-                // Check if this role is already taken by another official
-                const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
-                if (isRoleTaken) {
-                  // Don't allow duplicate roles
-                  return
-                }
-                setBenchHome(arr => {
-                  const a = [...arr];
-                  a[originalIdx] = { ...a[originalIdx], role: newRole };
-                  return a
-                })
-              }}>
-                {BENCH_ROLES.map(role => {
-                  const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === role.value)
-                  return (
-                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
-                      {t(role.labelKey, role.label)} - {t(role.fullLabelKey)}{isRoleTaken ? ` (${t('matchSetup.alreadyAssigned', 'already assigned')})` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
-              <div className="w-action">
-                <button type="button" className="secondary" onClick={() => {
-                  const updated = benchHome.filter((_, idx) => idx !== originalIdx)
-                  setBenchHome(updated)
-                  // Trigger save immediately
-                  setTimeout(() => saveDraft(true), 100)
-                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  {t('common.delete')}
-                </button>
+        <h4 className="section-divider" data-help-id="setup-bench-officials">{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
+        <div className="bench-grid">
+          {/* Bench Header Row */}
+          <div className="bench-grid-row grid-header">
+            <div>{t('matchSetup.role')}</div>
+            <div>{t('matchSetup.lastName')}</div>
+            <div>{t('matchSetup.firstName')}</div>
+            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div></div>
+          </div>
+          {sortBenchByHierarchy(benchHome).map((m, i) => {
+            const originalIdx = benchHome.findIndex(b => b === m)
+            return (
+              <div key={`bh-${originalIdx}`} className="bench-grid-row">
+                <select value={m.role || 'Coach'} onChange={e => {
+                  const newRole = e.target.value || 'Coach'
+                  const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
+                  if (isRoleTaken) return
+                  setBenchHome(arr => {
+                    const a = [...arr];
+                    a[originalIdx] = { ...a[originalIdx], role: newRole };
+                    return a
+                  })
+                }}>
+                  {BENCH_ROLES.map(role => {
+                    const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === role.value)
+                    return (
+                      <option key={role.value} value={role.value} disabled={isRoleTaken}>
+                        {t(role.labelKey, role.label)} - {t(role.fullLabelKey)}{isRoleTaken ? ` (${t('matchSetup.alreadyAssigned', 'already assigned')})` : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <div className="cell-action">
+                  <button type="button" className="secondary" onClick={() => {
+                    const updated = benchHome.filter((_, idx) => idx !== originalIdx)
+                    setBenchHome(updated)
+                    setTimeout(() => saveDraft(true), 100)
+                  }}>
+                    {t('common.delete')}
+                  </button>
+                </div>
               </div>
-            </div>
-          )
-        })}
-        <div className="row" style={{ marginTop: 8 }}>
-          <button
-            type="button"
-            className="secondary"
-            disabled={benchHome.length >= 5}
-            onClick={() => {
-              // Find the first available role
-              const takenRoles = new Set(benchHome.map(b => b.role))
-              const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
-              if (availableRole) {
-                setBenchHome([...benchHome, initBench(availableRole.value)])
-              }
-            }}
-            style={{ padding: '4px 8px', fontSize: '12px' }}
-          >
-            {t('matchSetup.addBenchOfficial')}
-          </button>
+            )
+          })}
+          <div className="bench-grid-row" style={{ border: 'none', padding: 0 }}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={benchHome.length >= 5}
+              onClick={() => {
+                const takenRoles = new Set(benchHome.map(b => b.role))
+                const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+                if (availableRole) {
+                  setBenchHome([...benchHome, initBench(availableRole.value)])
+                }
+              }}
+              style={{ padding: '4px 8px', fontSize: '12px' }}
+            >
+              {t('matchSetup.addBenchOfficial')}
+            </button>
+          </div>
         </div>
 
         {/* Signatures Section */}
@@ -4647,7 +4707,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {t('rosterSetup.signatures', 'Signatures')}
           </h4>
           <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
-            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             {/* Coach Signature */}
@@ -5617,136 +5677,149 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             borderRadius: '8px',
             padding: '12px',
             background: 'rgba(15, 23, 42, 0.2)',
-            marginBottom: '8px',
+            width: 'max-content',
+            margin: '0 auto 8px',
           }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8 }}>{t('matchSetup.addNewPlayer')}</div>
-            <div className="row" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <input
-                className="w-num"
-                placeholder={t('matchSetup.numberPlaceholder')}
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max="99"
-                value={awayNum}
-                onChange={e => setAwayNum(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                style={{ textAlign: 'center' }}
-              />
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-              <select className="w-90" value={awayLibero} onChange={e => {
-                let newValue = e.target.value
-                // If L2 is selected but no L1 exists, automatically change L2 to L1
-                if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
-                  newValue = 'libero1'
-                }
-                setAwayLibero(newValue)
-              }}>
-                <option value=""></option>
-                {!awayRoster.some(p => p.libero === 'libero1') && (
-                  <option value="libero1">{t('matchSetup.libero1')}</option>
+            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>{t('matchSetup.addNewPlayer')}</div>
+            <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
+              <div className="roster-grid-row" style={{ border: 'none' }}>
+                <div></div>
+                <input
+                  placeholder={t('matchSetup.numberPlaceholder')}
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="99"
+                  value={awayNum}
+                  onChange={e => setAwayNum(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                />
+                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <select value={awayLibero} onChange={e => {
+                  let newValue = e.target.value
+                  if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
+                    newValue = 'libero1'
+                  }
+                  setAwayLibero(newValue)
+                }}>
+                  <option value=""></option>
+                  {!awayRoster.some(p => p.libero === 'libero1') && (
+                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                  )}
+                  {!awayRoster.some(p => p.libero === 'libero2') && (
+                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                  )}
+                </select>
+                <div className="cell-captain">
+                  <div
+                    onClick={() => setAwayCaptain(!awayCaptain)}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: awayCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      background: awayCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: awayCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      userSelect: 'none'
+                    }}
+                  >C</div>
+                </div>
+                {lfpTrackingEnabled && (
+                  <div className="cell-captain">
+                    <div
+                      onClick={() => setAwayLfp(!awayLfp)}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        border: awayLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        background: awayLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: awayLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        userSelect: 'none'
+                      }}
+                    >{awayLfp ? 'LFP' : '\u2014'}</div>
+                  </div>
                 )}
-                {!awayRoster.some(p => p.libero === 'libero2') && (
-                  <option value="libero2">{t('matchSetup.libero2')}</option>
-                )}
-              </select>
-              <div className="w-captain">
-                <div
-                  onClick={() => setAwayCaptain(!awayCaptain)}
-                  style={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '4px',
-                    border: awayCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
-                    background: awayCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    color: awayCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
-                    userSelect: 'none',
-                    flexShrink: 0
-                  }}
-                >C</div>
-              </div>
-              <div className="w-action">
-                <button type="button" className="secondary" onClick={() => {
-                  if (!awayLast || !awayFirst) return
-                  const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain, isLfp: false }
-                  setAwayRoster(list => {
-                    const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                    const next = [...cleared, newPlayer].sort((a, b) => {
-                      const an = a.number ?? 999
-                      const bn = b.number ?? 999
-                      return an - bn
+                <div className="cell-action">
+                  <button type="button" className="secondary" onClick={() => {
+                    if (!awayLast || !awayFirst) return
+                    const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain, isLfp: awayLfp }
+                    setAwayRoster(list => {
+                      const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                      const next = [...cleared, newPlayer].sort((a, b) => {
+                        const an = a.number ?? 999
+                        const bn = b.number ?? 999
+                        return an - bn
+                      })
+                      return next
                     })
-                    return next
-                  })
-                  setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
-                }}>{t('common.add')}</button>
+                    setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false); setAwayLfp(false)
+                  }}>{t('common.add')}</button>
+                </div>
               </div>
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
           {/* Roster Header Row */}
-          <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
-            <div className="w-num" style={{ textAlign: 'center' }}>#</div>
-            <div className="w-name">{t('matchSetup.lastName')}</div>
-            <div className="w-name">{t('matchSetup.firstName')}</div>
-            <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
-            <div className="w-90" style={{ textAlign: 'center' }}>{t('matchSetup.role')}</div>
-            <div className="w-captain">C</div>
-            <div className="w-action"></div>
+          <div className="roster-grid-row grid-header">
+            <div></div>
+            <div style={{ textAlign: 'center' }}>#</div>
+            <div>{t('matchSetup.lastName')}</div>
+            <div>{t('matchSetup.firstName')}</div>
+            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
+            <div className="cell-captain">C</div>
+            {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
+            <div></div>
           </div>
-          {awayRoster.map((p, i) => {
-            // Check if this player's number is a duplicate
+          {(() => {
+            const awayLiberoCount = awayRoster.filter(pl => pl.libero).length
+            return awayRoster.map((p, i) => {
             const isDuplicate = p.number != null && p.number !== '' &&
               awayRoster.some((other, idx) => idx !== i && other.number === p.number)
 
-            // Determine border style based on captain/libero status
             const isCaptain = p.isCaptain || false
             const isLibero = !!p.libero
-            // Base style for all rows (transparent border for alignment)
-            let borderStyle = {
-              borderRadius: '6px',
-              padding: '6px 8px',
-              border: '2px solid transparent'
-            }
+            let borderStyle = {}
             if (isCaptain && isLibero) {
-              // Both: alternating green/white striped border
               borderStyle = {
-                padding: '6px 8px',
                 background: 'rgba(34, 197, 94, 0.05)',
                 border: '2px solid',
                 borderImage: 'repeating-linear-gradient(90deg, #22c55e 0, #22c55e 6px, #ffffff 6px, #ffffff 12px) 1'
               }
             } else if (isCaptain) {
-              // Captain only: green border
               borderStyle = {
                 border: '2px solid #22c55e',
-                borderRadius: '6px',
-                padding: '6px 8px',
                 background: 'rgba(34, 197, 94, 0.1)'
               }
             } else if (isLibero) {
-              // Libero only: white border
               borderStyle = {
                 border: '2px solid rgba(255, 255, 255, 0.8)',
-                borderRadius: '6px',
-                padding: '6px 8px',
                 background: 'rgba(255, 255, 255, 0.05)'
               }
             }
 
             return (
-              <div key={`a-${i}`} className="row" style={{ alignItems: 'center', ...borderStyle }}>
+              <div key={`a-${i}`} className="roster-grid-row" style={borderStyle}>
+                <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
+                  {isCaptain ? 'C' : p.libero === 'libero1' ? (awayLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (awayLiberoCount > 1 ? 'L2' : 'L') : ''}
+                </div>
                 <input
-                  className="w-num"
                   placeholder="#"
                   type="number"
                   inputMode="numeric"
@@ -5773,13 +5846,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setAwayRoster(updated)
                   }}
                   onBlur={() => {
-                    // Sort roster by player number when done editing
                     const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
                     setAwayRoster(sorted)
                   }}
                 />
                 <input
-                  className="w-name capitalize"
+                  className="capitalize"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5790,7 +5862,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
-                  className="w-name capitalize"
+                  className="capitalize"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5801,7 +5873,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
-                  className="w-dob"
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
                   type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -5813,14 +5884,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <select
-                  className="w-90"
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...awayRoster]
                     const oldValue = updated[i].libero
                     updated[i] = { ...updated[i], libero: e.target.value }
 
-                    // If L2 is selected but no L1 exists, automatically change L2 to L1
                     if (e.target.value === 'libero2') {
                       const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
                       if (!hasL1) {
@@ -5828,12 +5897,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       }
                     }
 
-                    // If L1 is being cleared and there's an L2, promote L2 to L1
                     if (oldValue === 'libero1' && !e.target.value) {
                       const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
                       if (l2Idx !== -1) {
                         updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                        // Update L2->L1 player in database if they have an ID
                         if (updated[l2Idx].id) {
                           await db.players.update(updated[l2Idx].id, { libero: 'libero1' })
                         }
@@ -5842,7 +5909,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
                     setAwayRoster(updated)
 
-                    // Update database immediately if player has an ID
                     if (p.id) {
                       await db.players.update(p.id, { libero: updated[i].libero })
                     }
@@ -5856,7 +5922,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <option value="libero2">{t('matchSetup.libero2')}</option>
                   )}
                 </select>
-                <div className="w-captain">
+                <div className="cell-captain">
                   <div
                     onClick={() => {
                       const updated = awayRoster.map((player, idx) => ({
@@ -5878,12 +5944,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       fontSize: '12px',
                       fontWeight: 700,
                       color: (p.isCaptain || false) ? '#22c55e' : 'rgba(255,255,255,0.3)',
-                      userSelect: 'none',
-                      flexShrink: 0
+                      userSelect: 'none'
                     }}
                   >C</div>
                 </div>
-                <div className="w-action">
+                {lfpTrackingEnabled && (
+                  <div className="cell-captain">
+                    <div
+                      onClick={() => {
+                        const updated = [...awayRoster]
+                        updated[i] = { ...updated[i], isLfp: !p.isLfp }
+                        setAwayRoster(updated)
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        border: p.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        background: p.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: p.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        userSelect: 'none'
+                      }}
+                    >{p.isLfp ? 'LFP' : '\u2014'}</div>
+                  </div>
+                )}
+                <div className="cell-action">
                   <button
                     type="button"
                     className="secondary"
@@ -5894,77 +5985,74 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </div>
               </div>
             )
-          })}
+            })
+          })()}
         </div>
-        <h4>{t('matchSetup.benchOfficials')} — {t('common.away')}</h4>
-        {/* Bench Header Row */}
-        <div className="row" style={{ alignItems: 'center', fontWeight: 600, fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: 4, padding: '6px 8px', border: '2px solid transparent' }}>
-          <div className="w-220">{t('matchSetup.role')}</div>
-          <div className="w-name">{t('matchSetup.lastName')}</div>
-          <div className="w-name">{t('matchSetup.firstName')}</div>
-          <div className="w-dob">{t('matchSetup.dateOfBirth')}</div>
-          <div className="w-action"></div>
-        </div>
-        {sortBenchByHierarchy(benchAway).map((m, i) => {
-          const originalIdx = benchAway.findIndex(b => b === m)
-          return (
-            <div key={`ba-${originalIdx}`} className="row bench-row" style={{ alignItems: 'center', padding: '6px 8px', border: '2px solid transparent', borderRadius: '6px' }}>
-              <select className="w-220" value={m.role || 'Coach'} onChange={e => {
-                const newRole = e.target.value || 'Coach'
-                // Check if this role is already taken by another official
-                const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
-                if (isRoleTaken) {
-                  // Don't allow duplicate roles
-                  return
-                }
-                setBenchAway(arr => {
-                  const a = [...arr];
-                  a[originalIdx] = { ...a[originalIdx], role: newRole };
-                  return a
-                })
-              }}>
-                {BENCH_ROLES.map(role => {
-                  const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === role.value)
-                  return (
-                    <option key={role.value} value={role.value} disabled={isRoleTaken}>
-                      {t(role.labelKey, role.label)} - {t(role.fullLabelKey)}{isRoleTaken ? ` (${t('matchSetup.alreadyAssigned', 'already assigned')})` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              <input className="w-name capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
-              <input className="w-name capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-              <input className="w-dob" placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
-              <div className="w-action">
-                <button type="button" className="secondary" onClick={() => {
-                  const updated = benchAway.filter((_, idx) => idx !== originalIdx)
-                  setBenchAway(updated)
-                  // Trigger save immediately
-                  setTimeout(() => saveDraft(true), 100)
-                }} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                  {t('common.delete')}
-                </button>
+        <h4 className="section-divider">{t('matchSetup.benchOfficials')} — {t('common.away')}</h4>
+        <div className="bench-grid">
+          {/* Bench Header Row */}
+          <div className="bench-grid-row grid-header">
+            <div>{t('matchSetup.role')}</div>
+            <div>{t('matchSetup.lastName')}</div>
+            <div>{t('matchSetup.firstName')}</div>
+            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div></div>
+          </div>
+          {sortBenchByHierarchy(benchAway).map((m, i) => {
+            const originalIdx = benchAway.findIndex(b => b === m)
+            return (
+              <div key={`ba-${originalIdx}`} className="bench-grid-row">
+                <select value={m.role || 'Coach'} onChange={e => {
+                  const newRole = e.target.value || 'Coach'
+                  const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
+                  if (isRoleTaken) return
+                  setBenchAway(arr => {
+                    const a = [...arr];
+                    a[originalIdx] = { ...a[originalIdx], role: newRole };
+                    return a
+                  })
+                }}>
+                  {BENCH_ROLES.map(role => {
+                    const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === role.value)
+                    return (
+                      <option key={role.value} value={role.value} disabled={isRoleTaken}>
+                        {t(role.labelKey, role.label)} - {t(role.fullLabelKey)}{isRoleTaken ? ` (${t('matchSetup.alreadyAssigned', 'already assigned')})` : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <div className="cell-action">
+                  <button type="button" className="secondary" onClick={() => {
+                    const updated = benchAway.filter((_, idx) => idx !== originalIdx)
+                    setBenchAway(updated)
+                    setTimeout(() => saveDraft(true), 100)
+                  }}>
+                    {t('common.delete')}
+                  </button>
+                </div>
               </div>
-            </div>
-          )
-        })}
-        <div className="row" style={{ marginTop: 8 }}>
-          <button
-            type="button"
-            className="secondary"
-            disabled={benchAway.length >= 5}
-            onClick={() => {
-              // Find the first available role
-              const takenRoles = new Set(benchAway.map(b => b.role))
-              const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
-              if (availableRole) {
-                setBenchAway([...benchAway, initBench(availableRole.value)])
-              }
-            }}
-            style={{ padding: '4px 8px', fontSize: '12px' }}
-          >
-            {t('matchSetup.addBenchOfficial')}
-          </button>
+            )
+          })}
+          <div className="bench-grid-row" style={{ border: 'none', padding: 0 }}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={benchAway.length >= 5}
+              onClick={() => {
+                const takenRoles = new Set(benchAway.map(b => b.role))
+                const availableRole = BENCH_ROLES.find(r => !takenRoles.has(r.value))
+                if (availableRole) {
+                  setBenchAway([...benchAway, initBench(availableRole.value)])
+                }
+              }}
+              style={{ padding: '4px 8px', fontSize: '12px' }}
+            >
+              {t('matchSetup.addBenchOfficial')}
+            </button>
+          </div>
         </div>
 
         {/* Signatures Section */}
@@ -5979,7 +6067,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {t('rosterSetup.signatures', 'Signatures')}
           </h4>
           <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
-            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+            {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             {/* Coach Signature */}
@@ -7892,7 +7980,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // Scaled table cell styles
         const thStyle = { padding: `${s(8)}px ${s(12)}px`, fontSize: s(13), fontWeight: 600 }
         const tdStyle = { padding: `${s(6)}px ${s(12)}px`, fontSize: s(14) }
-        const numberStyle = { ...tdStyle, width: s(60), textAlign: 'center', fontWeight: 600 }
+        const numberStyle = { ...tdStyle, width: s(60), textAlign: 'center', fontWeight: 600, position: 'relative' }
+        const badgeAbsStyle = { position: 'absolute', left: s(4), top: '50%', transform: 'translateY(-50%)', padding: `${s(1)}px ${s(3)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }
+        const captainBadgeStyle = { ...badgeAbsStyle, background: '#f59e0b', color: '#000' }
+        const liberoBadgeStyle = { ...badgeAbsStyle, left: s(1), background: '#22c55e', color: '#000' }
+        const homeLiberosCount = homeLiberos.length
+        const awayLiberosCount = awayLiberos.length
         const nameStyle = { ...tdStyle, minWidth: s(180) }
         const dobStyle = { ...tdStyle, width: s(100), textAlign: 'center' }
         const emptyRowStyle = { height: s(36) }
@@ -7913,6 +8006,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         <th style={thStyle}>#</th>
                         <th style={thStyle}>{t('roster.name')}</th>
                         <th style={thStyle}>{t('roster.dob')}</th>
+                        {lfpTrackingEnabled && <th style={thStyle}>LFP</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -7921,16 +8015,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           {player ? (
                             <>
                               <td style={numberStyle}>
+                                {player.isCaptain && <span style={captainBadgeStyle}>C</span>}
                                 <span>{player.number ?? '—'}</span>
-                                {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
                               </td>
                               <td style={nameStyle}>
                                 {player.lastName || ''} {player.firstName || ''}
                               </td>
                               <td style={dobStyle}>{player.dob || '—'}</td>
+                              {lfpTrackingEnabled && <td style={{ ...tdStyle, textAlign: 'center' }}>{player.isLfp && <span style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700, border: '1px solid #f97316' }}>LFP</span>}</td>}
                             </>
                           ) : (
-                            <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                            <td colSpan={lfpTrackingEnabled ? 4 : 3} style={emptyRowStyle}>&nbsp;</td>
                           )}
                         </tr>
                       ))}
@@ -7947,6 +8042,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           <th style={thStyle}>#</th>
                           <th style={thStyle}>{t('roster.name')}</th>
                           <th style={thStyle}>{t('roster.dob')}</th>
+                          {lfpTrackingEnabled && <th style={thStyle}>LFP</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -7955,19 +8051,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             {player ? (
                               <>
                                 <td style={numberStyle}>
-                                  <span>{player.number ?? '—'}</span>
-                                  {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
-                                  <span style={{ marginLeft: s(4), background: '#22c55e', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>
-                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
+                                  <span style={liberoBadgeStyle}>
+                                    {homeLiberosCount > 1 ? (player.libero === 'libero1' ? 'L1' : 'L2') : 'L'}
                                   </span>
+                                  <span>{player.number ?? '—'}</span>
                                 </td>
                                 <td style={nameStyle}>
                                   {player.lastName || ''} {player.firstName || ''}
                                 </td>
                                 <td style={dobStyle}>{player.dob || '—'}</td>
+                                {lfpTrackingEnabled && <td style={{ ...tdStyle, textAlign: 'center' }}>{player.isLfp && <span style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700, border: '1px solid #f97316' }}>LFP</span>}</td>}
                               </>
                             ) : (
-                              <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                              <td colSpan={lfpTrackingEnabled ? 4 : 3} style={emptyRowStyle}>&nbsp;</td>
                             )}
                           </tr>
                         ))}
@@ -8020,6 +8116,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         <th style={thStyle}>#</th>
                         <th style={thStyle}>{t('roster.name')}</th>
                         <th style={thStyle}>{t('roster.dob')}</th>
+                        {lfpTrackingEnabled && <th style={thStyle}>LFP</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -8028,16 +8125,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           {player ? (
                             <>
                               <td style={numberStyle}>
+                                {player.isCaptain && <span style={captainBadgeStyle}>C</span>}
                                 <span>{player.number ?? '—'}</span>
-                                {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
                               </td>
                               <td style={nameStyle}>
                                 {player.lastName || ''} {player.firstName || ''}
                               </td>
                               <td style={dobStyle}>{player.dob || '—'}</td>
+                              {lfpTrackingEnabled && <td style={{ ...tdStyle, textAlign: 'center' }}>{player.isLfp && <span style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700, border: '1px solid #f97316' }}>LFP</span>}</td>}
                             </>
                           ) : (
-                            <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                            <td colSpan={lfpTrackingEnabled ? 4 : 3} style={emptyRowStyle}>&nbsp;</td>
                           )}
                         </tr>
                       ))}
@@ -8054,6 +8152,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           <th style={thStyle}>#</th>
                           <th style={thStyle}>{t('roster.name')}</th>
                           <th style={thStyle}>{t('roster.dob')}</th>
+                          {lfpTrackingEnabled && <th style={thStyle}>LFP</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -8062,19 +8161,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             {player ? (
                               <>
                                 <td style={numberStyle}>
-                                  <span>{player.number ?? '—'}</span>
-                                  {player.isCaptain && <span style={{ marginLeft: s(4), background: '#f59e0b', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>C</span>}
-                                  <span style={{ marginLeft: s(4), background: '#22c55e', color: '#000', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }}>
-                                    {player.libero === 'libero1' ? 'L1' : 'L2'}
+                                  <span style={liberoBadgeStyle}>
+                                    {awayLiberosCount > 1 ? (player.libero === 'libero1' ? 'L1' : 'L2') : 'L'}
                                   </span>
+                                  <span>{player.number ?? '—'}</span>
                                 </td>
                                 <td style={nameStyle}>
                                   {player.lastName || ''} {player.firstName || ''}
                                 </td>
                                 <td style={dobStyle}>{player.dob || '—'}</td>
+                                {lfpTrackingEnabled && <td style={{ ...tdStyle, textAlign: 'center' }}>{player.isLfp && <span style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', padding: `${s(1)}px ${s(4)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700, border: '1px solid #f97316' }}>LFP</span>}</td>}
                               </>
                             ) : (
-                              <td colSpan="3" style={emptyRowStyle}>&nbsp;</td>
+                              <td colSpan={lfpTrackingEnabled ? 4 : 3} style={emptyRowStyle}>&nbsp;</td>
                             )}
                           </tr>
                         ))}

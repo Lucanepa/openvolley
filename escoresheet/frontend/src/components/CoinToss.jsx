@@ -132,7 +132,7 @@ const sortBenchByHierarchy = (bench) => {
 
 const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
-export default function CoinToss({ matchId, onConfirm, onBack }) {
+export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnabled = false }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
@@ -346,6 +346,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                 last_name: p.lastName || '',
                 dob: p.dob || null,
                 is_captain: !!p.isCaptain,
+                is_lfp: !!p.isLfp,
                 libero: p.libero || null
               })),
               [benchKey]: bench || []
@@ -449,7 +450,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             firstName: p.firstName || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
             dob: normalizeDob(p.dob) || '',
             libero: p.libero || '',
-            isCaptain: p.isCaptain || false
+            isCaptain: p.isCaptain || false,
+            isLfp: p.isLfp || false
           })).sort((a, b) => (a.number || 999) - (b.number || 999)))
         }
 
@@ -460,7 +462,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
             firstName: p.firstName || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
             dob: normalizeDob(p.dob) || '',
             libero: p.libero || '',
-            isCaptain: p.isCaptain || false
+            isCaptain: p.isCaptain || false,
+            isLfp: p.isLfp || false
           })).sort((a, b) => (a.number || 999) - (b.number || 999)))
         }
 
@@ -671,7 +674,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               last_name: p.lastName,
               dob: p.dob || null,
               libero: p.libero || '',
-              is_captain: !!p.isCaptain
+              is_captain: !!p.isCaptain,
+              is_lfp: !!p.isLfp
             })),
             players_away: awayRoster.map(p => ({
               number: p.number,
@@ -679,7 +683,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               last_name: p.lastName,
               dob: p.dob || null,
               libero: p.libero || '',
-              is_captain: !!p.isCaptain
+              is_captain: !!p.isCaptain,
+              is_lfp: !!p.isLfp
             })),
             bench_home: benchHome.map(b => ({
               role: b.role,
@@ -713,7 +718,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               firstName: p.firstName,
               dob: p.dob || null,
               libero: p.libero || '',
-              isCaptain: !!p.isCaptain
+              isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp
             })
           } else {
             await db.players.add({
@@ -725,6 +731,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               dob: p.dob || null,
               libero: p.libero || '',
               isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp,
               role: null,
               createdAt: new Date().toISOString()
             })
@@ -756,7 +763,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               firstName: p.firstName,
               dob: p.dob || null,
               libero: p.libero || '',
-              isCaptain: !!p.isCaptain
+              isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp
             })
           } else {
             await db.players.add({
@@ -768,6 +776,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               dob: p.dob || null,
               libero: p.libero || '',
               isCaptain: !!p.isCaptain,
+              isLfp: !!p.isLfp,
               role: null,
               createdAt: new Date().toISOString()
             })
@@ -1236,7 +1245,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               last_name: p.lastName,
               dob: p.dob || null,
               libero: p.libero || '',
-              is_captain: !!p.isCaptain
+              is_captain: !!p.isCaptain,
+              is_lfp: !!p.isLfp
             })),
             players_away: awayRoster.map(p => ({
               number: p.number,
@@ -1244,7 +1254,8 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
               last_name: p.lastName,
               dob: p.dob || null,
               libero: p.libero || '',
-              is_captain: !!p.isCaptain
+              is_captain: !!p.isCaptain,
+              is_lfp: !!p.isLfp
             })),
             bench_home: benchHome.map(b => ({
               role: b.role,
@@ -1660,6 +1671,7 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                       <th>{t('roster.name')}</th>
                       <th style={{ width: '90px' }}>{t('roster.dob')}</th>
                       <th>{t('roster.role')}</th>
+                      {lfpTrackingEnabled && <th style={{ textAlign: 'center' }}>LFP</th>}
                       <th></th>
                     </tr>
                   </thead>
@@ -1793,6 +1805,34 @@ export default function CoinToss({ matchId, onConfirm, onBack }) {
                               </div>
                             </div>
                           </td>
+                          {lfpTrackingEnabled && (
+                            <td style={{ verticalAlign: 'middle', padding: '4px', textAlign: 'center' }}>
+                              <div
+                                onClick={() => {
+                                  const updated = [...roster]
+                                  updated[originalIdx] = { ...updated[originalIdx], isLfp: !p.isLfp }
+                                  setRoster(updated)
+                                }}
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '4px',
+                                  border: p.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                                  background: p.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  fontSize: '8px',
+                                  fontWeight: 700,
+                                  color: p.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                                  userSelect: 'none'
+                                }}
+                              >
+                                {p.isLfp ? 'LFP' : '\u2014'}
+                              </div>
+                            </td>
+                          )}
                           <td style={{ verticalAlign: 'middle', padding: '4px' }}>
                             <button
                               type="button"

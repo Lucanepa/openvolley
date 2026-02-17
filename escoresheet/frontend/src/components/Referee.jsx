@@ -10,6 +10,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { ConnectionManager } from '../utils/connectionManager'
+import { setsToWin, isMatchFinished as isMatchFinishedUtil } from '../utils/matchFormat'
 import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
 import WsDebugOverlay from './WsDebugOverlay'
@@ -594,8 +595,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         awaySetsWon: actionData.awaySetsWon
       })
 
-      // Check if match is finished (one team won 3 sets) - don't show interval
-      const isMatchFinishedNow = actionData.homeSetsWon >= 3 || actionData.awaySetsWon >= 3
+      // Check if match is finished - don't show interval
+      const bestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
+      const isMatchFinishedNow = isMatchFinishedUtil(actionData.homeSetsWon, actionData.awaySetsWon, bestOf)
       if (isMatchFinishedNow) {
         console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
         // Clear any existing interval state - full-screen match ended view will show
@@ -833,8 +835,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               last_event_data: state.last_event_data
             })
 
-            // Check if match is finished (one team won 3 sets) - don't show interval
-            const isMatchFinishedNow = state.sets_won_a >= 3 || state.sets_won_b >= 3
+            // Check if match is finished - don't show interval
+            const bestOfVal = data?.match?.bestOf ?? state.best_of ?? 5
+            const isMatchFinishedNow = isMatchFinishedUtil(state.sets_won_a, state.sets_won_b, bestOfVal)
             if (isMatchFinishedNow) {
               console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
               // Clear any existing interval state - full-screen match ended view will show
@@ -1740,9 +1743,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   }, [data?.sets, data?.set, data?.events])
 
   // Check if match has ended (from liveState status or sets won)
+  const refBestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
   const isMatchEnded = data?.liveState?.match_status === 'ended' ||
-    (data?.liveState?.sets_won_a >= 3 || data?.liveState?.sets_won_b >= 3) ||
-    (setsWon.home >= 3 || setsWon.away >= 3)
+    isMatchFinishedUtil(data?.liveState?.sets_won_a || 0, data?.liveState?.sets_won_b || 0, refBestOf) ||
+    isMatchFinishedUtil(setsWon.home, setsWon.away, refBestOf)
 
   // Check if we're in set interval (from liveState or local detection)
   // But NOT if match is already finished

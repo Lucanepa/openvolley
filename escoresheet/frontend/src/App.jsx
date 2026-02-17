@@ -46,6 +46,7 @@ import { supabase } from './lib/supabaseClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
+import { isMatchFinished as isMatchFinishedUtil } from './utils/matchFormat'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -1499,8 +1500,8 @@ export default function App() {
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-    // Check if either team has won 3 sets (match win)
-    const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
+    // Check if either team has won enough sets (match win)
+    const isMatchEnd = isMatchFinishedUtil(homeSetsWon, awaySetsWon, matchRecord?.bestOf)
 
     if (isMatchEnd) {
       // IMPORTANT: When match ends, preserve ALL data in database:
@@ -1845,6 +1846,7 @@ export default function App() {
         dob: player.dob,
         libero: player.libero || '',
         is_captain: player.isCaptain || false,
+        is_lfp: player.isLfp || false,
         functions: player.functions || (player.libero ? ['player'] : ['player'])
       }))
     }
@@ -2405,6 +2407,7 @@ export default function App() {
             dob: player.dob,
             libero: player.libero || '',
             isCaptain: player.isCaptain,
+            isLfp: player.isLfp || false,
             role: null,
             test: true,
             createdAt: timestamp
@@ -2440,6 +2443,7 @@ export default function App() {
               dob: player.dob,
               libero: player.libero || '',
               isCaptain: player.isCaptain,
+              isLfp: player.isLfp || false,
               role: null,
               test: true,
               createdAt: timestamp
@@ -2761,7 +2765,7 @@ export default function App() {
         const finishedSets = sets.filter(s => s.finished)
         const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
         const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-        const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, existing?.bestOf)
 
         setShowMatchSetup(false)
         setShowCoinToss(false)
@@ -2889,12 +2893,13 @@ export default function App() {
       // Determine where to continue based on status
       // Note: status flow is live -> ended -> final (after approval)
       if (match.status === 'live' || match.status === 'ended' || match.status === 'final') {
-        // Check if match is finished (one team has won 3 sets) - go to MatchEnd
+        // Check if match is finished - go to MatchEnd
+        const match = await db.matches.get(targetMatchId)
         const sets = await db.sets.where('matchId').equals(targetMatchId).toArray()
         const finishedSets = sets.filter(s => s.finished)
         const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
         const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-        const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, match?.bestOf)
 
         setMatchId(targetMatchId)
         setShowMatchSetup(false)
@@ -3144,6 +3149,7 @@ export default function App() {
                     setShowCoinToss(false)
                     setShowMatchSetup(true)
                   }}
+                  lfpTrackingEnabled={lfpTrackingEnabled}
                 />
               ) : showMatchSetup && matchId ? (
                 <MatchSetup
@@ -3156,6 +3162,7 @@ export default function App() {
                     setShowCoinToss(true)
                   }}
                   offlineMode={offlineMode}
+                  lfpTrackingEnabled={lfpTrackingEnabled}
                 />
               ) : showManualAdjustments && matchId ? (
                 <ManualAdjustments
@@ -3870,7 +3877,7 @@ export default function App() {
                                 const finishedSets = (cloudData.sets || []).filter(s => s.finished)
                                 const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
                                 const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-                                const isMatchFinished = homeSetsWon >= 3 || awaySetsWon >= 3
+                                const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
 
                                 // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
                                 if (isMatchFinished) {
