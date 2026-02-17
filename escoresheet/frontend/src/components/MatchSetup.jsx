@@ -12,7 +12,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
 // Primary ball image (with mikasa as fallback)
-const ballImage = '/ball.png'
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getWebSocketUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'

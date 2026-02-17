@@ -8,7 +8,7 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
-const ballImage = '/ball.png'
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { ConnectionManager } from '../utils/connectionManager'
 import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
@@ -3797,7 +3797,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 </div>
               ) : (
                 <img
-                  src="/openvolley_no_bg.png"
+                  src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`}
                   alt="OpenVolley"
                   style={{
                     width: '100%',
