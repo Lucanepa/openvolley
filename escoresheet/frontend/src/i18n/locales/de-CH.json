@@ -1588,7 +1588,8 @@
     "someConnectionsFailed": "Es paar Verbindige hend nöd chönne hergstellt werde. Du chasch mit iigschränkter Funktionalität witerfahre oder offline gah.",
     "serverUnavailable": "Punkteerfassig funktioniert vollständig offline. Schiedsrichter, Bank und Livescore synchronisiere über Supabase — de Server wird nur als Fallback brucht.",
     "backgroundRetry": "D'Verbindig wird im Hintergrund witer probiert.",
-    "allConnected": "Alli Dienscht verbunde!"
+    "allConnected": "Alli Dienscht verbunde!",
+    "dismiss": "Schliesse"
   },
   "dashboardOptions": {
     "supabase": "Supabase",

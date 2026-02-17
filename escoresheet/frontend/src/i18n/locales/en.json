@@ -1588,7 +1588,8 @@
     "someConnectionsFailed": "Some connections could not be established. You can continue with limited functionality or go offline.",
     "serverUnavailable": "Scoring works fully offline. Referee, bench, and livescore sync via Supabase — server is only needed as fallback.",
     "backgroundRetry": "Connection will keep retrying in the background.",
-    "allConnected": "All services connected!"
+    "allConnected": "All services connected!",
+    "dismiss": "Dismiss"
   },
   "dashboardOptions": {
     "supabase": "Supabase",
