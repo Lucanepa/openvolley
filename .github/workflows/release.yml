@@ -109,6 +109,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run electron:build:mac -- --publish never
 
       - name: Upload macOS artifacts
@@ -144,6 +145,9 @@ jobs:
           if [ -d "node_modules/canvas" ]; then
             rm -rf node_modules/canvas
           fi
+
+      - name: Install Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Build Electron app (Linux)
         working-directory: escoresheet/frontend
@@ -181,7 +185,7 @@ jobs:
           find artifacts -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" | head -20
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
           name: Openvolley eScoresheet ${{ needs.check-version.outputs.version }}
