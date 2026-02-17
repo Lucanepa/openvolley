@@ -1588,7 +1588,8 @@
     "someConnectionsFailed": "Alcune connessioni non sono state stabilite. Puoi continuare con funzionalità limitate o andare offline.",
     "serverUnavailable": "Il punteggio funziona completamente offline. Arbitro, panchina e livescore si sincronizzano via Supabase — il server serve solo come fallback.",
     "backgroundRetry": "La connessione verrà ritentata in background.",
-    "allConnected": "Tutti i servizi sono connessi!"
+    "allConnected": "Tutti i servizi sono connessi!",
+    "dismiss": "Chiudi"
   },
   "dashboardOptions": {
     "supabase": "Supabase",

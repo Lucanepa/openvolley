@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 // Primary services shown to the user — these are what matters
@@ -6,6 +6,8 @@ const PRIMARY_KEYS = ['db', 'supabase']
 // Fallback services — only shown when they're connected (hidden otherwise)
 const FALLBACK_KEYS = ['api', 'server', 'websocket', 'scoreboard']
 const ALL_KEYS = [...PRIMARY_KEYS, ...FALLBACK_KEYS]
+
+const AUTO_DISMISS_SECONDS = 5
 
 const isStatusOk = (status) => {
   return status === 'connected' ||
@@ -28,11 +30,13 @@ export default function StartupConnectivityModal({
 }) {
   const { t } = useTranslation()
   const hasAutoDismissed = useRef(false)
+  const [countdown, setCountdown] = useState(AUTO_DISMISS_SECONDS)
 
   // Reset when modal opens fresh
   useEffect(() => {
     if (open) {
       hasAutoDismissed.current = false
+      setCountdown(AUTO_DISMISS_SECONDS)
     }
   }, [open])
 
@@ -41,18 +45,27 @@ export default function StartupConnectivityModal({
   const primaryChecked = PRIMARY_KEYS.every(key => connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting')
   const hasErrors = primaryChecked && PRIMARY_KEYS.some(key => !isStatusOk(connectionStatuses[key]))
 
-  // Auto-dismiss once primary services are OK (don't wait for fallback server)
+  // Countdown + auto-dismiss once primary services are OK
   useEffect(() => {
     if (!open || !primaryOk || hasAutoDismissed.current) return
 
-    const timer = setTimeout(() => {
-      if (!hasAutoDismissed.current) {
-        hasAutoDismissed.current = true
-        onDismiss?.()
-      }
+    setCountdown(AUTO_DISMISS_SECONDS)
+
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval)
+          if (!hasAutoDismissed.current) {
+            hasAutoDismissed.current = true
+            onDismiss?.()
+          }
+          return 0
+        }
+        return prev - 1
+      })
     }, 1000)
 
-    return () => clearTimeout(timer)
+    return () => clearInterval(interval)
   }, [open, primaryOk, onDismiss])
 
   if (!open) return null
@@ -221,52 +234,56 @@ export default function StartupConnectivityModal({
           gap: 10,
           alignItems: 'center'
         }}>
-          {/* Continue Anyway - only when there are errors */}
-          {hasErrors && (
+          {primaryOk ? (
+            /* Dismiss button with countdown when all OK */
             <button
               onClick={onDismiss}
               style={{
                 padding: '10px 24px',
-                background: '#f59e0b',
-                color: '#000',
-                border: 'none',
+                background: 'rgba(34, 197, 94, 0.15)',
+                color: '#22c55e',
+                border: '1px solid rgba(34, 197, 94, 0.4)',
                 borderRadius: 8,
                 fontSize: 14,
                 fontWeight: 600,
                 cursor: 'pointer',
                 width: '100%',
-                maxWidth: 240
+                maxWidth: 240,
+                transition: 'all 0.2s'
               }}
             >
-              {t('startupConnectivity.continueAnyway', 'Continue Anyway')}
+              {t('startupConnectivity.dismiss', 'Dismiss')}
+              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, opacity: 0.7 }}>
+                ({countdown}s)
+              </span>
+            </button>
+          ) : (
+            /* Go Offline - when primary checks fail or still connecting */
+            <button
+              onClick={onGoOffline}
+              style={{
+                padding: '10px 24px',
+                background: 'transparent',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                width: '100%',
+                maxWidth: 240,
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent'
+              }}
+            >
+              {t('startupConnectivity.goOffline', 'Go Offline')}
             </button>
           )}
-
-          {/* Go Offline - always visible */}
-          <button
-            onClick={onGoOffline}
-            style={{
-              padding: '10px 24px',
-              background: 'transparent',
-              color: '#ef4444',
-              border: '1px solid rgba(239, 68, 68, 0.5)',
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              width: '100%',
-              maxWidth: 240,
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-            }}
-          >
-            {t('startupConnectivity.goOffline', 'Go Offline')}
-          </button>
         </div>
       </div>
     </div>
