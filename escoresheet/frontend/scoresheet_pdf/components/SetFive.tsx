@@ -322,7 +322,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
        {/* Header Strip */}
        <div className="flex bg-gray-100 text-xs shrink-0k" style={{ height: '0.8cm', width: '229mm' }}>
            {/* Start Time */}
-           <div className="border-r border-black flex items-center px-2 gap-2 bg-white shrink-0" style={{ width: '20mm' }}>
+           <div className="border-r border-black flex items-center pr-2 gap-2 bg-white shrink-0" style={{ width: '20mm', paddingLeft: '3px' }}>
                 <span className="font-bold text-[9px]">Start:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{startTime}</div>
            </div>

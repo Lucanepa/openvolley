@@ -334,7 +334,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
         {/* Header Strip */}
         <div className="flex bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm' }}>
              {/* Start Time */}
-             <div className="flex items-center px-2 gap-2 bg-white shrink-0 border-r border-black" style={{ width: '20mm' }}>
+             <div className="flex items-center pr-2 gap-2 bg-white shrink-0 border-r border-black" style={{ width: '20mm', paddingLeft: '3px' }}>
                 <span className="font-bold text-[9px]">Start:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{startTime}</div>
              </div>

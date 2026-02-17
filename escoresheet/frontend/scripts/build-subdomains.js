@@ -119,7 +119,7 @@ function createScoresheetHtml(config) {
   <style>
     /* Global Font Setting */
     body {
-      font-family: 'Aptos Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
 
     /* Custom print styles to ensure background graphics/colors print */

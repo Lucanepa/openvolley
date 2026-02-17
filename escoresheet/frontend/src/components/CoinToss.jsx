@@ -942,25 +942,29 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       awayCaptain: awayCaptainSignature
     })
 
-    // Show initialization modal and wait for sync
-    setInitModal({ status: 'syncing', message: t('coinToss.syncingMatch', 'Syncing match data...') })
-
-    // Wait for sync queue to process (poll for completion)
-    const maxAttempts = 30 // 15 seconds max
-    let attempts = 0
+    // Show initialization modal and wait for sync (only if Supabase is configured)
     let syncComplete = false
+    if (supabase) {
+      setInitModal({ status: 'syncing', message: t('coinToss.syncingMatch', 'Syncing match data...') })
 
-    while (attempts < maxAttempts && !syncComplete) {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      const queuedCount = await db.sync_queue.where('status').equals('queued').count()
-      if (queuedCount === 0) {
-        syncComplete = true
+      // Wait for sync queue to process (poll for completion)
+      const maxAttempts = 30 // 15 seconds max
+      let attempts = 0
+
+      while (attempts < maxAttempts && !syncComplete) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const queuedCount = await db.sync_queue.where('status').equals('queued').count()
+        if (queuedCount === 0) {
+          syncComplete = true
+        }
+        attempts++
       }
-      attempts++
-    }
 
-    if (!syncComplete) {
-      console.warn('[CoinToss] Sync queue still has items after timeout, proceeding anyway')
+      if (!syncComplete) {
+        console.warn('[CoinToss] Sync queue still has items after timeout, proceeding anyway')
+      }
+    } else {
+      syncComplete = true
     }
 
     // Verify status is 'live' in Supabase (only for official matches with Supabase configured)
