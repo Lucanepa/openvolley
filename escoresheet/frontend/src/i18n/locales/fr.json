@@ -1586,6 +1586,8 @@
     "goOffline": "Passer hors ligne",
     "continueAnyway": "Continuer quand même",
     "someConnectionsFailed": "Certaines connexions n'ont pas pu être établies. Vous pouvez continuer avec des fonctionnalités limitées ou passer hors ligne.",
+    "serverUnavailable": "Le marquage fonctionne entièrement hors ligne. Arbitre, banc et livescore se synchronisent via Supabase — le serveur n'est nécessaire qu'en secours.",
+    "backgroundRetry": "La connexion sera retentée en arrière-plan.",
     "allConnected": "Tous les services sont connectés !"
   },
   "dashboardOptions": {
