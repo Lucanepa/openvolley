@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
+// Sport type for indoor volleyball
+const SPORT_TYPE = 'indoor'
+
 /**
  * Hook to manage referee and scorer history for autocomplete
  *
@@ -27,6 +30,7 @@ export function useOfficialHistory() {
       const { data, error: fetchError } = await supabase
         .from('referee_database')
         .select('first_name, last_name, country, dob, created_at')
+        .contains('sport_type', JSON.stringify([SPORT_TYPE]))
         .order('last_name', { ascending: true })
 
       if (fetchError) {
@@ -60,32 +64,54 @@ export function useOfficialHistory() {
     return []
   }, [])
 
-  // Save referee to history (upsert - update if exists, insert if new)
+  // Save referee to history (check existing, then insert or update sport_type array)
   const saveReferee = useCallback(async (official) => {
     if (!supabase || !official?.firstName || !official?.lastName) {
       return false
     }
 
     try {
-      const { error: upsertError } = await supabase
+      // Check if referee already exists
+      const { data: existing } = await supabase
         .from('referee_database')
-        .upsert({
-          first_name: official.firstName,
-          last_name: official.lastName,
-          country: official.country || 'CHE',
-          dob: official.dob || null,
-          created_at: new Date().toISOString()
-        }, {
-          onConflict: 'lower(last_name),lower(first_name)',
-          ignoreDuplicates: true
-        })
+        .select('id, sport_type')
+        .ilike('last_name', official.lastName)
+        .ilike('first_name', official.firstName)
+        .maybeSingle()
 
-      if (upsertError) {
-        // Ignore duplicate key errors - expected with unique index
-        if (!upsertError.message?.includes('duplicate')) {
-          console.error('Error saving referee:', upsertError)
+      if (existing) {
+        // Add sport type to array if not already present
+        const sports = existing.sport_type || []
+        if (!sports.includes(SPORT_TYPE)) {
+          const { error: updateError } = await supabase
+            .from('referee_database')
+            .update({ sport_type: [...sports, SPORT_TYPE] })
+            .eq('id', existing.id)
+
+          if (updateError) {
+            console.error('Error updating referee sport_type:', updateError)
+            return false
+          }
         }
-        return false
+      } else {
+        // Insert new referee
+        const { error: insertError } = await supabase
+          .from('referee_database')
+          .insert({
+            first_name: official.firstName,
+            last_name: official.lastName,
+            country: official.country || 'CHE',
+            dob: official.dob || null,
+            sport_type: [SPORT_TYPE],
+            created_at: new Date().toISOString()
+          })
+
+        if (insertError) {
+          if (!insertError.message?.includes('duplicate')) {
+            console.error('Error saving referee:', insertError)
+          }
+          return false
+        }
       }
 
       return true

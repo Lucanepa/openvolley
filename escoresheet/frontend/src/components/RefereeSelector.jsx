@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../lib/supabaseClient'
 
+// Sport type for indoor volleyball
+const SPORT_TYPE = 'indoor'
+
 /**
  * Reusable RefereeSelector component for selecting referees from history
  * Uses Supabase referee_database table for suggestions
@@ -36,6 +39,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
       const { data, error } = await supabase
         .from('referee_database')
         .select('first_name, last_name, country, dob, created_at')
+        .contains('sport_type', JSON.stringify([SPORT_TYPE]))
         .order('last_name', { ascending: true })
 
       if (error) {
