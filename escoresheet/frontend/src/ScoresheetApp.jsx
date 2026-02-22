@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { supabase } from './lib/supabaseClient'
@@ -32,86 +32,127 @@ const fetchFromStorage = async (date, game) => {
   }
 }
 
-// Fetch all scoresheets from storage
-const fetchAllScoresheets = async () => {
+// Fetch archived matches from Supabase matches table (indoor only, finalized)
+const fetchArchiveMatches = async () => {
   try {
     if (!supabase) {
       console.error('Supabase client not available')
       return []
     }
 
-    // List all folders (dates) in the scoresheets bucket
-    const { data: folders, error: foldersError } = await supabase.storage
-      .from('scoresheets')
-      .list('', { limit: 100, sortBy: { column: 'name', order: 'desc' } })
+    const { data, error } = await supabase
+      .from('matches')
+      .select('external_id, game_n, scheduled_at, match_info, home_team, away_team, final_score, winner, created_at')
+      .eq('sport_type', 'indoor')
+      .eq('status', 'final')
+      .eq('test', false)
+      .order('scheduled_at', { ascending: false })
+      .limit(500)
 
-    if (foldersError) {
-      console.error('[Scoresheet] Error listing folders:', foldersError)
+    if (error) {
+      console.error('[Archive] Error fetching matches:', error)
       return []
     }
 
-    const scoresheets = []
-
-    // For each date folder, list the game files
-    for (const folder of folders || []) {
-      if (!folder.name || folder.name.startsWith('.')) continue
-
-      const { data: files, error: filesError } = await supabase.storage
-        .from('scoresheets')
-        .list(folder.name, { limit: 50 })
-
-      if (filesError) {
-        console.error(`[Scoresheet] Error listing files in ${folder.name}:`, filesError)
-        continue
-      }
-
-      for (const file of files || []) {
-        // Only show approved/final scoresheets (game123_final.json)
-        if (!file.name.endsWith('_final.json')) continue
-
-        // Extract game number from filename (game123_final.json -> 123)
-        const gameMatch = file.name.match(/game(\d+)_final\.json/)
-        if (!gameMatch) continue
-
-        scoresheets.push({
-          date: folder.name,
-          game: gameMatch[1],
-          path: `${folder.name}/${file.name}`
-        })
-      }
-    }
-
-    // Fetch metadata for each scoresheet (team names, score)
-    const enrichedScoresheets = await Promise.all(
-      scoresheets.slice(0, 50).map(async (item) => {
-        try {
-          const { data, error } = await supabase.storage
-            .from('scoresheets')
-            .download(item.path)
-
-          if (error || !data) return item
-
-          const text = await data.text()
-          const json = JSON.parse(text)
-
-          return {
-            ...item,
-            homeTeam: json.homeTeam?.name || json.match?.homeTeamName || 'Team A',
-            awayTeam: json.awayTeam?.name || json.match?.awayTeamName || 'Team B',
-            finalScore: json.match?.final_score || '',
-            uploadedAt: json.uploadedAt
-          }
-        } catch {
-          return item
-        }
-      })
-    )
-
-    return enrichedScoresheets
+    return data || []
   } catch (error) {
-    console.error('[Scoresheet] Error fetching scoresheets:', error)
+    console.error('[Archive] Error fetching matches:', error)
     return []
   }
+}
+
+// Grouping sort orders
+const LEVEL_ORDER = { senior: 0, U23: 1, U19: 2 }
+const MATCH_TYPE_ORDER = { championship: 0, cup: 1, tournament: 2, friendly: 3 }
+const GENDER_ORDER = { men: 0, women: 1 }
+
+// Display labels
+const LEVEL_LABELS = { senior: 'Senior', U23: 'U23', U19: 'U19' }
+const MATCH_TYPE_LABELS = { championship: 'Championship', cup: 'Cup', tournament: 'Tournament', friendly: 'Friendly' }
+const GENDER_LABELS = { men: 'Men', women: 'Women' }
+
+function getSortOrder(map, key) {
+  return map[key] !== undefined ? map[key] : 999
+}
+
+// Build hierarchical tree: Level > Match Type > Gender > League > Matches
+function buildArchiveTree(matches) {
+  const tree = {}
+
+  for (const match of matches) {
+    const info = match.match_info || {}
+
+    // Level
+    const levelKey = info.match_type_3 || 'other'
+    const levelLabel = levelKey === 'other' && info.match_type_3_other
+      ? info.match_type_3_other
+      : (LEVEL_LABELS[levelKey] || levelKey)
+    // Use the label as grouping key for custom "other" values
+    const levelGroupKey = levelKey === 'other' && info.match_type_3_other
+      ? `other_${info.match_type_3_other}`
+      : levelKey
+
+    // Match Type
+    const mtKey = info.match_type_1 || 'other'
+    const mtLabel = mtKey === 'other' && info.match_type_1_other
+      ? info.match_type_1_other
+      : (MATCH_TYPE_LABELS[mtKey] || mtKey)
+    const mtGroupKey = mtKey === 'other' && info.match_type_1_other
+      ? `other_${info.match_type_1_other}`
+      : mtKey
+
+    // Gender
+    const genderKey = info.match_type_2 || 'other'
+    const genderLabel = GENDER_LABELS[genderKey] || genderKey
+
+    // League
+    const league = info.league || 'Other'
+
+    // Build nested structure
+    if (!tree[levelGroupKey]) tree[levelGroupKey] = { label: levelLabel, sortKey: levelKey, children: {} }
+    const levelNode = tree[levelGroupKey]
+
+    if (!levelNode.children[mtGroupKey]) levelNode.children[mtGroupKey] = { label: mtLabel, sortKey: mtKey, children: {} }
+    const mtNode = levelNode.children[mtGroupKey]
+
+    if (!mtNode.children[genderKey]) mtNode.children[genderKey] = { label: genderLabel, sortKey: genderKey, children: {} }
+    const genderNode = mtNode.children[genderKey]
+
+    if (!genderNode.children[league]) genderNode.children[league] = []
+    genderNode.children[league].push(match)
+  }
+
+  // Convert to sorted arrays
+  const sortedTree = Object.entries(tree)
+    .sort(([, a], [, b]) => getSortOrder(LEVEL_ORDER, a.sortKey) - getSortOrder(LEVEL_ORDER, b.sortKey))
+    .map(([key, level]) => {
+      const matchTypes = Object.entries(level.children)
+        .sort(([, a], [, b]) => getSortOrder(MATCH_TYPE_ORDER, a.sortKey) - getSortOrder(MATCH_TYPE_ORDER, b.sortKey))
+        .map(([mtKey, mt]) => {
+          const genders = Object.entries(mt.children)
+            .sort(([, a], [, b]) => getSortOrder(GENDER_ORDER, a.sortKey) - getSortOrder(GENDER_ORDER, b.sortKey))
+            .map(([gKey, g]) => {
+              const leagues = Object.entries(g.children)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([leagueName, leagueMatches]) => ({
+                  league: leagueName,
+                  matches: leagueMatches.sort((a, b) => {
+                    const dateA = a.scheduled_at || a.created_at || ''
+                    const dateB = b.scheduled_at || b.created_at || ''
+                    return dateB.localeCompare(dateA)
+                  })
+                }))
+              const totalCount = leagues.reduce((sum, l) => sum + l.matches.length, 0)
+              return { gender: gKey, genderLabel: g.label, leagues, totalCount }
+            })
+          const totalCount = genders.reduce((sum, g) => sum + g.totalCount, 0)
+          return { type: mtKey, typeLabel: mt.label, genders, totalCount }
+        })
+      const totalCount = matchTypes.reduce((sum, mt) => sum + mt.totalCount, 0)
+      return { level: key, levelLabel: level.label, matchTypes, totalCount }
+    })
+
+  return sortedTree
 }
 
 // Get URL parameters
@@ -137,6 +178,107 @@ const formatDate = (dateStr) => {
   } catch {
     return dateStr
   }
+}
+
+// Collapsible section component for hierarchical grouping
+const CollapsibleSection = ({ title, count, depth = 0, defaultOpen = false, children }) => {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+
+  const depthClasses = [
+    'text-base font-bold',
+    'text-sm font-semibold',
+    'text-sm font-medium',
+    'text-xs font-medium'
+  ]
+
+  const depthBorderColors = [
+    'border-l-blue-500',
+    'border-l-indigo-400',
+    'border-l-violet-400',
+    'border-l-purple-300'
+  ]
+
+  return (
+    <div className="mb-2" style={{ marginLeft: depth > 0 ? 12 : 0 }}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 border-l-4 ${depthBorderColors[depth] || depthBorderColors[3]} hover:bg-gray-50 transition-colors cursor-pointer`}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="text-gray-400 text-xs transition-transform duration-200"
+            style={{ display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          >
+            &#9654;
+          </span>
+          <span className={`text-gray-800 ${depthClasses[depth] || depthClasses[3]}`}>{title}</span>
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{count}</span>
+        </div>
+      </button>
+      {isOpen && (
+        <div className="mt-1">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Match card component for individual matches
+const MatchCard = ({ match }) => {
+  const homeTeam = match.home_team?.name || 'Team A'
+  const awayTeam = match.away_team?.name || 'Team B'
+  const finalScore = match.final_score || ''
+  const scheduledAt = match.scheduled_at || match.created_at
+  const date = scheduledAt ? new Date(scheduledAt).toISOString().slice(0, 10) : null
+  const gameNumber = match.game_n || match.external_id
+  const displayDate = scheduledAt ? formatDate(new Date(scheduledAt).toISOString().slice(0, 10)) : ''
+
+  return (
+    <div
+      className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow mb-2"
+      style={{ marginLeft: 12 }}
+    >
+      <div className="flex-1">
+        <div className="flex items-center gap-3 mb-1">
+          {match.game_n && (
+            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+              Game {match.game_n}
+            </span>
+          )}
+          {finalScore && (
+            <span className="text-sm font-semibold text-emerald-600">{finalScore}</span>
+          )}
+        </div>
+        <div className="text-base font-medium text-gray-800">
+          {homeTeam} vs {awayTeam}
+        </div>
+        {displayDate && (
+          <div className="text-xs text-gray-400 mt-1">{displayDate}</div>
+        )}
+      </div>
+      <div className="flex gap-2">
+        {date && gameNumber && (
+          <>
+            <a
+              href={`?date=${date}&game=${gameNumber}`}
+              className="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600"
+            >
+              View
+            </a>
+            <a
+              href={`?date=${date}&game=${gameNumber}&action=save`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-600 border border-gray-200 rounded-md hover:bg-gray-200"
+            >
+              Download PDF
+            </a>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // Scoresheet viewer component
@@ -189,17 +331,17 @@ const ScoresheetViewer = ({ date, game, action }) => {
   return <App matchData={matchData} autoAction={action} />
 }
 
-// Scoresheet list component
+// Scoresheet list component with hierarchical grouping
 const ScoresheetList = () => {
-  const [scoresheets, setScoresheets] = useState([])
+  const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     const loadList = async () => {
       try {
-        const items = await fetchAllScoresheets()
-        setScoresheets(items)
+        const items = await fetchArchiveMatches()
+        setMatches(items)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load scoresheets')
       } finally {
@@ -209,12 +351,7 @@ const ScoresheetList = () => {
     loadList()
   }, [])
 
-  // Group scoresheets by date
-  const groupedByDate = scoresheets.reduce((acc, item) => {
-    if (!acc[item.date]) acc[item.date] = []
-    acc[item.date].push(item)
-    return acc
-  }, {})
+  const tree = useMemo(() => buildArchiveTree(matches), [matches])
 
   if (loading) {
     return (
@@ -242,68 +379,60 @@ const ScoresheetList = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Scoresheet Archive</h1>
             <p className="text-gray-500">
-              {scoresheets.length} scoresheet{scoresheets.length !== 1 ? 's' : ''} available
+              {matches.length} scoresheet{matches.length !== 1 ? 's' : ''} available
             </p>
           </div>
         </div>
 
-        {scoresheets.length === 0 ? (
+        {matches.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
             <div className="text-5xl mb-4">📋</div>
             <div className="text-lg text-gray-500">No scoresheets uploaded yet</div>
           </div>
         ) : (
-          Object.entries(groupedByDate)
-            .sort(([a], [b]) => b.localeCompare(a))
-            .map(([date, items]) => (
-              <div key={date} className="mb-6">
-                <h2 className="text-sm font-semibold text-gray-500 mb-3 pb-2 border-b border-gray-200">
-                  {formatDate(date)}
-                </h2>
-                <div className="flex flex-col gap-2">
-                  {items
-                    .sort((a, b) => parseInt(a.game) - parseInt(b.game))
-                    .map((item) => (
-                      <div
-                        key={item.path}
-                        className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                              Game {item.game}
-                            </span>
-                            {item.finalScore && (
-                              <span className="text-sm font-semibold text-emerald-600">
-                                {item.finalScore}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-base font-medium text-gray-800">
-                            {item.homeTeam || 'Team A'} vs {item.awayTeam || 'Team B'}
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <a
-                            href={`?date=${item.date}&game=${item.game}`}
-                            className="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600"
-                          >
-                            View
-                          </a>
-                          <a
-                            href={`?date=${item.date}&game=${item.game}&action=save`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-600 border border-gray-200 rounded-md hover:bg-gray-200"
-                          >
-                            Download PDF
-                          </a>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            ))
+          tree.map(levelGroup => (
+            <CollapsibleSection
+              key={levelGroup.level}
+              title={levelGroup.levelLabel}
+              count={levelGroup.totalCount}
+              depth={0}
+              defaultOpen={tree.length === 1}
+            >
+              {levelGroup.matchTypes.map(mtGroup => (
+                <CollapsibleSection
+                  key={mtGroup.type}
+                  title={mtGroup.typeLabel}
+                  count={mtGroup.totalCount}
+                  depth={1}
+                  defaultOpen={levelGroup.matchTypes.length === 1}
+                >
+                  {mtGroup.genders.map(gGroup => (
+                    <CollapsibleSection
+                      key={gGroup.gender}
+                      title={gGroup.genderLabel}
+                      count={gGroup.totalCount}
+                      depth={2}
+                      defaultOpen={mtGroup.genders.length === 1}
+                    >
+                      {gGroup.leagues.map(lGroup => (
+                        <CollapsibleSection
+                          key={lGroup.league}
+                          title={lGroup.league}
+                          count={lGroup.matches.length}
+                          depth={3}
+                          defaultOpen={gGroup.leagues.length === 1}
+                        >
+                          {lGroup.matches.map(match => (
+                            <MatchCard key={match.external_id} match={match} />
+                          ))}
+                        </CollapsibleSection>
+                      ))}
+                    </CollapsibleSection>
+                  ))}
+                </CollapsibleSection>
+              ))}
+            </CollapsibleSection>
+          ))
         )}
       </div>
     </div>
