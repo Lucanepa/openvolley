@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getApiUrl } from '../utils/backendConfig'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
+import { apiFrom } from '../lib/apiClient'
 
 // Styles will be generated dynamically with scaleFactor
 
@@ -20,18 +21,8 @@ function formatLeagueDisplay(code, gender) {
     return `Züri Cup (${genderSymbol})`
   }
 
-  // For codes ending in M or D (men/damen) like 1LM, 2LD, 3LM
-  if (code.endsWith('M') || code.endsWith('D')) {
-    return `${code.slice(0, -1)} (${genderSymbol})`
-  }
-
-  // For codes like U23D-1, U23D-2, etc.
-  const match = code.match(/^(.+?)(M|D)(-\d+)?$/)
-  if (match) {
-    return `${match[1]}${match[3] || ''} (${genderSymbol})`
-  }
-
-  return code
+  // Display code as-is with gender symbol
+  return `${code} (${genderSymbol})`
 }
 
 /**
@@ -105,6 +96,37 @@ function isTomorrow(isoString) {
          date.getFullYear() === tomorrow.getFullYear()
 }
 
+/**
+ * Map a svrz_games row to the internal match format
+ */
+function mapSupabaseToMatchFormat(row) {
+  return {
+    gameN: row.game_number,
+    dtstart: row.datetime,
+    home: row.team_home,
+    away: row.team_away,
+    league: row.league,
+    venue: row.hall,
+    city: row.city,
+    type1: row.match_type,
+    type2: row.gender,
+    type3: row.match_level,
+    championshipType: row.championship_type,
+    bestOf: row.match_format,
+    referee1First: row.referee_1_first_name,
+    referee1Last: row.referee_1_last_name,
+    referee1Dob: row.referee_1_dob,
+    referee2First: row.referee_2_first_name,
+    referee2Last: row.referee_2_last_name,
+    referee2Dob: row.referee_2_dob,
+    hallAddress: row.hall_address,
+    hallPostalCode: row.hall_postal_code,
+    linesman1: row.linesman_1,
+    linesman2: row.linesman_2,
+    groupDisplay: row.group_display
+  }
+}
+
 export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
@@ -152,9 +174,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     borderColor: 'rgba(59, 130, 246, 0.5)'
   }
 
-  // Dynamic leagues from backend
+  // Dynamic leagues
   const [allLeagues, setAllLeagues] = useState([])
   const [loadingConfig, setLoadingConfig] = useState(false)
+  const [dataSource, setDataSource] = useState(null) // 'supabase' | 'ical' | null
 
   // Filter state (simplified: just gender and league)
   const [gender, setGender] = useState('')
@@ -169,31 +192,87 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Warning popover for league dropdown
+  const [showLeagueWarning, setShowLeagueWarning] = useState(false)
+  const leagueWarningRef = useRef(null)
+
+  // Dismiss league warning on click outside
+  useEffect(() => {
+    if (!showLeagueWarning) return
+    const handler = (e) => {
+      if (leagueWarningRef.current && !leagueWarningRef.current.contains(e.target)) {
+        setShowLeagueWarning(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showLeagueWarning])
+
   // Fetch available leagues when modal opens
   useEffect(() => {
     if (!open) return
     fetchLeaguesConfig()
   }, [open])
 
+  const fetchLeaguesFromSupabase = async () => {
+    const { data, error } = await apiFrom('svrz_games')
+      .select('gender, league')
+    if (error) throw error
+    if (!data || data.length === 0) return null
+    // Deduplicate gender+league pairs
+    const seen = new Set()
+    const leagues = []
+    for (const row of data) {
+      const key = `${row.gender}-${row.league}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        leagues.push({ code: row.league, gender: row.gender, federation: 'SVRZ' })
+      }
+    }
+    // Sort: men first, then alphabetical by code
+    leagues.sort((a, b) => {
+      if (a.gender !== b.gender) return a.gender === 'men' ? -1 : 1
+      return a.code.localeCompare(b.code)
+    })
+    return leagues
+  }
+
+  const fetchLeaguesFromIcal = async () => {
+    const apiUrl = getApiUrl('/api/official-matches/leagues')
+    if (!apiUrl) return null
+    const response = await fetch(apiUrl)
+    const data = await response.json()
+    if (data.success) return data.leagues || []
+    return null
+  }
+
   const fetchLeaguesConfig = async () => {
     setLoadingConfig(true)
     setError(null)
     try {
-      const apiUrl = getApiUrl('/api/official-matches/leagues')
-      if (!apiUrl) {
-        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
+      // Try Supabase first
+      const supabaseLeagues = await fetchLeaguesFromSupabase()
+      if (supabaseLeagues && supabaseLeagues.length > 0) {
+        setAllLeagues(supabaseLeagues)
+        setDataSource('supabase')
         setLoadingConfig(false)
         return
       }
-      const response = await fetch(apiUrl)
-      const data = await response.json()
-      if (data.success) {
-        setAllLeagues(data.leagues || [])
+      console.warn('[Schedule] Supabase unavailable or returned no leagues, falling back to ICAL')
+    } catch (err) {
+      console.warn('[Schedule] Supabase failed, falling back to ICAL:', err)
+    }
+    // Fallback to ICAL
+    try {
+      const icalLeagues = await fetchLeaguesFromIcal()
+      if (icalLeagues && icalLeagues.length > 0) {
+        setAllLeagues(icalLeagues)
+        setDataSource('ical')
       } else {
-        setError(data.error || t('loadOfficialMatch.failedToLoadLeagues'))
+        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
       }
     } catch (err) {
-      console.error('Failed to fetch leagues config:', err)
+      console.error('[Schedule] ICAL fallback also failed:', err)
       setError(t('loadOfficialMatch.fetchError', 'Failed to load matches. Check your connection.'))
     } finally {
       setLoadingConfig(false)
@@ -219,38 +298,61 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     fetchMatches()
   }, [league])
 
-  const fetchMatches = async () => {
-    // Find the league info to get federation
-    const leagueInfo = allLeagues.find(l => l.code === league)
-    if (!leagueInfo) return
+  const fetchMatchesFromSupabase = async () => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const { data, error } = await apiFrom('svrz_games')
+      .select('*')
+      .eq('gender', gender)
+      .eq('league', league)
+      .gte('datetime', today.toISOString())
+      .order('datetime', { ascending: true })
+    if (error) throw error
+    if (!data || data.length === 0) return null
+    return data.map(mapSupabaseToMatchFormat)
+  }
 
+  const fetchMatchesFromIcal = async () => {
+    const leagueInfo = allLeagues.find(l => l.code === league)
+    if (!leagueInfo) return null
+    const apiUrl = getApiUrl(`/api/official-matches?federation=${leagueInfo.federation}&league=${league}`)
+    if (!apiUrl) return null
+    const response = await fetch(apiUrl)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = await response.json()
+    if (data.success) return data.matches || []
+    return null
+  }
+
+  const fetchMatches = async () => {
     setLoading(true)
     setError(null)
 
+    // Try API first if it was our leagues source (or try anyway)
+    {
+      try {
+        const supabaseMatches = await fetchMatchesFromSupabase()
+        if (supabaseMatches && supabaseMatches.length > 0) {
+          setMatches(supabaseMatches)
+          setLoading(false)
+          return
+        }
+        console.warn(`[Schedule] Supabase returned no matches for ${gender}/${league}, falling back to ICAL`)
+      } catch (err) {
+        console.warn(`[Schedule] Supabase match query failed for ${gender}/${league}, falling back to ICAL:`, err)
+      }
+    }
+
+    // Fallback to ICAL
     try {
-      const apiUrl = getApiUrl(`/api/official-matches?federation=${leagueInfo.federation}&league=${league}`)
-
-      if (!apiUrl) {
-        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
-        setLoading(false)
-        return
-      }
-
-      const response = await fetch(apiUrl)
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.success) {
-        setMatches(data.matches || [])
+      const icalMatches = await fetchMatchesFromIcal()
+      if (icalMatches) {
+        setMatches(icalMatches)
       } else {
-        setError(data.error || t('loadOfficialMatch.fetchError', 'Failed to load matches'))
+        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
       }
     } catch (err) {
-      console.error('Failed to fetch official matches:', err)
+      console.error('[Schedule] ICAL fallback also failed:', err)
       setError(t('loadOfficialMatch.fetchError', 'Failed to load matches. Check your connection.'))
     } finally {
       setLoading(false)
@@ -283,7 +385,6 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   }, [matches, searchQuery, dateFilter])
 
   const handleSelectMatch = (match) => {
-    // Transform iCal data to MatchSetup state format
     const matchData = {
       // Date/Time - convert to local formats for inputs
       date: toLocalDate(match.dtstart),
@@ -305,7 +406,19 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
       // Teams
       home: match.home,
-      away: match.away
+      away: match.away,
+
+      // Supabase-only fields (undefined when source is ICAL)
+      bestOf: match.bestOf,
+      referee1First: match.referee1First,
+      referee1Last: match.referee1Last,
+      referee1Dob: match.referee1Dob,
+      referee2First: match.referee2First,
+      referee2Last: match.referee2Last,
+      referee2Dob: match.referee2Dob,
+      linesman1: match.linesman1,
+      linesman2: match.linesman2,
+      groupDisplay: match.groupDisplay
     }
 
     onSelectMatch(matchData)
@@ -313,7 +426,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
     // Show reminder alert after modal closes
     setTimeout(() => {
-      showAlert(t('loadOfficialMatch.reminderAlert', 'Set the League group if present, Team colours and Team Short names'), 'info')
+      showAlert(t('loadOfficialMatch.reminderAlert', 'Set Teams colours and Team Short names'), 'info')
     }, 100)
   }
 
@@ -326,6 +439,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       setError(null)
       setSearchQuery('')
       setDateFilter('')
+      setDataSource(null)
     }
   }, [open])
 
@@ -404,17 +518,75 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
             {/* League Dropdown */}
             <div>
               <label style={labelStyle}>{t('loadOfficialMatch.league', 'League')}</label>
-              <select
-                value={league}
-                onChange={e => setLeague(e.target.value)}
-                style={{ ...selectStyle, opacity: gender ? 1 : 0.5 }}
-                disabled={!gender}
-              >
-                <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
-                {availableLeagues.map(l => (
-                  <option key={l.code} value={l.code}>{formatLeagueDisplay(l.code, l.gender)}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <select
+                  value={league}
+                  onChange={e => setLeague(e.target.value)}
+                  style={{ ...selectStyle, opacity: gender ? 1 : 0.5 }}
+                  disabled={!gender}
+                >
+                  <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
+                  {availableLeagues.map(l => (
+                    <option key={l.code} value={l.code}>{formatLeagueDisplay(l.code, l.gender)}</option>
+                  ))}
+                </select>
+                {!gender && (
+                  <span
+                    ref={showLeagueWarning ? leagueWarningRef : undefined}
+                    style={{ position: 'relative', display: 'inline-flex', marginLeft: Math.round(6 * scaleFactor) }}
+                  >
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowLeagueWarning(v => !v)
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: Math.round(22 * scaleFactor),
+                        height: Math.round(22 * scaleFactor),
+                        borderRadius: '50%',
+                        backgroundColor: '#f59e0b',
+                        color: '#0b1120',
+                        fontWeight: 700,
+                        fontSize: Math.round(14 * scaleFactor),
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        border: '2px solid rgba(245, 158, 11, 0.4)',
+                        boxShadow: '0 0 8px rgba(245, 158, 11, 0.3)'
+                      }}
+                      title={t('warnings.clickForDetails')}
+                    >
+                      !
+                    </span>
+                    {showLeagueWarning && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          marginTop: Math.round(8 * scaleFactor),
+                          background: '#1f2937',
+                          border: '1px solid #f59e0b',
+                          borderRadius: Math.round(8 * scaleFactor),
+                          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(14 * scaleFactor)}px`,
+                          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+                          zIndex: 100,
+                          whiteSpace: 'nowrap',
+                          maxWidth: '90vw',
+                          fontSize: Math.round(12 * scaleFactor),
+                          color: '#f59e0b',
+                          fontWeight: 600
+                        }}
+                      >
+                        {t('warnings.selectGenderFirst')}
+                      </div>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )}

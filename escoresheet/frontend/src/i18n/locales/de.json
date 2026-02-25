@@ -1147,6 +1147,12 @@
     "noSetsReopen": "Keine Sätze zum Wiederöffnen gefunden",
     "setReopened": "Satz {{index}} für Korrekturen wieder geöffnet",
     "errorReopening": "Fehler beim Wiederöffnen: {{error}}",
+    "unlockReopen": "Entsperren",
+    "unlockReopenDescription": "Geben Sie das Passwort ein, um diese Aktion zu entsperren.",
+    "unlockPasswordPlaceholder": "Passwort",
+    "unlockPasswordRequired": "Bitte geben Sie das Passwort ein",
+    "unlockPasswordWrong": "Falsches Passwort",
+    "unlockPasswordError": "Fehler bei der Passwortüberprüfung",
     "sanctionTypes": {
       "delayWarning": "Verzögerungswarnung",
       "delayPenalty": "Verzögerungsstrafe",
@@ -1459,7 +1465,7 @@
     "noUpcomingMatches": "Keine anstehenden Spiele gefunden",
     "fetchError": "Spiele konnten nicht geladen werden. Verbindung prüfen.",
     "backendNotAvailable": "Backend-Server nicht verfügbar",
-    "reminderAlert": "Ligagruppe falls vorhanden, Teamfarben und Kurznamen einstellen",
+    "reminderAlert": "Teamfarben und Kurznamen einstellen",
     "loading": "Lade Spiele...",
     "selectFilters": "Wähle Geschlecht und Liga um Spiele anzuzeigen",
     "searchPlaceholder": "Suchen...",
@@ -1916,5 +1922,22 @@
       "teal": "Türkis",
       "pink": "Rosa"
     }
+  },
+  "warnings": {
+    "clickForDetails": "Klicken, um fehlende Angaben zu sehen",
+    "missingRequired": "Fehlende Pflichtfelder:",
+    "maxBenchOfficials": "Maximum 5 Bankoffizielle erreicht",
+    "confirmMatchInfoFirst": "Zuerst Spielinfos bestätigen",
+    "matchInfoNotConfirmed": "Spielinfos nicht bestätigt",
+    "firstRefereeMissing": "Name des 1. Schiedsrichters erforderlich",
+    "scorerNameMissing": "Name des Schreibers erforderlich",
+    "scorerDobMissing": "Geburtsdatum des Schreibers erforderlich",
+    "homeRosterIncomplete": "Heimkader unvollständig ({{count}}/6 Spieler)",
+    "awayRosterIncomplete": "Gastkader unvollständig ({{count}}/6 Spieler)",
+    "homeCaptainMissing": "Heimteam: kein Kapitän zugewiesen",
+    "homeCoachMissing": "Heimteam: kein Trainer gesetzt",
+    "awayCaptainMissing": "Gastteam: kein Kapitän zugewiesen",
+    "awayCoachMissing": "Gastteam: kein Trainer gesetzt",
+    "selectGenderFirst": "Zuerst Geschlecht auswählen"
   }
 }

@@ -14,13 +14,14 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { parseRosterPdf } from '../utils/parseRosterPdf'
-import { getWebSocketUrl } from '../utils/backendConfig'
+import { getWebSocketUrl, getBackendUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 import { generateMatchSeedKey } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
+import { generateSecurePin } from '../utils/stringUtils'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -206,6 +207,35 @@ const TEST_HOME_TEAM = TEST_TEAM_SEED_DATA.find(t => t.seedKey === 'test-team-ho
 const TEST_AWAY_TEAM = TEST_TEAM_SEED_DATA.find(t => t.seedKey === 'test-team-away')
 
 // OfficialCard component - defined outside to prevent focus loss on re-render
+const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle }) {
+  return (
+    <div
+      onClick={(e) => { e.stopPropagation(); onToggle() }}
+      style={{
+        width: '36px',
+        height: '20px',
+        borderRadius: '10px',
+        background: on ? 'rgba(59, 130, 246, 0.6)' : 'rgba(255,255,255,0.2)',
+        position: 'relative',
+        cursor: 'pointer',
+        transition: 'background 0.2s',
+        flexShrink: 0
+      }}
+    >
+      <div style={{
+        width: '16px',
+        height: '16px',
+        borderRadius: '50%',
+        background: '#fff',
+        position: 'absolute',
+        top: '2px',
+        left: on ? '18px' : '2px',
+        transition: 'left 0.2s'
+      }} />
+    </div>
+  )
+})
+
 const OfficialCard = memo(function OfficialCard({
   title,
   officialKey,
@@ -220,56 +250,70 @@ const OfficialCard = memo(function OfficialCard({
   hasDatabase = false,
   selectorKey = null,
   onOpenDatabase,
+  collapsible = false,
+  defaultCollapsed = false,
+  forceExpanded = false,
   t
 }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const isCollapsed = collapsible && collapsed && !forceExpanded
   return (
     <div style={{
-      border: '1px solid rgba(255, 255, 255, 0.2)',
+      border: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '8px',
-      background: 'rgba(15, 23, 42, 0.2)',
-      overflow: 'hidden'
+      background: isCollapsed ? 'transparent' : 'rgba(15, 23, 42, 0.2)',
+      overflow: 'hidden',
+      transition: 'border 0.2s, background 0.2s'
     }}>
       <div
         style={{
           padding: '10px 16px',
-          background: 'rgba(255, 255, 255, 0.1)',
+          background: isCollapsed ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '12px'
+          gap: '12px',
+          transition: 'background 0.2s'
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>{title}</span>
-        {hasDatabase && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenDatabase(e, selectorKey)
-            }}
-            style={{
-              padding: '4px 8px',
-              fontSize: '11px',
-              fontWeight: 500,
-              background: 'rgba(59, 130, 246, 0.2)',
-              color: '#60a5fa',
-              border: '1px solid rgba(59, 130, 246, 0.4)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            {t('matchSetup.database')}
-          </button>
-        )}
-      </div>
-      <div style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          <div className="field"><label>{t('matchSetup.lastName')}</label><input className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
-          <div className="field"><label>{t('matchSetup.firstName')}</label><input className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
-          <div className="field"><label>{t('matchSetup.country')}</label><input style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
-          <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+        <span style={{ fontWeight: 600, fontSize: '12px', color: isCollapsed ? 'rgba(255,255,255,0.5)' : 'inherit', transition: 'color 0.2s', whiteSpace: 'nowrap' }}>{title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          {hasDatabase && !isCollapsed && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenDatabase(e, selectorKey)
+              }}
+              style={{
+                padding: '3px 6px',
+                fontSize: '9px',
+                fontWeight: 500,
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#60a5fa',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              {t('matchSetup.database')}
+            </button>
+          )}
+          {collapsible && (
+            <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(c => !c)} />
+          )}
         </div>
       </div>
+      {!isCollapsed && (
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.country')}</label><input style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+          </div>
+        </div>
+      )}
     </div>
   )
 })
@@ -284,34 +328,44 @@ const LineJudgesCard = memo(function LineJudgesCard({
   setLineJudge2,
   setLineJudge3,
   setLineJudge4,
+  defaultCollapsed = false,
+  forceExpanded = false,
   t
 }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const isCollapsed = collapsed && !forceExpanded
   return (
     <div style={{
-      border: '1px solid rgba(255, 255, 255, 0.2)',
+      border: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
       borderRadius: '8px',
-      background: 'rgba(15, 23, 42, 0.2)',
-      overflow: 'hidden'
+      background: isCollapsed ? 'transparent' : 'rgba(15, 23, 42, 0.2)',
+      overflow: 'hidden',
+      transition: 'border 0.2s, background 0.2s'
     }}>
       <div
         style={{
           padding: '10px 16px',
-          background: 'rgba(255, 255, 255, 0.1)',
+          background: isCollapsed ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px'
+          justifyContent: 'space-between',
+          gap: '8px',
+          transition: 'background 0.2s'
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.lineJudges')}</span>
+        <span style={{ fontWeight: 600, fontSize: '12px', color: isCollapsed ? 'rgba(255,255,255,0.5)' : 'inherit', transition: 'color 0.2s', whiteSpace: 'nowrap' }}>{t('matchSetup.lineJudges')}</span>
+        <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(c => !c)} />
       </div>
-      <div style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-          <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-          <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-          <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+      {!isCollapsed && (
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 })
@@ -428,6 +482,118 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return `${t('matchSetup.required') || 'Required'}: ${missing.join(', ')}`
   }
 
+  // Returns missing match-info fields as an array (for WarningIndicator)
+  const getMissingFieldsList = () => {
+    const missing = []
+    if (!home?.trim()) missing.push(t('matchSetup.homeTeamName') || 'Home team')
+    if (!away?.trim()) missing.push(t('matchSetup.awayTeamName') || 'Away team')
+    if (!homeShortName?.trim()) missing.push(`${t('common.home')} ${t('matchSetup.short')}`)
+    if (!awayShortName?.trim()) missing.push(`${t('common.away')} ${t('matchSetup.short')}`)
+    if (!date?.trim()) missing.push(t('matchSetup.date') || 'Date')
+    else if (dateError) missing.push(`${t('matchSetup.date')} (${t('common.invalid') || 'invalid'})`)
+    if (!time?.trim()) missing.push(t('matchSetup.time') || 'Time')
+    else if (timeError) missing.push(`${t('matchSetup.time')} (${t('common.invalid') || 'invalid'})`)
+    if (!gameN?.trim()) missing.push(t('matchSetup.gameNumber') || 'Game #')
+    if (!league?.trim()) missing.push(t('matchSetup.league') || 'League')
+    if (!city?.trim()) missing.push(t('matchSetup.city') || 'City')
+    if (!hall?.trim()) missing.push(t('matchSetup.hall') || 'Hall')
+    if (requireEmail && !notificationEmail?.trim()) missing.push(t('matchSetup.notificationEmail') || 'Email')
+    return missing
+  }
+
+  // Warning indicator that shows a clickable amber "!" icon next to disabled buttons
+  // On click, displays a fixed popover listing what's missing, clamped to viewport
+  const WarningIndicator = ({ id, missingItems, position = 'above' }) => {
+    if (!missingItems || missingItems.length === 0) return null
+    const isOpen = activeWarningPopover === id
+
+    return (
+      <span
+        ref={isOpen ? warningPopoverRef : undefined}
+        style={{ position: 'relative', display: 'inline-flex', marginLeft: s(6), pointerEvents: 'auto' }}
+      >
+        <span
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            setActiveWarningPopover(isOpen ? null : id)
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: s(22),
+            height: s(22),
+            borderRadius: '50%',
+            backgroundColor: '#f59e0b',
+            color: '#0b1120',
+            fontWeight: 700,
+            fontSize: s(14),
+            cursor: 'pointer',
+            flexShrink: 0,
+            border: '2px solid rgba(245, 158, 11, 0.4)',
+            boxShadow: '0 0 8px rgba(245, 158, 11, 0.3)'
+          }}
+          title={t('warnings.clickForDetails')}
+        >
+          !
+        </span>
+
+        {isOpen && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              background: '#1f2937',
+              border: '1px solid #f59e0b',
+              borderRadius: s(8),
+              padding: `${s(10)}px ${s(14)}px`,
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+              zIndex: 100,
+              width: 'max-content',
+              maxWidth: `min(${s(340)}px, 90vw)`,
+              whiteSpace: 'normal'
+            }}
+            ref={(el) => {
+              if (!el) return
+              const iconRect = el.parentElement?.firstElementChild?.getBoundingClientRect()
+              if (!iconRect) return
+              if (position === 'above') {
+                el.style.bottom = `${window.innerHeight - iconRect.top + 8}px`
+              } else {
+                el.style.top = `${iconRect.bottom + 8}px`
+              }
+              let left = iconRect.right - el.offsetWidth
+              if (left < 8) left = 8
+              if (left + el.offsetWidth > window.innerWidth - 8) left = window.innerWidth - 8 - el.offsetWidth
+              el.style.left = `${left}px`
+            }}
+          >
+            <div style={{
+              fontSize: s(12),
+              fontWeight: 600,
+              color: '#f59e0b',
+              marginBottom: s(6)
+            }}>
+              {t('warnings.missingRequired')}
+            </div>
+            <ul style={{
+              margin: 0,
+              paddingLeft: s(16),
+              fontSize: s(12),
+              color: 'var(--text)',
+              lineHeight: 1.5
+            }}>
+              {missingItems.map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </span>
+    )
+  }
+
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
   const [awayRoster, setAwayRoster] = useState([])
@@ -462,7 +628,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [scorerFirst, setScorerFirst] = useState('')
   const [scorerLast, setScorerLast] = useState('')
   const [scorerCountry, setScorerCountry] = useState('CHE')
-  const [scorerDob, setScorerDob] = useState('01.01.1900')
+  const [scorerDob, setScorerDob] = useState('')
 
   const [asstFirst, setAsstFirst] = useState('')
   const [asstLast, setAsstLast] = useState('')
@@ -514,7 +680,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   ])
 
   // UI state for views
-  const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'officials', 'home', 'away'
+  const [currentView, setCurrentView] = useState('main') // 'main', 'info', 'home', 'away'
   const [openSignature, setOpenSignature] = useState(null) // 'home-coach', 'home-captain', 'away-coach', 'away-captain'
   const [showRoster, setShowRoster] = useState({ home: false, away: false })
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
@@ -587,6 +753,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [serverStatus, setServerStatus] = useState(null)
   const [serverLoading, setServerLoading] = useState(false)
   const [instanceId] = useState(() => `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
+
+  // Warning popover state (only one open at a time)
+  const [activeWarningPopover, setActiveWarningPopover] = useState(null)
+  const warningPopoverRef = useRef(null)
 
   // Sync status tracking for cards
   // 'idle' = no sync needed, 'syncing' = sync in progress, 'synced' = synced successfully, 'error' = sync failed
@@ -707,6 +877,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   const isMatchOngoing = match?.status === 'live'
 
+  // Dismiss warning popover on click outside
+  useEffect(() => {
+    if (!activeWarningPopover) return
+    const handler = (e) => {
+      if (warningPopoverRef.current && !warningPopoverRef.current.contains(e.target)) {
+        setActiveWarningPopover(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [activeWarningPopover])
+
   // Capture original state when entering a view (for discard on Back)
   useEffect(() => {
     if (currentView === 'info') {
@@ -714,7 +896,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
         type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
       }
-    } else if (currentView === 'officials') {
       originalOfficialsRef.current = {
         ref1First, ref1Last, ref1Country, ref1Dob,
         ref2First, ref2Last, ref2Country, ref2Dob,
@@ -773,14 +954,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Check Supabase availability and sync status periodically
   useEffect(() => {
     const checkSupabaseAndSyncStatus = async () => {
-      // Check if Supabase is available
-      if (!supabase) {
-        setIsSupabaseAvailable(false)
-        return
-      }
-
       try {
-        const { error } = await supabase.from('matches').select('id').limit(1)
+        const { error } = await apiFrom('matches').select('id').limit(1)
         const available = !error
         setIsSupabaseAvailable(available)
 
@@ -818,8 +993,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           setAwayTeamSyncStatus('syncing')
         } else {
           // Check if match exists in Supabase
-          const { data: supabaseMatch } = await supabase
-            .from('matches')
+          const { data: supabaseMatch } = await apiFrom('matches')
             .select('id, status')
             .eq('external_id', match.seed_key)
             .maybeSingle()
@@ -870,8 +1044,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       } else if (cardType === 'matchInfo') {
         // No error jobs - check if match exists in Supabase
         // If not, create a new match insert job
-        const { data: supabaseMatch } = await supabase
-          .from('matches')
+        const { data: supabaseMatch } = await apiFrom('matches')
           .select('id')
           .eq('external_id', match.seed_key)
           .maybeSingle()
@@ -879,8 +1052,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (!supabaseMatch) {
           // Check if a match with the same game_n already exists (prevent duplicates)
           if (match.gameN) {
-            const { data: existingByGameN } = await supabase
-              .from('matches')
+            const { data: existingByGameN } = await apiFrom('matches')
               .select('id, external_id')
               .eq('game_n', parseInt(match.gameN, 10))
               .maybeSingle()
@@ -1100,59 +1272,38 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         else if (match.gameNumber) setGameN(String(match.gameNumber))
 
         // Generate PINs if they don't exist (for matches created before PIN feature)
-        const generatePinCode = (existingPins = []) => {
-          const chars = '0123456789'
-          let pin = ''
-          let attempts = 0
-          const maxAttempts = 100
-
-          do {
-            pin = ''
-            for (let i = 0; i < 6; i++) {
-              pin += chars.charAt(Math.floor(Math.random() * chars.length))
-            }
-            attempts++
-            if (attempts >= maxAttempts) {
-              // If we can't generate a unique PIN after many attempts, just return this one
-              break
-            }
-          } while (existingPins.includes(pin))
-
-          return pin
-        }
-
         const updates = {}
         const existingPins = []
         if (!match.refereePin) {
-          const refPin = generatePinCode(existingPins)
+          const refPin = generateSecurePin(existingPins)
           updates.refereePin = String(refPin).trim() // Ensure string
           existingPins.push(String(refPin).trim())
         } else {
           existingPins.push(String(match.refereePin).trim())
         }
         if (!match.homeTeamPin) {
-          const homePin = generatePinCode(existingPins)
+          const homePin = generateSecurePin(existingPins)
           updates.homeTeamPin = String(homePin).trim() // Ensure string
           existingPins.push(String(homePin).trim())
         } else {
           existingPins.push(String(match.homeTeamPin).trim())
         }
         if (!match.awayTeamPin) {
-          const awayPin = generatePinCode(existingPins)
+          const awayPin = generateSecurePin(existingPins)
           updates.awayTeamPin = String(awayPin).trim() // Ensure string
           existingPins.push(String(awayPin).trim())
         } else {
           existingPins.push(String(match.awayTeamPin).trim())
         }
         if (!match.homeTeamUploadPin) {
-          const homeUploadPin = generatePinCode(existingPins)
+          const homeUploadPin = generateSecurePin(existingPins)
           updates.homeTeamUploadPin = homeUploadPin
           existingPins.push(homeUploadPin)
         } else {
           existingPins.push(match.homeTeamUploadPin)
         }
         if (!match.awayTeamUploadPin) {
-          const awayUploadPin = generatePinCode(existingPins)
+          const awayUploadPin = generateSecurePin(existingPins)
           updates.awayTeamUploadPin = awayUploadPin
         }
         if (Object.keys(updates).length > 0) {
@@ -1161,14 +1312,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         // Always sync upload PINs to Supabase if connected (whether newly generated or existing)
         // This ensures existing local PINs get pushed to Supabase
-        if (supabase && match.seed_key) {
+        if (match.seed_key) {
           const homeUploadPin = updates.homeTeamUploadPin || match.homeTeamUploadPin
           const awayUploadPin = updates.awayTeamUploadPin || match.awayTeamUploadPin
           if (homeUploadPin || awayUploadPin) {
             try {
               // Fetch existing connection_pins to merge (use maybeSingle to avoid 406 if match not synced yet)
-              const { data: existingMatch } = await supabase
-                .from('matches')
+              const { data: existingMatch } = await apiFrom('matches')
                 .select('connection_pins')
                 .eq('external_id', match.seed_key)
                 .maybeSingle()
@@ -1181,8 +1331,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   ...(awayUploadPin ? { upload_away: awayUploadPin } : {})
                 }
 
-                await supabase
-                  .from('matches')
+                await apiFrom('matches')
                   .update({ connection_pins: connectionPinsUpdate })
                   .eq('external_id', match.seed_key)
                 console.log('[MatchSetup] Synced upload PINs to Supabase connection_pins:', connectionPinsUpdate)
@@ -1648,15 +1797,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
           league,
-          gamePin: match && !match.test ? (match.gamePin || (() => {
-            // Auto-generate gamePin if it doesn't exist
-            const chars = '0123456789'
-            let pin = ''
-            for (let i = 0; i < 6; i++) {
-              pin += chars.charAt(Math.floor(Math.random() * chars.length))
-            }
-            return pin
-          })()) : null,
+          gamePin: match && !match.test ? (match.gamePin || generateSecurePin([])) : null,
           scheduledAt,
           officials: buildOfficialsArray(
             { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
@@ -1746,7 +1887,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Auto-save when data changes (debounced)
   useEffect(() => {
-    if (currentView === 'main' || currentView === 'info' || currentView === 'officials' || currentView === 'home' || currentView === 'away') {
+    if (currentView === 'main' || currentView === 'info' || currentView === 'home' || currentView === 'away') {
       const timeoutId = setTimeout(() => {
         saveDraft(true) // Silent auto-save
       }, 500) // Debounce 500ms
@@ -1921,7 +2062,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
       type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName
     }
-    const hasChanges = isCreating || hasMatchInfoChanged(originalMatchInfoRef.current, currentMatchInfo)
+    const currentOfficials = {
+      ref1First, ref1Last, ref1Country, ref1Dob,
+      ref2First, ref2Last, ref2Country, ref2Dob,
+      scorerFirst, scorerLast, scorerCountry, scorerDob,
+      asstFirst, asstLast, asstCountry, asstDob,
+      lineJudge1, lineJudge2, lineJudge3, lineJudge4
+    }
+    const hasChanges = isCreating || hasMatchInfoChanged(originalMatchInfoRef.current, currentMatchInfo) || hasOfficialsChanged(originalOfficialsRef.current, currentOfficials)
 
     // If no changes, just go back to main view
     if (!hasChanges) {
@@ -2012,6 +2160,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         seed_key: matchSeedKey, // Ensure seed_key is set
         bench_home: benchHome,
         bench_away: benchAway,
+        officials: buildOfficialsArray(
+          { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
+          { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
+          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
+          { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
+          { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
+        ),
         matchInfoConfirmedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })
@@ -2043,7 +2198,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
         away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
         bench_home: benchHome || [],
-        bench_away: benchAway || []
+        bench_away: benchAway || [],
+        officials: buildOfficialsArray(
+          { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: formatDobForSync(ref1Dob) },
+          { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: formatDobForSync(ref2Dob) },
+          { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: formatDobForSync(scorerDob) },
+          { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: formatDobForSync(asstDob) },
+          { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
+          true // useSnakeCase for Supabase
+        )
       }
 
       // Only set status to 'setup' when creating a new match
@@ -2086,7 +2249,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         }
 
         // Get backend URL from environment or use default
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://openvolley-escoresheet-backend-production.up.railway.app'
+        const backendUrl = getBackendUrl()
 
         fetch(`${backendUrl}/api/match/send-info`, {
           method: 'POST',
@@ -2110,35 +2273,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         uploadLogsToCloud(matchId, gameN || null)
       }).catch(err => console.warn('[MatchSetup] Cloud backup failed:', err))
 
-      // Poll to check when sync completes (only if Supabase is configured)
-      if (supabase) {
-        const checkSyncStatus = async () => {
-          let attempts = 0
-          const maxAttempts = 20 // 10 seconds max
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const job = await db.sync_queue.get(syncJobId)
-              if (!job || job.status === 'sent') {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
-              } else if (job.status === 'error') {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-              }
-            } catch (err) {
+      // Poll to check when sync completes
+      const checkSyncStatus = async () => {
+        let attempts = 0
+        const maxAttempts = 20 // 10 seconds max
+        const interval = setInterval(async () => {
+          attempts++
+          try {
+            const job = await db.sync_queue.get(syncJobId)
+            if (!job || job.status === 'sent') {
               clearInterval(interval)
+              setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
+            } else if (job.status === 'error') {
+              clearInterval(interval)
+              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
+            } else if (attempts >= maxAttempts) {
+              clearInterval(interval)
+              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
             }
-          }, 500)
-        }
-        checkSyncStatus()
-      } else {
-        // No Supabase — show immediate success without waiting for sync
-        setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
+          } catch (err) {
+            clearInterval(interval)
+          }
+        }, 500)
       }
+      checkSyncStatus()
     } catch (error) {
       console.error('Error confirming match info:', error)
       setNoticeModal({ message: t('matchSetup.errorGeneric', { error: error.message }), type: 'error' })
@@ -2261,28 +2419,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       const homeId = await db.teams.add({ name: home, color: homeColor, shortName: homeShortName || home.substring(0, 8).toUpperCase(), benchStaff: benchHome, createdAt: new Date().toISOString() })
       const awayId = await db.teams.add({ name: away, color: awayColor, shortName: awayShortName || away.substring(0, 8).toUpperCase(), benchStaff: benchAway, createdAt: new Date().toISOString() })
 
-      // Generate 6-digit PIN code for referee authentication
-      const generatePinCode = (existingPins = []) => {
-        const chars = '0123456789'
-        let pin = ''
-        let attempts = 0
-        const maxAttempts = 100
-
-        do {
-          pin = ''
-          for (let i = 0; i < 6; i++) {
-            pin += chars.charAt(Math.floor(Math.random() * chars.length))
-          }
-          attempts++
-          if (attempts >= maxAttempts) {
-            // If we can't generate a unique PIN after many attempts, just return this one
-            break
-          }
-        } while (existingPins.includes(pin))
-
-        return pin
-      }
-
       // Generate match PIN code (for opening/continuing match)
       const matchPin = prompt(t('matchSetup.enterPinPrompt'))
       if (!matchPin || matchPin.trim() === '') {
@@ -2291,19 +2427,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
 
       // Auto-generate gamePin for official matches
-      const generatedGamePin = (() => {
-        const chars = '0123456789'
-        let pin = ''
-        for (let i = 0; i < 6; i++) {
-          pin += chars.charAt(Math.floor(Math.random() * chars.length))
-        }
-        return pin
-      })()
+      const generatedGamePin = generateSecurePin([])
 
       // Generate all PINs upfront so we can display them in the modal
-      const generatedRefereePin = generatePinCode([])
-      const generatedHomeTeamPin = generatePinCode([generatedRefereePin])
-      const generatedAwayTeamPin = generatePinCode([generatedRefereePin, generatedHomeTeamPin])
+      const generatedRefereePin = generateSecurePin([])
+      const generatedHomeTeamPin = generateSecurePin([generatedRefereePin])
+      const generatedAwayTeamPin = generateSecurePin([generatedRefereePin, generatedHomeTeamPin])
 
       // Generate a unique seed_key for Supabase sync (stored as external_id)
       // This is the stable unique identifier - never includes modifiable fields like gameN
@@ -2420,9 +2549,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       })
 
       // Associate user with this match if logged in
-      if (user && supabase) {
+      if (user) {
         try {
-          await supabase.from('user_matches').upsert({
+          await apiFrom('user_matches').upsert({
             user_id: user.id,
             match_external_id: seedKey,
             role: 'scorer',
@@ -2851,6 +2980,31 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Clear short names - user must fill them in manually for official matches
     setHomeShortName('')
     setAwayShortName('')
+
+    // Referees (from Supabase - separate first/last name fields)
+    if (matchData.referee1First || matchData.referee1Last) {
+      setRef1First(matchData.referee1First || '')
+      setRef1Last(matchData.referee1Last || '')
+      setRef1Country('CHE')
+      if (matchData.referee1Dob) {
+        // Convert YYYY-MM-DD to DD.MM.YYYY
+        const m = matchData.referee1Dob.match(/^(\d{4})-(\d{2})-(\d{2})/)
+        if (m) setRef1Dob(`${m[3]}.${m[2]}.${m[1]}`)
+      }
+    }
+    if (matchData.referee2First || matchData.referee2Last) {
+      setRef2First(matchData.referee2First || '')
+      setRef2Last(matchData.referee2Last || '')
+      setRef2Country('CHE')
+      if (matchData.referee2Dob) {
+        const m = matchData.referee2Dob.match(/^(\d{4})-(\d{2})-(\d{2})/)
+        if (m) setRef2Dob(`${m[3]}.${m[2]}.${m[1]}`)
+      }
+    }
+
+    // Line judges
+    if (matchData.linesman1) setLineJudge1(matchData.linesman1)
+    if (matchData.linesman2) setLineJudge2(matchData.linesman2)
   }
 
   // PDF file handlers - must be defined before conditional returns
@@ -2888,7 +3042,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Search for pending roster in Supabase
   const handleSearchHomeRoster = async () => {
-    if (!match || !supabase) {
+    if (!match) {
       setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
       return
     }
@@ -2899,8 +3053,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       console.log('[MatchSetup] Searching for home roster, game number:', gameNumber)
 
       // Search for pending roster in Supabase
-      const { data, error } = await supabase
-        .from('matches')
+      const { data, error } = await apiFrom('matches')
         .select('pending_home_roster, external_id')
         .eq('game_n', gameNumber)
         .not('pending_home_roster', 'is', null)
@@ -2926,7 +3079,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }
 
   const handleSearchAwayRoster = async () => {
-    if (!match || !supabase) {
+    if (!match) {
       setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
       return
     }
@@ -2937,8 +3090,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       console.log('[MatchSetup] Searching for away roster, game number:', gameNumber)
 
       // Search for pending roster in Supabase
-      const { data, error } = await supabase
-        .from('matches')
+      const { data, error } = await apiFrom('matches')
         .select('pending_away_roster, external_id')
         .eq('game_n', gameNumber)
         .not('pending_away_roster', 'is', null)
@@ -3184,7 +3336,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return (
       <MatchSetupInfoView>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button className="secondary" onClick={() => { restoreMatchInfo(); setCurrentView('main') }}>← {t('common.back')}</button>
+          <button className="secondary" onClick={() => { restoreMatchInfo(); restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <h1 style={{ margin: 8 }}>{t('matchSetup.matchInfo')}</h1>
@@ -3208,125 +3360,231 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div style={{ width: 80 }}></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.dateTime')}</h3>
-            <div className="field">
-              <label>{t('matchSetup.date')}</label>
-              <input
-                className="w-100"
-                type="date"
-                value={date}
-                onChange={e => handleDateChange(e.target.value)}
-                style={dateError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
-              />
-              {dateError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{dateError}</span>}
+          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.dateTime')}</span>
             </div>
-            <div className="field">
-              <label>{t('matchSetup.time')}</label>
-              <input
-                className="w-100"
-                type="text"
-                value={time}
-                onChange={e => handleTimeChange(e.target.value)}
-                placeholder={t('matchSetup.placeholders.hhMm')}
-                style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
-              />
-              {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
-            </div>
-          </div>
-
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.location')}</h3>
-            <div className="field">
-              <label>{t('matchSetup.city')}</label>
-              <input
-                className="w-160 capitalize"
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                list="cities-zurich"
-                placeholder={t('matchSetup.enterCity')}
-              />
-              <datalist id="cities-zurich">
-                {citiesZurich.map(c => <option key={c} value={c} />)}
-              </datalist>
-            </div>
-            <div className="field"><label>{t('matchSetup.hall')}</label><input className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
-          </div>
-
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.matchType')}</h3>
-            <div className="field">
-              <label>{t('matchSetup.matchType')}</label>
-              <select className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
-                <option value="championship">{t('matchSetup.championship')}</option>
-                <option value="cup">{t('matchSetup.cup')}</option>
-                <option value="friendly">{t('matchSetup.friendly')}</option>
-                <option value="tournament">{t('matchSetup.tournament')}</option>
-                <option value="other">{t('matchSetup.other')}</option>
-              </select>
-            </div>
-            {type1 === 'other' && (
-              <div className="field">
-                <label>{t('matchSetup.specify')}</label>
-                <input className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.date')}</label>
+                <input
+                  className="w-100"
+                  type="date"
+                  value={date}
+                  onChange={e => handleDateChange(e.target.value)}
+                  style={dateError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
+                />
+                {dateError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{dateError}</span>}
               </div>
-            )}
-            <div className="field">
-              <label>{t('matchSetup.championshipType')}</label>
-              <select className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
-                <option value="regional">{t('matchSetup.regional')}</option>
-                <option value="national">{t('matchSetup.national')}</option>
-                <option value="international">{t('matchSetup.international')}</option>
-                <option value="other">{t('matchSetup.other')}</option>
-              </select>
-            </div>
-            {championshipType === 'other' && (
-              <div className="field">
-                <label>{t('matchSetup.specify')}</label>
-                <input className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.time')}</label>
+                <input
+                  className="w-100"
+                  type="text"
+                  value={time}
+                  onChange={e => handleTimeChange(e.target.value)}
+                  placeholder={t('matchSetup.placeholders.hhMm')}
+                  style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
+                />
+                {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
               </div>
-            )}
+            </div>
           </div>
 
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.categoryLevel')}</h3>
-            <div className="field">
-              <label>{t('matchSetup.gender')}</label>
-              <select className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
-                <option value="men">{t('matchSetup.men')}</option>
-                <option value="women">{t('matchSetup.women')}</option>
-              </select>
+          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.location')}</span>
             </div>
-            <div className="field">
-              <label>{t('matchSetup.matchLevel')}</label>
-              <select className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
-                <option value="senior">{t('matchSetup.senior')}</option>
-                <option value="U23">U23</option>
-                <option value="U21">U21</option>
-                <option value="U19">U19</option>
-                <option value="U17">U17</option>
-                <option value="other">{t('matchSetup.other')}</option>
-              </select>
-            </div>
-            {type3 === 'other' && (
-              <div className="field">
-                <label>{t('matchSetup.specify')}</label>
-                <input className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.city')}</label>
+                <input
+                  className="w-160 capitalize"
+                  value={city}
+                  onChange={e => setCity(e.target.value)}
+                  list="cities-zurich"
+                  placeholder={t('matchSetup.enterCity')}
+                />
+                <datalist id="cities-zurich">
+                  {citiesZurich.map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
-            )}
+              <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.hall')}</label><input className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
+            </div>
           </div>
 
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>{t('matchSetup.gameDetails')}</h3>
-            <div className="field"><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
-            <div className="field">
-              <label>{t('matchSetup.matchFormat')}</label>
-              <select style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
-                <option value={5}>{t('matchSetup.bestOf5')}</option>
-                <option value={3}>{t('matchSetup.bestOf3')}</option>
-              </select>
+          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.matchType')}</span>
             </div>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.matchType')}</label>
+                <select className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
+                  <option value="championship">{t('matchSetup.championship')}</option>
+                  <option value="cup">{t('matchSetup.cup')}</option>
+                  <option value="friendly">{t('matchSetup.friendly')}</option>
+                  <option value="tournament">{t('matchSetup.tournament')}</option>
+                  <option value="other">{t('matchSetup.other')}</option>
+                </select>
+              </div>
+              {type1 === 'other' && (
+                <div className="field" style={{ gap: '2px' }}>
+                  <label>{t('matchSetup.specify')}</label>
+                  <input className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                </div>
+              )}
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.championshipType')}</label>
+                <select className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
+                  <option value="regional">{t('matchSetup.regional')}</option>
+                  <option value="national">{t('matchSetup.national')}</option>
+                  <option value="international">{t('matchSetup.international')}</option>
+                  <option value="other">{t('matchSetup.other')}</option>
+                </select>
+              </div>
+              {championshipType === 'other' && (
+                <div className="field" style={{ gap: '2px' }}>
+                  <label>{t('matchSetup.specify')}</label>
+                  <input className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.categoryLevel')}</span>
+            </div>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.gender')}</label>
+                <select className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
+                  <option value="men">{t('matchSetup.men')}</option>
+                  <option value="women">{t('matchSetup.women')}</option>
+                </select>
+              </div>
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.matchLevel')}</label>
+                <select className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
+                  <option value="senior">{t('matchSetup.senior')}</option>
+                  <option value="U23">U23</option>
+                  <option value="U21">U21</option>
+                  <option value="U19">U19</option>
+                  <option value="U17">U17</option>
+                  <option value="other">{t('matchSetup.other')}</option>
+                </select>
+              </div>
+              {type3 === 'other' && (
+                <div className="field" style={{ gap: '2px' }}>
+                  <label>{t('matchSetup.specify')}</label>
+                  <input className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.gameDetails')}</span>
+            </div>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
+                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
+                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
+              </div>
+              <div className="field" style={{ gap: '2px' }}>
+                <label>{t('matchSetup.matchFormat')}</label>
+                <select style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
+                  <option value={5}>{t('matchSetup.bestOf5')}</option>
+                  <option value={3}>{t('matchSetup.bestOf3')}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Match Officials Row */}
+          <div style={{ gridColumn: 'span 5', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
+            <OfficialCard
+              title={t('matchSetup.referee1')}
+              officialKey="ref1"
+              lastName={ref1Last}
+              firstName={ref1First}
+              country={ref1Country}
+              dob={ref1Dob}
+              setLastName={setRef1Last}
+              setFirstName={setRef1First}
+              setCountry={setRef1Country}
+              setDob={setRef1Dob}
+              hasDatabase={true}
+              selectorKey="ref1"
+              onOpenDatabase={handleOpenDatabase}
+              t={t}
+            />
+            <OfficialCard
+              title={t('matchSetup.referee2')}
+              officialKey="ref2"
+              lastName={ref2Last}
+              firstName={ref2First}
+              country={ref2Country}
+              dob={ref2Dob}
+              setLastName={setRef2Last}
+              setFirstName={setRef2First}
+              setCountry={setRef2Country}
+              setDob={setRef2Dob}
+              hasDatabase={true}
+              selectorKey="ref2"
+              onOpenDatabase={handleOpenDatabase}
+              collapsible={true}
+              defaultCollapsed={true}
+              forceExpanded={!!(ref2First || ref2Last)}
+              t={t}
+            />
+            <OfficialCard
+              title={t('matchSetup.scorer')}
+              officialKey="scorer"
+              lastName={scorerLast}
+              firstName={scorerFirst}
+              country={scorerCountry}
+              dob={scorerDob}
+              setLastName={setScorerLast}
+              setFirstName={setScorerFirst}
+              setCountry={setScorerCountry}
+              setDob={setScorerDob}
+              hasDatabase={false}
+              selectorKey="scorer"
+              onOpenDatabase={handleOpenDatabase}
+              t={t}
+            />
+            <OfficialCard
+              title={t('matchSetup.assistantScorer')}
+              officialKey="asst"
+              lastName={asstLast}
+              firstName={asstFirst}
+              country={asstCountry}
+              dob={asstDob}
+              setLastName={setAsstLast}
+              setFirstName={setAsstFirst}
+              setCountry={setAsstCountry}
+              setDob={setAsstDob}
+              onOpenDatabase={handleOpenDatabase}
+              collapsible={true}
+              defaultCollapsed={true}
+              t={t}
+            />
+            <LineJudgesCard
+              lineJudge1={lineJudge1}
+              lineJudge2={lineJudge2}
+              lineJudge3={lineJudge3}
+              lineJudge4={lineJudge4}
+              setLineJudge1={setLineJudge1}
+              setLineJudge2={setLineJudge2}
+              setLineJudge3={setLineJudge3}
+              setLineJudge4={setLineJudge4}
+              defaultCollapsed={true}
+              forceExpanded={!!(lineJudge1 || lineJudge2 || lineJudge3 || lineJudge4)}
+              t={t}
+            />
           </div>
 
           {/* Teams Card - Full width row at bottom */}
@@ -3609,9 +3867,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         )}
 
+        {/* Referee Selector */}
+        <RefereeSelector
+          open={showRefereeSelector !== null}
+          onClose={() => setShowRefereeSelector(null)}
+          onSelect={(referee) => {
+            if (showRefereeSelector === 'ref1') {
+              setRef1First(referee.firstName || '')
+              setRef1Last(referee.lastName || '')
+              setRef1Country(referee.country || 'CHE')
+              setRef1Dob(referee.dob || '01.01.1900')
+            } else if (showRefereeSelector === 'ref2') {
+              setRef2First(referee.firstName || '')
+              setRef2Last(referee.lastName || '')
+              setRef2Country(referee.country || 'CHE')
+              setRef2Dob(referee.dob || '01.01.1900')
+            } else if (showRefereeSelector === 'scorer') {
+              setScorerFirst(referee.firstName || '')
+              setScorerLast(referee.lastName || '')
+              setScorerCountry(referee.country || 'CHE')
+              setScorerDob(referee.dob || '01.01.1900')
+            }
+          }}
+          position={refereeSelectorPosition}
+        />
 
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 16 }}>
           <button
             style={{
               padding: `${s(10)}px ${s(20)}px`,
@@ -3635,6 +3916,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           >
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
           </button>
+          {!canConfirmMatchInfo && (
+            <WarningIndicator id="confirmMatchInfo" missingItems={getMissingFieldsList()} position="below" />
+          )}
         </div>
 
         {/* Color Picker Modal for Match Info view */}
@@ -3716,203 +4000,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           onSelectMatch={handleOfficialMatchSelect}
         />
       </MatchSetupInfoView>
-    )
-  }
-
-  if (currentView === 'officials') {
-    return (
-      <MatchSetupOfficialsView>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button className="secondary" onClick={() => { restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <h2 style={{ marginLeft: 20, marginRight: 20 }}>{t('matchSetup.matchOfficials')}</h2>
-          <div style={{ width: 80 }}></div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <OfficialCard
-            title={t('matchSetup.referee1')}
-            officialKey="ref1"
-            lastName={ref1Last}
-            firstName={ref1First}
-            country={ref1Country}
-            dob={ref1Dob}
-            setLastName={setRef1Last}
-            setFirstName={setRef1First}
-            setCountry={setRef1Country}
-            setDob={setRef1Dob}
-            hasDatabase={true}
-            selectorKey="ref1"
-            onOpenDatabase={handleOpenDatabase}
-            t={t}
-          />
-          <OfficialCard
-            title={t('matchSetup.referee2')}
-            officialKey="ref2"
-            lastName={ref2Last}
-            firstName={ref2First}
-            country={ref2Country}
-            dob={ref2Dob}
-            setLastName={setRef2Last}
-            setFirstName={setRef2First}
-            setCountry={setRef2Country}
-            setDob={setRef2Dob}
-            hasDatabase={true}
-            selectorKey="ref2"
-            onOpenDatabase={handleOpenDatabase}
-            t={t}
-          />
-          <OfficialCard
-            title={t('matchSetup.scorer')}
-            officialKey="scorer"
-            lastName={scorerLast}
-            firstName={scorerFirst}
-            country={scorerCountry}
-            dob={scorerDob}
-            setLastName={setScorerLast}
-            setFirstName={setScorerFirst}
-            setCountry={setScorerCountry}
-            setDob={setScorerDob}
-            hasDatabase={false}
-            selectorKey="scorer"
-            onOpenDatabase={handleOpenDatabase}
-            t={t}
-          />
-          <OfficialCard
-            title={t('matchSetup.assistantScorer')}
-            officialKey="asst"
-            lastName={asstLast}
-            firstName={asstFirst}
-            country={asstCountry}
-            dob={asstDob}
-            setLastName={setAsstLast}
-            setFirstName={setAsstFirst}
-            setCountry={setAsstCountry}
-            setDob={setAsstDob}
-            onOpenDatabase={handleOpenDatabase}
-            t={t}
-          />
-          <div style={{ gridColumn: '1 / -1' }}>
-            <LineJudgesCard
-              lineJudge1={lineJudge1}
-              lineJudge2={lineJudge2}
-              lineJudge3={lineJudge3}
-              lineJudge4={lineJudge4}
-              setLineJudge1={setLineJudge1}
-              setLineJudge2={setLineJudge2}
-              setLineJudge3={setLineJudge3}
-              setLineJudge4={setLineJudge4}
-              t={t}
-            />
-          </div>
-        </div>
-        {/* Referee Selector */}
-        <RefereeSelector
-          open={showRefereeSelector !== null}
-          onClose={() => setShowRefereeSelector(null)}
-          onSelect={(referee) => {
-            if (showRefereeSelector === 'ref1') {
-              setRef1First(referee.firstName || '')
-              setRef1Last(referee.lastName || '')
-              setRef1Country(referee.country || 'CHE')
-              setRef1Dob(referee.dob || '01.01.1900')
-            } else if (showRefereeSelector === 'ref2') {
-              setRef2First(referee.firstName || '')
-              setRef2Last(referee.lastName || '')
-              setRef2Country(referee.country || 'CHE')
-              setRef2Dob(referee.dob || '01.01.1900')
-            } else if (showRefereeSelector === 'scorer') {
-              setScorerFirst(referee.firstName || '')
-              setScorerLast(referee.lastName || '')
-              setScorerCountry(referee.country || 'CHE')
-              setScorerDob(referee.dob || '01.01.1900')
-            }
-          }}
-          position={refereeSelectorPosition}
-        />
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={async () => {
-            // Check if any changes were made (skip sync if no changes)
-            const currentOfficials = {
-              ref1First, ref1Last, ref1Country, ref1Dob,
-              ref2First, ref2Last, ref2Country, ref2Dob,
-              scorerFirst, scorerLast, scorerCountry, scorerDob,
-              asstFirst, asstLast, asstCountry, asstDob,
-              lineJudge1, lineJudge2, lineJudge3, lineJudge4
-            }
-            const hasChanges = hasOfficialsChanged(originalOfficialsRef.current, currentOfficials)
-
-            // If no changes, just go back to main view
-            if (!hasChanges) {
-              setCurrentView('main')
-              return
-            }
-
-            // Save officials to database if matchId exists
-            if (matchId) {
-              await db.matches.update(matchId, {
-                officials: buildOfficialsArray(
-                  { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: ref1Dob },
-                  { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: ref2Dob },
-                  { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: scorerDob },
-                  { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: asstDob },
-                  { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
-                )
-              })
-
-              // Sync officials to Supabase as JSONB
-              const matchForOfficials = await db.matches.get(matchId)
-              if (matchForOfficials?.seed_key) {
-                await db.sync_queue.add({
-                  resource: 'match',
-                  action: 'update',
-                  payload: {
-                    id: matchForOfficials.seed_key,
-                    officials: buildOfficialsArray(
-                      { firstName: ref1First, lastName: ref1Last, country: ref1Country, dob: formatDobForSync(ref1Dob) },
-                      { firstName: ref2First, lastName: ref2Last, country: ref2Country, dob: formatDobForSync(ref2Dob) },
-                      { firstName: scorerFirst, lastName: scorerLast, country: scorerCountry, dob: formatDobForSync(scorerDob) },
-                      { firstName: asstFirst, lastName: asstLast, country: asstCountry, dob: formatDobForSync(asstDob) },
-                      { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 },
-                      true // useSnakeCase for Supabase
-                    )
-                  },
-                  ts: new Date().toISOString(),
-                  status: 'queued'
-                })
-              }
-
-              // Poll to check when sync completes (only if Supabase is configured)
-              if (supabase) {
-                setNoticeModal({ message: t('matchSetup.officialsSaved'), type: 'success', syncing: true })
-                const checkSyncStatus = async () => {
-                  let attempts = 0
-                  const maxAttempts = 20
-                  const interval = setInterval(async () => {
-                    attempts++
-                    try {
-                      const queued = await db.sync_queue.where('status').equals('queued').count()
-                      if (queued === 0) {
-                        clearInterval(interval)
-                        setNoticeModal({ message: t('matchSetup.officialsSynced'), type: 'success' })
-                      } else if (attempts >= maxAttempts) {
-                        clearInterval(interval)
-                        setNoticeModal({ message: t('matchSetup.officialsSavedLocal'), type: 'success' })
-                      }
-                    } catch (err) {
-                      clearInterval(interval)
-                    }
-                  }, 500)
-                }
-                checkSyncStatus()
-              } else {
-                setNoticeModal({ message: t('matchSetup.officialsSavedLocal'), type: 'success' })
-              }
-            }
-            setCurrentView('main')
-          }}>{t('common.confirm')}</button>
-        </div>
-      </MatchSetupOfficialsView>
     )
   }
 
@@ -4092,21 +4179,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           className="secondary"
                           onClick={async () => {
                             if (!matchId) return
-                            const generatePinCode = (existingPins = []) => {
-                              const chars = '0123456789'
-                              let pin = ''
-                              let attempts = 0
-                              const maxAttempts = 100
-                              do {
-                                pin = ''
-                                for (let i = 0; i < 6; i++) {
-                                  pin += chars.charAt(Math.floor(Math.random() * chars.length))
-                                }
-                                attempts++
-                                if (attempts >= maxAttempts) break
-                              } while (existingPins.includes(pin))
-                              return pin
-                            }
                             const match = await db.matches.get(matchId)
                             const existingPins = [
                               match?.refereePin,
@@ -4114,7 +4186,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               match?.awayTeamPin,
                               match?.awayTeamUploadPin
                             ].filter(Boolean)
-                            const newPin = generatePinCode(existingPins)
+                            const newPin = generateSecurePin(existingPins)
                             await db.matches.update(matchId, { homeTeamUploadPin: newPin })
                           }}
                           style={{ padding: '4px 8px', fontSize: '11px' }}
@@ -4128,21 +4200,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         className="secondary"
                         onClick={async () => {
                           if (!matchId) return
-                          const generatePinCode = (existingPins = []) => {
-                            const chars = '0123456789'
-                            let pin = ''
-                            let attempts = 0
-                            const maxAttempts = 100
-                            do {
-                              pin = ''
-                              for (let i = 0; i < 6; i++) {
-                                pin += chars.charAt(Math.floor(Math.random() * chars.length))
-                              }
-                              attempts++
-                              if (attempts >= maxAttempts) break
-                            } while (existingPins.includes(pin))
-                            return pin
-                          }
                           const match = await db.matches.get(matchId)
                           const existingPins = [
                             match?.refereePin,
@@ -4150,7 +4207,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             match?.awayTeamPin,
                             match?.awayTeamUploadPin
                           ].filter(Boolean)
-                          const newPin = generatePinCode(existingPins)
+                          const newPin = generateSecurePin(existingPins)
                           await db.matches.update(matchId, { homeTeamUploadPin: newPin })
                         }}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
@@ -4684,7 +4741,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
             )
           })}
-          <div className="bench-grid-row" style={{ border: 'none', padding: 0 }}>
+          <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               type="button"
               className="secondary"
@@ -4700,6 +4757,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             >
               {t('matchSetup.addBenchOfficial')}
             </button>
+            {benchHome.length >= 5 && (
+              <WarningIndicator id="addBenchHome" missingItems={[t('warnings.maxBenchOfficials')]} />
+            )}
           </div>
         </div>
 
@@ -4970,8 +5030,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
                 // Also sync to match_live_state if it exists (for Referee app)
                 try {
-                  const { data: supabaseMatch } = await supabase
-                    .from('matches')
+                  const { data: supabaseMatch } = await apiFrom('matches')
                     .select('id')
                     .eq('external_id', match.seed_key)
                     .maybeSingle()
@@ -4983,8 +5042,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const shortKey = homeIsTeamA ? 'team_a_short' : 'team_b_short'
                     const nameKey = homeIsTeamA ? 'team_a_name' : 'team_b_name'
 
-                    await supabase
-                      .from('match_live_state')
+                    await apiFrom('match_live_state')
                       .update({
                         [colorKey]: homeColor,
                         [shortKey]: homeShortName || generateShortName(home),
@@ -4999,32 +5057,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Poll to check when sync completes (only if Supabase is configured)
-              if (supabase) {
-                setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
-                const checkSyncStatus = async () => {
-                  let attempts = 0
-                  const maxAttempts = 20
-                  const interval = setInterval(async () => {
-                    attempts++
-                    try {
-                      const queued = await db.sync_queue.where('status').equals('queued').count()
-                      if (queued === 0) {
-                        clearInterval(interval)
-                        setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
-                      } else if (attempts >= maxAttempts) {
-                        clearInterval(interval)
-                        setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
-                      }
-                    } catch (err) {
+              // Poll to check when sync completes
+              setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
+              const checkSyncStatus = async () => {
+                let attempts = 0
+                const maxAttempts = 20
+                const interval = setInterval(async () => {
+                  attempts++
+                  try {
+                    const queued = await db.sync_queue.where('status').equals('queued').count()
+                    if (queued === 0) {
                       clearInterval(interval)
+                      setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
+                    } else if (attempts >= maxAttempts) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
                     }
-                  }, 500)
-                }
-                checkSyncStatus()
-              } else {
-                setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
+                  } catch (err) {
+                    clearInterval(interval)
+                  }
+                }, 500)
               }
+              checkSyncStatus()
             }
             setCurrentView('main')
           }}>{t('common.confirm')}</button>
@@ -5454,21 +5508,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           className="secondary"
                           onClick={async () => {
                             if (!matchId) return
-                            const generatePinCode = (existingPins = []) => {
-                              const chars = '0123456789'
-                              let pin = ''
-                              let attempts = 0
-                              const maxAttempts = 100
-                              do {
-                                pin = ''
-                                for (let i = 0; i < 6; i++) {
-                                  pin += chars.charAt(Math.floor(Math.random() * chars.length))
-                                }
-                                attempts++
-                                if (attempts >= maxAttempts) break
-                              } while (existingPins.includes(pin))
-                              return pin
-                            }
                             const match = await db.matches.get(matchId)
                             const existingPins = [
                               match?.refereePin,
@@ -5476,7 +5515,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               match?.awayTeamPin,
                               match?.homeTeamUploadPin
                             ].filter(Boolean)
-                            const newPin = generatePinCode(existingPins)
+                            const newPin = generateSecurePin(existingPins)
                             await db.matches.update(matchId, { awayTeamUploadPin: newPin })
                           }}
                           style={{ padding: '4px 8px', fontSize: '11px' }}
@@ -5490,21 +5529,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         className="secondary"
                         onClick={async () => {
                           if (!matchId) return
-                          const generatePinCode = (existingPins = []) => {
-                            const chars = '0123456789'
-                            let pin = ''
-                            let attempts = 0
-                            const maxAttempts = 100
-                            do {
-                              pin = ''
-                              for (let i = 0; i < 6; i++) {
-                                pin += chars.charAt(Math.floor(Math.random() * chars.length))
-                              }
-                              attempts++
-                              if (attempts >= maxAttempts) break
-                            } while (existingPins.includes(pin))
-                            return pin
-                          }
                           const match = await db.matches.get(matchId)
                           const existingPins = [
                             match?.refereePin,
@@ -5512,7 +5536,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             match?.awayTeamPin,
                             match?.homeTeamUploadPin
                           ].filter(Boolean)
-                          const newPin = generatePinCode(existingPins)
+                          const newPin = generateSecurePin(existingPins)
                           await db.matches.update(matchId, { awayTeamUploadPin: newPin })
                         }}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
@@ -6047,7 +6071,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
             )
           })}
-          <div className="bench-grid-row" style={{ border: 'none', padding: 0 }}>
+          <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               type="button"
               className="secondary"
@@ -6063,6 +6087,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             >
               {t('matchSetup.addBenchOfficial')}
             </button>
+            {benchAway.length >= 5 && (
+              <WarningIndicator id="addBenchAway" missingItems={[t('warnings.maxBenchOfficials')]} />
+            )}
           </div>
         </div>
 
@@ -6333,8 +6360,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
                 // Also sync to match_live_state if it exists (for Referee app)
                 try {
-                  const { data: supabaseMatch } = await supabase
-                    .from('matches')
+                  const { data: supabaseMatch } = await apiFrom('matches')
                     .select('id')
                     .eq('external_id', match.seed_key)
                     .maybeSingle()
@@ -6347,8 +6373,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const shortKey = homeIsTeamA ? 'team_b_short' : 'team_a_short'
                     const nameKey = homeIsTeamA ? 'team_b_name' : 'team_a_name'
 
-                    await supabase
-                      .from('match_live_state')
+                    await apiFrom('match_live_state')
                       .update({
                         [colorKey]: awayColor,
                         [shortKey]: awayShortName || generateShortName(away),
@@ -6363,32 +6388,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Poll to check when sync completes (only if Supabase is configured)
-              if (supabase) {
-                setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
-                const checkSyncStatus = async () => {
-                  let attempts = 0
-                  const maxAttempts = 20
-                  const interval = setInterval(async () => {
-                    attempts++
-                    try {
-                      const queued = await db.sync_queue.where('status').equals('queued').count()
-                      if (queued === 0) {
-                        clearInterval(interval)
-                        setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
-                      } else if (attempts >= maxAttempts) {
-                        clearInterval(interval)
-                        setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
-                      }
-                    } catch (err) {
+              // Poll to check when sync completes
+              setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
+              const checkSyncStatus = async () => {
+                let attempts = 0
+                const maxAttempts = 20
+                const interval = setInterval(async () => {
+                  attempts++
+                  try {
+                    const queued = await db.sync_queue.where('status').equals('queued').count()
+                    if (queued === 0) {
                       clearInterval(interval)
+                      setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
+                    } else if (attempts >= maxAttempts) {
+                      clearInterval(interval)
+                      setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
                     }
-                  }, 500)
-                }
-                checkSyncStatus()
-              } else {
-                setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
+                  } catch (err) {
+                    clearInterval(interval)
+                  }
+                }, 500)
               }
+              checkSyncStatus()
             }
             setCurrentView('main')
           }}>{t('common.confirm')}</button>
@@ -6717,7 +6738,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Officials are complete if at least 1st referee and scorer are filled
   // 2nd referee and assistant scorer are optional
   const officialsConfigured =
-    !!(ref1Last && ref1First && scorerLast && scorerFirst)
+    !!(ref1Last && ref1First && scorerLast && scorerFirst && scorerDob && scorerDob !== '01.01.1900')
   const matchInfoConfigured = !!(date || time || hall || city || league)
   // Basic roster configured (enough for saving)
   const homeRosterExists = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
@@ -6730,6 +6751,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
+
+  // Returns missing items for the "Proceed to Coin Toss" button (for WarningIndicator)
+  const getCoinTossMissingItems = () => {
+    const missing = []
+    if (!matchInfoConfirmed) missing.push(t('warnings.matchInfoNotConfirmed'))
+    if (!officialsConfigured) {
+      if (!ref1Last || !ref1First) missing.push(t('warnings.firstRefereeMissing'))
+      if (!scorerLast || !scorerFirst) missing.push(t('warnings.scorerNameMissing'))
+      if (!scorerDob || scorerDob === '01.01.1900') missing.push(t('warnings.scorerDobMissing'))
+    }
+    if (!homeConfigured) {
+      if (!home || homeRoster.length < 6) missing.push(t('warnings.homeRosterIncomplete', { count: homeRoster.length }))
+      else {
+        if (!homeCounts.hasCaptain) missing.push(t('warnings.homeCaptainMissing'))
+        if (!homeCounts.hasCoach) missing.push(t('warnings.homeCoachMissing'))
+      }
+    }
+    if (!awayConfigured) {
+      if (!away || awayRoster.length < 6) missing.push(t('warnings.awayRosterIncomplete', { count: awayRoster.length }))
+      else {
+        if (!awayCounts.hasCaptain) missing.push(t('warnings.awayCaptainMissing'))
+        if (!awayCounts.hasCoach) missing.push(t('warnings.awayCoachMissing'))
+      }
+    }
+    return missing
+  }
 
   const formatOfficial = (lastName, firstName) => {
     if (!lastName && !firstName) return t('common.notSet')
@@ -6767,24 +6814,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Helper function to generate unique PIN
   const generateUniquePin = async () => {
-    const generatePinCode = (existingPins = []) => {
-      const chars = '0123456789'
-      let pin = ''
-      let attempts = 0
-      const maxAttempts = 100
-
-      do {
-        pin = ''
-        for (let i = 0; i < 6; i++) {
-          pin += chars.charAt(Math.floor(Math.random() * chars.length))
-        }
-        attempts++
-        if (attempts >= maxAttempts) break
-      } while (existingPins.includes(pin))
-
-      return pin
-    }
-
     // Get all existing PINs to ensure uniqueness
     const allMatches = await db.matches.toArray()
     const existingPins = allMatches
@@ -6792,7 +6821,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       .flat()
       .filter(Boolean)
 
-    return generatePinCode(existingPins)
+    return generateSecurePin(existingPins)
   }
 
   // Sync match data to server (for when Scoreboard is not mounted)
@@ -6889,29 +6918,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion (only if Supabase is configured)
-          if (supabase) {
-            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-            let attempts = 0
-            const maxAttempts = 20
-            const interval = setInterval(async () => {
-              attempts++
-              try {
-                const queued = await db.sync_queue.where('status').equals('queued').count()
-                if (queued === 0) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-                } else if (attempts >= maxAttempts) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-                }
-              } catch (err) {
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
                 clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            }, 500)
-          } else {
-            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-          }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
         }
       }
     } catch (error) {
@@ -6958,29 +6983,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion (only if Supabase is configured)
-          if (supabase) {
-            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-            let attempts = 0
-            const maxAttempts = 20
-            const interval = setInterval(async () => {
-              attempts++
-              try {
-                const queued = await db.sync_queue.where('status').equals('queued').count()
-                if (queued === 0) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-                } else if (attempts >= maxAttempts) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-                }
-              } catch (err) {
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
                 clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            }, 500)
-          } else {
-            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-          }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
         }
       }
     } catch (error) {
@@ -7027,29 +7048,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion (only if Supabase is configured)
-          if (supabase) {
-            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-            let attempts = 0
-            const maxAttempts = 20
-            const interval = setInterval(async () => {
-              attempts++
-              try {
-                const queued = await db.sync_queue.where('status').equals('queued').count()
-                if (queued === 0) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-                } else if (attempts >= maxAttempts) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-                }
-              } catch (err) {
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
                 clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            }, 500)
-          } else {
-            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-          }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
         }
       }
     } catch (error) {
@@ -7113,29 +7130,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             status: 'queued'
           })
 
-          // Show syncing modal and poll for completion (only if Supabase is configured)
-          if (supabase) {
-            setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-            let attempts = 0
-            const maxAttempts = 20
-            const interval = setInterval(async () => {
-              attempts++
-              try {
-                const queued = await db.sync_queue.where('status').equals('queued').count()
-                if (queued === 0) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-                } else if (attempts >= maxAttempts) {
-                  clearInterval(interval)
-                  setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-                }
-              } catch (err) {
+          // Show syncing modal and poll for completion
+          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
+          let attempts = 0
+          const maxAttempts = 20
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const queued = await db.sync_queue.where('status').equals('queued').count()
+              if (queued === 0) {
                 clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
+              } else if (attempts >= maxAttempts) {
+                clearInterval(interval)
+                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
               }
-            }, 500)
-          } else {
-            setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-          }
+            } catch (err) {
+              clearInterval(interval)
+            }
+          }, 500)
         }
       }
     } catch (error) {
@@ -7366,41 +7379,23 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           )}
         </div>
       </div>
-      <div className="setup-cards-grid setup-section">
-        {/* Match Info Card */}
+      <div className="setup-section">
+        {/* Match Setup Summary Card */}
         <div data-help-id="setup-match-info-card" className="card" style={{ padding: s(20), ...(!matchInfoConfirmed ? { border: `2px solid ${canConfirmMatchInfo ? '#3b82f6' : '#f59e0b'}` } : {}) }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: s(4) }}>
-                <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
-                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchInfo')}</h3>
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(12) }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
+              <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
+              <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchInfo')}</h3>
               <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
-            <div
-              style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: s(6), columnGap: s(10), marginTop: s(10), fontSize: s(14) }}
-            >
-              {/* Home Team row with color indicator */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <span>{t('matchSetup.homeTeam')}:</span>
-              </div>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: `${s(2)}px 0` }} title={home}>{home || t('common.notSet')}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
+              <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
+            </div>
+          </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <span>{t('matchSetup.awayTeam')}:</span>
-              </div>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, padding: `${s(2)}px 0` }} title={away}>{away || t('common.notSet')}</span>
-
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: s(16), fontSize: s(14) }}>
+            {/* Column 1: Match Info */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: s(4), columnGap: s(10), alignContent: 'start' }}>
               <span>{t('matchSetup.date')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatDisplayDate(date) || t('common.notSet')}</span>
               <span>{t('matchSetup.time')}:</span>
@@ -7410,33 +7405,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <span>{t('matchSetup.hall')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={hall}>{hall || t('common.notSet')}</span>
             </div>
-          </div>
-          <div className="actions">
-            {matchInfoConfirmed ? (
-              <button className="secondary" onClick={() => setCurrentView('info')} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('common.edit')}</button>
-            ) : (
-              <button
-                className="primary"
-                onClick={() => setCurrentView('info')}
-                style={{ padding: `${s(10)}px ${s(20)}px`, fontSize: s(15) }}
-              >
-                {t('matchSetup.createMatch')}
-              </button>
-            )}
-          </div>
-        </div>
 
-        {/* Match Officials Card */}
-        <div className="card" style={{ padding: s(20), ...(!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: s(4) }}>
-                <StatusBadge ready={officialsConfigured} />
-                <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchOfficials')}</h3>
-              </div>
-              <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: s(6), columnGap: s(10), marginTop: s(10), fontSize: s(14) }}>
+            {/* Column 2: Officials */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: s(4), columnGap: s(10), alignContent: 'start' }}>
               <span>{t('matchSetup.referee1')}:</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={formatOfficial(ref1Last, ref1First)}>{formatOfficial(ref1Last, ref1First)}</span>
               <span>{t('matchSetup.referee2')}:</span>
@@ -7454,9 +7425,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </>
               )}
             </div>
+
+            {/* Column 3: Teams */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: s(4), columnGap: s(10), alignContent: 'start' }}>
+              <span>{t('matchSetup.homeTeam')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={home}>{home || t('common.notSet')}</span>
+              <span>{t('matchSetup.awayTeam')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }} title={away}>{away || t('common.notSet')}</span>
+              <span>{t('matchSetup.league')}:</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{league || t('common.notSet')}</span>
+              <span>{t('matchSetup.matchFormat')}:</span>
+              <span>{bestOf === 5 ? t('matchSetup.bestOf5') : t('matchSetup.bestOf3')}</span>
+            </div>
           </div>
-          <div className="actions">
-            <button className="secondary" onClick={() => setCurrentView('officials')} disabled={!matchInfoConfirmed} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('common.edit')}</button>
+
+          <div className="actions" style={{ marginTop: s(12) }}>
+            {matchInfoConfirmed ? (
+              <button className="secondary" onClick={() => setCurrentView('info')} style={{ padding: `${s(8)}px ${s(16)}px`, fontSize: s(14) }}>{t('common.edit')}</button>
+            ) : (
+              <button
+                className="primary"
+                onClick={() => setCurrentView('info')}
+                style={{ padding: `${s(10)}px ${s(20)}px`, fontSize: s(15) }}
+              >
+                {t('matchSetup.createMatch')}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -7765,25 +7759,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: s(16), alignItems: 'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' }) }}>
-        <button
-          className="secondary"
-          style={{
-            background: '#ffe066',
-            color: '#222',
-            border: '1px solid #ffd700',
-            fontWeight: 700,
-            padding: `${s(10)}px ${s(20)}px`,
-            fontSize: s(14)
-          }}
-          onClick={() => setShowBothRosters(!showBothRosters)}
-          disabled={!matchInfoConfirmed}
-        >
-          {showBothRosters ? t('scoreboard.hideRosters') : t('scoreboard.showRosters')}
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: s(16), alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', ...(matchInfoConfirmed ? {} : { opacity: 0.5 }) }}>
+          <button
+            className="secondary"
+            style={{
+              background: '#ffe066',
+              color: '#222',
+              border: '1px solid #ffd700',
+              fontWeight: 700,
+              padding: `${s(10)}px ${s(20)}px`,
+              fontSize: s(14),
+              ...(matchInfoConfirmed ? {} : { pointerEvents: 'none' })
+            }}
+            onClick={() => setShowBothRosters(!showBothRosters)}
+            disabled={!matchInfoConfirmed}
+          >
+            {showBothRosters ? t('scoreboard.hideRosters') : t('scoreboard.showRosters')}
+          </button>
+          {!matchInfoConfirmed && (
+            <WarningIndicator id="showRosters" missingItems={[t('warnings.confirmMatchInfoFirst')]} />
+          )}
+        </div>
         {isMatchOngoing && onReturn ? (
           <button onClick={onReturn} style={{ padding: `${s(10)}px ${s(20)}px`, fontSize: s(14) }}>{t('scoreboard.returnToMatch')}</button>
         ) : (
+          <div style={{ display: 'flex', alignItems: 'center' }}>
           <button
             data-help-id="setup-proceed-cointoss"
             disabled={!canProceedToCoinToss}
@@ -7967,6 +7968,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 await createMatch()
               }
             }}>{t('matchSetup.coinToss')}</button>
+          {!canProceedToCoinToss && (
+            <WarningIndicator id="proceedCoinToss" missingItems={getCoinTossMissingItems()} />
+          )}
+          </div>
         )}
       </div>
 
@@ -8324,14 +8329,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         }
 
                         // Sync to Supabase if match exists
-                        if (supabase && match?.seed_key) {
+                        if (match?.seed_key) {
                           const teamKey = isHome ? 'home_team' : 'away_team'
                           const teamName = isHome ? home : away
                           const shortName = isHome ? homeShortName : awayShortName
 
                           // Update matches table
-                          const { data: supabaseMatch } = await supabase
-                            .from('matches')
+                          const { data: supabaseMatch } = await apiFrom('matches')
                             .update({
                               [teamKey]: {
                                 name: teamName?.trim() || '',
@@ -8356,8 +8360,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             // If changing home color and home is Team B -> update team_b_color
                             const liveStateColorKey = (isHome === homeIsTeamA) ? 'team_a_color' : 'team_b_color'
 
-                            await supabase
-                              .from('match_live_state')
+                            await apiFrom('match_live_state')
                               .update({ [liveStateColorKey]: color, updated_at: new Date().toISOString() })
                               .eq('match_id', supabaseMatch.id)
                             console.log(`[MatchSetup] Synced ${liveStateColorKey} to match_live_state:`, color)
@@ -8793,10 +8796,6 @@ function MatchSetupMainView({ children }) {
 }
 
 function MatchSetupInfoView({ children }) {
-  return <div className="setup" style={setupViewStyle}>{children}</div>
-}
-
-function MatchSetupOfficialsView({ children }) {
   return <div className="setup" style={setupViewStyle}>{children}</div>
 }
 

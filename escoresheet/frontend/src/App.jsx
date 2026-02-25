@@ -43,6 +43,7 @@ import {
   getTestAwayTeamShortName
 } from './constants/testSeeds'
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
@@ -1129,12 +1130,12 @@ export default function App() {
       }
 
       try {
-        // Check if we have a configured backend URL (Railway/cloud backend)
+        // Check if we have a configured backend URL (Render/cloud backend)
         const backendUrl = import.meta.env.VITE_BACKEND_URL
 
         let wsUrl
         if (backendUrl) {
-          // Use configured backend (Railway cloud)
+          // Use configured backend (Render cloud)
           const url = new URL(backendUrl)
           const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
           wsUrl = `${protocol}//${url.host}`
@@ -1647,12 +1648,7 @@ export default function App() {
   }
 
   async function resetSupabaseTestMatch() {
-    if (!supabase) {
-      throw new Error('Supabase client is not configured.')
-    }
-
-    const { data: matchRecord, error: matchLookupError } = await supabase
-      .from('matches')
+    const { data: matchRecord, error: matchLookupError } = await apiFrom('matches')
       .select('id')
       .eq('external_id', TEST_MATCH_EXTERNAL_ID)
       .single()
@@ -1666,16 +1662,14 @@ export default function App() {
 
     const matchUuid = matchRecord.id
 
-    const { error: deleteEventsError } = await supabase
-      .from('events')
+    const { error: deleteEventsError } = await apiFrom('events')
       .delete()
       .eq('match_id', matchUuid)
     if (deleteEventsError) {
       throw new Error(deleteEventsError.message)
     }
 
-    const { error: deleteSetsError } = await supabase
-      .from('sets')
+    const { error: deleteSetsError } = await apiFrom('sets')
       .delete()
       .eq('match_id', matchUuid)
     if (deleteSetsError) {
@@ -1683,8 +1677,7 @@ export default function App() {
     }
 
     const newScheduled = getNextTestMatchStartTime()
-    const { error: updateMatchError } = await supabase
-      .from('matches')
+    const { error: updateMatchError } = await apiFrom('matches')
       .update({
         status: 'scheduled',
         scheduled_at: newScheduled,
@@ -1698,16 +1691,11 @@ export default function App() {
   }
 
   async function loadTestMatchFromSupabase({ resetRemote = false, targetView = 'setup' } = {}) {
-    if (!supabase) {
-      throw new Error('Supabase client is not configured.')
-    }
-
     if (resetRemote) {
       await resetSupabaseTestMatch()
     }
 
-    const { data: matchData, error: matchError } = await supabase
-      .from('matches')
+    const { data: matchData, error: matchError } = await apiFrom('matches')
       .select('*')
       .eq('external_id', TEST_MATCH_EXTERNAL_ID)
       .single()
@@ -1721,8 +1709,8 @@ export default function App() {
 
 
     const [homeTeamRes, awayTeamRes] = await Promise.all([
-      supabase.from('teams').select('*').eq('id', matchData.home_team_id).single(),
-      supabase.from('teams').select('*').eq('id', matchData.away_team_id).single()
+      apiFrom('teams').select('*').eq('id', matchData.home_team_id).single(),
+      apiFrom('teams').select('*').eq('id', matchData.away_team_id).single()
     ])
 
     if (homeTeamRes.error) {
@@ -1736,8 +1724,7 @@ export default function App() {
     const awayTeamData = awayTeamRes.data
 
 
-    const { data: playersData, error: playersError } = await supabase
-      .from('players')
+    const { data: playersData, error: playersError } = await apiFrom('players')
       .select('*')
       .in('team_id', [matchData.home_team_id, matchData.away_team_id])
 
@@ -1745,8 +1732,7 @@ export default function App() {
       throw new Error(playersError.message)
     }
 
-    const { data: setsData, error: setsError } = await supabase
-      .from('sets')
+    const { data: setsData, error: setsError } = await apiFrom('sets')
       .select('*')
       .eq('match_id', matchData.id)
       .order('index')
@@ -1755,8 +1741,7 @@ export default function App() {
       throw new Error(setsError.message)
     }
 
-    const { data: eventsData, error: eventsError } = await supabase
-      .from('events')
+    const { data: eventsData, error: eventsError } = await apiFrom('events')
       .select('*')
       .eq('match_id', matchData.id)
       .order('ts')
@@ -1865,7 +1850,7 @@ export default function App() {
 
     const fetchOfficialByExternalId = async (table, externalId) => {
       if (!externalId) return null
-      const { data, error } = await supabase.from(table).select('first_name,last_name,country,dob').eq('external_id', externalId).maybeSingle()
+      const { data, error } = await apiFrom(table).select('first_name,last_name,country,dob').eq('external_id', externalId).maybeSingle()
       if (error) {
         console.warn(`Unable to load ${table} ${externalId}:`, error.message)
         return null
@@ -3048,7 +3033,7 @@ export default function App() {
             } : null}
             collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
             onTriggerAlarm={async () => {
-              if (!matchId || !supabase || !currentMatch) return
+              if (!matchId || !currentMatch) return
 
               // Identify the UUID for Supabase
               let supabaseMatchId = null
@@ -3059,8 +3044,7 @@ export default function App() {
               } else {
                 // Fallback: look up standard ID from matches table using the match seed key
                 const seedKey = currentMatch.seed_key || String(matchId)
-                const { data: matchData } = await supabase
-                  .from('matches')
+                const { data: matchData } = await apiFrom('matches')
                   .select('id')
                   .eq('external_id', seedKey)
                   .maybeSingle()
@@ -3075,8 +3059,7 @@ export default function App() {
               const trigger = new Date().toISOString()
               setScorerAttentionTrigger(trigger)
               try {
-                const { error } = await supabase
-                  .from('match_live_state')
+                const { error } = await apiFrom('match_live_state')
                   .update({ scorer_attention_trigger: trigger })
                   .eq('match_id', supabaseMatchId)
                 if (error) throw error

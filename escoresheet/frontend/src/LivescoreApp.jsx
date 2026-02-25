@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -43,8 +44,7 @@ export default function LivescoreApp() {
     }
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from('match_live_state')
+      const { data, error: fetchError } = await apiFrom('match_live_state')
         .select('*, matches!match_live_state_match_id_fkey_cascade(set_results)')
         .eq('sport_type', 'indoor')
         .order('updated_at', { ascending: false })

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient'
+import { apiStorage } from '../lib/apiClient'
 
 /**
  * Upload scoresheet data as JSON to Supabase storage.
@@ -26,10 +26,10 @@ export async function uploadScoresheet({
   events,
   final = false
 }) {
-  // Skip if no supabase or no match
-  if (!supabase || !match) {
-    console.log('[scoresheetUploader] Skipping - no supabase or match')
-    return { success: false, error: 'No supabase or match' }
+  // Skip if no match
+  if (!match) {
+    console.log('[scoresheetUploader] Skipping - no match')
+    return { success: false, error: 'No match' }
   }
 
   // Skip test matches
@@ -65,7 +65,7 @@ export async function uploadScoresheet({
     const storagePath = `${scheduledDate}/game${gameNumber}${suffix}.json`
 
     // Upload to Supabase storage
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await apiStorage
       .from('scoresheets')
       .upload(storagePath, jsonBlob, {
         contentType: 'application/json',

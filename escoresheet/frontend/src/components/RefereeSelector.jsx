@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
@@ -30,14 +30,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
   const loadReferees = async () => {
     setLoading(true)
     try {
-      if (!supabase) {
-        console.log('[RefereeSelector] Supabase not available')
-        setReferees([])
-        return
-      }
-
-      const { data, error } = await supabase
-        .from('referee_database')
+      const { data, error } = await apiFrom('referee_database')
         .select('first_name, last_name, country, dob, created_at')
         .contains('sport_type', JSON.stringify([SPORT_TYPE]))
         .order('last_name', { ascending: true })
@@ -110,7 +103,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
 
   if (!open) return null
 
-  const isOnline = !!supabase
+  const isOnline = true
 
   return (
     <>

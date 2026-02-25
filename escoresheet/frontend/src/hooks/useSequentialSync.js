@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 
 /**
  * useSequentialSync - Hook for sequential sync operations at set end
@@ -31,13 +31,7 @@ export function useSequentialSync() {
       return { success: false, offline: true, jobId }
     }
 
-    // 3. Check if Supabase is configured
-    if (!supabase) {
-      console.warn('[SequentialSync] Supabase not configured - job queued for later')
-      return { success: false, offline: true, jobId }
-    }
-
-    // 4. Execute Supabase call directly
+    // 3. Execute API call directly
     try {
       const result = await processJobDirect(job)
 
@@ -95,8 +89,7 @@ export function useSequentialSync() {
       if (job.resource === 'set' && job.action === 'update') {
         const { external_id, ...updateData } = job.payload
 
-        const { error } = await supabase
-          .from('sets')
+        const { error } = await apiFrom('sets')
           .update({ ...updateData, sport_type: 'indoor' })
           .eq('external_id', external_id)
 
@@ -112,8 +105,7 @@ export function useSequentialSync() {
 
         // Resolve match_id from external_id if needed
         if (setPayload.match_id && typeof setPayload.match_id === 'string') {
-          const { data: matchData, error: lookupError } = await supabase
-            .from('matches')
+          const { data: matchData, error: lookupError } = await apiFrom('matches')
             .select('id')
             .eq('external_id', setPayload.match_id)
             .maybeSingle()
@@ -129,8 +121,7 @@ export function useSequentialSync() {
           setPayload.match_id = matchData.id
         }
 
-        const { error } = await supabase
-          .from('sets')
+        const { error } = await apiFrom('sets')
           .upsert({ ...setPayload, sport_type: 'indoor' }, { onConflict: 'external_id' })
 
         if (error) {
@@ -145,8 +136,7 @@ export function useSequentialSync() {
 
         // Resolve match_id from external_id if needed
         if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
-          const { data: matchData, error: lookupError } = await supabase
-            .from('matches')
+          const { data: matchData, error: lookupError } = await apiFrom('matches')
             .select('id')
             .eq('external_id', eventPayload.match_id)
             .maybeSingle()
@@ -162,8 +152,7 @@ export function useSequentialSync() {
           eventPayload.match_id = matchData.id
         }
 
-        const { error } = await supabase
-          .from('events')
+        const { error } = await apiFrom('events')
           .upsert({ ...eventPayload, sport_type: 'indoor' }, { onConflict: 'external_id' })
 
         if (error) {
@@ -185,8 +174,7 @@ export function useSequentialSync() {
         // If updating JSONB columns, fetch existing values and merge
         if (hasJsonbColumns) {
           const columnsToFetch = jsonbColumns.filter(col => updateData[col] !== undefined)
-          const { data: existingMatch, error: fetchError } = await supabase
-            .from('matches')
+          const { data: existingMatch, error: fetchError } = await apiFrom('matches')
             .select(columnsToFetch.join(','))
             .eq('external_id', id)
             .maybeSingle()
@@ -208,8 +196,7 @@ export function useSequentialSync() {
           }
         }
 
-        const { error } = await supabase
-          .from('matches')
+        const { error } = await apiFrom('matches')
           .update(finalUpdateData)
           .eq('external_id', id)
 

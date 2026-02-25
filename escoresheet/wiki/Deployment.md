@@ -189,4 +189,4 @@ Each release includes:
 
 ## Backend Deployment
 
-The optional WebSocket backend is deployed separately. See the [Backend README](../backend/README.md) for Railway deployment instructions and other hosting options.
+The optional WebSocket backend is deployed separately. See the [Backend README](../backend/README.md) for Render deployment instructions and other hosting options.

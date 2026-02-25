@@ -1147,6 +1147,12 @@
     "noSetsReopen": "Kei Sätz zum Wiederöffne gfunde",
     "setReopened": "Satz {{index}} für Korrekture wieder geöffnet",
     "errorReopening": "Fähler bim Wiederöffne: {{error}}",
+    "unlockReopen": "Entsperre",
+    "unlockReopenDescription": "Gib s'Passwort ii, um die Aktion z'entsperre.",
+    "unlockPasswordPlaceholder": "Passwort",
+    "unlockPasswordRequired": "Bitte gib s'Passwort ii",
+    "unlockPasswordWrong": "Falschs Passwort",
+    "unlockPasswordError": "Fähler bi de Passwortüberprüefig",
     "sanctionTypes": {
       "delayWarning": "Verzögerigswarnig",
       "delayPenalty": "Verzögerigsstraaf",
@@ -1459,7 +1465,7 @@
     "noUpcomingMatches": "Kei aastelligi Spiil gfunde",
     "fetchError": "Spiil händ nöd chönne glade werde. Verbindig prüefe.",
     "backendNotAvailable": "Backend-Server nöd verfügbar",
-    "reminderAlert": "Ligagruppe falls vorhande, Teamfarbe und Kurznäme iistelle",
+    "reminderAlert": "Teamfarbe und Kurznäme iistelle",
     "loading": "Lade Spiil...",
     "selectFilters": "Wähled Sie Geschlecht und Liga um Spiil aazeige",
     "searchPlaceholder": "Sueche...",
@@ -1916,5 +1922,22 @@
       "teal": "Türkis",
       "pink": "Rosa"
     }
+  },
+  "warnings": {
+    "clickForDetails": "Klicke, zum Luege was fählt",
+    "missingRequired": "Fählendi Pflichtfälder:",
+    "maxBenchOfficials": "Maximum 5 Bankoffizielle erreicht",
+    "confirmMatchInfoFirst": "Zerscht Spielinfos bestätige",
+    "matchInfoNotConfirmed": "Spielinfos nöd bestätigt",
+    "firstRefereeMissing": "Name vom 1. Schiedsrichter erforderlich",
+    "scorerNameMissing": "Name vom Schriber erforderlich",
+    "scorerDobMissing": "Geburtsdatum vom Schriber erforderlich",
+    "homeRosterIncomplete": "Heimkader unvollständig ({{count}}/6 Spieler)",
+    "awayRosterIncomplete": "Gastkader unvollständig ({{count}}/6 Spieler)",
+    "homeCaptainMissing": "Heimteam: kein Kapitän zuegwiise",
+    "homeCoachMissing": "Heimteam: kein Trainer gsetzt",
+    "awayCaptainMissing": "Gastteam: kein Kapitän zuegwiise",
+    "awayCoachMissing": "Gastteam: kein Trainer gsetzt",
+    "selectGenderFirst": "Zerscht Gschlächt uswähle"
   }
 }

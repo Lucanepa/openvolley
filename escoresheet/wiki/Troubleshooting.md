@@ -60,8 +60,8 @@ Or Vite will automatically try the next available port.
 ### WebSocket connection not working
 
 - **Local**: Make sure the backend server is running and the device can reach it on the network
-- **Cloud**: Verify `VITE_BACKEND_URL` is set to the correct Railway/Render URL
-- **Protocol**: Use `ws://` for HTTP connections and `wss://` for HTTPS. Railway requires `wss://`
+- **Cloud**: Verify `VITE_BACKEND_URL` is set to the correct Render URL
+- **Protocol**: Use `ws://` for HTTP connections and `wss://` for HTTPS. Render requires `wss://`
 - **CORS**: The backend must include your origin in the allowed list. Cloud mode accepts `*.openvolley.app` and localhost. Local mode accepts all origins
 
 ### PDF generation fails
@@ -107,15 +107,11 @@ Or Vite will automatically try the next available port.
 - Check that the build output path matches: `escoresheet/frontend/dist`
 - Environment variables must be configured in the Cloudflare Pages dashboard
 
-### Railway: "EADDRINUSE"
+### Render: deployment stuck or failing
 
-Railway is trying to deploy the whole repo instead of just the backend. Set **Root Directory** to `escoresheet/backend` in the Railway dashboard under Settings.
-
-### Railway: deployment stuck or failing
-
-1. Check logs: `railway logs`
+1. Check logs in the [Render Dashboard](https://dashboard.render.com)
 2. Make sure `package.json` exists in the backend folder
-3. Try redeploying: `cd escoresheet/backend && railway up`
+3. Try redeploying from the Render dashboard
 
 ## Getting Help
 

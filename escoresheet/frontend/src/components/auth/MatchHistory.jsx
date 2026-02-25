@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
-import { supabase } from '../../lib/supabaseClient'
+import { apiFrom } from '../../lib/apiClient'
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
@@ -14,10 +14,10 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   // Fetch user's matches when modal opens
   useEffect(() => {
     if (open) {
-      if (user && supabase) {
+      if (user) {
         fetchMatches()
       } else {
-        // No user or no supabase configured - show empty state
+        // No user - show empty state
         setMatches([])
         setLoading(false)
       }
@@ -30,8 +30,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
 
     try {
       // Get user's match associations
-      const { data: userMatches, error: userMatchesError } = await supabase
-        .from('user_matches')
+      const { data: userMatches, error: userMatchesError } = await apiFrom('user_matches')
         .select('match_external_id, role, created_at')
         .eq('user_id', user.id)
         .eq('sport_type', 'indoor')
@@ -49,8 +48,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
 
       // Get match details for each match_external_id (which references matches.external_id)
       const matchIds = userMatches.map(m => m.match_external_id)
-      const { data: matchDetails, error: matchError } = await supabase
-        .from('matches')
+      const { data: matchDetails, error: matchError } = await apiFrom('matches')
         .select('external_id, team_a, team_b, final_score, winner, status, start_time, created_at')
         .in('external_id', matchIds)
         .eq('sport_type', 'indoor')

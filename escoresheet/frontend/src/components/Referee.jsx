@@ -19,6 +19,7 @@ import TestModeControls from './TestModeControls'
 import SimpleHeader from './SimpleHeader'
 import DonutCountdown from './DonutCountdown'
 import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
 
 // Get current version from package.json (injected by Vite at build time)
@@ -683,8 +684,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     if (!supabase || !matchId) return
 
     const lookupUuid = async () => {
-      const { data, error } = await supabase
-        .from('matches')
+      const { data, error } = await apiFrom('matches')
         .select('id')
         .eq('external_id', matchId)
         .eq('sport_type', 'indoor')

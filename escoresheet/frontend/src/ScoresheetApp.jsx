@@ -1,21 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
-import { supabase } from './lib/supabaseClient'
+import { apiFrom, apiStorage } from './lib/apiClient'
 import App from '../scoresheet_pdf/App_Scoresheet'
 
 // Fetch scoresheet data from Supabase storage (only _final files)
 const fetchFromStorage = async (date, game) => {
   try {
-    if (!supabase) {
-      console.error('Supabase client not available')
-      return null
-    }
-
     const storagePath = `${date}/game${game}_final.json`
     console.log('[Scoresheet] Fetching from storage:', storagePath)
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await apiStorage
       .from('scoresheets')
       .download(storagePath)
 
@@ -35,13 +30,7 @@ const fetchFromStorage = async (date, game) => {
 // Fetch archived matches from Supabase matches table (indoor only, finalized)
 const fetchArchiveMatches = async () => {
   try {
-    if (!supabase) {
-      console.error('Supabase client not available')
-      return []
-    }
-
-    const { data, error } = await supabase
-      .from('matches')
+    const { data, error } = await apiFrom('matches')
       .select('external_id, game_n, scheduled_at, match_info, home_team, away_team, final_score, winner, created_at')
       .eq('sport_type', 'indoor')
       .eq('status', 'final')

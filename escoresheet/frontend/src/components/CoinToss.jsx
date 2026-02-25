@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import MenuList from './MenuList'
@@ -321,7 +321,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       console.log(`[CoinToss] Roster synced for ${teamType} team (local)`)
 
       // Also sync to Supabase if match has seed_key
-      if (supabase && match.seed_key) {
+      if (match.seed_key) {
         try {
           const isHome = teamType === 'home'
           const teamKey = isHome ? 'home_team' : 'away_team'
@@ -332,8 +332,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           const color = isHome ? homeColor : awayColor
 
           // Update matches table
-          const { data: supabaseMatch } = await supabase
-            .from('matches')
+          const { data: supabaseMatch } = await apiFrom('matches')
             .update({
               [teamKey]: {
                 name: teamName?.trim() || '',
@@ -367,8 +366,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             const shortLiveKey = isTeamA ? 'team_a_short' : 'team_b_short'
             const nameLiveKey = isTeamA ? 'team_a_name' : 'team_b_name'
 
-            await supabase
-              .from('match_live_state')
+            await apiFrom('match_live_state')
               .update({
                 [colorLiveKey]: color,
                 [shortLiveKey]: shortName || generateShortName(teamName),
@@ -864,11 +862,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
     // Create initial match_live_state entry for Referee app (only for official matches with Supabase)
     // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
-    if (!isTest && supabase && match?.seed_key) {
+    if (!isTest && match?.seed_key) {
       try {
         // First get the Supabase match UUID from external_id
-        const { data: supabaseMatch, error: lookupError } = await supabase
-          .from('matches')
+        const { data: supabaseMatch, error: lookupError } = await apiFrom('matches')
           .select('id')
           .eq('external_id', match.seed_key)
           .maybeSingle()
@@ -882,8 +879,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           const teamAColor = teamA === 'home' ? homeColor : awayColor
           const teamBColor = teamA === 'home' ? awayColor : homeColor
 
-          const { error: insertError } = await supabase
-            .from('match_live_state')
+          const { error: insertError } = await apiFrom('match_live_state')
             .upsert({
               match_id: supabaseMatch.id,
               current_set: 1,
@@ -944,34 +940,30 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
     // Show initialization modal and wait for sync (only if Supabase is configured)
     let syncComplete = false
-    if (supabase) {
-      setInitModal({ status: 'syncing', message: t('coinToss.syncingMatch', 'Syncing match data...') })
+    setInitModal({ status: 'syncing', message: t('coinToss.syncingMatch', 'Syncing match data...') })
 
-      // Wait for sync queue to process (poll for completion)
-      const maxAttempts = 30 // 15 seconds max
-      let attempts = 0
+    // Wait for sync queue to process (poll for completion)
+    const maxAttempts = 30 // 15 seconds max
+    let attempts = 0
 
-      while (attempts < maxAttempts && !syncComplete) {
-        await new Promise(resolve => setTimeout(resolve, 500))
-        const queuedCount = await db.sync_queue.where('status').equals('queued').count()
-        if (queuedCount === 0) {
-          syncComplete = true
-        }
-        attempts++
+    while (attempts < maxAttempts && !syncComplete) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+      const queuedCount = await db.sync_queue.where('status').equals('queued').count()
+      if (queuedCount === 0) {
+        syncComplete = true
       }
+      attempts++
+    }
 
-      if (!syncComplete) {
-        console.warn('[CoinToss] Sync queue still has items after timeout, proceeding anyway')
-      }
-    } else {
-      syncComplete = true
+    if (!syncComplete) {
+      console.warn('[CoinToss] Sync queue still has items after timeout, proceeding anyway')
     }
 
     // Verify status is 'live' in Supabase (only for official matches with Supabase configured)
     // This is non-blocking - if offline or error, we still proceed (local status is already 'live')
     let verificationSkipped = false
 
-    if (!match?.test && supabase) {
+    if (!match?.test) {
       setInitModal({ status: 'verifying', message: t('coinToss.verifyingStatus', 'Verifying match status...') })
 
       try {
@@ -980,8 +972,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         const seedKey = localMatch?.seed_key
 
         if (seedKey) {
-          const { data: supabaseMatch, error } = await supabase
-            .from('matches')
+          const { data: supabaseMatch, error } = await apiFrom('matches')
             .select('status')
             .eq('external_id', seedKey)
             .single()

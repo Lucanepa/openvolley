@@ -7,7 +7,7 @@
  * 1. Local network: Scoreboard ↔ Referee/Bench sync (no internet needed)
  * 2. Cloud relay: Multiple locations (requires internet)
  *
- * Deploy to Railway.app (free tier) for cloud relay
+
  * Or run locally for local network only
  */
 
@@ -15,10 +15,26 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
+import { randomBytes } from 'crypto'
+import { createClient } from '@supabase/supabase-js'
 
 const PORT = process.env.PORT || 8080
 
-// Email configuration - set these environment variables in Railway
+// --- Supabase admin client (server-side only, never exposed to frontend) ---
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  : null
+console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)')
+
+// Allowed tables/buckets for proxy endpoints
+const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'teams', 'players', 'referees', 'referee_database', 'user_matches', 'svrz_games']
+const ALLOWED_BUCKETS = ['scoresheets', 'backup']
+const ALLOWED_RPC = ['delete_user']
+const DB_RATE_LIMIT_MAX = 200
+
+
 // Option 1: Resend API (recommended - uses HTTPS, never blocked)
 // RESEND_API_KEY
 // Option 2: SMTP (may be blocked by some cloud providers)
@@ -62,13 +78,44 @@ const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
     pass: process.env.SMTP_PASS
   }
 }) : null
-const IS_CLOUD = process.env.RAILWAY_ENVIRONMENT || process.env.RENDER
+const IS_CLOUD = process.env.RENDER
 
 // In-memory storage for active matches
 // NOTE: This resets on server restart - Supabase is the source of truth for persistence
 const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
+
+// --- Rate limiting ---
+const RATE_LIMIT_WINDOW_MS = 60 * 1000
+const RATE_LIMIT_MAX_REQUESTS = 10
+const CONTACT_RATE_LIMIT_MAX = 3
+const rateLimitMap = new Map()
+
+function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now })
+    return false
+  }
+
+  entry.count++
+  return entry.count > maxRequests
+}
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitMap.delete(ip)
+    }
+  }
+}, 5 * 60 * 1000)
+
+const MAX_BODY_SIZE = 1024 * 1024 // 1MB
+const MAX_MATCH_BODY_SIZE = 5 * 1024 * 1024 // 5MB for match data with email
 
 // iCal feed configuration for Swiss VolleyManager
 const ICAL_FEEDS = {
@@ -273,6 +320,10 @@ const server = createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
+  // Security headers
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
@@ -312,8 +363,20 @@ const server = createServer((req, res) => {
 
   // Validate PIN for referee/bench access
   if (url.pathname === '/api/match/validate-pin' && req.method === 'POST') {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
+    if (isRateLimited(clientIp)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, error: 'Too many attempts. Please wait a minute before trying again.' }))
+      return
+    }
     let body = ''
-    req.on('data', chunk => { body += chunk.toString() })
+    req.on('data', chunk => {
+      body += chunk.toString()
+      if (body.length > MAX_BODY_SIZE) {
+        req.destroy()
+        return
+      }
+    })
     req.on('end', () => {
       try {
         if (!body || body.trim() === '') {
@@ -369,7 +432,7 @@ const server = createServer((req, res) => {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ success: true, match: matchFound }))
         } else {
-          console.log(`[API] PIN validation failed for ${type}: ${pinStr}`)
+          console.log(`[API] PIN validation failed for ${type}`)
           res.writeHead(404, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             success: false,
@@ -545,10 +608,24 @@ const server = createServer((req, res) => {
 
   // Contact/Support form endpoint
   if (url.pathname === '/api/contact' && req.method === 'POST') {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
+    if (isRateLimited(clientIp, CONTACT_RATE_LIMIT_MAX)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
+      return
+    }
     // Parse multipart form data (simplified - just log for now, email via mailto fallback)
     let body = ''
     const chunks = []
-    req.on('data', chunk => chunks.push(chunk))
+    let totalSize = 0
+    req.on('data', chunk => {
+      totalSize += chunk.length
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
     req.on('end', async () => {
       try {
         const buffer = Buffer.concat(chunks)
@@ -683,7 +760,13 @@ eScoresheet Developer
   // Send match info email
   if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
     let body = ''
-    req.on('data', chunk => body += chunk)
+    req.on('data', chunk => {
+      body += chunk
+      if (body.length > MAX_MATCH_BODY_SIZE) {
+        req.destroy()
+        return
+      }
+    })
     req.on('end', async () => {
       try {
         const matchData = JSON.parse(body)
@@ -855,6 +938,389 @@ Generated by eScoresheet
     return
   }
 
+  // ==================== SUPABASE PROXY ENDPOINTS ====================
+
+  // Helper: read JSON body
+  const readJsonBody = (req, maxSize = MAX_BODY_SIZE) => new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', chunk => {
+      body += chunk.toString()
+      if (body.length > maxSize) { req.destroy(); reject(new Error('Body too large')) }
+    })
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}) }
+      catch (e) { reject(new Error('Invalid JSON')) }
+    })
+    req.on('error', reject)
+  })
+
+  // POST /api/db — Generic database proxy
+  if (url.pathname === '/api/db' && req.method === 'POST') {
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+      return
+    }
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
+    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
+
+    ;(async () => {
+      try {
+        const { table, action, params = {} } = await readJsonBody(req, MAX_MATCH_BODY_SIZE)
+
+        if (!ALLOWED_TABLES.includes(table)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `Table not allowed: ${table}` }))
+          return
+        }
+
+        let query = supabaseAdmin.from(table)
+
+        // Build query based on action
+        if (action === 'select') {
+          query = query.select(params.columns || '*', params.count ? { count: params.count, head: params.head || false } : undefined)
+        } else if (action === 'insert') {
+          query = query.insert(params.data)
+        } else if (action === 'upsert') {
+          query = query.upsert(params.data, params.onConflict ? { onConflict: params.onConflict } : undefined)
+        } else if (action === 'update') {
+          query = query.update(params.data)
+        } else if (action === 'delete') {
+          query = query.delete()
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `Invalid action: ${action}` }))
+          return
+        }
+
+        // Apply filters
+        if (params.filters) {
+          for (const f of params.filters) {
+            if (f.type === 'eq') query = query.eq(f.column, f.value)
+            else if (f.type === 'neq') query = query.neq(f.column, f.value)
+            else if (f.type === 'gt') query = query.gt(f.column, f.value)
+            else if (f.type === 'gte') query = query.gte(f.column, f.value)
+            else if (f.type === 'lt') query = query.lt(f.column, f.value)
+            else if (f.type === 'lte') query = query.lte(f.column, f.value)
+            else if (f.type === 'like') query = query.like(f.column, f.value)
+            else if (f.type === 'ilike') query = query.ilike(f.column, f.value)
+            else if (f.type === 'in') query = query.in(f.column, f.value)
+            else if (f.type === 'contains') query = query.contains(f.column, f.value)
+            else if (f.type === 'is') query = query.is(f.column, f.value)
+          }
+        }
+
+        // Apply modifiers
+        if (params.order) {
+          for (const o of (Array.isArray(params.order) ? params.order : [params.order])) {
+            query = query.order(o.column, { ascending: o.ascending !== false })
+          }
+        }
+        if (params.limit) query = query.limit(params.limit)
+        if (params.single) query = query.single()
+        if (params.maybeSingle) query = query.maybeSingle()
+
+        const { data, error, count } = await query
+
+        if (error) {
+          console.error(`[DB Proxy] ${action} ${table} error:`, error.message)
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: { message: error.message, code: error.code } }))
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data, error: null, count: count ?? undefined }))
+        }
+      } catch (err) {
+        console.error('[DB Proxy] Error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })()
+    return
+  }
+
+  // POST /api/db/rpc — RPC proxy
+  if (url.pathname === '/api/db/rpc' && req.method === 'POST') {
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+      return
+    }
+
+    ;(async () => {
+      try {
+        const { fn, params = {} } = await readJsonBody(req)
+        if (!ALLOWED_RPC.includes(fn)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `RPC function not allowed: ${fn}` }))
+          return
+        }
+        const { data, error } = await supabaseAdmin.rpc(fn, params)
+        if (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: { message: error.message, code: error.code } }))
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data, error: null }))
+        }
+      } catch (err) {
+        console.error('[RPC Proxy] Error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })()
+    return
+  }
+
+  // POST /api/storage/upload — Upload file to Supabase Storage
+  if (url.pathname === '/api/storage/upload' && req.method === 'POST') {
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+      return
+    }
+
+    ;(async () => {
+      try {
+        const { bucket, path: filePath, fileBase64, contentType, upsert } = await readJsonBody(req, MAX_MATCH_BODY_SIZE)
+        if (!ALLOWED_BUCKETS.includes(bucket)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          return
+        }
+        const fileBuffer = Buffer.from(fileBase64, 'base64')
+        const { data, error } = await supabaseAdmin.storage
+          .from(bucket)
+          .upload(filePath, fileBuffer, { contentType: contentType || 'application/octet-stream', upsert: upsert !== false })
+        if (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data, error: null }))
+        }
+      } catch (err) {
+        console.error('[Storage Upload] Error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })()
+    return
+  }
+
+  // POST /api/storage/download — Download file from Supabase Storage
+  if (url.pathname === '/api/storage/download' && req.method === 'POST') {
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+      return
+    }
+
+    ;(async () => {
+      try {
+        const { bucket, path: filePath } = await readJsonBody(req)
+        if (!ALLOWED_BUCKETS.includes(bucket)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          return
+        }
+        const { data, error } = await supabaseAdmin.storage.from(bucket).download(filePath)
+        if (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+        } else {
+          // Convert blob to base64
+          const arrayBuffer = await data.arrayBuffer()
+          const base64 = Buffer.from(arrayBuffer).toString('base64')
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: base64, error: null }))
+        }
+      } catch (err) {
+        console.error('[Storage Download] Error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })()
+    return
+  }
+
+  // POST /api/storage/list — List files in Supabase Storage
+  if (url.pathname === '/api/storage/list' && req.method === 'POST') {
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+      return
+    }
+
+    ;(async () => {
+      try {
+        const { bucket, path: dirPath, options } = await readJsonBody(req)
+        if (!ALLOWED_BUCKETS.includes(bucket)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          return
+        }
+        const { data, error } = await supabaseAdmin.storage.from(bucket).list(dirPath, options || {})
+        if (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data, error: null }))
+        }
+      } catch (err) {
+        console.error('[Storage List] Error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })()
+    return
+  }
+
+  // POST /api/auth/* — Auth proxy endpoints
+  if (url.pathname.startsWith('/api/auth/') && req.method === 'POST') {
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+      return
+    }
+
+    const authAction = url.pathname.replace('/api/auth/', '')
+
+    ;(async () => {
+      try {
+        const body = await readJsonBody(req)
+        let result
+
+        switch (authAction) {
+          case 'sign-in': {
+            const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+              email: body.email,
+              password: body.password
+            })
+            result = { data: data ? { user: data.user, session: data.session } : null, error: error ? { message: error.message } : null }
+            break
+          }
+          case 'sign-up': {
+            const { data, error } = await supabaseAdmin.auth.admin.createUser({
+              email: body.email,
+              password: body.password,
+              email_confirm: true,
+              user_metadata: body.metadata || {}
+            })
+            result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
+            break
+          }
+          case 'sign-out': {
+            // With service_role, we can use admin API to sign out a user by their JWT
+            // But typically sign-out is client-side (just clear tokens)
+            result = { data: null, error: null }
+            break
+          }
+          case 'get-user': {
+            // Verify JWT and return user
+            const token = body.access_token
+            if (!token) {
+              result = { data: null, error: { message: 'No access token provided' } }
+              break
+            }
+            const { data, error } = await supabaseAdmin.auth.getUser(token)
+            result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
+            break
+          }
+          case 'reset-password': {
+            const { data, error } = await supabaseAdmin.auth.resetPasswordForEmail(body.email, {
+              redirectTo: body.redirectTo
+            })
+            result = { data, error: error ? { message: error.message } : null }
+            break
+          }
+          case 'update-user': {
+            const token = body.access_token
+            if (!token) {
+              result = { data: null, error: { message: 'No access token provided' } }
+              break
+            }
+            // Get user from token first
+            const { data: userData } = await supabaseAdmin.auth.getUser(token)
+            if (!userData?.user) {
+              result = { data: null, error: { message: 'Invalid token' } }
+              break
+            }
+            const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userData.user.id, {
+              email: body.email
+            })
+            result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
+            break
+          }
+          case 'delete-account': {
+            const token = body.access_token
+            if (!token) {
+              result = { data: null, error: { message: 'No access token provided' } }
+              break
+            }
+            const { data: userData } = await supabaseAdmin.auth.getUser(token)
+            if (!userData?.user) {
+              result = { data: null, error: { message: 'Invalid token' } }
+              break
+            }
+            const { error } = await supabaseAdmin.auth.admin.deleteUser(userData.user.id)
+            result = { data: null, error: error ? { message: error.message } : null }
+            break
+          }
+          case 'profile': {
+            // Get or update profile
+            const token = body.access_token
+            if (!token) {
+              result = { data: null, error: { message: 'No access token provided' } }
+              break
+            }
+            const { data: userData } = await supabaseAdmin.auth.getUser(token)
+            if (!userData?.user) {
+              result = { data: null, error: { message: 'Invalid token' } }
+              break
+            }
+            if (body.updates) {
+              // Update profile
+              const { data, error } = await supabaseAdmin
+                .from('profiles')
+                .update(body.updates)
+                .eq('user_id', userData.user.id)
+                .select()
+                .single()
+              result = { data, error: error ? { message: error.message } : null }
+            } else {
+              // Get profile
+              const { data, error } = await supabaseAdmin
+                .from('profiles')
+                .select('*')
+                .eq('user_id', userData.user.id)
+                .single()
+              result = { data, error: error ? { message: error.message } : null }
+            }
+            break
+          }
+          default:
+            res.writeHead(404, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: `Unknown auth action: ${authAction}` }))
+            return
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(result))
+      } catch (err) {
+        console.error(`[Auth Proxy] ${authAction} error:`, err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })()
+    return
+  }
+
   res.writeHead(404)
   res.end('Not Found')
 })
@@ -882,7 +1348,7 @@ const wss = new WebSocketServer({
 })
 
 wss.on('connection', (ws, req) => {
-  const clientId = Math.random().toString(36).substring(7)
+  const clientId = randomBytes(8).toString('hex')
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress
   const clientInfo = {
     ws,

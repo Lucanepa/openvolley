@@ -1146,6 +1146,12 @@
     "noSetsReopen": "Nessun set da riaprire",
     "setReopened": "Set {{index}} riaperto per correzioni",
     "errorReopening": "Errore riapertura: {{error}}",
+    "unlockReopen": "Sblocca riapertura",
+    "unlockReopenDescription": "Inserisci la password per sbloccare questa azione.",
+    "unlockPasswordPlaceholder": "Password",
+    "unlockPasswordRequired": "Inserisci la password",
+    "unlockPasswordWrong": "Password errata",
+    "unlockPasswordError": "Errore nella verifica della password",
     "sanctionTypes": {
       "delayWarning": "Avvertimento ritardo",
       "delayPenalty": "Penalità ritardo",
@@ -1458,7 +1464,7 @@
     "noUpcomingMatches": "Nessuna partita in programma trovata",
     "fetchError": "Impossibile caricare le partite. Verifica la connessione.",
     "backendNotAvailable": "Server backend non disponibile",
-    "reminderAlert": "Imposta il gruppo di lega se presente, i colori e i nomi brevi delle squadre",
+    "reminderAlert": "Seleziona i colori e i nomi brevi delle squadre",
     "loading": "Caricamento partite...",
     "selectFilters": "Seleziona sesso e lega per vedere le partite",
     "searchPlaceholder": "Cerca...",
@@ -1915,5 +1921,22 @@
       "teal": "Verde acqua",
       "pink": "Rosa"
     }
+  },
+  "warnings": {
+    "clickForDetails": "Clicca per vedere cosa manca",
+    "missingRequired": "Campi obbligatori mancanti:",
+    "maxBenchOfficials": "Massimo 5 ufficiali di panchina raggiunto",
+    "confirmMatchInfoFirst": "Confermare prima le info partita",
+    "matchInfoNotConfirmed": "Info partita non confermate",
+    "firstRefereeMissing": "Nome del 1° arbitro richiesto",
+    "scorerNameMissing": "Nome del segnapunti richiesto",
+    "scorerDobMissing": "Data di nascita del segnapunti richiesta",
+    "homeRosterIncomplete": "Rosa di casa incompleta ({{count}}/6 giocatori)",
+    "awayRosterIncomplete": "Rosa ospite incompleta ({{count}}/6 giocatori)",
+    "homeCaptainMissing": "Squadra di casa: nessun capitano assegnato",
+    "homeCoachMissing": "Squadra di casa: nessun allenatore impostato",
+    "awayCaptainMissing": "Squadra ospite: nessun capitano assegnato",
+    "awayCoachMissing": "Squadra ospite: nessun allenatore impostato",
+    "selectGenderFirst": "Selezionare prima il genere"
   }
 }

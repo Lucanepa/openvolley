@@ -9,6 +9,7 @@ import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
 import SignaturePad from './components/SignaturePad'
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -195,16 +196,16 @@ export default function UploadRosterApp() {
       setLoadingMatches(true)
       console.log('[Roster DEBUG] ========== LOADING MATCHES ==========')
       console.log('[Roster DEBUG] Connection mode:', connectionMode)
-      console.log('[Roster DEBUG] Supabase client exists:', !!supabase)
+      console.log('[Roster DEBUG] apiFrom available: true')
 
       try {
         // Try Supabase first if in AUTO or SUPABASE mode
         const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+          connectionMode === CONNECTION_MODES.AUTO
 
         console.log('[Roster DEBUG] Will try Supabase:', useSupabase)
 
-        if (useSupabase && supabase) {
+        if (useSupabase) {
           console.log('[Roster DEBUG] Attempting Supabase connection...')
           try {
             const result = await listAvailableMatchesSupabase()
@@ -762,7 +763,7 @@ export default function UploadRosterApp() {
       }
 
       // Try Supabase first if connected
-      if (activeConnection === 'supabase' && supabase && selectedMatch?.external_id) {
+      if (activeConnection === 'supabase' && selectedMatch?.external_id) {
         console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
 
         // JSONB signature keys
@@ -787,8 +788,7 @@ export default function UploadRosterApp() {
         }
 
         // Merge with existing signatures and connections JSONB
-        const { data: existingMatch } = await supabase
-          .from('matches')
+        const { data: existingMatch } = await apiFrom('matches')
           .select('signatures, connections')
           .eq('external_id', selectedMatch.external_id)
           .maybeSingle()
@@ -807,8 +807,7 @@ export default function UploadRosterApp() {
           [pendingRosterJsonKey]: rosterData
         }
 
-        const { error } = await supabase
-          .from('matches')
+        const { error } = await apiFrom('matches')
           .update(supabaseUpdate)
           .eq('external_id', selectedMatch.external_id)
 

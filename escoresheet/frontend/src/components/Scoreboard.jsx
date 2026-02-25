@@ -23,7 +23,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
@@ -40,7 +40,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
  *    Used for: All scoring events, substitutions, timeouts, sanctions
  *    Why: Offline-first, dependency ordering, retry-safe
  *
- * 2. DIRECT: match_live_state → supabase.upsert() immediately
+ * 2. DIRECT: match_live_state → apiFrom().upsert() immediately
  *    Used for: Real-time spectator display (lineup, scores, serving team)
  *    Why: Sub-second latency needed for live viewing - queue adds 1s+ delay
  *
@@ -1277,7 +1277,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearAllMatches()
 
       // Also set up a connection to clear when WebSocket opens
-      // Use configured backend URL if available (Railway/cloud)
+      // Use configured backend URL if available (Render/cloud)
       const backendUrl = import.meta.env.VITE_BACKEND_URL
       let wsUrl
       if (backendUrl) {
@@ -1318,12 +1318,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const connectWebSocket = () => {
       try {
-        // Check if we have a configured backend URL (Railway/cloud backend)
+        // Check if we have a configured backend URL (Render/cloud backend)
         const backendUrl = import.meta.env.VITE_BACKEND_URL
 
         let wsUrl
         if (backendUrl) {
-          // Use configured backend (Railway cloud)
+          // Use configured backend (Render cloud)
           const url = new URL(backendUrl)
           const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
           wsUrl = `${protocol}//${url.host}`
@@ -1773,7 +1773,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const syncLiveStateToSupabase = useCallback(async (eventType, eventTeam, eventData, cachedSnapshot = null) => {
     const _tl = performance.now()
     console.log(`[PERF:liveState] START: ${eventType}, cachedSnapshot: ${!!cachedSnapshot}`)
-    if (!supabase || !matchId) return
+    if (!matchId) return
 
     try {
       // Get match to check if it's a test match
@@ -1788,8 +1788,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         supabaseMatchId = externalId
       } else {
         const seedKey = match.seed_key || String(matchId)
-        const { data: matchData, error } = await supabase
-          .from('matches')
+        const { data: matchData, error } = await apiFrom('matches')
           .select('id')
           .eq('external_id', seedKey)
           .maybeSingle()
@@ -2011,8 +2010,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Reason: match_live_state needs sub-second latency for real-time spectator display.
       // Queuing would add 1s+ delay from the polling interval in useSyncQueue.
       const [liveStateResult, matchResult] = await Promise.all([
-        supabase.from('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }),
-        supabase.from('matches').update({ current_set: finalSetIndex }).eq('id', supabaseMatchId)
+        apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }),
+        apiFrom('matches').update({ current_set: finalSetIndex }).eq('id', supabaseMatchId)
       ])
 
       if (liveStateResult.error) {
@@ -2109,7 +2108,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else {
       // Test if WebSocket server is available
       try {
-        // Use configured backend URL if available (Railway/cloud)
+        // Use configured backend URL if available (Render/cloud)
         const backendUrlForWs = import.meta.env.VITE_BACKEND_URL
         let wsUrl
         if (backendUrlForWs) {
@@ -3836,10 +3835,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
 
       // Sync to Supabase
-      if (supabase && data.match?.seed_key) {
+      if (data.match?.seed_key) {
         console.log('[ManualChange] Syncing to Supabase:', { seed_key: data.match.seed_key, changes: updatedChanges })
-        supabase
-          .from('matches')
+        apiFrom('matches')
           .update({ manual_changes: updatedChanges })
           .eq('external_id', data.match.seed_key)
           .select('id, external_id, manual_changes')
@@ -3855,14 +3853,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             console.error('[ManualChange] Supabase error:', err)
           })
       } else {
-        console.log('[ManualChange] No Supabase sync:', { hasSupabase: !!supabase, seed_key: data.match?.seed_key })
+        console.log('[ManualChange] No Supabase sync:', { seed_key: data.match?.seed_key })
       }
     } else {
       console.log('[ManualChange] No match data:', { matchId, hasMatch: !!data?.match })
     }
 
     return change
-  }, [matchId, data?.match, supabase, notifyScoresheetUpdate])
+  }, [matchId, data?.match, notifyScoresheetUpdate])
 
   const logManualChangeWithRemark = useCallback(async (category, field, before, after, description, { setIndex, scoreStr } = {}) => {
     logManualChange(category, field, before, after, description)
@@ -20403,10 +20401,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     await db.sets.update(data.set.id, update)
 
                                     // Sync to Supabase
-                                    if (supabase && data.match?.seed_key) {
+                                    if (data.match?.seed_key) {
                                       try {
                                         const sbUpdate = leftIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        await supabase.from('sets').update(sbUpdate).eq('external_id', String(data.set.id))
+                                        await apiFrom('sets').update(sbUpdate).eq('external_id', String(data.set.id))
                                       } catch (err) { /* ignore */ }
                                     }
 
@@ -20445,10 +20443,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     await db.sets.update(data.set.id, update)
 
                                     // Sync to Supabase
-                                    if (supabase && data.match?.seed_key) {
+                                    if (data.match?.seed_key) {
                                       try {
                                         const sbUpdate = rightIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        await supabase.from('sets').update(sbUpdate).eq('external_id', String(data.set.id))
+                                        await apiFrom('sets').update(sbUpdate).eq('external_id', String(data.set.id))
                                       } catch (err) { /* ignore */ }
                                     }
 
@@ -20594,9 +20592,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                     await db.sets.update(set.id, { homePoints: newPoints })
                                     // Sync to Supabase
-                                    if (supabase && data.match?.seed_key) {
+                                    if (data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Home Points Set ${set.index}`, oldPoints, newPoints,
@@ -20627,9 +20625,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
                                     await db.sets.update(set.id, { awayPoints: newPoints })
                                     // Sync to Supabase
-                                    if (supabase && data.match?.seed_key) {
+                                    if (data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Away Points Set ${set.index}`, oldPoints, newPoints,
@@ -20658,9 +20656,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const newFinished = e.target.checked
                                     await db.sets.update(set.id, { finished: newFinished })
                                     // Sync to Supabase
-                                    if (supabase && data.match?.seed_key) {
+                                    if (data.match?.seed_key) {
                                       try {
-                                        await supabase.from('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Set ${set.index} Finished`, oldFinished, newFinished,
@@ -20748,10 +20746,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               await db.matches.update(matchId, { status: newStatus })
 
                               // Also sync to Supabase if match has seed_key
-                              if (supabase && data.match?.seed_key) {
+                              if (data.match?.seed_key) {
                                 try {
-                                  await supabase
-                                    .from('matches')
+                                  await apiFrom('matches')
                                     .update({ status: newStatus })
                                     .eq('external_id', data.match.seed_key)
                                 } catch (err) {

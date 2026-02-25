@@ -267,7 +267,7 @@
     "awayTeamName": "Away team name",
     "short": "Short",
     "gamePin": "Game PIN",
-    "gamePinDescription": "Auto-generated PIN to open this match in a new session",
+    "gamePinDescription": "Auto-generated PIN to delete/restore the match; please save this information to restore the match if needed.",
     "notificationEmail": "Send PIN by email",
     "notificationEmailPlaceholder": "Enter email address",
     "send": "Send",
@@ -1147,6 +1147,12 @@
     "noSetsReopen": "No sets found to reopen",
     "setReopened": "Set {{index}} reopened for corrections",
     "errorReopening": "Error reopening last set: {{error}}",
+    "unlockReopen": "Unlock Reopen",
+    "unlockReopenDescription": "Enter the reopen password to unlock this action.",
+    "unlockPasswordPlaceholder": "Password",
+    "unlockPasswordRequired": "Please enter the password",
+    "unlockPasswordWrong": "Incorrect password",
+    "unlockPasswordError": "Error verifying password",
     "sanctionTypes": {
       "delayWarning": "Delay Warning",
       "delayPenalty": "Delay Penalty",
@@ -1459,7 +1465,7 @@
     "noUpcomingMatches": "No upcoming matches found",
     "fetchError": "Failed to load matches. Check your connection.",
     "backendNotAvailable": "Backend server not available",
-    "reminderAlert": "Set the League group if present, Team colours and Team Short names",
+    "reminderAlert": "Set Teams colours and Team Short names",
     "loading": "Loading matches...",
     "selectFilters": "Select gender and league to view matches",
     "searchPlaceholder": "Search...",
@@ -1916,5 +1922,22 @@
       "teal": "Teal",
       "pink": "Pink"
     }
+  },
+  "warnings": {
+    "clickForDetails": "Click to see what's missing",
+    "missingRequired": "Missing required fields:",
+    "maxBenchOfficials": "Maximum 5 bench officials reached",
+    "confirmMatchInfoFirst": "Confirm match info first",
+    "matchInfoNotConfirmed": "Match info not confirmed",
+    "firstRefereeMissing": "1st referee name required",
+    "scorerNameMissing": "Scorer name required",
+    "scorerDobMissing": "Scorer date of birth required",
+    "homeRosterIncomplete": "Home roster incomplete ({{count}}/6 players)",
+    "awayRosterIncomplete": "Away roster incomplete ({{count}}/6 players)",
+    "homeCaptainMissing": "Home team: no captain assigned",
+    "homeCoachMissing": "Home team: no coach set",
+    "awayCaptainMissing": "Away team: no captain assigned",
+    "awayCoachMissing": "Away team: no coach set",
+    "selectGenderFirst": "Select a gender first"
   }
 }
