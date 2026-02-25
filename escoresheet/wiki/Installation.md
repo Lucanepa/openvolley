@@ -65,7 +65,7 @@ Create a `.env` file in `escoresheet/frontend/` if you need cloud features. All 
 | --- | --- |
 | `VITE_SUPABASE_URL` | Supabase project URL for cloud sync |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anonymous key |
-| `VITE_BACKEND_URL` | WebSocket backend URL (e.g., `https://your-server.railway.app`) |
+| `VITE_BACKEND_URL` | WebSocket backend URL (e.g., `https://openvolley-backend.onrender.com`) |
 | `VITE_HTTPS` | Set to `true` to enable HTTPS in dev |
 | `VITE_BASE_PATH` | Base path for non-root deployments (e.g., `/openvolley/`) |
 | `VITE_APP_TITLE` | Override PWA manifest app name |

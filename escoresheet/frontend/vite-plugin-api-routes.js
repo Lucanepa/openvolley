@@ -21,6 +21,35 @@ const matchSubscriptions = new Map() // key: matchId, value: Set of WebSocket co
 const wsClients = new Set()
 let mainInstanceId = null
 
+// --- Rate limiting ---
+const RATE_LIMIT_WINDOW_MS = 60 * 1000
+const RATE_LIMIT_MAX_REQUESTS = 10
+const rateLimitMap = new Map()
+
+function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now })
+    return false
+  }
+
+  entry.count++
+  return entry.count > maxRequests
+}
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitMap.delete(ip)
+    }
+  }
+}, 5 * 60 * 1000)
+
+const MAX_BODY_SIZE = 1024 * 1024 // 1MB
+
 // Get local IP address
 function getLocalIP() {
   const interfaces = networkInterfaces()
@@ -308,16 +337,10 @@ export function vitePluginApiRoutes(options = {}) {
               const pending = pendingPinRequests.get(requestId)
               if (pending && pending.res && !pending.res.headersSent) {
                 if (matchData) {
-                  pending.res.writeHead(200, { 
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                  })
+                  pending.res.writeHead(200, { 'Content-Type': 'application/json' })
                   pending.res.end(JSON.stringify({ success: true, ...matchData }))
                 } else {
-                  pending.res.writeHead(404, { 
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                  })
+                  pending.res.writeHead(404, { 'Content-Type': 'application/json' })
                   pending.res.end(JSON.stringify({ success: false, error: 'Match not found' }))
                 }
                 if (pending.timeout) clearTimeout(pending.timeout)
@@ -328,16 +351,10 @@ export function vitePluginApiRoutes(options = {}) {
               const pending = pendingPinRequests.get(requestId)
               if (pending && pending.res && !pending.res.headersSent) {
                 if (match) {
-                  pending.res.writeHead(200, { 
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                  })
+                  pending.res.writeHead(200, { 'Content-Type': 'application/json' })
                   pending.res.end(JSON.stringify({ success: true, match, matchId }))
                 } else {
-                  pending.res.writeHead(404, { 
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                  })
+                  pending.res.writeHead(404, { 'Content-Type': 'application/json' })
                   pending.res.end(JSON.stringify({ success: false, error: 'Match not found' }))
                 }
                 if (pending.timeout) clearTimeout(pending.timeout)
@@ -347,10 +364,7 @@ export function vitePluginApiRoutes(options = {}) {
               const { requestId, success, error, data, matchId } = message
               const pending = pendingPinRequests.get(requestId)
               if (pending && pending.res && !pending.res.headersSent) {
-                pending.res.writeHead(success ? 200 : 500, { 
-                  'Content-Type': 'application/json',
-                  'Access-Control-Allow-Origin': '*'
-                })
+                pending.res.writeHead(success ? 200 : 500, { 'Content-Type': 'application/json' })
                 pending.res.end(JSON.stringify({ success, error }))
                 if (pending.timeout) clearTimeout(pending.timeout)
                 pendingPinRequests.delete(requestId)
@@ -425,7 +439,12 @@ export function vitePluginApiRoutes(options = {}) {
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
-        
+
+        // Security headers
+        res.setHeader('X-Content-Type-Options', 'nosniff')
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+
         // Handle OPTIONS preflight
         if (req.method === 'OPTIONS') {
           res.writeHead(200)
@@ -572,6 +591,16 @@ export function vitePluginApiRoutes(options = {}) {
         
         // Validate PIN
         if (urlPath === '/match/validate-pin' && req.method === 'POST') {
+          const clientIp = req.socket.remoteAddress || 'unknown'
+          if (isRateLimited(clientIp)) {
+            res.writeHead(429, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({
+              success: false,
+              error: 'Too many attempts. Please wait a minute before trying again.'
+            }))
+            return
+          }
+
           let body = ''
           let responseSent = false
           
@@ -582,7 +611,13 @@ export function vitePluginApiRoutes(options = {}) {
             res.end(JSON.stringify(data))
           }
           
-          req.on('data', chunk => { body += chunk.toString() })
+          req.on('data', chunk => {
+            body += chunk.toString()
+            if (body.length > MAX_BODY_SIZE) {
+              req.destroy()
+              return
+            }
+          })
           req.on('end', () => {
             try {
               if (!body || body.trim() === '') {
@@ -784,8 +819,14 @@ export function vitePluginApiRoutes(options = {}) {
             req.method === 'PATCH') {
           const matchId = urlPath.split('/match/')[1]
           let body = ''
-          
-          req.on('data', chunk => { body += chunk.toString() })
+
+          req.on('data', chunk => {
+            body += chunk.toString()
+            if (body.length > MAX_BODY_SIZE) {
+              req.destroy()
+              return
+            }
+          })
           req.on('end', () => {
             try {
               const updates = JSON.parse(body)

@@ -8,6 +8,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
     "cors": "^2.8.5",
     "node-ical": "^0.22.1",
     "nodemailer": "^6.10.1",

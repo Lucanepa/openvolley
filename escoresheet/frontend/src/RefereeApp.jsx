@@ -89,12 +89,12 @@ export default function RefereeApp() {
     
     // Check WebSocket server availability
     try {
-      // Check if we have a configured backend URL (Railway/cloud backend)
+      // Check if we have a configured backend URL (Render/cloud backend)
       const backendUrl = import.meta.env.VITE_BACKEND_URL
 
       let wsUrl
       if (backendUrl) {
-        // Use configured backend (Railway cloud)
+        // Use configured backend (Render cloud)
         const url = new URL(backendUrl)
         const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl = `${protocol}//${url.host}`
@@ -192,7 +192,7 @@ export default function RefereeApp() {
   }
 
   // Load available matches function - called on mount and manually via button
-  // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Railway)
+  // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Render)
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true)
     try {

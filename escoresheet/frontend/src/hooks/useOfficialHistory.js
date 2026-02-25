@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
@@ -17,18 +17,16 @@ export function useOfficialHistory() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const isOnline = !!supabase
+  const isOnline = true
 
   // Fetch unique referees from history
   const fetchReferees = useCallback(async () => {
-    if (!supabase) return []
 
     try {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase
-        .from('referee_database')
+      const { data, error: fetchError } = await apiFrom('referee_database')
         .select('first_name, last_name, country, dob, created_at')
         .contains('sport_type', JSON.stringify([SPORT_TYPE]))
         .order('last_name', { ascending: true })
@@ -66,14 +64,13 @@ export function useOfficialHistory() {
 
   // Save referee to history (check existing, then insert or update sport_type array)
   const saveReferee = useCallback(async (official) => {
-    if (!supabase || !official?.firstName || !official?.lastName) {
+    if (!official?.firstName || !official?.lastName) {
       return false
     }
 
     try {
       // Check if referee already exists
-      const { data: existing } = await supabase
-        .from('referee_database')
+      const { data: existing } = await apiFrom('referee_database')
         .select('id, sport_type')
         .ilike('last_name', official.lastName)
         .ilike('first_name', official.firstName)
@@ -83,8 +80,7 @@ export function useOfficialHistory() {
         // Add sport type to array if not already present
         const sports = existing.sport_type || []
         if (!sports.includes(SPORT_TYPE)) {
-          const { error: updateError } = await supabase
-            .from('referee_database')
+          const { error: updateError } = await apiFrom('referee_database')
             .update({ sport_type: [...sports, SPORT_TYPE] })
             .eq('id', existing.id)
 
@@ -95,8 +91,7 @@ export function useOfficialHistory() {
         }
       } else {
         // Insert new referee
-        const { error: insertError } = await supabase
-          .from('referee_database')
+        const { error: insertError } = await apiFrom('referee_database')
           .insert({
             first_name: official.firstName,
             last_name: official.lastName,
@@ -129,7 +124,7 @@ export function useOfficialHistory() {
 
   // Save all officials from a match
   const saveMatchOfficials = useCallback(async (officials) => {
-    if (!supabase || !officials) return false
+    if (!officials) return false
 
     const promises = []
 

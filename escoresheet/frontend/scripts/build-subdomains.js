@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build script for subdomain deployments
- * Builds each dashboard as a standalone app for Railway static site deployment
+ * Builds each dashboard as a standalone app for Render static site deployment
  *
  * Usage:
  *   node scripts/build-subdomains.js          # Build all subdomains
@@ -302,8 +302,8 @@ async function buildSubdomain(subdomain, basePath = '/') {
       renameSync(builtHtmlPath, finalHtmlPath)
     }
 
-    // Create package.json for Railway deployment
-    const railwayPackageJson = {
+    // Create package.json for Render deployment
+    const renderPackageJson = {
       name: `openvolley-${subdomain}`,
       version: appVersion,
       private: true,
@@ -316,7 +316,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
     }
     writeFileSync(
       resolve(outDir, 'package.json'),
-      JSON.stringify(railwayPackageJson, null, 2)
+      JSON.stringify(renderPackageJson, null, 2)
     )
 
     console.log(`✅ Built ${subdomain}.openvolley.app → dist-${subdomain}/`)

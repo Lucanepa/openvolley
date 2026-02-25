@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { db } from '../db/db'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
+import { getApiUrl } from '../utils/backendConfig'
 
 /**
  * ============================================================================
@@ -100,9 +101,10 @@ export function useSyncQueue() {
   const lastConnectionCheck = useRef(0)
   const CONNECTION_CHECK_INTERVAL = 30000 // Only recheck every 30 seconds
 
-  // Check Supabase connection (with caching)
+  // Check backend/Supabase connection (with caching)
+  const hasBackend = () => !!getApiUrl('/api/db')
   const checkSupabaseConnection = useCallback(async (forceCheck = false) => {
-    if (!supabase) {
+    if (!hasBackend()) {
       setSyncStatus('online_no_supabase')
       return false
     }
@@ -119,7 +121,7 @@ export function useSyncQueue() {
         setSyncStatus('connecting')
       }
       // Try a simple query to check connection - use matches table
-      const { error } = await supabase.from('matches').select('id').limit(1)
+      const { error } = await apiFrom('matches').select('id').limit(1)
       if (error) {
         connectionVerified.current = false
         // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
@@ -169,8 +171,7 @@ export function useSyncQueue() {
         const matchPayload = filterMatchPayload(job.payload)
 
         console.log('[SyncQueue] Match insert payload:', matchPayload)
-        const { error } = await supabase
-          .from('matches')
+        const { error } = await apiFrom('matches')
           .upsert(matchPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Match insert error:', error, matchPayload)
@@ -192,8 +193,7 @@ export function useSyncQueue() {
         // If updating JSONB columns, fetch existing values and merge
         if (hasJsonbColumns) {
           const columnsToFetch = jsonbColumns.filter(col => updateData[col] !== undefined)
-          const { data: existingMatch, error: fetchError } = await supabase
-            .from('matches')
+          const { data: existingMatch, error: fetchError } = await apiFrom('matches')
             .select(columnsToFetch.join(','))
             .eq('external_id', id)
             .maybeSingle()
@@ -217,8 +217,7 @@ export function useSyncQueue() {
         }
 
         console.log('[SyncQueue] Match update payload:', { id, ...finalUpdateData })
-        const { error } = await supabase
-          .from('matches')
+        const { error } = await apiFrom('matches')
           .update(finalUpdateData)
           .eq('external_id', id)
         if (error) {
@@ -234,8 +233,7 @@ export function useSyncQueue() {
         console.log('[SyncQueue] 🗑️ Starting match delete for external_id:', id)
 
         // First, look up the match to get its UUID
-        const { data: matchData, error: lookupError } = await supabase
-          .from('matches')
+        const { data: matchData, error: lookupError } = await apiFrom('matches')
           .select('id')
           .eq('external_id', id)
           .maybeSingle()
@@ -255,16 +253,13 @@ export function useSyncQueue() {
         console.log('[SyncQueue] 🔍 Found match UUID:', matchUuid)
 
         // Count records before deletion for debugging
-        const { count: eventsCountBefore } = await supabase
-          .from('events')
+        const { count: eventsCountBefore } = await apiFrom('events')
           .select('*', { count: 'exact', head: true })
           .eq('match_id', matchUuid)
-        const { count: setsCountBefore } = await supabase
-          .from('sets')
+        const { count: setsCountBefore } = await apiFrom('sets')
           .select('*', { count: 'exact', head: true })
           .eq('match_id', matchUuid)
-        const { count: liveStateCountBefore } = await supabase
-          .from('match_live_state')
+        const { count: liveStateCountBefore } = await apiFrom('match_live_state')
           .select('*', { count: 'exact', head: true })
           .eq('match_id', matchUuid)
         console.log('[SyncQueue] 📊 Records before delete:', {
@@ -275,8 +270,7 @@ export function useSyncQueue() {
 
         // Delete events for this match
         console.log('[SyncQueue] 🗑️ Deleting events...')
-        const { error: eventsError, count: eventsDeleted } = await supabase
-          .from('events')
+        const { error: eventsError, count: eventsDeleted } = await apiFrom('events')
           .delete()
           .eq('match_id', matchUuid)
           .select('*', { count: 'exact', head: true })
@@ -288,8 +282,7 @@ export function useSyncQueue() {
 
         // Delete sets for this match
         console.log('[SyncQueue] 🗑️ Deleting sets...')
-        const { error: setsError } = await supabase
-          .from('sets')
+        const { error: setsError } = await apiFrom('sets')
           .delete()
           .eq('match_id', matchUuid)
         if (setsError) {
@@ -300,8 +293,7 @@ export function useSyncQueue() {
 
         // Delete match_live_state for this match
         console.log('[SyncQueue] 🗑️ Deleting match_live_state...')
-        const { error: liveStateError } = await supabase
-          .from('match_live_state')
+        const { error: liveStateError } = await apiFrom('match_live_state')
           .delete()
           .eq('match_id', matchUuid)
         if (liveStateError) {
@@ -311,16 +303,13 @@ export function useSyncQueue() {
         }
 
         // Verify all related records are deleted before deleting match
-        const { count: eventsCountAfter } = await supabase
-          .from('events')
+        const { count: eventsCountAfter } = await apiFrom('events')
           .select('*', { count: 'exact', head: true })
           .eq('match_id', matchUuid)
-        const { count: setsCountAfter } = await supabase
-          .from('sets')
+        const { count: setsCountAfter } = await apiFrom('sets')
           .select('*', { count: 'exact', head: true })
           .eq('match_id', matchUuid)
-        const { count: liveStateCountAfter } = await supabase
-          .from('match_live_state')
+        const { count: liveStateCountAfter } = await apiFrom('match_live_state')
           .select('*', { count: 'exact', head: true })
           .eq('match_id', matchUuid)
         console.log('[SyncQueue] 📊 Records after delete:', {
@@ -336,8 +325,7 @@ export function useSyncQueue() {
 
         // Delete the match
         console.log('[SyncQueue] 🗑️ Deleting match...')
-        const { error: matchError } = await supabase
-          .from('matches')
+        const { error: matchError } = await apiFrom('matches')
           .delete()
           .eq('id', matchUuid)
         if (matchError) {
@@ -366,8 +354,7 @@ export function useSyncQueue() {
 
         try {
           // Step 1: Look up existing match UUID by external_id (THIS MATCH ONLY)
-          const { data: existingMatch, error: lookupError } = await supabase
-            .from('matches')
+          const { data: existingMatch, error: lookupError } = await apiFrom('matches')
             .select('id')
             .eq('external_id', externalId)
             .maybeSingle()
@@ -383,13 +370,13 @@ export function useSyncQueue() {
             console.log('[SyncQueue] Deleting existing data for match UUID:', matchUuid)
 
             // Delete ONLY records with this specific match_id
-            const { error: eventsDelErr } = await supabase.from('events').delete().eq('match_id', matchUuid)
+            const { error: eventsDelErr } = await apiFrom('events').delete().eq('match_id', matchUuid)
             if (eventsDelErr) console.warn('[SyncQueue] Events delete warning:', eventsDelErr)
 
-            const { error: setsDelErr } = await supabase.from('sets').delete().eq('match_id', matchUuid)
+            const { error: setsDelErr } = await apiFrom('sets').delete().eq('match_id', matchUuid)
             if (setsDelErr) console.warn('[SyncQueue] Sets delete warning:', setsDelErr)
 
-            const { error: liveStateDelErr } = await supabase.from('match_live_state').delete().eq('match_id', matchUuid)
+            const { error: liveStateDelErr } = await apiFrom('match_live_state').delete().eq('match_id', matchUuid)
             if (liveStateDelErr) console.warn('[SyncQueue] match_live_state delete warning:', liveStateDelErr)
 
             console.log('[SyncQueue] Deleted existing data for match:', externalId)
@@ -400,8 +387,7 @@ export function useSyncQueue() {
           // Step 3: UPSERT match (creates or updates BY external_id)
           // Filter to valid columns only - handles old backup formats with invalid fields
           const filteredMatch = filterMatchPayload(match)
-          const { data: upsertedMatch, error: matchError } = await supabase
-            .from('matches')
+          const { data: upsertedMatch, error: matchError } = await apiFrom('matches')
             .upsert(filteredMatch, { onConflict: 'external_id' })
             .select('id')
             .single()
@@ -418,8 +404,7 @@ export function useSyncQueue() {
           if (sets?.length > 0) {
             for (const set of sets) {
               const setPayload = { ...set, match_id: matchUuid, sport_type: 'indoor' }
-              const { error: setErr } = await supabase
-                .from('sets')
+              const { error: setErr } = await apiFrom('sets')
                 .upsert(setPayload, { onConflict: 'external_id' })
               if (setErr) {
                 console.warn('[SyncQueue] Set upsert warning:', setErr, set.external_id)
@@ -432,14 +417,13 @@ export function useSyncQueue() {
           if (events?.length > 0) {
             // Batch insert events for efficiency
             const eventsWithMatchId = events.map(e => ({ ...e, match_id: matchUuid, sport_type: 'indoor' }))
-            const { error: eventsErr } = await supabase
-              .from('events')
+            const { error: eventsErr } = await apiFrom('events')
               .upsert(eventsWithMatchId, { onConflict: 'external_id' })
             if (eventsErr) {
               console.warn('[SyncQueue] Events batch upsert warning:', eventsErr)
               // Try individual inserts as fallback
               for (const event of eventsWithMatchId) {
-                await supabase.from('events').upsert(event, { onConflict: 'external_id' })
+                await apiFrom('events').upsert(event, { onConflict: 'external_id' })
               }
             }
             console.log('[SyncQueue] Upserted', events.length, 'events')
@@ -448,8 +432,7 @@ export function useSyncQueue() {
           // Step 6: UPSERT match_live_state (keyed by match_id)
           if (liveState) {
             const liveStatePayload = { ...liveState, match_id: matchUuid }
-            const { error: liveStateErr } = await supabase
-              .from('match_live_state')
+            const { error: liveStateErr } = await apiFrom('match_live_state')
               .upsert(liveStatePayload, { onConflict: 'match_id' })
             if (liveStateErr) {
               console.warn('[SyncQueue] match_live_state upsert warning:', liveStateErr)
@@ -473,8 +456,7 @@ export function useSyncQueue() {
         let setPayload = { ...job.payload, sport_type: 'indoor' }
 
         if (setPayload.match_id && typeof setPayload.match_id === 'string') {
-          const { data: matchData } = await supabase
-            .from('matches')
+          const { data: matchData } = await apiFrom('matches')
             .select('id')
             .eq('external_id', setPayload.match_id)
             .maybeSingle()
@@ -486,8 +468,7 @@ export function useSyncQueue() {
           setPayload.match_id = matchData.id
         }
 
-        const { error } = await supabase
-          .from('sets')
+        const { error } = await apiFrom('sets')
           .upsert(setPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Set insert error:', error, setPayload)
@@ -500,8 +481,7 @@ export function useSyncQueue() {
         // Update set by external_id
         const { external_id, ...updateData } = job.payload
 
-        const { error } = await supabase
-          .from('sets')
+        const { error } = await apiFrom('sets')
           .update({ ...updateData, sport_type: 'indoor' })
           .eq('external_id', external_id)
         if (error) {
@@ -517,8 +497,7 @@ export function useSyncQueue() {
         let eventPayload = { ...job.payload, sport_type: 'indoor' }
 
         if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
-          const { data: matchData } = await supabase
-            .from('matches')
+          const { data: matchData } = await apiFrom('matches')
             .select('id')
             .eq('external_id', eventPayload.match_id)
             .maybeSingle()
@@ -531,8 +510,7 @@ export function useSyncQueue() {
         }
 
         // Use upsert with external_id to avoid duplicates on retry
-        const { error } = await supabase
-          .from('events')
+        const { error } = await apiFrom('events')
           .upsert(eventPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Event insert error:', error, eventPayload)
@@ -553,7 +531,7 @@ export function useSyncQueue() {
 
   const flush = useCallback(async () => {
     if (busy.current) return
-    if (!supabase) {
+    if (!hasBackend()) {
       setSyncStatus('online_no_supabase')
       return
     }
@@ -639,7 +617,7 @@ export function useSyncQueue() {
       connectionVerified.current = false // Reset cache when coming online
       // Check connection when coming online
       setTimeout(async () => {
-        if (supabase) {
+        if (hasBackend()) {
           const connected = await checkSupabaseConnection(true)
           if (connected) {
             // When coming back online, retry errored jobs first, then flush queued
@@ -663,7 +641,7 @@ export function useSyncQueue() {
 
     // Initial check
     if (isOnline) {
-      if (supabase) {
+      if (hasBackend()) {
         checkSupabaseConnection(true).then(async (connected) => {
           if (connected) {
             // On initial load, retry errored jobs if any

@@ -1146,6 +1146,12 @@
     "noSetsReopen": "Aucun set à rouvrir",
     "setReopened": "Set {{index}} rouvert pour correction",
     "errorReopening": "Erreur réouverture : {{error}}",
+    "unlockReopen": "Déverrouiller",
+    "unlockReopenDescription": "Entrez le mot de passe pour déverrouiller la réouverture.",
+    "unlockPasswordPlaceholder": "Mot de passe",
+    "unlockPasswordRequired": "Veuillez entrer le mot de passe",
+    "unlockPasswordWrong": "Mot de passe incorrect",
+    "unlockPasswordError": "Erreur de vérification du mot de passe",
     "sanctionTypes": {
       "delayWarning": "Avertissement pour retard",
       "delayPenalty": "Pénalité pour retard",
@@ -1458,7 +1464,7 @@
     "noUpcomingMatches": "Aucun match à venir trouvé",
     "fetchError": "Échec du chargement des matchs. Vérifiez votre connexion.",
     "backendNotAvailable": "Serveur backend non disponible",
-    "reminderAlert": "Définir le groupe de ligue si présent, les couleurs et les noms courts des équipes",
+    "reminderAlert": "Définir les couleurs et les noms courts des équipes",
     "loading": "Chargement des matchs...",
     "selectFilters": "Sélectionnez genre et ligue pour voir les matchs",
     "searchPlaceholder": "Rechercher...",
@@ -1915,5 +1921,22 @@
       "teal": "Turquoise",
       "pink": "Rose"
     }
+  },
+  "warnings": {
+    "clickForDetails": "Cliquer pour voir ce qui manque",
+    "missingRequired": "Champs obligatoires manquants :",
+    "maxBenchOfficials": "Maximum de 5 officiels de banc atteint",
+    "confirmMatchInfoFirst": "Confirmer d'abord les infos du match",
+    "matchInfoNotConfirmed": "Infos du match non confirmées",
+    "firstRefereeMissing": "Nom du 1er arbitre requis",
+    "scorerNameMissing": "Nom du marqueur requis",
+    "scorerDobMissing": "Date de naissance du marqueur requise",
+    "homeRosterIncomplete": "Effectif domicile incomplet ({{count}}/6 joueurs)",
+    "awayRosterIncomplete": "Effectif visiteur incomplet ({{count}}/6 joueurs)",
+    "homeCaptainMissing": "Équipe domicile : aucun capitaine désigné",
+    "homeCoachMissing": "Équipe domicile : aucun entraîneur défini",
+    "awayCaptainMissing": "Équipe visiteur : aucun capitaine désigné",
+    "awayCoachMissing": "Équipe visiteur : aucun entraîneur défini",
+    "selectGenderFirst": "Sélectionner d'abord le genre"
   }
 }

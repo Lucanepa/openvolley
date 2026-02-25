@@ -3,7 +3,7 @@
  * Fetches match data from the main scoreboard server instead of using local IndexedDB
  */
 
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
 import { formatTimeLocal } from './timeUtils'
 
 /**
@@ -20,7 +20,7 @@ export function generateMatchSeedKey() {
 
 // Get server URL - checks for configured backend first, then falls back to current location
 function getServerUrl() {
-  // Check if we have a configured backend URL (Railway/cloud backend)
+  // Check if we have a configured backend URL (Render/cloud backend)
   const backendUrl = import.meta.env.VITE_BACKEND_URL
 
   if (backendUrl) {
@@ -40,7 +40,7 @@ function getServerUrl() {
 
 // Get WebSocket URL - checks for configured backend first, then falls back to current location
 function getWebSocketUrl() {
-  // Check if we have a configured backend URL (Railway/cloud backend)
+  // Check if we have a configured backend URL (Render/cloud backend)
   const backendUrl = import.meta.env.VITE_BACKEND_URL
 
   if (backendUrl) {
@@ -135,20 +135,19 @@ export async function getMatchData(matchId) {
       return result
     }
   } catch (error) {
-    console.debug('[getMatchData] HTTP fetch failed, trying Supabase:', error.message)
+    console.debug('[getMatchData] HTTP fetch failed, trying API fallback:', error.message)
   }
 
-  // Fallback to Supabase direct fetch
-  if (supabase) {
+  // Fallback to API client direct fetch
+  {
     try {
-      console.log('[getMatchData] Fetching from Supabase for matchId:', matchId)
+      console.log('[getMatchData] Fetching via API client for matchId:', matchId)
 
       let match = null
       let matchError = null
 
       // Try 1: Fetch match by external_id (seed_key)
-      const { data: matchByExtId, error: extIdError } = await supabase
-        .from('matches')
+      const { data: matchByExtId, error: extIdError } = await apiFrom('matches')
         .select('*')
         .eq('external_id', matchId)
         .eq('sport_type', 'indoor')
@@ -160,8 +159,7 @@ export async function getMatchData(matchId) {
         // Fallback: If matchId is a UUID, try direct id lookup
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
         if (uuidRegex.test(matchId)) {
-          const { data: matchById, error: idError } = await supabase
-            .from('matches')
+          const { data: matchById, error: idError } = await apiFrom('matches')
             .select('*')
             .eq('id', matchId)
             .eq('sport_type', 'indoor')
@@ -184,8 +182,7 @@ export async function getMatchData(matchId) {
       }
 
       // Fetch live state if available (for Referee app)
-      const { data: liveState } = await supabase
-        .from('match_live_state')
+      const { data: liveState } = await apiFrom('match_live_state')
         .select('*')
         .eq('match_id', match.id)
         .maybeSingle()
@@ -494,9 +491,9 @@ export async function getMatchData(matchId) {
         isRichFormat: true, // Always rich format now
         liveState // Include raw live state for additional data
       }
-    } catch (supabaseError) {
-      console.error('[getMatchData] Supabase fallback error:', supabaseError)
-      return { success: false, error: supabaseError.message }
+    } catch (apiError) {
+      console.error('[getMatchData] API fallback error:', apiError)
+      return { success: false, error: apiError.message }
     }
   }
 
@@ -960,13 +957,8 @@ export async function listAvailableMatches() {
  * Returns matches that are in 'setup' or 'live' status with referee_connection_enabled = true
  */
 export async function listAvailableMatchesSupabase() {
-  if (!supabase) {
-    return { success: false, matches: [], error: 'Supabase client not initialized' }
-  }
-
   try {
-    const { data, error } = await supabase
-      .from('matches')
+    const { data, error } = await apiFrom('matches')
       .select(`
         id,
         external_id,
@@ -1048,13 +1040,8 @@ export async function listAvailableMatchesSupabase() {
  * Filters by bench_connection_enabled = true
  */
 export async function listAvailableMatchesForBenchSupabase() {
-  if (!supabase) {
-    return { success: false, matches: [], error: 'Supabase client not initialized' }
-  }
-
   try {
-    const { data, error } = await supabase
-      .from('matches')
+    const { data, error } = await apiFrom('matches')
       .select(`
         id,
         external_id,
@@ -1143,8 +1130,7 @@ export async function validatePinSupabase(pin, type = 'referee') {
     }
 
     // Query matches by PIN in connection_pins JSONB
-    const { data, error } = await supabase
-      .from('matches')
+    const { data, error } = await apiFrom('matches')
       .select(`
         id,
         external_id,

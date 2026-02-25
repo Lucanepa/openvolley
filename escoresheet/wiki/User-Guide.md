@@ -140,7 +140,7 @@ For setup details, see the [Backend README](../backend/README.md).
 
 **Local network (no internet)**: All devices connect to the same WiFi. The backend runs on a laptop on the network.
 
-**Cloud relay**: The backend runs on Railway or similar. All devices need internet.
+**Cloud relay**: The backend runs on Render or similar. All devices need internet.
 
 ## Language Settings
 

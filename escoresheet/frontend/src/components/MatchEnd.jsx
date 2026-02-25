@@ -9,14 +9,14 @@ import MenuList from './MenuList'
 import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import JSZip from 'jszip'
-import { supabase } from '../lib/supabaseClient'
+import { apiStorage } from '../lib/apiClient'
 import { uploadScoresheet } from '../utils/scoresheetUploader'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
-import { sanitizeForFilename } from '../utils/stringUtils'
+import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 
 // Helper to format duration as hh:mm
@@ -317,6 +317,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const [showRemarksModal, setShowRemarksModal] = useState(false)
   const [remarksText, setRemarksText] = useState('')
   const remarksTextareaRef = useRef(null)
+
+  // Reopen password protection
+  const reopenPasswordHash = import.meta.env.VITE_REOPEN_PASSWORD_HASH || null
+  const [reopenUnlocked, setReopenUnlocked] = useState(false)
+  const [showUnlockModal, setShowUnlockModal] = useState(false)
+  const [unlockPasswordInput, setUnlockPasswordInput] = useState('')
+  const [unlockPasswordError, setUnlockPasswordError] = useState('')
 
   // Prevent accidental navigation away before approval
   // Skip warning during save process (isSaving) to avoid dialog during PDF generation
@@ -836,7 +843,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
 
       // Upload PDF and final JSON to Supabase storage "scoresheets" bucket
-      if (supabase && !match?.test) {
+      if (!match?.test) {
         try {
           const scheduledDate = match.scheduledAt
             ? new Date(match.scheduledAt).toISOString().slice(0, 10) // YYYY-MM-DD
@@ -846,7 +853,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           // Upload PDF (only if generation succeeded)
           if (pdfResult) {
             const pdfStoragePath = `${scheduledDate}/game${gameNumber}.pdf`
-            const { error: uploadError } = await supabase.storage
+            const { error: uploadError } = await apiStorage
               .from('scoresheets')
               .upload(pdfStoragePath, pdfResult.blob, {
                 contentType: 'application/pdf',
@@ -989,6 +996,39 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     } catch (error) {
       console.error('[MatchEnd] Error closing match:', error)
       showAlert(t('matchEnd.errorClosing', 'Error closing match: ') + error.message, 'error')
+    }
+  }
+
+  // Gatekeeper: check if reopen requires a password
+  const handleReopenMatchClick = () => {
+    if (reopenPasswordHash && !reopenUnlocked) {
+      setUnlockPasswordInput('')
+      setUnlockPasswordError('')
+      setShowUnlockModal(true)
+    } else {
+      handleReopenMatch()
+    }
+  }
+
+  const handleUnlockSubmit = async () => {
+    if (!unlockPasswordInput.trim()) {
+      setUnlockPasswordError(t('matchEnd.unlockPasswordRequired', 'Please enter the password'))
+      return
+    }
+    try {
+      const inputHash = await hashPassword(unlockPasswordInput.trim())
+      if (inputHash === reopenPasswordHash) {
+        setShowUnlockModal(false)
+        setReopenUnlocked(true)
+        setUnlockPasswordInput('')
+        setUnlockPasswordError('')
+      } else {
+        setUnlockPasswordError(t('matchEnd.unlockPasswordWrong', 'Incorrect password'))
+        setUnlockPasswordInput('')
+      }
+    } catch (error) {
+      console.error('[MatchEnd] Error verifying reopen password:', error)
+      setUnlockPasswordError(t('matchEnd.unlockPasswordError', 'Error verifying password'))
     }
   }
 
@@ -1288,15 +1328,32 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               {t('matchEnd.closeMatch', 'Close Match')}
             </button>
             <button
-              onClick={handleReopenMatch}
+              onClick={handleReopenMatchClick}
               className="secondary"
               style={{
                 padding: '14px 20px',
                 fontSize: '15px',
                 background: '#ea0808ff',
                 color: '#000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
               }}
             >
+              {reopenPasswordHash && (
+                reopenUnlocked ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                )
+              )}
               {t('matchEnd.reopenMatch', 'Reopen Match')}
             </button>
           </>
@@ -1601,6 +1658,96 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Unlock Reopen Match Password Modal */}
+      {showUnlockModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: 'var(--bg-secondary, #1f2937)',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            textAlign: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '16px' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <h3 style={{ margin: 0 }}>
+                {t('matchEnd.unlockReopen', 'Unlock Reopen')}
+              </h3>
+            </div>
+            <p style={{ margin: '0 0 16px 0', color: 'var(--muted, #9ca3af)', fontSize: '14px' }}>
+              {t('matchEnd.unlockReopenDescription', 'Enter the reopen password to unlock this action.')}
+            </p>
+            <input
+              type="password"
+              value={unlockPasswordInput}
+              onChange={e => {
+                setUnlockPasswordInput(e.target.value)
+                setUnlockPasswordError('')
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleUnlockSubmit()
+              }}
+              placeholder={t('matchEnd.unlockPasswordPlaceholder', 'Password')}
+              autoComplete="off"
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                borderRadius: '6px',
+                border: unlockPasswordError
+                  ? '2px solid #ef4444'
+                  : '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'rgba(0, 0, 0, 0.3)',
+                color: '#fff',
+                boxSizing: 'border-box',
+                marginBottom: '8px'
+              }}
+            />
+            {unlockPasswordError && (
+              <p style={{ margin: '0 0 12px 0', color: '#ef4444', fontSize: '13px' }}>
+                {unlockPasswordError}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button
+                onClick={handleUnlockSubmit}
+                className="primary"
+                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+              >
+                {t('common.confirm', 'Confirm')}
+              </button>
+              <button
+                onClick={() => {
+                  setShowUnlockModal(false)
+                  setUnlockPasswordInput('')
+                  setUnlockPasswordError('')
+                }}
+                className="secondary"
+                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </MatchEndPageView>
   )

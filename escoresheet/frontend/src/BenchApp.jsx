@@ -10,6 +10,7 @@ import mikasaVolleyball from './mikasa_v200w.png'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -192,9 +193,9 @@ export default function BenchApp() {
     try {
       // Try Supabase first if in AUTO or SUPABASE mode
       const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-        (connectionMode === CONNECTION_MODES.AUTO && supabase)
+        connectionMode === CONNECTION_MODES.AUTO
 
-      if (useSupabase && supabase) {
+      if (useSupabase) {
         const result = await listAvailableMatchesForBenchSupabase()
         if (result.success) {
           // Supabase is connected even if there are no matches
@@ -246,13 +247,11 @@ export default function BenchApp() {
     if (isStaticDeployment && !hasBackendUrl) {
       const checkSupabaseOnly = async () => {
         let supabaseConnected = false
-        if (supabase) {
-          try {
-            const { error } = await supabase.from('matches').select('id').limit(1)
-            supabaseConnected = !error
-          } catch {
-            supabaseConnected = false
-          }
+        try {
+          const { error } = await apiFrom('matches').select('id').limit(1)
+          supabaseConnected = !error
+        } catch {
+          supabaseConnected = false
         }
         setConnectionStatuses(prev => ({
           ...prev,
@@ -282,13 +281,11 @@ export default function BenchApp() {
 
         // Check Supabase connectivity with a simple query
         let supabaseConnected = false
-        if (supabase) {
-          try {
-            const { error } = await supabase.from('matches').select('id').limit(1)
-            supabaseConnected = !error
-          } catch {
-            supabaseConnected = false
-          }
+        try {
+          const { error } = await apiFrom('matches').select('id').limit(1)
+          supabaseConnected = !error
+        } catch {
+          supabaseConnected = false
         }
 
         setConnectionStatuses(prev => ({

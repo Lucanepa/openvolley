@@ -33,33 +33,21 @@ npm start
 
 Server runs on `http://localhost:8080`.
 
-### Deploy to Railway
+### Deploy to Render
 
-#### Option 1: CLI (Recommended)
-
-```bash
-cd escoresheet/backend
-npm install -g @railway/cli
-railway login
-railway init          # Create project: "escoresheet-backend"
-railway up            # Deploy
-railway open          # Get your URL from the dashboard
-```
-
-#### Option 2: GitHub Integration
-
-1. Go to [railway.app](https://railway.app) and create a new project
-2. Select **Deploy from GitHub repo**
-3. Choose your repository
-4. Set **Root Directory** to `escoresheet/backend`
-5. Deploy and generate a domain in Settings
+1. Go to [render.com](https://render.com) and create a new **Web Service**
+2. Connect your GitHub repository
+3. Set **Root Directory** to `escoresheet/backend`
+4. Set **Build Command** to `npm install`
+5. Set **Start Command** to `npm start`
+6. Deploy and get your URL from the dashboard
 
 ### Verify Deployment
 
 Test the health endpoint:
 
 ```bash
-curl https://your-railway-url.railway.app/health
+curl https://openvolley-backend.onrender.com/health
 ```
 
 Expected response:
@@ -77,7 +65,7 @@ Expected response:
 Test WebSocket (browser console):
 
 ```javascript
-const ws = new WebSocket('wss://your-railway-url.railway.app')
+const ws = new WebSocket('wss://openvolley-backend.onrender.com')
 ws.onopen = () => console.log('Connected!')
 ws.onmessage = (e) => console.log('Message:', e.data)
 ```
@@ -99,7 +87,7 @@ VITE_BACKEND_URL=http://localhost:8080
 | Option | Use Case | Internet | Latency | Cost |
 | --- | --- | --- | --- | --- |
 | **Local network** | Gymnasium WiFi, tablet hotspot | Not needed | Very low | Free |
-| **Railway (cloud)** | Remote referee, multiple locations | Required | ~50-200ms | Free tier |
+| **Render (cloud)** | Remote referee, multiple locations | Required | ~50-200ms | Free tier |
 | **Hybrid** | Primary local, cloud fallback | Optional | Low | Free |
 
 ### Local Network Setup
@@ -110,14 +98,13 @@ VITE_BACKEND_URL=http://localhost:8080
 
 ### Hybrid Setup
 
-Deploy to Railway for cloud backup, also run locally when available. The frontend tries local first and falls back to cloud automatically.
+Deploy to Render for cloud backup, also run locally when available. The frontend tries local first and falls back to cloud automatically.
 
 ## Environment Variables
 
 | Variable | Description | Default |
 | --- | --- | --- |
 | `PORT` | Server port | `8080` |
-| `RAILWAY_ENVIRONMENT` | Auto-set by Railway (enables cloud mode) | - |
 | `RENDER` | Auto-set by Render (enables cloud mode) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
 | `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
@@ -356,14 +343,9 @@ List all available leagues across federations (SV, SVRZ).
 
 ## Monitoring
 
-### Railway
+### Render
 
-```bash
-railway logs          # View logs
-railway logs --tail   # Stream logs
-railway status        # Check status
-railway open          # Open dashboard
-```
+View logs and manage deployments from the [Render Dashboard](https://dashboard.render.com).
 
 ### Local
 
@@ -378,16 +360,10 @@ Server logs to console with prefixed icons for easy scanning:
 
 | Tier | Cost | Hours | Notes |
 | --- | --- | --- | --- |
-| Railway Free | $0/mo | 500 exec hours | Sleeps after 1h inactivity |
-| Railway Hobby | $5/mo | Unlimited | Always on |
 | Render Free | $0/mo | 750 hours | 30s cold start after 15min |
 | Self-hosted | $0 | Unlimited | Run on any laptop/server |
 
 ## Troubleshooting
-
-### Railway: "EADDRINUSE: address already in use"
-
-Railway is trying to deploy the whole repo. Set **Root Directory** to `escoresheet/backend` in Railway dashboard > Settings.
 
 ### Connection refused
 
@@ -397,7 +373,7 @@ Railway is trying to deploy the whole repo. Set **Root Directory** to `escoreshe
 ### WebSocket connection fails
 
 - Use `ws://` for HTTP, `wss://` for HTTPS
-- Railway requires `wss://` (auto-configured)
+- Render requires `wss://` (auto-configured)
 - Local dev uses `ws://`
 
 ### CORS errors
@@ -406,9 +382,8 @@ Railway is trying to deploy the whole repo. Set **Root Directory** to `escoreshe
 - Local mode allows all origins
 - Cloud mode allows `*.openvolley.app` and localhost
 
-### Railway deployment fails
+### Render deployment fails
 
-1. Check logs: `railway logs`
+1. Check logs in the [Render Dashboard](https://dashboard.render.com)
 2. Verify `package.json` exists in backend folder
 3. Ensure Root Directory is set to `escoresheet/backend`
-4. Try deploying from backend folder: `cd escoresheet/backend && railway up`
