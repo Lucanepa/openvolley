@@ -107,11 +107,11 @@ Or Vite will automatically try the next available port.
 - Check that the build output path matches: `escoresheet/frontend/dist`
 - Environment variables must be configured in the Cloudflare Pages dashboard
 
-### Render: deployment stuck or failing
+### Backend: deployment stuck or failing
 
-1. Check logs in the [Render Dashboard](https://dashboard.render.com)
+1. Check logs in your hosting dashboard (Infomaniak)
 2. Make sure `package.json` exists in the backend folder
-3. Try redeploying from the Render dashboard
+3. Try redeploying from your hosting dashboard
 
 ## Getting Help
 

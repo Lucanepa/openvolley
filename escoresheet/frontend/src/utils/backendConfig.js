@@ -4,8 +4,7 @@
  */
 
 // Cloud relay URL for tablets/mobile (non-Electron/non-desktop)
-// Using Render free tier - may sleep after 15 min inactivity (handled by smart fallback)
-const CLOUD_RELAY_URL = 'https://openvolley-backend.onrender.com'
+const CLOUD_RELAY_URL = 'https://backend.openvolley.app'
 
 /**
  * Detect if running on a desktop platform (Mac/PC/Linux) vs tablet/mobile

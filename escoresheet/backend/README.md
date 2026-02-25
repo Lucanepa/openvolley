@@ -33,21 +33,18 @@ npm start
 
 Server runs on `http://localhost:8080`.
 
-### Deploy to Render
+### Deploy to Infomaniak
 
-1. Go to [render.com](https://render.com) and create a new **Web Service**
-2. Connect your GitHub repository
-3. Set **Root Directory** to `escoresheet/backend`
-4. Set **Build Command** to `npm install`
-5. Set **Start Command** to `npm start`
-6. Deploy and get your URL from the dashboard
+1. Deploy the `escoresheet/backend` directory to your Infomaniak Node.js hosting
+2. Set **Start Command** to `node server.js`
+3. Set environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY` (or SMTP vars)
 
 ### Verify Deployment
 
 Test the health endpoint:
 
 ```bash
-curl https://openvolley-backend.onrender.com/health
+curl https://backend.openvolley.app/health
 ```
 
 Expected response:
@@ -65,7 +62,7 @@ Expected response:
 Test WebSocket (browser console):
 
 ```javascript
-const ws = new WebSocket('wss://openvolley-backend.onrender.com')
+const ws = new WebSocket('wss://backend.openvolley.app')
 ws.onopen = () => console.log('Connected!')
 ws.onmessage = (e) => console.log('Message:', e.data)
 ```
@@ -343,10 +340,6 @@ List all available leagues across federations (SV, SVRZ).
 
 ## Monitoring
 
-### Render
-
-View logs and manage deployments from the [Render Dashboard](https://dashboard.render.com).
-
 ### Local
 
 Server logs to console with prefixed icons for easy scanning:
@@ -356,12 +349,9 @@ Server logs to console with prefixed icons for easy scanning:
 - `[Email]` / `[Contact]` -- Email operations
 - `[CORS]` -- Origin validation
 
-## Hosting Costs
+## Hosting
 
-| Tier | Cost | Hours | Notes |
-| --- | --- | --- | --- |
-| Render Free | $0/mo | 750 hours | 30s cold start after 15min |
-| Self-hosted | $0 | Unlimited | Run on any laptop/server |
+Deployed on Infomaniak at `https://backend.openvolley.app`.
 
 ## Troubleshooting
 
@@ -373,7 +363,7 @@ Server logs to console with prefixed icons for easy scanning:
 ### WebSocket connection fails
 
 - Use `ws://` for HTTP, `wss://` for HTTPS
-- Render requires `wss://` (auto-configured)
+- Production requires `wss://`
 - Local dev uses `ws://`
 
 ### CORS errors
@@ -382,8 +372,8 @@ Server logs to console with prefixed icons for easy scanning:
 - Local mode allows all origins
 - Cloud mode allows `*.openvolley.app` and localhost
 
-### Render deployment fails
+### Deployment fails
 
-1. Check logs in the [Render Dashboard](https://dashboard.render.com)
+1. Check logs in your Infomaniak hosting dashboard
 2. Verify `package.json` exists in backend folder
-3. Ensure Root Directory is set to `escoresheet/backend`
+3. Ensure environment variables are set correctly
