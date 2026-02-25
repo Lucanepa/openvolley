@@ -1,18 +1,17 @@
 /**
  * useRealtimeConnection Hook
- * Manages connection to match data using Supabase Realtime as primary
- * with WebSocket fallback
+ * Manages connection to match data using WebSocket as primary
+ * with Supabase Realtime fallback
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { subscribeToMatchData, getMatchData } from '../utils/serverDataSync'
-import { getBackendUrl } from '../utils/backendConfig'
 
 // Connection types
 export const CONNECTION_TYPES = {
-  AUTO: 'auto',           // Try Supabase first, fall back to WebSocket
+  AUTO: 'auto',           // Try WebSocket first, fall back to Supabase
   SUPABASE: 'supabase',   // Force Supabase Realtime only
   WEBSOCKET: 'websocket'  // Force WebSocket only
 }
@@ -24,71 +23,11 @@ export const CONNECTION_STATUS = {
   CONNECTED: 'connected',
   ERROR: 'error',
   FALLBACK: 'fallback',    // Using fallback connection
-  WAKING_UP: 'waking_up',  // Backend is sleeping, waiting for it to wake up
-  OFFLINE: 'offline'       // Both Supabase and backend failed, using offline mode
-}
-
-// Timeout for backend wake-up (cold start can take a few seconds)
-const BACKEND_WAKE_TIMEOUT = 45000 // 45 seconds max wait
-const HEALTH_CHECK_INTERVAL = 2000 // Check every 2 seconds
-
-/**
- * Ping backend /health endpoint until it responds or timeout
- * Used when backend is starting up (cold start)
- * @param {number} timeoutMs - Max time to wait
- * @param {function} onProgress - Callback with progress info
- * @returns {Promise<boolean>} - true if backend is ready, false if timeout
- */
-async function pingBackendUntilReady(timeoutMs = BACKEND_WAKE_TIMEOUT, onProgress = null) {
-  const backendUrl = getBackendUrl()
-  if (!backendUrl) return false
-
-  const startTime = Date.now()
-  let attempts = 0
-
-  while (Date.now() - startTime < timeoutMs) {
-    attempts++
-    const elapsed = Date.now() - startTime
-
-    if (onProgress) {
-      onProgress({
-        attempts,
-        elapsedMs: elapsed,
-        elapsedSec: Math.round(elapsed / 1000),
-        remainingSec: Math.max(0, Math.round((timeoutMs - elapsed) / 1000))
-      })
-    }
-
-    try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout per request
-
-      const response = await fetch(`${backendUrl}/health`, {
-        method: 'GET',
-        signal: controller.signal
-      })
-
-      clearTimeout(timeoutId)
-
-      if (response.ok) {
-        console.log(`[RealtimeConnection] Backend ready after ${attempts} attempts (${Math.round(elapsed / 1000)}s)`)
-        return true
-      }
-    } catch (err) {
-      // Expected during wake-up, just continue polling
-      console.debug(`[RealtimeConnection] Health check attempt ${attempts} failed:`, err.message)
-    }
-
-    // Wait before next attempt
-    await new Promise(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL))
-  }
-
-  console.warn(`[RealtimeConnection] Backend did not respond within ${timeoutMs / 1000}s`)
-  return false
+  OFFLINE: 'offline'       // Both WebSocket and Supabase failed, using offline mode
 }
 
 /**
- * Hook for managing realtime connection with Supabase primary + WebSocket fallback
+ * Hook for managing realtime connection with WebSocket primary + Supabase Realtime fallback
  * @param {Object} options
  * @param {string|number} options.matchId - Match ID to subscribe to
  * @param {string} options.preferredConnection - Preferred connection type (auto|supabase|websocket)
@@ -110,7 +49,6 @@ export function useRealtimeConnection({
   const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED)
   const [error, setError] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
-  const [wakeUpProgress, setWakeUpProgress] = useState(null) // { elapsedSec, remainingSec } when waking up
 
   const supabaseChannelRef = useRef(null)
   const wsUnsubscribeRef = useRef(null)
@@ -362,10 +300,11 @@ export function useRealtimeConnection({
           const success = connectWebSocket()
           if (!success) setStatus(CONNECTION_STATUS.ERROR)
         } else {
-          const supabaseSuccess = await connectSupabase()
-          if (!supabaseSuccess) {
-            const wsSuccess = connectWebSocket()
-            if (wsSuccess) {
+          // AUTO mode: WebSocket first, Supabase fallback
+          const wsSuccess = connectWebSocket()
+          if (!wsSuccess) {
+            const supabaseSuccess = await connectSupabase()
+            if (supabaseSuccess) {
               setStatus(CONNECTION_STATUS.FALLBACK)
             } else {
               setStatus(CONNECTION_STATUS.ERROR)
@@ -416,42 +355,18 @@ export function useRealtimeConnection({
             setStatus(CONNECTION_STATUS.ERROR)
           }
         } else {
-          // Auto mode: Smart fallback strategy
-          // 1. Try Supabase first (primary)
-          // 2. If Supabase fails, show wake-up message and ping backend
-          // 3. If backend responds, connect via WebSocket
-          // 4. If both fail or timeout > 45s, go offline
-          const supabaseSuccess = await connectSupabase()
-          if (!supabaseSuccess) {
-            console.log('[RealtimeConnection] Supabase failed, trying WebSocket fallback with wake-up handling')
-
-            // Show wake-up status (backend may be starting up)
-            setStatus(CONNECTION_STATUS.WAKING_UP)
-            setWakeUpProgress({ elapsedSec: 0, remainingSec: Math.round(BACKEND_WAKE_TIMEOUT / 1000) })
-
-            // Ping backend until ready
-            const backendReady = await pingBackendUntilReady(BACKEND_WAKE_TIMEOUT, (progress) => {
-              if (isMountedRef.current) {
-                setWakeUpProgress(progress)
-              }
-            })
-
-            if (backendReady && isMountedRef.current) {
-              // Backend is awake, try WebSocket connection
-              setWakeUpProgress(null)
-              const wsSuccess = connectWebSocket()
-              if (wsSuccess) {
-                setStatus(CONNECTION_STATUS.FALLBACK)
-              } else {
-                // WebSocket failed even though backend is up - go offline
-                console.warn('[RealtimeConnection] WebSocket failed after backend wake-up, going offline')
-                setStatus(CONNECTION_STATUS.OFFLINE)
-                setActiveConnection(null)
-              }
-            } else if (isMountedRef.current) {
-              // Backend timeout - go offline
-              console.warn('[RealtimeConnection] Backend wake-up timeout, going offline')
-              setWakeUpProgress(null)
+          // Auto mode: WebSocket first, Supabase fallback
+          // 1. Try WebSocket first (primary — fastest, sub-100ms)
+          // 2. If WebSocket fails, fall back to Supabase Realtime
+          // 3. If both fail, go offline
+          const wsSuccess = connectWebSocket()
+          if (!wsSuccess) {
+            console.log('[RealtimeConnection] WebSocket failed, trying Supabase fallback')
+            const supabaseSuccess = await connectSupabase()
+            if (supabaseSuccess) {
+              setStatus(CONNECTION_STATUS.FALLBACK)
+            } else {
+              console.warn('[RealtimeConnection] Both WebSocket and Supabase failed, going offline')
               setStatus(CONNECTION_STATUS.OFFLINE)
               setActiveConnection(null)
             }
@@ -485,8 +400,6 @@ export function useRealtimeConnection({
     isWebSocket: activeConnection === 'websocket',
     isFallback: status === CONNECTION_STATUS.FALLBACK,
     isOffline: status === CONNECTION_STATUS.OFFLINE,
-    isWakingUp: status === CONNECTION_STATUS.WAKING_UP,
-    wakeUpProgress, // { elapsedSec, remainingSec } when waking up backend
 
     // Actions
     switchConnection,

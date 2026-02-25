@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
+import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { setBackendOverride } from './utils/backendConfig'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -21,6 +23,9 @@ const CONNECTION_MODES = {
 
 export default function BenchApp() {
   const { t } = useTranslation()
+  const [serverReady, setServerReady] = useState(false)
+  const [autoConnectMatch, setAutoConnectMatch] = useState(null)
+  const [autoConnectTeam, setAutoConnectTeam] = useState(null)
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
@@ -50,6 +55,54 @@ export default function BenchApp() {
   const supabaseChannelRef = useRef(null)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // Check URL params for auto-connect on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const matchParam = params.get('match')
+    const serverParam = params.get('server')
+    const teamParam = params.get('team')
+
+    if (serverParam) {
+      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+    }
+
+    if (matchParam) {
+      setAutoConnectMatch(matchParam)
+      if (teamParam === 'home' || teamParam === 'away') {
+        setAutoConnectTeam(teamParam)
+      }
+      setServerReady(true)
+    }
+  }, [])
+
+  // Auto-connect to match from URL params
+  useEffect(() => {
+    if (!autoConnectMatch || !serverReady) return
+
+    const doAutoConnect = async () => {
+      try {
+        const result = await getMatchData(autoConnectMatch)
+        if (result.success && result.match) {
+          setMatchId(result.match.id || autoConnectMatch)
+          setMatch(result.match)
+          setSelectedMatch(result.match)
+          if (autoConnectTeam) {
+            setSelectedTeam(autoConnectTeam)
+            setView('match')
+          }
+        }
+      } catch { /* fall through to normal flow */ }
+      setAutoConnectMatch(null)
+      setAutoConnectTeam(null)
+    }
+    doAutoConnect()
+  }, [autoConnectMatch, autoConnectTeam, serverReady])
+
+  // Handle server connection established
+  const handleServerConnected = useCallback(() => {
+    setServerReady(true)
+  }, [])
 
   // Track viewport size for narrow screen blocking
   useEffect(() => {
@@ -465,6 +518,11 @@ export default function BenchApp() {
   // Get team names from selected match
   const homeTeamName = selectedMatch?.homeTeamName || 'Home Team'
   const awayTeamName = selectedMatch?.awayTeamName || 'Away Team'
+
+  // Show server connection screen first (unless auto-connecting via URL params)
+  if (!serverReady) {
+    return <ServerConnectionScreen onConnected={handleServerConnected} />
+  }
 
   // If view is selected, show the appropriate component wrapped with SimpleHeader
   if (matchId && view) {

@@ -169,7 +169,8 @@
     "deletePlayerConfirm": "Sei sicuro di voler eliminare questo giocatore?",
     "birthdateWarning": "Le seguenti date sembrano sospette (1 gennaio). Verifica che siano corrette:",
     "continueAnyway": "Continua comunque",
-    "close": "Chiudere"
+    "close": "Chiudere",
+    "cancel": "Annulla"
   },
   "deleteMatch": {
     "cancel": "Annullamento",
@@ -940,6 +941,7 @@
     "connectDashboardsTo": "Connetti le dashboard a:",
     "copy": "Copia",
     "copied": "Copiato!",
+    "copyUrl": "Copia URL",
     "refereePin": "PIN arbitro",
     "scanToOpen": "Scansiona per aprire la dashboard arbitro",
     "serverNotDetected": "Server non rilevato.",
@@ -1446,7 +1448,37 @@
     "noCloudBackend": "Nessun backend cloud configurato. Imposta la variabile VITE_BACKEND_URL.",
     "shareWithRemote": "Condividi con dispositivi remoti",
     "refereeUrl": "URL Arbitro",
-    "gamePin": "PIN Partita"
+    "gamePin": "PIN Partita",
+    "connectToServer": "Connetti al server",
+    "selectServerMode": "Scegli come connetterti",
+    "onlineAutomatic": "Online (automatico)",
+    "localServer": "Server locale",
+    "enterIPAddress": "Inserisci indirizzo IP",
+    "connect": "Connetti",
+    "or": "o",
+    "scanQRCode": "Scansiona codice QR",
+    "startingCamera": "Avvio fotocamera...",
+    "lastUsed": "Ultimo utilizzato",
+    "checking": "Connessione...",
+    "connectedSuccess": "Connesso!",
+    "connectionFailed": "Impossibile raggiungere il server",
+    "connectionTimeout": "Connessione scaduta",
+    "serverNotResponding": "Il server non risponde",
+    "retry": "Riprova",
+    "cameraError": "Impossibile accedere alla fotocamera",
+    "noBackendConfigured": "Nessun server backend configurato",
+    "scanWithPhone": "Scansiona con il telefono o il tablet per connetterti direttamente",
+    "showQR": "Mostra QR",
+    "role": {
+      "referee": "Dashboard Arbitro",
+      "bench_home": "Panchina Casa",
+      "bench_away": "Panchina Ospite",
+      "livescore": "Livescore"
+    }
+  },
+  "connectionSetup": {
+    "lan": "LAN",
+    "internet": "Internet"
   },
   "loadOfficialMatch": {
     "title": "Carica Partita dal Calendario",
