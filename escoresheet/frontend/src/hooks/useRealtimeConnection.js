@@ -28,13 +28,13 @@ export const CONNECTION_STATUS = {
   OFFLINE: 'offline'       // Both Supabase and backend failed, using offline mode
 }
 
-// Timeout for backend wake-up (Render free tier can take ~30 seconds)
+// Timeout for backend wake-up (cold start can take a few seconds)
 const BACKEND_WAKE_TIMEOUT = 45000 // 45 seconds max wait
 const HEALTH_CHECK_INTERVAL = 2000 // Check every 2 seconds
 
 /**
  * Ping backend /health endpoint until it responds or timeout
- * Used when backend is sleeping (Render free tier)
+ * Used when backend is starting up (cold start)
  * @param {number} timeoutMs - Max time to wait
  * @param {function} onProgress - Callback with progress info
  * @returns {Promise<boolean>} - true if backend is ready, false if timeout
@@ -455,7 +455,7 @@ export function useRealtimeConnection({
           if (!supabaseSuccess) {
             console.log('[RealtimeConnection] Supabase failed, trying WebSocket fallback with wake-up handling')
 
-            // Show wake-up status (Render free tier may be sleeping)
+            // Show wake-up status (backend may be starting up)
             setStatus(CONNECTION_STATUS.WAKING_UP)
             setWakeUpProgress({ elapsedSec: 0, remainingSec: Math.round(BACKEND_WAKE_TIMEOUT / 1000) })
 

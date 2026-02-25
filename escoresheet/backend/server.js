@@ -29,7 +29,7 @@ const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)')
 
 // Allowed tables/buckets for proxy endpoints
-const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'teams', 'players', 'referees', 'referee_database', 'user_matches', 'svrz_games']
+const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games']
 const ALLOWED_BUCKETS = ['scoresheets', 'backup']
 const ALLOWED_RPC = ['delete_user']
 const DB_RATE_LIMIT_MAX = 200
