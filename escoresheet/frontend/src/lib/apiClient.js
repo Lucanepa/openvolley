@@ -6,6 +6,19 @@
 
 import { getApiUrl } from '../utils/backendConfig'
 
+// Helper: safely parse JSON response, handling non-ok status codes
+async function safeJsonResponse(response, fallbackError = 'Request failed') {
+  if (!response.ok) {
+    try {
+      const result = await response.json()
+      return { data: null, error: result.error || { message: `${fallbackError} (${response.status})` } }
+    } catch {
+      return { data: null, error: { message: `${fallbackError} (${response.status})` } }
+    }
+  }
+  return response.json()
+}
+
 // ==================== Database (drop-in for supabase.from()) ====================
 
 class QueryBuilder {
@@ -108,7 +121,7 @@ class QueryBuilder {
 
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         table: this._table,
         action: this._action,
@@ -116,7 +129,7 @@ class QueryBuilder {
       })
     })
 
-    const result = await response.json()
+    const result = await safeJsonResponse(response, 'Database operation failed')
     return { data: result.data ?? null, error: result.error ?? null, count: result.count }
   }
 }
@@ -129,6 +142,17 @@ export function apiFrom(table) {
   return new QueryBuilder(table)
 }
 
+// ==================== Helpers ====================
+
+function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' }
+  const token = getStoredToken()
+  if (token?.access_token) {
+    headers['Authorization'] = `Bearer ${token.access_token}`
+  }
+  return headers
+}
+
 // ==================== RPC ====================
 
 export async function apiRpc(fn, params = {}) {
@@ -137,10 +161,10 @@ export async function apiRpc(fn, params = {}) {
 
   const response = await fetch(apiUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ fn, params })
   })
-  return response.json()
+  return safeJsonResponse(response, 'RPC operation failed')
 }
 
 // ==================== Storage ====================
@@ -170,7 +194,7 @@ export const apiStorage = {
 
         const response = await fetch(apiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             bucket,
             path,
@@ -179,7 +203,7 @@ export const apiStorage = {
             upsert: options.upsert
           })
         })
-        return response.json()
+        return safeJsonResponse(response, 'Storage upload failed')
       },
 
       async download(path) {
@@ -188,21 +212,28 @@ export const apiStorage = {
 
         const response = await fetch(apiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ bucket, path })
         })
+        if (!response.ok) {
+          return await safeJsonResponse(response, 'Storage download failed')
+        }
         const result = await response.json()
 
         if (result.error) return { data: null, error: result.error }
 
         // Convert base64 back to Blob
-        const binaryString = atob(result.data)
-        const bytes = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
+        try {
+          const binaryString = atob(result.data)
+          const bytes = new Uint8Array(binaryString.length)
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+          }
+          const blob = new Blob([bytes])
+          return { data: blob, error: null }
+        } catch {
+          return { data: null, error: { message: 'Invalid file data received' } }
         }
-        const blob = new Blob([bytes])
-        return { data: blob, error: null }
       },
 
       async list(dirPath, options = {}) {
@@ -211,10 +242,10 @@ export const apiStorage = {
 
         const response = await fetch(apiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ bucket, path: dirPath, options })
         })
-        return response.json()
+        return safeJsonResponse(response, 'Storage list failed')
       }
     }
   }
@@ -231,14 +262,21 @@ async function authRequest(action, body = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   })
-  return response.json()
+  return safeJsonResponse(response, 'Auth request failed')
 }
 
 // Session token management
 function getStoredToken() {
   try {
     const stored = localStorage.getItem('api_auth_token')
-    return stored ? JSON.parse(stored) : null
+    if (!stored) return null
+    const session = JSON.parse(stored)
+    // Check token expiration
+    if (session?.expires_at && Date.now() / 1000 > session.expires_at) {
+      localStorage.removeItem('api_auth_token')
+      return null
+    }
+    return session
   } catch { return null }
 }
 
@@ -322,7 +360,8 @@ export const apiAuth = {
     // Listen for storage events (cross-tab sync)
     const handler = (e) => {
       if (e.key === 'api_auth_token') {
-        const newSession = e.newValue ? JSON.parse(e.newValue) : null
+        let newSession = null
+        try { newSession = e.newValue ? JSON.parse(e.newValue) : null } catch { /* ignore corrupt data */ }
         callback(newSession ? 'SIGNED_IN' : 'SIGNED_OUT', newSession)
       }
     }

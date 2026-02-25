@@ -90,6 +90,20 @@ async function retryErrorsInternal() {
   }
 }
 
+// Auto-notify when items are added to sync_queue via Dexie creating hook.
+// This dispatches a custom event that the debounced flush listener picks up.
+// The hook is installed once at module level so it works for all callers.
+let _syncQueueHookInstalled = false
+function installSyncQueueHook() {
+  if (_syncQueueHookInstalled) return
+  _syncQueueHookInstalled = true
+  db.sync_queue.hook('creating', function () {
+    // Dispatch after the current microtask completes (Dexie hooks run inside transaction)
+    setTimeout(() => window.dispatchEvent(new Event('sync-queue-write')), 0)
+  })
+}
+installSyncQueueHook()
+
 export function useSyncQueue() {
   const busy = useRef(false)
   const [syncStatus, setSyncStatus] = useState('offline')
@@ -662,17 +676,31 @@ export function useSyncQueue() {
     }
   }, [isOnline, checkSupabaseConnection, flush])
 
-  // Real-time sync - check every 1 second for new items
+  // Debounced flush - triggers 200ms after a sync_queue write, with 5s fallback poll
+  const flushTimerRef = useRef(null)
+
   useEffect(() => {
     if (!isOnline || syncStatus === 'offline' || syncStatus === 'online_no_supabase') return
 
-    const interval = setInterval(() => {
-      if (!busy.current) {
-        flush()
-      }
-    }, 1000)
+    // Listen for 'sync-queue-write' custom event (dispatched when items are added to the queue)
+    const handleQueueWrite = () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = setTimeout(() => {
+        if (!busy.current) flush()
+      }, 200)
+    }
+    window.addEventListener('sync-queue-write', handleQueueWrite)
 
-    return () => clearInterval(interval)
+    // Fallback poll every 5s to catch any missed items (e.g., tab focus, retries)
+    const interval = setInterval(() => {
+      if (!busy.current) flush()
+    }, 5000)
+
+    return () => {
+      window.removeEventListener('sync-queue-write', handleQueueWrite)
+      clearInterval(interval)
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+    }
   }, [isOnline, syncStatus, flush])
 
   // Auto-retry errored jobs every 30 seconds when online

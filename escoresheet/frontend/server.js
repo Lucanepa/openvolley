@@ -158,8 +158,20 @@ function getLocalIP() {
 const requestHandler = (req, res) => {
   let urlPath = req.url.split('?')[0] // Remove query string
 
-  // --- Centralized CORS headers (LAN server - allow all origins) ---
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  // --- Centralized CORS headers ---
+  const origin = req.headers.origin
+  if (origin && (
+    origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/) ||
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:') ||
+    origin.startsWith('https://localhost:') ||
+    origin.startsWith('https://127.0.0.1:') ||
+    origin.match(/^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/)
+  )) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://app.openvolley.app')
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
 

@@ -17,6 +17,7 @@ import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
+import { getApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
 
 // Helper to format duration as hh:mm
@@ -1016,6 +1017,28 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       return
     }
     try {
+      // Try server-side verification first (more secure)
+      const apiUrl = getApiUrl('/api/verify-reopen-password')
+      if (apiUrl) {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: unlockPasswordInput.trim() })
+        })
+        const result = await response.json()
+        if (result.success) {
+          setShowUnlockModal(false)
+          setReopenUnlocked(true)
+          setUnlockPasswordInput('')
+          setUnlockPasswordError('')
+        } else {
+          setUnlockPasswordError(t('matchEnd.unlockPasswordWrong', 'Incorrect password'))
+          setUnlockPasswordInput('')
+        }
+        return
+      }
+
+      // Fallback to client-side verification (offline mode)
       const inputHash = await hashPassword(unlockPasswordInput.trim())
       if (inputHash === reopenPasswordHash) {
         setShowUnlockModal(false)

@@ -15,7 +15,7 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHash, timingSafeEqual } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const PORT = process.env.PORT || 8080
@@ -29,10 +29,28 @@ const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)')
 
 // Allowed tables/buckets for proxy endpoints
-const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches']
+const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches', 'teams']
 const ALLOWED_BUCKETS = ['scoresheets', 'backup']
 const ALLOWED_RPC = ['delete_user']
 const DB_RATE_LIMIT_MAX = 200
+const AUTH_RATE_LIMIT_MAX = 10
+const EMAIL_RATE_LIMIT_MAX = 3
+const ICAL_RATE_LIMIT_MAX = 10
+const STORAGE_RATE_LIMIT_MAX = 200
+
+// Per-table column whitelist for filter/order operations
+const ALLOWED_COLUMNS = {
+  matches: ['id', 'external_id', 'user_id', 'sport_type', 'game_n', 'game_pin', 'scheduled_at', 'status', 'created_at', 'match_id', 'last_name', 'first_name', 'match_info->>competition_name'],
+  sets: ['id', 'external_id', 'match_id', 'set_number', 'sport_type', 'user_id', 'created_at', 'last_name', 'first_name'],
+  events: ['id', 'external_id', 'match_id', 'game_n', 'game_pin', 'sport_type', 'status'],
+  match_live_state: ['id', 'external_id', 'match_id', 'sport_type', 'status', 'scheduled_at'],
+  profiles: ['id', 'user_id'],
+  referee_database: ['id', 'sport_type', 'last_name', 'first_name'],
+  user_matches: ['id', 'user_id', 'match_id', 'external_id'],
+  svrz_games: ['id', 'gender', 'league', 'datetime'],
+  beach_competition_matches: ['id', 'external_id', 'scheduled_at', 'status', 'competition_id'],
+  teams: ['id']
+}
 
 
 // Option 1: Resend API (recommended - uses HTTPS, never blocked)
@@ -47,24 +65,31 @@ console.log('[Email Config] SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SE
 
 // Resend email helper (uses HTTPS - works on all cloud platforms)
 async function sendViaResend(to, subject, text) {
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      from: process.env.RESEND_FROM || 'eScoresheet <escoresheet@openvolley.app>',
-      to: [to],
-      subject: subject,
-      text: text
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10000) // 10s timeout
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM || 'eScoresheet <escoresheet@openvolley.app>',
+        to: [to],
+        subject: subject,
+        text: text
+      }),
+      signal: controller.signal
     })
-  })
-  const data = await response.json()
-  if (!response.ok) {
-    throw new Error(data.message || 'Resend API error')
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.message || 'Resend API error')
+    }
+    return data
+  } finally {
+    clearTimeout(timeout)
   }
-  return data
 }
 const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -78,7 +103,7 @@ const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
     pass: process.env.SMTP_PASS
   }
 }) : null
-const IS_CLOUD = process.env.IS_CLOUD || process.env.RENDER
+const IS_CLOUD = process.env.IS_CLOUD
 
 // In-memory storage for active matches
 // NOTE: This resets on server restart - Supabase is the source of truth for persistence
@@ -86,18 +111,72 @@ const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
 
-// --- Rate limiting ---
+// --- Capacity limits ---
+const MAX_ROOMS = 500
+const MAX_CONNECTIONS = 2000
+const MAX_CONNECTIONS_PER_IP = 50
+const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+// --- Input validation constants ---
+const VALID_ROLES = ['scoreboard', 'referee', 'bench', 'subscriber', 'livescore']
+const VALID_TEAMS = ['home', 'away']
+const ROLES_REQUIRING_PIN = ['referee', 'bench']
+
+// --- Security helpers ---
+function isValidStoragePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false
+  if (filePath.includes('..') || filePath.startsWith('/') || filePath.includes('\\')) return false
+  return true
+}
+
+function isValidEmail(email) {
+  if (!email || typeof email !== 'string' || email.length > 254) return false
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function isValidPin(pin) {
+  return /^\d{6}$/.test(String(pin).trim())
+}
+
+// --- Client IP extraction (X-Forwarded-For hardening) ---
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for']
+  if (xff) {
+    // Use the rightmost IP that isn't a known private/proxy IP.
+    // In most reverse-proxy setups the rightmost entry is added by the
+    // closest trusted proxy, so it's the most reliable client IP.
+    const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
+    // Take the first (leftmost) entry — the original client IP as seen by the first proxy.
+    // This can still be spoofed, but combined with rate limits it's the best we can do
+    // without a trusted proxy list. Using leftmost matches the X-Forwarded-For spec.
+    if (parts.length > 0) return parts[0]
+  }
+  const addr = req.socket.remoteAddress || 'unknown'
+  return addr.replace('::ffff:', '')
+}
+
+// --- Rate limiting (per-category isolation) ---
 const RATE_LIMIT_WINDOW_MS = 60 * 1000
 const RATE_LIMIT_MAX_REQUESTS = 10
 const CONTACT_RATE_LIMIT_MAX = 3
-const rateLimitMap = new Map()
+// One Map per category so counters don't interfere across endpoint types
+const rateLimitMaps = {
+  default: new Map(),   // validate-pin, etc.
+  contact: new Map(),   // /api/contact
+  email: new Map(),     // /api/match/send-info
+  auth: new Map(),      // /api/auth/*, /api/verify-reopen-password
+  ical: new Map(),      // /api/official-matches
+  db: new Map(),        // /api/db
+  storage: new Map()    // /api/storage/*, /api/db/rpc
+}
 
-function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
+function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
+  const map = rateLimitMaps[category] || rateLimitMaps.default
   const now = Date.now()
-  const entry = rateLimitMap.get(ip)
+  const entry = map.get(ip)
 
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(ip, { count: 1, windowStart: now })
+    map.set(ip, { count: 1, windowStart: now })
     return false
   }
 
@@ -107,12 +186,59 @@ function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
 
 setInterval(() => {
   const now = Date.now()
-  for (const [ip, entry] of rateLimitMap.entries()) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      rateLimitMap.delete(ip)
+  for (const map of Object.values(rateLimitMaps)) {
+    for (const [ip, entry] of map.entries()) {
+      if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+        map.delete(ip)
+      }
     }
   }
 }, 5 * 60 * 1000)
+
+// --- Log sanitizer (prevent log injection via newlines/control chars) ---
+function sanitizeLog(str) {
+  if (typeof str !== 'string') return String(str)
+  return str.replace(/[\r\n\t]/g, ' ').substring(0, 200)
+}
+
+// --- WebSocket per-client rate limiting ---
+const WS_RATE_LIMIT_MAX = 120 // messages per window
+const WS_RATE_LIMIT_WINDOW_MS = 60 * 1000
+const wsRateLimitMap = new Map()
+
+function isWsRateLimited(clientId) {
+  const now = Date.now()
+  const entry = wsRateLimitMap.get(clientId)
+
+  if (!entry || now - entry.windowStart > WS_RATE_LIMIT_WINDOW_MS) {
+    wsRateLimitMap.set(clientId, { count: 1, windowStart: now })
+    return false
+  }
+
+  entry.count++
+  return entry.count > WS_RATE_LIMIT_MAX
+}
+
+// --- TTL cleanup for stale rooms, matches, and WS rate limit entries ---
+setInterval(() => {
+  const now = Date.now()
+
+  // Clean up rooms inactive for >24h
+  for (const [matchId, room] of rooms.entries()) {
+    if (room.clients.size === 0 && now - (room.lastActivity || 0) > ROOM_TTL_MS) {
+      rooms.delete(matchId)
+      activeMatches.delete(matchId)
+      console.log(`🧹 TTL cleanup: removed stale room ${matchId}`)
+    }
+  }
+
+  // Clean up WS rate limit entries
+  for (const [id, entry] of wsRateLimitMap.entries()) {
+    if (now - entry.windowStart > WS_RATE_LIMIT_WINDOW_MS * 2) {
+      wsRateLimitMap.delete(id)
+    }
+  }
+}, 15 * 60 * 1000) // Every 15 minutes
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
 const MAX_MATCH_BODY_SIZE = 5 * 1024 * 1024 // 5MB for match data with email
@@ -212,7 +338,10 @@ async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) 
   console.log(`[iCal] Fetching fresh data for ${cacheKey} from ${feedUrl}`)
 
   try {
-    const events = await ical.fromURL(feedUrl)
+    const events = await Promise.race([
+      ical.fromURL(feedUrl),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('iCal fetch timeout')), 15000))
+    ])
     const now = new Date()
     now.setHours(0, 0, 0, 0) // Start of today
 
@@ -303,11 +432,6 @@ function getCorsOrigin(req) {
     console.log(`[CORS] Origin ${origin} matches openvolley.app subdomain pattern`)
     return origin
   }
-  // Allow localhost/127.0.0.1 origins even in cloud mode (for development)
-  if (origin && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
-    console.log(`[CORS] Allowing localhost origin: ${origin}`)
-    return origin
-  }
   console.log(`[CORS] Origin ${origin} not recognized, using default: ${ALLOWED_ORIGINS[0]}`)
   return ALLOWED_ORIGINS[0] // Default to main domain
 }
@@ -318,12 +442,16 @@ const server = createServer((req, res) => {
   const corsOrigin = getCorsOrigin(req)
   res.setHeader('Access-Control-Allow-Origin', corsOrigin)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  if (IS_CLOUD) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
@@ -363,9 +491,9 @@ const server = createServer((req, res) => {
 
   // Validate PIN for referee/bench access
   if (url.pathname === '/api/match/validate-pin' && req.method === 'POST') {
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
-    if (isRateLimited(clientIp)) {
-      res.writeHead(429, { 'Content-Type': 'application/json' })
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, RATE_LIMIT_MAX_REQUESTS, 'default')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Too many attempts. Please wait a minute before trying again.' }))
       return
     }
@@ -387,7 +515,7 @@ const server = createServer((req, res) => {
 
         const { pin, type = 'referee' } = JSON.parse(body)
 
-        if (!pin || String(pin).length !== 6) {
+        if (!isValidPin(pin)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ success: false, error: 'Invalid PIN format' }))
           return
@@ -442,7 +570,7 @@ const server = createServer((req, res) => {
       } catch (err) {
         console.error('[API] Error validating PIN:', err)
         res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ success: false, error: err.message || 'Invalid request body' }))
+        res.end(JSON.stringify({ success: false, error: 'Invalid request body' }))
       }
     })
     return
@@ -489,7 +617,6 @@ const server = createServer((req, res) => {
           scheduledAt: m.match?.scheduledAt,
           dateTime,
           status: m.match?.status || 'scheduled',
-          refereePin: m.match?.refereePin,
           refereeConnectionEnabled: m.match?.refereeConnectionEnabled === true
         }
       })
@@ -504,7 +631,7 @@ const server = createServer((req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
-        error: error.message || 'Internal server error',
+        error: 'Internal server error',
         matches: []
       }))
     }
@@ -554,7 +681,7 @@ const server = createServer((req, res) => {
         events: matchData.events || []
       }))
     } else {
-      console.log(`[API] /api/match/${matchId} - Match not found. Active matches: ${Array.from(activeMatches.keys()).join(', ')}`)
+      console.log(`[API] /api/match/${sanitizeLog(matchId)} - Match not found. Active matches: ${Array.from(activeMatches.keys()).join(', ')}`)
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -608,9 +735,9 @@ const server = createServer((req, res) => {
 
   // Contact/Support form endpoint
   if (url.pathname === '/api/contact' && req.method === 'POST') {
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
-    if (isRateLimited(clientIp, CONTACT_RATE_LIMIT_MAX)) {
-      res.writeHead(429, { 'Content-Type': 'application/json' })
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, CONTACT_RATE_LIMIT_MAX, 'contact')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
     }
@@ -657,13 +784,20 @@ const server = createServer((req, res) => {
           }
         }
 
+        // Validate email to prevent header injection
+        if (formData.email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) || /[\r\n]/.test(formData.email))) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid email address' }))
+          return
+        }
+
         console.log('[Contact] Received feedback:', {
-          contactType: formData.contactType,
-          area: formData.area,
-          supportType: formData.supportType,
-          severity: formData.severity,
-          email: formData.email,
-          comments: formData.comments?.substring(0, 100) + '...',
+          contactType: sanitizeLog(formData.contactType),
+          area: sanitizeLog(formData.area),
+          supportType: sanitizeLog(formData.supportType),
+          severity: sanitizeLog(formData.severity),
+          email: sanitizeLog(formData.email),
+          comments: sanitizeLog(formData.comments?.substring(0, 100)),
           timestamp: formData.timestamp
         })
 
@@ -759,6 +893,12 @@ eScoresheet Developer
 
   // Send match info email
   if (url.pathname === '/api/match/send-info' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, EMAIL_RATE_LIMIT_MAX, 'email')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     let body = ''
     req.on('data', chunk => {
       body += chunk
@@ -771,7 +911,13 @@ eScoresheet Developer
       try {
         const matchData = JSON.parse(body)
 
-        console.log('[Match Email] Sending match info to:', matchData.email)
+        if (!isValidEmail(matchData.email)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid email address' }))
+          return
+        }
+
+        console.log('[Match Email] Sending match info to:', sanitizeLog(matchData.email))
 
         // Check if any email method is configured
         const hasResend = !!process.env.RESEND_API_KEY
@@ -859,8 +1005,64 @@ Generated by eScoresheet
     return
   }
 
+  // Verify reopen password (server-side hash comparison)
+  if (url.pathname === '/api/verify-reopen-password' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
+    const reopenHash = process.env.REOPEN_PASSWORD_HASH
+    if (!reopenHash) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true })) // No password configured = always allowed
+      return
+    }
+
+    let body = ''
+    req.on('data', chunk => {
+      body += chunk
+      if (body.length > MAX_BODY_SIZE) { req.destroy(); return }
+    })
+    req.on('end', async () => {
+      try {
+        const { password } = JSON.parse(body)
+        if (!password || typeof password !== 'string') {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Password required' }))
+          return
+        }
+
+        // Hash the input with SHA-256 and compare (timing-safe)
+        const inputHash = createHash('sha256').update(password).digest('hex')
+        const inputBuf = Buffer.from(inputHash, 'utf8')
+        const expectedBuf = Buffer.from(reopenHash, 'utf8')
+
+        if (inputBuf.length === expectedBuf.length && timingSafeEqual(inputBuf, expectedBuf)) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: true }))
+        } else {
+          res.writeHead(403, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Incorrect password' }))
+        }
+      } catch (err) {
+        console.error('[API] Error verifying reopen password:', err)
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
+      }
+    })
+    return
+  }
+
   // Get official matches from iCal feeds
   if (url.pathname === '/api/official-matches' && req.method === 'GET') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     const federation = url.searchParams.get('federation')
     const league = url.searchParams.get('league')
 
@@ -911,6 +1113,12 @@ Generated by eScoresheet
 
   // Get available leagues for official matches (flat list)
   if (url.pathname === '/api/official-matches/leagues' && req.method === 'GET') {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
+    if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     const leagues = []
     for (const [federation, config] of Object.entries(ICAL_FEEDS)) {
       for (const [leagueCode, leagueConfig] of Object.entries(config.leagues)) {
@@ -961,9 +1169,9 @@ Generated by eScoresheet
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
       return
     }
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX)) {
-      res.writeHead(429, { 'Content-Type': 'application/json' })
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'db')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
       return
     }
@@ -974,8 +1182,29 @@ Generated by eScoresheet
 
         if (!ALLOWED_TABLES.includes(table)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `Table not allowed: ${table}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
           return
+        }
+
+        // Require auth token for write operations (insert/update/upsert/delete)
+        const WRITE_ACTIONS = ['insert', 'update', 'upsert', 'delete']
+        if (WRITE_ACTIONS.includes(action)) {
+          const authHeader = req.headers['authorization']
+          const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+          if (!token) {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Authentication required' }))
+            return
+          }
+
+          // Verify token with Supabase
+          const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token)
+          if (authError || !userData?.user) {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Invalid or expired token' }))
+            return
+          }
         }
 
         let query = supabaseAdmin.from(table)
@@ -993,13 +1222,20 @@ Generated by eScoresheet
           query = query.delete()
         } else {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `Invalid action: ${action}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
           return
         }
 
-        // Apply filters
+        // Apply filters (validate column names against per-table whitelist)
+        const ALLOWED_FILTER_TYPES = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'in', 'contains', 'is']
+        const tableColumns = ALLOWED_COLUMNS[table]
         if (params.filters) {
           for (const f of params.filters) {
+            if (!f.column || !ALLOWED_FILTER_TYPES.includes(f.type) || (tableColumns && !tableColumns.includes(f.column))) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid request' }))
+              return
+            }
             if (f.type === 'eq') query = query.eq(f.column, f.value)
             else if (f.type === 'neq') query = query.neq(f.column, f.value)
             else if (f.type === 'gt') query = query.gt(f.column, f.value)
@@ -1017,6 +1253,11 @@ Generated by eScoresheet
         // Apply modifiers
         if (params.order) {
           for (const o of (Array.isArray(params.order) ? params.order : [params.order])) {
+            if (!o.column || (tableColumns && !tableColumns.includes(o.column))) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid request' }))
+              return
+            }
             query = query.order(o.column, { ascending: o.ascending !== false })
           }
         }
@@ -1029,7 +1270,7 @@ Generated by eScoresheet
         if (error) {
           console.error(`[DB Proxy] ${action} ${table} error:`, error.message)
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: error.message, code: error.code } }))
+          res.end(JSON.stringify({ data: null, error: { message: 'Database operation failed' } }))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ data, error: null, count: count ?? undefined }))
@@ -1037,7 +1278,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error('[DB Proxy] Error:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Database operation failed' }))
       }
     })()
     return
@@ -1045,6 +1286,12 @@ Generated by eScoresheet
 
   // POST /api/db/rpc — RPC proxy
   if (url.pathname === '/api/db/rpc' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     if (!supabaseAdmin) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
@@ -1053,16 +1300,32 @@ Generated by eScoresheet
 
     ;(async () => {
       try {
+        // Require auth for RPC calls
+        const authHeader = req.headers['authorization']
+        const rpcToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+        if (!rpcToken) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Authentication required' }))
+          return
+        }
+        const { data: rpcUser, error: rpcAuthError } = await supabaseAdmin.auth.getUser(rpcToken)
+        if (rpcAuthError || !rpcUser?.user) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid or expired token' }))
+          return
+        }
+
         const { fn, params = {} } = await readJsonBody(req)
         if (!ALLOWED_RPC.includes(fn)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `RPC function not allowed: ${fn}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
           return
         }
         const { data, error } = await supabaseAdmin.rpc(fn, params)
         if (error) {
+          console.error(`[RPC Proxy] ${fn} error:`, error.message)
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: error.message, code: error.code } }))
+          res.end(JSON.stringify({ data: null, error: { message: 'Operation failed' } }))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ data, error: null }))
@@ -1070,7 +1333,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error('[RPC Proxy] Error:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Operation failed' }))
       }
     })()
     return
@@ -1078,6 +1341,12 @@ Generated by eScoresheet
 
   // POST /api/storage/upload — Upload file to Supabase Storage
   if (url.pathname === '/api/storage/upload' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     if (!supabaseAdmin) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
@@ -1086,10 +1355,30 @@ Generated by eScoresheet
 
     ;(async () => {
       try {
+        // Require auth for storage uploads
+        const authHeader = req.headers['authorization']
+        const uploadToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+        if (!uploadToken) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Authentication required' }))
+          return
+        }
+        const { data: uploadUser, error: uploadAuthError } = await supabaseAdmin.auth.getUser(uploadToken)
+        if (uploadAuthError || !uploadUser?.user) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid or expired token' }))
+          return
+        }
+
         const { bucket, path: filePath, fileBase64, contentType, upsert } = await readJsonBody(req, MAX_MATCH_BODY_SIZE)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
+          return
+        }
+        if (!isValidStoragePath(filePath)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid file path' }))
           return
         }
         const fileBuffer = Buffer.from(fileBase64, 'base64')
@@ -1097,8 +1386,9 @@ Generated by eScoresheet
           .from(bucket)
           .upload(filePath, fileBuffer, { contentType: contentType || 'application/octet-stream', upsert: upsert !== false })
         if (error) {
+          console.error('[Storage Upload] Supabase error:', error.message)
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ data, error: null }))
@@ -1106,7 +1396,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error('[Storage Upload] Error:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Storage operation failed' }))
       }
     })()
     return
@@ -1114,6 +1404,12 @@ Generated by eScoresheet
 
   // POST /api/storage/download — Download file from Supabase Storage
   if (url.pathname === '/api/storage/download' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     if (!supabaseAdmin) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
@@ -1125,13 +1421,19 @@ Generated by eScoresheet
         const { bucket, path: filePath } = await readJsonBody(req)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
+          return
+        }
+        if (!isValidStoragePath(filePath)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid file path' }))
           return
         }
         const { data, error } = await supabaseAdmin.storage.from(bucket).download(filePath)
         if (error) {
+          console.error('[Storage Download] Supabase error:', error.message)
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
         } else {
           // Convert blob to base64
           const arrayBuffer = await data.arrayBuffer()
@@ -1142,7 +1444,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error('[Storage Download] Error:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Storage operation failed' }))
       }
     })()
     return
@@ -1150,6 +1452,12 @@ Generated by eScoresheet
 
   // POST /api/storage/list — List files in Supabase Storage
   if (url.pathname === '/api/storage/list' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     if (!supabaseAdmin) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
@@ -1161,13 +1469,19 @@ Generated by eScoresheet
         const { bucket, path: dirPath, options } = await readJsonBody(req)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
+          return
+        }
+        if (dirPath && !isValidStoragePath(dirPath)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid file path' }))
           return
         }
         const { data, error } = await supabaseAdmin.storage.from(bucket).list(dirPath, options || {})
         if (error) {
+          console.error('[Storage List] Supabase error:', error.message)
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ data, error: null }))
@@ -1175,7 +1489,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error('[Storage List] Error:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Storage operation failed' }))
       }
     })()
     return
@@ -1183,6 +1497,12 @@ Generated by eScoresheet
 
   // POST /api/storage/signed-url — Create signed URL for Supabase Storage
   if (url.pathname === '/api/storage/signed-url' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     if (!supabaseAdmin) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
@@ -1194,13 +1514,21 @@ Generated by eScoresheet
         const { bucket, path: filePath, expiresIn } = await readJsonBody(req)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: `Bucket not allowed: ${bucket}` }))
+          res.end(JSON.stringify({ error: 'Invalid request' }))
           return
         }
-        const { data, error } = await supabaseAdmin.storage.from(bucket).createSignedUrl(filePath, expiresIn || 3600)
-        if (error) {
+        if (!isValidStoragePath(filePath)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: error.message } }))
+          res.end(JSON.stringify({ error: 'Invalid file path' }))
+          return
+        }
+        const MAX_SIGNED_URL_EXPIRY = 3600 // 1 hour max
+        const safeExpiresIn = Math.min(expiresIn || 3600, MAX_SIGNED_URL_EXPIRY)
+        const { data, error } = await supabaseAdmin.storage.from(bucket).createSignedUrl(filePath, safeExpiresIn)
+        if (error) {
+          console.error('[Storage SignedUrl] Supabase error:', error.message)
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ data, error: null }))
@@ -1208,7 +1536,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error('[Storage SignedUrl] Error:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Storage operation failed' }))
       }
     })()
     return
@@ -1216,6 +1544,12 @@ Generated by eScoresheet
 
   // POST /api/auth/* — Auth proxy endpoints
   if (url.pathname.startsWith('/api/auth/') && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     if (!supabaseAdmin) {
       res.writeHead(503, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
@@ -1339,7 +1673,7 @@ Generated by eScoresheet
           }
           default:
             res.writeHead(404, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: `Unknown auth action: ${authAction}` }))
+            res.end(JSON.stringify({ error: 'Invalid request' }))
             return
         }
 
@@ -1348,7 +1682,7 @@ Generated by eScoresheet
       } catch (err) {
         console.error(`[Auth Proxy] ${authAction} error:`, err.message)
         res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: err.message }))
+        res.end(JSON.stringify({ error: 'Authentication error' }))
       }
     })()
     return
@@ -1362,7 +1696,7 @@ Generated by eScoresheet
 const wss = new WebSocketServer({
   server,
   // Increase limits for match data
-  maxPayload: 100 * 1024 * 1024, // 100MB
+  maxPayload: 10 * 1024 * 1024, // 10MB
   perMessageDeflate: {
     zlibDeflateOptions: {
       chunkSize: 1024,
@@ -1381,12 +1715,29 @@ const wss = new WebSocketServer({
 })
 
 wss.on('connection', (ws, req) => {
+  // Enforce global connection cap
+  if (connections.size >= MAX_CONNECTIONS) {
+    ws.close(1013, 'Server connection limit reached')
+    return
+  }
+
   const clientId = randomBytes(8).toString('hex')
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress
+  const ip = getClientIp(req)
+
+  // Enforce per-IP connection cap
+  let connectionsFromIp = 0
+  for (const c of connections.values()) {
+    if (c.ip === ip) connectionsFromIp++
+  }
+  if (connectionsFromIp >= MAX_CONNECTIONS_PER_IP) {
+    ws.close(1008, 'Too many connections from this IP')
+    return
+  }
+
   const clientInfo = {
     ws,
     id: clientId,
-    ip: ip ? ip.replace('::ffff:', '') : 'unknown', // Clean up IPv6 prefix
+    ip,
     matchId: null,
     role: null, // 'scoreboard', 'referee', 'bench'
     team: null, // 'home' or 'away' for bench clients
@@ -1395,7 +1746,7 @@ wss.on('connection', (ws, req) => {
 
   connections.set(clientId, clientInfo)
 
-  console.log(`✅ Client connected: ${clientId} from ${clientInfo.ip} (Total: ${connections.size})`)
+  console.log(`✅ Client connected: ${clientId} from ${ip} (Total: ${connections.size})`)
 
   // Send welcome message
   ws.send(JSON.stringify({
@@ -1406,6 +1757,13 @@ wss.on('connection', (ws, req) => {
   }))
 
   ws.on('message', (data) => {
+    // Per-client WebSocket rate limiting
+    if (isWsRateLimited(clientId)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Rate limit exceeded' }))
+      ws.close(1008, 'Rate limit exceeded')
+      return
+    }
+
     try {
       const message = JSON.parse(data.toString())
 
@@ -1499,36 +1857,98 @@ function handleJoinMatch(clientInfo, message) {
     return
   }
 
+  // Validate role and team
+  const validatedRole = (role && VALID_ROLES.includes(role)) ? role : 'unknown'
+  const validatedTeam = (team && VALID_TEAMS.includes(team)) ? team : null
+
+  // PIN enforcement for roles that require it
+  if (ROLES_REQUIRING_PIN.includes(validatedRole)) {
+    const matchData = activeMatches.get(matchId) || activeMatches.get(String(matchId))
+    const match = matchData?.match || matchData
+
+    if (!match) {
+      // No match data yet — scoreboard hasn't connected
+      clientInfo.ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Match not ready yet. The scoreboard must connect first.'
+      }))
+      return
+    }
+
+    let expectedPin = null
+    let connectionEnabled = false
+
+    if (validatedRole === 'referee') {
+      expectedPin = match.refereePin
+      connectionEnabled = match.refereeConnectionEnabled === true
+    } else if (validatedRole === 'bench') {
+      if (validatedTeam === 'home') {
+        expectedPin = match.homeTeamPin
+        connectionEnabled = match.homeTeamConnectionEnabled === true
+      } else if (validatedTeam === 'away') {
+        expectedPin = match.awayTeamPin
+        connectionEnabled = match.awayTeamConnectionEnabled === true
+      }
+    }
+
+    if (!connectionEnabled) {
+      clientInfo.ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Connection not enabled for this role'
+      }))
+      return
+    }
+
+    if (expectedPin != null && expectedPin !== '' && (!pin || String(pin).trim() !== String(expectedPin).trim())) {
+      clientInfo.ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Invalid PIN'
+      }))
+      return
+    }
+  }
+
   // Leave previous room if any
   if (clientInfo.matchId) {
     handleLeaveMatch(clientInfo)
   }
 
+  // Enforce room cap
+  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
+    clientInfo.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Server room limit reached'
+    }))
+    return
+  }
+
   // Update client info
   clientInfo.matchId = matchId
-  clientInfo.role = role || 'unknown'
-  clientInfo.team = team || null // 'home' or 'away' for bench clients
+  clientInfo.role = validatedRole
+  clientInfo.team = validatedTeam
 
   // Create room if doesn't exist
   if (!rooms.has(matchId)) {
     rooms.set(matchId, {
       matchId,
       clients: new Set(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      lastActivity: Date.now()
     })
   }
 
   // Add client to room
   const room = rooms.get(matchId)
   room.clients.add(clientInfo.id)
+  room.lastActivity = Date.now()
 
-  console.log(`🎯 ${clientInfo.id} (${role}) joined match ${matchId} (Room size: ${room.clients.size})`)
+  console.log(`🎯 ${clientInfo.id} (${validatedRole}) joined match ${matchId} (Room size: ${room.clients.size})`)
 
   // Notify client
   clientInfo.ws.send(JSON.stringify({
     type: 'joined_match',
     matchId,
-    role,
+    role: validatedRole,
     roomSize: room.clients.size
   }))
 
@@ -1536,7 +1956,7 @@ function handleJoinMatch(clientInfo, message) {
   broadcastToRoom(matchId, {
     type: 'client_joined',
     clientId: clientInfo.id,
-    role,
+    role: validatedRole,
     roomSize: room.clients.size
   }, clientInfo.id) // Exclude sender
 }
@@ -1575,7 +1995,7 @@ function handleLeaveMatch(clientInfo) {
 function handleMatchUpdate(clientInfo, message) {
   const { matchId, data } = message
 
-  if (!matchId || !data) {
+  if (!matchId || !data || typeof data !== 'object') {
     clientInfo.ws.send(JSON.stringify({
       type: 'error',
       message: 'Match ID and data required'
@@ -1630,11 +2050,21 @@ function handleAction(clientInfo, message) {
 function handleClientDisconnect(clientInfo) {
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
+  wsRateLimitMap.delete(clientInfo.id)
   console.log(`❌ Client disconnected: ${clientInfo.id} (Total: ${connections.size})`)
 }
 
 // Handle sync-match-data from frontend scoreboard
 function handleSyncMatchData(clientInfo, message) {
+  // Only scoreboard clients can sync match data
+  if (clientInfo.role && clientInfo.role !== 'scoreboard' && clientInfo.role !== 'unknown') {
+    clientInfo.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Only scoreboard can sync match data'
+    }))
+    return
+  }
+
   // Support both formats:
   // Frontend format: { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
   // Legacy format: { matchId, match, teams, players, sets, events }
@@ -1667,17 +2097,25 @@ function handleSyncMatchData(clientInfo, message) {
     updatedBy: clientInfo.id
   })
 
+  // Enforce room cap
+  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
+    clientInfo.ws.send(JSON.stringify({ type: 'error', message: 'Server room limit reached' }))
+    return
+  }
+
   // Ensure room exists
   if (!rooms.has(matchId)) {
     rooms.set(matchId, {
       matchId,
       clients: new Set(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      lastActivity: Date.now()
     })
   }
 
   // Add client to room if not already there
   const room = rooms.get(matchId)
+  room.lastActivity = Date.now()
   if (!room.clients.has(clientInfo.id)) {
     room.clients.add(clientInfo.id)
     clientInfo.matchId = matchId
@@ -1706,7 +2144,7 @@ function handleSyncMatchData(clientInfo, message) {
 function handleMatchAction(clientInfo, message) {
   const { matchId, action, actionData } = message
 
-  if (!matchId || !action) {
+  if (!matchId || !action || typeof action !== 'string') {
     return
   }
 

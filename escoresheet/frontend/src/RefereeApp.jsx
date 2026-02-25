@@ -566,7 +566,24 @@ export default function RefereeApp() {
               }}>
                 {t('refereeDashboard.noActiveGame')}
               </div>
-              
+              <button
+                type="button"
+                onClick={() => { loadMatches(); checkConnectionStatuses() }}
+                disabled={loadingMatches}
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px',
+                  color: 'var(--accent)',
+                  cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                  opacity: loadingMatches ? 0.5 : 1
+                }}
+              >
+                {loadingMatches ? t('common.loading', 'Loading...') : `🔄 ${t('refereeDashboard.loadGames', 'Load Games')}`}
+              </button>
             </div>
           ) : (
           <form onSubmit={handlePinSubmit} style={{
@@ -578,15 +595,32 @@ export default function RefereeApp() {
           }}>
             {availableMatches.length > 0 && (
               <div style={{ width: '80%' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  color: 'var(--muted)',
-                  marginBottom: '8px',
-                  fontWeight: 600
-                }}>
-                  {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{
+                    fontSize: '12px',
+                    color: 'var(--muted)',
+                    fontWeight: 600
+                  }}>
+                    {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { loadMatches(); checkConnectionStatuses() }}
+                    disabled={loadingMatches}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      background: 'transparent',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '6px',
+                      color: 'var(--accent)',
+                      cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                      opacity: loadingMatches ? 0.5 : 1
+                    }}
+                  >
+                    {loadingMatches ? '...' : '🔄'}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowGameModal(true)}
