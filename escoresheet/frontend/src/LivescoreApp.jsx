@@ -4,6 +4,8 @@ import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
+import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { setBackendOverride } from './utils/backendConfig'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -17,6 +19,7 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
  */
 export default function LivescoreApp() {
   const { t } = useTranslation()
+  const [serverReady, setServerReady] = useState(false)
   const [liveGames, setLiveGames] = useState([]) // All games from match_live_state
   const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
   const [loading, setLoading] = useState(true)
@@ -24,6 +27,27 @@ export default function LivescoreApp() {
   const channelRef = useRef(null)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // Check URL params for auto-connect on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const matchParam = params.get('match')
+    const serverParam = params.get('server')
+
+    if (serverParam) {
+      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+    }
+
+    // Livescore can auto-connect — it doesn't need PIN
+    if (matchParam || serverParam) {
+      setServerReady(true)
+    }
+  }, [])
+
+  // Handle server connection established
+  const handleServerConnected = useCallback(() => {
+    setServerReady(true)
+  }, [])
 
   // Track viewport size for narrow screen blocking
   useEffect(() => {
@@ -386,6 +410,11 @@ export default function LivescoreApp() {
         </div>
       </div>
     )
+  }
+
+  // Show server connection screen first (unless auto-connecting via URL params)
+  if (!serverReady) {
+    return <ServerConnectionScreen onConnected={handleServerConnected} />
   }
 
   // List view - show all games

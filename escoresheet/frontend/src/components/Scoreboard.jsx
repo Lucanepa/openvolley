@@ -30,6 +30,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { setsToWin, isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
+import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -782,6 +783,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     return result
   }, [matchId])
+
+  // Monitor tablet connection health — notify when a device drops
+  const handleDeviceDisconnected = useCallback(({ label }) => {
+    showAlert(t('scoreboard.deviceDisconnected', { defaultValue: '{{device}} disconnected', device: label }), 'warning')
+  }, [showAlert, t])
+
+  useConnectionHealthMonitor(data?.match, handleDeviceDisconnected, {
+    enabled: !!(data?.match && (data.match.refereeConnectionEnabled || data.match.homeTeamConnectionEnabled || data.match.awayTeamConnectionEnabled))
+  })
 
   // Check if Set 5 was already confirmed (on mount or when entering Set 5)
   useEffect(() => {
@@ -19442,6 +19452,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         open={connectionSetupModal}
         onClose={() => setConnectionSetupModal(false)}
         matchId={matchId}
+        matchSeedKey={data?.match?.seed_key || data?.match?.externalId}
+        match={data?.match}
         refereePin={data?.match?.refereePin}
         homeTeamPin={data?.match?.homeTeamPin}
         awayTeamPin={data?.match?.awayTeamPin}

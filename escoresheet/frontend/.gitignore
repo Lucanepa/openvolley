@@ -47,3 +47,7 @@ localhost-key.pem
 *.pem
 *.key
 *.crt
+
+# Environment variables
+.env
+.env.*

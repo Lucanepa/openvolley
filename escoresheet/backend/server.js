@@ -17,6 +17,11 @@ import nodemailer from 'nodemailer'
 import ical from 'node-ical'
 import { randomBytes, createHash, timingSafeEqual } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
+import { existsSync, readFileSync, statSync } from 'fs'
+import { join, extname } from 'path'
+import { fileURLToPath } from 'url'
+import os from 'os'
+import QRCode from 'qrcode'
 
 const PORT = process.env.PORT || 8080
 
@@ -104,6 +109,48 @@ const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
   }
 }) : null
 const IS_CLOUD = process.env.IS_CLOUD
+const IS_LOCAL = !SUPABASE_URL || process.argv.includes('--local')
+
+// --- Static file serving for standalone/local mode ---
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = join(__filename, '..')
+const STATIC_DIR = join(__dirname, 'public')
+const HAS_STATIC = existsSync(STATIC_DIR)
+
+const MIME_TYPES = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.webmanifest': 'application/manifest+json',
+  '.webp': 'image/webp'
+}
+
+if (HAS_STATIC) {
+  console.log('[Static] Serving frontend files from:', STATIC_DIR)
+} else {
+  console.log('[Static] No public/ directory found — static file serving disabled')
+}
+
+// --- Local IP detection ---
+function getLocalIPs() {
+  const ips = []
+  const interfaces = os.networkInterfaces()
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    for (const addr of addrs) {
+      if (addr.family === 'IPv4' && !addr.internal) {
+        ips.push({ name, address: addr.address })
+      }
+    }
+  }
+  return ips
+}
 
 // In-memory storage for active matches
 // NOTE: This resets on server restart - Supabase is the source of truth for persistence
@@ -140,15 +187,20 @@ function isValidPin(pin) {
 
 // --- Client IP extraction (X-Forwarded-For hardening) ---
 function getClientIp(req) {
+  // In cloud mode behind Cloudflare, use CF-Connecting-IP (unspoofable by clients)
+  if (IS_CLOUD) {
+    const cfIp = req.headers['cf-connecting-ip']
+    if (cfIp) return cfIp.trim()
+  }
+  // In local mode, use socket address directly (no reverse proxy on LAN)
+  if (IS_LOCAL) {
+    const addr = req.socket.remoteAddress || 'unknown'
+    return addr.replace('::ffff:', '')
+  }
+  // Fallback: X-Forwarded-For leftmost entry (per spec)
   const xff = req.headers['x-forwarded-for']
   if (xff) {
-    // Use the rightmost IP that isn't a known private/proxy IP.
-    // In most reverse-proxy setups the rightmost entry is added by the
-    // closest trusted proxy, so it's the most reliable client IP.
     const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
-    // Take the first (leftmost) entry — the original client IP as seen by the first proxy.
-    // This can still be spoofed, but combined with rate limits it's the best we can do
-    // without a trusted proxy list. Using leftmost matches the X-Forwarded-For spec.
     if (parts.length > 0) return parts[0]
   }
   const addr = req.socket.remoteAddress || 'unknown'
@@ -420,8 +472,9 @@ const ALLOWED_ORIGINS = [
 function getCorsOrigin(req) {
   const origin = req.headers.origin
   console.log(`[CORS] Request from origin: ${origin}, IS_CLOUD: ${IS_CLOUD}`)
-  // In development or local network, allow all origins
-  if (!IS_CLOUD) return '*'
+  // In local mode, reflect the requesting origin for LAN access.
+  // Intentionally permissive — local server is on a trusted network.
+  if (!IS_CLOUD) return origin || '*'
   // In production, check against allowed list
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     console.log(`[CORS] Origin ${origin} is in ALLOWED_ORIGINS`)
@@ -452,6 +505,18 @@ const server = createServer((req, res) => {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   }
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+  // Content Security Policy — cloud mode only (local mode needs permissive access for LAN IPs)
+  if (IS_CLOUD) {
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "connect-src 'self' wss://*.openvolley.app https://*.supabase.co",
+      "font-src 'self'",
+      "frame-ancestors 'none'"
+    ].join('; '))
+  }
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
@@ -462,7 +527,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`)
 
   // Health check
-  if (url.pathname === '/health' || url.pathname === '/') {
+  if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       status: 'healthy',
@@ -801,6 +866,10 @@ const server = createServer((req, res) => {
           timestamp: formData.timestamp
         })
 
+        // Sanitize all form fields to prevent CRLF/header injection in email
+        const sanitizeField = (str, maxLen = 500) =>
+          typeof str === 'string' ? str.replace(/[\r\n]/g, ' ').substring(0, maxLen).trim() : String(str || '')
+
         // Build email content
         const contactEmail = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
         const typeLabels = { support: 'Support', feedback: 'Feedback', request: 'Feature Request' }
@@ -812,21 +881,29 @@ const server = createServer((req, res) => {
           '4': '4 - Nice-to-have'
         }
 
-        const subject = `[eScoresheet ${(typeLabels[formData.contactType] || formData.contactType).toUpperCase()}] ${formData.area}${formData.supportType ? ` - ${supportTypeLabels[formData.supportType] || formData.supportType}` : ''}`
+        const safeContactType = sanitizeField(formData.contactType, 50)
+        const safeArea = sanitizeField(formData.area, 100)
+        const safeSupportType = sanitizeField(formData.supportType, 50)
+        const safeSeverity = sanitizeField(formData.severity, 10)
+        const safeComments = sanitizeField(formData.comments, 5000)
+        const safeUrl = sanitizeField(formData.url, 500)
+        const safeUserAgent = sanitizeField(formData.userAgent, 300)
+
+        const subject = `[eScoresheet ${(typeLabels[safeContactType] || safeContactType).toUpperCase()}] ${safeArea}${safeSupportType ? ` - ${supportTypeLabels[safeSupportType] || safeSupportType}` : ''}`
 
         const emailBody = `
-New ${typeLabels[formData.contactType] || formData.contactType} from eScoresheet
+New ${typeLabels[safeContactType] || safeContactType} from eScoresheet
 
-Contact Type: ${typeLabels[formData.contactType] || formData.contactType}
-Area: ${formData.area}
-${formData.supportType ? `Support Type: ${supportTypeLabels[formData.supportType] || formData.supportType}\n` : ''}${formData.severity ? `Severity: ${severityLabels[formData.severity] || formData.severity}\n` : ''}
+Contact Type: ${typeLabels[safeContactType] || safeContactType}
+Area: ${safeArea}
+${safeSupportType ? `Support Type: ${supportTypeLabels[safeSupportType] || safeSupportType}\n` : ''}${safeSeverity ? `Severity: ${severityLabels[safeSeverity] || safeSeverity}\n` : ''}
 From: ${formData.email}
-URL: ${formData.url || 'N/A'}
-User Agent: ${formData.userAgent || 'N/A'}
+URL: ${safeUrl || 'N/A'}
+User Agent: ${safeUserAgent || 'N/A'}
 Timestamp: ${formData.timestamp || new Date().toISOString()}
 
 Comments:
-${formData.comments || 'No comments provided'}
+${safeComments || 'No comments provided'}
 `.trim()
 
         // Send email if configured
@@ -1688,6 +1765,179 @@ Generated by eScoresheet
     return
   }
 
+  // --- Dynamic landing page (root only) ---
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '')) {
+    ;(async () => {
+      try {
+        const host = req.headers.host || `localhost:${PORT}`
+        const baseUrl = `http://${host}`
+        const roles = [
+          { key: 'referee', label: 'Referee', path: '/referee', color: '#3b82f6', icon: '🏁' },
+          { key: 'bench_home', label: 'Home Bench', path: '/bench?team=home', color: '#10b981', icon: '🏠' },
+          { key: 'bench_away', label: 'Away Bench', path: '/bench?team=away', color: '#ef4444', icon: '✈️' },
+          { key: 'livescore', label: 'Livescore', path: '/livescore', color: '#8b5cf6', icon: '📊' }
+        ]
+
+        // Generate QR codes as data URIs
+        const qrCodes = await Promise.all(
+          roles.map(async (role) => {
+            const url = `${baseUrl}${role.path}`
+            const svg = await QRCode.toString(url, { type: 'svg', width: 200, margin: 1 })
+            return { ...role, url, svg }
+          })
+        )
+
+        // Active matches info
+        const matchList = []
+        for (const [matchId, matchData] of activeMatches.entries()) {
+          const d = matchData.data || {}
+          matchList.push({
+            id: matchId,
+            home: d.homeTeamName || d.home_team_name || 'Home',
+            away: d.awayTeamName || d.away_team_name || 'Away',
+            updatedAt: matchData.updatedAt
+          })
+        }
+
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenVolley Server</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0; min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; padding: 24px;
+    }
+    .header { text-align: center; margin-bottom: 32px; }
+    .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .header .subtitle { color: #94a3b8; font-size: 14px; }
+    .status-bar {
+      display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;
+      margin-bottom: 32px; padding: 12px 24px;
+      background: rgba(255,255,255,0.05); border-radius: 12px;
+    }
+    .status-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.green { background: #22c55e; }
+    .dot.blue { background: #3b82f6; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px; width: 100%; max-width: 1080px; margin-bottom: 32px;
+    }
+    .card {
+      background: #1e293b; border-radius: 16px; padding: 24px;
+      text-align: center; border: 1px solid rgba(255,255,255,0.06);
+      transition: transform 0.15s;
+    }
+    .card:hover { transform: translateY(-2px); }
+    .card .icon { font-size: 28px; margin-bottom: 8px; }
+    .card h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .card .url { font-size: 11px; color: #64748b; word-break: break-all; margin-top: 12px; font-family: monospace; }
+    .card .qr { background: #fff; border-radius: 10px; padding: 12px; display: inline-block; margin-top: 12px; }
+    .card .qr svg { display: block; }
+    .matches { width: 100%; max-width: 1080px; }
+    .matches h2 { font-size: 18px; margin-bottom: 12px; }
+    .match-row {
+      background: #1e293b; border-radius: 10px; padding: 14px 20px;
+      margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .match-teams { font-weight: 600; }
+    .match-time { font-size: 12px; color: #64748b; }
+    .footer { margin-top: 32px; font-size: 12px; color: #475569; text-align: center; }
+    a { color: inherit; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🏐 OpenVolley Server</h1>
+    <p class="subtitle">${baseUrl}</p>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="dot green"></span>
+      Server running
+    </div>
+    <div class="status-item">
+      <span class="dot blue"></span>
+      ${connections.size} connected client${connections.size !== 1 ? 's' : ''}
+    </div>
+    <div class="status-item">
+      <span class="dot blue"></span>
+      ${activeMatches.size} active match${activeMatches.size !== 1 ? 'es' : ''}
+    </div>
+  </div>
+
+  <div class="grid">
+    ${qrCodes.map(r => `
+    <div class="card">
+      <div class="icon">${r.icon}</div>
+      <h3 style="color: ${r.color}">${r.label}</h3>
+      <div class="qr">${r.svg}</div>
+      <div class="url"><a href="${r.url}">${r.url}</a></div>
+    </div>
+    `).join('')}
+  </div>
+
+  ${matchList.length > 0 ? `
+  <div class="matches">
+    <h2>Active Matches</h2>
+    ${matchList.map(m => `
+    <div class="match-row">
+      <span class="match-teams">${m.home} vs ${m.away}</span>
+      <span class="match-time">${m.updatedAt ? new Date(m.updatedAt).toLocaleTimeString() : ''}</span>
+    </div>
+    `).join('')}
+  </div>
+  ` : ''}
+
+  <div class="footer">
+    Scan a QR code with your phone to connect as that role.<br>
+    All devices must be on the same network.
+  </div>
+</body>
+</html>`
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(html)
+      } catch (err) {
+        console.error('[Landing] Error generating landing page:', err.message)
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end('Internal Server Error')
+      }
+    })()
+    return
+  }
+
+  // --- Static file serving (for standalone/local server) ---
+  if (HAS_STATIC) {
+    const pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname
+    let filePath = join(STATIC_DIR, pathname === '/' ? 'index.html' : pathname)
+
+    // SPA fallback: /referee → /referee/index.html
+    if (!extname(filePath) && existsSync(join(filePath, 'index.html'))) {
+      filePath = join(filePath, 'index.html')
+    }
+
+    // Also handle /referee/ (with trailing slash)
+    if (filePath.endsWith('/') && existsSync(join(filePath, 'index.html'))) {
+      filePath = join(filePath, 'index.html')
+    }
+
+    if (existsSync(filePath) && statSync(filePath).isFile()) {
+      const ext = extname(filePath)
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+      const content = readFileSync(filePath)
+      res.writeHead(200, { 'Content-Type': contentType })
+      res.end(content)
+      return
+    }
+  }
+
   res.writeHead(404)
   res.end('Not Found')
 })
@@ -1899,12 +2149,18 @@ function handleJoinMatch(clientInfo, message) {
       return
     }
 
-    if (expectedPin != null && expectedPin !== '' && (!pin || String(pin).trim() !== String(expectedPin).trim())) {
-      clientInfo.ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Invalid PIN'
-      }))
-      return
+    if (expectedPin != null && expectedPin !== '') {
+      const pinStr = String(pin || '').trim()
+      const expectedStr = String(expectedPin).trim()
+      const pinBuf = Buffer.from(pinStr, 'utf8')
+      const expectedBuf = Buffer.from(expectedStr, 'utf8')
+      if (pinBuf.length !== expectedBuf.length || !timingSafeEqual(pinBuf, expectedBuf)) {
+        clientInfo.ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Invalid PIN'
+        }))
+        return
+      }
     }
   }
 
@@ -2229,18 +2485,26 @@ setInterval(() => {
 }, 30000) // Every 30 seconds
 
 server.listen(PORT, () => {
+  const ips = getLocalIPs()
+  const primaryIP = ips[0]?.address || 'localhost'
+  const mode = IS_CLOUD ? 'CLOUD' : IS_LOCAL ? 'LOCAL' : 'HYBRID'
+
+  const ipLines = ips.map(ip => `  📡 ${ip.name}: http://${ip.address}:${PORT}`).join('\n')
+
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║  🏐 eScoresheet WebSocket Server                          ║
-║                                                            ║
-║  Mode:     ${IS_CLOUD ? 'CLOUD RELAY' : 'LOCAL NETWORK'}                             ║
-║  Port:     ${PORT}                                          ║
-║  Status:   READY                                           ║
-║                                                            ║
-║  Endpoints:                                                ║
-║  • Health:  http://localhost:${PORT}/health                 ║
-║  • Status:  http://localhost:${PORT}/api/server/status      ║
-║  • WS:      ws://localhost:${PORT}                          ║
+║  🏐 OpenVolley Server — ${mode} MODE
+║
+║  Port: ${PORT}   Status: READY
+║  Static files: ${HAS_STATIC ? 'YES' : 'NO'}
+║
+${ipLines || `  📡 http://localhost:${PORT}`}
+║
+║  Referee:   http://${primaryIP}:${PORT}/referee
+║  Bench:     http://${primaryIP}:${PORT}/bench
+║  Livescore: http://${primaryIP}:${PORT}/livescore
+║
+║  Dashboard: http://${primaryIP}:${PORT}
 ╚════════════════════════════════════════════════════════════╝
   `)
 })

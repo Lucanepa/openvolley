@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
+import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { setBackendOverride } from './utils/backendConfig'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
 
@@ -13,6 +15,8 @@ const MASTER_PIN = '123456'
 
 export default function RefereeApp() {
   const { t } = useTranslation()
+  const [serverReady, setServerReady] = useState(false)
+  const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
@@ -38,6 +42,52 @@ export default function RefereeApp() {
     match: 'unknown',
     db: 'unknown'
   })
+
+  // Check URL params for auto-connect on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const matchParam = params.get('match')
+    const serverParam = params.get('server')
+
+    if (serverParam) {
+      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+    }
+
+    if (matchParam) {
+      setAutoConnectMatch(matchParam)
+      // Skip server connection screen if we have URL params
+      setServerReady(true)
+    }
+  }, [])
+
+  // Auto-connect to match from URL params
+  useEffect(() => {
+    if (!autoConnectMatch || !serverReady) return
+
+    const doAutoConnect = async () => {
+      setIsLoading(true)
+      try {
+        const result = await getMatchData(autoConnectMatch)
+        if (result.success && result.match) {
+          setMatchId(result.match.id || autoConnectMatch)
+          setMatch(result.match)
+        } else {
+          setError(t('connection.matchNotFound', 'Match not found'))
+        }
+      } catch (err) {
+        setError(t('connection.connectionFailed', 'Could not connect to match'))
+      } finally {
+        setIsLoading(false)
+        setAutoConnectMatch(null)
+      }
+    }
+    doAutoConnect()
+  }, [autoConnectMatch, serverReady, t])
+
+  // Handle server connection established
+  const handleServerConnected = useCallback(() => {
+    setServerReady(true)
+  }, [])
 
   // Preload assets that are used later (e.g., referee icon)
   useEffect(() => {
@@ -480,6 +530,11 @@ export default function RefereeApp() {
       setTestModeClicks(0)
     }, 2000)
   }, [])
+
+  // Show server connection screen first (unless auto-connecting via URL params)
+  if (!serverReady) {
+    return <ServerConnectionScreen onConnected={handleServerConnected} />
+  }
 
   // Render Referee component if connected (either to match or in master mode)
   if (matchId) {

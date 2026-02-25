@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
 import UserButton from './auth/UserButton'
+import TabletStatusIndicator from './TabletStatusIndicator'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
 
@@ -830,6 +831,9 @@ export default function MainHeader({
               )}
             </div>
           )}
+
+          {/* Tablet Status Indicator */}
+          {currentMatch && <TabletStatusIndicator match={currentMatch} />}
         </div>
 
         {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}

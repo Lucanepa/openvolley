@@ -4156,6 +4156,8 @@ export default function App() {
               open={connectionSetupModal}
               onClose={() => setConnectionSetupModal(false)}
               matchId={matchId}
+              matchSeedKey={currentMatch?.seed_key || currentMatch?.externalId}
+              match={currentMatch}
               refereePin={currentMatch?.refereePin}
               homeTeamPin={currentMatch?.homeTeamPin}
               awayTeamPin={currentMatch?.awayTeamPin}

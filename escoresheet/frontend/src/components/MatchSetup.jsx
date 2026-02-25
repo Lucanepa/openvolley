@@ -690,17 +690,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Show both rosters in match setup
   const [showBothRosters, setShowBothRosters] = useState(false)
 
-  // Referee connection
-  const [refereeConnectionEnabled, setRefereeConnectionEnabled] = useState(false)
+  // PIN editing modal
   const [editPinModal, setEditPinModal] = useState(false)
   const [editPinType, setEditPinType] = useState(null) // 'referee', 'benchHome', 'benchAway'
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState('')
-
-  // Bench connection - separate for each team
-  const [homeTeamConnectionEnabled, setHomeTeamConnectionEnabled] = useState(false)
-  const [awayTeamConnectionEnabled, setAwayTeamConnectionEnabled] = useState(false)
-  const [benchConnectionEnabled, setBenchConnectionEnabled] = useState(false)
 
   // Manage Captain on Court setting
   const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
@@ -1371,21 +1365,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })))
         }
 
-        // Load referee connection setting (default to disabled if not set)
-        setRefereeConnectionEnabled(match.refereeConnectionEnabled === true)
-
-        // Load bench connection settings (default to disabled if not set)
-        // Support both old (separate home/away) and new (combined) fields
-        const isBenchEnabled = match.benchConnectionEnabled === true ||
-          (match.homeTeamConnectionEnabled === true && match.awayTeamConnectionEnabled === true)
-        setBenchConnectionEnabled(isBenchEnabled)
-        setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled === true)
-        setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled === true)
-
         // Migrate old matches: ensure connection fields are explicitly set to false if undefined
         const connectionUpdates = {}
         if (match.refereeConnectionEnabled === undefined) connectionUpdates.refereeConnectionEnabled = false
-        if (match.benchConnectionEnabled === undefined) connectionUpdates.benchConnectionEnabled = false
+        if (match.homeTeamConnectionEnabled === undefined) connectionUpdates.homeTeamConnectionEnabled = false
+        if (match.awayTeamConnectionEnabled === undefined) connectionUpdates.awayTeamConnectionEnabled = false
         if (Object.keys(connectionUpdates).length > 0) {
           await db.matches.update(matchId, connectionUpdates)
         }
@@ -1476,20 +1460,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   useEffect(() => {
     rosterLoadedRef.current = false
   }, [matchId])
-
-  // Update effect - runs when match changes (for connection settings, etc.)
-  useEffect(() => {
-    if (!matchId || !match) return
-
-    // Update connection settings (these can change without affecting roster)
-    // Default to disabled if not explicitly enabled
-    setRefereeConnectionEnabled(match.refereeConnectionEnabled === true)
-    const isBenchEnabled = match.benchConnectionEnabled === true ||
-      (match.homeTeamConnectionEnabled === true && match.awayTeamConnectionEnabled === true)
-    setBenchConnectionEnabled(isBenchEnabled)
-    setHomeTeamConnectionEnabled(match.homeTeamConnectionEnabled === true)
-    setAwayTeamConnectionEnabled(match.awayTeamConnectionEnabled === true)
-  }, [matchId, match?.refereeConnectionEnabled, match?.benchConnectionEnabled, match?.homeTeamConnectionEnabled, match?.awayTeamConnectionEnabled])
 
   // Auto-fill scorer fields from logged-in user profile
   // Only applies when scorer fields are empty (new match or scorer not yet set)
@@ -6878,283 +6848,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
-  const handleRefereeConnectionToggle = async (enabled) => {
-    if (!matchId) return
-    setRefereeConnectionEnabled(enabled)
-    try {
-      const match = await db.matches.get(matchId)
-      if (!match) return
-
-      const updates = { refereeConnectionEnabled: enabled }
-
-      // If enabling connection and PIN doesn't exist, generate one
-      if (enabled && !match.refereePin) {
-        const newPin = await generateUniquePin()
-        updates.refereePin = String(newPin).trim() // Ensure it's a string
-      }
-
-      await db.matches.update(matchId, updates)
-
-      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
-      const updatedMatch = await db.matches.get(matchId)
-      if (updatedMatch) {
-        await syncMatchToServer(updatedMatch)
-        // Also sync to Supabase (use seed_key as external_id)
-        if (updatedMatch.seed_key) {
-          await db.sync_queue.add({
-            resource: 'match',
-            action: 'update',
-            payload: {
-              id: updatedMatch.seed_key,
-              // JSONB columns
-              connections: {
-                referee_enabled: enabled
-              },
-              connection_pins: {
-                referee: updatedMatch.refereePin || ''
-              }
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-              }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to update referee connection setting:', error)
-    }
-  }
-
-  const handleHomeTeamConnectionToggle = async (enabled) => {
-    if (!matchId) return
-    setHomeTeamConnectionEnabled(enabled)
-    try {
-      const match = await db.matches.get(matchId)
-      if (!match) return
-
-      const updates = { homeTeamConnectionEnabled: enabled }
-
-      // If enabling connection and PIN doesn't exist, generate one
-      if (enabled && !match.homeTeamPin) {
-        const newPin = await generateUniquePin()
-        updates.homeTeamPin = String(newPin).trim() // Ensure it's a string
-      }
-
-      await db.matches.update(matchId, updates)
-
-      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
-      const updatedMatch = await db.matches.get(matchId)
-      if (updatedMatch) {
-        await syncMatchToServer(updatedMatch)
-        // Also sync to Supabase (use seed_key as external_id)
-        if (updatedMatch.seed_key) {
-          await db.sync_queue.add({
-            resource: 'match',
-            action: 'update',
-            payload: {
-              id: updatedMatch.seed_key,
-              connections: {
-                home_bench_enabled: enabled
-              },
-              connection_pins: {
-                bench_home: updatedMatch.homeTeamPin || ''
-              }
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-              }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to update home team connection setting:', error)
-    }
-  }
-
-  const handleAwayTeamConnectionToggle = async (enabled) => {
-    if (!matchId) return
-    setAwayTeamConnectionEnabled(enabled)
-    try {
-      const match = await db.matches.get(matchId)
-      if (!match) return
-
-      const updates = { awayTeamConnectionEnabled: enabled }
-
-      // If enabling connection and PIN doesn't exist, generate one
-      if (enabled && !match.awayTeamPin) {
-        const newPin = await generateUniquePin()
-        updates.awayTeamPin = String(newPin).trim() // Ensure it's a string
-      }
-
-      await db.matches.update(matchId, updates)
-
-      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
-      const updatedMatch = await db.matches.get(matchId)
-      if (updatedMatch) {
-        await syncMatchToServer(updatedMatch)
-        // Also sync to Supabase (use seed_key as external_id)
-        if (updatedMatch.seed_key) {
-          await db.sync_queue.add({
-            resource: 'match',
-            action: 'update',
-            payload: {
-              id: updatedMatch.seed_key,
-              connections: {
-                away_bench_enabled: enabled
-              },
-              connection_pins: {
-                bench_away: updatedMatch.awayTeamPin || ''
-              }
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-              }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to update away team connection setting:', error)
-    }
-  }
-
-  // Combined Benches toggle handler - enables/disables benches connection for both teams
-  const handleBenchConnectionToggle = async (enabled) => {
-    if (!matchId) return
-    setBenchConnectionEnabled(enabled)
-    // Also set the individual states for backwards compatibility
-    setHomeTeamConnectionEnabled(enabled)
-    setAwayTeamConnectionEnabled(enabled)
-
-    try {
-      const match = await db.matches.get(matchId)
-      if (!match) return
-
-      const updates = {
-        benchConnectionEnabled: enabled,
-        homeTeamConnectionEnabled: enabled,
-        awayTeamConnectionEnabled: enabled
-      }
-
-      // If enabling connection and PINs don't exist, generate them
-      if (enabled) {
-        if (!match.homeTeamPin) {
-          const homePin = await generateUniquePin()
-          updates.homeTeamPin = String(homePin).trim()
-        }
-        if (!match.awayTeamPin) {
-          const awayPin = await generateUniquePin()
-          updates.awayTeamPin = String(awayPin).trim()
-        }
-      }
-
-      await db.matches.update(matchId, updates)
-
-      // Sync to server since Scoreboard is not mounted when MatchSetup is shown
-      const updatedMatch = await db.matches.get(matchId)
-      if (updatedMatch) {
-        await syncMatchToServer(updatedMatch)
-        // Sync to Supabase (use seed_key as external_id)
-        if (updatedMatch.seed_key) {
-          await db.sync_queue.add({
-            resource: 'match',
-            action: 'update',
-            payload: {
-              id: updatedMatch.seed_key,
-              connections: {
-                home_bench_enabled: enabled,
-                away_bench_enabled: enabled
-              },
-              connection_pins: {
-                bench_home: updatedMatch.homeTeamPin || '',
-                bench_away: updatedMatch.awayTeamPin || ''
-              }
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-
-          // Show syncing modal and poll for completion
-          setNoticeModal({ message: t('matchSetup.modals.syncingToDatabase'), type: 'success', syncing: true })
-          let attempts = 0
-          const maxAttempts = 20
-          const interval = setInterval(async () => {
-            attempts++
-            try {
-              const queued = await db.sync_queue.where('status').equals('queued').count()
-              if (queued === 0) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.syncedToDatabase'), type: 'success' })
-              } else if (attempts >= maxAttempts) {
-                clearInterval(interval)
-                setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-              }
-            } catch (err) {
-              clearInterval(interval)
-            }
-          }, 500)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to update bench connection setting:', error)
-    }
-  }
+  // Connection toggle handlers removed — now managed from Scoreboard Options (ConnectionSetupModal)
 
   // Dashboard Toggle Component - two rows: label+toggle on top, PIN below
   const DashboardToggle = ({ label, enabled, onToggle, pin }) => {
@@ -7454,32 +7148,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
       </div>
-      {/* Dashboard Connections Row */}
-      <div className="setup-section" style={{
-        padding: s(16),
-        background: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: s(8),
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        ...(matchInfoConfirmed ? {} : { opacity: 0.5, pointerEvents: 'none' })
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: s(8), marginBottom: s(4) }}>
-          <span style={{ fontWeight: 600, fontSize: s(14), textAlign: 'center', alignItems: 'center' }}>{t('matchSetup.dashboards')}</span>
-        </div>
-        <div style={{ display: 'flex', gap: s(10), flexWrap: 'wrap' }}>
-          <ConnectionBanner
-            team="referee"
-            enabled={refereeConnectionEnabled}
-            onToggle={handleRefereeConnectionToggle}
-            pin={match?.refereePin}
-          />
-          <BenchesToggle
-            enabled={benchConnectionEnabled}
-            onToggle={handleBenchConnectionToggle}
-            homePin={match?.homeTeamPin}
-            awayPin={match?.awayTeamPin}
-          />
-        </div>
-      </div>
+      {/* Connection toggles moved to Scoreboard Options menu (ConnectionSetupModal) */}
 
       <div className="grid-4 setup-section" style={!matchInfoConfirmed ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
         <div className="card" style={{ order: 1, padding: s(20) }}>

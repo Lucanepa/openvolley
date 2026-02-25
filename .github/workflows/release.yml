@@ -168,8 +168,158 @@ jobs:
             escoresheet/frontend/dist-electron/*.rpm
           retention-days: 30
 
+  # --- Standalone Server Binaries (Node.js SEA) ---
+  build-server-frontend:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+
+      - name: Remove canvas native dependency
+        working-directory: escoresheet/frontend
+        run: |
+          if [ -d "node_modules/canvas" ]; then
+            rm -rf node_modules/canvas
+          fi
+
+      - name: Build frontend subdomains
+        working-directory: escoresheet/frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build:subdomains
+
+      - name: Assemble server public directory
+        run: |
+          mkdir -p escoresheet/backend/public/referee
+          mkdir -p escoresheet/backend/public/bench
+          mkdir -p escoresheet/backend/public/livescore
+          cp -r escoresheet/frontend/dist-referee/* escoresheet/backend/public/referee/
+          cp -r escoresheet/frontend/dist-bench/* escoresheet/backend/public/bench/
+          cp -r escoresheet/frontend/dist-livescore/* escoresheet/backend/public/livescore/
+
+      - name: Upload server public files
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-public
+          path: escoresheet/backend/public/
+          retention-days: 1
+
+  build-server-linux:
+    needs: [check-version, build-server-frontend]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: escoresheet/backend
+        run: npm ci
+
+      - name: Download server public files
+        uses: actions/download-artifact@v4
+        with:
+          name: server-public
+          path: escoresheet/backend/public/
+
+      - name: Build SEA binary (Linux x64)
+        working-directory: escoresheet/backend
+        run: node build-server.js --output openvolley-server-linux-x64
+
+      - name: Upload Linux server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-linux
+          path: escoresheet/backend/dist/openvolley-server-linux-x64
+          retention-days: 30
+
+  build-server-windows:
+    needs: [check-version, build-server-frontend]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: escoresheet/backend
+        run: npm ci
+
+      - name: Download server public files
+        uses: actions/download-artifact@v4
+        with:
+          name: server-public
+          path: escoresheet/backend/public/
+
+      - name: Build SEA binary (Windows x64)
+        working-directory: escoresheet/backend
+        run: node build-server.js --output openvolley-server-win-x64.exe
+
+      - name: Upload Windows server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-windows
+          path: escoresheet/backend/dist/openvolley-server-win-x64.exe
+          retention-days: 30
+
+  build-server-macos:
+    needs: [check-version, build-server-frontend]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: escoresheet/backend
+        run: npm ci
+
+      - name: Download server public files
+        uses: actions/download-artifact@v4
+        with:
+          name: server-public
+          path: escoresheet/backend/public/
+
+      - name: Build SEA binary (macOS arm64)
+        working-directory: escoresheet/backend
+        run: node build-server.js --output openvolley-server-macos-arm64
+
+      - name: Upload macOS server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-macos
+          path: escoresheet/backend/dist/openvolley-server-macos-arm64
+          retention-days: 30
+
   release:
-    needs: [check-version, build-windows, build-macos, build-linux]
+    needs: [check-version, build-windows, build-macos, build-linux, build-server-linux, build-server-windows, build-server-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -182,7 +332,7 @@ jobs:
       - name: Display artifacts
         run: |
           echo "Artifact structure:"
-          find artifacts -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.zip" | head -20
+          find artifacts -type f | head -30
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -194,18 +344,27 @@ jobs:
           body: |
             ## Downloads
 
-            ### Windows
+            ### Desktop App (Electron)
+
+            #### Windows
             - **Installer**: `Openvolley eScoresheet Setup X.X.X.exe` - Recommended for most users
             - **Portable**: `Openvolley eScoresheet X.X.X.exe` - No installation required
 
-            ### macOS
+            #### macOS
             - **DMG**: `Openvolley eScoresheet-X.X.X.dmg` - Drag to Applications
             - **ZIP**: `Openvolley eScoresheet-X.X.X-mac.zip` - Extract and run
 
-            ### Linux
+            #### Linux
             - **AppImage**: `Openvolley eScoresheet-X.X.X.AppImage` - Make executable and run
             - **DEB**: For Debian/Ubuntu
             - **RPM**: For Fedora/RHEL
+
+            ### Standalone Server (for LAN / offline use)
+            Double-click to start the server. Open `http://localhost:8080` in a browser to see QR codes for connecting referee, bench, and livescore devices.
+
+            - **Windows**: `openvolley-server-win-x64.exe`
+            - **macOS (Apple Silicon)**: `openvolley-server-macos-arm64`
+            - **Linux**: `openvolley-server-linux-x64`
           files: |
             artifacts/**/*.exe
             artifacts/**/*.exe.blockmap
@@ -215,6 +374,9 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.deb
             artifacts/**/*.rpm
+            artifacts/server-linux/*
+            artifacts/server-windows/*
+            artifacts/server-macos/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

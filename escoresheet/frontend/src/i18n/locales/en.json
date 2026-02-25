@@ -170,7 +170,8 @@
     "deletePlayerConfirm": "Are you sure you want to delete this player?",
     "birthdateWarning": "The following dates look suspicious (January 1st). Please verify they are correct:",
     "continueAnyway": "Continue Anyway",
-    "close": "Close"
+    "close": "Close",
+    "cancel": "Cancel"
   },
   "deleteMatch": {
     "cancel": "Cancel",
@@ -941,6 +942,7 @@
     "connectDashboardsTo": "Connect dashboards to:",
     "copy": "Copy",
     "copied": "Copied!",
+    "copyUrl": "Copy URL",
     "refereePin": "Referee PIN",
     "scanToOpen": "Scan to open Referee Dashboard",
     "serverNotDetected": "Server not detected.",
@@ -1447,7 +1449,37 @@
     "noCloudBackend": "No cloud backend configured. Set VITE_BACKEND_URL environment variable.",
     "shareWithRemote": "Share with Remote Devices",
     "refereeUrl": "Referee URL",
-    "gamePin": "Game PIN"
+    "gamePin": "Game PIN",
+    "connectToServer": "Connect to Server",
+    "selectServerMode": "Choose how to connect",
+    "onlineAutomatic": "Online (automatic)",
+    "localServer": "Local server",
+    "enterIPAddress": "Enter IP address",
+    "connect": "Connect",
+    "or": "or",
+    "scanQRCode": "Scan QR Code",
+    "startingCamera": "Starting camera...",
+    "lastUsed": "Last used",
+    "checking": "Connecting...",
+    "connectedSuccess": "Connected!",
+    "connectionFailed": "Could not reach server",
+    "connectionTimeout": "Connection timed out",
+    "serverNotResponding": "Server not responding",
+    "retry": "Retry",
+    "cameraError": "Could not access camera",
+    "noBackendConfigured": "No backend server configured",
+    "scanWithPhone": "Scan with phone or tablet camera to connect directly",
+    "showQR": "Show QR",
+    "role": {
+      "referee": "Referee Dashboard",
+      "bench_home": "Home Bench",
+      "bench_away": "Away Bench",
+      "livescore": "Livescore"
+    }
+  },
+  "connectionSetup": {
+    "lan": "LAN",
+    "internet": "Internet"
   },
   "loadOfficialMatch": {
     "title": "Load Match from Schedule",

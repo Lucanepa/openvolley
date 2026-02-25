@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
-import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
+import { copyToClipboard } from '../../utils/networkInfo'
+import { QRCodeSVG } from 'qrcode.react'
 
 const currentVersion = __APP_VERSION__
 
@@ -842,11 +843,9 @@ export default function HomeOptionsModal({
 
                       {/* QR Code */}
                       <div style={{ textAlign: 'center', marginTop: '16px' }}>
-                        <img
-                          src={generateQRCodeUrl(`${dashboardServer.connectionUrl}/referee`, 120)}
-                          alt="Referee Dashboard QR"
-                          style={{ background: '#fff', padding: 6, borderRadius: 6 }}
-                        />
+                        <div style={{ background: '#fff', padding: 6, borderRadius: 6, display: 'inline-block' }}>
+                          <QRCodeSVG value={`${dashboardServer.connectionUrl}/referee`} size={120} level="L" />
+                        </div>
                         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
                           {t('options.scanToOpen')}
                         </div>
@@ -1034,7 +1033,13 @@ export default function HomeOptionsModal({
                 </div>
                 <ToggleSwitch
                   value={backup.autoBackupEnabled}
-                  onToggle={() => backup.toggleAutoBackup(!backup.autoBackupEnabled)}
+                  onToggle={() => {
+                    const newValue = !backup.autoBackupEnabled
+                    backup.toggleAutoBackup(newValue)
+                    if (newValue && backup.hasFileSystemAccess && !backup.backupDirName) {
+                      backup.selectBackupDir()
+                    }
+                  }}
                 />
               </div>
 

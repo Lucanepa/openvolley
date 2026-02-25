@@ -15,6 +15,7 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
+import { getBackendUrl } from '../utils/backendConfig'
 
 // Generate a placeholder signature image (wavy line) for test matches
 function generatePlaceholderSignature() {
@@ -1007,6 +1008,115 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
     if (verificationSkipped) {
       console.log('[CoinToss] Verification skipped (offline or no Supabase), proceeding with local status')
+    }
+
+    // --- Pre-game connection checks (non-blocking, informational only) ---
+    const checks = {
+      websocket: { status: 'pending', label: t('coinToss.checks.websocket', 'WebSocket Server') },
+      supabase: { status: 'pending', label: t('coinToss.checks.supabase', 'Cloud Database') },
+      matchData: { status: 'pending', label: t('coinToss.checks.matchData', 'Match Data in Cloud') },
+      devices: { status: 'pending', label: t('coinToss.checks.devices', 'Connected Devices') }
+    }
+
+    setInitModal({ status: 'checking', message: t('coinToss.runningChecks', 'Running connection checks...'), checks })
+
+    const backendUrl = getBackendUrl()
+    const localMatch = await db.matches.get(matchId)
+    const seedKey = localMatch?.seed_key
+
+    const checkPromises = []
+
+    // 1. WebSocket Server health
+    if (backendUrl) {
+      checkPromises.push(
+        fetch(`${backendUrl}/health`, { method: 'GET', signal: AbortSignal.timeout(3000) })
+          .then(r => { checks.websocket.status = r.ok ? 'pass' : 'fail' })
+          .catch(() => { checks.websocket.status = 'fail' })
+      )
+    } else {
+      checks.websocket.status = 'skip'
+    }
+
+    // 2. Cloud database connectivity
+    if (!match?.test) {
+      checkPromises.push(
+        apiFrom('matches').select('id').limit(1)
+          .then(({ error }) => { checks.supabase.status = error ? 'fail' : 'pass' })
+          .catch(() => { checks.supabase.status = 'fail' })
+      )
+    } else {
+      checks.supabase.status = 'skip'
+    }
+
+    // 3. Match data in cloud
+    if (seedKey && !match?.test) {
+      checkPromises.push(
+        apiFrom('matches').select('status').eq('external_id', seedKey).maybeSingle()
+          .then(({ data: md, error }) => {
+            if (error || !md) { checks.matchData.status = 'warn' }
+            else if (md.status === 'live') { checks.matchData.status = 'pass' }
+            else { checks.matchData.status = 'warn' }
+          })
+          .catch(() => { checks.matchData.status = 'fail' })
+      )
+    } else {
+      checks.matchData.status = 'skip'
+    }
+
+    // 4. Connected devices
+    if (backendUrl) {
+      checkPromises.push(
+        fetch(`${backendUrl}/api/server/connections`, { signal: AbortSignal.timeout(3000) })
+          .then(r => r.json())
+          .then(data => {
+            const anyEnabled = localMatch?.refereeConnectionEnabled || localMatch?.homeTeamConnectionEnabled || localMatch?.awayTeamConnectionEnabled
+            if (!anyEnabled) { checks.devices.status = 'skip'; return }
+            const connected = Array.isArray(data.clients) ? data.clients.filter(c => c.matchId === String(matchId)).length : 0
+            checks.devices.status = connected > 0 ? 'pass' : 'warn'
+            checks.devices.detail = String(connected)
+          })
+          .catch(() => { checks.devices.status = 'fail' })
+      )
+    } else {
+      checks.devices.status = 'skip'
+    }
+
+    // Run all checks in parallel with 10s timeout
+    await Promise.race([
+      Promise.allSettled(checkPromises),
+      new Promise(resolve => setTimeout(resolve, 10000))
+    ])
+
+    // Mark any remaining pending checks as timed out
+    for (const key of Object.keys(checks)) {
+      if (checks[key].status === 'pending') checks[key].status = 'fail'
+    }
+
+    // Update UI with results
+    const allPassed = Object.values(checks).every(c => c.status === 'pass' || c.status === 'skip')
+    const hasFails = Object.values(checks).some(c => c.status === 'fail')
+
+    if (hasFails) {
+      // Show results and wait for user to proceed
+      setInitModal({
+        status: 'check_results',
+        message: t('coinToss.checksIssues', 'Some checks reported issues'),
+        checks,
+        canProceed: true
+      })
+      // Wait for user to click proceed (handled in modal rendering)
+      await new Promise(resolve => {
+        window.__coinTossCheckResolve = resolve
+      })
+      delete window.__coinTossCheckResolve
+    } else if (!allPassed) {
+      // Warnings only - show briefly then auto-proceed
+      setInitModal({ status: 'check_results', message: t('coinToss.checksWarnings', 'Checks completed with warnings'), checks })
+      await new Promise(resolve => setTimeout(resolve, 2000))
+    } else {
+      // All passed - show briefly
+      setInitModal({ status: 'check_results', message: t('coinToss.checksOk', 'All checks passed'), checks })
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
     // Upload scoresheet to cloud (async, non-blocking)
@@ -2232,6 +2342,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         <Modal
           title={initModal.status === 'success' ? t('coinToss.initialized', 'Match Initialized') :
             initModal.status === 'error' ? t('coinToss.initError', 'Initialization Error') :
+            initModal.status === 'checking' || initModal.status === 'check_results' ? t('coinToss.connectionChecks', 'Connection Checks') :
               t('coinToss.initializing', 'Initializing Match')}
           open={true}
           onClose={initModal.status === 'error' ? () => setInitModal(null) : undefined}
@@ -2241,7 +2352,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           <div style={{ padding: '24px', textAlign: 'center' }}>
             {/* Status Icon */}
             <div style={{ marginBottom: '20px' }}>
-              {initModal.status === 'syncing' && (
+              {(initModal.status === 'syncing' || initModal.status === 'checking') && (
                 <div style={{
                   width: '60px', height: '60px', margin: '0 auto',
                   border: '4px solid rgba(59, 130, 246, 0.3)',
@@ -2279,17 +2390,73 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   <span style={{ fontSize: '32px', color: '#ef4444' }}>✕</span>
                 </div>
               )}
+              {initModal.status === 'check_results' && (
+                <div style={{
+                  width: '60px', height: '60px', margin: '0 auto',
+                  background: Object.values(initModal.checks || {}).some(c => c.status === 'fail')
+                    ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <span style={{ fontSize: '32px', color: Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? '#eab308' : '#22c55e' }}>
+                    {Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? '!' : '✓'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Message */}
             <p style={{
-              marginBottom: '24px',
+              marginBottom: initModal.checks ? '16px' : '24px',
               fontSize: '16px',
               color: initModal.status === 'error' ? '#ef4444' :
                 initModal.status === 'success' ? '#22c55e' : 'var(--text)'
             }}>
               {initModal.message}
             </p>
+
+            {/* Connection checks checklist */}
+            {initModal.checks && (
+              <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+                {Object.entries(initModal.checks).map(([key, check]) => (
+                  <div key={key} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '8px 12px',
+                    borderBottom: '1px solid rgba(255,255,255,0.06)'
+                  }}>
+                    <span style={{ width: 20, textAlign: 'center', fontSize: 14, flexShrink: 0 }}>
+                      {check.status === 'pending' && (
+                        <span style={{
+                          display: 'inline-block', width: 14, height: 14,
+                          border: '2px solid rgba(59, 130, 246, 0.3)',
+                          borderTop: '2px solid #3b82f6',
+                          borderRadius: '50%',
+                          animation: 'spin 1s linear infinite'
+                        }} />
+                      )}
+                      {check.status === 'pass' && <span style={{ color: '#22c55e' }}>✓</span>}
+                      {check.status === 'warn' && <span style={{ color: '#eab308' }}>!</span>}
+                      {check.status === 'fail' && <span style={{ color: '#ef4444' }}>✕</span>}
+                      {check.status === 'skip' && <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
+                    </span>
+                    <span style={{
+                      fontSize: 13,
+                      color: check.status === 'skip' ? 'rgba(255,255,255,0.3)' : 'var(--text)',
+                      flex: 1
+                    }}>
+                      {check.label}
+                    </span>
+                    {check.detail && (
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                        {check.detail}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Error button */}
             {initModal.status === 'error' && (
@@ -2303,6 +2470,24 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   }}
                 >
                   {t('common.back', 'Back')}
+                </button>
+              </div>
+            )}
+
+            {/* Proceed anyway button (for check failures) */}
+            {initModal.status === 'check_results' && initModal.canProceed && (
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => {
+                    if (window.__coinTossCheckResolve) window.__coinTossCheckResolve()
+                  }}
+                  style={{
+                    padding: '12px 24px', fontSize: '14px', fontWeight: 600,
+                    background: 'var(--accent)', color: '#000',
+                    border: 'none', borderRadius: '8px', cursor: 'pointer'
+                  }}
+                >
+                  {t('coinToss.proceedAnyway', 'Proceed Anyway')}
                 </button>
               </div>
             )}
