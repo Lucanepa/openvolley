@@ -135,8 +135,60 @@ export function useRealtimeConnection({
     onDeletedRef.current = onDeleted
   }, [onDeleted])
 
+  // UUID retry timer ref
+  const uuidRetryRef = useRef(null)
+
+  // Helper: fetch data and deliver to callback
+  const fetchAndDeliver = useCallback((reason) => {
+    getMatchData(matchId).then(result => {
+      if (result.success && onDataRef.current) {
+        onDataRef.current(result)
+      }
+    }).catch(err => {
+      console.error(`[RealtimeConnection] Error fetching data after ${reason}:`, err)
+    })
+  }, [matchId])
+
+  // Helper: build a Supabase channel with all subscriptions
+  const buildChannel = useCallback((supabaseMatchUuid) => {
+    const channelId = `match-${matchId}-${Date.now()}`
+    const channel = supabase.channel(channelId)
+
+    // Subscribe to events, sets, and match_live_state using UUID
+    if (supabaseMatchUuid) {
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `match_id=eq.${supabaseMatchUuid}` },
+          () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('event') })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sets', filter: `match_id=eq.${supabaseMatchUuid}` },
+          () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('set update') })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'match_live_state', filter: `match_id=eq.${supabaseMatchUuid}` },
+          () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('live state update') })
+    }
+
+    // Always subscribe to matches table (uses external_id, no UUID needed)
+    channel
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `external_id=eq.${matchId}` },
+        (payload) => {
+          if (!isMountedRef.current) return
+          setLastUpdate(Date.now())
+          if (payload.eventType === 'DELETE') {
+            if (onDeletedRef.current) onDeletedRef.current()
+            return
+          }
+          fetchAndDeliver('match update')
+        })
+
+    return channel
+  }, [matchId, fetchAndDeliver])
+
   // Cleanup function
   const cleanup = useCallback(() => {
+    // Clear UUID retry timer
+    if (uuidRetryRef.current) {
+      clearTimeout(uuidRetryRef.current)
+      uuidRetryRef.current = null
+    }
+
     // Cleanup Supabase subscription
     if (supabaseChannelRef.current) {
       try {
@@ -163,158 +215,76 @@ export function useRealtimeConnection({
   // Connect to Supabase Realtime
   const connectSupabase = useCallback(async () => {
     if (!supabase || !matchId) {
-      console.log('[RealtimeConnection] Supabase not available or no matchId')
       return false
+    }
+
+    // Clear any pending UUID retry
+    if (uuidRetryRef.current) {
+      clearTimeout(uuidRetryRef.current)
+      uuidRetryRef.current = null
     }
 
     try {
       setStatus(CONNECTION_STATUS.CONNECTING)
-      console.log('[RealtimeConnection] Connecting to Supabase Realtime for match:', matchId)
 
-      // First, look up the Supabase UUID from external_id (seed_key)
-      // This is needed because events/sets tables use match_id (UUID), not external_id
+      // Look up the Supabase UUID from external_id (seed_key)
       let supabaseMatchUuid = null
-      const { data: matchData, error: lookupError } = await apiFrom('matches')
+      const { data: matchData } = await apiFrom('matches')
         .select('id')
         .eq('external_id', matchId)
         .maybeSingle()
 
       if (matchData?.id) {
         supabaseMatchUuid = matchData.id
-        console.log('[RealtimeConnection] Found Supabase UUID:', supabaseMatchUuid)
       }
 
-      // Build channel subscriptions
-      // Note: events/sets use UUID (match_id), matches uses external_id
-      // Add unique ID to prevent StrictMode double-mount conflicts
-      const channelId = `match-${matchId}-${Date.now()}`
-      const channel = supabase.channel(channelId)
+      // Build and subscribe to channel
+      const channel = buildChannel(supabaseMatchUuid)
 
-      // Only subscribe to events/sets/match_live_state if we have the UUID
-      if (supabaseMatchUuid) {
-        channel
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'events',
-              filter: `match_id=eq.${supabaseMatchUuid}`
-            },
-            (payload) => {
+      channel.subscribe((status) => {
+        if (!isMountedRef.current) return
+
+        if (status === 'SUBSCRIBED') {
+          setStatus(CONNECTION_STATUS.CONNECTED)
+          setActiveConnection('supabase')
+          setError(null)
+
+          // If we connected WITHOUT the UUID, retry the lookup periodically
+          // so we can upgrade to full subscriptions once the match is synced
+          if (!supabaseMatchUuid) {
+            console.warn('[RealtimeConnection] Connected without UUID — will retry lookup')
+            const retryLookup = async () => {
               if (!isMountedRef.current) return
-              console.log('[RealtimeConnection] Supabase event received:', payload)
-              setLastUpdate(Date.now())
+              const { data } = await apiFrom('matches')
+                .select('id')
+                .eq('external_id', matchId)
+                .maybeSingle()
 
-              // Fetch fresh data when events change
-              getMatchData(matchId).then(result => {
-                if (result.success && onDataRef.current) {
-                  onDataRef.current(result)
-                }
-              }).catch(err => {
-                console.error('[RealtimeConnection] Error fetching data after event:', err)
-              })
-            }
-          )
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'sets',
-              filter: `match_id=eq.${supabaseMatchUuid}`
-            },
-            (payload) => {
-              if (!isMountedRef.current) return
-              console.log('[RealtimeConnection] Supabase set update:', payload)
-              setLastUpdate(Date.now())
-
-              // Fetch fresh data when sets change
-              getMatchData(matchId).then(result => {
-                if (result.success && onDataRef.current) {
-                  onDataRef.current(result)
-                }
-              }).catch(err => {
-                console.error('[RealtimeConnection] Error fetching data after set update:', err)
-              })
-            }
-          )
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'match_live_state',
-              filter: `match_id=eq.${supabaseMatchUuid}`
-            },
-            (payload) => {
-              if (!isMountedRef.current) return
-              console.log('[RealtimeConnection] Supabase match_live_state update:', payload)
-              setLastUpdate(Date.now())
-
-              // Fetch fresh data when live state changes (scores, lineups, etc.)
-              getMatchData(matchId).then(result => {
-                if (result.success && onDataRef.current) {
-                  onDataRef.current(result)
-                }
-              }).catch(err => {
-                console.error('[RealtimeConnection] Error fetching data after live state update:', err)
-              })
-            }
-          )
-      } else {
-        console.warn('[RealtimeConnection] No Supabase UUID found, subscribing to matches only')
-      }
-
-      // Always subscribe to matches table changes including deletions (uses external_id)
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'matches',
-            filter: `external_id=eq.${matchId}`
-          },
-          (payload) => {
-            if (!isMountedRef.current) return
-            console.log('[RealtimeConnection] Supabase match update:', payload.eventType, payload)
-            setLastUpdate(Date.now())
-
-            // Handle match deletion
-            if (payload.eventType === 'DELETE') {
-              console.log('[RealtimeConnection] Match deleted, calling onDeleted callback')
-              if (onDeletedRef.current) {
-                onDeletedRef.current()
+              if (data?.id) {
+                // UUID now available — rebuild channel with full subscriptions
+                console.log('[RealtimeConnection] UUID found on retry, upgrading subscriptions')
+                try { supabase?.removeChannel(channel) } catch {}
+                const fullChannel = buildChannel(data.id)
+                fullChannel.subscribe((s) => {
+                  if (!isMountedRef.current) return
+                  if (s === 'SUBSCRIBED') {
+                    setStatus(CONNECTION_STATUS.CONNECTED)
+                    setActiveConnection('supabase')
+                    fetchAndDeliver('uuid retry')
+                  }
+                })
+                supabaseChannelRef.current = fullChannel
+              } else if (isMountedRef.current) {
+                // Still no UUID, retry again in 3 seconds
+                uuidRetryRef.current = setTimeout(retryLookup, 3000)
               }
-              return
             }
-
-            // Fetch fresh data when match changes
-            getMatchData(matchId).then(result => {
-              if (result.success && onDataRef.current) {
-                onDataRef.current(result)
-              }
-            }).catch(err => {
-              console.error('[RealtimeConnection] Error fetching data after match update:', err)
-            })
+            uuidRetryRef.current = setTimeout(retryLookup, 3000)
           }
-        )
-        .subscribe((status) => {
-          if (!isMountedRef.current) return
-          console.log('[RealtimeConnection] Supabase channel status:', status)
-
-          if (status === 'SUBSCRIBED') {
-            setStatus(CONNECTION_STATUS.CONNECTED)
-            setActiveConnection('supabase')
-            setError(null)
-            console.log('[RealtimeConnection] Connected to Supabase Realtime')
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.warn('[RealtimeConnection] Supabase channel error/timeout, status:', status)
-            // Don't set error state, just log - the connection may still work
-            // Supabase channels can sometimes report CLOSED/ERROR initially but still function
-          }
-        })
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[RealtimeConnection] Supabase channel error/timeout, status:', status)
+        }
+      })
 
       supabaseChannelRef.current = channel
       return true
@@ -323,7 +293,7 @@ export function useRealtimeConnection({
       setError(err.message)
       return false
     }
-  }, [matchId]) // Removed onData from deps - using ref instead
+  }, [matchId, buildChannel, fetchAndDeliver]) // Removed onData from deps - using ref instead
 
   // Connect to WebSocket
   const connectWebSocket = useCallback(() => {

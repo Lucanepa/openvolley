@@ -225,12 +225,9 @@ export default function BenchApp() {
     }
   }, [connectionMode])
 
-  // Load available matches on mount and periodically
+  // Load available matches on mount only (no auto-polling — use manual refresh button)
   useEffect(() => {
     loadMatches()
-    const interval = setInterval(loadMatches, 30000) // Refresh every 30 seconds
-
-    return () => clearInterval(interval)
   }, [loadMatches])
 
   // Check connection status periodically
@@ -936,17 +933,53 @@ export default function BenchApp() {
             }}>
               {t('benchDashboard.noActiveGames')}
             </div>
-           
+            <button
+              type="button"
+              onClick={loadMatches}
+              disabled={loadingMatches}
+              style={{
+                marginTop: '12px',
+                padding: '10px 20px',
+                fontSize: '14px',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '8px',
+                color: 'var(--accent)',
+                cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                opacity: loadingMatches ? 0.5 : 1
+              }}
+            >
+              {loadingMatches ? t('common.loading', 'Loading...') : `🔄 ${t('benchDashboard.loadGames', 'Load Games')}`}
+            </button>
           </div>
         ) : (
           <>
-          <p style={{
-            fontSize: '14px',
-            color: 'var(--muted)',
-            marginBottom: '32px'
-          }}>
-            {t('benchDashboard.selectGame')}
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px' }}>
+            <p style={{
+              fontSize: '14px',
+              color: 'var(--muted)',
+              margin: 0
+            }}>
+              {t('benchDashboard.selectGame')}
+            </p>
+            <button
+              type="button"
+              onClick={loadMatches}
+              disabled={loadingMatches}
+              style={{
+                padding: '4px 10px',
+                fontSize: '12px',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '6px',
+                color: 'var(--accent)',
+                cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                opacity: loadingMatches ? 0.5 : 1
+              }}
+            >
+              {loadingMatches ? '...' : '🔄'}
+            </button>
+          </div>
           <div style={{
             display: 'flex',
             flexDirection: 'column',
