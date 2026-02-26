@@ -19,7 +19,7 @@
  */
 
 import { execSync } from 'child_process'
-import { existsSync, mkdirSync, copyFileSync, rmSync, writeFileSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, copyFileSync, rmSync, writeFileSync, readFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -64,18 +64,34 @@ run([
   '--banner:js="const __import_meta_url = require(\'url\').pathToFileURL(__filename).href;"'
 ].join(' '))
 
-// Step 2: Generate SEA config
+// Step 2: Generate SEA config (embed public/ files as assets)
 step('Generating SEA configuration...')
+
+const publicDir = join(__dirname, 'public')
+const assets = {}
+if (existsSync(publicDir)) {
+  function walkDir(dir, prefix) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = join(dir, entry.name)
+      const key = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walkDir(fullPath, key)
+      else assets[key] = fullPath
+    }
+  }
+  walkDir(publicDir, '')
+  console.log(`  Embedding ${Object.keys(assets).length} static files from public/`)
+} else {
+  console.log('  No public/ directory found — building without static assets')
+}
+
 const seaConfig = {
   main: bundlePath,
   output: blobPath,
   disableExperimentalSEAWarning: true,
-  useCodeCache: true
+  useCodeCache: true,
+  assets
 }
 
-// If public/ directory exists with static assets, embed key files as SEA assets
-// Note: For large static file trees, it's better to keep them alongside the binary
-// rather than embedding. The binary will look for a public/ folder next to itself.
 const seaConfigPath = join(distDir, 'sea-config.json')
 writeFileSync(seaConfigPath, JSON.stringify(seaConfig, null, 2))
 
@@ -134,6 +150,5 @@ console.log(`
 To run:
    ${isWindows ? `.\\dist\\${outputName}` : `./dist/${outputName}`}
 
-The server will look for a public/ directory next to the binary
-for serving frontend files (referee, bench, livescore).
+${Object.keys(assets).length > 0 ? `Frontend assets embedded: ${Object.keys(assets).length} files` : 'No frontend assets embedded — place public/ next to the binary'}
 `)
