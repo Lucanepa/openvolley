@@ -36,11 +36,12 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Will release: $VERSION"
 
-  # --- Build frontend assets for the standalone server ---
-  build-server-frontend:
+  # --- Build indoor frontend assets (parallel) ---
+  build-indoor-frontend:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -50,12 +51,11 @@ jobs:
           cache: 'npm'
           cache-dependency-path: escoresheet/frontend/package-lock.json
 
-      # --- Indoor volleyball frontend ---
       - name: Install indoor frontend dependencies
         working-directory: escoresheet/frontend
         run: npm ci
 
-      - name: Remove canvas native dependency (indoor)
+      - name: Remove canvas native dependency
         working-directory: escoresheet/frontend
         run: |
           if [ -d "node_modules/canvas" ]; then
@@ -67,67 +67,116 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
           node scripts/build-subdomains.js referee
           node scripts/build-subdomains.js bench
           node scripts/build-subdomains.js roster
 
-      # --- Beach volleyball frontend ---
+      - name: Upload indoor frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: indoor-frontend
+          path: |
+            escoresheet/frontend/dist-referee/
+            escoresheet/frontend/dist-bench/
+            escoresheet/frontend/dist-roster/
+          retention-days: 1
+
+  # --- Build beach frontend assets (parallel) ---
+  build-beach-frontend:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
       - name: Clone openbeach repository
         uses: actions/checkout@v4
         with:
           repository: Lucanepa/openbeach
-          path: openbeach
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
 
       - name: Install beach frontend dependencies
-        working-directory: openbeach/escoresheet/frontend
+        working-directory: escoresheet/frontend
         run: npm ci
 
-      - name: Remove canvas native dependency (beach)
-        working-directory: openbeach/escoresheet/frontend
+      - name: Remove canvas native dependency
+        working-directory: escoresheet/frontend
         run: |
           if [ -d "node_modules/canvas" ]; then
             rm -rf node_modules/canvas
           fi
 
-      - name: Build beach frontend (referee + bench only)
-        working-directory: openbeach/escoresheet/frontend
+      - name: Build beach frontend (referee + scoreboard)
+        working-directory: escoresheet/frontend
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
           node scripts/build-subdomains.js beach-referee
           node scripts/build-subdomains.js beach-scoreboard
 
-      # --- Assemble server public directory ---
+      - name: Upload beach frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: beach-frontend
+          path: |
+            escoresheet/frontend/dist-beach-referee/
+            escoresheet/frontend/dist-beach-scoreboard/
+          retention-days: 1
+
+  # --- Assemble all frontend assets into server public directory ---
+  assemble-server-public:
+    needs: [check-version, build-indoor-frontend, build-beach-frontend]
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download indoor frontend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: indoor-frontend
+          path: indoor/
+
+      - name: Download beach frontend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: beach-frontend
+          path: beach/
+
       - name: Assemble server public directory
         run: |
-          # Indoor volleyball
-          mkdir -p escoresheet/backend/public/referee
-          mkdir -p escoresheet/backend/public/bench
-          mkdir -p escoresheet/backend/public/roster
-          cp -r escoresheet/frontend/dist-referee/* escoresheet/backend/public/referee/
-          cp -r escoresheet/frontend/dist-bench/* escoresheet/backend/public/bench/
-          cp -r escoresheet/frontend/dist-roster/* escoresheet/backend/public/roster/
+          mkdir -p public/referee public/bench public/roster
+          mkdir -p public/beach-referee public/beach-scoreboard
 
-          # Beach volleyball
-          mkdir -p escoresheet/backend/public/beach-referee
-          mkdir -p escoresheet/backend/public/beach-scoreboard
-          cp -r openbeach/escoresheet/frontend/dist-beach-referee/* escoresheet/backend/public/beach-referee/
-          cp -r openbeach/escoresheet/frontend/dist-beach-scoreboard/* escoresheet/backend/public/beach-scoreboard/
+          cp -r indoor/escoresheet/frontend/dist-referee/* public/referee/
+          cp -r indoor/escoresheet/frontend/dist-bench/* public/bench/
+          cp -r indoor/escoresheet/frontend/dist-roster/* public/roster/
+          cp -r beach/escoresheet/frontend/dist-beach-referee/* public/beach-referee/
+          cp -r beach/escoresheet/frontend/dist-beach-scoreboard/* public/beach-scoreboard/
+
+          echo "Assembled public directory:"
+          du -sh public/*/
 
       - name: Upload server public files
         uses: actions/upload-artifact@v4
         with:
           name: server-public
-          path: escoresheet/backend/public/
+          path: public/
           retention-days: 1
 
   # --- Standalone Server Binaries (Node.js SEA) ---
   build-server-linux:
-    needs: [check-version, build-server-frontend]
+    needs: [check-version, assemble-server-public]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -159,9 +208,10 @@ jobs:
           retention-days: 30
 
   build-server-windows:
-    needs: [check-version, build-server-frontend]
+    needs: [check-version, assemble-server-public]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -193,9 +243,10 @@ jobs:
           retention-days: 30
 
   build-server-macos:
-    needs: [check-version, build-server-frontend]
+    needs: [check-version, assemble-server-public]
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
