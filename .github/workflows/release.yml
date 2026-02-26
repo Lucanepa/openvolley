@@ -97,7 +97,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           node scripts/build-subdomains.js beach-referee
-          node scripts/build-subdomains.js beachapp
+          node scripts/build-subdomains.js beach-scoreboard
 
       # --- Assemble server public directory ---
       - name: Assemble server public directory
@@ -112,9 +112,9 @@ jobs:
 
           # Beach volleyball
           mkdir -p escoresheet/backend/public/beach-referee
-          mkdir -p escoresheet/backend/public/beach-bench
+          mkdir -p escoresheet/backend/public/beach-scoreboard
           cp -r openbeach/escoresheet/frontend/dist-beach-referee/* escoresheet/backend/public/beach-referee/
-          cp -r openbeach/escoresheet/frontend/dist-beachapp/* escoresheet/backend/public/beach-bench/
+          cp -r openbeach/escoresheet/frontend/dist-beach-scoreboard/* escoresheet/backend/public/beach-scoreboard/
 
       - name: Upload server public files
         uses: actions/upload-artifact@v4
@@ -263,7 +263,7 @@ jobs:
 
             ### Beach Volleyball
             - **Referee**: `/beach-referee`
-            - **Team Bench**: `/beach-bench`
+            - **Scoreboard**: `/beach-scoreboard`
 
             ### Downloads
             - **Windows**: `openvolley-server-win-x64.exe`
