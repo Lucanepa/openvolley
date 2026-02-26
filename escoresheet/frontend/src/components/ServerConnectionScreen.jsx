@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride } from '../utils/backendConfig'
 
@@ -6,7 +6,7 @@ const LAST_SERVER_KEY = 'openvolley_last_server'
 
 /**
  * ServerConnectionScreen — shown before PIN/match selection in Referee, Bench, Livescore apps.
- * Lets user choose between online (cloud) or local server, scan QR, or type an IP.
+ * Lets user choose between online (cloud) or local server, or type an IP.
  *
  * @param {Object} props
  * @param {function} props.onConnected - Called when server is confirmed reachable, with { serverUrl }
@@ -14,14 +14,11 @@ const LAST_SERVER_KEY = 'openvolley_last_server'
  */
 export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect = true }) {
   const { t } = useTranslation()
-  const [mode, setMode] = useState('online') // 'online' | 'local' | 'scanning'
+  const [mode, setMode] = useState('online') // 'online' | 'local'
   const [localAddress, setLocalAddress] = useState('')
   const [status, setStatus] = useState('idle') // 'idle' | 'checking' | 'connected' | 'failed'
   const [errorMsg, setErrorMsg] = useState(null)
   const [lastServer, setLastServer] = useState(null)
-  const [scannerReady, setScannerReady] = useState(false)
-  const scannerRef = useRef(null)
-  const scannerContainerRef = useRef(null)
 
   // Load last used server from localStorage
   useEffect(() => {
@@ -41,16 +38,6 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
       connectToServer(url, true)
     }
   }, [skipIfAutoConnect]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cleanup QR scanner on unmount
-  useEffect(() => {
-    return () => {
-      if (scannerRef.current) {
-        try { scannerRef.current.stop() } catch { /* ignore */ }
-        scannerRef.current = null
-      }
-    }
-  }, [])
 
   const saveLastServer = useCallback((url, label) => {
     try {
@@ -138,78 +125,6 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
     }
   }, [lastServer, connectToServer])
 
-  const startQRScanner = useCallback(async () => {
-    setMode('scanning')
-    setScannerReady(false)
-
-    // Dynamically import html5-qrcode to keep bundle size down
-    try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-
-      // Wait for DOM element
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      if (!scannerContainerRef.current) return
-
-      const scanner = new Html5Qrcode('qr-scanner-region')
-      scannerRef.current = scanner
-
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          // QR code scanned — parse the URL
-          scanner.stop().catch(() => {})
-          scannerRef.current = null
-
-          // The QR code may contain a full URL with server + match params
-          try {
-            const url = new URL(decodedText)
-            const serverParam = url.searchParams.get('server') || `${url.protocol}//${url.host}`
-            const matchParam = url.searchParams.get('match')
-            const teamParam = url.searchParams.get('team')
-
-            // Set server and pass match info
-            if (serverParam) {
-              setBackendOverride(serverParam.startsWith('http') ? serverParam : `http://${serverParam}`)
-            }
-
-            // Store match/team params for the app to pick up
-            if (matchParam) {
-              const currentParams = new URLSearchParams(window.location.search)
-              currentParams.set('match', matchParam)
-              if (teamParam) currentParams.set('team', teamParam)
-              if (serverParam) currentParams.set('server', serverParam)
-              const newUrl = `${window.location.pathname}?${currentParams.toString()}`
-              window.history.replaceState({}, '', newUrl)
-            }
-
-            connectToServer(serverParam.startsWith('http') ? serverParam : `http://${serverParam}`)
-          } catch {
-            // Not a valid URL, try using it as a server address
-            connectToServer(decodedText)
-          }
-          setMode('local')
-        },
-        () => { /* ignore scan errors */ }
-      )
-      setScannerReady(true)
-    } catch (err) {
-      console.error('[ServerConnection] QR scanner error:', err)
-      setErrorMsg(t('connection.cameraError', 'Could not access camera'))
-      setMode('local')
-    }
-  }, [connectToServer, t])
-
-  const stopQRScanner = useCallback(() => {
-    if (scannerRef.current) {
-      try { scannerRef.current.stop() } catch { /* ignore */ }
-      scannerRef.current = null
-    }
-    setMode('local')
-    setScannerReady(false)
-  }, [])
-
   // Status indicator
   const renderStatus = () => {
     if (status === 'idle') return null
@@ -259,51 +174,6 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
             </button>
           </div>
         )}
-      </div>
-    )
-  }
-
-  // QR Scanner view
-  if (mode === 'scanning') {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: '#0a0a0a',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        color: '#fff'
-      }}>
-        <h2 style={{ margin: '0 0 16px', fontSize: 20, fontWeight: 600 }}>
-          {t('connection.scanQRCode', 'Scan QR Code')}
-        </h2>
-        <div
-          ref={scannerContainerRef}
-          id="qr-scanner-region"
-          style={{ width: 300, height: 300, borderRadius: 12, overflow: 'hidden' }}
-        />
-        {!scannerReady && (
-          <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12 }}>
-            {t('connection.startingCamera', 'Starting camera...')}
-          </p>
-        )}
-        <button
-          onClick={stopQRScanner}
-          style={{
-            marginTop: 24,
-            padding: '10px 24px',
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 8,
-            color: '#fff',
-            cursor: 'pointer',
-            fontSize: 14
-          }}
-        >
-          {t('modal.cancel', 'Cancel')}
-        </button>
       </div>
     )
   }
@@ -414,42 +284,6 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
             </button>
           </div>
         </div>
-
-        {/* Divider */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-          margin: '16px 0',
-          color: 'rgba(255,255,255,0.3)',
-          fontSize: 12
-        }}>
-          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-          {t('connection.or', 'or')}
-          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-        </div>
-
-        {/* QR Code scan button */}
-        <button
-          onClick={startQRScanner}
-          style={{
-            width: '100%',
-            padding: '12px 20px',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: 12,
-            color: '#fff',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
-            fontSize: 14
-          }}
-        >
-          <span style={{ fontSize: 20 }}>📷</span>
-          {t('connection.scanQRCode', 'Scan QR Code')}
-        </button>
 
         {/* Last used server */}
         {lastServer && (
