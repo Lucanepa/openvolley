@@ -141,12 +141,15 @@ if (HAS_STATIC) {
 }
 
 // --- Local IP detection ---
+// Virtual/VPN interfaces to hide from the default banner
+const HIDDEN_INTERFACES = /^(tailscale|tun|tap|docker|br-|veth|virbr|wg|zt|utun)/i
+
 function getLocalIPs() {
   const ips = []
   const interfaces = os.networkInterfaces()
   for (const [name, addrs] of Object.entries(interfaces)) {
     for (const addr of addrs) {
-      if (addr.family === 'IPv4' && !addr.internal) {
+      if (addr.family === 'IPv4' && !addr.internal && !HIDDEN_INTERFACES.test(name)) {
         ips.push({ name, address: addr.address })
       }
     }
