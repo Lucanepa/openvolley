@@ -180,8 +180,10 @@ export default defineConfig({
     },
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.png'],
+      includeAssets: ['openvolley_no_bg.png'],
       workbox: {
+        // Disable workbox console logs in production
+        mode: 'production',
         // Don't skip waiting automatically - let user choose when to update
         skipWaiting: false,
         clientsClaim: true,
@@ -251,8 +253,8 @@ export default defineConfig({
         background_color: '#ffffff',
         theme_color: '#111827',
         icons: [
-          { src: 'favicon.png', sizes: '192x192', type: 'image/png' },
-          { src: 'favicon.png', sizes: '512x512', type: 'image/png' }
+          { src: 'openvolley_no_bg.png', sizes: '192x192', type: 'image/png' },
+          { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
         ]
       }
     }),
@@ -279,13 +281,19 @@ export default defineConfig({
       },
       output: {
         format: 'es',
-        // Keep React and Dexie in separate chunks to avoid initialization issues
+        // Split vendor libraries into separate cached chunks
         manualChunks: (id) => {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
             return 'react-vendor'
           }
           if (id.includes('node_modules/dexie')) {
             return 'dexie-vendor'
+          }
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html-to-image')) {
+            return 'pdf-vendor'
+          }
+          if (id.includes('node_modules/i18next') || id.includes('node_modules/react-i18next')) {
+            return 'i18n-vendor'
           }
         }
       }

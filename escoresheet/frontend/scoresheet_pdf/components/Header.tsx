@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import swissvolleyLogo from './swissvolleylogo.jpg';
-import favicon from '../../src/favicon.png';
+// Logo for white background (scoresheet PDF)
+const openvolleyLogo = '/openvolley_no_bg.png';
+import { formatTimeLocal } from '../../src/utils/timeUtils';
 
 interface HeaderProps {
   match?: any;
@@ -14,11 +16,14 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamAName, teamBName, coinTossConfirmed }) => {
   const [imageError, setImageError] = useState(false);
   const [faviconImageError, setFaviconImageError] = useState(false);
-  
-  // Format date and time
+
+  // Determine if home team is "A" based on coin toss result
+  const homeIsA = (match?.coinTossTeamA || 'home') === 'home';
+
+  // Format date and time (display in local timezone)
   const scheduledDate = match?.scheduledAt ? new Date(match.scheduledAt) : null;
   const dateStr = scheduledDate ? scheduledDate.toISOString().split('T')[0] : '';
-  const timeStr = scheduledDate ? scheduledDate.toTimeString().slice(0, 5) : '';
+  const timeStr = match?.scheduledAt ? formatTimeLocal(match.scheduledAt) : '';
 
   return (
     <header className="border border-black bg-white">
@@ -27,16 +32,12 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             {/* Swiss Volley Logo Section with Fallback */}
             {!imageError ? (
                 <img
-                    src={swissvolleyLogo}
-                    alt="Swiss Volley Region Zürich"
-                    className="h-8 object-contain mx-auto"
+                    src={openvolleyLogo}
+                    alt="Openvolley eScoresheet"
+                    style={{ aspectRatio: '1/1', height:'45px' }}
                     onError={() => setImageError(true)}
                 />
-            ) : (
-                <div className="flex flex-col items-center select-none text-[10px] font-bold text-gray-600">
-                  Swiss Volley
-                </div>
-            )}
+            ) : null}
         </div>
         
         <div className="flex-1 w-full md:w-auto grid grid-cols-1 md:grid-cols-4 gap-0.5 text-xs min-w-0 overflow-hidden">
@@ -114,7 +115,6 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <input
                             type="text"
                             className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
-                            placeholder=""
                             value={match?.championshipTypeOther || ''}
                             onChange={e => {
                                 if (typeof match === 'object' && match !== null && typeof match.setChampionshipTypeOther === 'function') {
@@ -122,17 +122,18 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                                 }
                             }}
                             disabled={!((match && typeof match.setChampionshipTypeOther === 'function'))}
+                            aria-label="Other championship type"
                         />
                     </div>
                 </div>
             </div>
             
-            {/* Category Block */}
+            {/* Gender Block */}
             <div className="border-r border-black p-1 min-w-0 overflow-hidden">
                 <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
                     <div className="flex items-center gap-0.5">
                          <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.category === 'men' || match?.match_type_2 === 'men') && (
+                             {(match?.gender === 'men' || match?.match_type_2 === 'men') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
                          </div>
@@ -156,7 +157,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                      </div>
                      <div className="flex items-center gap-0.5">
                          <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.category === 'women' || match?.match_type_2 === 'women') && (
+                             {(match?.gender === 'women' || match?.match_type_2 === 'women') && (
                                  <span className="text-[10px] font-bold leading-none">X</span>
                              )}
                          </div>
@@ -179,13 +180,13 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <input
                              type="text"
                              className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
-                             placeholder=""
                              value={match?.match_type_3_other || ''}
                              onChange={e => {
                                  if (typeof match === 'object' && match !== null && typeof match.setMatchType3Other === 'function') {
                                      match.setMatchType3Other(e.target.value);
                                  }
                              }}
+                             aria-label="Other age category"
                              disabled={!((match && typeof match.setMatchType3Other === 'function'))}
                          />
                      </div>
@@ -206,12 +207,12 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
         </div>
 
         <div className="flex items-center justify-center min-w-[120px]">
-            {/* favicon Logo Section with Fallback */}
+            {/* Openvolley Logo Section with Fallback */}
             {!faviconImageError ? (
                 <img
-                    src={favicon}
-                    alt="favicon"
-                    className="h-8 object-contain mx-0"
+                    src={openvolleyLogo}
+                    alt="Openvolley"
+                    style={{ aspectRatio: '1/1', height:'45px' }}
                     onError={() => setFaviconImageError(true)}
                 />
             ) : (
@@ -224,28 +225,31 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
 
       {/* Teams and Location */}
       <div className="grid grid-cols-12 gap-0 border-t border-black text-xs">
-        {/* Teams: 6 cols with A/B circles spanning both rows */}
-        <div className="col-span-6 border-r border-black px-2 flex">
-            {/* Circle A column - centered vertically */}
-            <div className="flex items-center justify-center px-1">
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? 'A' : ''}</div>
-            </div>
-            {/* Teams content - TEAMS header and team names */}
-            <div className="flex-1 flex flex-col justify-between">
-                <div className="w-full text-center mb-0.5">
-                    <span className="text-[15px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+        {/* Teams: 5-column grid layout with TEAMS above VS */}
+        <div className="col-span-6 border-r border-black px-2 py-1">
+            {/* 5-column grid: Circle | Home Name | TEAMS/VS | Away Name | Circle */}
+            <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-1">
+                {/* Col 1: Left circle (Home team A/B) - vertically centered */}
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
+                    {coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}
                 </div>
-                <div className="flex items-end gap-1 mb-0.5">
-                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{coinTossConfirmed ? teamAName : (homeTeam?.name || '')}</div>
-                    <div className="flex items-center h-full">
-                        <span className="text-base font-bold text-gray-500 italic">VS</span>
-                    </div>
-                    <div className="flex-1 font-bold text-[18px] uppercase text-center bg-white pb-0.5">{coinTossConfirmed ? teamBName : (awayTeam?.name || '')}</div>
+                {/* Col 2: Home team name - vertically centered */}
+                <div className="font-bold text-[18px] uppercase text-center bg-white">
+                    {homeTeam?.name || ''}
                 </div>
-            </div>
-            {/* Circle B column - centered vertically */}
-            <div className="flex items-center justify-center px-1">
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">{coinTossConfirmed ? 'B' : ''}</div>
+                {/* Col 3: TEAMS label above VS */}
+                <div className="flex flex-col items-center px-2">
+                    <span className="text-[12px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+                    <span className="text-base font-bold text-gray-500 italic">VS</span>
+                </div>
+                {/* Col 4: Away team name - vertically centered */}
+                <div className="font-bold text-[18px] uppercase text-center bg-white">
+                    {awayTeam?.name || ''}
+                </div>
+                {/* Col 5: Right circle (Away team A/B) - vertically centered */}
+                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
+                    {coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}
+                </div>
             </div>
         </div>
 

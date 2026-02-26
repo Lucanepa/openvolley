@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getApiUrl } from '../utils/backendConfig'
+import { useScaledLayout } from '../hooks/useScaledLayout'
 
 const CONTACT_TYPES = ['support', 'feedback', 'request']
 
@@ -29,35 +30,35 @@ const SEVERITY_LEVELS = [
   { value: 4, label: 'severity4' }
 ]
 
-function Dropdown({ label, value, onChange, options, placeholder, t, translationPrefix, required = false }) {
+function Dropdown({ label, value, onChange, options, placeholder, t, translationPrefix, required = false, scaleFactor = 1 }) {
   return (
-    <div style={{ marginBottom: '16px' }}>
+    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
       <label style={{
         display: 'block',
-        marginBottom: '6px',
-        fontSize: '14px',
+        marginBottom: `${Math.round(6 * scaleFactor)}px`,
+        fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
         color: 'rgba(255,255,255,0.9)'
       }}>
-        {label}{required && <span style={{ color: '#ef4444', marginLeft: '4px' }}>*</span>}
+        {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
       </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
           width: '100%',
-          padding: '10px 12px',
-          fontSize: '14px',
+          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
+          fontSize: `${Math.round(14 * scaleFactor)}px`,
           background: 'rgba(255,255,255,0.1)',
           border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: '8px',
+          borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           cursor: 'pointer',
           appearance: 'none',
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
           backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'right 10px center',
-          backgroundSize: '16px'
+          backgroundPosition: `right ${Math.round(10 * scaleFactor)}px center`,
+          backgroundSize: `${Math.round(16 * scaleFactor)}px`
         }}
       >
         <option value="" style={{ background: '#1f2937' }}>{placeholder}</option>
@@ -74,17 +75,17 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
   )
 }
 
-function TextArea({ label, value, onChange, placeholder, rows = 4, required = false }) {
+function TextArea({ label, value, onChange, placeholder, rows = 4, required = false, scaleFactor = 1 }) {
   return (
-    <div style={{ marginBottom: '16px' }}>
+    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
       <label style={{
         display: 'block',
-        marginBottom: '6px',
-        fontSize: '14px',
+        marginBottom: `${Math.round(6 * scaleFactor)}px`,
+        fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
         color: 'rgba(255,255,255,0.9)'
       }}>
-        {label}{required && <span style={{ color: '#ef4444', marginLeft: '4px' }}>*</span>}
+        {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
       </label>
       <textarea
         value={value}
@@ -93,11 +94,11 @@ function TextArea({ label, value, onChange, placeholder, rows = 4, required = fa
         rows={rows}
         style={{
           width: '100%',
-          padding: '10px 12px',
-          fontSize: '14px',
+          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
+          fontSize: `${Math.round(14 * scaleFactor)}px`,
           background: 'rgba(255,255,255,0.1)',
           border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: '8px',
+          borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           resize: 'vertical',
           fontFamily: 'inherit',
@@ -108,17 +109,17 @@ function TextArea({ label, value, onChange, placeholder, rows = 4, required = fa
   )
 }
 
-function TextInput({ label, value, onChange, placeholder, type = 'text', required = false }) {
+function TextInput({ label, value, onChange, placeholder, type = 'text', required = false, scaleFactor = 1 }) {
   return (
-    <div style={{ marginBottom: '16px' }}>
+    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
       <label style={{
         display: 'block',
-        marginBottom: '6px',
-        fontSize: '14px',
+        marginBottom: `${Math.round(6 * scaleFactor)}px`,
+        fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
         color: 'rgba(255,255,255,0.9)'
       }}>
-        {label}{required && <span style={{ color: '#ef4444', marginLeft: '4px' }}>*</span>}
+        {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
       </label>
       <input
         type={type}
@@ -127,11 +128,11 @@ function TextInput({ label, value, onChange, placeholder, type = 'text', require
         placeholder={placeholder}
         style={{
           width: '100%',
-          padding: '10px 12px',
-          fontSize: '14px',
+          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
+          fontSize: `${Math.round(14 * scaleFactor)}px`,
           background: 'rgba(255,255,255,0.1)',
           border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: '8px',
+          borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           boxSizing: 'border-box'
         }}
@@ -140,7 +141,7 @@ function TextInput({ label, value, onChange, placeholder, type = 'text', require
   )
 }
 
-function FileAttachment({ label, files, onFilesChange, t }) {
+function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
   const fileInputRef = useRef(null)
 
   const handleFileSelect = (e) => {
@@ -160,11 +161,11 @@ function FileAttachment({ label, files, onFilesChange, t }) {
   }
 
   return (
-    <div style={{ marginBottom: '16px' }}>
+    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
       <label style={{
         display: 'block',
-        marginBottom: '6px',
-        fontSize: '14px',
+        marginBottom: `${Math.round(6 * scaleFactor)}px`,
+        fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
         color: 'rgba(255,255,255,0.9)'
       }}>
@@ -181,11 +182,11 @@ function FileAttachment({ label, files, onFilesChange, t }) {
       <button
         onClick={() => fileInputRef.current?.click()}
         style={{
-          padding: '10px 16px',
-          fontSize: '14px',
+          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(16 * scaleFactor)}px`,
+          fontSize: `${Math.round(14 * scaleFactor)}px`,
           background: 'rgba(255,255,255,0.1)',
           border: '1px dashed rgba(255,255,255,0.3)',
-          borderRadius: '8px',
+          borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           cursor: 'pointer',
           width: '100%',
@@ -195,16 +196,16 @@ function FileAttachment({ label, files, onFilesChange, t }) {
         {t('supportFeedback.attachFiles')}
       </button>
       {files.length > 0 && (
-        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ marginTop: `${Math.round(8 * scaleFactor)}px`, display: 'flex', flexDirection: 'column', gap: `${Math.round(4 * scaleFactor)}px` }}>
           {files.map((file, index) => (
             <div key={index} style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '6px 10px',
+              padding: `${Math.round(6 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px`,
               background: 'rgba(255,255,255,0.05)',
-              borderRadius: '6px',
-              fontSize: '12px'
+              borderRadius: `${Math.round(6 * scaleFactor)}px`,
+              fontSize: `${Math.round(12 * scaleFactor)}px`
             }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                 {file.name} ({formatFileSize(file.size)})
@@ -216,8 +217,8 @@ function FileAttachment({ label, files, onFilesChange, t }) {
                   border: 'none',
                   color: '#ef4444',
                   cursor: 'pointer',
-                  padding: '2px 6px',
-                  fontSize: '14px'
+                  padding: `${Math.round(2 * scaleFactor)}px ${Math.round(6 * scaleFactor)}px`,
+                  fontSize: `${Math.round(14 * scaleFactor)}px`
                 }}
               >
                 ×
@@ -232,6 +233,7 @@ function FileAttachment({ label, files, onFilesChange, t }) {
 
 export default function SupportFeedbackModal({ open, onClose, currentPage = 'mainPage' }) {
   const { t } = useTranslation()
+  const { scaleFactor } = useScaledLayout()
   const [contactType, setContactType] = useState('')
   const [area, setArea] = useState(currentPage)
   const [supportType, setSupportType] = useState('')
@@ -355,25 +357,25 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
           top: 0,
           background: '#1f2937',
           borderBottom: '1px solid rgba(255,255,255,0.1)',
-          padding: '12px 24px',
+          padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           zIndex: 10
         }}>
-          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#22c55e' }}>
+          <h2 style={{ margin: 0, fontSize: `${Math.round(18 * scaleFactor)}px`, fontWeight: 600, color: '#22c55e' }}>
             {t('supportFeedback.sent')}
           </h2>
           <button
             onClick={handleClose}
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '6px',
+              width: `${Math.round(32 * scaleFactor)}px`,
+              height: `${Math.round(32 * scaleFactor)}px`,
+              borderRadius: `${Math.round(6 * scaleFactor)}px`,
               border: 'none',
               background: 'rgba(255,255,255,0.1)',
               color: 'var(--text)',
-              fontSize: '18px',
+              fontSize: `${Math.round(18 * scaleFactor)}px`,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -383,21 +385,21 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             ×
           </button>
         </div>
-        <div style={{ padding: '24px', textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
-          <p style={{ fontSize: '16px', color: 'rgba(255,255,255,0.9)', marginBottom: '24px' }}>
+        <div style={{ padding: `${Math.round(24 * scaleFactor)}px`, textAlign: 'center' }}>
+          <div style={{ fontSize: `${Math.round(48 * scaleFactor)}px`, marginBottom: `${Math.round(16 * scaleFactor)}px` }}>✓</div>
+          <p style={{ fontSize: `${Math.round(16 * scaleFactor)}px`, color: 'rgba(255,255,255,0.9)', marginBottom: `${Math.round(24 * scaleFactor)}px` }}>
             {successMessage}
           </p>
           <button
             onClick={handleClose}
             style={{
-              padding: '12px 24px',
-              fontSize: '14px',
+              padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
+              fontSize: `${Math.round(14 * scaleFactor)}px`,
               fontWeight: 600,
               background: '#22c55e',
               color: '#fff',
               border: 'none',
-              borderRadius: '8px',
+              borderRadius: `${Math.round(8 * scaleFactor)}px`,
               cursor: 'pointer'
             }}
           >
@@ -423,25 +425,25 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
         top: 0,
         background: '#1f2937',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
-        padding: '12px 24px',
+        padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         zIndex: 10
       }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
+        <h2 style={{ margin: 0, fontSize: `${Math.round(18 * scaleFactor)}px`, fontWeight: 600 }}>
           {t('supportFeedback.title')}
         </h2>
         <button
           onClick={handleClose}
           style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '6px',
+            width: `${Math.round(32 * scaleFactor)}px`,
+            height: `${Math.round(32 * scaleFactor)}px`,
+            borderRadius: `${Math.round(6 * scaleFactor)}px`,
             border: 'none',
             background: 'rgba(255,255,255,0.1)',
             color: 'var(--text)',
-            fontSize: '18px',
+            fontSize: `${Math.round(18 * scaleFactor)}px`,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -453,7 +455,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
       </div>
 
       {/* Content */}
-      <div style={{ padding: '24px', maxHeight: 'calc(80vh - 60px)', overflowY: 'auto' }}>
+      <div style={{ padding: `${Math.round(24 * scaleFactor)}px`, maxHeight: `calc(80vh - ${Math.round(60 * scaleFactor)}px)`, overflowY: 'auto' }}>
         {/* Contact Type */}
         <Dropdown
           label={t('supportFeedback.contactTypeLabel')}
@@ -464,6 +466,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
           t={t}
           translationPrefix="supportFeedback.types"
           required={true}
+          scaleFactor={scaleFactor}
         />
 
         {/* Area (only after type is selected) */}
@@ -477,6 +480,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             t={t}
             translationPrefix="supportFeedback.areas"
             required={true}
+            scaleFactor={scaleFactor}
           />
         )}
 
@@ -491,6 +495,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             t={t}
             translationPrefix="supportFeedback.supportTypes"
             required={true}
+            scaleFactor={scaleFactor}
           />
         )}
 
@@ -505,6 +510,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             t={t}
             translationPrefix="supportFeedback.severities"
             required={true}
+            scaleFactor={scaleFactor}
           />
         )}
 
@@ -517,6 +523,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             placeholder={t('supportFeedback.commentsPlaceholder')}
             rows={5}
             required={true}
+            scaleFactor={scaleFactor}
           />
         )}
 
@@ -527,6 +534,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             files={files}
             onFilesChange={setFiles}
             t={t}
+            scaleFactor={scaleFactor}
           />
         )}
 
@@ -539,19 +547,20 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             placeholder={t('supportFeedback.emailPlaceholder')}
             type="email"
             required={true}
+            scaleFactor={scaleFactor}
           />
         )}
 
         {/* Error message */}
         {error && (
           <div style={{
-            padding: '10px 12px',
+            padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
             background: 'rgba(239, 68, 68, 0.2)',
             border: '1px solid rgba(239, 68, 68, 0.4)',
-            borderRadius: '8px',
+            borderRadius: `${Math.round(8 * scaleFactor)}px`,
             color: '#ef4444',
-            fontSize: '14px',
-            marginBottom: '16px'
+            fontSize: `${Math.round(14 * scaleFactor)}px`,
+            marginBottom: `${Math.round(16 * scaleFactor)}px`
           }}>
             {error}
           </div>
@@ -564,13 +573,13 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
             disabled={sending}
             style={{
               width: '100%',
-              padding: '14px 24px',
-              fontSize: '16px',
+              padding: `${Math.round(14 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
+              fontSize: `${Math.round(16 * scaleFactor)}px`,
               fontWeight: 600,
               background: sending ? 'rgba(34, 197, 94, 0.5)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
               color: '#fff',
               border: 'none',
-              borderRadius: '8px',
+              borderRadius: `${Math.round(8 * scaleFactor)}px`,
               cursor: sending ? 'not-allowed' : 'pointer',
               transition: 'transform 0.2s, box-shadow 0.2s'
             }}

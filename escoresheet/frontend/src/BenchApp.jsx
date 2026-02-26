@@ -1,13 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
-import RosterSetup from './components/RosterSetup'
 import MatchEntry from './components/MatchEntry'
-import SimpleHeader from './components/SimpleHeader'
+import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
+import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { setBackendOverride } from './utils/backendConfig'
 import mikasaVolleyball from './mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -18,6 +23,9 @@ const CONNECTION_MODES = {
 
 export default function BenchApp() {
   const { t } = useTranslation()
+  const [serverReady, setServerReady] = useState(false)
+  const [autoConnectMatch, setAutoConnectMatch] = useState(null)
+  const [autoConnectTeam, setAutoConnectTeam] = useState(null)
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
@@ -45,6 +53,66 @@ export default function BenchApp() {
   })
   const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket'
   const supabaseChannelRef = useRef(null)
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // Check URL params for auto-connect on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const matchParam = params.get('match')
+    const serverParam = params.get('server')
+    const teamParam = params.get('team')
+
+    if (serverParam) {
+      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+    }
+
+    if (matchParam) {
+      setAutoConnectMatch(matchParam)
+      if (teamParam === 'home' || teamParam === 'away') {
+        setAutoConnectTeam(teamParam)
+      }
+      setServerReady(true)
+    }
+  }, [])
+
+  // Auto-connect to match from URL params
+  useEffect(() => {
+    if (!autoConnectMatch || !serverReady) return
+
+    const doAutoConnect = async () => {
+      try {
+        const result = await getMatchData(autoConnectMatch)
+        if (result.success && result.match) {
+          setMatchId(result.match.id || autoConnectMatch)
+          setMatch(result.match)
+          setSelectedMatch(result.match)
+          if (autoConnectTeam) {
+            setSelectedTeam(autoConnectTeam)
+            setView('match')
+          }
+        }
+      } catch { /* fall through to normal flow */ }
+      setAutoConnectMatch(null)
+      setAutoConnectTeam(null)
+    }
+    doAutoConnect()
+  }, [autoConnectMatch, autoConnectTeam, serverReady])
+
+  // Handle server connection established
+  const handleServerConnected = useCallback(() => {
+    setServerReady(true)
+  }, [])
+
+  // Track viewport size for narrow screen blocking
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Preload assets that are used later (e.g., volleyball image)
   useEffect(() => {
@@ -172,44 +240,48 @@ export default function BenchApp() {
     }
   }, [wakeLockActive])
 
-  // Load available matches on mount and periodically
-  useEffect(() => {
-    const loadMatches = async () => {
-      setLoadingMatches(true)
-      try {
-        // Try Supabase first if in AUTO or SUPABASE mode
-        const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+  // Load available matches function - extracted so it can be called manually
+  const loadMatches = useCallback(async () => {
+    setLoadingMatches(true)
+    try {
+      // Try Supabase first if in AUTO or SUPABASE mode
+      const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+        connectionMode === CONNECTION_MODES.AUTO
 
-        if (useSupabase && supabase) {
-          const result = await listAvailableMatchesSupabase()
-          if (result.success && result.matches && result.matches.length > 0) {
+      if (useSupabase) {
+        const result = await listAvailableMatchesForBenchSupabase()
+        if (result.success) {
+          // Supabase is connected even if there are no matches
+          setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
+          if (result.matches && result.matches.length > 0) {
             setAvailableMatches(result.matches)
-            setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
             setActiveConnection('supabase')
             setLoadingMatches(false)
             return
           }
+        } else {
+          // Supabase call failed
+          setConnectionStatuses(prev => ({ ...prev, supabase: 'disconnected' }))
         }
-
-        // Fall back to WebSocket/server
-        const result = await listAvailableMatches()
-        if (result.success && result.matches) {
-          setAvailableMatches(result.matches)
-          setActiveConnection('websocket')
-        }
-      } catch (err) {
-        console.error('[Bench] Error loading matches:', err)
-      } finally {
-        setLoadingMatches(false)
       }
+
+      // Fall back to WebSocket/server
+      const result = await listAvailableMatches()
+      if (result.success && result.matches) {
+        setAvailableMatches(result.matches)
+        setActiveConnection('websocket')
+      }
+    } catch (err) {
+      console.error('[Bench] Error loading matches:', err)
+    } finally {
+      setLoadingMatches(false)
     }
-
-    loadMatches()
-    const interval = setInterval(loadMatches, 30000) // Refresh every 30 seconds
-
-    return () => clearInterval(interval)
   }, [connectionMode])
+
+  // Load available matches on mount only (no auto-polling — use manual refresh button)
+  useEffect(() => {
+    loadMatches()
+  }, [loadMatches])
 
   // Check connection status periodically
   useEffect(() => {
@@ -221,13 +293,23 @@ export default function BenchApp() {
     )
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
-    // For static deployments without backend, set server as not_available but keep Supabase
+    // For static deployments without backend, set server as not_available but check Supabase
     if (isStaticDeployment && !hasBackendUrl) {
-      setConnectionStatuses(prev => ({
-        ...prev, // Preserve supabase status
-        server: 'not_available',
-        websocket: 'not_available'
-      }))
+      const checkSupabaseOnly = async () => {
+        let supabaseConnected = false
+        try {
+          const { error } = await apiFrom('matches').select('id').limit(1)
+          supabaseConnected = !error
+        } catch {
+          supabaseConnected = false
+        }
+        setConnectionStatuses(prev => ({
+          ...prev,
+          server: 'not_available',
+          websocket: 'not_available',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
+        }))
+      }
       setConnectionDebugInfo({
         server: {
           status: 'not_available',
@@ -235,19 +317,32 @@ export default function BenchApp() {
           details: 'Real-time WebSocket updates are not available. Match data is loaded from Supabase database.'
         }
       })
-      return // Don't start polling for server status
+      checkSupabaseOnly()
+      const interval = setInterval(checkSupabaseOnly, 10000)
+      return () => clearInterval(interval)
     }
 
     const checkConnections = async () => {
       try {
         const serverStatus = await getServerStatus()
-        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'not_applicable'
+        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'no_match'
 
         const serverConnected = serverStatus?.running
+
+        // Check Supabase connectivity with a simple query
+        let supabaseConnected = false
+        try {
+          const { error } = await apiFrom('matches').select('id').limit(1)
+          supabaseConnected = !error
+        } catch {
+          supabaseConnected = false
+        }
+
         setConnectionStatuses(prev => ({
-          ...prev, // Preserve supabase status
+          ...prev,
           server: serverConnected ? 'connected' : 'disconnected',
-          websocket: matchId ? wsStatus : 'not_applicable'
+          websocket: matchId ? wsStatus : 'no_match',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
         }))
 
         // Build debug info for disconnected services
@@ -340,6 +435,7 @@ export default function BenchApp() {
       if (result.success && result.match) {
         setMatchId(result.match.id)
         setMatch(result.match)
+        setView('match') // Go directly to match view (like RefereeApp)
       } else {
         setError('Invalid PIN code. Please check and try again.')
         setPinInput('')
@@ -349,10 +445,6 @@ export default function BenchApp() {
       setError(err.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
       setPinInput('')
     }
-  }
-
-  const handleViewSelect = (viewType) => {
-    setView(viewType)
   }
 
   // Hidden test mode - 6 clicks on "No active game found"
@@ -427,6 +519,11 @@ export default function BenchApp() {
   const homeTeamName = selectedMatch?.homeTeamName || 'Home Team'
   const awayTeamName = selectedMatch?.awayTeamName || 'Away Team'
 
+  // Show server connection screen first (unless auto-connecting via URL params)
+  if (!serverReady) {
+    return <ServerConnectionScreen onConnected={handleServerConnected} />
+  }
+
   // If view is selected, show the appropriate component wrapped with SimpleHeader
   if (matchId && view) {
     const teamName = selectedTeam === 'home' ? homeTeamName : awayTeamName
@@ -434,24 +531,24 @@ export default function BenchApp() {
     return (
       <div style={{
         height: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         overflow: 'hidden'
       }}>
-        <SimpleHeader
-          title={view === 'roster' ? t('benchDashboard.roster') : teamName}
+        <DashboardHeader
+          title={teamName}
           subtitle={view === 'match' ? `${t('benchDashboard.game')} ${selectedMatch?.gameNumber || matchId}` : teamName}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
           onBack={handleBack}
           backLabel={t('benchDashboard.back')}
         />
@@ -462,151 +559,12 @@ export default function BenchApp() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {view === 'roster' ? (
-            <RosterSetup
-              matchId={matchId}
-              team={selectedTeam}
-              onBack={handleBack}
-              embedded={true}
-              useSupabaseConnection={activeConnection === 'supabase'}
-              matchData={selectedMatch}
-            />
-          ) : (
-            <MatchEntry
-              matchId={matchId}
-              team={selectedTeam}
-              onBack={handleBack}
-              embedded={true}
-            />
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // If PIN is correct, show view selection
-  if (matchId) {
-
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }}>
-        <SimpleHeader
-          title={t('benchDashboard.title')}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
-          connectionStatuses={connectionStatuses}
-          connectionDebugInfo={connectionDebugInfo}
-          connectionMode={connectionMode}
-          activeConnection={activeConnection}
-          onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
-        />
-
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '500px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <img
-            src={mikasaVolleyball}
-            alt="Volleyball"
-            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
+          <MatchEntry
+            matchId={matchId}
+            team={selectedTeam}
+            onBack={handleBack}
+            embedded={true}
           />
-          <h1 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            marginBottom: '12px'
-          }}>
-            {t('benchDashboard.selectGame')}
-          </h1>
-          <p style={{
-            fontSize: '14px',
-            color: 'var(--muted)',
-            marginBottom: '32px'
-          }}>
-            {t('benchDashboard.selectGame')}
-          </p>
-
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-            marginBottom: '24px'
-          }}>
-            <button
-              onClick={() => handleViewSelect('roster')}
-              style={{
-                width: '100%',
-                padding: '20px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.opacity = '0.9'}
-              onMouseOut={(e) => e.target.style.opacity = '1'}
-            >
-              {t('benchDashboard.roster')}
-            </button>
-
-            <button
-              onClick={() => handleViewSelect('match')}
-              style={{
-                width: '100%',
-                padding: '20px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.opacity = '0.9'}
-              onMouseOut={(e) => e.target.style.opacity = '1'}
-            >
-              {t('benchDashboard.match')}
-            </button>
-          </div>
-
-          <button
-            onClick={handleBack}
-            style={{
-              width: '100%',
-              padding: '12px',
-              fontSize: '14px',
-              fontWeight: 500,
-              background: 'transparent',
-              color: 'var(--muted)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
-            {t('benchDashboard.back')}
-          </button>
-        </div>
         </div>
       </div>
     )
@@ -619,23 +577,23 @@ export default function BenchApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        <SimpleHeader
+        <DashboardHeader
           title={t('benchDashboard.title')}
           subtitle={teamName}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
         />
 
         <div style={{
@@ -654,7 +612,7 @@ export default function BenchApp() {
           textAlign: 'center'
         }}>
           <img
-            src={mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
             alt="Volleyball"
             style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
@@ -766,23 +724,23 @@ export default function BenchApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
       }}>
-        <SimpleHeader
+        <DashboardHeader
           title={t('benchDashboard.title')}
           subtitle={`${t('benchDashboard.game')} ${selectedMatch.gameNumber}`}
-          wakeLockActive={wakeLockActive}
-          toggleWakeLock={toggleWakeLock}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
-          showConnectionOptions={true}
         />
 
         <div style={{
@@ -801,7 +759,7 @@ export default function BenchApp() {
           textAlign: 'center'
         }}>
           <img
-            src={mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
             alt="Volleyball"
             style={{ width: '80px', height: '80px', marginBottom: '20px' }}
           />
@@ -893,24 +851,95 @@ export default function BenchApp() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+      background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
       color: '#fff',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
+      {/* Narrow screen blocking overlay */}
+      {(viewportWidth < 357 || viewportHeight < 650) && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 700,
+            color: '#ffffff',
+            marginBottom: '16px'
+          }}>
+            {t('common.screenTooSmall', 'Screen too Small')}
+          </h2>
+          <p style={{
+            fontSize: '16px',
+            color: '#9ca3af',
+            maxWidth: '300px',
+            lineHeight: 1.5,
+            marginBottom: '24px'
+          }}>
+            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+          </p>
+          <button
+            onClick={() => {
+              if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {})
+              }
+            }}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              background: 'var(--accent, #3b82f6)',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>⛶</span>
+            <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
+          </button>
+          <p style={{
+            fontSize: '12px',
+            color: '#6b7280',
+            marginTop: '12px'
+          }}>
+            {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
+          </p>
+        </div>
+      )}
+
       <UpdateBanner />
 
-      <SimpleHeader
+      <DashboardHeader
         title={t('benchDashboard.title')}
-        wakeLockActive={wakeLockActive}
-        toggleWakeLock={toggleWakeLock}
         connectionStatuses={connectionStatuses}
         connectionDebugInfo={connectionDebugInfo}
+        onLoadGames={loadMatches}
+        loadingMatches={loadingMatches}
+        matchCount={availableMatches.length}
+        showWakeLock={true}
+        wakeLockActive={wakeLockActive}
+        onToggleWakeLock={toggleWakeLock}
         connectionMode={connectionMode}
         activeConnection={activeConnection}
         onConnectionModeChange={handleConnectionModeChange}
-        showConnectionOptions={true}
       />
 
       <div style={{
@@ -929,7 +958,7 @@ export default function BenchApp() {
         textAlign: 'center'
       }}>
         <img
-          src={mikasaVolleyball}
+          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
           alt="Volleyball"
           style={{ width: '80px', height: '80px', marginBottom: '20px' }}
         />
@@ -962,22 +991,53 @@ export default function BenchApp() {
             }}>
               {t('benchDashboard.noActiveGames')}
             </div>
-            <div style={{
-              fontSize: '13px',
-              color: 'rgba(255, 255, 255, 0.4)'
-            }}>
-              {t('refereeDashboard.startMatchToConnect')}
-            </div>
+            <button
+              type="button"
+              onClick={loadMatches}
+              disabled={loadingMatches}
+              style={{
+                marginTop: '12px',
+                padding: '10px 20px',
+                fontSize: '14px',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '8px',
+                color: 'var(--accent)',
+                cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                opacity: loadingMatches ? 0.5 : 1
+              }}
+            >
+              {loadingMatches ? t('common.loading', 'Loading...') : `🔄 ${t('benchDashboard.loadGames', 'Load Games')}`}
+            </button>
           </div>
         ) : (
           <>
-          <p style={{
-            fontSize: '14px',
-            color: 'var(--muted)',
-            marginBottom: '32px'
-          }}>
-            {t('benchDashboard.selectGame')}
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px' }}>
+            <p style={{
+              fontSize: '14px',
+              color: 'var(--muted)',
+              margin: 0
+            }}>
+              {t('benchDashboard.selectGame')}
+            </p>
+            <button
+              type="button"
+              onClick={loadMatches}
+              disabled={loadingMatches}
+              style={{
+                padding: '4px 10px',
+                fontSize: '12px',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '6px',
+                color: 'var(--accent)',
+                cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                opacity: loadingMatches ? 0.5 : 1
+              }}
+            >
+              {loadingMatches ? '...' : '🔄'}
+            </button>
+          </div>
           <div style={{
             display: 'flex',
             flexDirection: 'column',

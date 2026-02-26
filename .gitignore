@@ -10,7 +10,17 @@ key.pem
 .env.local
 .env.production
 
+# Wrangler cache (may contain auth tokens)
+.wrangler/
+
 # Claude Code local settings
 .claude/settings.local.json
 .claude/plans/
 nul
+CLAUDE.md
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/

@@ -1,24 +1,24 @@
 # eScoresheet WebSocket Backend
 
-Optional relay server for real-time communication between Scoreboard, Referee, and Bench tablets.
+Optional relay server for real-time communication between Scoreboard, Referee, and Bench devices. The app works fully offline without this server -- it only adds live multi-device sync.
 
 ## Features
 
-- **Match Rooms**: Isolated communication channels per match
-- **Real-time Sync**: WebSocket-based instant updates
-- **Offline-first**: App works without this server using IndexedDB
-- **Dual Mode**:
-  - Local network only (WiFi hotspot, no internet needed)
-  - Cloud relay (for remote referee/bench connections)
+- **Match Rooms**: Isolated WebSocket channels per match
+- **Real-time Sync**: Instant updates between Scoreboard, Referee, and Bench
+- **PIN Authentication**: Secure match access via 6-digit PINs
+- **Email Notifications**: Send match info via Resend API or SMTP
+- **Official Match Feeds**: iCal integration with Swiss VolleyManager
+- **Dual Mode**: Local network (no internet) or cloud relay
 
 ## Architecture
 
-```
+```text
 Scoreboard (Tablet 1)
-    ↓
-WebSocket Server (This backend)
-    ↓
-Referee (Tablet 2) + Bench (Tablet 3)
+    ↓ WebSocket
+Backend Server (this service)
+    ↓ Broadcast
+Referee (Tablet 2) + Bench (Tablet 3) + Livescore (Display)
 ```
 
 ## Quick Start
@@ -26,169 +26,99 @@ Referee (Tablet 2) + Bench (Tablet 3)
 ### Local Development
 
 ```bash
+cd escoresheet/backend
 npm install
 npm start
 ```
 
-Server runs on `http://localhost:8080`
+Server runs on `http://localhost:8080`.
 
-### Deploy to Railway (Free Tier)
+### Deploy to Infomaniak
 
-1. **Install Railway CLI**:
-   ```bash
-   npm install -g @railway/cli
-   ```
+1. Deploy the `escoresheet/backend` directory to your Infomaniak Node.js hosting
+2. Set **Start Command** to `node server.js`
+3. Set environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY` (or SMTP vars)
 
-2. **Login to Railway**:
-   ```bash
-   railway login
-   ```
+### Verify Deployment
 
-3. **Initialize project**:
-   ```bash
-   railway init
-   # Follow prompts to create new project
-   ```
-
-4. **Deploy**:
-   ```bash
-   railway up
-   ```
-
-5. **Get your URL**:
-   ```bash
-   railway open
-   # Or check dashboard for URL
-   ```
-
-6. **Copy your URL** (e.g., `https://escoresheet-backend-production.up.railway.app`)
-
-### Configure Frontend
-
-1. **Create `.env` in frontend folder**:
-   ```bash
-   cd ../frontend
-   cp .env.example .env
-   ```
-
-2. **Edit `.env` and add**:
-   ```env
-   VITE_BACKEND_URL=https://your-railway-url.railway.app
-   ```
-
-3. **Rebuild frontend**:
-   ```bash
-   npm run build
-   ```
-
-That's it! The app will now use your Railway backend for real-time sync.
-
-## Deployment Options
-
-### Option 1: Local Network Only (No Internet Needed)
-
-**Use Case**: Tablet hotspot, gymnasium WiFi, no internet
-
-**Setup**:
-1. Run backend on a laptop connected to same WiFi
-2. Get laptop's local IP (e.g., `192.168.1.100`)
-3. Configure frontend:
-   ```env
-   VITE_BACKEND_URL=http://192.168.1.100:8080
-   ```
-
-**Pros**:
-- ✅ Works without internet
-- ✅ Low latency
-- ✅ Free
-
-**Cons**:
-- ❌ Need laptop/server on-site
-
-### Option 2: Railway Cloud (Internet Required)
-
-**Use Case**: Remote referee, multiple courts in different locations
-
-**Setup**: Follow Railway deployment steps above
-
-**Pros**:
-- ✅ No on-site server needed
-- ✅ Works from anywhere
-- ✅ Free tier (500 hours/month)
-
-**Cons**:
-- ⚠️ Requires internet
-- ⚠️ Slightly higher latency
-
-### Option 3: Hybrid (Best of Both)
-
-**Use Case**: Primary local network, cloud fallback
-
-**Setup**:
-1. Deploy to Railway (cloud backup)
-2. Also run locally when available
-3. App tries local first, falls back to cloud
-
-Frontend automatically detects and uses available server.
-
-## Testing
-
-### Test Locally
+Test the health endpoint:
 
 ```bash
-npm start
+curl https://backend.openvolley.app/health
 ```
 
-Open browser: `http://localhost:8080/health`
+Expected response:
 
-Should see:
 ```json
 {
   "status": "healthy",
-  "mode": "local",
+  "mode": "cloud",
   "uptime": 123.45,
   "connections": 0,
   "activeRooms": 0
 }
 ```
 
-### Test WebSocket
-
-Use a WebSocket client or browser console:
+Test WebSocket (browser console):
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080')
-
-ws.onopen = () => {
-  console.log('Connected!')
-
-  // Join a match room
-  ws.send(JSON.stringify({
-    type: 'join_match',
-    matchId: 'test-match-123',
-    role: 'referee'
-  }))
-}
-
-ws.onmessage = (event) => {
-  console.log('Received:', JSON.parse(event.data))
-}
+const ws = new WebSocket('wss://backend.openvolley.app')
+ws.onopen = () => console.log('Connected!')
+ws.onmessage = (e) => console.log('Message:', e.data)
 ```
+
+### Configure Frontend
+
+Set `VITE_BACKEND_URL` so the frontend knows where to find the backend:
+
+**For local dev**: Create `.env` in `escoresheet/frontend/`:
+
+```env
+VITE_BACKEND_URL=http://localhost:8080
+```
+
+**For CI/CD**: Add `VITE_BACKEND_URL` as a GitHub repository secret, then rebuild.
+
+## Deployment Options
+
+| Option | Use Case | Internet | Latency | Cost |
+| --- | --- | --- | --- | --- |
+| **Local network** | Gymnasium WiFi, tablet hotspot | Not needed | Very low | Free |
+| **Render (cloud)** | Remote referee, multiple locations | Required | ~50-200ms | Free tier |
+| **Hybrid** | Primary local, cloud fallback | Optional | Low | Free |
+
+### Local Network Setup
+
+1. Run backend on a laptop connected to the same WiFi as the tablets
+2. Find the laptop's local IP (e.g., `192.168.1.100`)
+3. Set `VITE_BACKEND_URL=http://192.168.1.100:8080` in the frontend
+
+### Hybrid Setup
+
+Deploy to Render for cloud backup, also run locally when available. The frontend tries local first and falls back to cloud automatically.
 
 ## Environment Variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| --- | --- | --- |
 | `PORT` | Server port | `8080` |
-| `RAILWAY_ENVIRONMENT` | Auto-set by Railway | - |
-| `RENDER` | Auto-set by Render | - |
+| `RENDER` | Auto-set by Render (enables cloud mode) | - |
+| `RESEND_API_KEY` | Resend API key for email (recommended) | - |
+| `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
+| `SMTP_HOST` | SMTP server hostname (alternative to Resend) | - |
+| `SMTP_PORT` | SMTP port | `587` |
+| `SMTP_USER` | SMTP username | - |
+| `SMTP_PASS` | SMTP password | - |
+| `CONTACT_EMAIL` | Recipient for contact form submissions | `volleyball@lucanepa.com` |
+
+Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works on all cloud platforms) or SMTP credentials.
 
 ## API Endpoints
 
 ### `GET /health`
-Health check
 
-Response:
+Health check. Also responds on `/`.
+
 ```json
 {
   "status": "healthy",
@@ -200,9 +130,9 @@ Response:
 ```
 
 ### `GET /api/server/status`
-Detailed server status
 
-Response:
+Detailed server status.
+
 ```json
 {
   "status": "online",
@@ -215,82 +145,131 @@ Response:
 }
 ```
 
-### `GET /api/match/list`
-List active matches (ephemeral)
+### `GET /api/server/connections?matchId=abc`
 
-Response:
+Connected dashboard clients (referee, bench). Optional `matchId` filter.
+
+### `GET /api/match/list`
+
+List active matches with referee connections enabled.
+
+### `GET /api/match/:matchId`
+
+Get full match data (match, teams, players, sets, events) by ID.
+
+### `POST /api/match/validate-pin`
+
+Validate a 6-digit PIN for referee/bench access.
+
 ```json
-[
-  {
-    "matchId": "abc123",
-    "data": {...},
-    "updatedAt": "2024-01-01T12:00:00Z",
-    "updatedBy": "client123"
-  }
-]
+{ "pin": "123456", "type": "referee|homeTeam|awayTeam" }
 ```
+
+### `POST /api/match/send-info`
+
+Send match info email to a specified address. Requires email configuration.
+
+### `POST /api/contact`
+
+Contact/support form submission. Accepts JSON or multipart form data.
+
+### `GET /api/official-matches?federation=SV&league=1LD`
+
+Fetch upcoming matches from Swiss VolleyManager iCal feeds. Cached for 5 minutes.
+
+### `GET /api/official-matches/leagues`
+
+List all available leagues across federations (SV, SVRZ).
 
 ## WebSocket Protocol
 
-### Client → Server
+### Client to Server
 
 #### Join Match
+
 ```json
 {
   "type": "join_match",
   "matchId": "abc123",
-  "role": "scoreboard|referee|bench"
+  "role": "scoreboard|referee|bench",
+  "team": "home|away"
 }
 ```
 
-#### Send Match Update (Scoreboard only)
+#### Sync Match Data (Scoreboard)
+
 ```json
 {
-  "type": "match_update",
+  "type": "sync-match-data",
   "matchId": "abc123",
-  "data": {...full match state...}
+  "match": {},
+  "homeTeam": {},
+  "awayTeam": {},
+  "homePlayers": [],
+  "awayPlayers": [],
+  "sets": [],
+  "events": []
 }
 ```
 
-#### Send Action (Scoreboard only)
+#### Match Action (Scoreboard)
+
 ```json
 {
-  "type": "action",
+  "type": "match-action",
   "matchId": "abc123",
-  "action": {
-    "type": "timeout|substitution|...",
-    ...action data...
-  }
+  "action": "timeout|substitution|...",
+  "actionData": {}
+}
+```
+
+#### Subscribe to Match (Referee/Bench/Livescore)
+
+```json
+{
+  "type": "subscribe-match",
+  "matchId": "abc123",
+  "role": "referee|bench|subscriber"
 }
 ```
 
 #### Leave Match
+
 ```json
-{
-  "type": "leave_match"
-}
+{ "type": "leave_match" }
 ```
 
 #### Ping (Heartbeat)
+
 ```json
-{
-  "type": "ping"
-}
+{ "type": "ping" }
 ```
 
-### Server → Client
+#### Clear / Delete Matches
+
+```json
+{ "type": "clear-all-matches", "keepMatchId": "abc123" }
+```
+
+```json
+{ "type": "delete-match", "matchId": "abc123" }
+```
+
+### Server to Client
 
 #### Connection Confirmed
+
 ```json
 {
   "type": "connected",
   "clientId": "xyz789",
   "mode": "local|cloud",
-  "timestamp": "2024-01-01T12:00:00Z"
+  "timestamp": "2025-01-01T12:00:00Z"
 }
 ```
 
 #### Joined Match
+
 ```json
 {
   "type": "joined_match",
@@ -300,28 +279,38 @@ Response:
 }
 ```
 
-#### Match Update
+#### Match Data Update
+
 ```json
 {
-  "type": "match_update",
+  "type": "match-data-update",
   "matchId": "abc123",
-  "data": {...match state...},
-  "timestamp": "2024-01-01T12:00:00Z"
+  "match": {},
+  "homeTeam": {},
+  "awayTeam": {},
+  "homePlayers": [],
+  "awayPlayers": [],
+  "sets": [],
+  "events": [],
+  "timestamp": "2025-01-01T12:00:00Z"
 }
 ```
 
-#### Action Broadcast
+#### Match Action Broadcast
+
 ```json
 {
-  "type": "action",
+  "type": "match-action",
   "matchId": "abc123",
-  "action": {...action data...},
-  "timestamp": "2024-01-01T12:00:00Z",
+  "action": "timeout",
+  "data": {},
+  "timestamp": "2025-01-01T12:00:00Z",
   "from": "client123"
 }
 ```
 
 #### Client Joined/Left
+
 ```json
 {
   "type": "client_joined|client_left",
@@ -332,6 +321,7 @@ Response:
 ```
 
 #### Error
+
 ```json
 {
   "type": "error",
@@ -340,6 +330,7 @@ Response:
 ```
 
 #### Pong (Heartbeat Response)
+
 ```json
 {
   "type": "pong",
@@ -349,97 +340,40 @@ Response:
 
 ## Monitoring
 
-### Railway
-
-```bash
-# View logs
-railway logs
-
-# Check status
-railway status
-
-# Open dashboard
-railway open
-```
-
 ### Local
 
-Server logs are printed to console with emojis for easy monitoring:
-- ✅ Connection established
-- 🎯 Client joined match
-- 📤 Match update broadcasted
-- ⚡ Action broadcasted
-- ❌ Client disconnected
-- ❓ Unknown message type
+Server logs to console with prefixed icons for easy scanning:
 
-## Cost
+- `[API]` -- HTTP endpoint activity
+- `[iCal]` -- Official match feed fetches
+- `[Email]` / `[Contact]` -- Email operations
+- `[CORS]` -- Origin validation
 
-### Railway Free Tier
-- **500 execution hours/month**
-- **$5 credit/month**
-- Perfect for hobby projects
-- Sleeps after 1 hour of inactivity (wakes instantly)
+## Hosting
 
-### Render Free Tier
-- **750 hours/month**
-- Sleeps after 15 minutes (30s cold start)
-- Alternative option
-
-### Self-hosted
-- Run on any server/laptop
-- Completely free
-- Full control
+Deployed on Infomaniak at `https://backend.openvolley.app`.
 
 ## Troubleshooting
 
-### Railway: "EADDRINUSE: address already in use"
-
-**Problem**: Railway is trying to deploy the entire repo including frontend.
-
-**Solution**: Configure Railway to use backend folder only:
-
-1. In Railway dashboard → Settings → **Root Directory**: `escoresheet/backend`
-2. Redeploy
-
-Or use `railway up` from the `backend` folder directly.
-
 ### Connection refused
-- Check firewall settings
-- Ensure port 8080 is open
-- Verify server is running
+
+- Check firewall settings and ensure port 8080 is open
+- Verify the server is running (`curl http://localhost:8080/health`)
 
 ### WebSocket connection fails
-- Check URL protocol (`ws://` for HTTP, `wss://` for HTTPS)
-- Railway requires `wss://` (auto-configured)
+
+- Use `ws://` for HTTP, `wss://` for HTTPS
+- Production requires `wss://`
 - Local dev uses `ws://`
 
-### High latency
-- Use local network mode for best performance
-- Cloud mode adds ~50-200ms latency
+### CORS errors
 
-### Server crashes
-- Check Railway logs: `railway logs`
-- Memory limit: 512MB on free tier
-- Increase if needed (paid tier)
+- Check browser DevTools for the blocked origin
+- Local mode allows all origins
+- Cloud mode allows `*.openvolley.app` and localhost
 
-### Railway deployment fails
+### Deployment fails
 
-1. Check logs: `railway logs`
+1. Check logs in your Infomaniak hosting dashboard
 2. Verify `package.json` exists in backend folder
-3. Ensure Root Directory is set to `escoresheet/backend`
-4. Try deploying from backend folder: `cd escoresheet/backend && railway up`
-
-## Next Steps
-
-1. **Deploy to Railway**: `railway up`
-2. **Get your URL**: Check Railway dashboard
-3. **Configure frontend**: Add `VITE_BACKEND_URL` to `.env`
-4. **Test**: Start a match, connect referee
-5. **Monitor**: Check Railway logs
-
-## Support
-
-For issues:
-- Check logs: `railway logs`
-- Test locally first: `npm start`
-- Verify WebSocket connection in browser DevTools
+3. Ensure environment variables are set correctly

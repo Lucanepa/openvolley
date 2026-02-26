@@ -16,6 +16,8 @@ dist-referee
 dist-bench
 dist-livescore
 dist-roster
+dist-scoresheet
+dev-dist
 *.local
 _build_*.html
 
@@ -45,3 +47,7 @@ localhost-key.pem
 *.pem
 *.key
 *.crt
+
+# Environment variables
+.env
+.env.*

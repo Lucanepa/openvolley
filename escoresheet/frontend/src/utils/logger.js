@@ -2,7 +2,7 @@
  * Logger - Captures console logs and backs up to Supabase storage
  */
 
-import { supabase } from '../lib/supabaseClient'
+import { apiStorage } from '../lib/apiClient'
 
 // In-memory log buffer
 let logBuffer = []
@@ -131,26 +131,39 @@ export function downloadLogs(matchId = null) {
 }
 
 /**
- * Upload logs to Supabase storage
+ * Upload logs to Supabase storage - appends to a single log file per game
+ * @param {string|null} matchId - Match ID for organizing logs
+ * @param {string|number|null} gameNumber - Game number for human-readable folder names
  */
-export async function uploadLogsToCloud(matchId = null) {
-  if (!supabase) {
-    console.warn('[Logger] Supabase not configured - cannot upload logs')
-    return null
-  }
-
-  const text = exportLogsAsText()
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const filename = matchId
-    ? `logs/match_${matchId}/${timestamp}.txt`
-    : `logs/general/${timestamp}.txt`
+export async function uploadLogsToCloud(matchId = null, gameNumber = null) {
+  const newLogs = exportLogsAsText()
+  // Use gameNumber if available for human-readable paths, fall back to matchId
+  const folderName = gameNumber ? `game_${gameNumber}` : (matchId ? `match_${matchId}` : 'general')
+  const filename = `logs/${folderName}/logs.txt` // Single file name, not timestamped
 
   try {
-    const { data, error } = await supabase.storage
+    // Try to download existing log file
+    let existingLogs = ''
+    const { data: existingData, error: downloadError } = await apiStorage
       .from('backup')
-      .upload(filename, text, {
+      .download(filename)
+
+    if (!downloadError && existingData) {
+      // File exists, read its contents
+      existingLogs = await existingData.text()
+    }
+
+    // Append new logs to existing logs
+    const combinedLogs = existingLogs
+      ? `${existingLogs}\n${newLogs}`
+      : newLogs
+
+    // Upload combined logs (will replace the file)
+    const { data, error } = await apiStorage
+      .from('backup')
+      .upload(filename, combinedLogs, {
         contentType: 'text/plain',
-        upsert: true
+        upsert: true // Replace existing file
       })
 
     if (error) {
@@ -158,7 +171,7 @@ export async function uploadLogsToCloud(matchId = null) {
       return null
     }
 
-    console.log('[Logger] Logs uploaded to cloud:', filename)
+    console.log('[Logger] Logs appended to cloud:', filename)
     return data?.path || filename
   } catch (err) {
     console.error('[Logger] Error uploading logs:', err)
@@ -168,31 +181,35 @@ export async function uploadLogsToCloud(matchId = null) {
 
 /**
  * Upload match backup JSON to Supabase storage (sequential, with state summary)
+ * Uses game_pin for folder structure so backups can be found by PIN
  */
 export async function uploadBackupToCloud(matchId, backupData) {
-  if (!supabase) {
-    console.warn('[Logger] Supabase not configured - cannot upload backup')
-    return null
-  }
+  const gameN = backupData?.match?.gameN || backupData?.match?.game_n || 1
 
-  // Increment sequence
-  backupSequence++
-
-  // Build state summary for filename (e.g., "set2_15-12")
-  let stateSummary = ''
+  // Get set and score info for filename
+  let setIndex = 1
+  let leftScore = 0
+  let rightScore = 0
   if (backupData?.sets?.length > 0) {
     const latestSet = backupData.sets.sort((a, b) => (b.index || 0) - (a.index || 0))[0]
     if (latestSet) {
-      stateSummary = `_set${latestSet.index || 1}_${latestSet.homePoints || 0}-${latestSet.awayPoints || 0}`
+      setIndex = latestSet.index || 1
+      leftScore = latestSet.homePoints || 0
+      rightScore = latestSet.awayPoints || 0
     }
   }
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const seqStr = String(backupSequence).padStart(5, '0')
-  const filename = `backups/match_${matchId}/${seqStr}${stateSummary}_${timestamp}.json`
+  // Generate UTC timestamp in yyyymmdd_hhmmss_ms format for uniqueness
+  const now = new Date()
+  const utcDate = now.toISOString().slice(0, 10).replace(/-/g, '') // yyyymmdd
+  const utcTime = now.toISOString().slice(11, 19).replace(/:/g, '') // hhmmss
+  const ms = now.getMilliseconds().toString().padStart(3, '0') // milliseconds
+
+  // Folder structure: backups/backup_g{gameN}/
+  const filename = `backups/backup_g${gameN}/backup_g${gameN}_set${setIndex}_scoreleft${leftScore}_scoreright${rightScore}_${utcDate}_${utcTime}_${ms}.json`
 
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await apiStorage
       .from('backup')
       .upload(filename, JSON.stringify(backupData, null, 2), {
         contentType: 'application/json',
@@ -213,20 +230,16 @@ export async function uploadBackupToCloud(matchId, backupData) {
 }
 
 /**
- * List all cloud backups for a match
- * @param {number} matchId - Match ID
+ * List all cloud backups for a game
+ * @param {string} gamePin - Game PIN (unused but kept for API compatibility)
+ * @param {number} gameN - Game number
  * @returns {Array} List of backup files with name and metadata
  */
-export async function listCloudBackups(matchId) {
-  if (!supabase) {
-    console.warn('[Logger] Supabase not configured')
-    return []
-  }
-
+export async function listCloudBackups(gamePin, gameN = 1) {
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await apiStorage
       .from('backup')
-      .list(`backups/match_${matchId}`, {
+      .list(`backups/backup_g${gameN}`, {
         sortBy: { column: 'name', order: 'desc' }
       })
 
@@ -235,25 +248,26 @@ export async function listCloudBackups(matchId) {
       return []
     }
 
-    // Parse filenames to extract state info
+    // Parse filenames like "backup_g1_set2_scoreleft15_scoreright12_20250104_153045_123.json"
     return (data || []).map(file => {
-      // Parse filename like "00015_set2_15-12_2025-12-21T11-00-00-000Z.json"
-      const match = file.name.match(/^(\d+)_set(\d+)_(\d+)-(\d+)_(.+)\.json$/)
+      const match = file.name.match(/^backup_g(\d+)_set(\d+)_scoreleft(\d+)_scoreright(\d+)_(\d{8})_(\d{6})_(\d{3})\.json$/)
       if (match) {
         return {
           name: file.name,
-          path: `backups/match_${matchId}/${file.name}`,
-          sequence: parseInt(match[1]),
+          path: `backups/backup_g${gameN}/${file.name}`,
+          gameN: parseInt(match[1]),
           setIndex: parseInt(match[2]),
-          homePoints: parseInt(match[3]),
-          awayPoints: parseInt(match[4]),
-          timestamp: match[5].replace(/-/g, ':').replace('T', ' ').replace('Z', ''),
+          leftScore: parseInt(match[3]),
+          rightScore: parseInt(match[4]),
+          date: match[5],
+          time: match[6],
+          ms: match[7],
           created_at: file.created_at
         }
       }
       return {
         name: file.name,
-        path: `backups/match_${matchId}/${file.name}`,
+        path: `backups/backup_g${gameN}/${file.name}`,
         created_at: file.created_at
       }
     })
@@ -269,13 +283,8 @@ export async function listCloudBackups(matchId) {
  * @returns {Object} Parsed backup data
  */
 export async function loadCloudBackup(path) {
-  if (!supabase) {
-    console.warn('[Logger] Supabase not configured')
-    return null
-  }
-
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await apiStorage
       .from('backup')
       .download(path)
 
@@ -293,11 +302,46 @@ export async function loadCloudBackup(path) {
 }
 
 /**
+ * Format backup timestamp for display
+ * @param {string} date - Date string in yyyymmdd format
+ * @param {string} time - Time string in hhmmss format
+ * @param {string} ms - Milliseconds string
+ * @returns {string} Formatted datetime string
+ */
+export function formatBackupTimestamp(date, time, ms) {
+  if (!date || !time) return 'Unknown'
+
+  // Parse yyyymmdd
+  const year = date.substring(0, 4)
+  const month = date.substring(4, 6)
+  const day = date.substring(6, 8)
+
+  // Parse hhmmss
+  const hours = time.substring(0, 2)
+  const minutes = time.substring(2, 4)
+  const seconds = time.substring(4, 6)
+
+  // Create date object
+  const dateObj = new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}Z`)
+
+  // Format for display (local time)
+  return dateObj.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+/**
  * Trigger backup on every action (non-blocking, with minimal delay between uploads)
  * @param {number} matchId - Match ID
  * @param {function} getBackupData - Async function that returns backup data
+ * @param {string|number|null} gameNumber - Game number for human-readable paths
  */
-export async function triggerContinuousBackup(matchId, getBackupData) {
+export async function triggerContinuousBackup(matchId, getBackupData, gameNumber = null) {
   // Skip if backup already in progress
   if (isBackupInProgress) {
     return
@@ -318,7 +362,7 @@ export async function triggerContinuousBackup(matchId, getBackupData) {
       // Upload in parallel (non-blocking)
       Promise.all([
         uploadBackupToCloud(matchId, backupData),
-        uploadLogsToCloud(matchId)
+        uploadLogsToCloud(matchId, gameNumber)
       ]).catch(err => {
         // Silent fail - don't block UI
       })

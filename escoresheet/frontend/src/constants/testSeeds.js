@@ -8,7 +8,8 @@ export const TEST_MATCH_DEFAULTS = {
   hall: 'Kantonsschule Wiedikon (Halle A)',
   city: 'Zürich',
   league: '3L B',
-  gameNumber: '123456'
+  gameNumber: '123456',
+  bestOf: 5
 }
 
 export const TEST_HOME_BENCH = [
@@ -43,18 +44,18 @@ export const TEST_TEAM_SEED_DATA = [
     shortName: 'ZÜRICH',
     color: '#3b82f6',
     players: [
-      { number: 1, firstName: 'Luca', lastName: 'Keller', dob: '05/01/1998', libero: '', isCaptain: true },
-      { number: 2, firstName: 'Jonas', lastName: 'Hofmann', dob: '12/03/1997', libero: '', isCaptain: false },
-      { number: 3, firstName: 'Noah', lastName: 'Schmid', dob: '23/07/1996', libero: '', isCaptain: false },
-      { number: 13, firstName: 'Simon', lastName: 'Meier', dob: '18/09/1995', libero: 'libero2', isCaptain: false },
-      { number: 4, firstName: 'Felix', lastName: 'Graf', dob: '30/11/1999', libero: '', isCaptain: false },
-      { number: 6, firstName: 'David', lastName: 'Brunner', dob: '14/01/1998', libero: '', isCaptain: false },
-      { number: 7, firstName: 'Erik', lastName: 'Fischer', dob: '09/02/1996', libero: '', isCaptain: false },
-      { number: 8, firstName: 'Ben', lastName: 'Wenger', dob: '27/04/1999', libero: '', isCaptain: false },
-      { number: 9, firstName: 'Lukas', lastName: 'Bachmann', dob: '08/06/1997', libero: '', isCaptain: false },
-      { number: 10, firstName: 'Alex', lastName: 'Baumann', dob: '16/08/2000', libero: '', isCaptain: false },
-      { number: 11, firstName: 'Jonas', lastName: 'Arnold', dob: '02/12/1998', libero: '', isCaptain: false },
-      { number: 12, firstName: 'Mauro', lastName: 'Huber', dob: '19/03/1997', libero: 'libero1', isCaptain: false },
+      { number: 1, firstName: 'Luca', lastName: 'Keller', dob: '05/01/1998', libero: '', isCaptain: true, isLfp: true },
+      { number: 2, firstName: 'Jonas', lastName: 'Hofmann', dob: '12/03/1997', libero: '', isCaptain: false, isLfp: true },
+      { number: 3, firstName: 'Noah', lastName: 'Schmid', dob: '23/07/1996', libero: '', isCaptain: false, isLfp: true },
+      { number: 4, firstName: 'Felix', lastName: 'Graf', dob: '30/11/1999', libero: '', isCaptain: false, isLfp: true },
+      { number: 6, firstName: 'David', lastName: 'Brunner', dob: '14/01/1998', libero: '', isCaptain: false, isLfp: true },
+      { number: 7, firstName: 'Erik', lastName: 'Fischer', dob: '09/02/1996', libero: '', isCaptain: false, isLfp: true },
+      { number: 8, firstName: 'Ben', lastName: 'Wenger', dob: '27/04/1999', libero: '', isCaptain: false, isLfp: true },
+      { number: 9, firstName: 'Lukas', lastName: 'Bachmann', dob: '08/06/1997', libero: '', isCaptain: false, isLfp: true },
+      { number: 10, firstName: 'Alex', lastName: 'Baumann', dob: '16/08/2000', libero: '', isCaptain: false, isLfp: true },
+      { number: 11, firstName: 'Jonas', lastName: 'Arnold', dob: '02/12/1998', libero: '', isCaptain: false, isLfp: true },
+      { number: 12, firstName: 'Mauro', lastName: 'Huber', dob: '19/03/1997', libero: 'libero1', isCaptain: false, isLfp: true },
+      { number: 13, firstName: 'Simon', lastName: 'Meier', dob: '18/09/1995', libero: 'libero2', isCaptain: false, isLfp: true },
     ]
   },
   {
@@ -63,18 +64,18 @@ export const TEST_TEAM_SEED_DATA = [
     shortName: 'LUZERN',
     color: '#ef4444',
     players: [
-      { number: 1, firstName: 'Tom', lastName: 'Weber', dob: '11/01/1998', libero: 'libero1', isCaptain: false },
-      { number: 2, firstName: 'Max', lastName: 'Schneider', dob: '24/03/1996', libero: '', isCaptain: false },
-      { number: 3, firstName: 'Daniel', lastName: 'Vogt', dob: '06/05/1997', libero: '', isCaptain: false },
-      { number: 4, firstName: 'Michael', lastName: 'Imhof', dob: '22/07/1995', libero: '', isCaptain: false },
-      { number: 5, firstName: 'Jonas', lastName: 'Ackermann', dob: '18/09/1999', libero: '', isCaptain: false },
-      { number: 6, firstName: 'Reto', lastName: 'Gerber', dob: '03/12/1998', libero: '', isCaptain: false },
-      { number: 7, firstName: 'Marco', lastName: 'Aebi', dob: '15/02/1997', libero: '', isCaptain: false },
-      { number: 8, firstName: 'Lorenz', lastName: 'Egli', dob: '28/04/1996', libero: '', isCaptain: false },
-      { number: 9, firstName: 'Yannik', lastName: 'Frey', dob: '09/06/1999', libero: '', isCaptain: false },
-      { number: 10, firstName: 'Philipp', lastName: 'Ryser', dob: '17/08/2000', libero: '', isCaptain: false },
-      { number: 11, firstName: 'Lars', lastName: 'Hauser', dob: '05/10/1997', libero: '', isCaptain: false },
-      { number: 12, firstName: 'Jonas', lastName: 'Mäder', dob: '21/11/1998', libero: '', isCaptain: true }
+      { number: 1, firstName: 'Tom', lastName: 'Weber', dob: '11/01/1998', libero: 'libero1', isCaptain: false, isLfp: true },
+      { number: 2, firstName: 'Max', lastName: 'Schneider', dob: '24/03/1996', libero: '', isCaptain: false, isLfp: true },
+      { number: 3, firstName: 'Daniel', lastName: 'Vogt', dob: '06/05/1997', libero: '', isCaptain: false, isLfp: true },
+      { number: 4, firstName: 'Michael', lastName: 'Imhof', dob: '22/07/1995', libero: '', isCaptain: false, isLfp: true },
+      { number: 5, firstName: 'Jonas', lastName: 'Ackermann', dob: '18/09/1999', libero: '', isCaptain: false, isLfp: true },
+      { number: 6, firstName: 'Reto', lastName: 'Gerber', dob: '03/12/1998', libero: '', isCaptain: false, isLfp: true },
+      { number: 7, firstName: 'Marco', lastName: 'Aebi', dob: '15/02/1997', libero: '', isCaptain: false, isLfp: true },
+      { number: 8, firstName: 'Lorenz', lastName: 'Egli', dob: '28/04/1996', libero: '', isCaptain: false, isLfp: true },
+      { number: 9, firstName: 'Yannik', lastName: 'Frey', dob: '09/06/1999', libero: '', isCaptain: false, isLfp: true },
+      { number: 10, firstName: 'Philipp', lastName: 'Ryser', dob: '17/08/2000', libero: '', isCaptain: false, isLfp: true },
+      { number: 11, firstName: 'Lars', lastName: 'Hauser', dob: '05/10/1997', libero: '', isCaptain: false, isLfp: true },
+      { number: 12, firstName: 'Jonas', lastName: 'Mäder', dob: '21/11/1998', libero: '', isCaptain: true, isLfp: true }
     ]
   }
 ]

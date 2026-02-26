@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [windows-latest]
+        # customized to only run on windows for now as per user environment
+        # add macos-latest and ubuntu-latest if needed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: escoresheet/frontend
+        run: npm install
+
+      - name: Build and Release
+        working-directory: escoresheet/frontend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build
+          npm run electron:build:win

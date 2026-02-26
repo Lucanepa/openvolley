@@ -1,375 +1,585 @@
-import { useState, useEffect, useRef } from 'react'
-import changelog from '../CHANGELOG'
-import ConnectionStatus from './ConnectionStatus'
-import DashboardOptionsMenu from './DashboardOptionsMenu'
+import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
+
+// Flag SVG components for language selector
+const FlagGB = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="42" fill="#012169" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7" />
+  </svg>
+)
+
+const FlagIT = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#009246" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#CE2B37" />
+  </svg>
+)
+
+const FlagDE = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="14" fill="#000" />
+    <rect y="14" width="60" height="14" fill="#DD0000" />
+    <rect y="28" width="60" height="14" fill="#FFCE00" />
+  </svg>
+)
+
+const FlagFR = () => (
+  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#002395" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#ED2939" />
+  </svg>
+)
+
+const FlagCH = () => (
+  <svg width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="32" height="32" fill="#ff0000" />
+    <rect x="14" y="6" width="4" height="20" fill="#fff" />
+    <rect x="6" y="14" width="20" height="4" fill="#fff" />
+  </svg>
+)
+
+const languages = [
+  { code: 'en', Flag: FlagGB, label: 'EN' },
+  { code: 'it', Flag: FlagIT, label: 'IT' },
+  { code: 'de', Flag: FlagDE, label: 'DE' },
+  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
+  { code: 'fr', Flag: FlagFR, label: 'FR' }
+]
 
 /**
- * SimpleHeader - A simplified header component for satellite apps (Bench, Upload Roster, Livescore)
- * Matches the MainHeader styling but with reduced functionality
+ * SimpleHeader - 3-column header for all dashboard apps
+ * Left: Title/version
+ * Middle: Hamburger menu (collapsible)
+ * Right: Fullscreen button
  */
 export default function SimpleHeader({
   title,
-  subtitle,
-  wakeLockActive,
-  toggleWakeLock,
-  onBack,
-  backLabel = 'Back',
-  rightContent,
-  connectionStatuses,
-  connectionDebugInfo,
-  // Connection mode props for DashboardOptionsMenu
-  connectionMode,
-  activeConnection,
-  onConnectionModeChange,
-  showConnectionOptions = false
+  version,
+  menuItems = [], // Array of { icon, label, onClick, active, color, toggle, badge, badgeColor, disabled, divider }
+  onFullscreen,
+  isFullscreen = false,
+  toggleOptions // Optional: segmented toggle [{ label: '1 REF', active: false, onClick }, { label: '2 REF', active: true, onClick }]
 }) {
-  const [versionMenuOpen, setVersionMenuOpen] = useState(false)
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const touchStartY = useRef(0)
-  const headerRef = useRef(null)
-  const currentVersion = changelog[0]?.version || '1.0.0'
+  const { t } = useTranslation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [versionExpanded, setVersionExpanded] = useState(false)
+  const [languageExpanded, setLanguageExpanded] = useState(false)
+  const [confirmingClearCache, setConfirmingClearCache] = useState(false)
+  const currentVersion = version || __APP_VERSION__
 
-  // Check if compact mode (viewport width <= 960px)
-  const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960
+  const handleClearCache = async () => {
+    if ('caches' in window) {
+      const cacheNames = await caches.keys()
+      await Promise.all(cacheNames.map(name => caches.delete(name)))
+    }
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(registrations.map(reg => reg.unregister()))
+    }
+    window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
+  }
 
-  // Handle touch events for swipe to show/hide header in compact mode
+  // Close menu on outside click
   useEffect(() => {
-    if (!isCompactMode) {
-      setIsCollapsed(false)
-      return
-    }
-
-    const handleTouchStart = (e) => {
-      touchStartY.current = e.touches[0].clientY
-    }
-
-    const handleTouchEnd = (e) => {
-      const touchEndY = e.changedTouches[0].clientY
-      const deltaY = touchEndY - touchStartY.current
-
-      if (touchStartY.current < 60 && deltaY > 30) {
-        setIsCollapsed(false)
-      } else if (deltaY < -50 && !isCollapsed) {
-        setIsCollapsed(true)
+    if (!menuOpen) return
+    const handleClick = (e) => {
+      if (!e.target.closest('.simple-header-menu')) {
+        setMenuOpen(false)
       }
     }
-
-    document.addEventListener('touchstart', handleTouchStart)
-    document.addEventListener('touchend', handleTouchEnd)
-
-    return () => {
-      document.removeEventListener('touchstart', handleTouchStart)
-      document.removeEventListener('touchend', handleTouchEnd)
-    }
-  }, [isCompactMode, isCollapsed])
-
-  // Track viewport dimensions
-  useEffect(() => {
-    const updateViewportSize = () => {
-      setViewportSize({
-        width: window.innerWidth,
-        height: window.innerHeight
-      })
-    }
-
-    updateViewportSize()
-    window.addEventListener('resize', updateViewportSize)
-    return () => window.removeEventListener('resize', updateViewportSize)
-  }, [])
-
-  // Close version menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (versionMenuOpen && !e.target.closest('.version-menu-container')) {
-        setVersionMenuOpen(false)
-      }
-    }
-
-    document.addEventListener('click', handleClickOutside)
-    return () => document.removeEventListener('click', handleClickOutside)
-  }, [versionMenuOpen])
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [menuOpen])
 
   return (
-    <>
-      {/* Collapsed header indicator - tap to expand */}
-      {isCompactMode && isCollapsed && (
-        <div
-          onClick={() => setIsCollapsed(false)}
-          style={{
-            position: 'sticky',
-            top: 0,
-            width: '100%',
-            height: '8px',
-            background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, transparent 100%)',
-            cursor: 'pointer',
-            zIndex: 999,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'flex-end',
-            paddingBottom: '2px'
-          }}
-        >
+    <div style={{
+      height: '40px',
+      minHeight: '40px',
+      maxHeight: '40px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '0 12px',
+      background: 'rgba(0, 0, 0, 0.3)',
+      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+    }}>
+      {/* LEFT: Title/Version or Toggle */}
+      <div style={{
+        flex: '1 1 0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        minWidth: 0
+      }}>
+        {/* Segmented Toggle (like LOCAL/REMOTE) */}
+        {toggleOptions && toggleOptions.length > 0 ? (
           <div style={{
-            width: '40px',
-            height: '3px',
-            background: 'rgba(255, 255, 255, 0.4)',
-            borderRadius: '2px'
-          }} />
-        </div>
-      )}
-      <div
-        ref={headerRef}
-        style={{
-          display: 'flex',
-          height: isCompactMode && isCollapsed ? '0px' : '40px',
-          minHeight: isCompactMode && isCollapsed ? '0px' : '40px',
-          maxHeight: isCompactMode && isCollapsed ? '0px' : '40px',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: isCompactMode && isCollapsed ? '0' : '0 clamp(8px, 2vw, 20px)',
-          background: 'rgba(0, 0, 0, 0.2)',
-          borderBottom: isCompactMode && isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
-          flexShrink: 0,
-          gap: 'clamp(8px, 1.5vw, 16px)',
-          zIndex: 1000,
-          position: 'sticky',
-          top: isCompactMode && isCollapsed ? '-40px' : 0,
-          overflow: isCompactMode && isCollapsed ? 'hidden' : 'visible',
-          transition: 'all 0.3s ease-in-out'
-        }}
-      >
-        {/* Left: Title and subtitle */}
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            display: 'flex',
+            alignItems: 'center',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '6px',
+            padding: '2px',
+            gap: '2px'
+          }}>
+            {toggleOptions.map((option, idx) => (
+              <button
+                key={idx}
+                onClick={option.onClick}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 'clamp(11px, 2.5vw, 13px)',
+                  fontWeight: 600,
+                  background: option.active ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                  color: option.active ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                  border: option.active ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : title ? (
           <span style={{
-            fontSize: 'clamp(13px, 1.5vw, 16px)',
-            fontWeight: 600,
-            whiteSpace: 'nowrap'
+            fontSize: 'clamp(12px, 3vw, 15px)',
+            fontWeight: 700,
+            color: '#fff',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
           }}>
             {title}
           </span>
-          {subtitle && (
-            <span style={{
-              fontSize: 'clamp(10px, 1.2vw, 12px)',
-              color: 'rgba(255, 255, 255, 0.6)',
-              whiteSpace: 'nowrap'
-            }}>
-              {subtitle}
-            </span>
-          )}
-        </div>
+        ) : null}
+      </div>
 
-        {/* Center: Version dropdown */}
-        <div
-          className="version-menu-container"
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 101
-          }}
-        >
-          <button
-            onClick={() => setVersionMenuOpen(!versionMenuOpen)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 10px',
-              fontSize: 'clamp(10px, 1.2vw, 12px)',
-              fontWeight: 600,
-              background: versionMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
-              color: 'rgba(255, 255, 255, 0.8)',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              whiteSpace: 'nowrap'
-            }}
-            onMouseEnter={(e) => {
-              if (!versionMenuOpen) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-            }}
-            onMouseLeave={(e) => {
-              if (!versionMenuOpen) e.currentTarget.style.background = 'transparent'
-            }}
-          >
-            <span>v{currentVersion}</span>
-            <span style={{
-              fontSize: '8px',
-              transform: versionMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s'
-            }}>▼</span>
-          </button>
-
-          {/* Version dropdown menu */}
-          {versionMenuOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              marginTop: '4px',
-              background: '#1f2937',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              padding: '8px 0',
-              minWidth: '280px',
-              maxHeight: '300px',
-              overflowY: 'auto',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
-              zIndex: 1001
-            }}>
-              <div style={{
-                padding: '8px 12px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                marginBottom: '4px'
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: 600 }}>Version History</span>
-              </div>
-              {changelog.slice(0, 10).map((entry, index) => (
-                <div
-                  key={entry.version}
-                  style={{
-                    padding: '8px 12px',
-                    borderLeft: index === 0 ? '3px solid #22c55e' : '3px solid transparent',
-                    background: index === 0 ? 'rgba(34, 197, 94, 0.1)' : 'transparent'
-                  }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    marginBottom: '4px'
-                  }}>
-                    <span style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: index === 0 ? '#22c55e' : 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      v{entry.version}
-                    </span>
-                    <span style={{
-                      fontSize: '10px',
-                      color: 'rgba(255, 255, 255, 0.5)'
-                    }}>
-                      {entry.date}
-                    </span>
-                    {index === 0 && (
-                      <span style={{
-                        fontSize: '9px',
-                        padding: '2px 6px',
-                        background: 'rgba(34, 197, 94, 0.2)',
-                        color: '#22c55e',
-                        borderRadius: '4px',
-                        fontWeight: 600
-                      }}>
-                        CURRENT
-                      </span>
-                    )}
-                  </div>
-                  <ul style={{
-                    margin: 0,
-                    padding: '0 0 0 16px',
-                    fontSize: '11px',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    lineHeight: '1.5'
-                  }}>
-                    {entry.changes.slice(0, 3).map((change, i) => (
-                      <li key={i}>{change}</li>
-                    ))}
-                    {entry.changes.length > 3 && (
-                      <li style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
-                        +{entry.changes.length - 3} more...
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Connection status, Wake lock, custom content, and back button */}
-        <div style={{
+      {/* MIDDLE: Hamburger Menu */}
+      <div
+        className="simple-header-menu"
+        style={{
+          flex: '0 0 auto',
           display: 'flex',
+          justifyContent: 'center',
           alignItems: 'center',
-          gap: 'clamp(8px, 1.5vw, 12px)',
-          flex: '0 0 auto'
-        }}>
-          {/* Connection Status */}
-          {connectionStatuses && Object.keys(connectionStatuses).length > 0 && (
-            <ConnectionStatus
-              connectionStatuses={connectionStatuses}
-              connectionDebugInfo={connectionDebugInfo || {}}
-              size="small"
-            />
-          )}
-
-          {/* Wake Lock Toggle */}
-          {toggleWakeLock && (
-            <button
-              onClick={toggleWakeLock}
+          position: 'relative'
+        }}
+      >
+        {/* Always show hamburger - at minimum has language, version, and clear cache */}
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen(!menuOpen)
+            }}
               style={{
-                padding: '4px 10px',
-                fontSize: 'clamp(9px, 1.1vw, 11px)',
-                fontWeight: 600,
-                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-                color: wakeLockActive ? '#22c55e' : '#fff',
-                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+                padding: '6px 14px',
+                fontSize: '16px',
+                background: menuOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.2s'
-              }}
-              title={wakeLockActive ? 'Screen will stay on' : 'Screen may turn off'}
-            >
-              {wakeLockActive ? '☀️ On' : '🌙 Off'}
-            </button>
-          )}
-
-          {/* Custom right content */}
-          {rightContent}
-
-          {/* Back/Disconnect button */}
-          {onBack && (
-            <button
-              onClick={onBack}
-              style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                fontSize: 'clamp(10px, 1.2vw, 12px)',
-                fontWeight: 600,
-                background: 'rgba(239, 68, 68, 0.2)',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                whiteSpace: 'nowrap'
+                justifyContent: 'center',
+                height: '28px',
+                minWidth: '44px',
+                transition: 'all 0.15s'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
-              }}
+              title={t('header.menu')}
             >
-              <span>{backLabel}</span>
+              {menuOpen ? '✕' : '☰'}
             </button>
-          )}
 
-          {/* Options Menu */}
-          <DashboardOptionsMenu
-            showConnectionOptions={showConnectionOptions}
-            connectionType={connectionMode}
-            activeConnection={activeConnection}
-            onConnectionChange={onConnectionModeChange}
-          />
-        </div>
+            {/* Dropdown Menu */}
+            {menuOpen && (
+              <>
+                {/* Backdrop */}
+                <div
+                  onClick={() => setMenuOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 998
+                  }}
+                />
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  marginTop: '6px',
+                  background: '#1a1a2e',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  zIndex: 1000,
+                  minWidth: '200px',
+                  maxWidth: '280px',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+                }}>
+                  {menuItems.map((item, index) => {
+                    // Divider
+                    if (item.divider) {
+                      return (
+                        <div
+                          key={`divider-${index}`}
+                          style={{
+                            height: '1px',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            margin: '4px 0'
+                          }}
+                        />
+                      )
+                    }
+
+                    // Section header
+                    if (item.header) {
+                      return (
+                        <div
+                          key={`header-${index}`}
+                          style={{
+                            padding: '8px 14px 4px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            color: 'rgba(255, 255, 255, 0.4)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}
+                        >
+                          {item.header}
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <button
+                        key={index}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (!item.disabled && item.onClick) {
+                            item.onClick()
+                          }
+                          if (!item.keepOpen) {
+                            setMenuOpen(false)
+                          }
+                        }}
+                        disabled={item.disabled}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          width: '100%',
+                          padding: '12px 14px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          background: item.active
+                            ? (item.color ? `${item.color}20` : 'rgba(255, 255, 255, 0.1)')
+                            : 'transparent',
+                          color: item.disabled
+                            ? 'rgba(255, 255, 255, 0.3)'
+                            : (item.color || '#fff'),
+                          border: 'none',
+                          cursor: item.disabled ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          opacity: item.disabled ? 0.5 : 1,
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!item.disabled) {
+                            e.currentTarget.style.background = item.active
+                              ? (item.color ? `${item.color}30` : 'rgba(255, 255, 255, 0.15)')
+                              : 'rgba(255, 255, 255, 0.08)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = item.active
+                            ? (item.color ? `${item.color}20` : 'rgba(255, 255, 255, 0.1)')
+                            : 'transparent'
+                        }}
+                      >
+                        {item.icon && <span style={{ fontSize: '15px', width: '20px', textAlign: 'center' }}>{item.icon}</span>}
+                        <span style={{ flex: 1 }}>{item.label}</span>
+
+                        {/* Badge */}
+                        {item.badge && (
+                          <span style={{
+                            padding: '2px 6px',
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            background: item.badgeColor || 'rgba(255, 255, 255, 0.2)',
+                            color: item.badgeTextColor || '#fff',
+                            borderRadius: '4px'
+                          }}>
+                            {item.badge}
+                          </span>
+                        )}
+
+                        {/* Toggle switch */}
+                        {item.toggle !== undefined && (
+                          <span style={{
+                            width: '36px',
+                            height: '20px',
+                            background: item.toggle ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                            borderRadius: '10px',
+                            position: 'relative',
+                            transition: 'background 0.2s',
+                            flexShrink: 0
+                          }}>
+                            <span style={{
+                              position: 'absolute',
+                              top: '2px',
+                              left: item.toggle ? '18px' : '2px',
+                              width: '16px',
+                              height: '16px',
+                              background: '#fff',
+                              borderRadius: '50%',
+                              transition: 'left 0.2s'
+                            }} />
+                          </span>
+                        )}
+
+                        {/* Submenu arrow */}
+                        {item.submenu && (
+                          <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>▶</span>
+                        )}
+                      </button>
+                    )
+                  })}
+
+                  {/* Language selector */}
+                  {menuItems.length > 0 && <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setLanguageExpanded(!languageExpanded)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '10px 14px',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
+                    </span>
+                    <span style={{ flex: 1 }}>{t('header.language', 'Language')}</span>
+                    <span style={{
+                      fontSize: '8px',
+                      transform: languageExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s'
+                    }}>▼</span>
+                  </button>
+
+                  {/* Language options */}
+                  {languageExpanded && (
+                    <div style={{
+                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                      background: 'rgba(0, 0, 0, 0.2)'
+                    }}>
+                      {languages.map((lang) => (
+                        <button
+                          key={lang.code}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            i18n.changeLanguage(lang.code)
+                            setLanguageExpanded(false)
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            width: '100%',
+                            padding: '10px 14px 10px 44px',
+                            fontSize: '12px',
+                            fontWeight: i18n.language === lang.code ? 600 : 400,
+                            background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
+                            color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                            border: 'none',
+                            borderLeft: i18n.language === lang.code ? '3px solid #22c55e' : '3px solid transparent',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.15s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (i18n.language !== lang.code) {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (i18n.language !== lang.code) {
+                              e.currentTarget.style.background = 'transparent'
+                            }
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center' }}><lang.Flag /></span>
+                          <span>{lang.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Version info at bottom */}
+                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setVersionExpanded(!versionExpanded)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '10px 14px',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      background: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>📋</span>
+                    <span style={{ flex: 1 }}>Version {currentVersion}</span>
+                  </button>
+
+                  {/* Clear Cache */}
+                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  {!confirmingClearCache ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingClearCache(true)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        width: '100%',
+                        padding: '10px 14px',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        background: 'transparent',
+                        color: '#ef4444',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>🗑️</span>
+                      <span style={{ flex: 1 }}>{t('options.clearCache', 'Clear Cache')}</span>
+                    </button>
+                  ) : (
+                    <div style={{ padding: '10px 14px' }}>
+                      <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)', marginBottom: '8px' }}>
+                        {t('options.clearCacheConfirm', 'Clear cache and reload?')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleClearCache()
+                          }}
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: '#ef4444',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('common.yes', 'Yes')}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConfirmingClearCache(false)
+                          }}
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('common.cancel', 'Cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </>
       </div>
-    </>
+
+      {/* RIGHT: Fullscreen Button */}
+      <div style={{
+        flex: '1 1 0',
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        {onFullscreen && (
+          <button
+            onClick={onFullscreen}
+            style={{
+              padding: '6px 12px',
+              fontSize: '14px',
+              fontWeight: 600,
+              background: isFullscreen ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+              color: isFullscreen ? '#22c55e' : '#fff',
+              border: isFullscreen ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              height: '28px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.15s'
+            }}
+            title={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
+          >
+            {isFullscreen ? '⛶' : '⛶'}
+          </button>
+        )}
+      </div>
+    </div>
   )
 }

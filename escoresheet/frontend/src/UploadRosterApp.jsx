@@ -9,6 +9,7 @@ import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
 import SignaturePad from './components/SignaturePad'
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -195,16 +196,16 @@ export default function UploadRosterApp() {
       setLoadingMatches(true)
       console.log('[Roster DEBUG] ========== LOADING MATCHES ==========')
       console.log('[Roster DEBUG] Connection mode:', connectionMode)
-      console.log('[Roster DEBUG] Supabase client exists:', !!supabase)
+      console.log('[Roster DEBUG] apiFrom available: true')
 
       try {
         // Try Supabase first if in AUTO or SUPABASE mode
         const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
-          (connectionMode === CONNECTION_MODES.AUTO && supabase)
+          connectionMode === CONNECTION_MODES.AUTO
 
         console.log('[Roster DEBUG] Will try Supabase:', useSupabase)
 
-        if (useSupabase && supabase) {
+        if (useSupabase) {
           console.log('[Roster DEBUG] Attempting Supabase connection...')
           try {
             const result = await listAvailableMatchesSupabase()
@@ -762,27 +763,51 @@ export default function UploadRosterApp() {
       }
 
       // Try Supabase first if connected
-      if (activeConnection === 'supabase' && supabase && selectedMatch?.external_id) {
+      if (activeConnection === 'supabase' && selectedMatch?.external_id) {
         console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
 
-        // Build update object with pending roster and signatures
-        const coachSigKey = team === 'home' ? 'home_coach_signature' : 'away_coach_signature'
-        const captainSigKey = team === 'home' ? 'home_captain_signature' : 'away_captain_signature'
+        // JSONB signature keys
+        const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
+        const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
 
         const supabaseUpdate = {
           [pendingField]: rosterData
         }
 
-        // Also save signatures directly to main signature columns
+        // Build signatures JSONB partial update
+        const signaturesUpdate = {}
+        // Build connections JSONB partial update for pending roster
+        const pendingRosterJsonKey = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
+
+        // Save signatures to JSONB
         if (coachSignature) {
-          supabaseUpdate[coachSigKey] = coachSignature
+          signaturesUpdate[coachSigJsonKey] = coachSignature
         }
         if (captainSignature) {
-          supabaseUpdate[captainSigKey] = captainSignature
+          signaturesUpdate[captainSigJsonKey] = captainSignature
         }
 
-        const { error } = await supabase
-          .from('matches')
+        // Merge with existing signatures and connections JSONB
+        const { data: existingMatch } = await apiFrom('matches')
+          .select('signatures, connections')
+          .eq('external_id', selectedMatch.external_id)
+          .maybeSingle()
+
+        // Update signatures JSONB if we have signature updates
+        if (Object.keys(signaturesUpdate).length > 0) {
+          supabaseUpdate.signatures = {
+            ...(existingMatch?.signatures || {}),
+            ...signaturesUpdate
+          }
+        }
+
+        // Always update connections JSONB with pending roster
+        supabaseUpdate.connections = {
+          ...(existingMatch?.connections || {}),
+          [pendingRosterJsonKey]: rosterData
+        }
+
+        const { error } = await apiFrom('matches')
           .update(supabaseUpdate)
           .eq('external_id', selectedMatch.external_id)
 
@@ -790,7 +815,7 @@ export default function UploadRosterApp() {
           console.error('[Roster] Supabase write error:', error)
           // Fall back to server
         } else {
-          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', { coachSigKey, captainSigKey })
+          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', signaturesUpdate)
         }
       }
 
@@ -983,7 +1008,7 @@ export default function UploadRosterApp() {
                 flexDirection: 'column',
                 gap: '12px',
                 width: '100%',
-                maxWidth: '400px'
+                maxWidth: '500px'
               }}>
                 {availableMatches.map((match) => (
                   <button
@@ -1309,7 +1334,7 @@ export default function UploadRosterApp() {
               <span>{t('rosterSetup.firstName', 'First Name')}</span>
               <span>{t('rosterSetup.dob', 'DOB')}</span>
               <span>{t('rosterSetup.libero', 'Libero')}</span>
-              <span>{t('rosterSetup.captain', 'Captain')}</span>
+              <span>C</span>
               <span></span>
             </div>
 
@@ -1406,14 +1431,25 @@ export default function UploadRosterApp() {
                     <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
                     <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
                   </select>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      checked={player.isCaptain}
-                      onChange={(e) => handlePlayerChange(index, 'isCaptain', e.target.checked)}
-                      style={{ width: '18px', height: '18px' }}
-                    />
-                  </label>
+                  <div
+                    onClick={() => handlePlayerChange(index, 'isCaptain', !player.isCaptain)}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: player.isCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      background: player.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: player.isCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      userSelect: 'none',
+                      margin: '0 auto'
+                    }}
+                  >C</div>
                   <button
                     type="button"
                     onClick={() => handleDeletePlayer(index)}
@@ -1601,7 +1637,7 @@ export default function UploadRosterApp() {
                 {t('rosterSetup.signatures', 'Signatures')}
               </h2>
               <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '20px' }}>
-                {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before submitting.')}
+                {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
               </p>
               <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                 {/* Coach Signature */}

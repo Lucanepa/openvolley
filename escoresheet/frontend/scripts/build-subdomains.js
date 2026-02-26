@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build script for subdomain deployments
- * Builds each dashboard as a standalone app for Railway static site deployment
+ * Builds each dashboard as a standalone app for Render static site deployment
  *
  * Usage:
  *   node scripts/build-subdomains.js          # Build all subdomains
@@ -24,6 +24,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
+const disablePWA = process.env.DISABLE_PWA === 'true'
 
 // Read version from package.json
 const packageJson = JSON.parse(readFileSync(resolve(frontendDir, 'package.json'), 'utf-8'))
@@ -70,6 +71,15 @@ const subdomains = {
     title: 'Roster Upload - OpenVolley',
     mainEntry: 'upload-roster-main',
     themeColor: '#ea580c'
+  },
+  scoresheet: {
+    name: 'Scoresheet Archive',
+    shortName: 'Scoresheet',
+    description: 'View and download volleyball match scoresheets',
+    title: 'Scoresheet Archive - OpenVolley',
+    mainEntry: 'scoresheet-main',
+    themeColor: '#0891b2',
+    customHtml: true
   }
 }
 
@@ -78,9 +88,9 @@ function createIndexHtml(config) {
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/favicon.png" />
-    <link rel="icon" type="image/png" sizes="128x128 256x256" href="/favicon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
+    <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="${config.themeColor}" />
     <meta name="description" content="${config.description}" />
@@ -94,7 +104,86 @@ function createIndexHtml(config) {
 `
 }
 
-async function buildSubdomain(subdomain) {
+function createScoresheetHtml(config) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
+  <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
+  <meta name="theme-color" content="${config.themeColor}" />
+  <meta name="description" content="${config.description}" />
+  <title>${config.title}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Global Font Setting */
+    body {
+      font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* Custom print styles to ensure background graphics/colors print */
+    @media print {
+      html,
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+      }
+
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+
+      #root {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+      }
+    }
+
+    /* Hide scrollbar for cleaner look in inputs */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .vertical-text {
+      writing-mode: vertical-lr;
+      transform: rotate(180deg);
+    }
+
+    /* Dense table utils */
+    .input-dense {
+      text-align: center;
+      background-color: transparent;
+      width: 100%;
+      height: 100%;
+      outline: none;
+    }
+
+    .input-dense:focus {
+      background-color: rgba(59, 130, 246, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-900 antialiased print:bg-white text-[10px] overflow-auto">
+  <div id="root"></div>
+  <script type="module" src="/src/${config.mainEntry}.jsx"></script>
+</body>
+</html>
+`
+}
+
+async function buildSubdomain(subdomain, basePath = '/') {
   const config = subdomains[subdomain]
   if (!config) {
     console.error(`Unknown subdomain: ${subdomain}`)
@@ -109,35 +198,31 @@ async function buildSubdomain(subdomain) {
   // Clean output directory
   if (existsSync(outDir)) rmSync(outDir, { recursive: true })
 
-  console.log(`\n🔨 Building ${subdomain}.openvolley.app...`)
+  console.log(`\n🔨 Building ${subdomain}.openvolley.app...${basePath !== '/' ? ` (base: ${basePath})` : ''}`)
 
-  // Create temp index.html in frontend root
-  writeFileSync(tempIndexPath, createIndexHtml(config))
+  // Create temp index.html in frontend root (use custom HTML for scoresheet)
+  const htmlContent = config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
+  writeFileSync(tempIndexPath, htmlContent)
 
   try {
     await build({
       root: frontendDir,
-      base: '/',
+      base: basePath,
       publicDir: 'public',
       define: {
         __APP_VERSION__: JSON.stringify(appVersion)
-      },
-      optimizeDeps: {
-        include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks']
       },
       resolve: {
         dedupe: ['react', 'react-dom', 'dexie']
       },
       plugins: [
         react(),
-        VitePWA({
+        ...(!disablePWA ? [VitePWA({
           registerType: 'prompt',
-          includeAssets: ['favicon.png'],
+          includeAssets: ['openvolley_no_bg.png'],
           workbox: {
             skipWaiting: false,
             clientsClaim: true,
-            // Disable navigateFallback - each subdomain is a single entry point
-            // and the temp filename issue causes precache mismatch
             navigateFallback: null,
             runtimeCaching: [
               {
@@ -158,7 +243,6 @@ async function buildSubdomain(subdomain) {
                 }
               },
               {
-                // HTML pages - network first for navigation
                 urlPattern: /\.html$/,
                 handler: 'NetworkFirst',
                 options: {
@@ -179,11 +263,11 @@ async function buildSubdomain(subdomain) {
             background_color: '#ffffff',
             theme_color: config.themeColor,
             icons: [
-              { src: 'favicon.png', sizes: '192x192', type: 'image/png' },
-              { src: 'favicon.png', sizes: '512x512', type: 'image/png' }
+              { src: 'openvolley_no_bg.png', sizes: '192x192', type: 'image/png' },
+              { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
             ]
           }
-        })
+        })] : [])
       ],
       build: {
         outDir,
@@ -213,8 +297,8 @@ async function buildSubdomain(subdomain) {
       renameSync(builtHtmlPath, finalHtmlPath)
     }
 
-    // Create package.json for Railway deployment
-    const railwayPackageJson = {
+    // Create package.json for Render deployment
+    const renderPackageJson = {
       name: `openvolley-${subdomain}`,
       version: appVersion,
       private: true,
@@ -227,7 +311,7 @@ async function buildSubdomain(subdomain) {
     }
     writeFileSync(
       resolve(outDir, 'package.json'),
-      JSON.stringify(railwayPackageJson, null, 2)
+      JSON.stringify(renderPackageJson, null, 2)
     )
 
     console.log(`✅ Built ${subdomain}.openvolley.app → dist-${subdomain}/`)
@@ -248,6 +332,19 @@ async function main() {
 
   if (targetSubdomain) {
     await buildSubdomain(targetSubdomain)
+
+    // If building 'app', also build scoresheet with /scoresheet/ base path
+    if (targetSubdomain === 'app') {
+      console.log('\n📋 Building embedded scoresheet for app.openvolley.app/scoresheet...')
+      await buildSubdomain('scoresheet', '/scoresheet/')
+      const scoresheetSrc = resolve(frontendDir, 'dist-scoresheet')
+      const scoresheetDest = resolve(frontendDir, 'dist-app', 'scoresheet')
+      if (existsSync(scoresheetSrc)) {
+        mkdirSync(scoresheetDest, { recursive: true })
+        cpSync(scoresheetSrc, scoresheetDest, { recursive: true })
+        console.log('✅ Copied scoresheet to dist-app/scoresheet/')
+      }
+    }
   } else {
     console.log('\n📦 Building all subdomains...')
     for (const subdomain of Object.keys(subdomains)) {
@@ -261,7 +358,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().then(() => {
+  process.exit(0)
+}).catch((err) => {
   console.error('Build failed:', err)
   process.exit(1)
 })

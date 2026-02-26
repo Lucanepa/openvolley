@@ -1,15 +1,20 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { useTranslation } from 'react-i18next'
+import { apiFrom } from '../lib/apiClient'
+
+// Sport type for indoor volleyball
+const SPORT_TYPE = 'indoor'
 
 /**
  * Reusable RefereeSelector component for selecting referees from history
- * Uses Supabase referee_history table for suggestions
+ * Uses Supabase referee_database table for suggestions
  * @param {boolean} open - Whether dropdown is open
  * @param {function} onClose - Function to call when closing
  * @param {function} onSelect - Function to call when a referee is selected: (referee) => void
  * @param {Object} position - Position config for dropdown placement
  */
 export default function RefereeSelector({ open, onClose, onSelect, position = {} }) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [referees, setReferees] = useState([])
   const [loading, setLoading] = useState(false)
@@ -25,15 +30,9 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
   const loadReferees = async () => {
     setLoading(true)
     try {
-      if (!supabase) {
-        console.log('[RefereeSelector] Supabase not available')
-        setReferees([])
-        return
-      }
-
-      const { data, error } = await supabase
-        .from('referee_history')
+      const { data, error } = await apiFrom('referee_database')
         .select('first_name, last_name, country, dob, created_at')
+        .contains('sport_type', JSON.stringify([SPORT_TYPE]))
         .order('last_name', { ascending: true })
 
       if (error) {
@@ -104,7 +103,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
 
   if (!open) return null
 
-  const isOnline = !!supabase
+  const isOnline = true
 
   return (
     <>
@@ -145,21 +144,11 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
             flexDirection: 'column'
           }}
         >
-          {/* Header */}
-          <div style={{
-            padding: '4px 8px 8px',
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.5)',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-            marginBottom: '8px'
-          }}>
-            {isOnline ? 'Select from history (Supabase)' : 'Offline - no history available'}
-          </div>
 
           {/* Search Input */}
           <input
             type="text"
-            placeholder="Search referees..."
+            placeholder={t('refereeSelector.searchReferees')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -186,15 +175,15 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
           }}>
             {!isOnline ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                Connect to internet to see referee history
+                {t('refereeSelector.connectToInternet')}
               </div>
             ) : loading ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                Loading...
+                {t('common.loading')}
               </div>
             ) : filteredReferees.length === 0 ? (
               <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
-                {searchQuery ? 'No referees found' : 'No referee history yet. Enter referees manually and they will be saved for future matches.'}
+                {searchQuery ? t('refereeSelector.noRefereesFound') : t('refereeSelector.noRefereeHistory')}
               </div>
             ) : (
               filteredReferees.map((referee) => (

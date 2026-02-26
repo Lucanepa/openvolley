@@ -23,23 +23,36 @@ export async function parseRosterPdf(file) {
 
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    
+
     let fullText = ''
-    
+    // Collect all positioned text items for GFL column detection
+    const allPositionedItems = []
+
     // Extract text from all pages
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const textContent = await page.getTextContent()
       const pageText = textContent.items.map(item => item.str).join(' ')
       fullText += pageText + '\n'
+
+      // Store items with position info (transform[4]=x, transform[5]=y)
+      for (const item of textContent.items) {
+        if (item.str.trim()) {
+          allPositionedItems.push({
+            str: item.str.trim(),
+            x: item.transform[4],
+            y: item.transform[5],
+            page: i
+          })
+        }
+      }
     }
 
-    // Removed console.log('[parseRosterPdf] Extracted text (first 2000 chars):', fullText.substring(0, 2000))
-    // Removed console.log('[parseRosterPdf] Full text length:', fullText.length)
+    // Build GFL/LFP lookup using x-coordinates from positioned text items
+    const gflPlayerNames = buildGflLookup(allPositionedItems)
 
     // Parse the text to extract player and official data
-    const result = parseRosterText(fullText)
-    // Removed console.log('[parseRosterPdf] Parse result:', result)
+    const result = parseRosterText(fullText, gflPlayerNames)
     return result
   } catch (error) {
     console.error('Error parsing PDF:', error)
@@ -47,7 +60,66 @@ export async function parseRosterPdf(file) {
   }
 }
 
-function parseRosterText(text) {
+/**
+ * Use PDF x-coordinates to detect which players have an "X" in the GFL column.
+ * Returns a Set of "firstName|lastName" strings for players marked as GFL/LFP.
+ */
+function buildGflLookup(items) {
+  const gflPlayerNames = new Set()
+
+  // Find GFL/LAS/JFL/LFP column header by text
+  const gflHeader = items.find(item =>
+    /^(GFL|LAS|JFL|LFP)$/i.test(item.str)
+  )
+  if (!gflHeader) return gflPlayerNames
+
+  const gflX = gflHeader.x
+  const tolerance = 15 // x-coordinate tolerance in PDF units
+
+  // Find all "X" marks near the GFL column x-position
+  const gflMarks = items.filter(item =>
+    item.str === 'X' &&
+    Math.abs(item.x - gflX) < tolerance
+  )
+
+  if (gflMarks.length === 0) return gflPlayerNames
+
+  // For each GFL "X" mark, find the player on the same row (same y-coordinate)
+  // by looking for a 5-6 digit SV number at the same y position
+  const yTolerance = 3
+  for (const mark of gflMarks) {
+    // Find the SV number on the same line
+    const svNumberItem = items.find(item =>
+      /^\d{5,6}$/.test(item.str) &&
+      Math.abs(item.y - mark.y) < yTolerance
+    )
+    if (!svNumberItem) continue
+
+    // Find name items on the same row — items between the SV number x and the GFL column x
+    const rowItems = items.filter(item =>
+      Math.abs(item.y - mark.y) < yTolerance &&
+      item.x > svNumberItem.x &&
+      item.x < gflX - tolerance &&
+      !/^\d{5,6}$/.test(item.str) && // not SV number
+      !/^[MFH]$/.test(item.str) && // not gender
+      !/^\d{1,2}[./]\d{1,2}[./]\d{4}$/.test(item.str) && // not date
+      !/^(LLR|NLR|LLA|NLA|LLB|NLB|1L|2L|3L|4L)$/i.test(item.str) // not league/club codes
+    ).sort((a, b) => a.x - b.x)
+
+    // Typically first 2 text items are firstName, lastName (or lastName, firstName)
+    if (rowItems.length >= 2) {
+      // Store both orderings since parser may swap them
+      const name1 = rowItems[0].str
+      const name2 = rowItems[1].str
+      gflPlayerNames.add(`${name1}|${name2}`)
+      gflPlayerNames.add(`${name2}|${name1}`)
+    }
+  }
+
+  return gflPlayerNames
+}
+
+function parseRosterText(text, gflPlayerNames = new Set()) {
   const result = {
     players: [],
     coach: null,
@@ -140,7 +212,7 @@ function parseRosterText(text) {
     // This format is common in Swiss Volleyball rosters
     // Store SV format players separately to avoid duplicates
     const svFormatPlayers = []
-    
+
       // Try Italian/German/French format: SV number (5-6 digits), First Name, Last Name, M/F/H, Date
       // Pattern: 5-6 digit number, name, name, M/F/H, date (DD.MM.YYYY or DD/MM/YYYY, may have spaces)
       // Example Italian: "312307   Oscar   Bizard   M   29.10.2005"
@@ -149,43 +221,43 @@ function parseRosterText(text) {
       // Use normalized text for consistent spacing, but also try original text for dates with spaces
       // Note: H = Homme (French for Male), M = Male, F = Female
     const svPlayerPattern = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}[./]\\s*\\d{1,2}[./]\\s*\\d{4})`, 'gi')
-    
+
     // Reset regex lastIndex to avoid issues
     svPlayerPattern.lastIndex = 0
     while ((match = svPlayerPattern.exec(normalizedText)) !== null) {
-      const svNumber = match[1] // SV number (Swiss Volleyball registration number)
       const firstName = match[2].trim()
       const lastName = match[3].trim()
-      // Normalize date - remove spaces and normalize separators
       const dob = normalizeDate(match[4].replace(/\s+/g, '').trim())
+      // Use coordinate-based GFL lookup instead of trailing text heuristic
+      const isLfp = gflPlayerNames.has(`${firstName}|${lastName}`)
 
-      // Don't assign automatic numbers - user should see which players need numbers
       svFormatPlayers.push({
         number: null,
         firstName,
         lastName,
-        dob
+        dob,
+        isLfp
       })
     }
-    
+
     // If still no SV format players, try with original text (not normalized) to catch dates with spaces
     if (svFormatPlayers.length === 0) {
       const svPlayerPatternOriginal = new RegExp(`(\\d{5,6})\\s+(${fullName})\\s+(${fullName})\\s+[MFH]\\s+(\\d{1,2}\\s*[./]\\s*\\d{1,2}\\s*[./]\\s*\\d{4})`, 'gi')
-      
+
       let matchOriginal
       while ((matchOriginal = svPlayerPatternOriginal.exec(text)) !== null) {
-        const svNumber = matchOriginal[1]
         const firstName = matchOriginal[2].trim()
         const lastName = matchOriginal[3].trim()
-        // Normalize date - remove spaces and normalize separators
         const dob = normalizeDate(matchOriginal[4].replace(/\s+/g, '').trim())
+        // Use coordinate-based GFL lookup instead of trailing text heuristic
+        const isLfp = gflPlayerNames.has(`${firstName}|${lastName}`)
 
-        // Don't assign automatic numbers - user should see which players need numbers
         svFormatPlayers.push({
           number: null,
           firstName,
           lastName,
-          dob
+          dob,
+          isLfp
         })
       }
     }

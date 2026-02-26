@@ -1,12 +1,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getMatchData, updateMatchData } from '../utils/serverDataSync'
 import { useRealtimeConnection } from '../hooks/useRealtimeConnection'
 import { db } from '../db/db'
 import mikasaVolleyball from '../mikasa_v200w.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
+import { setsToWin } from '../utils/matchFormat'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
+  const { t } = useTranslation()
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
@@ -90,10 +96,19 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     })
   }, [])
 
+  // Handle match deletion - navigate back
+  const handleMatchDeleted = useCallback(() => {
+    console.log('[MatchEntry] Match deleted, navigating back')
+    if (onBack) {
+      onBack()
+    }
+  }, [onBack])
+
   // Use Supabase Realtime as primary connection, WebSocket as fallback
   useRealtimeConnection({
     matchId: matchId !== -1 ? matchId : null, // Disable for test mode
     onData: updateFromMatchData,
+    onDeleted: handleMatchDeleted,
     enabled: matchId && matchId !== -1
   })
 
@@ -230,8 +245,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     }
   }, [data?.set, team])
 
-  // Get set score
-  const setScore = useMemo(() => {
+  // Get sets won by each team
+  const setsWon = useMemo(() => {
     if (!data?.allSets) return { team: 0, opponent: 0 }
     let teamWins = 0
     let opponentWins = 0
@@ -250,9 +265,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }, [data?.allSets, team])
 
   // Check if match is finished
+  const matchBestOf = data?.match?.bestOf ?? 5
   const isMatchFinished = useMemo(() => {
-    return setScore.team === 3 || setScore.opponent === 3
-  }, [setScore])
+    const needed = setsToWin(matchBestOf)
+    return setsWon.team >= needed || setsWon.opponent >= needed
+  }, [setsWon, matchBestOf])
 
   // Calculate set results for Results component
   const calculateSetResults = useMemo(() => {
@@ -332,14 +349,14 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Match finished info
   const matchWinner = useMemo(() => {
     if (!isMatchFinished || !data) return ''
-    const teamWon = setScore.team > setScore.opponent
+    const teamWon = setsWon.team > setsWon.opponent
     return teamWon ? teamInfo.name : opponentInfo.name
-  }, [isMatchFinished, data, setScore, teamInfo, opponentInfo])
+  }, [isMatchFinished, data, setsWon, teamInfo, opponentInfo])
 
   const matchResult = useMemo(() => {
     if (!isMatchFinished) return ''
-    return `3:${Math.min(setScore.team, setScore.opponent)}`
-  }, [isMatchFinished, setScore])
+    return `${setsToWin(matchBestOf)}:${Math.min(setsWon.team, setsWon.opponent)}`
+  }, [isMatchFinished, setsWon, matchBestOf])
 
   // Get timeouts used in current set
   const timeoutsUsed = useMemo(() => {
@@ -427,7 +444,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     }
     
     const players = positions.map((pos) => {
-      const playerNum = latestLineup[pos]
+      const posData = latestLineup[pos]
+      // Handle both rich format (posData is object with number) and legacy format (posData is number)
+      const playerNum = posData && typeof posData === 'object' && posData.number !== undefined
+        ? posData.number
+        : posData
       if (!playerNum) {
         return {
           number: null,
@@ -438,17 +459,24 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           substitutedPlayerNumber: null
         }
       }
-      
-      const player = teamInfo?.players?.find(p => p.number === playerNum)
-      
-      // Check for libero substitution (substituted player number)
-      const liberoSub = latestLineupEvent?.payload?.liberoSubstitution
-      const substitutedPlayerNumber = liberoSub && 
-        String(liberoSub.liberoNumber) === String(playerNum) && 
-        liberoSub.position === pos
-        ? liberoSub.playerNumber
-        : null
-      
+
+      const player = teamInfo?.players?.find(p => String(p.number) === String(playerNum))
+
+      // Check for libero substitution - first from rich format, then from liberoSubstitution payload
+      let substitutedPlayerNumber = null
+      if (posData && typeof posData === 'object' && posData.isLibero && posData.replacedNumber) {
+        // Rich format has replacedNumber directly
+        substitutedPlayerNumber = posData.replacedNumber
+      } else {
+        // Legacy format - check liberoSubstitution in payload
+        const liberoSub = latestLineupEvent?.payload?.liberoSubstitution
+        substitutedPlayerNumber = liberoSub &&
+          String(liberoSub.liberoNumber) === String(playerNum) &&
+          liberoSub.position === pos
+          ? liberoSub.playerNumber
+          : null
+      }
+
       return {
         number: playerNum,
         position: pos,
@@ -496,12 +524,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     if (lineupEvents.length > 0) {
       const latestLineup = lineupEvents[0].payload?.lineup
       if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(num => {
+        Object.values(latestLineup).forEach(posData => {
+          // Handle both rich format (object with number) and legacy format (just number)
+          const num = posData && typeof posData === 'object' && posData.number !== undefined
+            ? posData.number
+            : posData
           if (num) playersOnCourtSet.add(Number(num))
         })
       }
     }
-    
+
     // Get bench players: all players not on court, excluding liberos
     const benchPlayers = teamInfo.players
       .filter(p => {
@@ -540,22 +572,26 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Get liberos (not currently on court)
   const benchLiberos = useMemo(() => {
     if (!teamInfo?.players || !data?.events || !data?.set) return []
-    
+
     // Get players currently on court
     const lineupEvents = data.events
       .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
       .sort((a, b) => new Date(b.ts) - new Date(a.ts))
-    
+
     const playersOnCourtSet = new Set()
     if (lineupEvents.length > 0) {
       const latestLineup = lineupEvents[0].payload?.lineup
       if (latestLineup && typeof latestLineup === 'object') {
-        Object.values(latestLineup).forEach(num => {
+        Object.values(latestLineup).forEach(posData => {
+          // Handle both rich format (object with number) and legacy format (just number)
+          const num = posData && typeof posData === 'object' && posData.number !== undefined
+            ? posData.number
+            : posData
           if (num) playersOnCourtSet.add(Number(num))
         })
       }
     }
-    
+
     // Get liberos not on court
     const liberos = teamInfo.players
       .filter(p => {
@@ -573,6 +609,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           lastName: p.lastName || p.name || '',
           dob: p.dob || '',
           libero: p.libero,
+          isCaptain: p.isCaptain || p.captain || false,
           sanctions,
           type: 'libero'
         }
@@ -610,11 +647,76 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   const overallSanctions = useMemo(() => {
     if (!data?.events) return []
     return data.events.filter(
-      e => e.type === 'sanction' && 
-      e.payload?.team === team && 
+      e => e.type === 'sanction' &&
+      e.payload?.team === team &&
       (!e.payload?.playerNumber || e.payload?.role)
     )
   }, [data?.events, team])
+
+  // Collect all sanctions for display - MUST be before any early returns to maintain consistent hook order
+  const allSanctionsForDisplay = useMemo(() => {
+    const sanctions = []
+
+    // Player sanctions (on court)
+    playersOnCourt.forEach(player => {
+      if (player.number) {
+        const playerSanctions = getPlayerSanctions(player.number)
+        playerSanctions.forEach(s => {
+          sanctions.push({
+            type: 'player',
+            number: player.number,
+            sanctionType: s.payload?.type || 'warning'
+          })
+        })
+      }
+    })
+
+    // Bench player sanctions
+    benchPlayersWithSanctions.forEach(player => {
+      player.sanctions.forEach(s => {
+        sanctions.push({
+          type: 'bench',
+          number: player.number,
+          sanctionType: s.payload?.type || 'warning'
+        })
+      })
+    })
+
+    // Libero sanctions
+    benchLiberos.forEach(libero => {
+      libero.sanctions.forEach(s => {
+        sanctions.push({
+          type: 'libero',
+          number: libero.number,
+          sanctionType: s.payload?.type || 'warning'
+        })
+      })
+    })
+
+    // Official sanctions
+    benchOfficials.forEach(official => {
+      if (official.sanctions) {
+        official.sanctions.forEach(s => {
+          sanctions.push({
+            type: 'official',
+            role: official.role,
+            sanctionType: s.payload?.type || 'warning'
+          })
+        })
+      }
+    })
+
+    // Overall team sanctions
+    overallSanctions.forEach(s => {
+      sanctions.push({
+        type: 'team',
+        role: s.payload?.role || 'Team',
+        sanctionType: s.payload?.type || 'warning'
+      })
+    })
+
+    return sanctions
+  }, [playersOnCourt, benchPlayersWithSanctions, benchLiberos, benchOfficials, overallSanctions, getPlayerSanctions])
 
   if (!data || !teamInfo) {
     if (embedded) {
@@ -626,7 +728,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           justifyContent: 'center',
           padding: '20px'
         }}>
-          <div>Loading...</div>
+          <div>{t('matchEntry.loading', 'Loading...')}</div>
         </div>
       )
     }
@@ -678,11 +780,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   // Show results when match is finished
   if (isMatchFinished) {
     const teamAShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
-      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
+      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
+      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
     const teamBShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || 'Away')
-      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || 'Home')
+      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
+      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
 
     return (
       <div style={{
@@ -706,7 +808,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           textTransform: 'uppercase',
           letterSpacing: '2px'
         }}>
-          The match has ended
+          {t('matchEntry.matchHasEnded', 'The match has ended')}
         </div>
 
         {/* Winner and Result */}
@@ -760,7 +862,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               marginTop: '16px'
             }}
           >
-            Back
+            {t('matchEntry.back', 'Back')}
           </button>
         )}
       </div>
@@ -773,758 +875,528 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       height: embedded ? '100%' : 'auto',
       background: embedded ? 'transparent' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      padding: embedded ? '12px' : '20px',
+      padding: embedded ? '8px' : '12px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       display: 'flex',
       flexDirection: 'column',
-      flex: embedded ? 1 : 'none'
+      flex: embedded ? 1 : 'none',
+      gap: '8px'
     }}>
-      <div style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-        width: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: embedded ? '12px' : '20px',
-        flex: embedded ? 1 : 'none'
-      }}>
-        {/* Header with Back button - only show when not embedded */}
-        {!embedded && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <button
-              onClick={onBack}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: 600,
-                background: 'rgba(255,255,255,0.1)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
-            >
-              ← Back
-            </button>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0 }}>
-              {teamInfo.name}
-            </h1>
-            <div style={{ width: '100px' }}></div>
-          </div>
-        )}
-
-        {/* Score Display */}
+      {/* Header with Back button - only show when not embedded */}
+      {!embedded && (
         <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '4px'
+        }}>
+          <button
+            onClick={onBack}
+            style={{
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: 600,
+              background: 'rgba(255,255,255,0.1)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            {t('matchEntry.backArrow', '← Back')}
+          </button>
+          <h1 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
+            {teamInfo.name}
+          </h1>
+          <div style={{ width: '80px' }}></div>
+        </div>
+      )}
+
+      {/* SECTION 1: TO+SUB | Score & Sets | Sanctions */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr auto',
+        gap: '8px',
+        alignItems: 'stretch'
+      }}>
+        {/* Left: TO + SUB side by side */}
+        <div style={{
+          display: 'flex',
+          gap: '6px'
+        }}>
+          {/* TO Counter */}
+          <div style={{
+            background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)',
+            borderRadius: '8px',
+            padding: '6px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.1)',
+            minWidth: '50px'
+          }}>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.to', 'TO')}</div>
+            <div style={{
+              fontSize: '28px',
+              fontWeight: 800,
+              color: timeoutsUsed >= 2 ? '#ef4444' : '#fff'
+            }}>
+              {timeoutsUsed}
+            </div>
+          </div>
+          {/* SUB Counter */}
+          <div style={{
+            background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.05)',
+            borderRadius: '8px',
+            padding: '6px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid rgba(255,255,255,0.1)',
+            minWidth: '50px'
+          }}>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.sub', 'SUB')}</div>
+            <div style={{
+              fontSize: '28px',
+              fontWeight: 800,
+              color: substitutionsUsed >= 6 ? '#ef4444' : substitutionsUsed >= 5 ? '#eab308' : '#fff'
+            }}>
+              {substitutionsUsed}
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Score and Set Counter */}
+        <div style={{
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: '8px',
+          padding: '8px 12px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: embedded ? '4px' : '8px',
-          padding: embedded ? '12px' : '20px',
-          background: 'rgba(255,255,255,0.05)',
-          borderRadius: '12px',
-          flexShrink: 0
+          justifyContent: 'center',
+          gap: '2px'
         }}>
-          {/* Current set points - team points bigger */}
+          {/* Score */}
           <div style={{
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'baseline',
-            gap: embedded ? '8px' : '12px',
-            fontWeight: 700
+            gap: '8px'
           }}>
             <span style={{
-              fontSize: embedded ? '48px' : '64px',
-              color: '#fff'
+              fontSize: '48px',
+              fontWeight: 800,
+              color: '#22c55e'
             }}>{points.team}</span>
             <span style={{
-              fontSize: embedded ? '20px' : '28px',
-              opacity: 0.5,
-              alignSelf: 'center'
+              fontSize: '24px',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.4)'
             }}>:</span>
             <span style={{
-              fontSize: embedded ? '28px' : '36px',
-              color: 'rgba(255,255,255,0.6)'
+              fontSize: '28px',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.5)'
             }}>{points.opponent}</span>
           </div>
-
-          {/* Set score with previous set results */}
+          {/* Set Score */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: embedded ? '12px' : '16px'
+            gap: '8px',
+            fontSize: '14px'
           }}>
-            {/* Previous set results */}
-            {data?.allSets?.filter(s => s.finished).length > 0 && (
-              <div style={{
-                display: 'flex',
-                gap: '6px',
-                fontSize: embedded ? '11px' : '13px',
-                color: 'rgba(255,255,255,0.5)'
-              }}>
-                {data.allSets.filter(s => s.finished).map((s, idx) => {
-                  const teamPts = team === 'home' ? s.homePoints : s.awayPoints
-                  const oppPts = team === 'home' ? s.awayPoints : s.homePoints
-                  const won = teamPts > oppPts
-                  return (
-                    <span key={idx} style={{
-                      padding: '2px 6px',
-                      background: won ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                      border: `1px solid ${won ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
-                      borderRadius: '4px',
-                      color: won ? '#22c55e' : '#ef4444'
-                    }}>
-                      {teamPts}-{oppPts}
-                    </span>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Current set counter */}
-            <div style={{
-              fontSize: embedded ? '14px' : '18px',
+            <span style={{ color: 'var(--muted)' }}>{t('common.setIndex', { index: data?.set?.index || 1 })}</span>
+            <span style={{
+              fontWeight: 700,
+              color: '#22c55e',
+              fontSize: '18px'
+            }}>{setsWon.team}</span>
+            <span style={{ color: 'rgba(255,255,255,0.4)' }}>-</span>
+            <span style={{
               fontWeight: 600,
-              color: 'var(--muted)'
-            }}>
-              Sets: {setScore.team} - {setScore.opponent}
-            </div>
+              color: 'rgba(255,255,255,0.5)',
+              fontSize: '14px'
+            }}>{setsWon.opponent}</span>
           </div>
         </div>
 
-        {/* Court and Info Section - Side by side for right team */}
+        {/* Right: Sanctions */}
         <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          borderRadius: '8px',
+          padding: '6px 10px',
           display: 'flex',
-          flexDirection: teamSide === 'right' ? 'row' : 'column',
-          gap: embedded ? '12px' : '20px',
-          alignItems: teamSide === 'right' ? 'flex-start' : 'stretch',
-          flex: embedded ? 1 : 'none',
-          minHeight: 0,
-          overflow: embedded ? 'auto' : 'visible'
+          flexDirection: 'column',
+          gap: '4px',
+          maxHeight: '80px',
+          overflow: 'auto',
+          minWidth: '100px'
         }}>
-          {/* Court Display - Single Side */}
-          <div className="court" style={{
-            aspectRatio: '1 / 1',
-            maxWidth: embedded ? '350px' : '600px',
-            maxHeight: embedded ? 'calc(100vh - 280px)' : 'none',
-            width: teamSide === 'right' ? '50%' : (embedded ? '100%' : '100%'),
-            margin: teamSide === 'right' ? '0' : '0 auto',
-            gridTemplateColumns: '1fr',
-            position: 'relative',
-            flexShrink: embedded ? 1 : 0
-          }}>
-          {/* 3m line */}
-          <div className="court-attack-line" style={{
-            left: teamSide === 'left' ? 'calc(100% - 33.33%)' : '33.33%',
-            right: teamSide === 'left' ? '0' : 'auto'
-          }} />
-          
-          {/* Net - positioned on left if right team, on right if left team */}
-          <div className="court-net" style={{
-            left: teamSide === 'left' ? 'auto' : '0',
-            right: teamSide === 'left' ? '0' : 'auto',
-            transform: 'none',
-            width: '8px'
-          }} />
-          
-          {/* Single side court */}
-          <div className={`court-side court-side-${teamSide}`} style={{ width: '100%' }}>
-            <div className={`court-team court-team-${teamSide}`} style={{ width: '100%', height: '100%' }}>
-              {/* Front Row (closer to net) */}
-              <div className={`court-row court-row-front`}>
-                {frontRow.map((player, idx) => {
-                  const sanctions = player.number ? getPlayerSanctions(player.number) : []
-                  const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                  const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                  const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                  const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                  
-                  const shouldShowBall = showBall && player.position === 'I'
-                  const teamPlayers = teamInfo?.players || []
-                  const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                  const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                  
-                  return (
-                    <div
-                      key={`front-${player.position}-${idx}`}
-                      className="court-player"
-                      style={{
-                        background: player.isLibero ? '#FFF8E7' : undefined,
-                        color: player.isLibero ? '#000' : undefined,
-                        position: 'relative',
-                        width: 'clamp(56px, 12vw, 96px)',
-                        height: 'clamp(56px, 12vw, 96px)',
-                        fontSize: 'clamp(20px, 5vw, 36px)'
-                      }}
-                    >
-                      {shouldShowBall && (
-                        <img
-                          src={mikasaVolleyball}
-                          alt="Volleyball"
-                          style={{
-                            position: 'absolute',
-                            left: teamSide === 'left' ? '-40px' : 'auto',
-                            right: teamSide === 'left' ? 'auto' : '-40px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: '30px',
-                            height: '30px',
-                            zIndex: 5,
-                            filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-                          }}
-                        />
-                      )}
-                      {player.substitutedPlayerNumber && (
-                        <span style={{
-                          position: 'absolute',
-                          top: '-8px',
-                          right: '-8px',
-                          width: '18px',
-                          height: '18px',
-                          background: '#FFF8E7',
-                          border: '2px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          color: '#000',
-                          zIndex: 6
-                        }}>
-                          {player.substitutedPlayerNumber}
-                        </span>
-                      )}
-                      <span className="court-player-position">{player.position}</span>
-                      {player.isCaptain && (() => {
-                        if (player.isLibero) {
-                          return (
-                            <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                          )
-                        }
-                        return <span className="court-player-captain">C</span>
-                      })()}
-                      {player.isLibero && !player.isCaptain && (
-                        <span style={{
-                          position: 'absolute',
-                          bottom: '-8px',
-                          left: '-8px',
-                          width: '20px',
-                          height: '18px',
-                          background: '#3b82f6',
-                          border: '2px solid rgba(255, 255, 255, 0.4)',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          color: '#fff',
-                          zIndex: 5
-                        }}>
-                          {liberoLabel}
-                        </span>
-                      )}
-                      {player.number || '—'}
-                      {sanctions.length > 0 && (
-                        <div style={{
-                          position: 'absolute',
-                          bottom: '-6px',
-                          right: '-6px',
-                          zIndex: 10,
-                          ...(player.substitutedPlayerNumber && (hasWarning || hasDisqualification) ? {
-                            background: '#1a1a1a',
-                            borderRadius: '3px',
-                            padding: '2px',
-                            bottom: '-8px',
-                            right: '-8px'
-                          } : {})
-                        }}>
-                          {hasExpulsion ? (
-                            <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                              <div className="sanction-card yellow" style={{
-                                width: '6px',
-                                height: '9px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                position: 'absolute',
-                                left: '0',
-                                top: '1px',
-                                transform: 'rotate(-8deg)',
-                                zIndex: 1,
-                                borderRadius: '1px'
-                              }}></div>
-                              <div className="sanction-card red" style={{
-                                width: '6px',
-                                height: '9px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                position: 'absolute',
-                                right: '0',
-                                top: '1px',
-                                transform: 'rotate(8deg)',
-                                zIndex: 2,
-                                borderRadius: '1px'
-                              }}></div>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', gap: '1px' }}>
-                              {(hasWarning || hasDisqualification) && (
-                                <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                              )}
-                              {(hasPenalty || hasDisqualification) && (
-                                <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+          <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600 }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
+          {allSanctionsForDisplay.length === 0 ? (
+            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>{t('matchEntry.none', 'None')}</div>
+          ) : (
+            allSanctionsForDisplay.slice(0, 3).map((s, idx) => (
+              <div key={idx} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px'
+              }}>
+                <div style={{
+                  width: '8px',
+                  height: '12px',
+                  background: s.sanctionType === 'warning' || s.sanctionType === 'disqualification' ? '#eab308' : '#ef4444',
+                  borderRadius: '1px'
+                }}></div>
+                <span style={{ fontWeight: 600 }}>
+                  {s.type === 'player' || s.type === 'bench' || s.type === 'libero' ? `#${s.number}` : s.role}
+                </span>
               </div>
-
-              {/* Back Row (further from net) */}
-              <div className={`court-row court-row-back`}>
-                {backRow.map((player, idx) => {
-                  const sanctions = player.number ? getPlayerSanctions(player.number) : []
-                  const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
-                  const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
-                  const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
-                  const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
-                  
-                  const shouldShowBall = showBall && player.position === 'I'
-                  const teamPlayers = teamInfo?.players || []
-                  const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
-                  const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
-                  
-                  return (
-                    <div
-                      key={`back-${player.position}-${idx}`}
-                      className="court-player"
-                      style={{
-                        background: player.isLibero ? '#FFF8E7' : undefined,
-                        color: player.isLibero ? '#000' : undefined,
-                        position: 'relative',
-                        width: 'clamp(56px, 12vw, 96px)',
-                        height: 'clamp(56px, 12vw, 96px)',
-                        fontSize: 'clamp(20px, 5vw, 36px)'
-                      }}
-                    >
-                      {shouldShowBall && (
-                        <img
-                          src={mikasaVolleyball}
-                          alt="Volleyball"
-                          style={{
-                            position: 'absolute',
-                            left: teamSide === 'left' ? '-40px' : 'auto',
-                            right: teamSide === 'left' ? 'auto' : '-40px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: '30px',
-                            height: '30px',
-                            zIndex: 5,
-                            filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35))'
-                          }}
-                        />
-                      )}
-                      {player.substitutedPlayerNumber && (
-                        <span style={{
-                          position: 'absolute',
-                          top: '-8px',
-                          right: '-8px',
-                          width: '18px',
-                          height: '18px',
-                          background: '#FFF8E7',
-                          border: '2px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          color: '#000',
-                          zIndex: 6
-                        }}>
-                          {player.substitutedPlayerNumber}
-                        </span>
-                      )}
-                      <span className="court-player-position">{player.position}</span>
-                      {player.isCaptain && (() => {
-                        if (player.isLibero) {
-                          return (
-                            <span className="court-player-captain" style={{ width: '20px' }}>{liberoLabel}</span>
-                          )
-                        }
-                        return <span className="court-player-captain">C</span>
-                      })()}
-                      {player.isLibero && !player.isCaptain && (
-                        <span style={{
-                          position: 'absolute',
-                          bottom: '-8px',
-                          left: '-8px',
-                          width: '20px',
-                          height: '18px',
-                          background: '#3b82f6',
-                          border: '2px solid rgba(255, 255, 255, 0.4)',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          color: '#fff',
-                          zIndex: 5
-                        }}>
-                          {liberoLabel}
-                        </span>
-                      )}
-                      {player.number || '—'}
-                      {sanctions.length > 0 && (
-                        <div style={{
-                          position: 'absolute',
-                          bottom: '-6px',
-                          right: '-6px',
-                          zIndex: 10,
-                          ...(player.substitutedPlayerNumber && (hasWarning || hasDisqualification) ? {
-                            background: '#1a1a1a',
-                            borderRadius: '3px',
-                            padding: '2px',
-                            bottom: '-8px',
-                            right: '-8px'
-                          } : {})
-                        }}>
-                          {hasExpulsion ? (
-                            <div style={{ position: 'relative', width: '12px', height: '12px' }}>
-                              <div className="sanction-card yellow" style={{
-                                width: '6px',
-                                height: '9px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                position: 'absolute',
-                                left: '0',
-                                top: '1px',
-                                transform: 'rotate(-8deg)',
-                                zIndex: 1,
-                                borderRadius: '1px'
-                              }}></div>
-                              <div className="sanction-card red" style={{
-                                width: '6px',
-                                height: '9px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                                position: 'absolute',
-                                right: '0',
-                                top: '1px',
-                                transform: 'rotate(8deg)',
-                                zIndex: 2,
-                                borderRadius: '1px'
-                              }}></div>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', gap: '1px' }}>
-                              {(hasWarning || hasDisqualification) && (
-                                <div className="sanction-card yellow" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                              )}
-                              {(hasPenalty || hasDisqualification) && (
-                                <div className="sanction-card red" style={{ width: '8px', height: '11px', boxShadow: '0 1px 3px rgba(0,0,0,0.8)', borderRadius: '1px' }}></div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
+            ))
+          )}
+          {allSanctionsForDisplay.length > 3 && (
+            <div style={{ fontSize: '9px', color: 'var(--muted)' }}>{t('matchEntry.moreCount', '+{{count}} more', { count: allSanctionsForDisplay.length - 3 })}</div>
+          )}
         </div>
+      </div>
 
-        {/* Info Section - Right side for right team, below for left team */}
+      {/* SECTION 2: Court (full width, centered) */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        minHeight: 0
+      }}>
+        {/* Court - centered, max 80% width */}
         <div style={{
+          width: '80%',
+          maxWidth: '400px',
+          aspectRatio: '1 / 1',
+          position: 'relative'
+        }}>
+          <div className="court" style={{
+            width: '100%',
+            height: '100%',
+            position: 'relative'
+          }}>
+            {/* 3m line */}
+            <div className="court-attack-line" style={{
+              left: teamSide === 'left' ? 'calc(100% - 40.33%)' : '40.33%',
+              right: teamSide === 'left' ? '0' : 'auto'
+            }} />
+
+            {/* Net */}
+            <div className="court-net" style={{
+              left: teamSide === 'left' ? 'auto' : '0',
+              right: teamSide === 'left' ? '0' : 'auto',
+              transform: 'none',
+              width: '6px'
+            }} />
+
+            {/* Single side court */}
+            <div className={`court-side court-side-${teamSide}`} style={{ width: '100%' }}>
+              <div className={`court-team court-team-${teamSide}`} style={{ width: '100%', height: '100%' }}>
+                {/* Front Row */}
+                <div className="court-row court-row-front">
+                  {frontRow.map((player, idx) => {
+                    const sanctions = player.number ? getPlayerSanctions(player.number) : []
+                    const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+                    const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+                    const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+                    const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+                    const shouldShowBall = showBall && player.position === 'I'
+                    const teamPlayers = teamInfo?.players || []
+                    const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                    const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+
+                    return (
+                      <div
+                        key={`front-${player.position}-${idx}`}
+                        className="court-player"
+                        style={{
+                          background: player.isLibero ? '#FFF8E7' : undefined,
+                          color: player.isLibero ? '#000' : undefined,
+                          position: 'relative',
+                          aspectRatio: '1 / 1',
+                          fontSize: 'clamp(25px, 10vw, 40px)'
+                        }}
+                      >
+                        {shouldShowBall && (
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{
+                            position: 'absolute',
+                            left: teamSide === 'left' ? '-28px' : 'auto',
+                            right: teamSide === 'left' ? 'auto' : '-28px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: '24px',
+                            height: '24px',
+                            zIndex: 5,
+                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                          }} />
+                        )}
+                        {player.substitutedPlayerNumber && (
+                          <span style={{
+                            position: 'absolute', top: '-6px', right: '-6px',
+                            width: '16px', height: '16px', background: '#FFF8E7',
+                            border: '2px solid rgba(0,0,0,0.2)', borderRadius: '3px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '9px', fontWeight: 700, color: '#000', zIndex: 6
+                          }}>{player.substitutedPlayerNumber}</span>
+                        )}
+                        <span className="court-player-position">{player.position}</span>
+                        {player.isCaptain && (
+                          <span className="court-player-captain" style={player.isLibero ? { background: '#fff', color: '#10b981', borderColor: '#10b981' } : {}}>C</span>
+                        )}
+                        {player.isLibero && !player.isCaptain && (
+                          <span style={{
+                            position: 'absolute', bottom: '-6px', left: '-6px',
+                            width: '18px', height: '14px', background: '#3b82f6',
+                            border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
+                          }}>{liberoLabel}</span>
+                        )}
+                        {player.number || '—'}
+                        {sanctions.length > 0 && (
+                          <div style={{ position: 'absolute', bottom: '-5px', right: '-5px', zIndex: 10 }}>
+                            {hasExpulsion ? (
+                              <div style={{ position: 'relative', width: '10px', height: '10px' }}>
+                                <div className="sanction-card yellow" style={{ width: '5px', height: '8px', position: 'absolute', left: 0, top: '1px', transform: 'rotate(-8deg)', borderRadius: '1px' }}></div>
+                                <div className="sanction-card red" style={{ width: '5px', height: '8px', position: 'absolute', right: 0, top: '1px', transform: 'rotate(8deg)', borderRadius: '1px' }}></div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '1px' }}>
+                                {(hasWarning || hasDisqualification) && <div className="sanction-card yellow" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
+                                {(hasPenalty || hasDisqualification) && <div className="sanction-card red" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Back Row */}
+                <div className="court-row court-row-back">
+                  {backRow.map((player, idx) => {
+                    const sanctions = player.number ? getPlayerSanctions(player.number) : []
+                    const hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+                    const hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+                    const hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+                    const hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+                    const shouldShowBall = showBall && player.position === 'I'
+                    const teamPlayers = teamInfo?.players || []
+                    const liberoCount = teamPlayers.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+                    const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : 'L2')
+
+                    return (
+                      <div
+                        key={`back-${player.position}-${idx}`}
+                        className="court-player"
+                        style={{
+                          background: player.isLibero ? '#FFF8E7' : undefined,
+                          color: player.isLibero ? '#000' : undefined,
+                          position: 'relative',
+                          width: 'clamp(44px, 10vw, 72px)',
+                          height: 'clamp(44px, 10vw, 72px)',
+                          fontSize: 'clamp(18px, 4vw, 28px)'
+                        }}
+                      >
+                        {shouldShowBall && (
+                          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{
+                            position: 'absolute',
+                            left: teamSide === 'left' ? '-28px' : 'auto',
+                            right: teamSide === 'left' ? 'auto' : '-28px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: '24px',
+                            height: '24px',
+                            zIndex: 5,
+                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                          }} />
+                        )}
+                        {player.substitutedPlayerNumber && (
+                          <span style={{
+                            position: 'absolute', top: '-6px', right: '-6px',
+                            width: '16px', height: '16px', background: '#FFF8E7',
+                            border: '2px solid rgba(0,0,0,0.2)', borderRadius: '3px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '9px', fontWeight: 700, color: '#000', zIndex: 6
+                          }}>{player.substitutedPlayerNumber}</span>
+                        )}
+                        <span className="court-player-position">{player.position}</span>
+                        {player.isCaptain && (
+                          <span className="court-player-captain" style={player.isLibero ? { background: '#fff', color: '#10b981', borderColor: '#10b981' } : {}}>C</span>
+                        )}
+                        {player.isLibero && !player.isCaptain && (
+                          <span style={{
+                            position: 'absolute', bottom: '-6px', left: '-6px',
+                            width: '18px', height: '14px', background: '#3b82f6',
+                            border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
+                          }}>{liberoLabel}</span>
+                        )}
+                        {player.number || '—'}
+                        {sanctions.length > 0 && (
+                          <div style={{ position: 'absolute', bottom: '-5px', right: '-5px', zIndex: 10 }}>
+                            {hasExpulsion ? (
+                              <div style={{ position: 'relative', width: '10px', height: '10px' }}>
+                                <div className="sanction-card yellow" style={{ width: '5px', height: '8px', position: 'absolute', left: 0, top: '1px', transform: 'rotate(-8deg)', borderRadius: '1px' }}></div>
+                                <div className="sanction-card red" style={{ width: '5px', height: '8px', position: 'absolute', right: 0, top: '1px', transform: 'rotate(8deg)', borderRadius: '1px' }}></div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '1px' }}>
+                                {(hasWarning || hasDisqualification) && <div className="sanction-card yellow" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
+                                {(hasPenalty || hasDisqualification) && <div className="sanction-card red" style={{ width: '6px', height: '9px', borderRadius: '1px' }}></div>}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 3: Bench - Players, Liberos, Officials (N and Codes only) */}
+      <div style={{
+        background: 'rgba(255,255,255,0.03)',
+        borderRadius: '8px',
+        padding: '8px 12px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+        alignItems: 'center'
+      }}>
+        {/* Bench Players */}
+        {benchPlayersWithSanctions.map((player, idx) => (
+          <div key={`bp-${idx}`} style={{
             display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-            flex: teamSide === 'right' ? '1' : 'none',
-            minWidth: teamSide === 'right' ? '300px' : 'auto'
-          }}>
-            {/* Timeouts and Substitutions */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: teamSide === 'right' ? '1fr 1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '12px',
-              marginBottom: teamSide === 'right' ? '0' : '20px'
-            }}>
-              {/* Timeouts */}
-              <div style={{
-                background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)',
-                borderRadius: '8px',
-                padding: '12px',
-                textAlign: 'center',
-                border: timeoutsUsed >= 2 ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid transparent'
-              }}>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                  TO
-                </div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: timeoutsUsed >= 2 ? '#ef4444' : 'inherit' }}>
-                  {timeoutsUsed} / 2
-                </div>
-              </div>
-
-              {/* Substitutions */}
-              <div style={{
-                background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.05)',
-                borderRadius: '8px',
-                padding: '12px',
-                textAlign: 'center',
-                border: substitutionsUsed >= 6 ? '1px solid rgba(239, 68, 68, 0.4)' : substitutionsUsed >= 5 ? '1px solid rgba(234, 179, 8, 0.4)' : '1px solid transparent'
-              }}>
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-                  Sub
-                </div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: substitutionsUsed >= 6 ? '#ef4444' : substitutionsUsed >= 5 ? '#eab308' : 'inherit' }}>
-                  {substitutionsUsed} / 6
-                </div>
-              </div>
-            </div>
-
-            {/* Bench Section: Players, Liberos, and Officials */}
-            {(benchPlayersWithSanctions.length > 0 || benchLiberos.length > 0 || benchOfficials.length > 0) && (
-              <div style={{
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '12px',
-                padding: '20px'
-              }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
-              Bench
-            </h3>
-            
-            {/* Bench Players */}
-            {benchPlayersWithSanctions.length > 0 && (
-              <div style={{ marginBottom: '20px' }}>
-                <h4 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px', color: 'var(--muted)' }}>
-                  Players
-                </h4>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                  gap: '12px'
-                }}>
-                  {benchPlayersWithSanctions.map((player, idx) => (
-                    <div
-                      key={`player-${idx}`}
-                      style={{
-                        background: 'rgba(255,255,255,0.05)',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px'
-                      }}
-                    >
-                      <div style={{ fontSize: '14px', fontWeight: 600 }}>
-                        #{player.number} {player.firstName} {player.lastName}
-                      </div>
-                      {player.sanctions.length > 0 && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                          {player.sanctions.map((s, sIdx) => {
-                            const type = s.payload?.type || 'warning'
-                            const color = type === 'warning' || type === 'disqualification' ? '#eab308' : '#ef4444'
-                            return (
-                              <div
-                                key={sIdx}
-                                style={{
-                                  width: '12px',
-                                  height: '16px',
-                                  background: color,
-                                  border: '1px solid rgba(0,0,0,0.3)',
-                                  borderRadius: '2px',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.8)'
-                                }}
-                                title={type}
-                              ></div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Liberos */}
-            {benchLiberos.length > 0 && (
-              <div style={{ marginBottom: '20px' }}>
-                <h4 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px', color: 'var(--muted)' }}>
-                  Liberos
-                </h4>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                  gap: '12px'
-                }}>
-                  {benchLiberos.map((libero, idx) => (
-                    <div
-                      key={`libero-${idx}`}
-                      style={{
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px'
-                      }}
-                    >
-                      <div style={{ fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{
-                          background: '#3b82f6',
-                          color: '#fff',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          fontWeight: 700
-                        }}>
-                          {libero.libero === 'libero1' ? 'L1' : 'L2'}
-                        </span>
-                        #{libero.number} {libero.firstName} {libero.lastName}
-                      </div>
-                      {libero.sanctions.length > 0 && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                          {libero.sanctions.map((s, sIdx) => {
-                            const type = s.payload?.type || 'warning'
-                            const color = type === 'warning' || type === 'disqualification' ? '#eab308' : '#ef4444'
-                            return (
-                              <div
-                                key={sIdx}
-                                style={{
-                                  width: '12px',
-                                  height: '16px',
-                                  background: color,
-                                  border: '1px solid rgba(0,0,0,0.3)',
-                                  borderRadius: '2px',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.8)'
-                                }}
-                                title={type}
-                              ></div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Bench Officials */}
-            {benchOfficials.length > 0 && (
-              <div>
-                <h4 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px', color: 'var(--muted)' }}>
-                  Officials
-                </h4>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                  gap: '12px'
-                }}>
-                  {benchOfficials.map((official, idx) => (
-                    <div
-                      key={`official-${idx}`}
-                      style={{
-                        background: 'rgba(255,255,255,0.05)',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px'
-                      }}
-                    >
-                      <div style={{ fontSize: '14px', fontWeight: 600 }}>
-                        {official.firstName} {official.lastName}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {official.role}
-                      </div>
-                      {official.sanctions && official.sanctions.length > 0 && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                          {official.sanctions.map((s, sIdx) => {
-                            const type = s.payload?.type || 'warning'
-                            const color = type === 'warning' || type === 'disqualification' ? '#eab308' : '#ef4444'
-                            return (
-                              <div
-                                key={sIdx}
-                                style={{
-                                  width: '12px',
-                                  height: '16px',
-                                  background: color,
-                                  border: '1px solid rgba(0,0,0,0.3)',
-                                  borderRadius: '2px',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.8)'
-                                }}
-                                title={type}
-                              ></div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        </div>
-
-        {/* Overall Sanctions */}
-        {overallSanctions.length > 0 && (
-          <div style={{
+            alignItems: 'center',
+            gap: '4px',
+            padding: '4px 8px',
             background: 'rgba(255,255,255,0.05)',
-            borderRadius: '12px',
-            padding: '20px'
+            borderRadius: '4px',
+            fontSize: '13px'
           }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
-              Team Sanctions
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {overallSanctions.map((sanction, idx) => {
-                const type = sanction.payload?.type || 'warning'
-                const target = sanction.payload?.role || 'Team'
-                const color = type === 'warning' || type === 'disqualification' ? '#eab308' : '#ef4444'
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px',
-                      background: 'rgba(255,255,255,0.05)',
-                      borderRadius: '8px'
-                    }}
-                  >
-                    <div style={{
-                      width: '16px',
-                      height: '22px',
-                      background: color,
-                      border: '1px solid rgba(0,0,0,0.3)',
-                      borderRadius: '2px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.8)'
-                    }}></div>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{target}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+            <span style={{ fontWeight: 700 }}>#{player.number}</span>
+            {player.sanctions.length > 0 && (
+              <div style={{ display: 'flex', gap: '1px' }}>
+                {player.sanctions.map((s, sIdx) => (
+                  <div key={sIdx} style={{
+                    width: '6px', height: '9px', borderRadius: '1px',
+                    background: s.payload?.type === 'warning' || s.payload?.type === 'disqualification' ? '#eab308' : '#ef4444'
+                  }}></div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Separator if both players and liberos exist */}
+        {benchPlayersWithSanctions.length > 0 && benchLiberos.length > 0 && (
+          <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)' }}></div>
+        )}
+
+        {/* Liberos */}
+        {benchLiberos.map((libero, idx) => {
+          const liberoCount = teamInfo?.players?.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length || 0
+          const liberoLabel = liberoCount === 1 ? 'L' : (libero.libero === 'libero1' ? 'L1' : 'L2')
+          return (
+            <div key={`lib-${idx}`} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '4px',
+              fontSize: '13px'
+            }}>
+              <span style={{
+                background: '#3b82f6',
+                color: '#fff',
+                padding: '1px 4px',
+                borderRadius: '2px',
+                fontSize: '9px',
+                fontWeight: 700
+              }}>{liberoLabel}</span>
+              <span style={{ fontWeight: 700 }}>#{libero.number}</span>
+              {libero.isCaptain && (
+                <span style={{
+                  background: '#fff',
+                  color: '#10b981',
+                  border: '1px solid #10b981',
+                  borderRadius: '2px',
+                  padding: '0 3px',
+                  fontSize: '9px',
+                  fontWeight: 700
+                }}>C</span>
+              )}
             </div>
+          )
+        })}
+
+        {/* Separator if liberos/players and officials exist */}
+        {(benchPlayersWithSanctions.length > 0 || benchLiberos.length > 0) && benchOfficials.length > 0 && (
+          <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)' }}></div>
+        )}
+
+        {/* Officials - show role codes */}
+        {benchOfficials.map((official, idx) => {
+          // Convert role to short code
+          const roleCode = official.role === 'Coach' || official.role === 'coach' ? 'C' :
+                          official.role === 'Assistant Coach' || official.role === 'assistant_coach' ? 'AC' :
+                          official.role === 'Doctor' || official.role === 'doctor' ? 'D' :
+                          official.role === 'Physio' || official.role === 'physio' ? 'P' :
+                          official.role === 'Manager' || official.role === 'manager' ? 'M' :
+                          official.role?.charAt(0)?.toUpperCase() || '?'
+          return (
+            <div key={`off-${idx}`} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 8px',
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: '4px',
+              fontSize: '13px'
+            }}>
+              <span style={{
+                background: 'rgba(255,255,255,0.2)',
+                padding: '1px 4px',
+                borderRadius: '2px',
+                fontSize: '10px',
+                fontWeight: 700
+              }}>{roleCode}</span>
+              {official.sanctions && official.sanctions.length > 0 && (
+                <div style={{ display: 'flex', gap: '1px' }}>
+                  {official.sanctions.map((s, sIdx) => (
+                    <div key={sIdx} style={{
+                      width: '6px', height: '9px', borderRadius: '1px',
+                      background: s.payload?.type === 'warning' || s.payload?.type === 'disqualification' ? '#eab308' : '#ef4444'
+                    }}></div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Empty state */}
+        {benchPlayersWithSanctions.length === 0 && benchLiberos.length === 0 && benchOfficials.length === 0 && (
+          <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+            {t('matchEntry.noBenchData', 'No bench data')}
           </div>
         )}
-        </div>
       </div>
 
       {/* Test Mode Controls - only shown in test mode */}
@@ -1532,7 +1404,6 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         <TestModeControls
           matchId={matchId}
           onRefresh={() => {
-            // Force re-fetch data
             if (matchId && matchId !== -1) {
               getMatchData(matchId).then(result => {
                 if (result.success) {

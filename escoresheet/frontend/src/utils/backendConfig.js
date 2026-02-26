@@ -1,10 +1,46 @@
 /**
  * Backend Configuration
  * Detects if backend server is available and provides URLs
+ * Supports runtime override via localStorage for local server connections
  */
 
 // Cloud relay URL for tablets/mobile (non-Electron/non-desktop)
-const CLOUD_RELAY_URL = 'https://escoresheet-backend-production.up.railway.app'
+const CLOUD_RELAY_URL = 'https://backend.openvolley.app'
+
+// localStorage key for runtime backend URL override
+const OVERRIDE_KEY = 'openvolley_backend_override'
+
+/**
+ * Set a runtime backend URL override (persists in localStorage)
+ * Used when connecting to a local server at a custom IP:port
+ * @param {string|null} url - Backend URL to override with, or null to clear
+ */
+export function setBackendOverride(url) {
+  try {
+    if (url) {
+      localStorage.setItem(OVERRIDE_KEY, url)
+    } else {
+      localStorage.removeItem(OVERRIDE_KEY)
+    }
+  } catch { /* localStorage unavailable */ }
+}
+
+/**
+ * Get the current backend URL override, if set
+ * @returns {string|null}
+ */
+export function getBackendOverride() {
+  try {
+    return localStorage.getItem(OVERRIDE_KEY) || null
+  } catch { return null }
+}
+
+/**
+ * Clear the backend URL override
+ */
+export function clearBackendOverride() {
+  try { localStorage.removeItem(OVERRIDE_KEY) } catch {}
+}
 
 /**
  * Detect if running on a desktop platform (Mac/PC/Linux) vs tablet/mobile
@@ -42,6 +78,12 @@ export function isStaticDeployment() {
 
 // Get backend URL from environment or use current host
 export function getBackendUrl() {
+  // Check runtime override first (set by local server connection UI)
+  const override = getBackendOverride()
+  if (override) {
+    return override
+  }
+
   // If VITE_BACKEND_URL is set, use it (production with separate backend)
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL
@@ -79,18 +121,20 @@ export function getWebSocketUrl() {
     return null // No backend available
   }
 
+  // If runtime override is set, derive WebSocket URL from it
+  const override = getBackendOverride()
+  if (override) {
+    return httpToWsUrl(override)
+  }
+
   // If backend URL is set, use it for WebSocket
   if (import.meta.env.VITE_BACKEND_URL) {
-    const url = new URL(import.meta.env.VITE_BACKEND_URL)
-    const protocol = url.protocol === 'https:' ? 'wss' : 'ws'
-    return `${protocol}://${url.host}`
+    return httpToWsUrl(import.meta.env.VITE_BACKEND_URL)
   }
 
   // On static deployments, use cloud relay WebSocket
   if (isStaticDeployment()) {
-    const url = new URL(CLOUD_RELAY_URL)
-    const protocol = url.protocol === 'https:' ? 'wss' : 'ws'
-    return `${protocol}://${url.host}`
+    return httpToWsUrl(CLOUD_RELAY_URL)
   }
 
   // In development, use separate WebSocket port
@@ -102,6 +146,17 @@ export function getWebSocketUrl() {
   }
 
   return null
+}
+
+/**
+ * Convert an HTTP(S) URL to a WS(S) URL
+ * @param {string} httpUrl
+ * @returns {string}
+ */
+function httpToWsUrl(httpUrl) {
+  const url = new URL(httpUrl)
+  const protocol = url.protocol === 'https:' ? 'wss' : 'ws'
+  return `${protocol}://${url.host}`
 }
 
 export function isBackendAvailable() {

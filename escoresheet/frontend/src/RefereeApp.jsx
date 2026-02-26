@@ -1,20 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
-import ConnectionStatus from './components/ConnectionStatus'
 import UpdateBanner from './components/UpdateBanner'
-import DashboardOptionsMenu from './components/DashboardOptionsMenu'
+import DashboardHeader from './components/DashboardHeader'
+import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { setBackendOverride } from './utils/backendConfig'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
-import changelog from './CHANGELOG'
 
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
 
 export default function RefereeApp() {
   const { t } = useTranslation()
+  const [serverReady, setServerReady] = useState(false)
+  const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
@@ -32,9 +34,6 @@ export default function RefereeApp() {
   const wakeLockRef = useRef(null)
   const testModeTimeoutRef = useRef(null)
 
-  // Get current version from changelog
-  const currentVersion = changelog[0]?.version || '1.0.0'
-
   const [connectionStatuses, setConnectionStatuses] = useState({
     api: 'unknown',
     server: 'unknown',
@@ -43,7 +42,52 @@ export default function RefereeApp() {
     match: 'unknown',
     db: 'unknown'
   })
-  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+
+  // Check URL params for auto-connect on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const matchParam = params.get('match')
+    const serverParam = params.get('server')
+
+    if (serverParam) {
+      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+    }
+
+    if (matchParam) {
+      setAutoConnectMatch(matchParam)
+      // Skip server connection screen if we have URL params
+      setServerReady(true)
+    }
+  }, [])
+
+  // Auto-connect to match from URL params
+  useEffect(() => {
+    if (!autoConnectMatch || !serverReady) return
+
+    const doAutoConnect = async () => {
+      setIsLoading(true)
+      try {
+        const result = await getMatchData(autoConnectMatch)
+        if (result.success && result.match) {
+          setMatchId(result.match.id || autoConnectMatch)
+          setMatch(result.match)
+        } else {
+          setError(t('connection.matchNotFound', 'Match not found'))
+        }
+      } catch (err) {
+        setError(t('connection.connectionFailed', 'Could not connect to match'))
+      } finally {
+        setIsLoading(false)
+        setAutoConnectMatch(null)
+      }
+    }
+    doAutoConnect()
+  }, [autoConnectMatch, serverReady, t])
+
+  // Handle server connection established
+  const handleServerConnected = useCallback(() => {
+    setServerReady(true)
+  }, [])
 
   // Preload assets that are used later (e.g., referee icon)
   useEffect(() => {
@@ -95,12 +139,12 @@ export default function RefereeApp() {
     
     // Check WebSocket server availability
     try {
-      // Check if we have a configured backend URL (Railway/cloud backend)
+      // Check if we have a configured backend URL (Render/cloud backend)
       const backendUrl = import.meta.env.VITE_BACKEND_URL
 
       let wsUrl
       if (backendUrl) {
-        // Use configured backend (Railway cloud)
+        // Use configured backend (Render cloud)
         const url = new URL(backendUrl)
         const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
         wsUrl = `${protocol}//${url.host}`
@@ -195,11 +239,10 @@ export default function RefereeApp() {
     }
     
     setConnectionStatuses(statuses)
-    setConnectionDebugInfo(debugInfo)
   }
 
   // Load available matches function - called on mount and manually via button
-  // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Railway)
+  // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Render)
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true)
     try {
@@ -447,7 +490,10 @@ export default function RefereeApp() {
     } else {
       setError('')
     }
-  }, [t])
+
+    // Refresh the match list when returning to home
+    loadMatches()
+  }, [t, loadMatches])
 
   // Monitor match status - clear credentials if match becomes final
   useEffect(() => {
@@ -485,6 +531,11 @@ export default function RefereeApp() {
     }, 2000)
   }, [])
 
+  // Show server connection screen first (unless auto-connecting via URL params)
+  if (!serverReady) {
+    return <ServerConnectionScreen onConnected={handleServerConnected} />
+  }
+
   // Render Referee component if connected (either to match or in master mode)
   if (matchId) {
     return <Referee matchId={matchId} onExit={handleExit} isMasterMode={isMasterMode} />
@@ -507,105 +558,19 @@ export default function RefereeApp() {
       <UpdateBanner />
 
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        background: 'rgba(0, 0, 0, 0.2)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        padding: '8px 16px',
-        flexShrink: 0,
-        height: '40px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 600 }}>{t('refereeDashboard.title')}</span>
-          <button
-            onClick={toggleWakeLock}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-              color: wakeLockActive ? '#22c55e' : '#fff',
-              border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-            title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
-          >
-            {wakeLockActive ? `☀️ ${t('refereeDashboard.wakeLockOn')}` : `🌙 ${t('refereeDashboard.wakeLockOff')}`}
-          </button>
-        </div>
-
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          flex: '0 0 auto'
-        }}>
-          <ConnectionStatus
-            connectionStatuses={connectionStatuses}
-            connectionDebugInfo={connectionDebugInfo}
-            position="right"
-            size="normal"
-          />
-
-          <button
-            onClick={() => { loadMatches(); checkConnectionStatuses() }}
-            disabled={loadingMatches}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              background: loadingMatches ? 'rgba(255, 255, 255, 0.05)' : 'rgba(59, 130, 246, 0.2)',
-              color: loadingMatches ? 'rgba(255, 255, 255, 0.4)' : '#fff',
-              border: '1px solid rgba(59, 130, 246, 0.5)',
-              borderRadius: '4px',
-              cursor: loadingMatches ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            {loadingMatches ? '...' : '🔄'} {t('refereeDashboard.loadGames', 'Load Games')}
-          </button>
-
-          {availableMatches.length > 0 && (
-            <div style={{
-              fontSize: '12px',
-              padding: '4px 8px',
-              background: 'rgba(59, 130, 246, 0.2)',
-              border: '1px solid rgba(59, 130, 246, 0.5)',
-              borderRadius: '4px',
-              fontWeight: 600
-            }}>
-              {availableMatches.length} {availableMatches.length === 1 ? t('refereeDashboard.game') : t('refereeDashboard.games')}
-            </div>
-          )}
-
-          <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
-            v{currentVersion}
-          </div>
-
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              padding: '4px 10px',
-              fontSize: '12px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-          >
-            {isFullscreen ? `⛶ ${t('refereeDashboard.exitFullscreen')}` : `⛶ ${t('refereeDashboard.fullscreen')}`}
-          </button>
-
-          <DashboardOptionsMenu showConnectionOptions={true} />
-        </div>
-      </div>
+      <DashboardHeader
+        title={t('refereeDashboard.title')}
+        connectionStatuses={connectionStatuses}
+        onLoadGames={() => { loadMatches(); checkConnectionStatuses() }}
+        loadingMatches={loadingMatches}
+        matchCount={availableMatches.length}
+        showFullscreen={true}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={toggleFullscreen}
+        showWakeLock={true}
+        wakeLockActive={wakeLockActive}
+        onToggleWakeLock={toggleWakeLock}
+      />
 
       {/* Main content */}
       <div style={{
@@ -656,12 +621,24 @@ export default function RefereeApp() {
               }}>
                 {t('refereeDashboard.noActiveGame')}
               </div>
-              <div style={{
-                fontSize: '13px',
-                color: 'rgba(255, 255, 255, 0.4)'
-              }}>
-                {t('refereeDashboard.startMatchToConnect')}
-              </div>
+              <button
+                type="button"
+                onClick={() => { loadMatches(); checkConnectionStatuses() }}
+                disabled={loadingMatches}
+                style={{
+                  marginTop: '12px',
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: '8px',
+                  color: 'var(--accent)',
+                  cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                  opacity: loadingMatches ? 0.5 : 1
+                }}
+              >
+                {loadingMatches ? t('common.loading', 'Loading...') : `🔄 ${t('refereeDashboard.loadGames', 'Load Games')}`}
+              </button>
             </div>
           ) : (
           <form onSubmit={handlePinSubmit} style={{
@@ -673,15 +650,32 @@ export default function RefereeApp() {
           }}>
             {availableMatches.length > 0 && (
               <div style={{ width: '80%' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  color: 'var(--muted)',
-                  marginBottom: '8px',
-                  fontWeight: 600
-                }}>
-                  {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{
+                    fontSize: '12px',
+                    color: 'var(--muted)',
+                    fontWeight: 600
+                  }}>
+                    {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { loadMatches(); checkConnectionStatuses() }}
+                    disabled={loadingMatches}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      background: 'transparent',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '6px',
+                      color: 'var(--accent)',
+                      cursor: loadingMatches ? 'not-allowed' : 'pointer',
+                      opacity: loadingMatches ? 0.5 : 1
+                    }}
+                  >
+                    {loadingMatches ? '...' : '🔄'}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowGameModal(true)}
@@ -736,8 +730,8 @@ export default function RefereeApp() {
               </div>
             )}
 
-            {/* Only show PIN input when offline OR when there are games */}
-            {(!serverConnected || availableMatches.length > 0) && (
+            {/* Only show PIN input when offline OR when a game has been selected */}
+            {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
             <div style={{ width: '80%', maxWidth: '280px' }}>
               <label style={{
                 display: 'block',
@@ -788,7 +782,7 @@ export default function RefereeApp() {
               </div>
             )}
 
-            {(!serverConnected || availableMatches.length > 0) && (
+            {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
             <button
               type="submit"
               disabled={isLoading}

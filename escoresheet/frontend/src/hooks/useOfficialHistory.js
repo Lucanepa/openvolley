@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
+
+// Sport type for indoor volleyball
+const SPORT_TYPE = 'indoor'
 
 /**
  * Hook to manage referee and scorer history for autocomplete
@@ -11,23 +14,21 @@ import { supabase } from '../lib/supabaseClient'
  */
 export function useOfficialHistory() {
   const [referees, setReferees] = useState([])
-  const [scorers, setScorers] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const isOnline = !!supabase
+  const isOnline = true
 
   // Fetch unique referees from history
   const fetchReferees = useCallback(async () => {
-    if (!supabase) return []
 
     try {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase
-        .from('referee_history')
+      const { data, error: fetchError } = await apiFrom('referee_database')
         .select('first_name, last_name, country, dob, created_at')
+        .contains('sport_type', JSON.stringify([SPORT_TYPE]))
         .order('last_name', { ascending: true })
 
       if (fetchError) {
@@ -55,70 +56,57 @@ export function useOfficialHistory() {
     }
   }, [])
 
-  // Fetch unique scorers from history
+  // Fetch scorers - no longer stored in separate table, return empty
   const fetchScorers = useCallback(async () => {
-    if (!supabase) return []
-
-    try {
-      setLoading(true)
-      setError(null)
-
-      const { data, error: fetchError } = await supabase
-        .from('scorer_history')
-        .select('first_name, last_name, country, dob, created_at')
-        .order('last_name', { ascending: true })
-
-      if (fetchError) {
-        console.error('Error fetching scorers:', fetchError)
-        setError(fetchError.message)
-        return []
-      }
-
-      // Data is already unique due to unique index, just map to expected format
-      const uniqueScorers = (data || []).map(row => ({
-        firstName: row.first_name,
-        lastName: row.last_name,
-        country: row.country || 'CHE',
-        dob: row.dob || ''
-      }))
-
-      setScorers(uniqueScorers)
-      return uniqueScorers
-    } catch (err) {
-      console.error('Error in fetchScorers:', err)
-      setError(err.message)
-      return []
-    } finally {
-      setLoading(false)
-    }
+    // scorer_history table was dropped - scorers now stored in match officials JSONB
+    return []
   }, [])
 
-  // Save referee to history (upsert - update if exists, insert if new)
+  // Save referee to history (check existing, then insert or update sport_type array)
   const saveReferee = useCallback(async (official) => {
-    if (!supabase || !official?.firstName || !official?.lastName) {
+    if (!official?.firstName || !official?.lastName) {
       return false
     }
 
     try {
-      const { error: upsertError } = await supabase
-        .from('referee_history')
-        .upsert({
-          first_name: official.firstName,
-          last_name: official.lastName,
-          country: official.country || 'CHE',
-          dob: official.dob || null,
-          created_at: new Date().toISOString()
-        }, {
-          onConflict: 'lower(last_name),lower(first_name)',
-          ignoreDuplicates: true
-        })
+      // Check if referee already exists
+      const { data: existing } = await apiFrom('referee_database')
+        .select('id, sport_type')
+        .ilike('last_name', official.lastName)
+        .ilike('first_name', official.firstName)
+        .maybeSingle()
 
-      if (upsertError) {
-        // Ignore duplicate key errors - expected with unique index
-        if (!upsertError.message?.includes('duplicate')) {
-          console.error('Error saving referee:', upsertError)
+      if (existing) {
+        // Add sport type to array if not already present
+        const sports = existing.sport_type || []
+        if (!sports.includes(SPORT_TYPE)) {
+          const { error: updateError } = await apiFrom('referee_database')
+            .update({ sport_type: [...sports, SPORT_TYPE] })
+            .eq('id', existing.id)
+
+          if (updateError) {
+            console.error('Error updating referee sport_type:', updateError)
+            return false
+          }
         }
-        return false
+      } else {
+        // Insert new referee
+        const { error: insertError } = await apiFrom('referee_database')
+          .insert({
+            first_name: official.firstName,
+            last_name: official.lastName,
+            country: official.country || 'CHE',
+            dob: official.dob || null,
+            sport_type: [SPORT_TYPE],
+            created_at: new Date().toISOString()
+          })
+
+        if (insertError) {
+          if (!insertError.message?.includes('duplicate')) {
+            console.error('Error saving referee:', insertError)
+          }
+          return false
+        }
       }
 
       return true
@@ -128,44 +116,15 @@ export function useOfficialHistory() {
     }
   }, [])
 
-  // Save scorer to history (upsert - update if exists, insert if new)
-  const saveScorer = useCallback(async (official) => {
-    if (!supabase || !official?.firstName || !official?.lastName) {
-      return false
-    }
-
-    try {
-      const { error: upsertError } = await supabase
-        .from('scorer_history')
-        .upsert({
-          first_name: official.firstName,
-          last_name: official.lastName,
-          country: official.country || 'CHE',
-          dob: official.dob || null,
-          created_at: new Date().toISOString()
-        }, {
-          onConflict: 'lower(last_name),lower(first_name)',
-          ignoreDuplicates: true
-        })
-
-      if (upsertError) {
-        // Ignore duplicate key errors - expected with unique index
-        if (!upsertError.message?.includes('duplicate')) {
-          console.error('Error saving scorer:', upsertError)
-        }
-        return false
-      }
-
-      return true
-    } catch (err) {
-      console.error('Error in saveScorer:', err)
-      return false
-    }
+  // Save scorer - no longer stored in separate table
+  const saveScorer = useCallback(async () => {
+    // scorer_history table was dropped - scorers now stored in match officials JSONB
+    return true
   }, [])
 
   // Save all officials from a match
   const saveMatchOfficials = useCallback(async (officials) => {
-    if (!supabase || !officials) return false
+    if (!officials) return false
 
     const promises = []
 
@@ -187,23 +146,22 @@ export function useOfficialHistory() {
 
     await Promise.all(promises)
 
-    // Refresh lists
-    await Promise.all([fetchReferees(), fetchScorers()])
+    // Refresh referee list
+    await fetchReferees()
     return true
-  }, [saveReferee, saveScorer, fetchReferees, fetchScorers])
+  }, [saveReferee, saveScorer, fetchReferees])
 
   // Load data on mount if online
   useEffect(() => {
     if (isOnline) {
       fetchReferees()
-      fetchScorers()
     }
-  }, [isOnline, fetchReferees, fetchScorers])
+  }, [isOnline, fetchReferees])
 
   return {
     isOnline,
     referees,
-    scorers,
+    scorers: [], // scorer_history table was dropped
     loading,
     error,
     fetchReferees,

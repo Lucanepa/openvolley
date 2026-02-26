@@ -3,11 +3,24 @@
  * Fetches match data from the main scoreboard server instead of using local IndexedDB
  */
 
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
+import { formatTimeLocal } from './timeUtils'
+
+/**
+ * Generate a unique seed_key for a match
+ * This is the stable identifier used for Supabase sync (stored as external_id)
+ * Format: match_{timestamp}_{random} - never includes modifiable fields like gameN
+ * @returns {string} Unique seed_key
+ */
+export function generateMatchSeedKey() {
+  const timestamp = Date.now()
+  const randomPart = Math.random().toString(36).substring(2, 8)
+  return `match_${timestamp}_${randomPart}`
+}
 
 // Get server URL - checks for configured backend first, then falls back to current location
 function getServerUrl() {
-  // Check if we have a configured backend URL (Railway/cloud backend)
+  // Check if we have a configured backend URL (Render/cloud backend)
   const backendUrl = import.meta.env.VITE_BACKEND_URL
 
   if (backendUrl) {
@@ -27,7 +40,7 @@ function getServerUrl() {
 
 // Get WebSocket URL - checks for configured backend first, then falls back to current location
 function getWebSocketUrl() {
-  // Check if we have a configured backend URL (Railway/cloud backend)
+  // Check if we have a configured backend URL (Render/cloud backend)
   const backendUrl = import.meta.env.VITE_BACKEND_URL
 
   if (backendUrl) {
@@ -52,7 +65,7 @@ function getWebSocketUrl() {
  */
 export async function validatePin(pin, type = 'referee') {
   const serverUrl = getServerUrl()
-  
+
   try {
     const response = await fetch(`${serverUrl}/api/match/validate-pin`, {
       method: 'POST',
@@ -103,10 +116,12 @@ export async function validatePin(pin, type = 'referee') {
 
 /**
  * Get full match data from server (match, teams, players, sets, events)
+ * Falls back to Supabase direct fetch if HTTP endpoint is not available
  */
 export async function getMatchData(matchId) {
   const serverUrl = getServerUrl()
-  
+
+  // Try HTTP endpoint first (WebSocket server may have it)
   try {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'GET',
@@ -115,16 +130,374 @@ export async function getMatchData(matchId) {
       }
     })
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch match data')
+    if (response.ok) {
+      const result = await response.json()
+      return result
     }
-
-    const result = await response.json()
-    return result
   } catch (error) {
-    console.error('Error fetching match data:', error)
-    throw error
+    console.debug('[getMatchData] HTTP fetch failed, trying API fallback:', error.message)
   }
+
+  // Fallback to API client direct fetch
+  {
+    try {
+      console.log('[getMatchData] Fetching via API client for matchId:', matchId)
+
+      let match = null
+      let matchError = null
+
+      // Try 1: Fetch match by external_id (seed_key)
+      const { data: matchByExtId, error: extIdError } = await apiFrom('matches')
+        .select('*')
+        .eq('external_id', matchId)
+        .eq('sport_type', 'indoor')
+        .maybeSingle()
+
+      if (matchByExtId) {
+        match = matchByExtId
+      } else {
+        // Fallback: If matchId is a UUID, try direct id lookup
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        if (uuidRegex.test(matchId)) {
+          const { data: matchById, error: idError } = await apiFrom('matches')
+            .select('*')
+            .eq('id', matchId)
+            .eq('sport_type', 'indoor')
+            .maybeSingle()
+
+          if (matchById) {
+            match = matchById
+            console.log('[getMatchData] Found match by UUID fallback')
+          } else {
+            matchError = idError || extIdError
+          }
+        } else {
+          matchError = extIdError
+        }
+      }
+
+      if (!match) {
+        console.error('[getMatchData] Supabase match fetch error:', matchError)
+        return { success: false, error: matchError?.message || 'Match not found' }
+      }
+
+      // Fetch live state if available (for Referee app)
+      const { data: liveState } = await apiFrom('match_live_state')
+        .select('*')
+        .eq('match_id', match.id)
+        .maybeSingle()
+
+      // Build team info from matches table (prefer JSONB, fallback to old columns for transition)
+      const homeTeamName = match.home_team?.name || match.home_team_name || 'Home'
+      const awayTeamName = match.away_team?.name || match.away_team_name || 'Away'
+
+      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+      // Determine coinTossTeamA: is Team A the home or away team?
+      let coinTossTeamA = null
+      let teamAIsHome = true
+
+      if (liveState?.team_a_name) {
+        // Compare live state team_a_name with matches table to determine if Team A is home
+        teamAIsHome = liveState.team_a_name === homeTeamName
+        coinTossTeamA = teamAIsHome ? 'home' : 'away'
+      } else {
+        // Fallback to coin_toss if live state doesn't have A/B data (prefer JSONB, fallback to old columns)
+        coinTossTeamA = match.coin_toss?.team_a || match.coin_toss_team_a || 'home'
+        teamAIsHome = coinTossTeamA === 'home'
+      }
+
+      // Determine which side is home based on side_a
+      // side_a = 'left' means Team A is on left, side_a = 'right' means Team A is on right
+      const sideA = liveState?.side_a || 'left'
+      const leftIsHome = (sideA === 'left') === teamAIsHome
+
+      // Build team info with live state colors
+      const homeColorFromLive = liveState ? (teamAIsHome ? liveState.team_a_color : liveState.team_b_color) : null
+      const awayColorFromLive = liveState ? (teamAIsHome ? liveState.team_b_color : liveState.team_a_color) : null
+
+      const homeTeam = {
+        name: homeTeamName,
+        shortName: match.home_team?.short_name || match.home_short_name || 'HOM',
+        color: homeColorFromLive || match.home_team?.color || '#ef4444'
+      }
+      const awayTeam = {
+        name: awayTeamName,
+        shortName: match.away_team?.short_name || match.away_short_name || 'AWY',
+        color: awayColorFromLive || match.away_team?.color || '#3b82f6'
+      }
+
+      // Build sets from live state using A/B model
+      let sets = []
+      if (liveState) {
+        // Convert A/B points to home/away
+        const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
+        const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
+
+        // Determine serving team - priority: serving_team field, then lineup isServing
+        let servingTeam = 'home'
+        let serverNumber = null
+
+        const lineupA = liveState.lineup_a
+        const lineupB = liveState.lineup_b
+
+        // First priority: use serving_team from live state (set by manual changes or score events)
+        // serving_team stores 'left' or 'right', convert to 'home'/'away'
+        if (liveState.serving_team) {
+          const servingSide = liveState.serving_team // 'left' or 'right'
+          // leftIsHome tells us if home is on left
+          servingTeam = (servingSide === 'left') === leftIsHome ? 'home' : 'away'
+          // Get server number from the serving team's lineup position I
+          // If serving home and Team A is home, use lineupA. Otherwise use lineupB.
+          const servingTeamIsA = (servingTeam === 'home') === teamAIsHome
+          const servingTeamLineup = servingTeamIsA ? lineupA : lineupB
+          serverNumber = servingTeamLineup?.I?.number || null
+          console.log('[serverDataSync] Using serving_team field:', { servingSide, leftIsHome, servingTeam, serverNumber })
+        } else if (lineupA?.I?.isServing) {
+          // Fallback: Rich format with serving info in position I (isServing field)
+          servingTeam = teamAIsHome ? 'home' : 'away'
+          serverNumber = lineupA.I.number
+          console.log('[serverDataSync] Using lineupA.I.isServing:', { servingTeam, serverNumber })
+        } else if (lineupB?.I?.isServing) {
+          servingTeam = teamAIsHome ? 'away' : 'home'
+          serverNumber = lineupB.I.number
+          console.log('[serverDataSync] Using lineupB.I.isServing:', { servingTeam, serverNumber })
+        } else {
+          console.log('[serverDataSync] No serving info found, defaulting to home')
+        }
+
+        const currentSet = {
+          index: liveState.current_set || 1,
+          homePoints: homePoints || 0,
+          awayPoints: awayPoints || 0,
+          finished: false,
+          servingTeam,
+          serverNumber
+        }
+        sets = [currentSet]
+
+        // Set scores
+        const homeSetsWon = teamAIsHome ? liveState.sets_won_a : liveState.sets_won_b
+        const awaySetsWon = teamAIsHome ? liveState.sets_won_b : liveState.sets_won_a
+        // We only have set counts, not individual set scores - this is a limitation
+      } else {
+        // No live state yet (before first point) - create empty set 1
+        sets = [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
+      }
+
+      // Build events array with lineup info from live state
+      let events = []
+
+      if (liveState) {
+        // Lineup events contain rich data (captain, libero, subs, sanctions embedded per position)
+        if (liveState.lineup_a) {
+          events.push({
+            type: 'lineup',
+            setIndex: liveState.current_set || 1,
+            seq: 1,
+            payload: {
+              team: teamAIsHome ? 'home' : 'away',
+              lineup: liveState.lineup_a,
+              isRichFormat: true
+            }
+          })
+        }
+        if (liveState.lineup_b) {
+          events.push({
+            type: 'lineup',
+            setIndex: liveState.current_set || 1,
+            seq: 1.1,
+            payload: {
+              team: teamAIsHome ? 'away' : 'home',
+              lineup: liveState.lineup_b,
+              isRichFormat: true
+            }
+          })
+        }
+
+        // Build sanction events from live state (team-level sanctions only)
+        if (liveState.sanctions_a) {
+          for (const sanction of liveState.sanctions_a) {
+            events.push({
+              type: 'sanction',
+              setIndex: liveState.current_set || 1,
+              ts: sanction.ts,
+              payload: {
+                team: teamAIsHome ? 'home' : 'away',
+                playerNumber: sanction.player,
+                type: sanction.type,
+                playerType: sanction.playerType, // 'player', 'bench', 'libero', 'official'
+                position: sanction.position,
+                role: sanction.role
+              }
+            })
+          }
+        }
+        if (liveState.sanctions_b) {
+          for (const sanction of liveState.sanctions_b) {
+            events.push({
+              type: 'sanction',
+              setIndex: liveState.current_set || 1,
+              ts: sanction.ts,
+              payload: {
+                team: teamAIsHome ? 'away' : 'home',
+                playerNumber: sanction.player,
+                type: sanction.type,
+                playerType: sanction.playerType,
+                position: sanction.position,
+                role: sanction.role
+              }
+            })
+          }
+        }
+
+        // Build substitution events from live state (if stored as JSONB arrays)
+        if (Array.isArray(liveState.subs_a)) {
+          for (const sub of liveState.subs_a) {
+            events.push({
+              type: 'substitution',
+              setIndex: liveState.current_set || 1,
+              ts: sub.ts,
+              payload: {
+                team: teamAIsHome ? 'home' : 'away',
+                playerIn: sub.playerIn,
+                playerOut: sub.playerOut,
+                position: sub.position,
+                exceptional: sub.exceptional || false
+              }
+            })
+          }
+        }
+        if (Array.isArray(liveState.subs_b)) {
+          for (const sub of liveState.subs_b) {
+            events.push({
+              type: 'substitution',
+              setIndex: liveState.current_set || 1,
+              ts: sub.ts,
+              payload: {
+                team: teamAIsHome ? 'away' : 'home',
+                playerIn: sub.playerIn,
+                playerOut: sub.playerOut,
+                position: sub.position,
+                exceptional: sub.exceptional || false
+              }
+            })
+          }
+        }
+
+        // Build timeout events from live state (if stored as JSONB arrays)
+        if (Array.isArray(liveState.timeouts_a)) {
+          for (const timeout of liveState.timeouts_a) {
+            events.push({
+              type: 'timeout',
+              setIndex: liveState.current_set || 1,
+              ts: timeout.ts,
+              payload: {
+                team: teamAIsHome ? 'home' : 'away'
+              }
+            })
+          }
+        } else if (typeof liveState.timeouts_a === 'number') {
+          // Backwards compatibility: if stored as number, create that many timeout events
+          for (let i = 0; i < liveState.timeouts_a; i++) {
+            events.push({
+              type: 'timeout',
+              setIndex: liveState.current_set || 1,
+              payload: {
+                team: teamAIsHome ? 'home' : 'away'
+              }
+            })
+          }
+        }
+        if (Array.isArray(liveState.timeouts_b)) {
+          for (const timeout of liveState.timeouts_b) {
+            events.push({
+              type: 'timeout',
+              setIndex: liveState.current_set || 1,
+              ts: timeout.ts,
+              payload: {
+                team: teamAIsHome ? 'away' : 'home'
+              }
+            })
+          }
+        } else if (typeof liveState.timeouts_b === 'number') {
+          // Backwards compatibility: if stored as number, create that many timeout events
+          for (let i = 0; i < liveState.timeouts_b; i++) {
+            events.push({
+              type: 'timeout',
+              setIndex: liveState.current_set || 1,
+              payload: {
+                team: teamAIsHome ? 'away' : 'home'
+              }
+            })
+          }
+        }
+      }
+
+      // Build players from matches table JSONB columns
+      const homePlayers = match.players_home || []
+      const awayPlayers = match.players_away || []
+
+      // Extract captain info from rich lineup format
+      let homeCaptain = null
+      let awayCaptain = null
+      let homeCourtCaptain = null
+      let awayCourtCaptain = null
+
+      const homeLineup = teamAIsHome ? liveState?.lineup_a : liveState?.lineup_b
+      const awayLineup = teamAIsHome ? liveState?.lineup_b : liveState?.lineup_a
+
+      for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+        if (homeLineup?.[pos]?.isCaptain) homeCaptain = homeLineup[pos].number
+        if (homeLineup?.[pos]?.isCourtCaptain) homeCourtCaptain = homeLineup[pos].number
+        if (awayLineup?.[pos]?.isCaptain) awayCaptain = awayLineup[pos].number
+        if (awayLineup?.[pos]?.isCourtCaptain) awayCourtCaptain = awayLineup[pos].number
+      }
+
+      return {
+        success: true,
+        match: {
+          ...match,
+          id: matchId, // Use external_id as the reference ID
+          // Use liveState.match_status if available (reflects actual game state)
+          status: liveState?.match_status || match.status,
+          coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
+          coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
+          coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
+          firstServe: match.coin_toss?.first_serve || match.first_serve,
+          // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
+          coin_toss_confirmed: !!(liveState?.team_a_name),
+          // Get short names from JSONB, or fallback to old columns
+          homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
+          awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
+          homeName: homeTeam.name,
+          awayName: awayTeam.name,
+          homeColor: homeTeam.color,
+          awayColor: awayTeam.color,
+          // Captain info
+          homeCaptain: homeCaptain || null,
+          awayCaptain: awayCaptain || null,
+          homeCourtCaptain: homeCourtCaptain || null,
+          awayCourtCaptain: awayCourtCaptain || null,
+          // Also ensure gameNumber is set
+          gameNumber: match.game_n ? String(match.game_n) : null,
+          gameN: match.game_n
+        },
+        homeTeam,
+        awayTeam,
+        homePlayers,
+        awayPlayers,
+        sets,
+        events,
+        isRichFormat: true, // Always rich format now
+        liveState // Include raw live state for additional data
+      }
+    } catch (apiError) {
+      console.error('[getMatchData] API fallback error:', apiError)
+      return { success: false, error: apiError.message }
+    }
+  }
+
+  return { success: false, error: 'No data source available' }
 }
 
 // Global WebSocket connection manager to prevent multiple connections
@@ -185,7 +558,7 @@ export function forceReconnect(matchId) {
   if (connection.ws) {
     try {
       connection.ws.close(4000, 'Force reconnect')
-    } catch (e) {}
+    } catch (e) { }
     connection.ws = null
   }
 
@@ -219,7 +592,7 @@ export function forceReconnect(matchId) {
 export function subscribeToMatchData(matchId, onUpdate) {
   const wsUrl = getWebSocketUrl()
   const matchIdStr = String(matchId)
-  
+
   // Get or create connection manager for this match
   let connection = wsConnections.get(matchIdStr)
   if (!connection) {
@@ -233,10 +606,10 @@ export function subscribeToMatchData(matchId, onUpdate) {
     }
     wsConnections.set(matchIdStr, connection)
   }
-  
+
   // Add this subscriber
   connection.subscribers.add(onUpdate)
-  
+
   const maxReconnectDelay = 10000 // Max 10 seconds
 
   const connect = () => {
@@ -357,9 +730,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
             connection.subscribers.forEach(subscriber => {
               try {
                 // Pass the action with a special _action wrapper, including timestamps for latency tracking
-                subscriber({ 
-                  _action: message.action, 
-                  _actionData: message.data, 
+                subscriber({
+                  _action: message.action,
+                  _actionData: message.data,
                   _timestamp: message._timestamp || message.timestamp,
                   _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
                 })
@@ -420,7 +793,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
         // Exponential backoff for reconnection
         connection.reconnectAttempts++
         const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
-        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay/1000} seconds... (attempt ${connection.reconnectAttempts})`)
+        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay / 1000} seconds... (attempt ${connection.reconnectAttempts})`)
         connection.reconnectTimeout = setTimeout(connect, delay)
       }
     } catch (err) {
@@ -481,11 +854,11 @@ export function subscribeToMatchData(matchId, onUpdate) {
 export function getWebSocketStatus(matchId) {
   const matchIdStr = String(matchId)
   const connection = wsConnections.get(matchIdStr)
-  
+
   if (!connection || !connection.ws) {
     return 'disconnected'
   }
-  
+
   switch (connection.ws.readyState) {
     case WebSocket.CONNECTING:
       return 'connecting'
@@ -504,7 +877,7 @@ export function getWebSocketStatus(matchId) {
  */
 export async function findMatchByGameNumber(gameNumber) {
   const serverUrl = getServerUrl()
-  
+
   try {
     const response = await fetch(`${serverUrl}/api/match/by-game-number?gameNumber=${encodeURIComponent(gameNumber)}`, {
       method: 'GET',
@@ -530,7 +903,7 @@ export async function findMatchByGameNumber(gameNumber) {
  */
 export async function updateMatchData(matchId, updates) {
   const serverUrl = getServerUrl()
-  
+
   try {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'PATCH',
@@ -559,12 +932,7 @@ export async function listAvailableMatches() {
   const serverUrl = getServerUrl()
   const url = `${serverUrl}/api/match/list`
 
-  console.log('[listAvailableMatches DEBUG] ========== START ==========')
-  console.log('[listAvailableMatches DEBUG] Server URL:', serverUrl)
-  console.log('[listAvailableMatches DEBUG] Full URL:', url)
-
   try {
-    console.log('[listAvailableMatches DEBUG] Fetching...')
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -572,20 +940,14 @@ export async function listAvailableMatches() {
       }
     })
 
-    console.log('[listAvailableMatches DEBUG] Response status:', response.status, response.statusText)
-
     if (!response.ok) {
-      console.log('[listAvailableMatches DEBUG] Response not ok')
       return { success: false, matches: [], error: `HTTP ${response.status}: ${response.statusText}` }
     }
 
     const result = await response.json()
-    console.log('[listAvailableMatches DEBUG] Result:', JSON.stringify(result, null, 2))
-    console.log('[listAvailableMatches DEBUG] ========== END ==========')
     return result
   } catch (error) {
-    console.error('[listAvailableMatches DEBUG] Error:', error.message)
-    console.log('[listAvailableMatches DEBUG] ========== END (ERROR) ==========')
+    console.error('[listAvailableMatches] Error:', error.message)
     return { success: false, matches: [], error: error.message }
   }
 }
@@ -595,57 +957,35 @@ export async function listAvailableMatches() {
  * Returns matches that are in 'setup' or 'live' status with referee_connection_enabled = true
  */
 export async function listAvailableMatchesSupabase() {
-  console.log('[listAvailableMatchesSupabase DEBUG] ========== START ==========')
-  console.log('[listAvailableMatchesSupabase DEBUG] Supabase client exists:', !!supabase)
-
-  if (!supabase) {
-    console.error('[listAvailableMatchesSupabase DEBUG] No Supabase client!')
-    return { success: false, matches: [], error: 'Supabase client not initialized' }
-  }
-
   try {
-    console.log('[listAvailableMatchesSupabase DEBUG] Executing query...')
-    console.log('[listAvailableMatchesSupabase DEBUG] Query: matches where status IN (setup, live) AND referee_connection_enabled = true')
-
-    const { data, error } = await supabase
-      .from('matches')
+    const { data, error } = await apiFrom('matches')
       .select(`
         id,
         external_id,
         game_n,
         status,
         scheduled_at,
-        referee_pin,
-        referee_connection_enabled,
-        home_team_name,
-        away_team_name,
-        home_team_upload_pin,
-        away_team_upload_pin,
-        home_team:teams!matches_home_team_id_fkey(id, name, short_name),
-        away_team:teams!matches_away_team_id_fkey(id, name, short_name)
+        home_team,
+        away_team,
+        connections,
+        connection_pins
       `)
       .in('status', ['setup', 'live'])
-      .eq('referee_connection_enabled', true)
       .order('scheduled_at', { ascending: true })
-
-    console.log('[listAvailableMatchesSupabase DEBUG] Query completed')
-    console.log('[listAvailableMatchesSupabase DEBUG] Error:', error)
-    console.log('[listAvailableMatchesSupabase DEBUG] Data count:', data?.length || 0)
 
     if (error) {
       console.error('[listAvailableMatchesSupabase] Error:', error)
-      console.error('[listAvailableMatchesSupabase DEBUG] Error code:', error.code)
-      console.error('[listAvailableMatchesSupabase DEBUG] Error message:', error.message)
-      console.error('[listAvailableMatchesSupabase DEBUG] Error details:', error.details)
-      console.error('[listAvailableMatchesSupabase DEBUG] Error hint:', error.hint)
       return { success: false, matches: [], error: error.message }
     }
 
-    // Debug: log raw data from Supabase to verify team names and scheduled_at
-    console.log('[listAvailableMatchesSupabase] Raw data from Supabase:', JSON.stringify(data, null, 2))
+    // Filter to only show matches where referee connection is enabled
+    const filteredData = (data || []).filter(m => {
+      const connections = m.connections || {}
+      return connections.referee_enabled === true
+    })
 
     // Format to match the WebSocket server format
-    const formattedMatches = (data || []).map(m => {
+    const formattedMatches = filteredData.map(m => {
       let dateTime = 'TBD'
       if (m.scheduled_at) {
         try {
@@ -655,36 +995,124 @@ export async function listAvailableMatchesSupabase() {
             scheduledStr = scheduledStr + 'Z'
           }
           const scheduledDate = new Date(scheduledStr)
-          // Display as UTC (no timezone conversion) since we store time as-entered
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+          // Display in local timezone
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = formatTimeLocal(scheduledStr)
           dateTime = `${dateStr} ${timeStr}`
         } catch (e) {
           dateTime = 'TBD'
         }
       }
 
+      // Read from JSONB columns only (clean schema)
+      const homeTeamName = m.home_team?.name || 'Home'
+      const awayTeamName = m.away_team?.name || 'Away'
+      const connections = m.connections || {}
+      const connectionPins = m.connection_pins || {}
+
       return {
         id: m.external_id || m.id,
         external_id: m.external_id, // Keep original for Supabase writes
         gameNumber: m.game_n || m.external_id,
-        homeTeam: m.home_team_name || m.home_team?.name || 'Home',
-        awayTeam: m.away_team_name || m.away_team?.name || 'Away',
-        homeTeamName: m.home_team_name || m.home_team?.name || 'Home',
-        awayTeamName: m.away_team_name || m.away_team?.name || 'Away',
+        homeTeam: homeTeamName,
+        awayTeam: awayTeamName,
+        homeTeamName: homeTeamName,
+        awayTeamName: awayTeamName,
         scheduledAt: m.scheduled_at,
         dateTime,
-        refereeConnectionEnabled: m.referee_connection_enabled,
         status: m.status,
+        refereeConnectionEnabled: connections.referee_enabled === true,
         // Include upload PINs for roster upload app
-        homeTeamUploadPin: m.home_team_upload_pin,
-        awayTeamUploadPin: m.away_team_upload_pin
+        homeTeamUploadPin: connectionPins.upload_home,
+        awayTeamUploadPin: connectionPins.upload_away
       }
     })
 
     return { success: true, matches: formattedMatches }
   } catch (error) {
     console.error('[listAvailableMatchesSupabase] Exception:', error)
+    return { success: false, matches: [], error: error.message }
+  }
+}
+
+/**
+ * List available matches from Supabase for Bench apps
+ * Filters by bench_connection_enabled = true
+ */
+export async function listAvailableMatchesForBenchSupabase() {
+  try {
+    const { data, error } = await apiFrom('matches')
+      .select(`
+        id,
+        external_id,
+        game_n,
+        status,
+        scheduled_at,
+        home_team,
+        away_team,
+        connections,
+        connection_pins
+      `)
+      .in('status', ['setup', 'live'])
+      .order('scheduled_at', { ascending: true })
+
+    if (error) {
+      console.error('[listAvailableMatchesForBenchSupabase] Error:', error)
+      return { success: false, matches: [], error: error.message }
+    }
+
+    // Filter to only show matches where at least one bench connection is enabled
+    const filteredData = (data || []).filter(m => {
+      const connections = m.connections || {}
+      return connections.home_bench_enabled === true || connections.away_bench_enabled === true
+    })
+
+    // Format to match the WebSocket server format
+    const formattedMatches = filteredData.map(m => {
+      let dateTime = 'TBD'
+      if (m.scheduled_at) {
+        try {
+          let scheduledStr = m.scheduled_at
+          if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
+            scheduledStr = scheduledStr + 'Z'
+          }
+          const scheduledDate = new Date(scheduledStr)
+          // Display in local timezone
+          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          const timeStr = formatTimeLocal(scheduledStr)
+          dateTime = `${dateStr} ${timeStr}`
+        } catch (e) {
+          dateTime = 'TBD'
+        }
+      }
+
+      // Read from JSONB columns only (clean schema)
+      const homeTeamName = m.home_team?.name || 'Home'
+      const awayTeamName = m.away_team?.name || 'Away'
+      const connections = m.connections || {}
+      const connectionPins = m.connection_pins || {}
+
+      return {
+        id: m.external_id || m.id,
+        external_id: m.external_id,
+        gameNumber: m.game_n || m.external_id,
+        homeTeam: homeTeamName,
+        awayTeam: awayTeamName,
+        homeTeamName: homeTeamName,
+        awayTeamName: awayTeamName,
+        scheduledAt: m.scheduled_at,
+        dateTime,
+        homeBenchEnabled: connections.home_bench_enabled,
+        awayBenchEnabled: connections.away_bench_enabled,
+        homeTeamPin: connectionPins.bench_home,
+        awayTeamPin: connectionPins.bench_away,
+        status: m.status
+      }
+    })
+
+    return { success: true, matches: formattedMatches }
+  } catch (error) {
+    console.error('[listAvailableMatchesForBenchSupabase] Exception:', error)
     return { success: false, matches: [], error: error.message }
   }
 }
@@ -701,47 +1129,59 @@ export async function validatePinSupabase(pin, type = 'referee') {
       return { success: false, error: 'Invalid PIN format' }
     }
 
-    // Query matches by referee_pin
-    const { data, error } = await supabase
-      .from('matches')
+    // Query matches by PIN in connection_pins JSONB
+    const { data, error } = await apiFrom('matches')
       .select(`
         id,
         external_id,
         game_n,
         status,
         scheduled_at,
-        referee_pin,
-        referee_connection_enabled,
-        home_team_name,
-        away_team_name,
-        home_team:teams!matches_home_team_id_fkey(id, name, short_name, color),
-        away_team:teams!matches_away_team_id_fkey(id, name, short_name, color)
+        home_team,
+        away_team,
+        connections,
+        connection_pins
       `)
-      .eq('referee_pin', pinStr)
       .in('status', ['setup', 'live'])
-      .eq('referee_connection_enabled', true)
-      .maybeSingle()
+      .eq('sport_type', 'indoor')
 
     if (error) {
       console.error('[validatePinSupabase] Error:', error)
       return { success: false, error: error.message }
     }
 
-    if (!data) {
+    // Find match where PIN matches the appropriate type in connection_pins
+    const matchData = (data || []).find(m => {
+      const connectionPins = m.connection_pins || {}
+      const connections = m.connections || {}
+
+      if (type === 'referee') {
+        return connectionPins.referee === pinStr && connections.referee_enabled
+      } else if (type === 'bench_home') {
+        return connectionPins.bench_home === pinStr && connections.home_bench_enabled
+      } else if (type === 'bench_away') {
+        return connectionPins.bench_away === pinStr && connections.away_bench_enabled
+      }
+      return false
+    })
+
+    if (!matchData) {
       return { success: false, error: 'Invalid PIN code' }
     }
 
-    // Format match data to match WebSocket server format
+    // Read from JSONB columns only (clean schema)
+    const connections = matchData.connections || {}
+
     const match = {
-      id: data.external_id || data.id,
-      gameNumber: data.game_n || data.external_id,
-      status: data.status,
-      scheduledAt: data.scheduled_at,
-      refereeConnectionEnabled: data.referee_connection_enabled,
-      homeTeam: data.home_team_name || data.home_team?.name || 'Home',
-      awayTeam: data.away_team_name || data.away_team?.name || 'Away',
-      homeTeamColor: data.home_team?.color,
-      awayTeamColor: data.away_team?.color
+      id: matchData.external_id || matchData.id,
+      gameNumber: matchData.game_n || matchData.external_id,
+      status: matchData.status,
+      scheduledAt: matchData.scheduled_at,
+      refereeConnectionEnabled: connections.referee_enabled,
+      homeTeam: matchData.home_team?.name || 'Home',
+      awayTeam: matchData.away_team?.name || 'Away',
+      homeTeamColor: matchData.home_team?.color,
+      awayTeamColor: matchData.away_team?.color
     }
 
     return { success: true, match }
