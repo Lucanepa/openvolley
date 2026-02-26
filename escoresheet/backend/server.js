@@ -42,6 +42,42 @@ const POCKETBASE_ADMIN_PASSWORD = process.env.POCKETBASE_ADMIN_PASSWORD
 let pbClient = null
 let pbReady = false
 
+async function ensurePocketBaseCollection() {
+  if (!pbReady || !pbClient) return
+  try {
+    await pbClient.collections.getOne('matches')
+  } catch (err) {
+    if (err.status === 404) {
+      console.log('[PocketBase] Creating "matches" collection...')
+      await pbClient.collections.create({
+        name: 'matches',
+        type: 'base',
+        schema: [
+          { name: 'match_id', type: 'text', options: {} },
+          { name: 'external_id', type: 'text', options: {} },
+          { name: 'status', type: 'text', options: {} },
+          { name: 'sport_type', type: 'text', options: {} },
+          { name: 'game_number', type: 'number', options: {} },
+          { name: 'match_data', type: 'json', options: {} },
+          { name: 'home_team', type: 'json', options: {} },
+          { name: 'away_team', type: 'json', options: {} },
+          { name: 'home_players', type: 'json', options: {} },
+          { name: 'away_players', type: 'json', options: {} },
+          { name: 'sets', type: 'json', options: {} },
+          { name: 'events', type: 'json', options: {} },
+          { name: 'updated_at', type: 'text', options: {} }
+        ],
+        indexes: [
+          'CREATE UNIQUE INDEX idx_match_id ON matches (match_id)'
+        ]
+      })
+      console.log('[PocketBase] "matches" collection created successfully')
+    } else {
+      throw err
+    }
+  }
+}
+
 async function initPocketBase() {
   if (!POCKETBASE_URL || !POCKETBASE_ADMIN_EMAIL || !POCKETBASE_ADMIN_PASSWORD) return
   try {
@@ -50,6 +86,7 @@ async function initPocketBase() {
     await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
     pbReady = true
     console.log('[PocketBase] Admin client: CONFIGURED and AUTHENTICATED')
+    await ensurePocketBaseCollection()
     await loadMatchesFromPocketBase()
   } catch (err) {
     pbClient = null
@@ -217,22 +254,10 @@ const MAX_CONNECTIONS = 2000
 const MAX_CONNECTIONS_PER_IP = 50
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
-// --- PocketBase debounced sync ---
-const PB_SYNC_DEBOUNCE_MS = 12000
-const pbSyncTimers = new Map()
-const pbSyncPending = new Map()
-
-function queuePocketBaseSync(matchId, matchData) {
+// --- PocketBase sync ---
+function syncToPocketBase(matchId, matchData) {
   if (!pbReady || !pbClient) return
-  pbSyncPending.set(matchId, matchData)
-  if (pbSyncTimers.has(matchId)) return
-  const timerId = setTimeout(() => {
-    pbSyncTimers.delete(matchId)
-    const latestData = pbSyncPending.get(matchId)
-    pbSyncPending.delete(matchId)
-    if (latestData) executePocketBaseSync(matchId, latestData)
-  }, PB_SYNC_DEBOUNCE_MS)
-  pbSyncTimers.set(matchId, timerId)
+  executePocketBaseSync(matchId, matchData)
 }
 
 async function executePocketBaseSync(matchId, matchData) {
@@ -285,9 +310,6 @@ async function executePocketBaseSync(matchId, matchData) {
 
 async function deletePocketBaseMatch(matchId) {
   if (!pbReady || !pbClient) return
-  const timerId = pbSyncTimers.get(matchId)
-  if (timerId) { clearTimeout(timerId); pbSyncTimers.delete(matchId) }
-  pbSyncPending.delete(matchId)
   try {
     const existing = await pbClient.collection('matches').getFirstListItem(
       pbClient.filter('match_id = {:id}', { id: String(matchId) })
@@ -301,9 +323,6 @@ async function deletePocketBaseMatch(matchId) {
 
 async function clearAllPocketBaseMatches() {
   if (!pbReady || !pbClient) return
-  for (const timerId of pbSyncTimers.values()) clearTimeout(timerId)
-  pbSyncTimers.clear()
-  pbSyncPending.clear()
   try {
     const records = await pbClient.collection('matches').getFullList({ fields: 'id' })
     for (const record of records) await pbClient.collection('matches').delete(record.id)
@@ -2658,7 +2677,7 @@ function handleSyncMatchData(clientInfo, message) {
   console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
 
   // Queue PocketBase backup sync (fire-and-forget, debounced)
-  queuePocketBaseSync(String(matchId), { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
+  syncToPocketBase(String(matchId), { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
 }
 
 // Handle match-action from frontend
