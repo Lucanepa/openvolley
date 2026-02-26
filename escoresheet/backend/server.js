@@ -473,21 +473,13 @@ const ALLOWED_ORIGINS = [
 
 function getCorsOrigin(req) {
   const origin = req.headers.origin
-  console.log(`[CORS] Request from origin: ${origin}, IS_CLOUD: ${IS_CLOUD}`)
   // In local mode, reflect the requesting origin for LAN access.
   // Intentionally permissive — local server is on a trusted network.
   if (!IS_CLOUD) return origin || '*'
   // In production, check against allowed list
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    console.log(`[CORS] Origin ${origin} is in ALLOWED_ORIGINS`)
-    return origin
-  }
+  if (origin && ALLOWED_ORIGINS.includes(origin)) return origin
   // Allow any openvolley.app subdomain
-  if (origin && origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/)) {
-    console.log(`[CORS] Origin ${origin} matches openvolley.app subdomain pattern`)
-    return origin
-  }
-  console.log(`[CORS] Origin ${origin} not recognized, using default: ${ALLOWED_ORIGINS[0]}`)
+  if (origin && origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/)) return origin
   return ALLOWED_ORIGINS[0] // Default to main domain
 }
 
