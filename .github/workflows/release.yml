@@ -1,4 +1,4 @@
-name: Build and Release Desktop Apps
+name: Build and Release Server
 
 on:
   workflow_dispatch:
@@ -36,139 +36,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Will release: $VERSION"
 
-  build-windows:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: escoresheet/frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: escoresheet/frontend
-        run: npm ci
-
-      - name: Remove canvas native dependency
-        working-directory: escoresheet/frontend
-        run: |
-          if (Test-Path "node_modules\canvas") {
-            Remove-Item -Recurse -Force "node_modules\canvas"
-          }
-
-      - name: Build Electron app (Windows)
-        working-directory: escoresheet/frontend
-        env:
-          ELECTRON: 'true'
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run electron:build:win -- --publish never
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: |
-            escoresheet/frontend/dist-electron/*.exe
-            escoresheet/frontend/dist-electron/*.exe.blockmap
-          retention-days: 30
-
-  build-macos:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: escoresheet/frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: escoresheet/frontend
-        run: npm ci
-
-      - name: Remove canvas native dependency
-        working-directory: escoresheet/frontend
-        run: |
-          if [ -d "node_modules/canvas" ]; then
-            rm -rf node_modules/canvas
-          fi
-
-      - name: Build Electron app (macOS)
-        working-directory: escoresheet/frontend
-        env:
-          ELECTRON: 'true'
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run electron:build:mac -- --publish never
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-build
-          path: |
-            escoresheet/frontend/dist-electron/*.dmg
-            escoresheet/frontend/dist-electron/*.dmg.blockmap
-            escoresheet/frontend/dist-electron/*.zip
-          retention-days: 30
-
-  build-linux:
-    needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: escoresheet/frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: escoresheet/frontend
-        run: npm ci
-
-      - name: Remove canvas native dependency
-        working-directory: escoresheet/frontend
-        run: |
-          if [ -d "node_modules/canvas" ]; then
-            rm -rf node_modules/canvas
-          fi
-
-      - name: Install Linux build dependencies
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
-      - name: Build Electron app (Linux)
-        working-directory: escoresheet/frontend
-        env:
-          ELECTRON: 'true'
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run electron:build:linux -- --publish never
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build
-          path: |
-            escoresheet/frontend/dist-electron/*.AppImage
-            escoresheet/frontend/dist-electron/*.deb
-            escoresheet/frontend/dist-electron/*.rpm
-          retention-days: 30
-
-  # --- Standalone Server Binaries (Node.js SEA) ---
+  # --- Build frontend assets for the standalone server ---
   build-server-frontend:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
@@ -182,32 +50,68 @@ jobs:
           cache: 'npm'
           cache-dependency-path: escoresheet/frontend/package-lock.json
 
-      - name: Install frontend dependencies
+      # --- Indoor volleyball frontend ---
+      - name: Install indoor frontend dependencies
         working-directory: escoresheet/frontend
         run: npm ci
 
-      - name: Remove canvas native dependency
+      - name: Remove canvas native dependency (indoor)
         working-directory: escoresheet/frontend
         run: |
           if [ -d "node_modules/canvas" ]; then
             rm -rf node_modules/canvas
           fi
 
-      - name: Build frontend subdomains
+      - name: Build indoor frontend subdomains
         working-directory: escoresheet/frontend
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build:subdomains
 
+      # --- Beach volleyball frontend ---
+      - name: Clone openbeach repository
+        uses: actions/checkout@v4
+        with:
+          repository: Lucanepa/openbeach
+          path: openbeach
+
+      - name: Install beach frontend dependencies
+        working-directory: openbeach/escoresheet/frontend
+        run: npm ci
+
+      - name: Remove canvas native dependency (beach)
+        working-directory: openbeach/escoresheet/frontend
+        run: |
+          if [ -d "node_modules/canvas" ]; then
+            rm -rf node_modules/canvas
+          fi
+
+      - name: Build beach frontend subdomains
+        working-directory: openbeach/escoresheet/frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build:subdomains
+
+      # --- Assemble server public directory ---
       - name: Assemble server public directory
         run: |
+          # Indoor volleyball
           mkdir -p escoresheet/backend/public/referee
           mkdir -p escoresheet/backend/public/bench
           mkdir -p escoresheet/backend/public/livescore
           cp -r escoresheet/frontend/dist-referee/* escoresheet/backend/public/referee/
           cp -r escoresheet/frontend/dist-bench/* escoresheet/backend/public/bench/
           cp -r escoresheet/frontend/dist-livescore/* escoresheet/backend/public/livescore/
+
+          # Beach volleyball
+          mkdir -p escoresheet/backend/public/beach-referee
+          mkdir -p escoresheet/backend/public/beach-bench
+          mkdir -p escoresheet/backend/public/beach-livescore
+          cp -r openbeach/escoresheet/frontend/dist-beach-referee/* escoresheet/backend/public/beach-referee/
+          cp -r openbeach/escoresheet/frontend/dist-beachapp/* escoresheet/backend/public/beach-bench/
+          cp -r openbeach/escoresheet/frontend/dist-beach-livescore/* escoresheet/backend/public/beach-livescore/
 
       - name: Upload server public files
         uses: actions/upload-artifact@v4
@@ -216,6 +120,7 @@ jobs:
           path: escoresheet/backend/public/
           retention-days: 1
 
+  # --- Standalone Server Binaries (Node.js SEA) ---
   build-server-linux:
     needs: [check-version, build-server-frontend]
     if: needs.check-version.outputs.should_release == 'true'
@@ -319,7 +224,7 @@ jobs:
           retention-days: 30
 
   release:
-    needs: [check-version, build-windows, build-macos, build-linux, build-server-linux, build-server-windows, build-server-macos]
+    needs: [check-version, build-server-linux, build-server-windows, build-server-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -338,42 +243,31 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
-          name: Openvolley eScoresheet ${{ needs.check-version.outputs.version }}
+          name: OpenVolley Server ${{ needs.check-version.outputs.version }}
           draft: false
           prerelease: false
           body: |
-            ## Downloads
+            ## Standalone Server (Indoor + Beach Volleyball)
 
-            ### Desktop App (Electron)
+            Double-click to start the server. Open `http://localhost:8080` in a browser to see QR codes for connecting devices. Each device can install the app as a **PWA** from the browser menu for a native-like experience.
 
-            #### Windows
-            - **Installer**: `Openvolley eScoresheet Setup X.X.X.exe` - Recommended for most users
-            - **Portable**: `Openvolley eScoresheet X.X.X.exe` - No installation required
+            All devices must be on the same network.
 
-            #### macOS
-            - **DMG**: `Openvolley eScoresheet-X.X.X.dmg` - Drag to Applications
-            - **ZIP**: `Openvolley eScoresheet-X.X.X-mac.zip` - Extract and run
+            ### Indoor Volleyball
+            - **Referee**: `/referee`
+            - **Team Bench**: `/bench`
+            - **Livescore**: `/livescore`
 
-            #### Linux
-            - **AppImage**: `Openvolley eScoresheet-X.X.X.AppImage` - Make executable and run
-            - **DEB**: For Debian/Ubuntu
-            - **RPM**: For Fedora/RHEL
+            ### Beach Volleyball
+            - **Referee**: `/beach-referee`
+            - **Team Bench**: `/beach-bench`
+            - **Livescore**: `/beach-livescore`
 
-            ### Standalone Server (for LAN / offline use)
-            Double-click to start the server. Open `http://localhost:8080` in a browser to see QR codes for connecting referee, bench, and livescore devices.
-
+            ### Downloads
             - **Windows**: `openvolley-server-win-x64.exe`
             - **macOS (Apple Silicon)**: `openvolley-server-macos-arm64`
             - **Linux**: `openvolley-server-linux-x64`
           files: |
-            artifacts/**/*.exe
-            artifacts/**/*.exe.blockmap
-            artifacts/**/*.dmg
-            artifacts/**/*.dmg.blockmap
-            artifacts/**/*.zip
-            artifacts/**/*.AppImage
-            artifacts/**/*.deb
-            artifacts/**/*.rpm
             artifacts/server-linux/*
             artifacts/server-windows/*
             artifacts/server-macos/*
