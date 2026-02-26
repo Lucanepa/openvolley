@@ -5,7 +5,7 @@ import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { setBackendOverride } from './utils/backendConfig'
+import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -19,7 +19,7 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
  */
 export default function LivescoreApp() {
   const { t } = useTranslation()
-  const [serverReady, setServerReady] = useState(false)
+  const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [liveGames, setLiveGames] = useState([]) // All games from match_live_state
   const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
   const [loading, setLoading] = useState(true)
