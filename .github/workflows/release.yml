@@ -150,16 +150,23 @@ jobs:
           name: beach-frontend
           path: beach/
 
+      - name: Debug artifact structure
+        run: |
+          echo "Indoor artifact structure:"
+          find indoor/ -type f | head -20
+          echo "Beach artifact structure:"
+          find beach/ -type f | head -20
+
       - name: Assemble server public directory
         run: |
           mkdir -p public/referee public/bench public/roster
           mkdir -p public/beach-referee public/beach-scoreboard
 
-          cp -r indoor/escoresheet/frontend/dist-referee/* public/referee/
-          cp -r indoor/escoresheet/frontend/dist-bench/* public/bench/
-          cp -r indoor/escoresheet/frontend/dist-roster/* public/roster/
-          cp -r beach/escoresheet/frontend/dist-beach-referee/* public/beach-referee/
-          cp -r beach/escoresheet/frontend/dist-beach-scoreboard/* public/beach-scoreboard/
+          cp -r indoor/dist-referee/* public/referee/
+          cp -r indoor/dist-bench/* public/bench/
+          cp -r indoor/dist-roster/* public/roster/
+          cp -r beach/dist-beach-referee/* public/beach-referee/
+          cp -r beach/dist-beach-scoreboard/* public/beach-scoreboard/
 
           echo "Assembled public directory:"
           du -sh public/*/
