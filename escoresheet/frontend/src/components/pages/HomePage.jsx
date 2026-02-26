@@ -1,8 +1,17 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import UserButton from '../auth/UserButton'
 import { useScaledLayout } from '../../hooks/useScaledLayout'
+
+function detectDesktopOS() {
+  const ua = navigator.userAgent
+  if (/android|iphone|ipad|ipod|mobile|tablet/i.test(ua)) return null
+  if (/Windows/i.test(ua)) return 'windows'
+  if (/Mac OS X|Macintosh/i.test(ua)) return 'macos'
+  if (/Linux/i.test(ua)) return 'linux'
+  return null
+}
 
 export default function HomePage({
   favicon,
@@ -23,6 +32,7 @@ export default function HomePage({
   const { t } = useTranslation()
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const { scaleFactor } = useScaledLayout()
+  const desktopOS = useMemo(() => detectDesktopOS(), [])
 
   // Scaled dimensions
   const buttonWidth = `${Math.round(400 * scaleFactor)}px`
@@ -317,6 +327,42 @@ export default function HomePage({
             {t('supportFeedback.button')}
           </button>
         </div>
+
+        {/* Download Server - desktop only */}
+        {desktopOS && (
+          <div style={{ marginTop: gap, textAlign: 'center' }}>
+            <a
+              href="https://github.com/Lucanepa/openvolley/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: tinyGap,
+                padding: smallPadding,
+                fontSize: `${Math.round(14 * scaleFactor)}px`,
+                color: 'rgba(255, 255, 255, 0.5)',
+                background: 'none',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: smallBorderRadius,
+                textDecoration: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)'
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+            >
+              <span>↓</span>
+              <span>{t('home.downloadServer', 'Download Server — Referee without internet')}</span>
+            </a>
+          </div>
+        )}
 
         {/* Support & Feedback Modal */}
         <SupportFeedbackModal

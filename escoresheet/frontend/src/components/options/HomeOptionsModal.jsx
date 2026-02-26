@@ -984,39 +984,6 @@ export default function HomeOptionsModal({
           </div>
         )}
 
-        {activeDisplayMode === 'desktop' && (
-          <Section title={t('options.downloadDesktopApp')} borderBottom={false}>
-            <a
-              href="https://github.com/Lucanepa/openvolley/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: 'var(--text)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '8px',
-                textDecoration: 'none',
-                transition: 'all 0.2s',
-                justifyContent: 'center'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-              }}
-            >
-              <span>{t('options.viewReleasesDownloads')}</span>
-              <span style={{ fontSize: '14px', opacity: 0.7 }}>↗</span>
-            </a>
-          </Section>
-        )}
 
       
 
