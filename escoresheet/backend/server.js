@@ -31,7 +31,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   : null
-console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED (set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)')
+if (SUPABASE_URL) console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED')
 
 // Allowed tables/buckets for proxy endpoints
 const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches', 'teams']
@@ -62,11 +62,13 @@ const ALLOWED_COLUMNS = {
 // RESEND_API_KEY
 // Option 2: SMTP (may be blocked by some cloud providers)
 // SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
-console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
-console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
-console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
-console.log('[Email Config] SMTP_USER:', process.env.SMTP_USER ? 'SET' : 'NOT SET')
-console.log('[Email Config] SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SET')
+if (process.env.RESEND_API_KEY || process.env.SMTP_HOST) {
+  console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
+  console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
+  console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
+  console.log('[Email Config] SMTP_USER:', process.env.SMTP_USER ? 'SET' : 'NOT SET')
+  console.log('[Email Config] SMTP_PASS:', process.env.SMTP_PASS ? 'SET' : 'NOT SET')
+}
 
 // Resend email helper (uses HTTPS - works on all cloud platforms)
 async function sendViaResend(to, subject, text) {
