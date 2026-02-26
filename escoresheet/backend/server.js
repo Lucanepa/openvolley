@@ -22,6 +22,7 @@ import { join, extname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import QRCode from 'qrcode'
+import PocketBase from 'pocketbase'
 
 const PORT = process.env.PORT || 8080
 
@@ -32,6 +33,33 @@ const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   : null
 if (SUPABASE_URL) console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED')
+
+// --- PocketBase backup client (server-side only, parallel to Supabase) ---
+const POCKETBASE_URL = process.env.POCKETBASE_URL
+const POCKETBASE_ADMIN_EMAIL = process.env.POCKETBASE_ADMIN_EMAIL
+const POCKETBASE_ADMIN_PASSWORD = process.env.POCKETBASE_ADMIN_PASSWORD
+
+let pbClient = null
+let pbReady = false
+
+async function initPocketBase() {
+  if (!POCKETBASE_URL || !POCKETBASE_ADMIN_EMAIL || !POCKETBASE_ADMIN_PASSWORD) return
+  try {
+    pbClient = new PocketBase(POCKETBASE_URL)
+    pbClient.autoCancellation(false)
+    await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
+    pbReady = true
+    console.log('[PocketBase] Admin client: CONFIGURED and AUTHENTICATED')
+    await loadMatchesFromPocketBase()
+  } catch (err) {
+    pbClient = null
+    pbReady = false
+    console.warn('[PocketBase] Admin client: FAILED to authenticate -', err.message)
+  }
+}
+
+// Initialize asynchronously (non-blocking — server starts regardless)
+if (POCKETBASE_URL) initPocketBase()
 
 // Allowed tables/buckets for proxy endpoints
 const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches', 'teams']
@@ -188,6 +216,137 @@ const MAX_ROOMS = 500
 const MAX_CONNECTIONS = 2000
 const MAX_CONNECTIONS_PER_IP = 50
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+// --- PocketBase debounced sync ---
+const PB_SYNC_DEBOUNCE_MS = 12000
+const pbSyncTimers = new Map()
+const pbSyncPending = new Map()
+
+function queuePocketBaseSync(matchId, matchData) {
+  if (!pbReady || !pbClient) return
+  pbSyncPending.set(matchId, matchData)
+  if (pbSyncTimers.has(matchId)) return
+  const timerId = setTimeout(() => {
+    pbSyncTimers.delete(matchId)
+    const latestData = pbSyncPending.get(matchId)
+    pbSyncPending.delete(matchId)
+    if (latestData) executePocketBaseSync(matchId, latestData)
+  }, PB_SYNC_DEBOUNCE_MS)
+  pbSyncTimers.set(matchId, timerId)
+}
+
+async function executePocketBaseSync(matchId, matchData) {
+  if (!pbReady || !pbClient) return
+  try {
+    const payload = {
+      match_id: String(matchId),
+      external_id: matchData.match?.external_id || matchData.match?.seed_key || '',
+      status: matchData.match?.status || 'unknown',
+      sport_type: matchData.match?.sport_type || 'indoor',
+      game_number: matchData.match?.gameN || matchData.match?.gameNumber || matchData.match?.game_n || 0,
+      match_data: matchData.match || {},
+      home_team: matchData.homeTeam || {},
+      away_team: matchData.awayTeam || {},
+      home_players: matchData.homePlayers || [],
+      away_players: matchData.awayPlayers || [],
+      sets: matchData.sets || [],
+      events: matchData.events || [],
+      updated_at: new Date().toISOString()
+    }
+    try {
+      const existing = await pbClient.collection('matches').getFirstListItem(
+        pbClient.filter('match_id = {:id}', { id: String(matchId) })
+      )
+      await pbClient.collection('matches').update(existing.id, payload)
+    } catch (findErr) {
+      if (findErr.status === 404) {
+        await pbClient.collection('matches').create(payload)
+      } else {
+        throw findErr
+      }
+    }
+    console.log(`[PocketBase] Synced match ${matchId}`)
+  } catch (err) {
+    if (err.status === 401) {
+      console.warn('[PocketBase] Auth expired, re-authenticating...')
+      pbReady = false
+      try {
+        await pbClient.collection('_superusers').authWithPassword(POCKETBASE_ADMIN_EMAIL, POCKETBASE_ADMIN_PASSWORD)
+        pbReady = true
+        executePocketBaseSync(matchId, matchData)
+      } catch (reAuthErr) {
+        console.error('[PocketBase] Re-authentication failed:', reAuthErr.message)
+      }
+      return
+    }
+    console.error(`[PocketBase] Sync failed for match ${matchId}:`, err.message)
+  }
+}
+
+async function deletePocketBaseMatch(matchId) {
+  if (!pbReady || !pbClient) return
+  const timerId = pbSyncTimers.get(matchId)
+  if (timerId) { clearTimeout(timerId); pbSyncTimers.delete(matchId) }
+  pbSyncPending.delete(matchId)
+  try {
+    const existing = await pbClient.collection('matches').getFirstListItem(
+      pbClient.filter('match_id = {:id}', { id: String(matchId) })
+    )
+    await pbClient.collection('matches').delete(existing.id)
+    console.log(`[PocketBase] Deleted match ${matchId}`)
+  } catch (err) {
+    if (err.status !== 404) console.error(`[PocketBase] Delete failed for match ${matchId}:`, err.message)
+  }
+}
+
+async function clearAllPocketBaseMatches() {
+  if (!pbReady || !pbClient) return
+  for (const timerId of pbSyncTimers.values()) clearTimeout(timerId)
+  pbSyncTimers.clear()
+  pbSyncPending.clear()
+  try {
+    const records = await pbClient.collection('matches').getFullList({ fields: 'id' })
+    for (const record of records) await pbClient.collection('matches').delete(record.id)
+    console.log(`[PocketBase] Cleared all ${records.length} matches`)
+  } catch (err) {
+    console.error('[PocketBase] Clear all failed:', err.message)
+  }
+}
+
+async function loadMatchesFromPocketBase() {
+  if (!pbReady || !pbClient) return
+  try {
+    const records = await pbClient.collection('matches').getFullList({ sort: '-updated_at' })
+    let loaded = 0
+    for (const record of records) {
+      const matchId = record.match_id
+      if (!matchId || record.status === 'final' || activeMatches.has(matchId)) continue
+      activeMatches.set(matchId, {
+        matchId,
+        match: record.match_data || {},
+        homeTeam: record.home_team || {},
+        awayTeam: record.away_team || {},
+        homePlayers: record.home_players || [],
+        awayPlayers: record.away_players || [],
+        sets: record.sets || [],
+        events: record.events || [],
+        gameNumber: record.game_number || record.match_data?.gameN,
+        updatedAt: record.updated_at || record.updated,
+        updatedBy: 'pocketbase-recovery'
+      })
+      rooms.set(matchId, {
+        matchId,
+        clients: new Set(),
+        createdAt: new Date().toISOString(),
+        lastActivity: Date.now()
+      })
+      loaded++
+    }
+    if (loaded > 0) console.log(`[PocketBase] Recovered ${loaded} active match(es) from backup`)
+  } catch (err) {
+    console.error('[PocketBase] Failed to load matches on startup:', err.message)
+  }
+}
 
 // --- Input validation constants ---
 const VALID_ROLES = ['scoreboard', 'referee', 'bench', 'subscriber', 'livescore']
@@ -566,7 +725,8 @@ const server = createServer((req, res) => {
       connections: connections.size,
       matches: activeMatches.size,
       rooms: rooms.size,
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      pocketbase: pbReady ? 'connected' : (POCKETBASE_URL ? 'configured' : 'not_configured')
     }))
     return
   }
@@ -2496,6 +2656,9 @@ function handleSyncMatchData(clientInfo, message) {
   }, clientInfo.id)
 
   console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
+
+  // Queue PocketBase backup sync (fire-and-forget, debounced)
+  queuePocketBaseSync(String(matchId), { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
 }
 
 // Handle match-action from frontend
@@ -2534,6 +2697,7 @@ function handleClearMatches(message) {
     keysToDelete.forEach(matchId => {
       activeMatches.delete(matchId)
       rooms.delete(matchId)
+      deletePocketBaseMatch(matchId)
     })
     console.log(`🗑️  Cleared ${keysToDelete.length} matches (kept ${keepMatchId})`)
   } else {
@@ -2541,6 +2705,7 @@ function handleClearMatches(message) {
     const count = activeMatches.size
     activeMatches.clear()
     rooms.clear()
+    clearAllPocketBaseMatches()
     console.log(`🗑️  Cleared all ${count} matches`)
   }
 }
@@ -2553,6 +2718,7 @@ function handleDeleteMatch(message) {
 
   activeMatches.delete(matchId)
   rooms.delete(matchId)
+  deletePocketBaseMatch(matchId)
   console.log(`🗑️  Deleted match ${matchId}`)
 }
 
@@ -2609,6 +2775,7 @@ server.listen(PORT, () => {
 ║
 ║  Port: ${PORT}   Status: READY
 ║  Static files: ${HAS_STATIC ? 'YES' : 'NO'}
+║  PocketBase: ${pbReady ? 'CONNECTED' : POCKETBASE_URL ? 'CONNECTING...' : 'NOT CONFIGURED'}
 ║
 ${ipLines || `  📡 http://localhost:${PORT}`}
 ║
