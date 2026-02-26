@@ -320,8 +320,9 @@ jobs:
             1. Download the binary for your platform
             2. Run it:
                - **Windows**: Double-click `openvolley-server-win-x64.exe`
-               - **macOS / Linux**: Open a terminal:
+               - **macOS / Linux**: Open a terminal in your Downloads folder:
                  ```
+                 cd ~/Downloads
                  chmod +x openvolley-server-*
                  ./openvolley-server-*
                  ```
