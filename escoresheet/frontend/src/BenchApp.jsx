@@ -6,7 +6,7 @@ import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { setBackendOverride } from './utils/backendConfig'
+import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -23,7 +23,7 @@ const CONNECTION_MODES = {
 
 export default function BenchApp() {
   const { t } = useTranslation()
-  const [serverReady, setServerReady] = useState(false)
+  const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null)
   const [autoConnectTeam, setAutoConnectTeam] = useState(null)
   const [availableMatches, setAvailableMatches] = useState([])

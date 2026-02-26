@@ -6,6 +6,7 @@ import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { isServedFromLocalServer } from './utils/backendConfig'
 import { setBackendOverride } from './utils/backendConfig'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
@@ -15,7 +16,7 @@ const MASTER_PIN = '123456'
 
 export default function RefereeApp() {
   const { t } = useTranslation()
-  const [serverReady, setServerReady] = useState(false)
+  const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
