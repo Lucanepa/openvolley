@@ -209,11 +209,19 @@ jobs:
           node build-server.js --output openvolley-server-linux-x64
           chmod +x dist/openvolley-server-linux-x64
 
-      - name: Upload Linux server binary
+      - name: Package binary + frontend into zip
+        working-directory: escoresheet/backend
+        run: |
+          mkdir -p package/public
+          cp dist/openvolley-server-linux-x64 package/
+          cp -r public/* package/public/
+          cd package && zip -r ../dist/openvolley-server-linux-x64.zip .
+
+      - name: Upload Linux server package
         uses: actions/upload-artifact@v4
         with:
           name: server-linux
-          path: escoresheet/backend/dist/openvolley-server-linux-x64
+          path: escoresheet/backend/dist/openvolley-server-linux-x64.zip
           retention-days: 30
 
   build-server-windows:
@@ -244,11 +252,20 @@ jobs:
         working-directory: escoresheet/backend
         run: node build-server.js --output openvolley-server-win-x64.exe
 
-      - name: Upload Windows server binary
+      - name: Package binary + frontend into zip
+        working-directory: escoresheet/backend
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package/public -Force
+          Copy-Item dist/openvolley-server-win-x64.exe package/
+          Copy-Item -Recurse public/* package/public/
+          Compress-Archive -Path package/* -DestinationPath dist/openvolley-server-win-x64.zip
+
+      - name: Upload Windows server package
         uses: actions/upload-artifact@v4
         with:
           name: server-windows
-          path: escoresheet/backend/dist/openvolley-server-win-x64.exe
+          path: escoresheet/backend/dist/openvolley-server-win-x64.zip
           retention-days: 30
 
   build-server-macos:
@@ -281,11 +298,19 @@ jobs:
           node build-server.js --output openvolley-server-macos-arm64
           chmod +x dist/openvolley-server-macos-arm64
 
-      - name: Upload macOS server binary
+      - name: Package binary + frontend into zip
+        working-directory: escoresheet/backend
+        run: |
+          mkdir -p package/public
+          cp dist/openvolley-server-macos-arm64 package/
+          cp -r public/* package/public/
+          cd package && zip -r ../dist/openvolley-server-macos-arm64.zip .
+
+      - name: Upload macOS server package
         uses: actions/upload-artifact@v4
         with:
           name: server-macos
-          path: escoresheet/backend/dist/openvolley-server-macos-arm64
+          path: escoresheet/backend/dist/openvolley-server-macos-arm64.zip
           retention-days: 30
 
   release:
@@ -315,14 +340,17 @@ jobs:
             ## Standalone Server (Indoor + Beach Volleyball)
 
             ### Quick Start
-            - **Windows**: Download and double-click `openvolley-server-win-x64.exe`
-            - **macOS / Linux**: Download, then run in terminal:
-              ```
-              chmod +x openvolley-server-*
-              ./openvolley-server-*
-              ```
+            1. Download the `.zip` for your platform
+            2. Extract the zip (keep the `public/` folder next to the binary)
+            3. Run the server:
+               - **Windows**: Double-click `openvolley-server-win-x64.exe`
+               - **macOS / Linux**: Open a terminal in the extracted folder:
+                 ```
+                 chmod +x openvolley-server-*
+                 ./openvolley-server-*
+                 ```
 
-            Open the dashboard URL shown in the console. Scan QR codes with your phone to connect each role. All devices must be on the **same Wi-Fi network**.
+            Open the URL shown in the console. Scan QR codes with your phone to connect each role. All devices must be on the **same Wi-Fi network**.
 
             ### Indoor Volleyball
             - **Referee** · **Team Bench** · **Roster Upload**
