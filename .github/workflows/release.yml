@@ -62,12 +62,15 @@ jobs:
             rm -rf node_modules/canvas
           fi
 
-      - name: Build indoor frontend subdomains
+      - name: Build indoor frontend (referee, bench, roster)
         working-directory: escoresheet/frontend
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run build:subdomains
+        run: |
+          node scripts/build-subdomains.js referee
+          node scripts/build-subdomains.js bench
+          node scripts/build-subdomains.js roster
 
       # --- Beach volleyball frontend ---
       - name: Clone openbeach repository
@@ -87,12 +90,14 @@ jobs:
             rm -rf node_modules/canvas
           fi
 
-      - name: Build beach frontend subdomains
+      - name: Build beach frontend (referee + bench only)
         working-directory: openbeach/escoresheet/frontend
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run build:subdomains
+        run: |
+          node scripts/build-subdomains.js beach-referee
+          node scripts/build-subdomains.js beachapp
 
       # --- Assemble server public directory ---
       - name: Assemble server public directory
@@ -100,18 +105,16 @@ jobs:
           # Indoor volleyball
           mkdir -p escoresheet/backend/public/referee
           mkdir -p escoresheet/backend/public/bench
-          mkdir -p escoresheet/backend/public/livescore
+          mkdir -p escoresheet/backend/public/roster
           cp -r escoresheet/frontend/dist-referee/* escoresheet/backend/public/referee/
           cp -r escoresheet/frontend/dist-bench/* escoresheet/backend/public/bench/
-          cp -r escoresheet/frontend/dist-livescore/* escoresheet/backend/public/livescore/
+          cp -r escoresheet/frontend/dist-roster/* escoresheet/backend/public/roster/
 
           # Beach volleyball
           mkdir -p escoresheet/backend/public/beach-referee
           mkdir -p escoresheet/backend/public/beach-bench
-          mkdir -p escoresheet/backend/public/beach-livescore
           cp -r openbeach/escoresheet/frontend/dist-beach-referee/* escoresheet/backend/public/beach-referee/
           cp -r openbeach/escoresheet/frontend/dist-beachapp/* escoresheet/backend/public/beach-bench/
-          cp -r openbeach/escoresheet/frontend/dist-beach-livescore/* escoresheet/backend/public/beach-livescore/
 
       - name: Upload server public files
         uses: actions/upload-artifact@v4
@@ -256,12 +259,11 @@ jobs:
             ### Indoor Volleyball
             - **Referee**: `/referee`
             - **Team Bench**: `/bench`
-            - **Livescore**: `/livescore`
+            - **Roster Upload**: `/roster`
 
             ### Beach Volleyball
             - **Referee**: `/beach-referee`
             - **Team Bench**: `/beach-bench`
-            - **Livescore**: `/beach-livescore`
 
             ### Downloads
             - **Windows**: `openvolley-server-win-x64.exe`
