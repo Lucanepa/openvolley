@@ -52,20 +52,20 @@ async function ensurePocketBaseCollection() {
       await pbClient.collections.create({
         name: 'matches',
         type: 'base',
-        schema: [
-          { name: 'match_id', type: 'text', options: {} },
-          { name: 'external_id', type: 'text', options: {} },
-          { name: 'status', type: 'text', options: {} },
-          { name: 'sport_type', type: 'text', options: {} },
-          { name: 'game_number', type: 'number', options: {} },
-          { name: 'match_data', type: 'json', options: {} },
-          { name: 'home_team', type: 'json', options: {} },
-          { name: 'away_team', type: 'json', options: {} },
-          { name: 'home_players', type: 'json', options: {} },
-          { name: 'away_players', type: 'json', options: {} },
-          { name: 'sets', type: 'json', options: {} },
-          { name: 'events', type: 'json', options: {} },
-          { name: 'updated_at', type: 'text', options: {} }
+        fields: [
+          { name: 'match_id', type: 'text', required: true },
+          { name: 'external_id', type: 'text' },
+          { name: 'status', type: 'text' },
+          { name: 'sport_type', type: 'text' },
+          { name: 'game_number', type: 'number' },
+          { name: 'match_data', type: 'json' },
+          { name: 'home_team', type: 'json' },
+          { name: 'away_team', type: 'json' },
+          { name: 'home_players', type: 'json' },
+          { name: 'away_players', type: 'json' },
+          { name: 'sets', type: 'json' },
+          { name: 'events', type: 'json' },
+          { name: 'updated_at', type: 'text' }
         ],
         indexes: [
           'CREATE UNIQUE INDEX idx_match_id ON matches (match_id)'
@@ -89,9 +89,12 @@ async function initPocketBase() {
     await ensurePocketBaseCollection()
     await loadMatchesFromPocketBase()
   } catch (err) {
-    pbClient = null
-    pbReady = false
-    console.warn('[PocketBase] Admin client: FAILED to authenticate -', err.message)
+    if (pbReady) {
+      console.error('[PocketBase] Post-auth initialization error:', err.message)
+    } else {
+      pbClient = null
+      console.warn('[PocketBase] Admin client: FAILED to authenticate -', err.message)
+    }
   }
 }
 
