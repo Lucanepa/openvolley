@@ -314,23 +314,21 @@ jobs:
           body: |
             ## Standalone Server (Indoor + Beach Volleyball)
 
-            Double-click (or `chmod +x` and run from terminal on Linux/macOS) to start the server. The console will show your LAN IP and QR codes for connecting devices. Each device can install the app as a **PWA** from the browser menu for a native-like experience.
+            ### Quick Start
+            - **Windows**: Download and double-click `openvolley-server-win-x64.exe`
+            - **macOS / Linux**: Download, then run in terminal:
+              ```
+              chmod +x openvolley-server-*
+              ./openvolley-server-*
+              ```
 
-            All devices must be on the same Wi-Fi / LAN network.
+            Open the dashboard URL shown in the console. Scan QR codes with your phone to connect each role. All devices must be on the **same Wi-Fi network**.
 
             ### Indoor Volleyball
-            - **Referee**: `/referee`
-            - **Team Bench**: `/bench`
-            - **Roster Upload**: `/roster`
+            - **Referee** · **Team Bench** · **Roster Upload**
 
             ### Beach Volleyball
-            - **Referee**: `/beach-referee`
-            - **Scoreboard**: `/beach-scoreboard`
-
-            ### Downloads
-            - **Windows**: `openvolley-server-win-x64.exe`
-            - **macOS (Apple Silicon)**: `openvolley-server-macos-arm64`
-            - **Linux**: `openvolley-server-linux-x64`
+            - **Referee** · **Scoreboard**
           files: |
             artifacts/server-linux/*
             artifacts/server-windows/*
