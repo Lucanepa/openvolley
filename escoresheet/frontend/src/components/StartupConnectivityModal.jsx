@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-// Primary services shown to the user — these are what matters
-const PRIMARY_KEYS = ['db', 'supabase']
-// Fallback services — only shown when they're connected (hidden otherwise)
-const FALLBACK_KEYS = ['api', 'server', 'websocket', 'scoreboard']
-const ALL_KEYS = [...PRIMARY_KEYS, ...FALLBACK_KEYS]
+// All services shown to the user
+const DISPLAY_KEYS = ['db', 'supabase', 'api', 'server', 'websocket', 'scoreboard']
 
 const AUTO_DISMISS_SECONDS = 5
 
@@ -40,10 +37,16 @@ export default function StartupConnectivityModal({
     }
   }, [open])
 
-  // Only primary services gate dismissal
-  const primaryOk = PRIMARY_KEYS.every(key => isStatusOk(connectionStatuses[key]))
-  const primaryChecked = PRIMARY_KEYS.every(key => connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting')
-  const hasErrors = primaryChecked && PRIMARY_KEYS.some(key => !isStatusOk(connectionStatuses[key]))
+  // App is ready when DB works AND at least one sync path works (Supabase OR WebSocket)
+  const dbOk = isStatusOk(connectionStatuses.db)
+  const supabaseOk = isStatusOk(connectionStatuses.supabase)
+  const websocketOk = connectionStatuses.websocket === 'connected'
+  const primaryOk = dbOk && (supabaseOk || websocketOk)
+
+  const coreChecked = ['db', 'supabase', 'websocket'].every(key =>
+    connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting'
+  )
+  const hasErrors = coreChecked && !primaryOk
 
   // Countdown + auto-dismiss once primary services are OK
   useEffect(() => {
@@ -70,10 +73,10 @@ export default function StartupConnectivityModal({
 
   if (!open) return null
 
-  // Only show fallback services if they're connected — hide them otherwise
+  // Show DB + Supabase always, show fallback services only when connected
   const visibleKeys = [
-    ...PRIMARY_KEYS,
-    ...FALLBACK_KEYS.filter(key => connectionStatuses[key] === 'connected')
+    'db', 'supabase',
+    ...['api', 'server', 'websocket', 'scoreboard'].filter(key => connectionStatuses[key] === 'connected')
   ]
 
   const labelMap = {
@@ -169,7 +172,9 @@ export default function StartupConnectivityModal({
           fontSize: 18
         }}>
           {primaryOk
-            ? t('startupConnectivity.allConnected', 'All services connected!')
+            ? (supabaseOk
+              ? t('startupConnectivity.allConnected', 'All services connected!')
+              : t('startupConnectivity.connectedViaServer', 'Connected via local server'))
             : t('startupConnectivity.connecting', 'Connecting...')}
         </h3>
 
@@ -218,7 +223,7 @@ export default function StartupConnectivityModal({
             textAlign: 'center',
             lineHeight: 1.5
           }}>
-            {t('startupConnectivity.serverUnavailable', 'Scoring works fully offline. Referee, bench, and livescore sync via Supabase — server is only needed as fallback.')}
+            {t('startupConnectivity.noConnection', 'No server or cloud connection available. Scoring still works offline.')}
             <br />
             <span style={{ color: '#9ca3af', fontSize: 12 }}>
               {t('startupConnectivity.backgroundRetry', 'Connection will keep retrying in the background.')}
