@@ -24,7 +24,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                     <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
                         <span className="text-[12px] font-bold leading-none relative z-0">A</span>
                         {improperRequests.teamA && (
-                            <span className="absolute inset-0 flex items-center justify-center text-[20px] text-gray-200 leading-none z-10">X</span>
+                            <span className="absolute inset-0 flex items-center justify-center text-[20px] leading-none z-10">X</span>
                         )}
                     </div>
 
@@ -32,7 +32,7 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                     <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center relative select-none bg-white">
                         <span className="text-[12px] font-bold leading-none relative z-0">B</span>
                         {improperRequests.teamB && (
-                            <span className="absolute inset-0 flex items-center justify-center text-[20px] text-gray-200 leading-none z-10">X</span>
+                            <span className="absolute inset-0 flex items-center justify-center text-[20px] leading-none z-10">X</span>
                         )}
                     </div>
                 </div>
@@ -186,6 +186,7 @@ interface ResultsProps {
   winner?: string;
   result?: string;
   coinTossConfirmed?: boolean;
+  bestOf?: number;
 }
 
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
@@ -204,8 +205,13 @@ export const Results: React.FC<ResultsProps> = ({
   matchDuration = '',
   winner = '',
   result = '',
-  coinTossConfirmed = false
+  coinTossConfirmed = false,
+  bestOf = 5
 }) => {
+    // For best-of-3: show 3 rows (sets 1, 2, and the deciding set which is stored at index 5)
+    // For best-of-5: show 5 rows (sets 1-5)
+    const isBestOf3 = bestOf === 3;
+    const displaySets = isBestOf3 ? [1, 2, 5] : [1, 2, 3, 4, 5];
     return (
         <div className="border border-r-0 border-black bg-white flex flex-col mr-1 h-full">
             <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
@@ -220,7 +226,7 @@ export const Results: React.FC<ResultsProps> = ({
                         <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div >P</div>
                     </div>
                     <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => {
+                        {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamATimeouts !== null;
                             return (
@@ -266,13 +272,15 @@ export const Results: React.FC<ResultsProps> = ({
                          <span className="flex-1">Time</span>
                      </div>
                      <div className="flex-1 flex flex-col">
-                        {[1,2,3,4,5].map(set => {
+                        {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
-                            // Only show set 4 and 5 numbers if they were actually played
-                            const showSetNumber = set <= 3 || (setData && setData.teamATimeouts !== null);
+                            // For best-of-3, the deciding set is stored at index 5
+                            const displayLabel = isBestOf3 && set === 5 ? "5'" : set;
+                            // Only show set 4 and 5 labels (in best-of-5) if they were actually played
+                            const showSetNumber = isBestOf3 || set <= 3 || (setData && setData.teamATimeouts !== null);
                             return (
                             <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white" style={{ gridTemplateColumns: '1fr 2fr' }}>
-                                <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? set : ''}</div>
+                                <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? displayLabel : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
                                 </div>
@@ -307,7 +315,7 @@ export const Results: React.FC<ResultsProps> = ({
                         <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div className="border-r border-black">T</div>
                     </div>
                     <div className="flex-1 flex flex-col border-r border-black">
-                        {[1,2,3,4,5].map(set => {
+                        {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamBTimeouts !== null;
                             return (
@@ -656,7 +664,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
         .slice(0, 2);
 
     return (
-        <div className="border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0">
+        <div className={`border ${isHome ? 'border-r-0' : ''} border-black bg-white w-full h-full flex flex-col min-w-0`}>
             <div className="bg-white text-black border-b border-r border-black font-bold py-0.5 text-xs flex justify-between px-1 items-center h-6 shrink-0">
                 {isHome ? (
                     <>
@@ -693,7 +701,10 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                                 </svg>
                             )}
                         </div>
-                        <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center">{player?.name || ''}</div>
+                        <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
+                            <span>{player?.name || ''}</span>
+                            {player?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
+                        </div>
                     </div>
                 )})}
             </div>
@@ -709,7 +720,10 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                         <div key={i} className={`${gridClass} ${rowHeight} text-[9px]`}>
                             <div className="border-r border-black text-center flex items-center justify-center">{libero?.dob || ''}</div>
                             <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
-                            <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center">{liberoName}</div>
+                            <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
+                                <span>{liberoName}</span>
+                                {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
+                            </div>
                         </div>
                     );
                 })}

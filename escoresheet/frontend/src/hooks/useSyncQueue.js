@@ -1,14 +1,108 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { db } from '../db/db'
-import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
+import { getApiUrl } from '../utils/backendConfig'
+
+/**
+ * ============================================================================
+ * SYNC ARCHITECTURE: IndexedDB + Supabase
+ * ============================================================================
+ *
+ * This app uses a TWO-PATH write architecture:
+ *
+ * PATH 1: QUEUED SYNC (this hook)
+ * --------------------------------
+ * Used for: Events, Sets, Match metadata
+ * Flow: IndexedDB write (immediate) → sync_queue → Supabase (async)
+ *
+ * Why queued?
+ * - Offline-first: Works without internet, syncs when back online
+ * - Dependency ordering: Matches must exist in Supabase before sets/events
+ * - Retry safety: external_id enables idempotent upserts (no duplicates on retry)
+ * - JSONB merging: Multiple components write different fields safely
+ *
+ * PATH 2: DIRECT SUPABASE (bypasses this queue)
+ * --------------------------------
+ * Used for: match_live_state table only
+ * Flow: Direct Supabase upsert (no local queue)
+ *
+ * Why direct?
+ * - Real-time latency: Spectators need sub-second updates
+ * - Queuing adds 1000ms+ delay (polling interval)
+ * - Acceptable tradeoff: live_state is ephemeral, can be reconstructed
+ *
+ * KEY DESIGN DECISIONS:
+ * - external_id: Stable identifier across retries (immutable, unlike game_n)
+ * - JSONB merging: Fetch existing + merge on update to prevent field overwrites
+ * - Dependency retries: Jobs retry up to MAX_DEPENDENCY_RETRIES times
+ * - Connection caching: Only recheck Supabase every 30 seconds
+ *
+ * See also:
+ * - db.js: sync_queue table schema
+ * - Scoreboard.jsx: Event logging + live_state direct writes
+ * ============================================================================
+ */
 
 // Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error'
 
-// Resource processing order - matches must be synced before sets/events
+// Resource processing order - matches must be synced before sets/events (FK dependency)
 const RESOURCE_ORDER = ['match', 'set', 'event']
 
-// Max retries for jobs waiting on dependencies
+// Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
+
+// Auto-retry interval for errored jobs (every 30 seconds when online)
+const ERROR_RETRY_INTERVAL = 30000
+
+// Valid Supabase matches table columns - filters out invalid columns from old backup formats
+const VALID_MATCH_COLUMNS = [
+  'external_id', 'game_n', 'game_pin', 'status', 'connections', 'connection_pins',
+  'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
+  'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
+  'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
+  'set_results', 'final_score', 'sanctions', 'winner', 'sport_type'
+]
+
+// Filter match payload to only include valid Supabase columns
+function filterMatchPayload(payload) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => VALID_MATCH_COLUMNS.includes(key))
+  )
+}
+
+/**
+ * Internal helper: Reset errored jobs to queued (non-hook function)
+ * This can be called from within useEffect without dependency issues
+ */
+async function retryErrorsInternal() {
+  try {
+    const errorJobs = await db.sync_queue.where('status').equals('error').toArray()
+    if (errorJobs.length === 0) return false
+
+    console.log(`[SyncQueue] Auto-retrying ${errorJobs.length} errored jobs`)
+    for (const job of errorJobs) {
+      await db.sync_queue.update(job.id, { status: 'queued', retry_count: 0 })
+    }
+    return true
+  } catch (err) {
+    console.error('[SyncQueue] Auto-retry errors failed:', err)
+    return false
+  }
+}
+
+// Auto-notify when items are added to sync_queue via Dexie creating hook.
+// This dispatches a custom event that the debounced flush listener picks up.
+// The hook is installed once at module level so it works for all callers.
+let _syncQueueHookInstalled = false
+function installSyncQueueHook() {
+  if (_syncQueueHookInstalled) return
+  _syncQueueHookInstalled = true
+  db.sync_queue.hook('creating', function () {
+    // Dispatch after the current microtask completes (Dexie hooks run inside transaction)
+    setTimeout(() => window.dispatchEvent(new Event('sync-queue-write')), 0)
+  })
+}
+installSyncQueueHook()
 
 export function useSyncQueue() {
   const busy = useRef(false)
@@ -21,9 +115,10 @@ export function useSyncQueue() {
   const lastConnectionCheck = useRef(0)
   const CONNECTION_CHECK_INTERVAL = 30000 // Only recheck every 30 seconds
 
-  // Check Supabase connection (with caching)
+  // Check backend/Supabase connection (with caching)
+  const hasBackend = () => !!getApiUrl('/api/db')
   const checkSupabaseConnection = useCallback(async (forceCheck = false) => {
-    if (!supabase) {
+    if (!hasBackend()) {
       setSyncStatus('online_no_supabase')
       return false
     }
@@ -40,7 +135,7 @@ export function useSyncQueue() {
         setSyncStatus('connecting')
       }
       // Try a simple query to check connection - use matches table
-      const { error } = await supabase.from('matches').select('id').limit(1)
+      const { error } = await apiFrom('matches').select('id').limit(1)
       if (error) {
         connectionVerified.current = false
         // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
@@ -86,11 +181,11 @@ export function useSyncQueue() {
       // ==================== MATCH ====================
       if (job.resource === 'match' && job.action === 'insert') {
         // All data is stored as JSONB in the match record - no FK resolution needed
-        const matchPayload = { ...job.payload }
+        // Filter to valid columns only - handles old backup formats with invalid fields
+        const matchPayload = filterMatchPayload(job.payload)
 
         console.log('[SyncQueue] Match insert payload:', matchPayload)
-        const { error } = await supabase
-          .from('matches')
+        const { error } = await apiFrom('matches')
           .upsert(matchPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Match insert error:', error, matchPayload)
@@ -103,10 +198,41 @@ export function useSyncQueue() {
       if (job.resource === 'match' && job.action === 'update') {
         const { id, ...updateData } = job.payload
 
-        console.log('[SyncQueue] Match update payload:', { id, ...updateData })
-        const { error } = await supabase
-          .from('matches')
-          .update(updateData)
+        // JSONB columns that need to be merged instead of replaced
+        const jsonbColumns = ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
+        const hasJsonbColumns = jsonbColumns.some(col => updateData[col] !== undefined)
+
+        let finalUpdateData = { ...updateData }
+
+        // If updating JSONB columns, fetch existing values and merge
+        if (hasJsonbColumns) {
+          const columnsToFetch = jsonbColumns.filter(col => updateData[col] !== undefined)
+          const { data: existingMatch, error: fetchError } = await apiFrom('matches')
+            .select(columnsToFetch.join(','))
+            .eq('external_id', id)
+            .maybeSingle()
+
+          if (fetchError) {
+            console.error('[SyncQueue] Match fetch for merge error:', fetchError)
+            // Continue with update anyway - worst case we overwrite
+          }
+
+          if (existingMatch) {
+            // Merge JSONB columns
+            for (const col of columnsToFetch) {
+              if (updateData[col] && typeof updateData[col] === 'object' && !Array.isArray(updateData[col])) {
+                finalUpdateData[col] = {
+                  ...(existingMatch[col] || {}),
+                  ...updateData[col]
+                }
+              }
+            }
+          }
+        }
+
+        console.log('[SyncQueue] Match update payload:', { id, ...finalUpdateData })
+        const { error } = await apiFrom('matches')
+          .update(finalUpdateData)
           .eq('external_id', id)
         if (error) {
           console.error('[SyncQueue] Match update error:', error, job.payload)
@@ -118,10 +244,10 @@ export function useSyncQueue() {
 
       if (job.resource === 'match' && job.action === 'delete') {
         const { id } = job.payload
+        console.log('[SyncQueue] 🗑️ Starting match delete for external_id:', id)
 
         // First, look up the match to get its UUID
-        const { data: matchData, error: lookupError } = await supabase
-          .from('matches')
+        const { data: matchData, error: lookupError } = await apiFrom('matches')
           .select('id')
           .eq('external_id', id)
           .maybeSingle()
@@ -138,28 +264,82 @@ export function useSyncQueue() {
         }
 
         const matchUuid = matchData.id
+        console.log('[SyncQueue] 🔍 Found match UUID:', matchUuid)
+
+        // Count records before deletion for debugging
+        const { count: eventsCountBefore } = await apiFrom('events')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: setsCountBefore } = await apiFrom('sets')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: liveStateCountBefore } = await apiFrom('match_live_state')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        console.log('[SyncQueue] 📊 Records before delete:', {
+          events: eventsCountBefore,
+          sets: setsCountBefore,
+          match_live_state: liveStateCountBefore
+        })
 
         // Delete events for this match
-        const { error: eventsError } = await supabase
-          .from('events')
+        console.log('[SyncQueue] 🗑️ Deleting events...')
+        const { error: eventsError, count: eventsDeleted } = await apiFrom('events')
           .delete()
           .eq('match_id', matchUuid)
+          .select('*', { count: 'exact', head: true })
         if (eventsError) {
           console.warn('[SyncQueue] Events delete error (continuing):', eventsError)
+        } else {
+          console.log('[SyncQueue] ✅ Events deleted')
         }
 
         // Delete sets for this match
-        const { error: setsError } = await supabase
-          .from('sets')
+        console.log('[SyncQueue] 🗑️ Deleting sets...')
+        const { error: setsError } = await apiFrom('sets')
           .delete()
           .eq('match_id', matchUuid)
         if (setsError) {
           console.warn('[SyncQueue] Sets delete error (continuing):', setsError)
+        } else {
+          console.log('[SyncQueue] ✅ Sets deleted')
+        }
+
+        // Delete match_live_state for this match
+        console.log('[SyncQueue] 🗑️ Deleting match_live_state...')
+        const { error: liveStateError } = await apiFrom('match_live_state')
+          .delete()
+          .eq('match_id', matchUuid)
+        if (liveStateError) {
+          console.warn('[SyncQueue] match_live_state delete error (continuing):', liveStateError)
+        } else {
+          console.log('[SyncQueue] ✅ match_live_state deleted')
+        }
+
+        // Verify all related records are deleted before deleting match
+        const { count: eventsCountAfter } = await apiFrom('events')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: setsCountAfter } = await apiFrom('sets')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        const { count: liveStateCountAfter } = await apiFrom('match_live_state')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', matchUuid)
+        console.log('[SyncQueue] 📊 Records after delete:', {
+          events: eventsCountAfter,
+          sets: setsCountAfter,
+          match_live_state: liveStateCountAfter
+        })
+
+        // If any records remain, warn but continue
+        if (eventsCountAfter > 0 || setsCountAfter > 0 || liveStateCountAfter > 0) {
+          console.warn('[SyncQueue] ⚠️ Some records were not deleted (RLS issue?). Attempting match delete anyway...')
         }
 
         // Delete the match
-        const { error: matchError } = await supabase
-          .from('matches')
+        console.log('[SyncQueue] 🗑️ Deleting match...')
+        const { error: matchError } = await apiFrom('matches')
           .delete()
           .eq('id', matchUuid)
         if (matchError) {
@@ -167,26 +347,142 @@ export function useSyncQueue() {
           return false
         }
 
-        console.log('[SyncQueue] Deleted match and related records from Supabase:', id)
+        console.log('[SyncQueue] ✅ Deleted match and related records from Supabase:', id)
         return true
+      }
+
+      // ==================== MATCH RESTORE ====================
+      // Special action for backup restore: DELETE first, then UPSERT
+      // SAFETY: Only deletes data for THIS SPECIFIC MATCH by external_id
+      if (job.resource === 'match' && job.action === 'restore') {
+        const { match, sets, events, liveState } = job.payload
+
+        // SAFETY CHECK: external_id is required - identifies THIS specific match
+        if (!match?.external_id) {
+          console.error('[SyncQueue] Restore failed: missing external_id in match payload')
+          return false
+        }
+
+        const externalId = match.external_id
+        console.log('[SyncQueue] Processing restore job for match:', externalId)
+
+        try {
+          // Step 1: Look up existing match UUID by external_id (THIS MATCH ONLY)
+          const { data: existingMatch, error: lookupError } = await apiFrom('matches')
+            .select('id')
+            .eq('external_id', externalId)
+            .maybeSingle()
+
+          if (lookupError) {
+            console.error('[SyncQueue] Restore lookup error:', lookupError)
+            return false
+          }
+
+          // Step 2: DELETE existing data for THIS MATCH ONLY (if it exists)
+          if (existingMatch) {
+            const matchUuid = existingMatch.id
+            console.log('[SyncQueue] Deleting existing data for match UUID:', matchUuid)
+
+            // Delete ONLY records with this specific match_id
+            const { error: eventsDelErr } = await apiFrom('events').delete().eq('match_id', matchUuid)
+            if (eventsDelErr) console.warn('[SyncQueue] Events delete warning:', eventsDelErr)
+
+            const { error: setsDelErr } = await apiFrom('sets').delete().eq('match_id', matchUuid)
+            if (setsDelErr) console.warn('[SyncQueue] Sets delete warning:', setsDelErr)
+
+            const { error: liveStateDelErr } = await apiFrom('match_live_state').delete().eq('match_id', matchUuid)
+            if (liveStateDelErr) console.warn('[SyncQueue] match_live_state delete warning:', liveStateDelErr)
+
+            console.log('[SyncQueue] Deleted existing data for match:', externalId)
+          } else {
+            console.log('[SyncQueue] No existing match found in Supabase, will create new')
+          }
+
+          // Step 3: UPSERT match (creates or updates BY external_id)
+          // Filter to valid columns only - handles old backup formats with invalid fields
+          const filteredMatch = filterMatchPayload(match)
+          const { data: upsertedMatch, error: matchError } = await apiFrom('matches')
+            .upsert(filteredMatch, { onConflict: 'external_id' })
+            .select('id')
+            .single()
+
+          if (matchError) {
+            console.error('[SyncQueue] Match upsert failed:', matchError)
+            return false
+          }
+
+          const matchUuid = upsertedMatch.id
+          console.log('[SyncQueue] Match upserted, UUID:', matchUuid)
+
+          // Step 4: INSERT all sets (with resolved match_id)
+          if (sets?.length > 0) {
+            for (const set of sets) {
+              const setPayload = { ...set, match_id: matchUuid, sport_type: 'indoor' }
+              const { error: setErr } = await apiFrom('sets')
+                .upsert(setPayload, { onConflict: 'external_id' })
+              if (setErr) {
+                console.warn('[SyncQueue] Set upsert warning:', setErr, set.external_id)
+              }
+            }
+            console.log('[SyncQueue] Upserted', sets.length, 'sets')
+          }
+
+          // Step 5: INSERT all events (with resolved match_id)
+          if (events?.length > 0) {
+            // Batch insert events for efficiency
+            const eventsWithMatchId = events.map(e => ({ ...e, match_id: matchUuid, sport_type: 'indoor' }))
+            const { error: eventsErr } = await apiFrom('events')
+              .upsert(eventsWithMatchId, { onConflict: 'external_id' })
+            if (eventsErr) {
+              console.warn('[SyncQueue] Events batch upsert warning:', eventsErr)
+              // Try individual inserts as fallback
+              for (const event of eventsWithMatchId) {
+                await apiFrom('events').upsert(event, { onConflict: 'external_id' })
+              }
+            }
+            console.log('[SyncQueue] Upserted', events.length, 'events')
+          }
+
+          // Step 6: UPSERT match_live_state (keyed by match_id)
+          if (liveState) {
+            const liveStatePayload = { ...liveState, match_id: matchUuid }
+            const { error: liveStateErr } = await apiFrom('match_live_state')
+              .upsert(liveStatePayload, { onConflict: 'match_id' })
+            if (liveStateErr) {
+              console.warn('[SyncQueue] match_live_state upsert warning:', liveStateErr)
+            } else {
+              console.log('[SyncQueue] match_live_state upserted')
+            }
+          }
+
+          console.log('[SyncQueue] Restore complete for match:', externalId)
+          return true
+
+        } catch (restoreErr) {
+          console.error('[SyncQueue] Restore exception:', restoreErr)
+          return false
+        }
       }
 
       // ==================== SET ====================
       if (job.resource === 'set' && job.action === 'insert') {
         // Resolve match_id from external_id
-        let setPayload = { ...job.payload }
+        let setPayload = { ...job.payload, sport_type: 'indoor' }
 
         if (setPayload.match_id && typeof setPayload.match_id === 'string') {
-          const { data: matchData } = await supabase
-            .from('matches')
+          const { data: matchData } = await apiFrom('matches')
             .select('id')
             .eq('external_id', setPayload.match_id)
             .maybeSingle()
-          setPayload.match_id = matchData?.id || null
+
+          if (!matchData) {
+            // Match not yet synced - keep job queued for retry
+            return null // null means "retry later"
+          }
+          setPayload.match_id = matchData.id
         }
 
-        const { error } = await supabase
-          .from('sets')
+        const { error } = await apiFrom('sets')
           .upsert(setPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Set insert error:', error, setPayload)
@@ -195,14 +491,27 @@ export function useSyncQueue() {
         return true
       }
 
+      if (job.resource === 'set' && job.action === 'update') {
+        // Update set by external_id
+        const { external_id, ...updateData } = job.payload
+
+        const { error } = await apiFrom('sets')
+          .update({ ...updateData, sport_type: 'indoor' })
+          .eq('external_id', external_id)
+        if (error) {
+          console.error('[SyncQueue] Set update error:', error, job.payload)
+          return false
+        }
+        return true
+      }
+
       // ==================== EVENT ====================
       if (job.resource === 'event' && job.action === 'insert') {
         // Resolve match_id from external_id
-        let eventPayload = { ...job.payload }
+        let eventPayload = { ...job.payload, sport_type: 'indoor' }
 
         if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
-          const { data: matchData } = await supabase
-            .from('matches')
+          const { data: matchData } = await apiFrom('matches')
             .select('id')
             .eq('external_id', eventPayload.match_id)
             .maybeSingle()
@@ -215,8 +524,7 @@ export function useSyncQueue() {
         }
 
         // Use upsert with external_id to avoid duplicates on retry
-        const { error } = await supabase
-          .from('events')
+        const { error } = await apiFrom('events')
           .upsert(eventPayload, { onConflict: 'external_id' })
         if (error) {
           console.error('[SyncQueue] Event insert error:', error, eventPayload)
@@ -237,7 +545,7 @@ export function useSyncQueue() {
 
   const flush = useCallback(async () => {
     if (busy.current) return
-    if (!supabase) {
+    if (!hasBackend()) {
       setSyncStatus('online_no_supabase')
       return
     }
@@ -322,13 +630,15 @@ export function useSyncQueue() {
       setIsOnline(true)
       connectionVerified.current = false // Reset cache when coming online
       // Check connection when coming online
-      setTimeout(() => {
-        if (supabase) {
-          checkSupabaseConnection(true).then(connected => {
-            if (connected) {
-              flush()
-            }
-          })
+      setTimeout(async () => {
+        if (hasBackend()) {
+          const connected = await checkSupabaseConnection(true)
+          if (connected) {
+            // When coming back online, retry errored jobs first, then flush queued
+            console.log('[SyncQueue] Back online - retrying errored jobs and flushing queue')
+            await retryErrorsInternal()
+            flush()
+          }
         } else {
           setSyncStatus('online_no_supabase')
         }
@@ -345,9 +655,11 @@ export function useSyncQueue() {
 
     // Initial check
     if (isOnline) {
-      if (supabase) {
-        checkSupabaseConnection(true).then(connected => {
+      if (hasBackend()) {
+        checkSupabaseConnection(true).then(async (connected) => {
           if (connected) {
+            // On initial load, retry errored jobs if any
+            await retryErrorsInternal()
             flush()
           }
         })
@@ -364,18 +676,60 @@ export function useSyncQueue() {
     }
   }, [isOnline, checkSupabaseConnection, flush])
 
-  // Real-time sync - check every 1 second for new items
+  // Debounced flush - triggers 200ms after a sync_queue write, with 5s fallback poll
+  const flushTimerRef = useRef(null)
+
   useEffect(() => {
     if (!isOnline || syncStatus === 'offline' || syncStatus === 'online_no_supabase') return
 
+    // Listen for 'sync-queue-write' custom event (dispatched when items are added to the queue)
+    const handleQueueWrite = () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = setTimeout(() => {
+        if (!busy.current) flush()
+      }, 200)
+    }
+    window.addEventListener('sync-queue-write', handleQueueWrite)
+
+    // Fallback poll every 5s to catch any missed items (e.g., tab focus, retries)
     const interval = setInterval(() => {
+      if (!busy.current) flush()
+    }, 5000)
+
+    return () => {
+      window.removeEventListener('sync-queue-write', handleQueueWrite)
+      clearInterval(interval)
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+    }
+  }, [isOnline, syncStatus, flush])
+
+  // Auto-retry errored jobs every 30 seconds when online
+  useEffect(() => {
+    if (!isOnline || syncStatus === 'offline' || syncStatus === 'online_no_supabase') return
+
+    const interval = setInterval(async () => {
       if (!busy.current) {
-        flush()
+        const hadErrors = await retryErrorsInternal()
+        if (hadErrors) {
+          // Trigger a flush to process the retried jobs
+          flush()
+        }
       }
-    }, 1000)
+    }, ERROR_RETRY_INTERVAL)
 
     return () => clearInterval(interval)
   }, [isOnline, syncStatus, flush])
 
-  return { flush, syncStatus, isOnline }
+  /**
+   * Manual retry: reset all 'error' status jobs to 'queued' for immediate reprocessing
+   */
+  const retryErrors = useCallback(async () => {
+    const hadErrors = await retryErrorsInternal()
+    if (hadErrors) {
+      // Trigger a flush immediately
+      flush()
+    }
+  }, [flush])
+
+  return { flush, retryErrors, syncStatus, isOnline }
 }

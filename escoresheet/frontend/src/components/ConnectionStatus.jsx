@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 
 export default function ConnectionStatus({
   connectionStatuses = {},
   connectionDebugInfo = {},
   onCheckStatus,
+  onRetryErrors,
+  queueStats = { pending: 0, error: 0 },
   position = 'right', // 'left' | 'right' | 'center'
   size = 'normal' // 'normal' | 'small' | 'large'
 }) {
+  const { t } = useTranslation()
 
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
@@ -93,86 +97,91 @@ export default function ConnectionStatus({
     }
   }, [showConnectionMenu, showDebugMenu])
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status, key) => {
     if (status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing') {
-      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? 'Syncing' : 'Connected' }
+      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? t('connectionStatus.syncing', 'Syncing') : t('connectionStatus.connected', 'Connected') }
     } else if (status === 'awaiting_match') {
-      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: 'Connected' }
+      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: t('connectionStatus.connected', 'Connected') }
     } else if (status === 'attention') {
-      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: 'Error' }
+      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: t('connectionStatus.error', 'Error') }
     } else if (status === 'no_match') {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Ready' }
+      // For websocket, "no_match" means waiting for a match to be selected - show as gray/ready
+      const text = key === 'websocket' ? t('connectionStatus.noMatch', 'No Match') : t('connectionStatus.ready', 'Ready')
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text }
     } else if (status === 'disconnected' || status === 'error' || status === 'offline') {
-      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? 'Error' : status === 'offline' ? 'Offline' : 'Disconnected' }
+      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? t('connectionStatus.error', 'Error') : status === 'offline' ? t('connectionStatus.offline', 'Offline') : t('connectionStatus.disconnected', 'Disconnected') }
     } else if (status === 'not_configured' || status === 'not_applicable') {
-      return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: 'Not Configured' }
+      return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: t('connectionStatus.notConfigured', 'Not Configured') }
     } else if (status === 'not_available') {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'N/A (Static)' }
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: t('connectionStatus.naStatic', 'N/A (Static)') }
     } else if (status === 'connecting') {
-      return { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308', text: 'Connecting' }
+      return { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308', text: t('connectionStatus.connecting', 'Connecting') }
     } else if (status === 'test_mode') {
-      return { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgba(139, 92, 246, 0.5)', dot: '#8b5cf6', text: 'Test Mode' }
+      return { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgba(139, 92, 246, 0.5)', dot: '#8b5cf6', text: t('connectionStatus.testMode', 'Test Mode') }
     } else {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: 'Unknown' }
+      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: t('connectionStatus.unknown', 'Unknown') }
     }
   }
 
   const labelMap = {
-    api: 'API',
-    server: 'Server',
-    websocket: 'WebSocket',
-    scoreboard: 'Scoreboard',
-    match: 'Match',
-    db: 'Database',
-    supabase: 'Supabase'
+    api: t('connectionStatus.api', 'API'),
+    server: t('connectionStatus.server', 'Server'),
+    websocket: t('connectionStatus.webSocket', 'WebSocket'),
+    scoreboard: t('connectionStatus.scoreboard', 'Scoreboard'),
+    match: t('connectionStatus.match', 'Match'),
+    db: t('connectionStatus.database', 'Database'),
+    supabase: t('connectionStatus.supabase', 'Supabase')
   }
 
   const getOverallStatus = () => {
-    // Check all connection statuses
-    const statuses = Object.entries(connectionStatuses)
+    // Helper to check if a status is considered "OK"
+    const isStatusOk = (status) => {
+      return status === 'connected' ||
+        status === 'live' ||
+        status === 'scheduled' ||
+        status === 'synced' ||
+        status === 'syncing' ||
+        status === 'test_mode' ||
+        status === 'not_applicable' ||
+        status === 'not_available' ||
+        status === 'no_match' // No match is OK - just waiting for match selection
+    }
 
-    // Check if only match is disconnected
+    const serverStatus = connectionStatuses.server
+    const websocketStatus = connectionStatuses.websocket
+    const supabaseStatus = connectionStatuses.supabase
     const matchStatus = connectionStatuses.match
-    const otherStatuses = statuses.filter(([key]) => key !== 'match')
-    
-    const onlyMatchDisconnected = (
-      (matchStatus === 'no_match' || matchStatus === 'disconnected' || matchStatus === 'unknown') &&
-      otherStatuses.every(([, status]) => {
-        return status === 'connected' ||
-               status === 'live' ||
-               status === 'scheduled' ||
-               status === 'synced' ||
-               status === 'syncing' ||
-               status === 'test_mode' ||
-               status === 'not_applicable' || // Not applicable is considered OK
-               status === 'not_available' // Static deployment - no backend
-      })
-    )
-    
-    if (onlyMatchDisconnected) {
+
+    // Check if Server+WebSocket path is viable
+    const serverPathOk = serverStatus === 'connected'
+    const websocketPathOk = websocketStatus === 'connected' || websocketStatus === 'no_match'
+    const serverWebsocketViable = serverPathOk && websocketPathOk
+
+    // Check if Supabase path is viable
+    const supabaseViable = supabaseStatus === 'connected'
+
+    // At least one connection path must be working
+    const hasViableConnection = serverWebsocketViable || supabaseViable
+
+    if (!hasViableConnection) {
+      return 'attention' // No viable connection path
+    }
+
+    // Check if we're waiting for match selection
+    const waitingForMatch =
+      websocketStatus === 'no_match' ||
+      matchStatus === 'no_match' ||
+      matchStatus === 'disconnected' ||
+      matchStatus === 'unknown'
+
+    if (waitingForMatch) {
       return 'awaiting_match'
     }
-    
-    // If any status is not connected/ok, show attention
-    const allConnected = statuses.every(([, status]) => {
-      return status === 'connected' ||
-             status === 'live' ||
-             status === 'scheduled' ||
-             status === 'synced' ||
-             status === 'syncing' ||
-             status === 'test_mode' ||
-             status === 'not_applicable' || // Not applicable is considered OK
-             status === 'not_available' // Static deployment - no backend
-    })
-    
-    if (allConnected && statuses.length > 0) {
-      return 'connected'
-    } else {
-      return 'attention' // Use 'attention' instead of 'disconnected' for the overall status
-    }
+
+    return 'connected'
   }
 
-  const overallStatus = getOverallStatus()
+  const overallStatus = queueStats.error > 0 ? 'attention' : getOverallStatus()
   const statusInfo = getStatusColor(overallStatus)
 
   const sizeStyles = {
@@ -209,7 +218,9 @@ export default function ConnectionStatus({
         style={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'center',
           gap: '6px',
+          height: '25px',
           fontSize: currentSize.fontSize,
           padding: currentSize.padding,
           background: statusInfo.bg,
@@ -233,15 +244,28 @@ export default function ConnectionStatus({
           background: statusInfo.dot
         }}></span>
         <span>
-          {overallStatus === 'connected' ? 'Connected' : 
-           overallStatus === 'awaiting_match' ? 'Ready' : 
-           'Error'}
+          {overallStatus === 'connected' ? (queueStats.pending > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
+            overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
+              t('connectionStatus.error', 'Error')}
+          {queueStats.error > 0 && (
+            <span style={{
+              background: '#ef4444',
+              color: '#fff',
+              fontSize: '9px',
+              borderRadius: '10px',
+              padding: '0px 5px',
+              marginLeft: '4px',
+              fontWeight: 800
+            }}>
+              {queueStats.error}
+            </span>
+          )}
         </span>
         <span style={{ fontSize: `${parseInt(currentSize.fontSize) - 2}px`, marginLeft: '4px' }}>
           {showConnectionMenu ? '▲' : '▼'}
         </span>
       </div>
-      
+
       {/* Connection Status Menu */}
       {showConnectionMenu && (
         <div
@@ -273,20 +297,20 @@ export default function ConnectionStatus({
             paddingBottom: '4px',
             borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
           }}>
-            Connection Status
+            {t('connectionStatus.title', 'Connection Status')}
           </div>
           {Object.entries(connectionStatuses).map(([key, status]) => {
-            const itemStatusInfo = getStatusColor(status)
-            
+            const itemStatusInfo = getStatusColor(status, key)
+
             let displayText = itemStatusInfo.text
             if (key === 'match' && status !== 'no_match' && status !== 'unknown') {
               displayText = status.charAt(0).toUpperCase() + status.slice(1)
             }
-            
+
             const isConnected = status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing'
             const isReady = key === 'match' && status === 'no_match'
             const debugInfo = connectionDebugInfo[key]
-            
+
             return (
               <div key={key} style={{ position: 'relative' }} data-debug-menu>
                 <div
@@ -338,7 +362,54 @@ export default function ConnectionStatus({
                     )}
                   </div>
                 </div>
-                
+
+                {/* Queue Stats for Supabase */}
+                {key === 'supabase' && (queueStats.pending > 0 || queueStats.error > 0) && (
+                  <div style={{
+                    padding: '8px',
+                    margin: '0 8px 8px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    {queueStats.pending > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#3b82f6' }}>
+                        <span>{t('connectionStatus.pendingBackgroundSync', 'Pending background sync:')}</span>
+                        <span style={{ fontWeight: 700 }}>{queueStats.pending}</span>
+                      </div>
+                    )}
+                    {queueStats.error > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ef4444' }}>
+                        <span>{t('connectionStatus.synchronizationErrors', 'Synchronization errors:')}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 700 }}>{queueStats.error}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onRetryErrors?.()
+                            }}
+                            style={{
+                              padding: '2px 8px',
+                              background: '#ef4444',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {t('common.retryAll', 'Retry All')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Debug Menu - inline instead of absolute to avoid overflow */}
                 {!isConnected && !isReady && showDebugMenu === key && (
                   <div
@@ -361,10 +432,10 @@ export default function ConnectionStatus({
                       color: '#ef4444',
                       fontSize: '12px'
                     }}>
-                      Status Information
+                      {t('connectionStatus.statusInformation', 'Status Information')}
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.9)' }}>
-                      <strong>Status:</strong> {(() => {
+                      <strong>{t('connectionStatus.statusLabel', 'Status:')}</strong> {(() => {
                         const statusText = (debugInfo?.status || status || '').toString()
                         return statusText
                           .replace(/_/g, ' ')
@@ -374,7 +445,7 @@ export default function ConnectionStatus({
                       })()}
                     </div>
                     <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.8)' }}>
-                      <strong>Message:</strong> {debugInfo?.message || 'Connection issue detected'}
+                      <strong>{t('connectionStatus.messageLabel', 'Message:')}</strong> {debugInfo?.message || t('connectionStatus.connectionIssueDetected', 'Connection issue detected')}
                     </div>
                     {debugInfo?.details && (
                       <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.2)', color: 'rgba(255, 255, 255, 0.7)', fontSize: '10px' }}>

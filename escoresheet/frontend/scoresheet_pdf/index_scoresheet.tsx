@@ -5,18 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import App from './App_Scoresheet';
 
 // Initialize Dexie database (same as main app)
-const db = new Dexie('escoresheet');
-db.version(11).stores({
-  teams: '++id,name,createdAt',
-  players: '++id,teamId,number,name,role,createdAt',
-  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
-  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
-  events: '++id,matchId,setIndex,ts,type,payload,seq',
-  sync_queue: '++id,resource,action,payload,ts,status',
-  match_setup: '++id,updatedAt',
-  referees: '++id,seedKey,lastName,createdAt',
-  scorers: '++id,seedKey,lastName,createdAt'
-});
+import { db } from '../src/db/db';
 
 // Helper function to send errors to parent window
 const sendErrorToParent = (error: Error | string, details?: string) => {
@@ -45,6 +34,153 @@ window.addEventListener('unhandledrejection', (event) => {
   sendErrorToParent(error);
 });
 
+// Check if we're loading from storage URL parameters
+const getStorageParams = () => {
+  const params = new URLSearchParams(window.location.search);
+  const date = params.get('date');
+  const game = params.get('game');
+  if (date && game) {
+    return { date, game };
+  }
+  return null;
+};
+
+// Check if matchId is passed via URL parameter
+const getMatchIdFromUrl = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('matchId');
+};
+
+// Check if we should show the list view
+const shouldShowList = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.has('list') || window.location.pathname.includes('/storage');
+};
+
+// Scoresheet item type for the list
+interface ScoresheetItem {
+  date: string;
+  game: string;
+  path: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  finalScore?: string;
+  uploadedAt?: string;
+}
+
+// Fetch scoresheet data from Supabase storage
+const fetchFromStorage = async (date: string, game: string): Promise<any | null> => {
+  try {
+    // Import supabase client dynamically to avoid circular dependencies
+    const { supabase } = await import('../src/lib/supabaseClient');
+    if (!supabase) {
+      console.error('Supabase client not available');
+      return null;
+    }
+
+    const storagePath = `${date}/game${game}.json`;
+    console.log('[Scoresheet] Fetching from storage:', storagePath);
+
+    const { data, error } = await supabase.storage
+      .from('scoresheets')
+      .download(storagePath);
+
+    if (error) {
+      console.error('[Scoresheet] Storage fetch error:', error);
+      return null;
+    }
+
+    const text = await data.text();
+    return JSON.parse(text);
+  } catch (error) {
+    console.error('[Scoresheet] Error fetching from storage:', error);
+    return null;
+  }
+};
+
+// Fetch all scoresheets from storage
+const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
+  try {
+    const { supabase } = await import('../src/lib/supabaseClient');
+    if (!supabase) {
+      console.error('Supabase client not available');
+      return [];
+    }
+
+    // List all folders (dates) in the scoresheets bucket
+    const { data: folders, error: foldersError } = await supabase.storage
+      .from('scoresheets')
+      .list('', { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+
+    if (foldersError) {
+      console.error('[Scoresheet] Error listing folders:', foldersError);
+      return [];
+    }
+
+    const scoresheets: ScoresheetItem[] = [];
+
+    // For each date folder, list the game files
+    for (const folder of folders || []) {
+      if (!folder.name || folder.name.startsWith('.')) continue;
+
+      const { data: files, error: filesError } = await supabase.storage
+        .from('scoresheets')
+        .list(folder.name, { limit: 50 });
+
+      if (filesError) {
+        console.error(`[Scoresheet] Error listing files in ${folder.name}:`, filesError);
+        continue;
+      }
+
+      for (const file of files || []) {
+        if (!file.name.endsWith('.json')) continue;
+
+        // Extract game number from filename (game123.json -> 123)
+        const gameMatch = file.name.match(/game(\d+)\.json/);
+        if (!gameMatch) continue;
+
+        scoresheets.push({
+          date: folder.name,
+          game: gameMatch[1],
+          path: `${folder.name}/${file.name}`
+        });
+      }
+    }
+
+    // Fetch metadata for each scoresheet (team names, score)
+    // Do this in parallel but limit concurrency
+    const enrichedScoresheets = await Promise.all(
+      scoresheets.slice(0, 50).map(async (item) => {
+        try {
+          const { data, error } = await supabase.storage
+            .from('scoresheets')
+            .download(item.path);
+
+          if (error || !data) return item;
+
+          const text = await data.text();
+          const json = JSON.parse(text);
+
+          return {
+            ...item,
+            homeTeam: json.homeTeam?.name || json.match?.homeTeamName || 'Team A',
+            awayTeam: json.awayTeam?.name || json.match?.awayTeamName || 'Team B',
+            finalScore: json.match?.final_score || '',
+            uploadedAt: json.uploadedAt
+          };
+        } catch {
+          return item;
+        }
+      })
+    );
+
+    return enrichedScoresheets;
+  } catch (error) {
+    console.error('[Scoresheet] Error fetching scoresheets:', error);
+    return [];
+  }
+};
+
 // Load match data from sessionStorage (for initial load and fallback)
 const loadMatchData = () => {
   try {
@@ -62,11 +198,11 @@ const loadMatchData = () => {
   }
 };
 
-// Get action from URL parameters (preview, print, save)
-const getActionFromUrl = (): 'preview' | 'print' | 'save' => {
+// Get action from URL parameters (preview, print, save, getBlob)
+const getActionFromUrl = (): 'preview' | 'print' | 'save' | 'getBlob' => {
   const params = new URLSearchParams(window.location.search);
   const action = params.get('action');
-  if (action === 'print' || action === 'save') {
+  if (action === 'print' || action === 'save' || action === 'getBlob') {
     return action;
   }
   return 'preview';
@@ -75,18 +211,43 @@ const getActionFromUrl = (): 'preview' | 'print' | 'save' => {
 const initialAction = getActionFromUrl();
 
 // Live scoresheet component that updates in real-time from IndexedDB
-const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'print' | 'save' }> = ({ initialMatchData, action }) => {
+const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ initialMatchData, action }) => {
   const matchId = initialMatchData?.match?.id;
+
+  // Version counter to force re-queries when notified of changes via BroadcastChannel
+  const [refreshVersion, setRefreshVersion] = React.useState(0);
+
+  React.useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('escoresheet-updates');
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'MANUAL_ADJUSTMENT' || event.data?.type === 'DATA_CHANGED') {
+          // If matchId matches or no matchId filter, force re-query all data
+          if (!event.data.matchId || event.data.matchId === matchId) {
+            setRefreshVersion(v => v + 1);
+          }
+        }
+      };
+    } catch (e) {
+      // BroadcastChannel not supported, fall back to storage event
+      const onStorage = () => setRefreshVersion(v => v + 1);
+      window.addEventListener('storage', onStorage);
+      return () => window.removeEventListener('storage', onStorage);
+    }
+    return () => { channel?.close(); };
+  }, [matchId]);
 
   // Use live queries to get real-time data from IndexedDB
   // useLiveQuery returns undefined while loading, null/result after query completes
+  // refreshVersion is included in deps to force re-query on BroadcastChannel notifications
   const match = useLiveQuery(
     async () => {
       if (!matchId) return null;
       const result = await (db as any).matches.get(matchId);
       return result || null; // Return null if not found (deleted)
     },
-    [matchId]
+    [matchId, refreshVersion]
   );
 
   // Track if initial load is complete (match query has run at least once)
@@ -99,7 +260,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.homeTeamId) return null;
       return await (db as any).teams.get(match.homeTeamId);
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const awayTeam = useLiveQuery(
@@ -108,7 +269,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.awayTeamId) return null;
       return await (db as any).teams.get(match.awayTeamId);
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const homePlayers = useLiveQuery(
@@ -117,7 +278,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.homeTeamId) return [];
       return await (db as any).players.where('teamId').equals(match.homeTeamId).toArray();
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const awayPlayers = useLiveQuery(
@@ -126,7 +287,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!match?.awayTeamId) return [];
       return await (db as any).players.where('teamId').equals(match.awayTeamId).toArray();
     },
-    [match]
+    [match, refreshVersion]
   );
 
   const sets = useLiveQuery(
@@ -134,7 +295,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!matchId || isMatchDeleted) return [];
       return await (db as any).sets.where('matchId').equals(matchId).sortBy('index');
     },
-    [matchId, isMatchDeleted]
+    [matchId, isMatchDeleted, refreshVersion]
   );
 
   const events = useLiveQuery(
@@ -142,7 +303,7 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
       if (!matchId || isMatchDeleted) return [];
       return await (db as any).events.where('matchId').equals(matchId).sortBy('seq');
     },
-    [matchId, isMatchDeleted]
+    [matchId, isMatchDeleted, refreshVersion]
   );
 
   // Show loading state while initial data is being fetched
@@ -176,10 +337,317 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
 };
 
 // Static scoresheet component (fallback when no matchId available)
-const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' | 'save' }> = ({ matchData, action }) => {
+const StaticScoresheet: React.FC<{ matchData: any; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ matchData, action }) => {
   return <App matchData={matchData} autoAction={action} />;
 };
 
+// URL matchId scoresheet component - loads from IndexedDB by matchId
+const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ matchId, action }) => {
+  // Convert matchId to number if it's a numeric string (IndexedDB uses auto-increment integer IDs)
+  const numericMatchId = !isNaN(Number(matchId)) ? parseInt(matchId, 10) : matchId;
+  // Use the LiveScoresheet component with a minimal initial data object
+  const initialData = { match: { id: numericMatchId } };
+  return <LiveScoresheet initialMatchData={initialData} action={action} />;
+};
+
+// Storage scoresheet component - fetches from Supabase storage
+const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ date, game, action }) => {
+  const [matchData, setMatchData] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await fetchFromStorage(date, game);
+        if (data) {
+          setMatchData(data);
+        } else {
+          setError(`Scoresheet not found: ${date}/game${game}.json`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load scoresheet');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [date, game]);
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheet from storage...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '20px',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+          Scoresheet Not Found
+        </div>
+        <div style={{ color: '#666' }}>{error}</div>
+      </div>
+    );
+  }
+
+  return <App matchData={matchData} autoAction={action} />;
+};
+
+// Scoresheet list component - shows all available scoresheets
+const ScoresheetList: React.FC = () => {
+  const [scoresheets, setScoresheets] = React.useState<ScoresheetItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const loadList = async () => {
+      try {
+        const items = await fetchAllScoresheets();
+        setScoresheets(items);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load scoresheets');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadList();
+  }, []);
+
+  const handleView = (item: ScoresheetItem) => {
+    window.location.href = `?date=${item.date}&game=${item.game}`;
+  };
+
+  const handleDownload = async (item: ScoresheetItem) => {
+    // Open in new tab with save action
+    window.open(`?date=${item.date}&game=${item.game}&action=save`, '_blank');
+  };
+
+  // Group scoresheets by date
+  const groupedByDate = scoresheets.reduce((acc, item) => {
+    if (!acc[item.date]) acc[item.date] = [];
+    acc[item.date].push(item);
+    return acc;
+  }, {} as Record<string, ScoresheetItem[]>);
+
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr + 'T12:00:00');
+      return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '18px', color: '#666' }}>Loading scoresheets...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '20px',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
+          Error Loading Scoresheets
+        </div>
+        <div style={{ color: '#666' }}>{error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#f8fafc',
+      fontFamily: 'system-ui, sans-serif',
+      padding: '20px'
+    }}>
+      <div style={{
+        maxWidth: '800px',
+        margin: '0 auto'
+      }}>
+        <h1 style={{
+          fontSize: '28px',
+          fontWeight: 'bold',
+          color: '#1e293b',
+          marginBottom: '8px'
+        }}>
+          Scoresheets
+        </h1>
+        <p style={{ color: '#64748b', marginBottom: '24px' }}>
+          {scoresheets.length} scoresheet{scoresheets.length !== 1 ? 's' : ''} available
+        </p>
+
+        {scoresheets.length === 0 ? (
+          <div style={{
+            textAlign: 'center',
+            padding: '60px 20px',
+            background: 'white',
+            borderRadius: '12px',
+            border: '1px solid #e2e8f0'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+            <div style={{ fontSize: '18px', color: '#64748b' }}>
+              No scoresheets uploaded yet
+            </div>
+          </div>
+        ) : (
+          Object.entries(groupedByDate)
+            .sort(([a], [b]) => b.localeCompare(a)) // Sort dates descending
+            .map(([date, items]) => (
+              <div key={date} style={{ marginBottom: '24px' }}>
+                <h2 style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#475569',
+                  marginBottom: '12px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px solid #e2e8f0'
+                }}>
+                  {formatDate(date)}
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {items
+                    .sort((a, b) => parseInt(a.game) - parseInt(b.game))
+                    .map((item) => (
+                      <div
+                        key={item.path}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '16px',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '1px solid #e2e8f0',
+                          transition: 'box-shadow 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            marginBottom: '4px'
+                          }}>
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              color: '#3b82f6',
+                              background: '#eff6ff',
+                              padding: '2px 8px',
+                              borderRadius: '4px'
+                            }}>
+                              Game {item.game}
+                            </span>
+                            {item.finalScore && (
+                              <span style={{
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                color: '#059669'
+                              }}>
+                                {item.finalScore}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            fontSize: '15px',
+                            fontWeight: '500',
+                            color: '#1e293b'
+                          }}>
+                            {item.homeTeam || 'Team A'} vs {item.awayTeam || 'Team B'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => handleView(item)}
+                            style={{
+                              padding: '8px 16px',
+                              fontSize: '14px',
+                              fontWeight: '500',
+                              background: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => handleDownload(item)}
+                            style={{
+                              padding: '8px 16px',
+                              fontSize: '14px',
+                              fontWeight: '500',
+                              background: '#f1f5f9',
+                              color: '#475569',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '6px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Download PDF
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+const storageParams = getStorageParams();
+const showList = shouldShowList();
+const urlMatchId = getMatchIdFromUrl();
 const initialMatchData = loadMatchData();
 
 const rootElement = document.getElementById('root');
@@ -268,7 +736,139 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-if (initialMatchData) {
+// Import scoresheet component - allows uploading JSON data to render a scoresheet
+const ImportScoresheet: React.FC<{ action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ action }) => {
+  const [matchData, setMatchData] = React.useState<any>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const data = JSON.parse(text);
+
+        // Basic validation: check that it has the expected structure
+        if (!data.match && !data.sets && !data.events) {
+          setError('Invalid scoresheet data: missing match, sets, or events fields.');
+          return;
+        }
+
+        setMatchData(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to parse JSON file');
+      }
+    };
+    reader.onerror = () => {
+      setError('Failed to read file');
+    };
+    reader.readAsText(file);
+  };
+
+  if (matchData) {
+    return <App matchData={matchData} autoAction={action} />;
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      flexDirection: 'column',
+      gap: '20px',
+      fontFamily: 'system-ui, sans-serif'
+    }}>
+      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>
+        Scoresheet Viewer
+      </div>
+      <div style={{ color: '#666', textAlign: 'center', maxWidth: '400px' }}>
+        Upload a scoresheet JSON file to view, print, or save it as a PDF.
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+      />
+
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        style={{
+          padding: '12px 24px',
+          fontSize: '16px',
+          fontWeight: '500',
+          background: '#3b82f6',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}
+      >
+        Import game data
+      </button>
+
+      {error && (
+        <div style={{
+          color: '#ef4444',
+          fontSize: '14px',
+          textAlign: 'center',
+          maxWidth: '500px',
+          padding: '12px',
+          background: '#fef2f2',
+          borderRadius: '8px',
+          border: '1px solid #fecaca'
+        }}>
+          {error}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Priority: 1. URL matchId param, 2. Storage params (?date=...&game=...), 3. List view (?list), 4. sessionStorage, 5. Import/No data
+if (urlMatchId) {
+  // Load from IndexedDB using matchId from URL
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <UrlMatchIdScoresheet matchId={urlMatchId} action={initialAction} />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+} else if (storageParams) {
+  // Load from Supabase storage
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <StorageScoresheet
+          date={storageParams.date}
+          game={storageParams.game}
+          action={initialAction}
+        />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+} else if (showList) {
+  // Show list of all scoresheets
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ScoresheetList />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+} else if (initialMatchData) {
   try {
     // Check if we have a matchId for live updates
     const hasMatchId = initialMatchData?.match?.id;
@@ -321,36 +921,12 @@ if (initialMatchData) {
     );
   }
 } else {
+  // No data from any source - show import screen
   root.render(
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100vh',
-      flexDirection: 'column',
-      gap: '20px',
-      fontFamily: 'system-ui, sans-serif'
-    }}>
-      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-        No Match Data Found
-      </div>
-      <div style={{ color: '#666' }}>
-        Please generate the scoresheet from the match end screen.
-      </div>
-      <button
-        onClick={() => window.close()}
-        style={{
-          padding: '10px 20px',
-          fontSize: '16px',
-          background: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: 'pointer'
-        }}
-      >
-        Close Window
-      </button>
-    </div>
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ImportScoresheet action={initialAction} />
+      </ErrorBoundary>
+    </React.StrictMode>
   );
 }

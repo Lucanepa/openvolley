@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 export default function MenuList({
   items = [],
   position = 'right', // 'left' | 'right' | 'center'
+  vertical = 'bottom', // 'bottom' | 'top' - whether menu opens above or below the button
   buttonLabel = 'Menu',
   buttonTitle = '',
   menuTitle = '',
@@ -39,20 +40,50 @@ export default function MenuList({
         const menu = menuRef.current
         
         requestAnimationFrame(() => {
+          // Horizontal positioning
           if (position === 'right') {
             menu.style.right = `${window.innerWidth - buttonRect.right}px`
             menu.style.left = 'auto'
-            menu.style.top = `${buttonRect.bottom + 4}px`
           } else if (position === 'left') {
             menu.style.left = `${buttonRect.left}px`
             menu.style.right = 'auto'
-            menu.style.top = `${buttonRect.bottom + 4}px`
           } else {
             // center
             menu.style.left = `${buttonRect.left + (buttonRect.width / 2)}px`
             menu.style.right = 'auto'
-            menu.style.top = `${buttonRect.bottom + 4}px`
             menu.style.transform = 'translateX(-50%)'
+          }
+
+          // Vertical positioning
+          if (vertical === 'top') {
+            menu.style.bottom = `${window.innerHeight - buttonRect.top + 4}px`
+            menu.style.top = 'auto'
+          } else {
+            menu.style.top = `${buttonRect.bottom + 4}px`
+            menu.style.bottom = 'auto'
+          }
+
+          // Clamp to viewport bounds
+          const MARGIN = 8
+          const menuRect = menu.getBoundingClientRect()
+          if (menuRect.right > window.innerWidth - MARGIN) {
+            if (menu.style.left !== 'auto') {
+              menu.style.left = `${parseFloat(menu.style.left) - (menuRect.right - (window.innerWidth - MARGIN))}px`
+            } else {
+              menu.style.right = `${parseFloat(menu.style.right) + (menuRect.right - (window.innerWidth - MARGIN))}px`
+            }
+          }
+          if (menuRect.left < MARGIN) {
+            menu.style.left = `${MARGIN}px`
+            menu.style.right = 'auto'
+          }
+          if (menuRect.bottom > window.innerHeight - MARGIN) {
+            menu.style.bottom = `${MARGIN}px`
+            menu.style.top = 'auto'
+          }
+          if (menuRect.top < MARGIN) {
+            menu.style.top = `${MARGIN}px`
+            menu.style.bottom = 'auto'
           }
         })
       }
@@ -66,7 +97,7 @@ export default function MenuList({
         window.removeEventListener('resize', updatePosition)
       }
     }
-  }, [showMenu, position])
+  }, [showMenu, position, vertical])
 
   const getPositionStyle = () => {
     // Will be set dynamically via useEffect

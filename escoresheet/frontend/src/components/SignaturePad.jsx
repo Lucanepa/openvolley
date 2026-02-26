@@ -1,7 +1,9 @@
 import { useRef, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 
 export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false }) {
+  const { t } = useTranslation()
   const canvasRef = useRef(null)
   const isDrawingRef = useRef(false)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -208,12 +210,12 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           {readOnly ? (
-            <button onClick={onClose}>Close</button>
+            <button onClick={onClose}>{t('signature.close', 'Close')}</button>
           ) : (
             <>
-              <button className="secondary" onClick={clear}>Clear</button>
-              <button className="secondary" onClick={handleCancel}>Cancel</button>
-              <button onClick={save} disabled={!hasSignature}>Save</button>
+              <button className="secondary" onClick={clear}>{t('signature.clear', 'Clear')}</button>
+              <button className="secondary" onClick={handleCancel}>{t('signature.cancel', 'Cancel')}</button>
+              <button onClick={save} disabled={!hasSignature}>{t('signature.save', 'Save')}</button>
             </>
           )}
         </div>

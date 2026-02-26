@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.openvolley.escoresheet',
   appName: 'Openvolley eScoresheet',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
     iosScheme: 'https'

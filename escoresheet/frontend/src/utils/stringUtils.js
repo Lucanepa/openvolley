@@ -1,5 +1,5 @@
 /**
- * String utilities for filename sanitization
+ * String utilities for filename sanitization and secure PIN generation
  */
 
 /**
@@ -102,4 +102,54 @@ export function sanitizeSimple(str, maxLength = 15) {
   }
 
   return result
+}
+
+/**
+ * Generate a cryptographically secure PIN code.
+ * Uses crypto.getRandomValues() instead of Math.random() for better entropy.
+ *
+ * @param {string[]} existingPins - Array of PINs to avoid duplicating
+ * @param {number} length - PIN length (default: 6)
+ * @returns {string} A unique PIN of the specified length
+ */
+export function generateSecurePin(existingPins = [], length = 6) {
+  const maxAttempts = 100
+  let attempts = 0
+
+  do {
+    const array = new Uint32Array(length)
+    const cryptoObj = (typeof globalThis !== 'undefined' && globalThis.crypto)
+      || (typeof crypto !== 'undefined' ? crypto : null)
+
+    if (cryptoObj && cryptoObj.getRandomValues) {
+      cryptoObj.getRandomValues(array)
+    } else {
+      // Fallback for environments without Web Crypto (should not happen in modern browsers/Node 19+)
+      for (let i = 0; i < length; i++) {
+        array[i] = Math.floor(Math.random() * 4294967296)
+      }
+    }
+
+    const pin = Array.from(array, v => String(v % 10)).join('')
+    attempts++
+
+    if (!existingPins.includes(pin) || attempts >= maxAttempts) {
+      return pin
+    }
+  } while (true)
+}
+
+/**
+ * Hash a password using SHA-256 via Web Crypto API.
+ * Returns the hex-encoded hash string. Works fully offline.
+ *
+ * @param {string} password - The plaintext password to hash
+ * @returns {Promise<string>} - Hex-encoded SHA-256 hash
+ */
+export async function hashPassword(password) {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }

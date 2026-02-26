@@ -1,0 +1,11 @@
+#!/bin/sh
+# Auto-bump version based on conventional commit message.
+# Installed by: node escoresheet/frontend/scripts/install-hooks.js
+
+# Find repo root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/escoresheet/frontend/scripts/bump-version.js"
+
+if [ -f "$SCRIPT" ]; then
+  node "$SCRIPT" "$1"
+fi

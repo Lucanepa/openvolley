@@ -8,7 +8,7 @@ import { createServer as createHttpServer } from 'http'
 import { createServer as createHttpsServer } from 'https'
 import { readFileSync, existsSync, statSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join, extname } from 'path'
+import { dirname, join, extname, basename } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
 
@@ -29,7 +29,7 @@ const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' 
 let httpsOptions = null
 
 if (useHttps) {
-  // Support for base64-encoded certificates (for Railway/cloud deployment)
+  // Support for base64-encoded certificates (for cloud deployment)
   if (process.env.SSL_CERT_BASE64 && process.env.SSL_KEY_BASE64) {
     try {
       httpsOptions = {
@@ -101,6 +101,36 @@ const MIME_TYPES = {
 // WebSocket clients storage
 const wsClients = new Set()
 
+// --- Rate limiting ---
+const RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 10 // max 10 PIN attempts per minute per IP
+const rateLimitMap = new Map()
+
+function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now })
+    return false
+  }
+
+  entry.count++
+  return entry.count > maxRequests
+}
+
+// Clean up stale rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitMap.delete(ip)
+    }
+  }
+}, 5 * 60 * 1000)
+
+const MAX_BODY_SIZE = 1024 * 1024 // 1MB max request body
+
 // Known HTML entry points from vite.config.js
 const HTML_ENTRY_POINTS = [
   'index.html',
@@ -127,7 +157,29 @@ function getLocalIP() {
 // Request handler for static files
 const requestHandler = (req, res) => {
   let urlPath = req.url.split('?')[0] // Remove query string
-  
+
+  // --- Centralized CORS headers ---
+  const origin = req.headers.origin
+  if (origin && (
+    origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/) ||
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:') ||
+    origin.startsWith('https://localhost:') ||
+    origin.startsWith('https://127.0.0.1:') ||
+    origin.match(/^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/)
+  )) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://app.openvolley.app')
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
+
+  // --- Security headers ---
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+
   // Debug logging for API routes
   if (urlPath.startsWith('/api/')) {
     console.log(`[API] ${req.method} ${urlPath} from ${req.socket.remoteAddress}`)
@@ -138,11 +190,8 @@ const requestHandler = (req, res) => {
     const localIP = getLocalIP()
     const protocol = httpsOptions ? 'https' : 'http'
     const wsProtocol = httpsOptions ? 'wss' : 'ws'
-    res.writeHead(200, { 
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+    res.writeHead(200, {
+      'Content-Type': 'application/json'
     })
     res.end(JSON.stringify({
       running: true,
@@ -172,11 +221,7 @@ const requestHandler = (req, res) => {
   
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    res.writeHead(200, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Instance-ID'
-    })
+    res.writeHead(200)
     res.end()
     return
   }
@@ -185,15 +230,13 @@ const requestHandler = (req, res) => {
     const instanceId = req.headers['x-instance-id'] || `instance-${Date.now()}`
     if (mainInstanceId === null) {
       mainInstanceId = instanceId
-      res.writeHead(200, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(200, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify({ success: true, instanceId }))
     } else {
-      res.writeHead(409, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(409, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify({ success: false, error: 'Main instance already registered', existingInstanceId: mainInstanceId }))
     }
@@ -204,15 +247,13 @@ const requestHandler = (req, res) => {
     const instanceId = req.headers['x-instance-id']
     if (instanceId === mainInstanceId) {
       mainInstanceId = null
-      res.writeHead(200, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(200, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify({ success: true }))
     } else {
-      res.writeHead(403, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(403, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify({ success: false, error: 'Not the registered instance' }))
     }
@@ -221,20 +262,35 @@ const requestHandler = (req, res) => {
   
   // API endpoint to validate PIN and get match data
   if (urlPath === '/api/match/validate-pin' && req.method === 'POST') {
+    const clientIp = req.socket.remoteAddress || 'unknown'
+    if (isRateLimited(clientIp)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        success: false,
+        error: 'Too many attempts. Please wait a minute before trying again.'
+      }))
+      return
+    }
+
     let body = ''
     let responseSent = false
     
     const sendResponse = (statusCode, data) => {
       if (responseSent) return
       responseSent = true
-      res.writeHead(statusCode, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(statusCode, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify(data))
     }
     
-    req.on('data', chunk => { body += chunk.toString() })
+    req.on('data', chunk => {
+      body += chunk.toString()
+      if (body.length > MAX_BODY_SIZE) {
+        req.destroy()
+        return
+      }
+    })
     req.on('end', () => {
       try {
         if (!body || body.trim() === '') {
@@ -311,9 +367,8 @@ const requestHandler = (req, res) => {
               responseSent = true
               timeoutCleared = true
               if (timeout) clearTimeout(timeout)
-              res.writeHead(statusCode, { 
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+              res.writeHead(statusCode, {
+                'Content-Type': 'application/json'
               })
               res.end(JSON.stringify(data))
               pendingPinRequests.delete(requestId)
@@ -348,49 +403,46 @@ const requestHandler = (req, res) => {
     const matchId = urlPath.split('/api/match/')[1]
     
     if (!matchId) {
-      res.writeHead(400, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(400, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify({ success: false, error: 'Match ID required' }))
       return
     }
-    
+
     const matchData = matchDataStore.get(String(matchId))
-    
+
     if (!matchData) {
       // Request from main instance via WebSocket
       const requestId = `match-data-request-${Date.now()}-${Math.random()}`
-      
+
       broadcast({
         type: 'match-data-request',
         requestId,
         matchId: String(matchId)
       })
-      
+
       const timeout = setTimeout(() => {
-        res.writeHead(404, { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+        res.writeHead(404, {
+          'Content-Type': 'application/json'
         })
-        res.end(JSON.stringify({ 
-          success: false, 
-          error: 'Match data not found. Make sure the main scoresheet is running and connected.' 
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Match data not found. Make sure the main scoresheet is running and connected.'
         }))
         pendingPinRequests.delete(requestId)
       }, 5000)
-      
+
       pendingPinRequests.set(requestId, { res, timeout, type: 'match-data' })
       return
     }
-    
-    res.writeHead(200, { 
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
+
+    res.writeHead(200, {
+      'Content-Type': 'application/json'
     })
-    res.end(JSON.stringify({ 
-      success: true, 
-      ...matchData 
+    res.end(JSON.stringify({
+      success: true,
+      ...matchData
     }))
     return
   }
@@ -449,13 +501,12 @@ const requestHandler = (req, res) => {
     // Only return the most recent open/in-progress match
     const activeMatch = matches.length > 0 ? [matches[0]] : []
     
-    res.writeHead(200, { 
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
+    res.writeHead(200, {
+      'Content-Type': 'application/json'
     })
-    res.end(JSON.stringify({ 
-      success: true, 
-      matches: activeMatch 
+    res.end(JSON.stringify({
+      success: true,
+      matches: activeMatch
     }))
     return
   }
@@ -466,14 +517,13 @@ const requestHandler = (req, res) => {
     const gameNumber = url.searchParams.get('gameNumber')
     
     if (!gameNumber) {
-      res.writeHead(400, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(400, {
+        'Content-Type': 'application/json'
       })
       res.end(JSON.stringify({ success: false, error: 'Game number required' }))
       return
     }
-    
+
     // Search in match data store
     let matchFound = null
     for (const [matchId, matchData] of matchDataStore.entries()) {
@@ -487,39 +537,37 @@ const requestHandler = (req, res) => {
         break
       }
     }
-    
+
     if (matchFound) {
-      res.writeHead(200, { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+      res.writeHead(200, {
+        'Content-Type': 'application/json'
       })
-      res.end(JSON.stringify({ 
-        success: true, 
+      res.end(JSON.stringify({
+        success: true,
         match: matchFound.match,
         matchId: matchFound.matchId
       }))
     } else {
       // Request from main instance
       const requestId = `game-number-request-${Date.now()}-${Math.random()}`
-      
+
       broadcast({
         type: 'game-number-request',
         requestId,
         gameNumber: String(gameNumber)
       })
-      
+
       const timeout = setTimeout(() => {
-        res.writeHead(404, { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+        res.writeHead(404, {
+          'Content-Type': 'application/json'
         })
-        res.end(JSON.stringify({ 
-          success: false, 
-          error: 'Match not found with this game number' 
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Match not found with this game number'
         }))
         pendingPinRequests.delete(requestId)
       }, 5000)
-      
+
       pendingPinRequests.set(requestId, { res, timeout, type: 'game-number' })
     }
     return
@@ -529,7 +577,13 @@ const requestHandler = (req, res) => {
   if (urlPath.startsWith('/api/match/') && urlPath !== '/api/match/validate-pin' && urlPath !== '/api/match/by-game-number' && req.method === 'PATCH') {
     const matchId = urlPath.split('/api/match/')[1]
     let body = ''
-    req.on('data', chunk => { body += chunk.toString() })
+    req.on('data', chunk => {
+      body += chunk.toString()
+      if (body.length > MAX_BODY_SIZE) {
+        req.destroy()
+        return
+      }
+    })
     req.on('end', () => {
       try {
         const updates = JSON.parse(body)
@@ -548,23 +602,21 @@ const requestHandler = (req, res) => {
         
         const timeout = setTimeout(() => {
           console.warn(`[API] Match update request ${requestId} timed out after 5 seconds`)
-          res.writeHead(500, { 
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+          res.writeHead(500, {
+            'Content-Type': 'application/json'
           })
-          res.end(JSON.stringify({ 
-            success: false, 
-            error: 'Update request timeout. Make sure the main scoresheet is running.' 
+          res.end(JSON.stringify({
+            success: false,
+            error: 'Update request timeout. Make sure the main scoresheet is running.'
           }))
           pendingPinRequests.delete(requestId)
         }, 5000)
-        
+
         pendingPinRequests.set(requestId, { res, timeout, type: 'match-update' })
         console.log(`[API] Waiting for response to requestId: ${requestId}`)
       } catch (err) {
-        res.writeHead(400, { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+        res.writeHead(400, {
+          'Content-Type': 'application/json'
         })
         res.end(JSON.stringify({ success: false, error: 'Invalid request body' }))
       }
@@ -665,7 +717,9 @@ const requestHandler = (req, res) => {
     
     res.writeHead(200, { 
       'Content-Type': contentType,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000'
+      'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
+        ? 'no-cache'
+        : 'public, max-age=31536000'
     })
     res.end(content)
   } catch (err) {
@@ -688,9 +742,16 @@ const wss = new WebSocketServer({
 })
 
 wss.on('connection', (ws, req) => {
+  // Connection limit for LAN server
+  if (wsClients.size >= 20) {
+    console.warn('[WebSocket] Connection rejected: max clients (20) reached')
+    ws.close(1013, 'Maximum connections reached')
+    return
+  }
+
   const clientIp = req.socket.remoteAddress
   console.log(`[WebSocket] New client connected from ${clientIp}`)
-  
+
   wsClients.add(ws)
   
   // Send welcome message
@@ -863,13 +924,12 @@ wss.on('connection', (ws, req) => {
             } else {
               // Fallback to direct response
               try {
-                pending.res.writeHead(200, { 
-                  'Content-Type': 'application/json',
-                  'Access-Control-Allow-Origin': '*'
+                pending.res.writeHead(200, {
+                  'Content-Type': 'application/json'
                 })
-                pending.res.end(JSON.stringify({ 
-                  success: true, 
-                  match: data.match 
+                pending.res.end(JSON.stringify({
+                  success: true,
+                  match: data.match
                 }))
               } catch (err) {
                 console.error('[WebSocket] Error sending PIN validation response:', err)
@@ -879,20 +939,19 @@ wss.on('connection', (ws, req) => {
           } else {
             // Use sendResponse wrapper to ensure proper cleanup
             if (pending.sendResponse) {
-              pending.sendResponse(404, { 
-                success: false, 
-                error: data.error || 'No match found with this PIN' 
+              pending.sendResponse(404, {
+                success: false,
+                error: data.error || 'No match found with this PIN'
               })
             } else {
               // Fallback to direct response
               try {
-                pending.res.writeHead(404, { 
-                  'Content-Type': 'application/json',
-                  'Access-Control-Allow-Origin': '*'
+                pending.res.writeHead(404, {
+                  'Content-Type': 'application/json'
                 })
-                pending.res.end(JSON.stringify({ 
-                  success: false, 
-                  error: data.error || 'No match found with this PIN' 
+                pending.res.end(JSON.stringify({
+                  success: false,
+                  error: data.error || 'No match found with this PIN'
                 }))
               } catch (err) {
                 console.error('[WebSocket] Error sending PIN validation error:', err)
@@ -911,22 +970,20 @@ wss.on('connection', (ws, req) => {
           
           if (data.success && data.data) {
             matchDataStore.set(String(data.matchId), data.data)
-            pending.res.writeHead(200, { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+            pending.res.writeHead(200, {
+              'Content-Type': 'application/json'
             })
-            pending.res.end(JSON.stringify({ 
-              success: true, 
-              ...data.data 
+            pending.res.end(JSON.stringify({
+              success: true,
+              ...data.data
             }))
           } else {
-            pending.res.writeHead(404, { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+            pending.res.writeHead(404, {
+              'Content-Type': 'application/json'
             })
-            pending.res.end(JSON.stringify({ 
-              success: false, 
-              error: data.error || 'Match data not found' 
+            pending.res.end(JSON.stringify({
+              success: false,
+              error: data.error || 'Match data not found'
             }))
           }
         }
@@ -937,21 +994,19 @@ wss.on('connection', (ws, req) => {
         if (pending && pending.type === 'game-number') {
           clearTimeout(pending.timeout)
           pendingPinRequests.delete(requestId)
-          
+
           if (data.success && data.match) {
-            pending.res.writeHead(200, { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+            pending.res.writeHead(200, {
+              'Content-Type': 'application/json'
             })
-            pending.res.end(JSON.stringify({ 
-              success: true, 
+            pending.res.end(JSON.stringify({
+              success: true,
               match: data.match,
               matchId: data.matchId
             }))
           } else {
-            pending.res.writeHead(404, { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+            pending.res.writeHead(404, {
+              'Content-Type': 'application/json'
             })
             pending.res.end(JSON.stringify({ 
               success: false, 
@@ -974,23 +1029,21 @@ wss.on('connection', (ws, req) => {
             if (data.data) {
               matchDataStore.set(String(data.matchId), data.data)
             }
-            
-            pending.res.writeHead(200, { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+
+            pending.res.writeHead(200, {
+              'Content-Type': 'application/json'
             })
-            pending.res.end(JSON.stringify({ 
+            pending.res.end(JSON.stringify({
               success: true,
               ...(data.data || {})
             }))
           } else {
-            pending.res.writeHead(500, { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
+            pending.res.writeHead(500, {
+              'Content-Type': 'application/json'
             })
-            pending.res.end(JSON.stringify({ 
-              success: false, 
-              error: data.error || 'Update failed' 
+            pending.res.end(JSON.stringify({
+              success: false,
+              error: data.error || 'Update failed'
             }))
           }
         } else {

@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import MatchSetup from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd from './components/MatchEnd'
+import ManualAdjustments from './components/ManualAdjustments'
 import Modal from './components/Modal'
-import GuideModal from './components/GuideModal'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
+import SpotlightOverlay from './components/help/SpotlightOverlay'
 import ConnectionStatus from './components/ConnectionStatus'
+import StartupConnectivityModal from './components/StartupConnectivityModal'
 import MainHeader from './components/MainHeader'
+import BackupTable from './components/BackupTable'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectionSetupModal from './components/options/ConnectionSetupModal'
@@ -16,7 +21,12 @@ import { useSyncQueue } from './hooks/useSyncQueue'
 import useAutoBackup from './hooks/useAutoBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import mikasaVolleyball from './mikasa_v200w.png'
-import favicon from './favicon.png'
+
+// Primary ball image (with mikasa as fallback)
+const ballImage = `${import.meta.env.BASE_URL}ball.png`
+
+// Logo for dark background (HomePage)
+const openvolleyLogo = `${import.meta.env.BASE_URL}openvolley_dark_bg.png`
 import {
   TEST_REFEREE_SEED_DATA,
   TEST_SCORER_SEED_DATA,
@@ -33,9 +43,11 @@ import {
   getTestAwayTeamShortName
 } from './constants/testSeeds'
 import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile } from './utils/backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
+import { isMatchFinished as isMatchFinishedUtil } from './utils/matchFormat'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -55,34 +67,56 @@ function generateRefereePin() {
 }
 
 export default function App() {
+  const { t } = useTranslation()
   const [matchId, setMatchId] = useState(null)
   const [showMatchSetup, setShowMatchSetup] = useState(false)
   const [showCoinToss, setShowCoinToss] = useState(false)
   const [showMatchEnd, setShowMatchEnd] = useState(false)
+  const [showManualAdjustments, setShowManualAdjustments] = useState(false)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
+  const [deletePinInput, setDeletePinInput] = useState('')
+  const [deletePinError, setDeletePinError] = useState('')
   const [newMatchModal, setNewMatchModal] = useState(null)
   const [restoreMatchModal, setRestoreMatchModal] = useState(false)
   const [restoreMatchIdInput, setRestoreMatchIdInput] = useState('')
   const [restorePin, setRestorePin] = useState('')
   const [restoreError, setRestoreError] = useState('')
   const [restoreLoading, setRestoreLoading] = useState(false)
+  const [cloudBackups, setCloudBackups] = useState([])
+  const [cloudBackupPin, setCloudBackupPin] = useState('')
+  const [cloudBackupGameN, setCloudBackupGameN] = useState('')
+  const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
+  const [cloudBackupError, setCloudBackupError] = useState('')
+  const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
   const [testMatchLoading, setTestMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
-  const [homeGuideModal, setHomeGuideModal] = useState(false)
+  const [helpPanelOpen, setHelpPanelOpen] = useState(false)
+  const [spotlightTarget, setSpotlightTarget] = useState(null)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
-  const { syncStatus, isOnline } = useSyncQueue()
+  const { syncStatus, retryErrors, isOnline } = useSyncQueue()
   const backup = useAutoBackup(matchId)
   const canUseSupabase = Boolean(supabase)
 
-  // Dashboard Server state
+  // Compute current page for contextual help
+  const currentPage = useMemo(() => {
+    if (showManualAdjustments && matchId) return 'manualAdjustments'
+    if (showMatchEnd && matchId) return 'matchEnd'
+    if (showCoinToss && matchId) return 'coinToss'
+    if (showMatchSetup && matchId) return 'matchSetup'
+    if (matchId) return 'scoreboard'
+    return 'home'
+  }, [matchId, showMatchSetup, showCoinToss, showMatchEnd, showManualAdjustments])
+
+  // Dashboard Server state (only available in Electron desktop app)
+  const isElectron = typeof window !== 'undefined' && !!window.electronAPI
   const [dashboardServerEnabled, setDashboardServerEnabled] = useState(
     () => localStorage.getItem('dashboardServerEnabled') === 'true'
   )
   const dashboardServerData = useDashboardServer({
-    enabled: dashboardServerEnabled,
+    enabled: isElectron && dashboardServerEnabled,
     matchId: matchId
   })
   const [serverStatus, setServerStatus] = useState(null)
@@ -97,6 +131,7 @@ export default function App() {
     supabase: 'unknown'
   })
   const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [scorerAttentionTrigger, setScorerAttentionTrigger] = useState(null)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight })
@@ -105,7 +140,10 @@ export default function App() {
     const saved = localStorage.getItem('offlineMode')
     return saved === 'true'
   })
-  // Display mode: 'desktop' | 'tablet' | 'smartphone' | 'auto'
+  const [showStartupConnectivity, setShowStartupConnectivity] = useState(() => {
+    return localStorage.getItem('offlineMode') !== 'true'
+  })
+  // Display mode: 'desktop' | 'tablet' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
     return saved || 'auto' // default to auto-detect
@@ -147,6 +185,13 @@ export default function App() {
     const saved = localStorage.getItem('keybindingsEnabled')
     return saved === 'true' // default false
   })
+  const [lfpTrackingEnabled, setLfpTrackingEnabled] = useState(() => {
+    return localStorage.getItem('lfpTrackingEnabled') === 'true' // default false
+  })
+  const [lfpMinimumOnCourt, setLfpMinimumOnCourt] = useState(() => {
+    const saved = localStorage.getItem('lfpMinimumOnCourt')
+    return saved ? parseInt(saved, 10) : 3 // default 3
+  })
 
   // Wake lock refs and state
   const wakeLockRef = useRef(null)
@@ -158,7 +203,7 @@ export default function App() {
     const enableNoSleep = async () => {
       try {
         if ('wakeLock' in navigator) {
-          if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
+          if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) { } }
           wakeLockRef.current = await navigator.wakeLock.request('screen')
           setWakeLockActive(true)
           wakeLockRef.current.addEventListener('release', () => {
@@ -190,7 +235,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       document.removeEventListener('click', handleInteraction)
       document.removeEventListener('touchstart', handleInteraction)
-      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => {}); wakeLockRef.current = null }
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => { }); wakeLockRef.current = null }
       if (noSleepVideoRef.current) { noSleepVideoRef.current.pause(); noSleepVideoRef.current.remove(); noSleepVideoRef.current = null }
     }
   }, [])
@@ -198,10 +243,10 @@ export default function App() {
   const reEnableWakeLock = useCallback(async () => {
     try {
       if ('wakeLock' in navigator) {
-        if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) {} }
+        if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) { } }
         wakeLockRef.current = await navigator.wakeLock.request('screen')
         setWakeLockActive(true)
-        wakeLockRef.current.addEventListener('release', () => {})
+        wakeLockRef.current.addEventListener('release', () => { })
         return true
       }
     } catch (err) { /* Failed to re-acquire, ignore */ }
@@ -210,7 +255,7 @@ export default function App() {
 
   const toggleWakeLock = useCallback(async () => {
     if (wakeLockActive) {
-      if (wakeLockRef.current) { try { await wakeLockRef.current.release(); wakeLockRef.current = null } catch (e) {} }
+      if (wakeLockRef.current) { try { await wakeLockRef.current.release(); wakeLockRef.current = null } catch (e) { } }
       setWakeLockActive(false)
     } else {
       const success = await reEnableWakeLock()
@@ -218,10 +263,12 @@ export default function App() {
     }
   }, [wakeLockActive, reEnableWakeLock])
 
-  // Preload assets that are used later (e.g., coin toss volleyball image)
+  // Preload assets that are used later (e.g., coin toss volleyball image, logo)
   useEffect(() => {
     const assetsToPreload = [
-      mikasaVolleyball
+      ballImage,
+      mikasaVolleyball,
+      openvolleyLogo
     ]
 
     assetsToPreload.forEach(src => {
@@ -268,16 +315,14 @@ export default function App() {
   }, [])
 
   // Screen size detection for display mode
-  // < 768px = smartphone, 768-1024px = tablet, > 1024px = desktop
+  // <= 1024px = tablet, > 1024px = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
       const height = window.innerHeight
       let detected = 'desktop'
 
-      if (width < 768) {
-        detected = 'smartphone'
-      } else if (width <= 1024) {
+      if (width <= 1024) {
         detected = 'tablet'
       }
       // > 1024px = desktop (default)
@@ -294,7 +339,7 @@ export default function App() {
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [])
 
-  // Fullscreen for tablet/smartphone modes (orientation lock handled by Scoreboard/Scoresheet)
+  // Fullscreen for tablet mode
   const enterDisplayMode = useCallback((mode) => {
     // Request fullscreen
     if (document.documentElement.requestFullscreen) {
@@ -370,7 +415,9 @@ export default function App() {
   const currentOfficialMatch = useLiveQuery(async () => {
     try {
       const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      return matches.find(m => m.test !== true && m.status !== 'final') || null
+      // Only consider matches that have been confirmed (matchInfoConfirmedAt set)
+      // This prevents showing Continue/Delete for matches where user hasn't clicked "Create Match"
+      return matches.find(m => m.test !== true && m.status !== 'final' && m.matchInfoConfirmedAt) || null
     } catch (error) {
       console.error('Unable to load official match', error)
       return null
@@ -423,18 +470,13 @@ export default function App() {
     }
   }, [])
 
-  // Check connection statuses
+  // Check connection statuses — updates progressively as each check resolves
   const checkConnectionStatuses = useCallback(async () => {
-    const statuses = {
-      api: 'unknown',
-      server: 'unknown',
-      websocket: 'unknown',
-      scoreboard: 'unknown',
-      match: 'unknown',
-      db: 'unknown',
-      supabase: 'unknown'
+    // Helper to update individual statuses as they resolve
+    const updateStatus = (key, status, debug) => {
+      setConnectionStatuses(prev => ({ ...prev, [key]: status }))
+      setConnectionDebugInfo(prev => ({ ...prev, [key]: debug }))
     }
-    const debugInfo = {}
 
     // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
     const isStaticDeployment = !import.meta.env.DEV && (
@@ -442,252 +484,233 @@ export default function App() {
       window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
     )
 
-    // Check if we have a configured backend URL (Railway/cloud backend)
+    // Check if we have a configured backend URL (cloud backend)
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
-    // Check API/Server connection
-    if (isStaticDeployment && !hasBackendUrl) {
-      // No backend configured - pure standalone mode
-      statuses.api = 'not_available'
-      statuses.server = 'not_available'
-      debugInfo.api = { status: 'not_available', message: 'API not available in static deployment (using local database only)' }
-      debugInfo.server = { status: 'not_available', message: 'Server not available in static deployment (using local database only)' }
-    } else if (hasBackendUrl) {
-      // Backend URL configured - check Railway backend health
-      try {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL
-        const response = await fetch(`${backendUrl}/health`)
-        if (response.ok) {
-          const data = await response.json()
-          statuses.api = 'connected'
-          statuses.server = 'connected'
-          debugInfo.api = { status: 'connected', message: `Cloud backend responding (${data.mode} mode)` }
-          debugInfo.server = { status: 'connected', message: `Backend healthy, ${data.connections} connections, ${data.activeRooms} active rooms` }
-        } else {
-          statuses.api = 'disconnected'
-          statuses.server = 'disconnected'
-          debugInfo.api = { status: 'disconnected', message: `Backend returned status ${response.status}` }
-          debugInfo.server = { status: 'disconnected', message: `Backend returned status ${response.status}` }
-        }
-      } catch (err) {
-        statuses.api = 'disconnected'
-        statuses.server = 'disconnected'
-        debugInfo.api = { status: 'disconnected', message: `Backend unreachable: ${err.message}` }
-        debugInfo.server = { status: 'disconnected', message: `Backend unreachable: ${err.message}` }
-      }
-    } else {
-      try {
-        const response = await fetch('/api/match/list')
-        if (response.ok) {
-          statuses.api = 'connected'
-          statuses.server = 'connected'
-          debugInfo.api = { status: 'connected', message: 'API endpoint responding' }
-          debugInfo.server = { status: 'connected', message: 'Server is reachable' }
-        } else {
-          statuses.api = 'disconnected'
-          statuses.server = 'disconnected'
-          debugInfo.api = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
-          debugInfo.server = { status: 'disconnected', message: `Server returned status ${response.status}: ${response.statusText}` }
-        }
-      } catch (err) {
-        statuses.api = 'disconnected'
-        statuses.server = 'disconnected'
-        const errMsg = import.meta.env.DEV
-          ? `Network error: ${err.message || 'Failed to connect to API'}`
-          : 'Server not available (running in standalone mode)'
-        debugInfo.api = { status: 'disconnected', message: errMsg }
-        debugInfo.server = { status: 'disconnected', message: errMsg }
-      }
-    }
-    
-    // Check WebSocket server availability
-    // Skip WebSocket check for static deployments without backend URL
-    if (isStaticDeployment && !hasBackendUrl) {
-      statuses.websocket = 'not_available'
-      debugInfo.websocket = {
-        status: 'not_available',
-        message: 'WebSocket not available in static deployment (using local database only)'
-      }
-    } else if (typeof wsRef !== 'undefined' && wsRef.current?.readyState === WebSocket.OPEN) {
-      // Reuse main WebSocket connection status - no need to create test connection
-      statuses.websocket = 'connected'
-      debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable (active connection)' }
-    } else {
-    try {
-      // Check if we have a configured backend URL (Railway/cloud backend)
-      const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-      let wsUrl
-      if (backendUrl) {
-        // Use configured backend (Railway cloud)
-        const url = new URL(backendUrl)
-        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        wsUrl = `${protocol}//${url.host}`
-      } else {
-        // Fallback to local WebSocket server
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        const wsPort = serverStatus?.wsPort || 8080
-        wsUrl = `${protocol}://${hostname}:${wsPort}`
-      }
-
-      const wsTest = new WebSocket(wsUrl)
-      let resolved = false
-      let errorMessage = ''
-
-      // Use longer timeout for cloud backends (Railway needs more time to wake up)
-      const connectionTimeout = backendUrl ? 10000 : 2000
-
-      await new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          if (!resolved) {
-            resolved = true
-            console.log(`⏱️  WebSocket connection timeout after ${connectionTimeout / 1000}s, readyState:`, wsTest.readyState)
-            try {
-              if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                wsTest.close()
-              }
-            } catch (e) {
-              // Ignore errors when closing
-            }
-            statuses.websocket = 'disconnected'
-            debugInfo.websocket = {
-              status: 'disconnected',
-              message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
-              details: `Attempted to connect to ${wsUrl}, readyState: ${wsTest.readyState}`
-            }
-            resolve()
-          }
-        }, connectionTimeout)
-        
-        wsTest.onopen = () => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            try {
-              wsTest.close()
-            } catch (e) {
-              // Ignore errors when closing
-            }
-            statuses.websocket = 'connected'
-            debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
-            resolve()
-          }
-        }
-
-        wsTest.onerror = () => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            try {
-              if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                wsTest.close()
-              }
-            } catch (e) {
-              // Ignore errors when closing
-            }
-            statuses.websocket = 'disconnected'
-            debugInfo.websocket = {
-              status: 'disconnected',
-              message: `WebSocket connection error. Server may not be available.`,
-              details: `Failed to connect to ${wsUrl}`
-            }
-            console.log('❌ WebSocket test error - server may not be available')
-            resolve()
-          }
-        }
-
-        wsTest.onclose = (event) => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            statuses.websocket = 'disconnected'
-            if (!debugInfo.websocket) {
-              debugInfo.websocket = { 
-                status: 'disconnected', 
-                message: `Connection closed unexpectedly (code: ${event.code}).`,
-                details: `WebSocket server on port ${wsPort} may not be running`
-              }
-            }
-            resolve()
-          }
-        }
-      })
-    } catch (err) {
-      statuses.websocket = 'disconnected'
-      debugInfo.websocket = {
-        status: 'disconnected',
-        message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
-        details: 'Check if WebSocket server is running'
-      }
-    }
-    } // end of else block for static deployment check
-
-    // Check Scoreboard connection (same as server for now)
-    statuses.scoreboard = statuses.server
-    debugInfo.scoreboard = debugInfo.server
-    
-    // Check Match status (both official and test matches)
+    // --- Check Match status (instant) ---
     if (currentMatch) {
-      statuses.match = currentMatch.status === 'live' ? 'live' : currentMatch.status === 'scheduled' ? 'scheduled' : currentMatch.status === 'final' ? 'final' : 'unknown'
-      debugInfo.match = { status: statuses.match, message: `Match status: ${statuses.match} (${currentMatch.test ? 'Test' : 'Official'} match)` }
+      const matchStatus = currentMatch.status === 'live' ? 'live' : currentMatch.status === 'scheduled' ? 'scheduled' : currentMatch.status === 'final' ? 'final' : 'unknown'
+      updateStatus('match', matchStatus, { status: matchStatus, message: `Match status: ${matchStatus} (${currentMatch.test ? 'Test' : 'Official'} match)` })
     } else {
-      statuses.match = 'no_match'
-      debugInfo.match = { status: 'no_match', message: 'No match found. Create a new match to start.' }
+      updateStatus('match', 'no_match', { status: 'no_match', message: 'No match found. Create a new match to start.' })
     }
-    
-    // Check DB (IndexedDB)
-    try {
-      await db.matches.count()
-      statuses.db = 'connected'
-      debugInfo.db = { status: 'connected', message: 'IndexedDB is accessible' }
-    } catch (err) {
-      statuses.db = 'disconnected'
-      debugInfo.db = { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }
-    }
-    
-    // Check Supabase status (based on syncStatus and canUseSupabase)
-    // First check if Supabase is configured at all
+
+    // --- Check Supabase status (instant — based on existing syncStatus state) ---
     if (!canUseSupabase) {
-      statuses.supabase = 'not_configured'
       const envUrl = import.meta.env.VITE_SUPABASE_URL
       const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      debugInfo.supabase = { 
-        status: 'not_configured', 
+      updateStatus('supabase', 'not_configured', {
+        status: 'not_configured',
         message: 'Supabase is not configured',
         details: `Environment variables missing: ${!envUrl ? 'VITE_SUPABASE_URL' : ''}${!envUrl && !envKey ? ' and ' : ''}${!envKey ? 'VITE_SUPABASE_ANON_KEY' : ''}. Set these in your .env file to enable Supabase sync.`
-      }
+      })
     } else if (syncStatus === 'synced' || syncStatus === 'syncing') {
-      statuses.supabase = 'connected'
-      debugInfo.supabase = { status: 'connected', message: 'Supabase is connected and syncing' }
+      updateStatus('supabase', 'connected', { status: 'connected', message: 'Supabase is connected and syncing' })
     } else if (syncStatus === 'online_no_supabase') {
-      // This shouldn't happen if canUseSupabase is true, but handle it anyway
-      statuses.supabase = 'not_configured'
-      debugInfo.supabase = { 
-        status: 'not_configured', 
+      updateStatus('supabase', 'not_configured', {
+        status: 'not_configured',
         message: 'Supabase client not initialized',
         details: 'Supabase environment variables may be set but client failed to initialize. Check your .env file.'
-      }
+      })
     } else if (syncStatus === 'connecting') {
-      statuses.supabase = 'connecting'
-      debugInfo.supabase = { status: 'connecting', message: 'Connecting to Supabase...' }
+      updateStatus('supabase', 'connecting', { status: 'connecting', message: 'Connecting to Supabase...' })
     } else if (syncStatus === 'error') {
-      statuses.supabase = 'error'
-      debugInfo.supabase = { 
-        status: 'error', 
+      updateStatus('supabase', 'error', {
+        status: 'error',
         message: 'Supabase connection error',
         details: 'Check your Supabase credentials and network connection'
-      }
+      })
     } else if (syncStatus === 'offline') {
-      statuses.supabase = 'offline'
-      debugInfo.supabase = { status: 'offline', message: 'Device is offline or Supabase is unreachable' }
+      updateStatus('supabase', 'offline', { status: 'offline', message: 'Device is offline or Supabase is unreachable' })
     } else {
-      statuses.supabase = 'unknown'
-      debugInfo.supabase = { status: 'unknown', message: 'Supabase status unknown' }
+      updateStatus('supabase', 'unknown', { status: 'unknown', message: 'Supabase status unknown' })
     }
-    
-    setConnectionStatuses(statuses)
-    setConnectionDebugInfo(debugInfo)
+
+    // --- Run async checks in parallel ---
+    const asyncChecks = []
+
+    // DB check (IndexedDB — fast)
+    asyncChecks.push(
+      db.matches.count()
+        .then(() => updateStatus('db', 'connected', { status: 'connected', message: 'IndexedDB is accessible' }))
+        .catch(err => updateStatus('db', 'disconnected', { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }))
+    )
+
+    // API/Server + Scoreboard check
+    const checkApiServer = async () => {
+      if (isStaticDeployment && !hasBackendUrl) {
+        updateStatus('api', 'not_available', { status: 'not_available', message: 'API not available in static deployment (using local database only)' })
+        updateStatus('server', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
+        updateStatus('scoreboard', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
+      } else if (hasBackendUrl) {
+        try {
+          const backendUrl = import.meta.env.VITE_BACKEND_URL
+          const controller = new AbortController()
+          const fetchTimeout = setTimeout(() => controller.abort(), 5000)
+          const response = await fetch(`${backendUrl}/health`, { signal: controller.signal })
+          clearTimeout(fetchTimeout)
+          if (response.ok) {
+            const data = await response.json()
+            const apiDebug = { status: 'connected', message: `Cloud backend responding (${data.mode} mode)` }
+            const serverDebug = { status: 'connected', message: `Backend healthy, ${data.connections} connections, ${data.activeRooms} active rooms` }
+            updateStatus('api', 'connected', apiDebug)
+            updateStatus('server', 'connected', serverDebug)
+            updateStatus('scoreboard', 'connected', serverDebug)
+          } else {
+            const debug = { status: 'disconnected', message: `Backend returned status ${response.status}` }
+            updateStatus('api', 'disconnected', debug)
+            updateStatus('server', 'disconnected', debug)
+            updateStatus('scoreboard', 'disconnected', debug)
+          }
+        } catch (err) {
+          const message = err.name === 'AbortError' ? 'Backend request timed out (5s)' : `Backend unreachable: ${err.message}`
+          const debug = { status: 'disconnected', message }
+          updateStatus('api', 'disconnected', debug)
+          updateStatus('server', 'disconnected', debug)
+          updateStatus('scoreboard', 'disconnected', debug)
+        }
+      } else {
+        try {
+          const controller = new AbortController()
+          const fetchTimeout = setTimeout(() => controller.abort(), 5000)
+          const response = await fetch('/api/match/list', { signal: controller.signal })
+          clearTimeout(fetchTimeout)
+          if (response.ok) {
+            updateStatus('api', 'connected', { status: 'connected', message: 'API endpoint responding' })
+            updateStatus('server', 'connected', { status: 'connected', message: 'Server is reachable' })
+            updateStatus('scoreboard', 'connected', { status: 'connected', message: 'Server is reachable' })
+          } else {
+            const debug = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
+            updateStatus('api', 'disconnected', debug)
+            updateStatus('server', 'disconnected', debug)
+            updateStatus('scoreboard', 'disconnected', debug)
+          }
+        } catch (err) {
+          const errMsg = err.name === 'AbortError'
+            ? 'Server request timed out (5s)'
+            : import.meta.env.DEV
+              ? `Network error: ${err.message || 'Failed to connect to API'}`
+              : 'Server not available (running in standalone mode)'
+          const debug = { status: 'disconnected', message: errMsg }
+          updateStatus('api', 'disconnected', debug)
+          updateStatus('server', 'disconnected', debug)
+          updateStatus('scoreboard', 'disconnected', debug)
+        }
+      }
+    }
+    asyncChecks.push(checkApiServer())
+
+    // WebSocket check
+    const checkWebSocket = async () => {
+      if (isStaticDeployment && !hasBackendUrl) {
+        updateStatus('websocket', 'not_available', {
+          status: 'not_available',
+          message: 'WebSocket not available in static deployment (using local database only)'
+        })
+      } else if (typeof wsRef !== 'undefined' && wsRef.current?.readyState === WebSocket.OPEN) {
+        updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable (active connection)' })
+      } else {
+        try {
+          const backendUrl = import.meta.env.VITE_BACKEND_URL
+
+          let wsUrl
+          if (backendUrl) {
+            const url = new URL(backendUrl)
+            const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+            wsUrl = `${protocol}//${url.host}`
+          } else {
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+            const hostname = window.location.hostname
+            const wsPort = serverStatus?.wsPort || 8080
+            wsUrl = `${protocol}://${hostname}:${wsPort}`
+          }
+
+          const wsTest = new WebSocket(wsUrl)
+          let resolved = false
+
+          const connectionTimeout = backendUrl ? 5000 : 2000
+
+          await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                resolved = true
+                console.log(`⏱️  WebSocket connection timeout after ${connectionTimeout / 1000}s, readyState:`, wsTest.readyState)
+                try {
+                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                    wsTest.close()
+                  }
+                } catch (e) {
+                  // Ignore errors when closing
+                }
+                updateStatus('websocket', 'disconnected', {
+                  status: 'disconnected',
+                  message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
+                  details: `Attempted to connect to ${wsUrl}, readyState: ${wsTest.readyState}`
+                })
+                resolve()
+              }
+            }, connectionTimeout)
+
+            wsTest.onopen = () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                try {
+                  wsTest.close()
+                } catch (e) {
+                  // Ignore errors when closing
+                }
+                updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable' })
+                resolve()
+              }
+            }
+
+            wsTest.onerror = () => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                try {
+                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
+                    wsTest.close()
+                  }
+                } catch (e) {
+                  // Ignore errors when closing
+                }
+                updateStatus('websocket', 'disconnected', {
+                  status: 'disconnected',
+                  message: `WebSocket connection error. Server may not be available.`,
+                  details: `Failed to connect to ${wsUrl}`
+                })
+                console.log('❌ WebSocket test error - server may not be available')
+                resolve()
+              }
+            }
+
+            wsTest.onclose = (event) => {
+              if (!resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                updateStatus('websocket', 'disconnected', {
+                  status: 'disconnected',
+                  message: `Connection closed unexpectedly (code: ${event.code}).`,
+                  details: `WebSocket server may not be running`
+                })
+                resolve()
+              }
+            }
+          })
+        } catch (err) {
+          updateStatus('websocket', 'disconnected', {
+            status: 'disconnected',
+            message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
+            details: 'Check if WebSocket server is running'
+          })
+        }
+      }
+    }
+    asyncChecks.push(checkWebSocket())
+
+    await Promise.all(asyncChecks)
   }, [currentMatch, syncStatus, serverStatus])
 
   // Periodically check connection statuses
@@ -697,6 +720,25 @@ export default function App() {
     return () => clearInterval(interval)
   }, [checkConnectionStatuses])
 
+  // Show startup connectivity popup when toggling from offline to online
+  const prevOfflineModeRef = useRef(offlineMode)
+  useEffect(() => {
+    if (prevOfflineModeRef.current === true && offlineMode === false) {
+      setShowStartupConnectivity(true)
+      checkConnectionStatuses()
+    }
+    prevOfflineModeRef.current = offlineMode
+  }, [offlineMode, checkConnectionStatuses])
+
+  const handleStartupGoOffline = useCallback(() => {
+    setOfflineMode(true)
+    localStorage.setItem('offlineMode', 'true')
+    setShowStartupConnectivity(false)
+  }, [])
+
+  const handleStartupDismiss = useCallback(() => {
+    setShowStartupConnectivity(false)
+  }, [])
 
   const currentTestMatch = useLiveQuery(async () => {
     try {
@@ -716,11 +758,11 @@ export default function App() {
 
     // For test matches that have been restarted (no signatures, only initial set, no events), don't show status
     if (currentMatch.test === true) {
-      const hasSignatures = currentMatch.homeCoachSignature || 
-                           currentMatch.homeCaptainSignature || 
-                           currentMatch.awayCoachSignature || 
-                           currentMatch.awayCaptainSignature
-      
+      const hasSignatures = currentMatch.homeCoachSignature ||
+        currentMatch.homeCaptainSignature ||
+        currentMatch.awayCoachSignature ||
+        currentMatch.awayCaptainSignature
+
       if (!hasSignatures) {
         const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
         const events = await db.events.where('matchId').equals(currentMatch.id).toArray()
@@ -816,7 +858,7 @@ export default function App() {
         match: currentMatch
       }
     }
-    
+
     // For home view (use currentOfficialMatch or currentTestMatch)
     if (!matchId) {
       const matchToUse = currentOfficialMatch || currentTestMatch
@@ -831,31 +873,37 @@ export default function App() {
         }
       }
     }
-    
+
     return null
   }, [matchId, currentMatch, currentOfficialMatch, currentTestMatch])
 
   const restoredRef = useRef(false)
 
-  // Preload volleyball image when app loads
+  // Preload ball and logo images when app loads
   useEffect(() => {
-    // Preload the image
-    const img = new Image()
-    img.src = mikasaVolleyball
-    
-    // Also add a preload link to the document head for early loading
-    const link = document.createElement('link')
-    link.rel = 'preload'
-    link.as = 'image'
-    link.href = mikasaVolleyball
-    document.head.appendChild(link)
-    
+    const imagesToPreload = [ballImage, mikasaVolleyball, openvolleyLogo]
+
+    imagesToPreload.forEach(src => {
+      // Preload the image
+      const img = new Image()
+      img.src = src
+
+      // Also add a preload link to the document head for early loading
+      const link = document.createElement('link')
+      link.rel = 'preload'
+      link.as = 'image'
+      link.href = src
+      document.head.appendChild(link)
+    })
+
     return () => {
-      // Cleanup: remove preload link if component unmounts
-      const existingLink = document.querySelector(`link[href="${mikasaVolleyball}"]`)
-      if (existingLink) {
-        document.head.removeChild(existingLink)
-      }
+      // Cleanup: remove preload links if component unmounts
+      imagesToPreload.forEach(src => {
+        const existingLink = document.querySelector(`link[href="${src}"]`)
+        if (existingLink) {
+          document.head.removeChild(existingLink)
+        }
+      })
     }
   }, [])
 
@@ -903,10 +951,10 @@ export default function App() {
 
     // Prevent browser back/forward buttons
     window.addEventListener('popstate', blockHistoryNavigation)
-    
+
     // Prevent refresh keyboard shortcuts
     window.addEventListener('keydown', disableRefreshKeys, { passive: false })
-    
+
     // Prevent backspace navigation (except in input fields)
     window.addEventListener('keydown', disableBackspaceNavigation, { passive: false })
 
@@ -1056,7 +1104,7 @@ export default function App() {
       if (wsRef.current) {
         const oldWs = wsRef.current
         const oldState = oldWs.readyState
-        
+
         // Remove all handlers first to prevent error logs
         try {
           oldWs.onerror = null
@@ -1066,7 +1114,7 @@ export default function App() {
         } catch (err) {
           // Ignore if handlers can't be set
         }
-        
+
         // Only try to close if not already closed/closing
         if (oldState === WebSocket.OPEN) {
           try {
@@ -1082,12 +1130,12 @@ export default function App() {
       }
 
       try {
-        // Check if we have a configured backend URL (Railway/cloud backend)
+        // Check if we have a configured backend URL (Render/cloud backend)
         const backendUrl = import.meta.env.VITE_BACKEND_URL
 
         let wsUrl
         if (backendUrl) {
-          // Use configured backend (Railway cloud)
+          // Use configured backend (Render cloud)
           const url = new URL(backendUrl)
           const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
           wsUrl = `${protocol}//${url.host}`
@@ -1105,7 +1153,7 @@ export default function App() {
         }
 
         wsRef.current = new WebSocket(wsUrl)
-        
+
         // Set error handler first to catch any immediate errors
         wsRef.current.onerror = () => {
           // Suppress - browser will show native errors if needed
@@ -1129,7 +1177,7 @@ export default function App() {
           } catch (err) {
             console.error('[App WebSocket] Error clearing other matches:', err)
           }
-          
+
           syncMatchData()
           // Periodic sync as backup only (every 30 seconds)
           // Primary sync happens via data change detection in Scoreboard component
@@ -1139,7 +1187,7 @@ export default function App() {
         wsRef.current.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data)
-            
+
             if (message.type === 'pin-validation-request') {
               handlePinValidationRequest(message)
             } else if (message.type === 'match-data-request') {
@@ -1218,7 +1266,7 @@ export default function App() {
           externalId: currentMatchData.externalId,
           scheduledAt: currentMatchData.scheduledAt
         }
-        
+
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         const syncPayload = {
           type: 'sync-match-data',
@@ -1231,9 +1279,9 @@ export default function App() {
           sets,
           events
         }
-        
+
         // Periodic sync - don't log every time to reduce noise
-        
+
         ws.send(JSON.stringify(syncPayload))
       } catch (err) {
         console.error('[App WebSocket] Error syncing match data:', err)
@@ -1313,7 +1361,7 @@ export default function App() {
 
       try {
         const { requestId, matchId: requestedMatchId } = request
-        
+
         if (String(requestedMatchId) !== String(currentActiveMatchId)) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
@@ -1366,7 +1414,7 @@ export default function App() {
         const matchGameNumber = String(currentMatchData.gameNumber || '')
         const matchGameN = String(currentMatchData.game_n || '')
         const matchIdStr = String(currentMatchData.id || '')
-        
+
         if (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr) {
           ws.send(JSON.stringify({
             type: 'game-number-response',
@@ -1394,7 +1442,7 @@ export default function App() {
 
     return () => {
       isIntentionallyClosedRef.current = true
-      
+
       // Clear all matches from server when component unmounts (scoreboard is source of truth)
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         try {
@@ -1405,7 +1453,7 @@ export default function App() {
           // Ignore error on unmount
         }
       }
-      
+
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current)
         syncIntervalRef.current = null
@@ -1417,7 +1465,7 @@ export default function App() {
       if (wsRef.current) {
         const ws = wsRef.current
         const readyState = ws.readyState
-        
+
         // Remove all handlers first to prevent error logs
         try {
           ws.onerror = null
@@ -1427,7 +1475,7 @@ export default function App() {
         } catch (err) {
           // Ignore if handlers can't be set
         }
-        
+
         // Only try to close if connection is OPEN
         // Don't close if CONNECTING - let it fail naturally to avoid browser errors
         if (readyState === WebSocket.OPEN) {
@@ -1446,38 +1494,41 @@ export default function App() {
   async function finishSet(cur) {
     const matchRecord = await db.matches.get(cur.matchId)
     const isTestMatch = matchRecord?.test === true
-    
+
     // Calculate current set scores
     const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
     const finishedSets = sets.filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-    
-    // Check if either team has won 3 sets (match win)
-    const isMatchEnd = homeSetsWon >= 3 || awaySetsWon >= 3
-    
+
+    // Check if either team has won enough sets (match win)
+    const isMatchEnd = isMatchFinishedUtil(homeSetsWon, awaySetsWon, matchRecord?.bestOf)
+
     if (isMatchEnd) {
       // IMPORTANT: When match ends, preserve ALL data in database:
       // - All sets remain in db.sets
       // - All events remain in db.events
       // - All players remain in db.players
       // - All teams remain in db.teams
-      // - Only update match status to 'final' - DO NOT DELETE ANYTHING
-      await db.matches.update(cur.matchId, { status: 'final' })
-      
+      // - Set status to 'ended' - MatchEnd component will set to 'approved' after approval
+      // Status flow: live -> ended -> approved
+
       // Unlock session when match ends
       try {
         await unlockMatchSession(cur.matchId)
       } catch (error) {
         console.error('Error unlocking session:', error)
       }
-      
+
+      // Update local match status to 'ended' (may already be set by Scoreboard)
+      await db.matches.update(cur.matchId, { status: 'ended' })
+
       // Only sync official matches with seed_key
       if (!isTestMatch && matchRecord?.seed_key) {
         // Build set results array
         const setResults = finishedSets
           .sort((a, b) => a.index - b.index)
-          .map(s => ({ home: s.homePoints, away: s.awayPoints }))
+          .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
 
         // Determine winner
         const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
@@ -1488,7 +1539,7 @@ export default function App() {
           action: 'update',
           payload: {
             id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-            status: 'final',
+            status: 'ended', // Match ended, awaiting approval
             set_results: setResults,
             winner,
             final_score: finalScore,
@@ -1498,7 +1549,7 @@ export default function App() {
           status: 'queued'
         })
       }
-      
+
       // Notify server to delete match from matchDataStore (since it's now final)
       const ws = wsRef.current
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1511,15 +1562,15 @@ export default function App() {
           // Ignore error
         }
       }
-      
+
       // Show match end screen
       setShowMatchEnd(true)
       return
     }
-    
+
     // Continue to next set (legacy logic - shouldn't reach here with new logic)
     const setId = await db.sets.add({ matchId: cur.matchId, index: cur.index + 1, homePoints: 0, awayPoints: 0, finished: false })
-    
+
     // Only sync official matches with seed_key
     if (!isTestMatch && matchRecord?.seed_key) {
       await db.sync_queue.add({
@@ -1540,17 +1591,20 @@ export default function App() {
     }
   }
 
-  const openMatchSetup = () => setMatchId(null)
-  
+  const openMatchSetup = () => {
+    setMatchId(null)
+    setShowManualAdjustments(false)
+  }
+
   const openMatchSetupView = () => setShowMatchSetup(true)
-  
+
   const openCoinTossView = () => {
     setShowMatchSetup(false)
     setShowCoinToss(true)
   }
-  
+
   const returnToMatch = () => setShowMatchSetup(false)
-  
+
   const goHome = async () => {
     // Unlock session if match was open
     if (matchId) {
@@ -1562,6 +1616,7 @@ export default function App() {
     }
     setMatchId(null)
     setShowMatchSetup(false)
+    setShowManualAdjustments(false)
   }
 
   async function clearLocalTestData() {
@@ -1593,12 +1648,7 @@ export default function App() {
   }
 
   async function resetSupabaseTestMatch() {
-    if (!supabase) {
-      throw new Error('Supabase client is not configured.')
-    }
-
-    const { data: matchRecord, error: matchLookupError } = await supabase
-      .from('matches')
+    const { data: matchRecord, error: matchLookupError } = await apiFrom('matches')
       .select('id')
       .eq('external_id', TEST_MATCH_EXTERNAL_ID)
       .single()
@@ -1612,16 +1662,14 @@ export default function App() {
 
     const matchUuid = matchRecord.id
 
-    const { error: deleteEventsError } = await supabase
-      .from('events')
+    const { error: deleteEventsError } = await apiFrom('events')
       .delete()
       .eq('match_id', matchUuid)
     if (deleteEventsError) {
       throw new Error(deleteEventsError.message)
     }
 
-    const { error: deleteSetsError } = await supabase
-      .from('sets')
+    const { error: deleteSetsError } = await apiFrom('sets')
       .delete()
       .eq('match_id', matchUuid)
     if (deleteSetsError) {
@@ -1629,8 +1677,7 @@ export default function App() {
     }
 
     const newScheduled = getNextTestMatchStartTime()
-    const { error: updateMatchError } = await supabase
-      .from('matches')
+    const { error: updateMatchError } = await apiFrom('matches')
       .update({
         status: 'scheduled',
         scheduled_at: newScheduled,
@@ -1644,16 +1691,11 @@ export default function App() {
   }
 
   async function loadTestMatchFromSupabase({ resetRemote = false, targetView = 'setup' } = {}) {
-    if (!supabase) {
-      throw new Error('Supabase client is not configured.')
-    }
-
     if (resetRemote) {
       await resetSupabaseTestMatch()
     }
 
-    const { data: matchData, error: matchError } = await supabase
-      .from('matches')
+    const { data: matchData, error: matchError } = await apiFrom('matches')
       .select('*')
       .eq('external_id', TEST_MATCH_EXTERNAL_ID)
       .single()
@@ -1667,8 +1709,8 @@ export default function App() {
 
 
     const [homeTeamRes, awayTeamRes] = await Promise.all([
-      supabase.from('teams').select('*').eq('id', matchData.home_team_id).single(),
-      supabase.from('teams').select('*').eq('id', matchData.away_team_id).single()
+      apiFrom('teams').select('*').eq('id', matchData.home_team_id).single(),
+      apiFrom('teams').select('*').eq('id', matchData.away_team_id).single()
     ])
 
     if (homeTeamRes.error) {
@@ -1682,8 +1724,7 @@ export default function App() {
     const awayTeamData = awayTeamRes.data
 
 
-    const { data: playersData, error: playersError } = await supabase
-      .from('players')
+    const { data: playersData, error: playersError } = await apiFrom('players')
       .select('*')
       .in('team_id', [matchData.home_team_id, matchData.away_team_id])
 
@@ -1691,8 +1732,7 @@ export default function App() {
       throw new Error(playersError.message)
     }
 
-    const { data: setsData, error: setsError } = await supabase
-      .from('sets')
+    const { data: setsData, error: setsError } = await apiFrom('sets')
       .select('*')
       .eq('match_id', matchData.id)
       .order('index')
@@ -1701,8 +1741,7 @@ export default function App() {
       throw new Error(setsError.message)
     }
 
-    const { data: eventsData, error: eventsError } = await supabase
-      .from('events')
+    const { data: eventsData, error: eventsError } = await apiFrom('events')
       .select('*')
       .eq('match_id', matchData.id)
       .order('ts')
@@ -1792,6 +1831,7 @@ export default function App() {
         dob: player.dob,
         libero: player.libero || '',
         is_captain: player.isCaptain || false,
+        is_lfp: player.isLfp || false,
         functions: player.functions || (player.libero ? ['player'] : ['player'])
       }))
     }
@@ -1810,7 +1850,7 @@ export default function App() {
 
     const fetchOfficialByExternalId = async (table, externalId) => {
       if (!externalId) return null
-      const { data, error } = await supabase.from(table).select('first_name,last_name,country,dob').eq('external_id', externalId).maybeSingle()
+      const { data, error } = await apiFrom(table).select('first_name,last_name,country,dob').eq('external_id', externalId).maybeSingle()
       if (error) {
         console.warn(`Unable to load ${table} ${externalId}:`, error.message)
         return null
@@ -1902,14 +1942,27 @@ export default function App() {
       await db.players.bulkAdd(awayPlayersData.map(p => normalizePlayer(p, awayTeamId)))
     }
 
+    // Extract JSONB data with fallback to legacy columns
+    const matchInfo = matchData.match_info || {}
+    const coinToss = matchData.coin_toss || {}
+    const signatures = matchData.signatures || {}
+    const connections = matchData.connections || {}
+    const connectionPins = matchData.connection_pins || {}
+
     const matchDexieId = await db.matches.add({
       status: matchData.status || 'scheduled',
       scheduledAt: matchData.scheduled_at,
-      hall: matchData.hall || TEST_MATCH_DEFAULTS.hall,
-      city: matchData.city || TEST_MATCH_DEFAULTS.city,
-      league: matchData.league || TEST_MATCH_DEFAULTS.league,
+      // Match info: prefer JSONB, fallback to legacy
+      hall: matchInfo.hall || matchData.hall || TEST_MATCH_DEFAULTS.hall,
+      city: matchInfo.city || matchData.city || TEST_MATCH_DEFAULTS.city,
+      league: matchInfo.league || matchData.league || TEST_MATCH_DEFAULTS.league,
       gameNumber: matchData.game_number || TEST_MATCH_DEFAULTS.gameNumber,
-      refereePin: matchData.referee_pin || generateRefereePin(),
+      // Connection PINs: prefer JSONB, fallback to legacy
+      refereePin: connectionPins.referee || matchData.referee_pin || generateRefereePin(),
+      homeTeamPin: connectionPins.bench_home || matchData.bench_home_pin || null,
+      awayTeamPin: connectionPins.bench_away || matchData.bench_away_pin || null,
+      homeTeamUploadPin: connectionPins.upload_home || matchData.home_team_upload_pin || null,
+      awayTeamUploadPin: connectionPins.upload_away || matchData.away_team_upload_pin || null,
       homeTeamId,
       awayTeamId,
       bench_home: homeBench,
@@ -1921,15 +1974,21 @@ export default function App() {
       externalId: matchData.external_id,
       seedKey: TEST_MATCH_SEED_KEY,
       supabaseId: matchData.id,
-      homeCoachSignature: matchData.home_coach_signature || null,
-      homeCaptainSignature: matchData.home_captain_signature || null,
-      awayCoachSignature: matchData.away_coach_signature || null,
-      awayCaptainSignature: matchData.away_captain_signature || null,
-      coinTossTeamA: matchData.coin_toss_team_a || null,
-      coinTossTeamB: matchData.coin_toss_team_b || null,
-      coinTossServeA: matchData.coin_toss_serve_a ?? null,
+      // Signatures: prefer JSONB, fallback to legacy
+      homeCoachSignature: signatures.home_coach || matchData.home_coach_signature || null,
+      homeCaptainSignature: signatures.home_captain || matchData.home_captain_signature || null,
+      awayCoachSignature: signatures.away_coach || matchData.away_coach_signature || null,
+      awayCaptainSignature: signatures.away_captain || matchData.away_captain_signature || null,
+      // Coin toss: prefer JSONB, fallback to legacy
+      coinTossTeamA: coinToss.team_a || matchData.coin_toss_team_a || null,
+      coinTossTeamB: coinToss.team_b || matchData.coin_toss_team_b || null,
+      coinTossServeA: coinToss.serve_a !== undefined ? coinToss.serve_a : (matchData.coin_toss_serve_a ?? null),
       coinTossServeB: matchData.coin_toss_serve_b ?? null,
-      coinTossConfirmed: matchData.coin_toss_confirmed ?? false
+      coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : (matchData.coin_toss_confirmed ?? false),
+      // Connection enables: prefer JSONB, fallback to legacy
+      refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : matchData.referee_connection_enabled,
+      homeTeamConnectionEnabled: connections.home_bench_enabled !== undefined ? connections.home_bench_enabled : matchData.home_team_connection_enabled,
+      awayTeamConnectionEnabled: connections.away_bench_enabled !== undefined ? connections.away_bench_enabled : matchData.away_team_connection_enabled
     })
 
     if (Array.isArray(setsData) && setsData.length > 0) {
@@ -1973,7 +2032,7 @@ export default function App() {
 
   const firstNames = ['Max', 'Luca', 'Tom', 'Jonas', 'Felix', 'Noah', 'David', 'Simon', 'Daniel', 'Michael', 'Anna', 'Sarah', 'Lisa', 'Emma', 'Sophie', 'Laura', 'Julia', 'Maria', 'Nina', 'Sara']
   const lastNames = ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Bauer', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun']
-  
+
   function randomDate(start, end) {
     const startDate = new Date(start).getTime()
     const endDate = new Date(end).getTime()
@@ -2003,34 +2062,34 @@ export default function App() {
     // At least 6 non-libero players required
     const { totalPlayers = 12, liberoCount = 1 } = config
     const nonLiberoCount = totalPlayers - liberoCount
-    
+
     if (nonLiberoCount < 6) {
       throw new Error('At least 6 non-libero players required')
     }
-    
+
     const numbers = Array.from({ length: totalPlayers }, (_, i) => i + 1)
     const shuffled = numbers.sort(() => Math.random() - 0.5)
-    
+
     let captainAssigned = false
-    
+
     return shuffled.slice(0, totalPlayers).map((number, idx) => {
       const firstName = firstNames[Math.floor(Math.random() * firstNames.length)]
       const lastName = lastNames[Math.floor(Math.random() * lastNames.length)]
       const dob = randomDate('1990-01-01', '2005-12-31')
-      
+
       // Assign libero roles
       let libero = ''
       if (idx < liberoCount) {
         libero = idx === 0 ? 'libero1' : 'libero2'
       }
-      
+
       // Assign captain to first non-libero player
       let isCaptain = false
       if (!captainAssigned && libero === '') {
         isCaptain = true
         captainAssigned = true
       }
-      
+
       return {
         teamId,
         number,
@@ -2055,43 +2114,70 @@ export default function App() {
       matchToDelete.awayTeamId ? db.teams.get(matchToDelete.awayTeamId) : null
     ])
     const matchName = `${homeTeam?.name || 'Home'} vs ${awayTeam?.name || 'Away'}`
-    
+
+    setDeletePinInput('')
+    setDeletePinError('')
     setDeleteMatchModal({
       matchName,
-      matchId: matchToDelete.id
+      matchId: matchToDelete.id,
+      gamePin: matchToDelete.gamePin || null
     })
   }
 
   async function confirmDeleteMatch() {
     if (!deleteMatchModal) return
 
+    // Require PIN confirmation if match has a gamePin
+    if (deleteMatchModal.gamePin) {
+      if (!deletePinInput.trim()) {
+        setDeletePinError('Please enter the Game PIN to confirm deletion')
+        return
+      }
+      if (deletePinInput.trim() !== deleteMatchModal.gamePin) {
+        setDeletePinError('Incorrect PIN. Please enter the correct Game PIN.')
+        return
+      }
+    }
+
     const matchIdToDelete = deleteMatchModal.matchId
 
     // Get match before deleting to check status and seed_key
     const matchToDelete = await db.matches.get(matchIdToDelete)
     const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key
+    console.log('[Delete Match] 🗑️ Preparing to delete match:', {
+      matchId: matchIdToDelete,
+      status: matchToDelete?.status,
+      seed_key: matchToDelete?.seed_key,
+      shouldDeleteFromSupabase
+    })
 
     await db.transaction('rw', db.matches, db.sets, db.events, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+      console.log('[Delete Match] Starting local deletion of match:', matchIdToDelete)
+
       // Delete sets
       const sets = await db.sets.where('matchId').equals(matchIdToDelete).toArray()
+      console.log('[Delete Match] Found', sets.length, 'sets to delete')
       if (sets.length > 0) {
         await db.sets.bulkDelete(sets.map(s => s.id))
       }
 
-      // Delete events
-      const events = await db.events.where('matchId').equals(matchIdToDelete).toArray()
-      if (events.length > 0) {
-        await db.events.bulkDelete(events.map(e => e.id))
-      }
+      // Delete events - use direct delete instead of bulkDelete for better reliability
+      const eventsCount = await db.events.where('matchId').equals(matchIdToDelete).count()
+      console.log('[Delete Match] Found', eventsCount, 'events to delete')
+      await db.events.where('matchId').equals(matchIdToDelete).delete()
 
       // Get match to find team IDs
       const match = await db.matches.get(matchIdToDelete)
 
       // Delete players
       if (match?.homeTeamId) {
+        const homePlayersCount = await db.players.where('teamId').equals(match.homeTeamId).count()
+        console.log('[Delete Match] Deleting', homePlayersCount, 'home players')
         await db.players.where('teamId').equals(match.homeTeamId).delete()
       }
       if (match?.awayTeamId) {
+        const awayPlayersCount = await db.players.where('teamId').equals(match.awayTeamId).count()
+        console.log('[Delete Match] Deleting', awayPlayersCount, 'away players')
         await db.players.where('teamId').equals(match.awayTeamId).delete()
       }
 
@@ -2104,6 +2190,8 @@ export default function App() {
       }
 
       // Delete all sync queue items (since we can't filter by matchId easily)
+      const syncQueueCount = await db.sync_queue.count()
+      console.log('[Delete Match] Clearing', syncQueueCount, 'sync queue items')
       await db.sync_queue.clear()
 
       // Delete match setup draft
@@ -2111,6 +2199,7 @@ export default function App() {
 
       // Delete match
       await db.matches.delete(matchIdToDelete)
+      console.log('[Delete Match] Match deleted successfully')
     })
 
     // Notify server to delete match from matchDataStore
@@ -2139,18 +2228,24 @@ export default function App() {
           ts: new Date().toISOString(),
           status: 'queued'
         })
+        console.log('[Delete Match] ✅ Queued Supabase delete for seed_key:', matchToDelete.seed_key)
       } catch (err) {
         console.error('[App] Error queuing Supabase match deletion:', err)
       }
+    } else {
+      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status or no seed_key)')
     }
 
     setDeleteMatchModal(null)
     setMatchId(null)
     setShowMatchSetup(false)
+    setShowManualAdjustments(false)
   }
 
   function cancelDeleteMatch() {
     setDeleteMatchModal(null)
+    setDeletePinInput('')
+    setDeletePinError('')
   }
 
   async function createNewOfficialMatch() {
@@ -2159,14 +2254,25 @@ export default function App() {
       return // Don't allow creating new match when one is ongoing
     }
 
-    // Delete current match if exists
+    // Check if there's a CONFIRMED match (has matchInfoConfirmedAt)
+    // Unconfirmed matches (user started but didn't click "Create Match") should be silently deleted
     if (currentMatch) {
-      setNewMatchModal({
-        type: 'official',
-        message: 'There is an existing match. Do you want to delete it and create a new official match?'
-      })
-      return
+      if (currentMatch.matchInfoConfirmedAt) {
+        // This is a real confirmed match - warn the user
+        setNewMatchModal({
+          type: 'official',
+          message: t('home.modals.existingMatchWarning')
+        })
+        return
+      } else {
+        // This is an unconfirmed match - delete it silently
+        console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
+        await db.matches.delete(currentMatch.id)
+      }
     }
+
+    // Clear any stray draft data from previous sessions
+    await db.match_setup.clear()
 
     // Create new blank match
     const newMatchId = await db.matches.add({
@@ -2187,18 +2293,14 @@ export default function App() {
     // Delete current match first
     if (currentMatch) {
       await db.transaction('rw', db.matches, db.sets, db.events, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+        console.log('[New Match] Deleting existing match:', currentMatch.id)
+
         // Delete sets
-        const sets = await db.sets.where('matchId').equals(currentMatch.id).toArray()
-        if (sets.length > 0) {
-          await db.sets.bulkDelete(sets.map(s => s.id))
-        }
-        
-        // Delete events
-        const events = await db.events.where('matchId').equals(currentMatch.id).toArray()
-        if (events.length > 0) {
-          await db.events.bulkDelete(events.map(e => e.id))
-        }
-        
+        await db.sets.where('matchId').equals(currentMatch.id).delete()
+
+        // Delete events - use direct delete for reliability
+        await db.events.where('matchId').equals(currentMatch.id).delete()
+
         // Delete players
         if (currentMatch.homeTeamId) {
           await db.players.where('teamId').equals(currentMatch.homeTeamId).delete()
@@ -2206,7 +2308,7 @@ export default function App() {
         if (currentMatch.awayTeamId) {
           await db.players.where('teamId').equals(currentMatch.awayTeamId).delete()
         }
-        
+
         // Delete teams
         if (currentMatch.homeTeamId) {
           await db.teams.delete(currentMatch.homeTeamId)
@@ -2214,15 +2316,16 @@ export default function App() {
         if (currentMatch.awayTeamId) {
           await db.teams.delete(currentMatch.awayTeamId)
         }
-        
+
         // Delete all sync queue items
         await db.sync_queue.clear()
-        
+
         // Delete match setup draft
         await db.match_setup.clear()
-        
+
         // Delete match
         await db.matches.delete(currentMatch.id)
+        console.log('[New Match] Existing match deleted')
       })
     }
 
@@ -2289,6 +2392,7 @@ export default function App() {
             dob: player.dob,
             libero: player.libero || '',
             isCaptain: player.isCaptain,
+            isLfp: player.isLfp || false,
             role: null,
             test: true,
             createdAt: timestamp
@@ -2324,6 +2428,7 @@ export default function App() {
               dob: player.dob,
               libero: player.libero || '',
               isCaptain: player.isCaptain,
+              isLfp: player.isLfp || false,
               role: null,
               test: true,
               createdAt: timestamp
@@ -2573,7 +2678,7 @@ export default function App() {
     const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
     if (officialMatchRecording) {
       setConfirmModal({
-        message: 'An official match is still recording. Starting a new test match will wipe the previous test session. Continue?',
+        message: t('home.modals.testMatchOverwriteWarning'),
         onConfirm: async () => {
           setConfirmModal(null)
           setTestMatchLoading(true)
@@ -2582,7 +2687,7 @@ export default function App() {
             await createTestMatchData()
           } catch (error) {
             console.error('Failed to prepare test match:', error)
-            setAlertModal(`Unable to prepare the test match: ${error.message || error}`)
+            setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
           } finally {
             setTestMatchLoading(false)
           }
@@ -2604,7 +2709,7 @@ export default function App() {
       await createTestMatchData()
     } catch (error) {
       console.error('Failed to prepare test match:', error)
-      setAlertModal(`Unable to prepare the test match: ${error.message || error}`)
+      setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
     } finally {
       setTestMatchLoading(false)
     }
@@ -2618,30 +2723,45 @@ export default function App() {
     const existing = matches.find(m => m.test === true && m.status !== 'final')
     if (existing) {
       // Check if coin toss is confirmed
-      const isCoinTossConfirmed = existing.coinTossTeamA !== null && 
-                                   existing.coinTossTeamA !== undefined &&
-                                   existing.coinTossTeamB !== null && 
-                                   existing.coinTossTeamB !== undefined &&
-                                   existing.coinTossServeA !== null && 
-                                   existing.coinTossServeA !== undefined &&
-                                   existing.coinTossServeB !== null && 
-                                   existing.coinTossServeB !== undefined
-      
+      const isCoinTossConfirmed = existing.coinTossTeamA !== null &&
+        existing.coinTossTeamA !== undefined &&
+        existing.coinTossTeamB !== null &&
+        existing.coinTossTeamB !== undefined &&
+        existing.coinTossServeA !== null &&
+        existing.coinTossServeA !== undefined &&
+        existing.coinTossServeB !== null &&
+        existing.coinTossServeB !== undefined
+
       // PIN check removed - no longer required
-      
+
       // Check match state to determine where to continue
-      const isMatchSetupComplete = existing.homeCoachSignature && 
-                                    existing.homeCaptainSignature && 
-                                    existing.awayCoachSignature && 
-                                    existing.awayCaptainSignature
-      
+      const isMatchSetupComplete = existing.homeCoachSignature &&
+        existing.homeCaptainSignature &&
+        existing.awayCoachSignature &&
+        existing.awayCaptainSignature
+
       setMatchId(existing.id)
-      
+
       // Determine where to continue based on status
-      if (existing.status === 'live' || existing.status === 'final') {
-        // Go directly to scoreboard
+      // Note: status flow is live -> ended -> final (after approval)
+      if (existing.status === 'live' || existing.status === 'ended' || existing.status === 'final') {
+        // Check if match is finished (one team has won 3 sets) - go to MatchEnd
+        const sets = await db.sets.where('matchId').equals(existing.id).toArray()
+        const finishedSets = sets.filter(s => s.finished)
+        const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+        const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, existing?.bestOf)
+
         setShowMatchSetup(false)
         setShowCoinToss(false)
+
+        if ((existing.status === 'live' || existing.status === 'ended') && isMatchFinished && !existing.approved) {
+          // Match finished but not yet approved - go to MatchEnd
+          setShowMatchEnd(true)
+        } else {
+          // Match in progress - go to scoreboard
+          setShowMatchEnd(false)
+        }
       } else if (isMatchSetupComplete && isCoinTossConfirmed) {
         // Match setup and coin toss complete - go to scoreboard
         setShowMatchSetup(false)
@@ -2656,7 +2776,7 @@ export default function App() {
         setShowCoinToss(false)
       }
     } else {
-      setAlertModal('No test match found. Please create a new test match first.')
+      setAlertModal(t('home.modals.noTestMatchFound'))
     }
   }
 
@@ -2665,9 +2785,9 @@ export default function App() {
 
     // Set loading state immediately to disable buttons
     setTestMatchLoading(true)
-    
+
     setConfirmModal({
-      message: 'This will delete the test match and all its data. Continue?',
+      message: t('home.modals.deleteTestMatchConfirm'),
       onConfirm: async () => {
         setConfirmModal(null)
         try {
@@ -2675,7 +2795,7 @@ export default function App() {
           const matches = await db.matches.orderBy('createdAt').reverse().toArray()
           const testMatch = matches.find(m => m.test === true && m.status !== 'final')
           if (!testMatch) {
-            setAlertModal('No test match found.')
+            setAlertModal(t('home.modals.noTestMatchFound'))
             setTestMatchLoading(false)
             return
           }
@@ -2687,11 +2807,12 @@ export default function App() {
           setMatchId(null)
           setShowMatchSetup(false)
           setShowCoinToss(false)
+          setShowManualAdjustments(false)
 
-          setAlertModal('Test match deleted successfully.')
+          setAlertModal(t('home.modals.testMatchDeleted'))
         } catch (error) {
           console.error('Failed to delete test match:', error)
-          setAlertModal(`Unable to delete test match: ${error.message || error}`)
+          setAlertModal(t('home.modals.unableToDeleteTestMatch', { error: error.message || error }))
         } finally {
           setTestMatchLoading(false)
         }
@@ -2706,16 +2827,16 @@ export default function App() {
   async function continueMatch(matchIdParam) {
     const targetMatchId = matchIdParam || currentOfficialMatch?.id
     if (!targetMatchId) return
-    
+
     try {
-    // Get the match to check its status
+      // Get the match to check its status
       const match = await db.matches.get(targetMatchId)
       if (!match) return
-      
+
       // Check session lock (only for non-test matches)
       if (!match.test) {
         const sessionCheck = await checkMatchSession(targetMatchId)
-        
+
         if (sessionCheck.locked && !sessionCheck.isCurrentSession) {
           // Match is locked by another session - just take over (no PIN required)
           await lockMatchSession(targetMatchId)
@@ -2725,19 +2846,19 @@ export default function App() {
         }
         // If isCurrentSession is true, we already own it - no need to lock again
       }
-      
+
       // PIN check removed - no longer required
-      
+
       // Check if coin toss is confirmed (for navigation logic)
-      const isCoinTossConfirmed = match.coinTossTeamA !== null && 
-                                   match.coinTossTeamA !== undefined &&
-                                   match.coinTossTeamB !== null && 
-                                   match.coinTossTeamB !== undefined &&
-                                   match.coinTossServeA !== null && 
-                                   match.coinTossServeA !== undefined &&
-                                   match.coinTossServeB !== null && 
-                                   match.coinTossServeB !== undefined
-      
+      const isCoinTossConfirmed = match.coinTossTeamA !== null &&
+        match.coinTossTeamA !== undefined &&
+        match.coinTossTeamB !== null &&
+        match.coinTossTeamB !== undefined &&
+        match.coinTossServeA !== null &&
+        match.coinTossServeA !== undefined &&
+        match.coinTossServeB !== null &&
+        match.coinTossServeB !== undefined
+
       // If coin toss is confirmed and match is live, allow test matches to go to scoreboard
       // (This handles the case when coin toss is just confirmed)
       if (match.test === true && match.status === 'live' && isCoinTossConfirmed) {
@@ -2747,19 +2868,35 @@ export default function App() {
         setShowCoinToss(false)
         return
       }
-      
+
       // Reject test matches for other cases
       if (match.test === true) {
-        setAlertModal('This is a test match. Use "Continue test match" instead.')
+        setAlertModal(t('home.modals.isTestMatchWarning'))
         return
       }
-      
+
       // Determine where to continue based on status
-      if (match.status === 'live' || match.status === 'final') {
-        // Go directly to scoreboard
+      // Note: status flow is live -> ended -> final (after approval)
+      if (match.status === 'live' || match.status === 'ended' || match.status === 'final') {
+        // Check if match is finished - go to MatchEnd
+        const match = await db.matches.get(targetMatchId)
+        const sets = await db.sets.where('matchId').equals(targetMatchId).toArray()
+        const finishedSets = sets.filter(s => s.finished)
+        const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+        const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, match?.bestOf)
+
         setMatchId(targetMatchId)
         setShowMatchSetup(false)
         setShowCoinToss(false)
+
+        if ((match.status === 'live' || match.status === 'ended') && isMatchFinished && !match.approved) {
+          // Match finished but not yet approved - go to MatchEnd
+          setShowMatchEnd(true)
+        } else {
+          // Match in progress or already approved - go to scoreboard
+          setShowMatchEnd(false)
+        }
       } else {
         // Go to match setup
         setMatchId(targetMatchId)
@@ -2767,12 +2904,12 @@ export default function App() {
       }
     } catch (error) {
       console.error('Error continuing match:', error)
-      setAlertModal('Error opening match. Please try again.')
+      setAlertModal(t('home.modals.errorOpeningMatch'))
     }
   }
 
   return (
-    <div style={{ position: 'relative', height: '100vh', width: 'auto', maxWidth: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => {
+    <div className="app-root" onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
       if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
         setShowConnectionMenu(false)
@@ -2856,587 +2993,1186 @@ export default function App() {
           </div>
         </div>
       ) : (
-      <>
-      {/* Global Header */}
-      <MainHeader
-        connectionStatuses={connectionStatuses}
-        connectionDebugInfo={connectionDebugInfo}
-        showMatchSetup={showMatchSetup}
-        matchId={matchId}
-        currentMatch={currentMatch}
-        matchInfoMenuOpen={matchInfoMenuOpen}
-        setMatchInfoMenuOpen={setMatchInfoMenuOpen}
-        matchInfoData={matchInfoData}
-        matchStatus={matchStatus}
-        currentOfficialMatch={currentOfficialMatch}
-        currentTestMatch={currentTestMatch}
-        isFullscreen={isFullscreen}
-        toggleFullscreen={toggleFullscreen}
-        offlineMode={offlineMode}
-        setOfflineMode={(val) => {
-          setOfflineMode(val)
-          localStorage.setItem('offlineMode', val.toString())
-        }}
-        onOpenSetup={openMatchSetup}
-        dashboardServer={dashboardServerEnabled ? {
-          enabled: dashboardServerEnabled,
-          dashboardCount: dashboardServerData.dashboardCount,
-          refereePin: currentMatch?.refereePin,
-          onOpenOptions: () => setHomeOptionsModal(true),
-          serverIP: dashboardServerData.serverIP,
-          serverPort: dashboardServerData.serverPort,
-          wsPort: dashboardServerData.wsPort,
-          connectionUrl: dashboardServerData.connectionUrl,
-          wsConnectionUrl: dashboardServerData.wsConnectionUrl,
-          serverRunning: dashboardServerData.serverRunning,
-          refereeCount: dashboardServerData.refereeCount,
-          benchCount: dashboardServerData.benchCount
-        } : null}
-        collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
-      />
-      <div className="container" style={{
-        minHeight: 0,
-        flex: '1 1 auto',
-        width: 'auto',
-        height: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        alignItems: 'center',
-        margin: '0 auto',
-        padding: '5px',
-        overflow: 'hidden'
-      }}>
-      <div className="panel" style={{
-        flex: '1 1 auto',
-        height: 'auto',
-        overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto',
-        overflowX: 'hidden',
-        width: 'auto',
-        maxWidth: '100%',
-        padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
-        // Vertical centering for CoinToss and MatchSetup screens
-        ...(showCoinToss || showMatchSetup ? {
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center'
-        } : {})
-      }}>
-        {showCoinToss && matchId ? (
-          <CoinToss
+        <>
+          {/* Global Header */}
+          <MainHeader
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            showMatchSetup={showMatchSetup}
             matchId={matchId}
-            onConfirm={() => {
-              setShowCoinToss(false)
-              // Match status is set to 'live' by CoinToss component
-            }}
-            onBack={() => {
-              setShowCoinToss(false)
-              setShowMatchSetup(true)
-            }}
-          />
-        ) : showMatchSetup && matchId ? (
-          <MatchSetup
-            matchId={matchId}
-            onStart={continueMatch}
-            onReturn={returnToMatch}
-            onOpenOptions={() => setHomeOptionsModal(true)}
-            onOpenCoinToss={() => {
-              setShowMatchSetup(false)
-              setShowCoinToss(true)
-            }}
-            offlineMode={offlineMode}
-          />
-        ) : showMatchEnd && matchId ? (
-          <MatchEnd
-            matchId={matchId}
-            onGoHome={() => {
-              setMatchId(null)
-              setShowMatchEnd(false)
-            }}
-          />
-        ) : !matchId ? (
-          <>
-            <UpdateBanner showClearDataOption={true} />
-            <HomePage
-            favicon={favicon}
-            newMatchMenuOpen={newMatchMenuOpen}
-            setNewMatchMenuOpen={setNewMatchMenuOpen}
-            createNewOfficialMatch={createNewOfficialMatch}
-            createNewTestMatch={createNewTestMatch}
-            testMatchLoading={testMatchLoading}
+            currentMatch={currentMatch}
+            matchInfoMenuOpen={matchInfoMenuOpen}
+            setMatchInfoMenuOpen={setMatchInfoMenuOpen}
+            matchInfoData={matchInfoData}
+            matchStatus={matchStatus}
             currentOfficialMatch={currentOfficialMatch}
             currentTestMatch={currentTestMatch}
-            continueMatch={continueMatch}
-            continueTestMatch={continueTestMatch}
-            showDeleteMatchModal={showDeleteMatchModal}
-            restartTestMatch={restartTestMatch}
-            onOpenSettings={() => setHomeOptionsModal(true)}
-            onRestoreMatch={() => setRestoreMatchModal(true)}
-            />
-          </>
-        ) : (
-          <Scoreboard
-            matchId={matchId}
-            onFinishSet={finishSet}
+            isFullscreen={isFullscreen}
+            toggleFullscreen={toggleFullscreen}
+            offlineMode={offlineMode}
+            setOfflineMode={(val) => {
+              setOfflineMode(val)
+              localStorage.setItem('offlineMode', val.toString())
+            }}
             onOpenSetup={openMatchSetup}
-            onOpenMatchSetup={openMatchSetupView}
-            onOpenCoinToss={openCoinTossView}
-            onTriggerEventBackup={backup.triggerEventBackup}
+            queueStats={syncStatus}
+            onRetryErrors={retryErrors}
+            dashboardServer={isElectron && dashboardServerEnabled ? {
+              enabled: dashboardServerEnabled,
+              dashboardCount: dashboardServerData.dashboardCount,
+              refereePin: currentMatch?.refereePin,
+              onOpenOptions: () => setHomeOptionsModal(true),
+              serverIP: dashboardServerData.serverIP,
+              serverPort: dashboardServerData.serverPort,
+              wsPort: dashboardServerData.wsPort,
+              connectionUrl: dashboardServerData.connectionUrl,
+              wsConnectionUrl: dashboardServerData.wsConnectionUrl,
+              serverRunning: dashboardServerData.serverRunning,
+              refereeCount: dashboardServerData.refereeCount,
+              benchCount: dashboardServerData.benchCount
+            } : null}
+            collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
+            onTriggerAlarm={async () => {
+              if (!matchId || !currentMatch) return
+
+              // Identify the UUID for Supabase
+              let supabaseMatchId = null
+              const externalId = currentMatch.externalId
+              // Check if externalId is already a UUID
+              if (externalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
+                supabaseMatchId = externalId
+              } else {
+                // Fallback: look up standard ID from matches table using the match seed key
+                const seedKey = currentMatch.seed_key || String(matchId)
+                const { data: matchData } = await apiFrom('matches')
+                  .select('id')
+                  .eq('external_id', seedKey)
+                  .maybeSingle()
+                if (matchData) supabaseMatchId = matchData.id
+              }
+
+              if (!supabaseMatchId) {
+                console.warn('[Alarm] Could not resolve Supabase UUID for match', matchId)
+                return
+              }
+
+              const trigger = new Date().toISOString()
+              setScorerAttentionTrigger(trigger)
+              try {
+                const { error } = await apiFrom('match_live_state')
+                  .update({ scorer_attention_trigger: trigger })
+                  .eq('match_id', supabaseMatchId)
+                if (error) throw error
+                if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                  navigator.vibrate(100)
+                }
+              } catch (err) {
+                console.error('Failed to trigger alarm:', err)
+              }
+            }}
+            alarmEnabled={currentMatch?.refereeConnectionEnabled === true}
+            currentPage={currentPage}
+            onToggleHelp={() => setHelpPanelOpen(prev => !prev)}
+            helpPanelOpen={helpPanelOpen}
           />
-        )}
-      </div>
-
-      {/* Delete Match Modal */}
-      {deleteMatchModal && (
-        <Modal
-          title="Delete Match"
-          open={true}
-          onClose={cancelDeleteMatch}
-          width={400}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Are you sure you want to delete all data for: <strong>{deleteMatchModal.matchName}</strong>?
-            </p>
-            <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
-              This will delete all sets, events, players, and team data for this match.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={confirmDeleteMatch}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: '#ef4444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Delete
-              </button>
-              <button
-                onClick={cancelDeleteMatch}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
+          <div className="container" style={{
+            minHeight: 0,
+            flex: '1 1 auto',
+            width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
+            height: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            alignItems: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? 'stretch' : 'center',
+            margin: '0 auto',
+            padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '0' : '5px',
+            overflowX: 'hidden',
+            overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto'
+          }}>
+            <div className="panel" style={{
+              flex: '1 1 auto',
+              minHeight: 0,
+              height: 'auto',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
+              maxWidth: '100%',
+              padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
+              // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space)
+              ...(!matchId || showCoinToss || showMatchEnd ? {
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              } : {}),
+              // MatchSetup fills available space
+              ...(showMatchSetup ? {
+                display: 'flex',
+                flexDirection: 'column',
+                padding: '10px',
+                overflowY: 'hidden',
+                height: '0px',
+                flexGrow: 1
+              } : {}),
+              // Scoreboard active: flex column so match-record height: 100% resolves correctly
+              ...(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd ? {
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'hidden',
+                padding: '0'
+              } : {})
+            }}>
+              {showCoinToss && matchId ? (
+                <CoinToss
+                  matchId={matchId}
+                  onConfirm={() => {
+                    setShowCoinToss(false)
+                    // Match status is set to 'live' by CoinToss component
+                  }}
+                  onBack={() => {
+                    setShowCoinToss(false)
+                    setShowMatchSetup(true)
+                  }}
+                  lfpTrackingEnabled={lfpTrackingEnabled}
+                />
+              ) : showMatchSetup && matchId ? (
+                <MatchSetup
+                  matchId={matchId}
+                  onStart={continueMatch}
+                  onReturn={returnToMatch}
+                  onOpenOptions={() => setHomeOptionsModal(true)}
+                  onOpenCoinToss={() => {
+                    setShowMatchSetup(false)
+                    setShowCoinToss(true)
+                  }}
+                  offlineMode={offlineMode}
+                  lfpTrackingEnabled={lfpTrackingEnabled}
+                />
+              ) : showManualAdjustments && matchId ? (
+                <ManualAdjustments
+                  matchId={matchId}
+                  onClose={() => {
+                    setShowManualAdjustments(false)
+                    setShowMatchEnd(true)
+                  }}
+                  onSave={() => {
+                    setShowManualAdjustments(false)
+                    setShowMatchEnd(true)
+                  }}
+                />
+              ) : showMatchEnd && matchId ? (
+                <MatchEnd
+                  matchId={matchId}
+                  onGoHome={() => {
+                    setMatchId(null)
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(false)
+                  }}
+                  onReopenLastSet={() => {
+                    // Just hide MatchEnd - Scoreboard will show for the same matchId
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(false)
+                  }}
+                  onManualAdjustments={() => {
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(true)
+                  }}
+                />
+              ) : !matchId ? (
+                <>
+                  <UpdateBanner showClearDataOption={true} />
+                  <HomePage
+                    favicon={openvolleyLogo}
+                    newMatchMenuOpen={newMatchMenuOpen}
+                    setNewMatchMenuOpen={setNewMatchMenuOpen}
+                    createNewOfficialMatch={createNewOfficialMatch}
+                    createNewTestMatch={createNewTestMatch}
+                    testMatchLoading={testMatchLoading}
+                    currentOfficialMatch={currentOfficialMatch}
+                    currentTestMatch={currentTestMatch}
+                    continueMatch={continueMatch}
+                    continueTestMatch={continueTestMatch}
+                    showDeleteMatchModal={showDeleteMatchModal}
+                    restartTestMatch={restartTestMatch}
+                    onOpenSettings={() => setHomeOptionsModal(true)}
+                    onRestoreMatch={() => setRestoreMatchModal(true)}
+                  />
+                </>
+              ) : (
+                <Scoreboard
+                  matchId={matchId}
+                  scorerAttentionTrigger={scorerAttentionTrigger}
+                  onFinishSet={finishSet}
+                  onOpenSetup={openMatchSetup}
+                  onOpenMatchSetup={openMatchSetupView}
+                  onOpenCoinToss={openCoinTossView}
+                  onTriggerEventBackup={backup.triggerEventBackup}
+                />
+              )}
             </div>
-          </div>
-        </Modal>
-      )}
 
-      {/* Restore Match Modal */}
-      {restoreMatchModal && (
-        <Modal
-          title="Restore Match"
-          open={true}
-          onClose={() => {
-            setRestoreMatchModal(false)
-            setRestoreMatchIdInput('')
-            setRestorePin('')
-            setRestoreError('')
-          }}
-          width={450}
-        >
-          <div style={{ padding: '24px' }}>
-            {/* Online mode - restore from database */}
-            {!offlineMode && (
-              <div style={{ marginBottom: '24px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
-                  Restore from Database
-                </h3>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                      Game N:
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={restoreMatchIdInput}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, '')
-                        setRestoreMatchIdInput(value)
-                        setRestoreError('')
-                      }}
-                      placeholder="123"
+            {/* Delete Match Modal */}
+            {deleteMatchModal && (
+              <Modal
+                title="Delete Match"
+                open={true}
+                onClose={cancelDeleteMatch}
+                width={420}
+              >
+                <div style={{ padding: '24px', textAlign: 'center' }}>
+                  <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+                    Are you sure you want to delete all data for: <strong>{deleteMatchModal.matchName}</strong>?
+                  </p>
+                  <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--muted)' }}>
+                    This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.
+                  </p>
+
+                  {/* PIN confirmation for matches with gamePin */}
+                  {deleteMatchModal.gamePin && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#ef4444' }}>
+                        Enter Game PIN to confirm deletion:
+                      </label>
+                      <input
+                        type="text"
+                        value={deletePinInput}
+                        onChange={(e) => {
+                          setDeletePinInput(e.target.value)
+                          setDeletePinError('')
+                        }}
+                        placeholder="Game PIN"
+                        style={{
+                          width: '100%',
+                          maxWidth: '200px',
+                          padding: '12px',
+                          fontSize: '18px',
+                          fontWeight: 600,
+                          textAlign: 'center',
+                          letterSpacing: '4px',
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: deletePinError ? '2px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '8px',
+                          color: 'var(--text)'
+                        }}
+                      />
+                      {deletePinError && (
+                        <p style={{ marginTop: '8px', fontSize: '13px', color: '#ef4444' }}>
+                          {deletePinError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                      onClick={confirmDeleteMatch}
                       style={{
-                        width: '100%',
-                        padding: '12px',
-                        fontSize: '20px',
-                        fontWeight: 700,
-                        textAlign: 'center',
-                        fontFamily: 'monospace',
-                        background: 'var(--bg)',
-                        border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: '#ef4444',
+                        color: '#fff',
+                        border: 'none',
                         borderRadius: '8px',
-                        color: 'var(--text)',
-                        outline: 'none'
+                        cursor: 'pointer'
                       }}
-                    />
-                  </div>
-                  <div style={{ flex: 1.5 }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                      Game PIN:
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={restorePin}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, '')
-                        if (value.length <= 6) {
-                          setRestorePin(value)
-                          setRestoreError('')
-                        }
-                      }}
-                      placeholder="000000"
-                      maxLength={6}
+                    >
+                      {t('deleteMatch.delete')}
+                    </button>
+                    <button
+                      onClick={cancelDeleteMatch}
                       style={{
-                        width: '100%',
-                        padding: '12px',
-                        fontSize: '20px',
-                        fontWeight: 700,
-                        textAlign: 'center',
-                        letterSpacing: '4px',
-                        fontFamily: 'monospace',
-                        background: 'var(--bg)',
-                        border: restoreError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
-                        borderRadius: '8px',
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
                         color: 'var(--text)',
-                        outline: 'none'
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
                       }}
-                    />
+                    >
+                      {t('deleteMatch.cancel')}
+                    </button>
                   </div>
                 </div>
-                {restoreError && (
-                  <p style={{ color: '#ef4444', fontSize: '13px', marginBottom: '12px' }}>{restoreError}</p>
-                )}
-                <button
-                  onClick={async () => {
-                    if (restorePin.length !== 6) {
-                      setRestoreError('Please enter a 6-digit Game PIN')
-                      return
-                    }
-                    setRestoreLoading(true)
-                    setRestoreError('')
-                    try {
-                      const cloudData = await fetchMatchByPin(restorePin, restoreMatchIdInput || null)
-                      if (!cloudData) {
-                        setRestoreError('Match not found')
-                        setRestoreLoading(false)
-                        return
-                      }
-                      const newMatchId = await importMatchFromSupabase(cloudData)
-                      setRestoreMatchModal(false)
-                      setRestoreMatchIdInput('')
-                      setRestorePin('')
-                      setMatchId(newMatchId)
-                      setShowMatchSetup(true)
-                    } catch (err) {
-                      setRestoreError(err.message || 'Failed to restore match')
-                    } finally {
-                      setRestoreLoading(false)
-                    }
-                  }}
-                  disabled={restoreLoading || restorePin.length !== 6}
-                  style={{
-                    width: '100%',
-                    padding: '12px 24px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: restoreLoading || restorePin.length !== 6 ? 'rgba(59, 130, 246, 0.3)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: restoreLoading || restorePin.length !== 6 ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {restoreLoading ? 'Restoring...' : 'Restore from Database'}
-                </button>
-              </div>
+              </Modal>
             )}
 
-            {/* Divider if online */}
-            {!offlineMode && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '16px',
-                marginBottom: '24px'
-              }}>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
-                <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>or</span>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
-              </div>
-            )}
-
-            {/* Offline/File restore */}
-            <div>
-              <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
-                Restore from Local Backup
-              </h3>
-              <button
-                onClick={async () => {
-                  setRestoreLoading(true)
+            {/* Restore Match Modal */}
+            {restoreMatchModal && (
+              <Modal
+                title={t('settings.backup.restoreMatch')}
+                open={true}
+                onClose={() => {
+                  setRestoreMatchModal(false)
+                  setRestoreMatchIdInput('')
+                  setRestorePin('')
                   setRestoreError('')
-                  try {
-                    const jsonData = await selectBackupFile()
-                    if (!jsonData) {
-                      setRestoreLoading(false)
-                      return // User cancelled
+                  setCloudBackups([])
+                  setCloudBackupPin('')
+                  setCloudBackupGameN('')
+                  setCloudBackupError('')
+                }}
+                width={500}
+              >
+                <div style={{ padding: '24px' }}>
+                  {/* Restore from Cloud Backup */}
+                  {!offlineMode && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                        {t('settings.backup.restoreFromCloudBackup')}
+                      </h3>
+                      <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
+                        {t('settings.backup.restoreFromCloudDesc')}
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                            {t('settings.backup.gameN')}:
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={cloudBackupGameN}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '')
+                              setCloudBackupGameN(value)
+                            }}
+                            placeholder="123456"
+                            style={{
+                              width: '100%',
+                              padding: '12px',
+                              fontSize: '20px',
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              fontFamily: 'monospace',
+                              background: 'var(--bg)',
+                              border: '2px solid rgba(255,255,255,0.2)',
+                              borderRadius: '8px',
+                              color: 'var(--text)',
+                              outline: 'none'
+                            }}
+                          />
+                        </div>
+                        <div style={{ flex: 1.5 }}>
+                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                            {t('settings.backup.gamePin')}:
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={cloudBackupPin}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '')
+                              if (value.length <= 6) {
+                                setCloudBackupPin(value)
+                              }
+                            }}
+                            placeholder="000000"
+                            maxLength={6}
+                            style={{
+                              width: '100%',
+                              padding: '12px',
+                              fontSize: '20px',
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              letterSpacing: '4px',
+                              fontFamily: 'monospace',
+                              background: 'var(--bg)',
+                              border: '2px solid rgba(255,255,255,0.2)',
+                              borderRadius: '8px',
+                              color: 'var(--text)',
+                              outline: 'none'
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (cloudBackupPin.length !== 6) {
+                            setCloudBackupError('Please enter a 6-digit PIN')
+                            return
+                          }
+                          setCloudBackupLoading(true)
+                          setCloudBackupError('')
+                          try {
+                            const backups = await listCloudBackups(cloudBackupPin, parseInt(cloudBackupGameN) || 1)
+                            setCloudBackups(backups)
+                            if (backups.length === 0) {
+                              setCloudBackupError('No cloud backups found for this Game Number/PIN')
+                            }
+                          } catch (err) {
+                            setCloudBackupError(err.message || 'Failed to list backups')
+                          } finally {
+                            setCloudBackupLoading(false)
+                          }
+                        }}
+                        disabled={cloudBackupLoading || cloudBackupPin.length !== 6}
+                        style={{
+                          width: '100%',
+                          padding: '12px 24px',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          background: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'rgba(139, 92, 246, 0.3)' : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {cloudBackupLoading ? t('common.loading') : t('settings.backup.searchCloudBackups')}
+                      </button>
+                      {cloudBackupError && (
+                        <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '8px', marginBottom: '0' }}>{cloudBackupError}</p>
+                      )}
+                      {cloudBackups.length > 0 && (
+                        <div style={{
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '8px',
+                          marginTop: '8px',
+                          maxHeight: '300px',
+                          overflowY: 'auto'
+                        }}>
+                          <BackupTable
+                            backups={cloudBackups}
+                            onBackupSelect={async (backup) => {
+                              setRestoreLoading(true)
+                              setRestoreError('')
+                              try {
+                                const cloudData = await fetchCloudBackup(backup.path)
+                                if (!cloudData) {
+                                  setRestoreError('Failed to fetch backup data')
+                                  setRestoreLoading(false)
+                                  return
+                                }
+                                // Show preview instead of immediately restoring
+                                setRestorePreviewData({ data: cloudData, source: 'cloud', backupName: backup.name })
+                              } catch (err) {
+                                setRestoreError(err.message || 'Failed to load cloud backup')
+                              } finally {
+                                setRestoreLoading(false)
+                              }
+                            }}
+                            loading={restoreLoading}
+                            mode="button"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Divider before local backup */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    marginBottom: '24px'
+                  }}>
+                    <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>{t('settings.backup.or')}</span>
+                    <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+                  </div>
+
+                  {/* Offline/File restore */}
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                      {t('settings.backup.restoreFromLocal')}
+                    </h3>
+                    <button
+                      onClick={async () => {
+                        setRestoreLoading(true)
+                        setRestoreError('')
+                        try {
+                          const jsonData = await selectBackupFile()
+                          if (!jsonData) {
+                            setRestoreLoading(false)
+                            return // User cancelled
+                          }
+                          // Show preview instead of immediately restoring
+                          setRestorePreviewData({ data: jsonData, source: 'local' })
+                        } catch (err) {
+                          setRestoreError(err.message || t('home.modals.failedToRestoreFromFile'))
+                        } finally {
+                          setRestoreLoading(false)
+                        }
+                      }}
+                      disabled={restoreLoading}
+                      style={{
+                        width: '100%',
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: restoreLoading ? 'rgba(249, 115, 22, 0.3)' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {restoreLoading ? t('common.loading') : t('settings.backup.selectBackupFile')}
+                    </button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Restore Preview Modal */}
+            {restorePreviewData && (
+              <Modal
+                title={t('settings.backup.restorePreview')}
+                open={true}
+                onClose={() => setRestorePreviewData(null)}
+                width={700}
+              >
+                <div style={{ padding: '24px', maxHeight: '80vh', overflowY: 'auto' }}>
+                  {(() => {
+                    // Normalize data from different sources
+                    const d = restorePreviewData.data
+                    const isDbFormat = d.match?.home_team || d.liveState
+
+                    const homeTeamName = isDbFormat
+                      ? (d.match?.home_team?.name || d.match?.homeTeamName || 'Home')
+                      : (d.homeTeam?.name || d.match?.homeTeamName || 'Home')
+                    const awayTeamName = isDbFormat
+                      ? (d.match?.away_team?.name || d.match?.awayTeamName || 'Away')
+                      : (d.awayTeam?.name || d.match?.awayTeamName || 'Away')
+
+                    const events = d.events || []
+                    const sets = d.sets || []
+
+                    // Get latest set
+                    const latestSet = [...sets].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+                    const currentSetIndex = latestSet?.index || d.liveState?.current_set || 1
+                    const homePoints = latestSet?.homePoints ?? latestSet?.home_points ?? d.liveState?.points_a ?? 0
+                    const awayPoints = latestSet?.awayPoints ?? latestSet?.away_points ?? d.liveState?.points_b ?? 0
+
+                    // Get lineups (from events or liveState)
+                    const lineupEvents = events.filter(e => e.type === 'lineup')
+                    const homeLineup = lineupEvents.find(e => e.payload?.team === 'home')?.payload?.lineup ||
+                      (isDbFormat ? d.liveState?.lineup_a : null)
+                    const awayLineup = lineupEvents.find(e => e.payload?.team === 'away')?.payload?.lineup ||
+                      (isDbFormat ? d.liveState?.lineup_b : null)
+
+                    // Get timeouts for current set
+                    const timeoutEvents = events.filter(e => e.type === 'timeout' && e.setIndex === currentSetIndex)
+                    const homeTimeouts = timeoutEvents.filter(e => e.payload?.team === 'home').length
+                    const awayTimeouts = timeoutEvents.filter(e => e.payload?.team === 'away').length
+
+                    // Get substitutions for current set
+                    const subEvents = events.filter(e => e.type === 'substitution' && e.setIndex === currentSetIndex)
+                    const homeSubs = subEvents.filter(e => e.payload?.team === 'home')
+                    const awaySubs = subEvents.filter(e => e.payload?.team === 'away')
+
+                    // Get sanctions
+                    const sanctionEvents = events.filter(e => e.type === 'sanction')
+
+                    // Get serving team
+                    const pointEvents = events.filter(e => e.type === 'point').sort((a, b) => (b.seq || 0) - (a.seq || 0))
+                    const lastPoint = pointEvents[0]
+                    const servingTeam = lastPoint?.payload?.scoringTeam || d.liveState?.serving_team || 'home'
+
+                    // Helper to render lineup
+                    const renderLineup = (lineup, teamName) => {
+                      if (!lineup) return <span style={{ color: 'rgba(255,255,255,0.4)' }}>No lineup data</span>
+                      const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                          {positions.map(pos => {
+                            const posData = lineup[pos]
+                            const num = typeof posData === 'object' ? posData?.number : posData
+                            const isServing = typeof posData === 'object' && posData?.isServing
+                            const isLibero = typeof posData === 'object' && posData?.isLibero
+                            return (
+                              <div key={pos} style={{
+                                padding: '6px 8px',
+                                background: isServing ? 'rgba(34, 197, 94, 0.2)' : isLibero ? 'rgba(249, 115, 22, 0.2)' : 'rgba(255,255,255,0.05)',
+                                borderRadius: '4px',
+                                textAlign: 'center',
+                                fontSize: '13px'
+                              }}>
+                                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>{pos}</span>
+                                <br />
+                                <span style={{ fontWeight: 600 }}>{num || '-'}</span>
+                                {isServing && <span style={{ color: '#22c55e', marginLeft: '4px' }}>●</span>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
                     }
-                    const newMatchId = await restoreMatchFromJson(jsonData)
-                    setRestoreMatchModal(false)
-                    setRestorePin('')
-                    setMatchId(newMatchId)
-                    setShowMatchSetup(true)
-                  } catch (err) {
-                    setRestoreError(err.message || 'Failed to restore from file')
-                  } finally {
-                    setRestoreLoading(false)
-                  }
-                }}
-                disabled={restoreLoading}
-                style={{
-                  width: '100%',
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: restoreLoading ? 'rgba(249, 115, 22, 0.3)' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: restoreLoading ? 'not-allowed' : 'pointer'
-                }}
+
+                    return (
+                      <>
+                        {/* Source indicator */}
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          marginBottom: '16px',
+                          gap: '8px'
+                        }}>
+                          <span style={{
+                            padding: '4px 12px',
+                            background: restorePreviewData.source === 'database' ? '#3b82f6' :
+                              restorePreviewData.source === 'cloud' ? '#8b5cf6' : '#f97316',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: 600
+                          }}>
+                            {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From Database') :
+                              restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
+                          </span>
+                          {restorePreviewData.backupName && (
+                            <span style={{
+                              padding: '4px 12px',
+                              background: 'rgba(255,255,255,0.1)',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontFamily: 'monospace'
+                            }}>
+                              {restorePreviewData.backupName.replace('.json', '')}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Teams header */}
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '16px',
+                          background: 'rgba(255,255,255,0.05)',
+                          borderRadius: '8px',
+                          marginBottom: '16px'
+                        }}>
+                          <div style={{ textAlign: 'center', flex: 1 }}>
+                            <div style={{ fontSize: '18px', fontWeight: 700 }}>{homeTeamName}</div>
+                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Home</div>
+                          </div>
+                          <div style={{ textAlign: 'center', padding: '0 16px' }}>
+                            <div style={{ fontSize: '24px', fontWeight: 700 }}>{homePoints} - {awayPoints}</div>
+                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Set {currentSetIndex}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', flex: 1 }}>
+                            <div style={{ fontSize: '18px', fontWeight: 700 }}>{awayTeamName}</div>
+                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Away</div>
+                          </div>
+                        </div>
+
+                        {/* Serving indicator */}
+                        <div style={{
+                          textAlign: 'center',
+                          marginBottom: '16px',
+                          fontSize: '14px'
+                        }}>
+                          <span style={{ color: '#22c55e' }}>● </span>
+                          Serving: <strong>{servingTeam === 'home' ? homeTeamName : awayTeamName}</strong>
+                        </div>
+
+                        {/* Lineups */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '16px',
+                          marginBottom: '16px'
+                        }}>
+                          <div>
+                            <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
+                              {homeTeamName} Lineup
+                            </h4>
+                            {renderLineup(homeLineup)}
+                          </div>
+                          <div>
+                            <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
+                              {awayTeamName} Lineup
+                            </h4>
+                            {renderLineup(awayLineup)}
+                          </div>
+                        </div>
+
+                        {/* Timeouts */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '16px',
+                          marginBottom: '16px'
+                        }}>
+                          <div style={{
+                            padding: '12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            borderRadius: '8px',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>Timeouts</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700 }}>{homeTimeouts}/2</div>
+                          </div>
+                          <div style={{
+                            padding: '12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            borderRadius: '8px',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>Timeouts</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700 }}>{awayTimeouts}/2</div>
+                          </div>
+                        </div>
+
+                        {/* Substitutions */}
+                        {(homeSubs.length > 0 || awaySubs.length > 0) && (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: '16px',
+                            marginBottom: '16px'
+                          }}>
+                            <div>
+                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                                Substitutions ({homeSubs.length})
+                              </h4>
+                              {homeSubs.length === 0 ? (
+                                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>None</span>
+                              ) : (
+                                homeSubs.map((sub, i) => (
+                                  <div key={i} style={{
+                                    fontSize: '12px',
+                                    padding: '4px 8px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    borderRadius: '4px',
+                                    marginBottom: '4px'
+                                  }}>
+                                    #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
+                                    <span style={{ color: 'rgba(255,255,255,0.4)', marginLeft: '8px' }}>
+                                      @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                            <div>
+                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                                Substitutions ({awaySubs.length})
+                              </h4>
+                              {awaySubs.length === 0 ? (
+                                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>None</span>
+                              ) : (
+                                awaySubs.map((sub, i) => (
+                                  <div key={i} style={{
+                                    fontSize: '12px',
+                                    padding: '4px 8px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    borderRadius: '4px',
+                                    marginBottom: '4px'
+                                  }}>
+                                    #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
+                                    <span style={{ color: 'rgba(255,255,255,0.4)', marginLeft: '8px' }}>
+                                      @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Sanctions */}
+                        {sanctionEvents.length > 0 && (
+                          <div style={{ marginBottom: '16px' }}>
+                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                              Sanctions ({sanctionEvents.length})
+                            </h4>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                              {sanctionEvents.map((s, i) => (
+                                <div key={i} style={{
+                                  padding: '4px 8px',
+                                  background: s.payload?.type === 'red' ? 'rgba(239, 68, 68, 0.2)' :
+                                    s.payload?.type === 'yellow' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.1)',
+                                  borderRadius: '4px',
+                                  fontSize: '12px'
+                                }}>
+                                  {s.payload?.team === 'home' ? homeTeamName : awayTeamName}{s.payload?.playerNumber ? ` #${s.payload.playerNumber}` : ''} - {s.payload?.type || 'sanction'}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Set scores summary */}
+                        {sets.length > 0 && (
+                          <div style={{ marginBottom: '24px' }}>
+                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                              Set Scores
+                            </h4>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              {[...sets].sort((a, b) => (a.index || 0) - (b.index || 0)).map(s => (
+                                <div key={s.index} style={{
+                                  padding: '8px 12px',
+                                  background: s.finished ? 'rgba(255,255,255,0.1)' : 'rgba(59, 130, 246, 0.2)',
+                                  borderRadius: '6px',
+                                  textAlign: 'center'
+                                }}>
+                                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>Set {s.index}</div>
+                                  <div style={{ fontSize: '14px', fontWeight: 600 }}>
+                                    {s.homePoints ?? s.home_points ?? 0} - {s.awayPoints ?? s.away_points ?? 0}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '12px',
+                          justifyContent: 'center',
+                          paddingTop: '16px',
+                          borderTop: '1px solid rgba(255,255,255,0.1)'
+                        }}>
+                          <button
+                            onClick={async () => {
+                              setRestoreLoading(true)
+                              try {
+                                const cloudData = restorePreviewData.data
+                                let newMatchId
+
+                                if (restorePreviewData.source === 'database') {
+                                  newMatchId = await importMatchFromSupabase(cloudData)
+                                } else {
+                                  newMatchId = await restoreMatchFromJson(cloudData)
+                                }
+
+                                // Close modals
+                                setRestorePreviewData(null)
+                                setRestoreMatchModal(false)
+                                setRestoreMatchIdInput('')
+                                setRestorePin('')
+                                setCloudBackups([])
+                                setCloudBackupPin('')
+                                setCloudBackupGameN('')
+                                setCloudBackupError('')
+                                setMatchId(newMatchId)
+
+                                // Determine where to go based on match state
+                                const matchStatus = cloudData.match?.status
+                                const hasEvents = cloudData.events && cloudData.events.length > 0
+                                const hasSets = cloudData.sets && cloudData.sets.length > 0
+                                const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+                                const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+                                const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+                                const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
+
+                                // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
+                                if (isMatchFinished) {
+                                  // Match is complete - go directly to MatchEnd
+                                  setShowMatchSetup(false)
+                                  setShowMatchEnd(true)
+                                } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
+                                  // Match in progress with activity - go to Scoreboard
+                                  setShowMatchSetup(false)
+                                } else {
+                                  // New or setup-phase match - go to MatchSetup
+                                  setShowMatchSetup(true)
+                                }
+                              } catch (err) {
+                                setRestoreError(err.message || 'Failed to restore match')
+                              } finally {
+                                setRestoreLoading(false)
+                              }
+                            }}
+                            disabled={restoreLoading}
+                            style={{
+                              padding: '12px 32px',
+                              fontSize: '15px',
+                              fontWeight: 600,
+                              background: restoreLoading ? 'rgba(34, 197, 94, 0.3)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            {restoreLoading ? 'Restoring...' : 'Confirm Restore'}
+                          </button>
+                          <button
+                            onClick={() => setRestorePreviewData(null)}
+                            disabled={restoreLoading}
+                            style={{
+                              padding: '12px 24px',
+                              fontSize: '14px',
+                              fontWeight: 600,
+                              background: 'rgba(255,255,255,0.1)',
+                              color: 'var(--text)',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              borderRadius: '8px',
+                              cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            Select Another
+                          </button>
+                          <button
+                            onClick={() => {
+                              setRestorePreviewData(null)
+                              setRestoreMatchModal(false)
+                              setRestoreMatchIdInput('')
+                              setRestorePin('')
+                              setCloudBackups([])
+                              setCloudBackupPin('')
+                              setCloudBackupGameN('')
+                              setCloudBackupError('')
+                            }}
+                            disabled={restoreLoading}
+                            style={{
+                              padding: '12px 24px',
+                              fontSize: '14px',
+                              fontWeight: 600,
+                              background: 'rgba(239, 68, 68, 0.2)',
+                              color: '#ef4444',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              borderRadius: '8px',
+                              cursor: restoreLoading ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </Modal>
+            )}
+
+            {/* New Match Modal */}
+            {newMatchModal && (
+              <Modal
+                title="Create New Match"
+                open={true}
+                onClose={cancelNewMatch}
+                width={400}
               >
-                {restoreLoading ? 'Restoring...' : 'Select Backup File'}
-              </button>
-            </div>
+                <div style={{ padding: '24px', textAlign: 'center' }}>
+                  <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+                    {newMatchModal.message}
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                      onClick={confirmNewMatch}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'var(--accent)',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={cancelNewMatch}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Alert Modal */}
+            {alertModal && (
+              <Modal
+                title={t('alert.info', 'Alert')}
+                open={true}
+                onClose={() => setAlertModal(null)}
+                width={400}
+                hideCloseButton={true}
+              >
+                <div style={{ padding: '24px', textAlign: 'center' }}>
+                  <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+                    {alertModal}
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                      onClick={() => setAlertModal(null)}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'var(--accent)',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.ok', 'OK')}
+                    </button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Confirm Modal */}
+            {confirmModal && (
+              <Modal
+                title={t('common.confirm', 'Confirm')}
+                open={true}
+                onClose={confirmModal.onCancel}
+                width={400}
+                hideCloseButton={true}
+              >
+                <div style={{ padding: '24px', textAlign: 'center' }}>
+                  <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+                    {confirmModal.message}
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                      onClick={confirmModal.onConfirm}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'var(--accent)',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.yes', 'Yes')}
+                    </button>
+                    <button
+                      onClick={confirmModal.onCancel}
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'var(--text)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('common.cancel', 'Cancel')}
+                    </button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Home Options Modal */}
+            <HomeOptionsModal
+              open={homeOptionsModal}
+              onClose={() => setHomeOptionsModal(false)}
+              onOpenConnectionSetup={isElectron ? () => setConnectionSetupModal(true) : null}
+              matchOptions={{
+                checkAccidentalRallyStart,
+                setCheckAccidentalRallyStart,
+                accidentalRallyStartDuration,
+                setAccidentalRallyStartDuration,
+                checkAccidentalPointAward,
+                setCheckAccidentalPointAward,
+                accidentalPointAwardDuration,
+                setAccidentalPointAwardDuration,
+                manageCaptainOnCourt,
+                setManageCaptainOnCourt,
+                liberoExitConfirmation,
+                setLiberoExitConfirmation,
+                liberoEntrySuggestion,
+                setLiberoEntrySuggestion,
+                setIntervalDuration,
+                setSetIntervalDuration,
+                keybindingsEnabled,
+                setKeybindingsEnabled,
+                lfpTrackingEnabled,
+                setLfpTrackingEnabled,
+                lfpMinimumOnCourt,
+                setLfpMinimumOnCourt
+              }}
+              displayOptions={{
+                displayMode,
+                setDisplayMode,
+                detectedDisplayMode,
+                activeDisplayMode,
+                enterDisplayMode,
+                exitDisplayMode
+              }}
+              wakeLock={{
+                wakeLockActive,
+                toggleWakeLock
+              }}
+              backup={backup}
+              dashboardServer={isElectron ? {
+                enabled: dashboardServerEnabled,
+                onToggle: () => {
+                  const newValue = !dashboardServerEnabled
+                  setDashboardServerEnabled(newValue)
+                  localStorage.setItem('dashboardServerEnabled', String(newValue))
+                },
+                serverRunning: dashboardServerData.serverRunning,
+                connectionUrl: dashboardServerData.connectionUrl,
+                refereePin: currentMatch?.refereePin,
+                dashboardCount: dashboardServerData.dashboardCount,
+                refereeCount: dashboardServerData.refereeCount,
+                benchCount: dashboardServerData.benchCount,
+                connectedDashboards: dashboardServerData.connectedDashboards
+              } : null}
+            />
+
+            {/* Contextual Help Panel */}
+            <ContextualHelpPanel
+              open={helpPanelOpen}
+              onClose={() => setHelpPanelOpen(false)}
+              currentPage={currentPage}
+              onShowMe={(helpId, tooltipKey) => {
+                setHelpPanelOpen(false)
+                setSpotlightTarget({ helpId, tooltipKey })
+              }}
+            />
+            {spotlightTarget && (
+              <SpotlightOverlay
+                targetHelpId={spotlightTarget.helpId}
+                tooltipKey={spotlightTarget.tooltipKey}
+                onDismiss={() => setSpotlightTarget(null)}
+              />
+            )}
+
+            {/* Connection Setup Modal */}
+            <ConnectionSetupModal
+              open={connectionSetupModal}
+              onClose={() => setConnectionSetupModal(false)}
+              matchId={matchId}
+              matchSeedKey={currentMatch?.seed_key || currentMatch?.externalId}
+              match={currentMatch}
+              refereePin={currentMatch?.refereePin}
+              homeTeamPin={currentMatch?.homeTeamPin}
+              awayTeamPin={currentMatch?.awayTeamPin}
+              gameNumber={currentMatch?.gameNumber}
+            />
+
+            <StartupConnectivityModal
+              open={showStartupConnectivity && !offlineMode}
+              connectionStatuses={connectionStatuses}
+              onDismiss={handleStartupDismiss}
+              onGoOffline={handleStartupGoOffline}
+            />
+
           </div>
-        </Modal>
-      )}
-
-      {/* New Match Modal */}
-      {newMatchModal && (
-        <Modal
-          title="Create New Match"
-          open={true}
-          onClose={cancelNewMatch}
-          width={400}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              {newMatchModal.message}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={confirmNewMatch}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={cancelNewMatch}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Alert Modal */}
-      {alertModal && (
-        <Modal
-          title="Alert"
-          open={true}
-          onClose={() => setAlertModal(null)}
-          width={400}
-          hideCloseButton={true}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              {alertModal}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={() => setAlertModal(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Confirm Modal */}
-      {confirmModal && (
-        <Modal
-          title="Confirm"
-          open={true}
-          onClose={confirmModal.onCancel}
-          width={400}
-          hideCloseButton={true}
-        >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              {confirmModal.message}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={confirmModal.onConfirm}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Yes
-              </button>
-              <button
-                onClick={confirmModal.onCancel}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Home Options Modal */}
-      <HomeOptionsModal
-        open={homeOptionsModal}
-        onClose={() => setHomeOptionsModal(false)}
-        onOpenGuide={() => setHomeGuideModal(true)}
-        onOpenConnectionSetup={() => setConnectionSetupModal(true)}
-        matchOptions={{
-          checkAccidentalRallyStart,
-          setCheckAccidentalRallyStart,
-          accidentalRallyStartDuration,
-          setAccidentalRallyStartDuration,
-          checkAccidentalPointAward,
-          setCheckAccidentalPointAward,
-          accidentalPointAwardDuration,
-          setAccidentalPointAwardDuration,
-          manageCaptainOnCourt,
-          setManageCaptainOnCourt,
-          liberoExitConfirmation,
-          setLiberoExitConfirmation,
-          liberoEntrySuggestion,
-          setLiberoEntrySuggestion,
-          setIntervalDuration,
-          setSetIntervalDuration,
-          keybindingsEnabled,
-          setKeybindingsEnabled
-        }}
-        displayOptions={{
-          displayMode,
-          setDisplayMode,
-          detectedDisplayMode,
-          activeDisplayMode,
-          enterDisplayMode,
-          exitDisplayMode
-        }}
-        wakeLock={{
-          wakeLockActive,
-          toggleWakeLock
-        }}
-        backup={backup}
-        dashboardServer={{
-          enabled: dashboardServerEnabled,
-          onToggle: () => {
-            const newValue = !dashboardServerEnabled
-            setDashboardServerEnabled(newValue)
-            localStorage.setItem('dashboardServerEnabled', String(newValue))
-          },
-          serverRunning: dashboardServerData.serverRunning,
-          connectionUrl: dashboardServerData.connectionUrl,
-          refereePin: currentMatch?.refereePin,
-          dashboardCount: dashboardServerData.dashboardCount,
-          refereeCount: dashboardServerData.refereeCount,
-          benchCount: dashboardServerData.benchCount,
-          connectedDashboards: dashboardServerData.connectedDashboards
-        }}
-      />
-
-      {/* Home Guide Modal */}
-      <GuideModal
-        open={homeGuideModal}
-        onClose={() => setHomeGuideModal(false)}
-      />
-
-      {/* Connection Setup Modal */}
-      <ConnectionSetupModal
-        open={connectionSetupModal}
-        onClose={() => setConnectionSetupModal(false)}
-        matchId={matchId}
-        refereePin={currentMatch?.refereePin}
-        homeTeamPin={currentMatch?.homeTeamPin}
-        awayTeamPin={currentMatch?.awayTeamPin}
-        gameNumber={currentMatch?.gameNumber}
-      />
-
-      </div>
-      </>
+        </>
       )}
     </div>
   )

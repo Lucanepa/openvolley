@@ -1,0 +1,20 @@
+# Cloudflare Pages redirects
+# Each route should serve its own index.html (Multi-Page App)
+# Do NOT use SPA fallback for these routes
+
+/scoresheet/*   /scoresheet/index.html   200
+/scoresheet     /scoresheet/index.html   200
+/referee/*      /referee/index.html      200
+/referee        /referee/index.html      200
+/bench/*        /bench/index.html        200
+/bench          /bench/index.html        200
+/livescore/*    /livescore/index.html    200
+/livescore      /livescore/index.html    200
+/upload_roster/* /upload_roster/index.html 200
+/upload_roster  /upload_roster/index.html 200
+
+# API routes should not be rewritten
+/api/*          /api/:splat              200
+
+# Default: all other routes go to the main app
+/*              /index.html              200

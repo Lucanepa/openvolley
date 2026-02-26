@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
-import { copyToClipboard, generateQRCodeUrl } from '../../utils/networkInfo'
-import { changelog } from '../../CHANGELOG'
+import { copyToClipboard } from '../../utils/networkInfo'
+import { QRCodeSVG } from 'qrcode.react'
 
-const currentVersion = changelog[0]?.version || 'unknown'
+const currentVersion = __APP_VERSION__
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -30,7 +31,6 @@ function InfoDot({ title }) {
           fontWeight: 600,
           cursor: 'pointer'
         }}
-        title={title}
       >
         i
       </div>
@@ -129,50 +129,37 @@ function Section({ title, children, borderBottom = true }) {
   )
 }
 
-function Stepper({ value, onDecrement, onIncrement, label }) {
+function DurationInput({ value, onChange, label }) {
+  const minutes = Math.floor(value / 60)
+  const seconds = value % 60
+  const handleMinutes = (e) => {
+    const m = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0))
+    const newVal = Math.max(60, Math.min(600, m * 60 + seconds))
+    onChange(newVal)
+  }
+  const handleSeconds = (e) => {
+    const s = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0))
+    const newVal = Math.max(60, Math.min(600, minutes * 60 + s))
+    onChange(newVal)
+  }
+  const inputStyle = {
+    width: '36px',
+    padding: '4px',
+    fontSize: '14px',
+    fontFamily: 'monospace',
+    fontWeight: 600,
+    textAlign: 'center',
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '6px',
+    color: 'var(--text)'
+  }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
-      <button
-        onClick={onDecrement}
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '6px',
-          border: 'none',
-          background: 'rgba(255,255,255,0.1)',
-          color: 'var(--text)',
-          fontSize: '18px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        aria-label={`Decrease ${label}`}
-      >
-        -
-      </button>
-      <span style={{ minWidth: '80px', textAlign: 'center', fontFamily: 'monospace', fontSize: '14px', fontWeight: 600 }}>
-        {Math.floor(value / 60)}' {(value % 60).toString().padStart(2, '0')}''
-      </span>
-      <button
-        onClick={onIncrement}
-        style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '6px',
-          border: 'none',
-          background: 'rgba(255,255,255,0.1)',
-          color: 'var(--text)',
-          fontSize: '18px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        aria-label={`Increase ${label}`}
-      >
-        +
-      </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '16px' }}>
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} style={inputStyle} aria-label={`${label} minutes`} />
+      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>'</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} style={inputStyle} aria-label={`${label} seconds`} />
+      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>''</span>
     </div>
   )
 }
@@ -191,24 +178,23 @@ const defaultKeyBindings = {
   startRally: 'Enter'
 }
 
-// Key binding labels
-const keyBindingLabels = {
-  pointLeft: 'Point Left',
-  pointRight: 'Point Right',
-  timeoutLeft: 'Timeout Left',
-  timeoutRight: 'Timeout Right',
-  exchangeLiberoLeft: 'Libero Left',
-  exchangeLiberoRight: 'Libero Right',
-  undo: 'Undo',
-  confirm: 'Confirm',
-  cancel: 'Cancel',
-  startRally: 'Start Rally'
-}
+// Key binding keys (used for lookup)
+const keyBindingKeys = [
+  'pointLeft',
+  'pointRight',
+  'timeoutLeft',
+  'timeoutRight',
+  'exchangeLiberoLeft',
+  'exchangeLiberoRight',
+  'undo',
+  'confirm',
+  'cancel',
+  'startRally'
+]
 
 export default function HomeOptionsModal({
   open,
   onClose,
-  onOpenGuide,
   onOpenConnectionSetup,
   matchOptions,
   displayOptions,
@@ -217,6 +203,7 @@ export default function HomeOptionsModal({
   dashboardServer = null // Optional dashboard server props from useDashboardServer
 }) {
   const { t } = useTranslation()
+  const { showAlert } = useAlert()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
@@ -294,14 +281,11 @@ export default function HomeOptionsModal({
         localStorage.clear()
       }
 
-      // Show success alert before reload
-      alert(includeLocalStorage ? 'Cache and settings cleared!' : 'Cache cleared!')
-
-      // Reload to apply changes
-      window.location.reload()
+      // Force reload bypassing browser HTTP cache
+      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     } catch (error) {
       console.error('Error clearing cache:', error)
-      alert('Failed to clear cache: ' + error.message)
+      showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')
     }
   }
 
@@ -325,7 +309,11 @@ export default function HomeOptionsModal({
     setIntervalDuration,
     setSetIntervalDuration,
     keybindingsEnabled,
-    setKeybindingsEnabled
+    setKeybindingsEnabled,
+    lfpTrackingEnabled,
+    setLfpTrackingEnabled,
+    lfpMinimumOnCourt,
+    setLfpMinimumOnCourt
   } = matchOptions
 
   const {
@@ -340,9 +328,8 @@ export default function HomeOptionsModal({
   const { wakeLockActive, toggleWakeLock } = wakeLock
 
   const modeDescriptions = {
-    desktop: 'Full layout with court visualization',
-    tablet: 'Scaled-down layout optimized for 768-1024px screens',
-    smartphone: 'Compact 3-column layout without court, optimized for <768px screens'
+    desktop: t('options.desktopDesc'),
+    tablet: t('options.tabletDesc')
   }
 
   return (
@@ -350,7 +337,7 @@ export default function HomeOptionsModal({
       open={true}
       title=""
       onClose={onClose}
-      width={500}
+      width={750}
       hideCloseButton={true}
     >
       {/* Sticky Header */}
@@ -551,23 +538,17 @@ export default function HomeOptionsModal({
               <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.setIntervalDuration')}</div>
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
-            <Stepper
+            <DurationInput
               value={setIntervalDuration}
-              label="set interval duration"
-              onDecrement={() => {
-                const newVal = Math.max(60, setIntervalDuration - 15)
-                setSetIntervalDuration(newVal)
-                localStorage.setItem('setIntervalDuration', String(newVal))
-              }}
-              onIncrement={() => {
-                const newVal = Math.min(600, setIntervalDuration + 15)
+              label={t('options.setIntervalDurationLabel', 'set interval duration')}
+              onChange={(newVal) => {
                 setSetIntervalDuration(newVal)
                 localStorage.setItem('setIntervalDuration', String(newVal))
               }}
             />
           </Row>
 
-          <Row>
+          <Row style={{ marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.keyboardShortcuts')}</div>
               <InfoDot title={t('options.keyboardShortcutsInfo')} />
@@ -601,6 +582,50 @@ export default function HomeOptionsModal({
               />
             </div>
           </Row>
+
+          <Row style={{ alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableLfpTracking')}</div>
+                <InfoDot title={t('options.lfpTrackingInfo')} />
+              </div>
+              {lfpTrackingEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.minimumLfpsOnCourt')}</span>
+                  <select
+                    value={lfpMinimumOnCourt}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10)
+                      setLfpMinimumOnCourt(val)
+                      localStorage.setItem('lfpMinimumOnCourt', String(val))
+                    }}
+                    style={{
+                      padding: '4px 4px',
+                      fontSize: '12px',
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '4px',
+                      color: 'var(--text)',
+                      textAlign: 'center',
+                      width: '44px'
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5, 6].map(n => (
+                      <option key={n} value={n} style={{ background: '#1e293b', color: '#fff' }}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <ToggleSwitch
+              value={lfpTrackingEnabled}
+              onToggle={() => {
+                const newValue = !lfpTrackingEnabled
+                setLfpTrackingEnabled(newValue)
+                localStorage.setItem('lfpTrackingEnabled', String(newValue))
+              }}
+            />
+          </Row>
         </Section>
 
         <Section title={t('options.displayMode')}>
@@ -611,11 +636,11 @@ export default function HomeOptionsModal({
                 <InfoDot title={t('options.screenModeInfo')} />
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {['auto', 'desktop', 'tablet', 'smartphone'].map(mode => (
+                {['auto', 'desktop', 'tablet'].map(mode => (
                   <button
                     key={mode}
                     onClick={() => {
-                      if (mode === 'tablet' || mode === 'smartphone') {
+                      if (mode === 'tablet') {
                         enterDisplayMode(mode)
                         return
                       }
@@ -642,7 +667,7 @@ export default function HomeOptionsModal({
                       gap: '6px'
                     }}
                   >
-                    <span>{mode === 'auto' ? `Auto (${detectedDisplayMode})` : mode}</span>
+                    <span>{mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode}</span>
                     {modeDescriptions[mode] ? (
                       <span
                         title={modeDescriptions[mode]}
@@ -683,7 +708,7 @@ export default function HomeOptionsModal({
                       cursor: 'pointer'
                     }}
                   >
-                    Exit {displayMode} mode
+                    {t('options.exitMode', { mode: displayMode })}
                   </button>
                 </div>
               )}
@@ -703,8 +728,8 @@ export default function HomeOptionsModal({
           <Section title={t('options.dashboardServer')}>
             <Row style={{ marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Enable Dashboards</div>
-                <InfoDot title="Allow referee and bench tablets to connect via local network (LAN). No internet required." />
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableDashboards')}</div>
+                <InfoDot title={t('options.enableDashboardsInfo')} />
               </div>
               <ToggleSwitch
                 value={dashboardServer.enabled}
@@ -722,7 +747,7 @@ export default function HomeOptionsModal({
                   marginBottom: '12px'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>Server Status</span>
+                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{t('options.serverStatus')}</span>
                     <span style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -736,7 +761,7 @@ export default function HomeOptionsModal({
                         borderRadius: '50%',
                         background: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
                       }} />
-                      {dashboardServer.serverRunning ? 'Running' : 'Not Running'}
+                      {dashboardServer.serverRunning ? t('options.running') : t('options.notRunning')}
                     </span>
                   </div>
 
@@ -744,7 +769,7 @@ export default function HomeOptionsModal({
                     <>
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
-                          Connect dashboards to:
+                          {t('options.connectDashboardsTo')}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <code style={{
@@ -773,7 +798,7 @@ export default function HomeOptionsModal({
                               whiteSpace: 'nowrap'
                             }}
                           >
-                            {copyFeedback === 'URL' ? 'Copied!' : 'Copy'}
+                            {copyFeedback === 'URL' ? t('options.copied') : t('options.copy')}
                           </button>
                         </div>
                       </div>
@@ -781,7 +806,7 @@ export default function HomeOptionsModal({
                       {dashboardServer.refereePin && (
                         <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
-                            Referee PIN:
+                            {t('options.refereePin')}:
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <code style={{
@@ -810,7 +835,7 @@ export default function HomeOptionsModal({
                                 whiteSpace: 'nowrap'
                               }}
                             >
-                              {copyFeedback === 'PIN' ? 'Copied!' : 'Copy'}
+                              {copyFeedback === 'PIN' ? t('options.copied') : t('options.copy')}
                             </button>
                           </div>
                         </div>
@@ -818,13 +843,11 @@ export default function HomeOptionsModal({
 
                       {/* QR Code */}
                       <div style={{ textAlign: 'center', marginTop: '16px' }}>
-                        <img
-                          src={generateQRCodeUrl(`${dashboardServer.connectionUrl}/referee`, 120)}
-                          alt="Referee Dashboard QR"
-                          style={{ background: '#fff', padding: 6, borderRadius: 6 }}
-                        />
+                        <div style={{ background: '#fff', padding: 6, borderRadius: 6, display: 'inline-block' }}>
+                          <QRCodeSVG value={`${dashboardServer.connectionUrl}/referee`} size={120} level="L" />
+                        </div>
                         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
-                          Scan to open Referee Dashboard
+                          {t('options.scanToOpen')}
                         </div>
                       </div>
                     </>
@@ -839,9 +862,9 @@ export default function HomeOptionsModal({
                       fontSize: '12px',
                       color: 'rgba(255,255,255,0.8)'
                     }}>
-                      <strong style={{ color: '#ef4444' }}>Server not detected.</strong>
+                      <strong style={{ color: '#ef4444' }}>{t('options.serverNotDetected')}</strong>
                       <br />
-                      Start the backend server with: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
+                      {t('options.startBackendServer')} <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
                     </div>
                   )}
                 </div>
@@ -853,7 +876,7 @@ export default function HomeOptionsModal({
                   padding: '16px'
                 }}>
                   <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
-                    Connected Dashboards
+                    {t('options.connectedDashboards')}
                   </div>
                   <div style={{
                     display: 'flex',
@@ -873,11 +896,13 @@ export default function HomeOptionsModal({
                     </span>
                     <div style={{ textAlign: 'left' }}>
                       <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>
-                        {dashboardServer.dashboardCount === 1 ? 'dashboard' : 'dashboards'} connected
+                        {dashboardServer.dashboardCount === 1
+                          ? t('options.dashboardConnected', { count: dashboardServer.dashboardCount || 0 })
+                          : t('options.dashboardsConnected', { count: dashboardServer.dashboardCount || 0 })}
                       </div>
                       {dashboardServer.dashboardCount > 0 && (
                         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                          {dashboardServer.refereeCount || 0} referee, {dashboardServer.benchCount || 0} bench
+                          {t('options.refereeBenchCount', { refereeCount: dashboardServer.refereeCount || 0, benchCount: dashboardServer.benchCount || 0 })}
                         </div>
                       )}
                     </div>
@@ -924,68 +949,40 @@ export default function HomeOptionsModal({
           </Section>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <button
-            onClick={() => {
-              onClose?.()
-              onOpenConnectionSetup?.()
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-              color: 'var(--text)',
-              border: '1px solid rgba(59, 130, 246, 0.4)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              width: '100%',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
-            }}
-          >
-            <span style={{ fontSize: '20px' }}>📡</span>
-            <span>Setup Connections</span>
-          </button>
-          <button
-            onClick={() => {
-              onClose?.()
-              onOpenGuide?.()
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: 'var(--text)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              width: '100%',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-            }}
-          >
-            <span style={{ fontSize: '20px' }}>?</span>
-            <span>Show Guide</span>
-          </button>
-        </div>
+        {onOpenConnectionSetup && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+            <button
+              onClick={() => {
+                onClose?.()
+                onOpenConnectionSetup?.()
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                fontSize: '16px',
+                fontWeight: 600,
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                color: 'var(--text)',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                width: '100%',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
+              }}
+            >
+              <span style={{ fontSize: '20px' }}>📡</span>
+              <span>{t('options.setupConnections')}</span>
+            </button>
+          </div>
+        )}
 
         {activeDisplayMode === 'desktop' && (
           <Section title={t('options.downloadDesktopApp')} borderBottom={false}>
@@ -1015,100 +1012,34 @@ export default function HomeOptionsModal({
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
               }}
             >
-              <span>View Releases & Downloads</span>
+              <span>{t('options.viewReleasesDownloads')}</span>
               <span style={{ fontSize: '14px', opacity: 0.7 }}>↗</span>
             </a>
           </Section>
         )}
 
-        <Section title={t('options.environment')}>
-          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
-            Quick links to all app pages. Open in new tabs for multi-device setup.
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[
-              { path: '/', name: 'Scoreboard', desc: 'Main scoring interface' },
-              { path: '/referee/index.html', name: 'Referee', desc: 'Referee Dashboard' },
-              { path: '/bench/index.html', name: 'Bench', desc: 'Team Dashboard' },
-              { path: '/livescore/index.html', name: 'Livescore', desc: 'Public display' },
-              { path: '/upload_roster/index.html', name: 'Upload Roster', desc: 'Import team rosters from PDF/CSV' }
-            ].map(page => (
-              <a
-                key={page.path}
-                href={`https://app.openvolley.app${page.path}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 14px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  textDecoration: 'none',
-                  color: 'var(--text)',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>
-                    {page.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>
-                    {page.desc}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
-                  <code style={{
-                    fontSize: '10px',
-                    padding: '3px 6px',
-                    background: 'rgba(0,0,0,0.3)',
-                    borderRadius: '4px',
-                    color: 'rgba(255,255,255,0.6)'
-                  }}>
-                    {page.path === '/' ? '/' : page.path}
-                  </code>
-                  <span style={{ fontSize: '12px', opacity: 0.5 }}>↗</span>
-                </div>
-              </a>
-            ))}
-          </div>
-          <div style={{
-            marginTop: '12px',
-            padding: '10px 12px',
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
-            borderRadius: '6px',
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.7)'
-          }}>
-            <strong style={{ color: '#3b82f6' }}>Tip:</strong> For local network setup, use your device's IP address instead of app.openvolley.app (e.g., http://192.168.1.100:5173/referee)
-          </div>
-        </Section>
+      
 
         {backup && (
           <Section title={t('options.backup')}>
             <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px' }}>Auto Backup</div>
+                  <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.autoBackup')}</div>
                   <InfoDot title={backup.hasFileSystemAccess
-                    ? "Automatically save match data to selected folder on every change"
-                    : "Automatically download backup every few minutes during active match"
+                    ? t('options.autoBackupFolderInfo')
+                    : t('options.autoBackupDownloadInfo')
                   } />
                 </div>
                 <ToggleSwitch
                   value={backup.autoBackupEnabled}
-                  onToggle={() => backup.toggleAutoBackup(!backup.autoBackupEnabled)}
+                  onToggle={() => {
+                    const newValue = !backup.autoBackupEnabled
+                    backup.toggleAutoBackup(newValue)
+                    if (newValue && backup.hasFileSystemAccess && !backup.backupDirName) {
+                      backup.selectBackupDir()
+                    }
+                  }}
                 />
               </div>
 
@@ -1116,7 +1047,7 @@ export default function HomeOptionsModal({
                 // Chrome/Edge: Folder selection
                 <div style={{ marginTop: '8px' }}>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
-                    Backup Location: {backup.backupDirName || 'Not set'}
+                    {t('options.backupLocation')}: {backup.backupDirName || t('common.notSet')}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button
@@ -1132,7 +1063,7 @@ export default function HomeOptionsModal({
                         cursor: 'pointer'
                       }}
                     >
-                      {backup.backupDirName ? 'Change Folder' : 'Select Backup Folder'}
+                      {backup.backupDirName ? t('options.changeFolder') : t('options.selectBackupFolder')}
                     </button>
                     {backup.backupDirName && (
                       <button
@@ -1148,7 +1079,7 @@ export default function HomeOptionsModal({
                           cursor: 'pointer'
                         }}
                       >
-                        Clear
+                        {t('options.clear')}
                       </button>
                     )}
                   </div>
@@ -1164,14 +1095,14 @@ export default function HomeOptionsModal({
                     marginBottom: '12px'
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#fbbf24', marginBottom: '4px' }}>
-                      Limited Browser Support
+                      {t('options.limitedBrowserSupport')}
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', lineHeight: '1.4' }}>
-                      Your browser doesn't support automatic folder backup. For best experience, use <strong style={{ color: '#fff' }}>Chrome</strong> or <strong style={{ color: '#fff' }}>Edge</strong> on desktop.
+                      {t('options.limitedBrowserSupportDesc')}
                     </div>
                   </div>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
-                    Event-based auto-download (when enabled):
+                    {t('options.eventBasedAutoDownload')}:
                   </div>
                   <div style={{
                     display: 'grid',
@@ -1181,27 +1112,27 @@ export default function HomeOptionsModal({
                     color: 'rgba(255,255,255,0.7)'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Set Start
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.setStart')}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Set End
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.setEnd')}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Match End
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.matchEnd')}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> Timeout Called
+                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.timeoutCalled')}
                     </div>
                   </div>
                   <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>
-                    Note: Each download creates a new file in your Downloads folder
+                    {t('options.eventBasedNote')}
                   </div>
                 </div>
               )}
 
               {backup.lastBackup && (
                 <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
-                  Last backup: {backup.lastBackup.toLocaleTimeString()}
+                  {t('options.lastBackup')}: {backup.lastBackup.toLocaleTimeString()}
                 </div>
               )}
 
@@ -1233,7 +1164,7 @@ export default function HomeOptionsModal({
                     cursor: backup.isBackingUp ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {backup.isBackingUp ? 'Backing up...' : 'Download Backup Now'}
+                  {backup.isBackingUp ? t('options.backingUp') : t('options.downloadBackupNow')}
                 </button>
               </div>
             </Row>
@@ -1244,7 +1175,7 @@ export default function HomeOptionsModal({
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>Current Version</div>
+                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.currentVersion')}</div>
                 <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px' }}>
                   v{currentVersion}
                 </div>
@@ -1263,7 +1194,7 @@ export default function HomeOptionsModal({
                   cursor: updateCheck.checking ? 'not-allowed' : 'pointer'
                 }}
               >
-                {updateCheck.checking ? 'Checking...' : 'Check for Updates'}
+                {updateCheck.checking ? t('options.checking') : t('options.checkForUpdates')}
               </button>
             </div>
 
@@ -1280,7 +1211,7 @@ export default function HomeOptionsModal({
               }}>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: '#22c55e' }}>
-                    Update Available!
+                    {t('options.updateAvailable')}
                   </div>
                   <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
                     {currentVersion} → {newVersion}
@@ -1299,7 +1230,7 @@ export default function HomeOptionsModal({
                     cursor: 'pointer'
                   }}
                 >
-                  Refresh to Update
+                  {t('options.refreshToUpdate')}
                 </button>
               </div>
             )}
@@ -1313,7 +1244,7 @@ export default function HomeOptionsModal({
                 fontSize: '13px',
                 color: 'rgba(255,255,255,0.8)'
               }}>
-                You're on the latest version!
+                {t('options.latestVersion')}
               </div>
             )}
 
@@ -1326,7 +1257,7 @@ export default function HomeOptionsModal({
                 fontSize: '13px',
                 color: '#ef4444'
               }}>
-                Could not check for updates. Please try again.
+                {t('options.couldNotCheckUpdates')}
               </div>
             )}
           </Row>
@@ -1335,8 +1266,8 @@ export default function HomeOptionsModal({
         <Section title={t('options.cacheManagement')} borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>Clear Application Cache</div>
-              <InfoDot title="Clears service worker caches and optionally localStorage. Use if app behaves unexpectedly." />
+              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.clearApplicationCache')}</div>
+              <InfoDot title={t('options.clearApplicationCacheInfo')} />
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
@@ -1359,7 +1290,7 @@ export default function HomeOptionsModal({
                   e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
                 }}
               >
-                Clear Cache
+                {t('options.clearCache')}
               </button>
               <button
                 onClick={() => setClearCacheModal({ type: 'all' })}
@@ -1381,7 +1312,7 @@ export default function HomeOptionsModal({
                   e.currentTarget.style.background = 'rgba(239, 68, 68, 0.4)'
                 }}
               >
-                Clear All (includes settings)
+                {t('options.clearAll')}
               </button>
             </div>
           </Row>
@@ -1416,17 +1347,17 @@ export default function HomeOptionsModal({
               }}
             >
               <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
-                Confirm Clear Cache
+                {t('options.confirmClearCache')}
               </h3>
               <p style={{ margin: '0 0 16px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
                 {clearCacheModal.type === 'all'
-                  ? 'This will clear all cached data AND your settings. The page will reload after clearing.'
-                  : 'This will clear cached files. Your settings will be preserved. The page will reload after clearing.'
+                  ? t('options.clearAllWarning')
+                  : t('options.clearCacheWarning')
                 }
               </p>
               {clearCacheModal.type === 'all' && (
                 <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
-                  Warning: This will reset all your preferences to defaults.
+                  {t('options.resetPreferencesWarning')}
                 </p>
               )}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -1443,7 +1374,7 @@ export default function HomeOptionsModal({
                     cursor: 'pointer'
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => executeClearCache(clearCacheModal.type === 'all')}
@@ -1458,7 +1389,7 @@ export default function HomeOptionsModal({
                     cursor: 'pointer'
                   }}
                 >
-                  Clear {clearCacheModal.type === 'all' ? 'All' : 'Cache'}
+                  {clearCacheModal.type === 'all' ? t('options.clearAll') : t('options.clearCache')}
                 </button>
               </div>
             </div>
@@ -1473,7 +1404,7 @@ export default function HomeOptionsModal({
           fontSize: '12px',
           color: 'var(--muted)'
         }}>
-          Support: luca.canepa@gmail.com
+          {t('common.support', 'Support:')} luca.canepa@gmail.com
         </div>
       </div>
 
@@ -1536,7 +1467,7 @@ export default function HomeOptionsModal({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {Object.entries(keyBindingLabels).map(([key, label]) => (
+              {keyBindingKeys.map((key) => (
                 <div
                   key={key}
                   style={{
@@ -1548,7 +1479,7 @@ export default function HomeOptionsModal({
                     borderRadius: '8px'
                   }}
                 >
-                  <span style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>{label}</span>
+                  <span style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>{t(`options.keybindingLabels.${key}`)}</span>
                   <button
                     onClick={() => {
                       if (editingKey === key) {
@@ -1587,14 +1518,14 @@ export default function HomeOptionsModal({
                   >
                     {editingKey === key ? t('options.pressKey') : (
                       keyBindings[key] === ' ' ? 'Space' :
-                      keyBindings[key] === 'Enter' ? 'Enter' :
-                      keyBindings[key] === 'Escape' ? 'Esc' :
-                      keyBindings[key] === 'Backspace' ? 'Backspace' :
-                      keyBindings[key] === 'ArrowUp' ? '↑' :
-                      keyBindings[key] === 'ArrowDown' ? '↓' :
-                      keyBindings[key] === 'ArrowLeft' ? '←' :
-                      keyBindings[key] === 'ArrowRight' ? '→' :
-                      keyBindings[key].toUpperCase()
+                        keyBindings[key] === 'Enter' ? 'Enter' :
+                          keyBindings[key] === 'Escape' ? 'Esc' :
+                            keyBindings[key] === 'Backspace' ? 'Backspace' :
+                              keyBindings[key] === 'ArrowUp' ? '↑' :
+                                keyBindings[key] === 'ArrowDown' ? '↓' :
+                                  keyBindings[key] === 'ArrowLeft' ? '←' :
+                                    keyBindings[key] === 'ArrowRight' ? '→' :
+                                      keyBindings[key].toUpperCase()
                     )}
                   </button>
                 </div>
