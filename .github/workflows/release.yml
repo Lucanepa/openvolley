@@ -68,6 +68,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
+          DISABLE_PWA: 'true'
         run: |
           node scripts/build-subdomains.js referee
           node scripts/build-subdomains.js bench
@@ -118,6 +119,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
+          DISABLE_PWA: 'true'
         run: |
           node scripts/build-subdomains.js beach-referee
           node scripts/build-subdomains.js beach-scoreboard

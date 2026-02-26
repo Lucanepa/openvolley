@@ -24,6 +24,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
+const disablePWA = process.env.DISABLE_PWA === 'true'
 
 // Read version from package.json
 const packageJson = JSON.parse(readFileSync(resolve(frontendDir, 'package.json'), 'utf-8'))
@@ -216,14 +217,12 @@ async function buildSubdomain(subdomain, basePath = '/') {
       },
       plugins: [
         react(),
-        VitePWA({
+        ...(!disablePWA ? [VitePWA({
           registerType: 'prompt',
           includeAssets: ['openvolley_no_bg.png'],
           workbox: {
             skipWaiting: false,
             clientsClaim: true,
-            // Disable navigateFallback - each subdomain is a single entry point
-            // and the temp filename issue causes precache mismatch
             navigateFallback: null,
             runtimeCaching: [
               {
@@ -244,7 +243,6 @@ async function buildSubdomain(subdomain, basePath = '/') {
                 }
               },
               {
-                // HTML pages - network first for navigation
                 urlPattern: /\.html$/,
                 handler: 'NetworkFirst',
                 options: {
@@ -269,7 +267,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
               { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
             ]
           }
-        })
+        })] : [])
       ],
       build: {
         outDir,
