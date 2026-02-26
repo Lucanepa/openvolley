@@ -76,6 +76,20 @@ export function isStaticDeployment() {
   return window.location.hostname.endsWith('.openvolley.app')
 }
 
+/**
+ * Detect if being served from a standalone local server (not cloud, not dev)
+ * e.g., http://192.168.1.100:8080/referee/ — a LAN IP with a port
+ */
+export function isServedFromLocalServer() {
+  if (typeof window === 'undefined') return false
+  if (import.meta.env.DEV) return false
+  const hostname = window.location.hostname
+  if (hostname.endsWith('.openvolley.app')) return false
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return false
+  // LAN IP pattern (10.x, 192.168.x, 172.16-31.x)
+  return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)
+}
+
 // Get backend URL from environment or use current host
 export function getBackendUrl() {
   // Check runtime override first (set by local server connection UI)
@@ -92,13 +106,17 @@ export function getBackendUrl() {
   // On static deployments (*.openvolley.app), always use cloud relay
   // These deployments have no backend server
   if (isStaticDeployment()) {
-    console.log('[BackendConfig] Static deployment detected, using cloud relay:', CLOUD_RELAY_URL)
     return CLOUD_RELAY_URL
+  }
+
+  // If served from a local server (non-openvolley.app, not localhost dev),
+  // the app is running on the standalone server — use same origin as backend
+  if (isServedFromLocalServer()) {
+    return window.location.origin
   }
 
   // On tablets/mobile in production, use cloud relay automatically
   if (!import.meta.env.DEV && isTabletOrMobile()) {
-    console.log('[BackendConfig] Tablet/mobile detected, using cloud relay:', CLOUD_RELAY_URL)
     return CLOUD_RELAY_URL
   }
 
@@ -135,6 +153,11 @@ export function getWebSocketUrl() {
   // On static deployments, use cloud relay WebSocket
   if (isStaticDeployment()) {
     return httpToWsUrl(CLOUD_RELAY_URL)
+  }
+
+  // If served from local server, use same origin for WebSocket
+  if (isServedFromLocalServer()) {
+    return httpToWsUrl(window.location.origin)
   }
 
   // In development, use separate WebSocket port
