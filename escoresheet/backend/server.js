@@ -2022,6 +2022,15 @@ const wss = new WebSocketServer({
   }
 })
 
+wss.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ Port ${PORT} is already in use.`)
+    console.error(`   Another instance of the server may be running.`)
+    console.error(`   Stop it first, or set a different port: PORT=8081 ./openvolley-server-*\n`)
+    process.exit(1)
+  }
+})
+
 wss.on('connection', (ws, req) => {
   // Enforce global connection cap
   if (connections.size >= MAX_CONNECTIONS) {
