@@ -326,12 +326,14 @@ async function buildSubdomain(subdomain, basePath = '/') {
 
 async function main() {
   const targetSubdomain = process.argv[2]
+  const baseArgIndex = process.argv.indexOf('--base')
+  const basePath = baseArgIndex !== -1 ? process.argv[baseArgIndex + 1] : '/'
 
   console.log('🏐 OpenVolley Subdomain Builder')
   console.log(`   Version: ${appVersion}`)
 
   if (targetSubdomain) {
-    await buildSubdomain(targetSubdomain)
+    await buildSubdomain(targetSubdomain, basePath)
 
     // If building 'app', also build scoresheet with /scoresheet/ base path
     if (targetSubdomain === 'app') {

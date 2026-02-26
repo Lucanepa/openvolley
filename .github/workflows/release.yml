@@ -69,9 +69,9 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
-          node scripts/build-subdomains.js referee
-          node scripts/build-subdomains.js bench
-          node scripts/build-subdomains.js roster
+          node scripts/build-subdomains.js referee --base /referee/
+          node scripts/build-subdomains.js bench --base /bench/
+          node scripts/build-subdomains.js roster --base /roster/
 
       - name: Upload indoor frontend artifacts
         uses: actions/upload-artifact@v4
@@ -119,8 +119,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
         run: |
-          node scripts/build-subdomains.js beach-referee
-          node scripts/build-subdomains.js beach-scoreboard
+          node scripts/build-subdomains.js beach-referee --base /beach-referee/
+          node scripts/build-subdomains.js beach-scoreboard --base /beach-scoreboard/
 
       - name: Upload beach frontend artifacts
         uses: actions/upload-artifact@v4
