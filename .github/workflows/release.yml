@@ -314,9 +314,9 @@ jobs:
           body: |
             ## Standalone Server (Indoor + Beach Volleyball)
 
-            Double-click to start the server. Open `http://localhost:8080` in a browser to see QR codes for connecting devices. Each device can install the app as a **PWA** from the browser menu for a native-like experience.
+            Double-click (or `chmod +x` and run from terminal on Linux/macOS) to start the server. The console will show your LAN IP and QR codes for connecting devices. Each device can install the app as a **PWA** from the browser menu for a native-like experience.
 
-            All devices must be on the same network.
+            All devices must be on the same Wi-Fi / LAN network.
 
             ### Indoor Volleyball
             - **Referee**: `/referee`
