@@ -257,10 +257,24 @@ const MAX_CONNECTIONS = 2000
 const MAX_CONNECTIONS_PER_IP = 50
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
-// --- PocketBase sync ---
+// --- PocketBase sync (5s trailing-edge debounce) ---
+const PB_SYNC_DEBOUNCE_MS = 5000
+const pbPendingSync = new Map() // matchId → { data, timer }
+const pbSyncedMatches = new Set() // track which matches have been synced at least once
+
 function syncToPocketBase(matchId, matchData) {
   if (!pbReady || !pbClient) return
-  executePocketBaseSync(matchId, matchData)
+  const existing = pbPendingSync.get(matchId)
+  if (existing) {
+    existing.data = matchData // overwrite with latest snapshot
+    return // timer already running
+  }
+  const entry = { data: matchData, timer: null }
+  entry.timer = setTimeout(() => {
+    pbPendingSync.delete(matchId)
+    executePocketBaseSync(matchId, entry.data)
+  }, PB_SYNC_DEBOUNCE_MS)
+  pbPendingSync.set(matchId, entry)
 }
 
 async function executePocketBaseSync(matchId, matchData) {
@@ -293,7 +307,11 @@ async function executePocketBaseSync(matchId, matchData) {
         throw findErr
       }
     }
-    console.log(`[PocketBase] Synced match ${matchId}`)
+    // Only log first sync per match to keep logs clean
+    if (!pbSyncedMatches.has(matchId)) {
+      pbSyncedMatches.add(matchId)
+      console.log(`[PocketBase] First sync for match ${matchId}`)
+    }
   } catch (err) {
     if (err.status === 401) {
       console.warn('[PocketBase] Auth expired, re-authenticating...')
@@ -312,6 +330,10 @@ async function executePocketBaseSync(matchId, matchData) {
 }
 
 async function deletePocketBaseMatch(matchId) {
+  // Cancel any pending debounced sync
+  const pending = pbPendingSync.get(matchId)
+  if (pending) { clearTimeout(pending.timer); pbPendingSync.delete(matchId) }
+  pbSyncedMatches.delete(matchId)
   if (!pbReady || !pbClient) return
   try {
     const existing = await pbClient.collection('matches').getFirstListItem(
@@ -325,6 +347,10 @@ async function deletePocketBaseMatch(matchId) {
 }
 
 async function clearAllPocketBaseMatches() {
+  // Cancel all pending debounced syncs
+  for (const [, entry] of pbPendingSync) clearTimeout(entry.timer)
+  pbPendingSync.clear()
+  pbSyncedMatches.clear()
   if (!pbReady || !pbClient) return
   try {
     const records = await pbClient.collection('matches').getFullList({ fields: 'id' })
@@ -750,6 +776,86 @@ const server = createServer((req, res) => {
       uptime: process.uptime(),
       pocketbase: pbReady ? 'connected' : (POCKETBASE_URL ? 'configured' : 'not_configured')
     }))
+    return
+  }
+
+  // PocketBase matches list (for restore UI)
+  if (url.pathname === '/api/pocketbase/matches' && req.method === 'GET') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'default')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ data: [], error: 'Rate limited' }))
+      return
+    }
+    if (!pbReady || !pbClient) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: [], error: 'pocketbase_not_available' }))
+      return
+    }
+    try {
+      const gameNumber = url.searchParams.get('game_number')
+      const sportType = url.searchParams.get('sport_type')
+      const filterParams = {}
+      const filterParts = []
+      if (gameNumber) {
+        filterParts.push('game_number = {:gn}')
+        filterParams.gn = parseInt(gameNumber)
+      }
+      if (sportType && /^(indoor|beach)$/.test(sportType)) {
+        filterParts.push('sport_type = {:st}')
+        filterParams.st = sportType
+      }
+      const filter = filterParts.length
+        ? pbClient.filter(filterParts.join(' && '), filterParams)
+        : undefined
+      const records = await pbClient.collection('matches').getFullList({
+        sort: '-updated_at',
+        filter,
+        fields: 'id,match_id,external_id,status,sport_type,game_number,updated_at,home_team,away_team,sets'
+      })
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: records }))
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: [], error: err.message }))
+    }
+    return
+  }
+
+  // PocketBase single match (full snapshot for restore)
+  if (url.pathname.startsWith('/api/pocketbase/matches/') && req.method === 'GET') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'default')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
+      return
+    }
+    if (!pbReady || !pbClient) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: null, error: 'pocketbase_not_available' }))
+      return
+    }
+    const matchId = decodeURIComponent(url.pathname.split('/api/pocketbase/matches/')[1])
+    if (!matchId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: null, error: 'match_id required' }))
+      return
+    }
+    try {
+      const record = await pbClient.collection('matches').getFirstListItem(
+        pbClient.filter('match_id = {:id}', { id: String(matchId) })
+      )
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: record }))
+    } catch (err) {
+      if (err.status === 404) {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: null, error: 'Match not found' }))
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: null, error: err.message }))
+      }
+    }
     return
   }
 

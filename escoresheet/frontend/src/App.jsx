@@ -45,7 +45,7 @@ import {
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup } from './utils/backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import { isMatchFinished as isMatchFinishedUtil } from './utils/matchFormat'
 
@@ -3398,10 +3398,23 @@ export default function App() {
                           setCloudBackupLoading(true)
                           setCloudBackupError('')
                           try {
-                            const backups = await listCloudBackups(cloudBackupPin, parseInt(cloudBackupGameN) || 1)
-                            setCloudBackups(backups)
-                            if (backups.length === 0) {
-                              setCloudBackupError('No cloud backups found for this Game Number/PIN')
+                            const gameN = parseInt(cloudBackupGameN) || 1
+                            // Fetch from both Supabase cloud backups and PocketBase in parallel
+                            const [cloudResults, pbResults] = await Promise.all([
+                              listCloudBackups(cloudBackupPin, gameN).catch(() => []),
+                              listPocketBaseBackups(gameN).catch(() => [])
+                            ])
+                            // Tag cloud results with source
+                            const taggedCloud = cloudResults.map(b => ({ ...b, source: b.source || 'cloud' }))
+                            // Merge and sort by most recent first
+                            const merged = [...taggedCloud, ...pbResults].sort((a, b) => {
+                              const dateA = a.created || a.updated_at || ''
+                              const dateB = b.created || b.updated_at || ''
+                              return dateB.localeCompare(dateA)
+                            })
+                            setCloudBackups(merged)
+                            if (merged.length === 0) {
+                              setCloudBackupError('No backups found for this Game Number')
                             }
                           } catch (err) {
                             setCloudBackupError(err.message || 'Failed to list backups')
@@ -3441,16 +3454,20 @@ export default function App() {
                               setRestoreLoading(true)
                               setRestoreError('')
                               try {
-                                const cloudData = await fetchCloudBackup(backup.path)
+                                let cloudData
+                                if (backup.source === 'pocketbase') {
+                                  cloudData = await fetchPocketBaseMatch(backup.match_id)
+                                } else {
+                                  cloudData = await fetchCloudBackup(backup.path)
+                                }
                                 if (!cloudData) {
                                   setRestoreError('Failed to fetch backup data')
                                   setRestoreLoading(false)
                                   return
                                 }
-                                // Show preview instead of immediately restoring
-                                setRestorePreviewData({ data: cloudData, source: 'cloud', backupName: backup.name })
+                                setRestorePreviewData({ data: cloudData, source: backup.source || 'cloud', backupName: backup.name })
                               } catch (err) {
-                                setRestoreError(err.message || 'Failed to load cloud backup')
+                                setRestoreError(err.message || 'Failed to load backup')
                               } finally {
                                 setRestoreLoading(false)
                               }
@@ -3615,12 +3632,14 @@ export default function App() {
                           <span style={{
                             padding: '4px 12px',
                             background: restorePreviewData.source === 'database' ? '#3b82f6' :
+                              restorePreviewData.source === 'pocketbase' ? '#22c55e' :
                               restorePreviewData.source === 'cloud' ? '#8b5cf6' : '#f97316',
                             borderRadius: '12px',
                             fontSize: '12px',
                             fontWeight: 600
                           }}>
                             {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From Database') :
+                              restorePreviewData.source === 'pocketbase' ? 'PocketBase Backup' :
                               restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
                           </span>
                           {restorePreviewData.backupName && (

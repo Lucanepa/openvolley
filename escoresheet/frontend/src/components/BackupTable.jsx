@@ -67,23 +67,26 @@ export default function BackupTable({
   const [lastActions, setLastActions] = useState({})
   const [loadingActions, setLoadingActions] = useState({})
 
-  // Fetch last actions for all backups
+  // Fetch last actions for cloud backups (PocketBase entries don't need fetching)
   useEffect(() => {
     if (backups.length === 0) return
+
+    const cloudBackups = backups.filter(b => b.source !== 'pocketbase' && b.path)
+    if (cloudBackups.length === 0) return
 
     const fetchLastActions = async () => {
       const actions = {}
       const loadingStates = {}
 
-      // Mark all as loading
-      backups.forEach(backup => {
+      // Mark cloud backups as loading
+      cloudBackups.forEach(backup => {
         loadingStates[backup.path] = true
       })
       setLoadingActions(loadingStates)
 
       // Fetch all in parallel
       await Promise.all(
-        backups.map(async (backup) => {
+        cloudBackups.map(async (backup) => {
           try {
             const backupData = await loadCloudBackup(backup.path)
             if (backupData && backupData.events) {
@@ -109,9 +112,12 @@ export default function BackupTable({
     return null
   }
 
+  const hasMixedSources = backups.some(b => b.source === 'pocketbase') && backups.some(b => b.source !== 'pocketbase')
+  const hasAnyPb = backups.some(b => b.source === 'pocketbase')
+  const sourceColWidth = (hasMixedSources || hasAnyPb) ? '32px ' : ''
   const gridColumns = showRestoreButton
-    ? '60px 35px 70px 90px 1fr 70px'
-    : '60px 35px 70px 90px 1fr'
+    ? `${sourceColWidth}60px 35px 70px 90px 1fr 70px`
+    : `${sourceColWidth}60px 35px 70px 90px 1fr`
 
   return (
     <>
@@ -128,6 +134,7 @@ export default function BackupTable({
         marginBottom: '2px',
         alignItems: 'center'
       }}>
+        {(hasMixedSources || hasAnyPb) && <span style={{ textAlign: 'center' }}></span>}
         <span style={{ textAlign: 'center' }}>{t('backupTable.gameN', 'Game N')}</span>
         <span style={{ textAlign: 'center' }}>{t('backupTable.set', 'Set')}</span>
         <span style={{ textAlign: 'center' }}>{t('backupTable.score', 'Score')}</span>
@@ -156,8 +163,8 @@ export default function BackupTable({
               ms
             ).getTime()
           }
-          if (backup.created_at) {
-            return new Date(backup.created_at).getTime()
+          if (backup.created_at || backup.updated_at) {
+            return new Date(backup.created_at || backup.updated_at).getTime()
           }
           return 0
         }
@@ -165,11 +172,14 @@ export default function BackupTable({
       }).map((backup, index) => {
         const formattedTime = backup.date && backup.time
           ? formatBackupDateTime(backup.date, backup.time, backup.ms)
-          : (backup.created_at ? new Date(backup.created_at).toLocaleString() : 'Unknown')
+          : (backup.created_at || backup.updated_at ? new Date(backup.created_at || backup.updated_at).toLocaleString() : 'Unknown')
 
-        const lastAction = loadingActions[backup.path]
-          ? t('common.loading', 'Loading...')
-          : (lastActions[backup.path] || t('common.unknown', 'Unknown'))
+        const isPb = backup.source === 'pocketbase'
+        const lastAction = isPb
+          ? (backup.status || '—')
+          : (loadingActions[backup.path]
+            ? t('common.loading', 'Loading...')
+            : (lastActions[backup.path] || t('common.unknown', 'Unknown')))
 
         const isDisabled = loading || loadingBackupPath === backup.path
 
@@ -188,7 +198,7 @@ export default function BackupTable({
           // App.jsx mode - entire row is a button
           return (
             <button
-              key={backup.name}
+              key={backup.match_id || backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
               disabled={isDisabled}
               style={{
@@ -200,6 +210,18 @@ export default function BackupTable({
                 fontSize: '12px'
               }}
             >
+              {(hasMixedSources || hasAnyPb) && (
+                <span style={{ textAlign: 'center' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: isPb ? '#22c55e' : '#8b5cf6',
+                    title: isPb ? 'PocketBase' : 'Cloud'
+                  }} />
+                </span>
+              )}
               <span style={{ fontWeight: 600, textAlign: 'center' }}>{backup.gameN || 'N/A'}</span>
               <span style={{ textAlign: 'center' }}>{backup.setIndex || 'N/A'}</span>
               <span style={{ fontWeight: 600, color: '#22c55e', textAlign: 'center' }}>
@@ -220,7 +242,7 @@ export default function BackupTable({
           // ScoreboardOptionsModal mode - row clickable with separate restore button
           return (
             <div
-              key={backup.name}
+              key={backup.match_id || backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
               style={{
                 ...rowStyle,
@@ -231,6 +253,18 @@ export default function BackupTable({
               onMouseEnter={(e) => !isDisabled && (e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)')}
               onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
             >
+              {(hasMixedSources || hasAnyPb) && (
+                <span style={{ textAlign: 'center' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: isPb ? '#22c55e' : '#8b5cf6',
+                    title: isPb ? 'PocketBase' : 'Cloud'
+                  }} />
+                </span>
+              )}
               <span style={{ fontWeight: 600, fontSize: '12px', textAlign: 'center' }}>{backup.gameN || 'N/A'}</span>
               <span style={{ fontSize: '12px', textAlign: 'center' }}>{backup.setIndex || 'N/A'}</span>
               <span style={{ fontWeight: 600, fontSize: '12px', color: '#22c55e', textAlign: 'center' }}>
