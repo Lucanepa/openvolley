@@ -8,6 +8,7 @@
 import { db } from '../db/db'
 import { apiFrom, apiStorage } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
+import { getApiUrl } from './backendConfig'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -1218,5 +1219,62 @@ export function saveBackupSettings(settings) {
   }
   if (settings.backupFrequencyMinutes !== undefined) {
     localStorage.setItem('backupFrequencyMinutes', String(settings.backupFrequencyMinutes))
+  }
+}
+
+/**
+ * List matches stored in PocketBase (server-side backup)
+ * @param {number} gameN - Game number to filter by (optional)
+ * @returns {Array} Array of backup entries compatible with BackupTable
+ */
+export async function listPocketBaseBackups(gameN) {
+  const params = new URLSearchParams()
+  if (gameN) params.set('game_number', String(gameN))
+  const url = getApiUrl(`/api/pocketbase/matches?${params.toString()}`)
+  if (!url) return []
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const { data } = await res.json()
+    return (data || []).map(record => {
+      const lastSet = record.sets?.at?.(-1)
+      return {
+        source: 'pocketbase',
+        match_id: record.match_id,
+        name: `Game #${record.game_number || '?'} — ${record.home_team?.name || 'Home'} vs ${record.away_team?.name || 'Away'}`,
+        gameN: record.game_number,
+        status: record.status,
+        updated_at: record.updated_at,
+        created: record.updated_at,
+        setIndex: record.sets?.length || 0,
+        leftScore: lastSet?.homePoints ?? lastSet?.home_points ?? 0,
+        rightScore: lastSet?.awayPoints ?? lastSet?.away_points ?? 0,
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Fetch full match snapshot from PocketBase for restoration
+ * @param {string} matchId - The PocketBase match_id
+ * @returns {Object} Match data in standard restore format
+ */
+export async function fetchPocketBaseMatch(matchId) {
+  const url = getApiUrl(`/api/pocketbase/matches/${encodeURIComponent(matchId)}`)
+  if (!url) throw new Error('Backend not available')
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('PocketBase match not found')
+  const { data } = await res.json()
+  return {
+    version: 1,
+    match: data.match_data,
+    homeTeam: data.home_team,
+    awayTeam: data.away_team,
+    homePlayers: data.home_players,
+    awayPlayers: data.away_players,
+    sets: data.sets,
+    events: data.events,
   }
 }
