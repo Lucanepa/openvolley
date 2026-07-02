@@ -10,6 +10,7 @@ import { createServer as createHttpServer } from 'http'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
+import { stripMatchSecrets } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -338,7 +339,7 @@ export function vitePluginApiRoutes(options = {}) {
               if (pending && pending.res && !pending.res.headersSent) {
                 if (matchData) {
                   pending.res.writeHead(200, { 'Content-Type': 'application/json' })
-                  pending.res.end(JSON.stringify({ success: true, ...matchData }))
+                  pending.res.end(JSON.stringify({ success: true, ...matchData, match: stripMatchSecrets(matchData.match) }))
                 } else {
                   pending.res.writeHead(404, { 'Content-Type': 'application/json' })
                   pending.res.end(JSON.stringify({ success: false, error: 'Match not found' }))
@@ -672,7 +673,7 @@ export function vitePluginApiRoutes(options = {}) {
               }
               
               if (matchFound) {
-                sendResponse(200, { success: true, match: matchFound })
+                sendResponse(200, { success: true, match: stripMatchSecrets(matchFound) })
               } else {
                 // Request from main instance via WebSocket
                 const requestId = `pin-request-${Date.now()}-${Math.random()}`
@@ -737,7 +738,7 @@ export function vitePluginApiRoutes(options = {}) {
           
           if (matchData) {
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: true, ...matchData }))
+            res.end(JSON.stringify({ success: true, ...matchData, match: stripMatchSecrets(matchData.match) }))
           } else {
             // Request from main instance
             const requestId = `match-data-request-${Date.now()}-${Math.random()}`
@@ -788,9 +789,9 @@ export function vitePluginApiRoutes(options = {}) {
           
           if (matchFound) {
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ 
-              success: true, 
-              match: matchFound.match,
+            res.end(JSON.stringify({
+              success: true,
+              match: stripMatchSecrets(matchFound.match),
               matchId: matchFound.matchId
             }))
           } else {
