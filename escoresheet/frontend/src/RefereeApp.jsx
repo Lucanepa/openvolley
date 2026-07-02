@@ -663,6 +663,7 @@ export default function RefereeApp() {
                     type="button"
                     onClick={() => { loadMatches(); checkConnectionStatuses() }}
                     disabled={loadingMatches}
+                    aria-label={t('refereeDashboard.loadGames', 'Load Games')}
                     style={{
                       padding: '4px 10px',
                       fontSize: '12px',
@@ -750,6 +751,7 @@ export default function RefereeApp() {
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
                 placeholder="000000"
+                aria-label={t('refereeDashboard.connectionPin')}
                 maxLength={6}
                 disabled={isLoading}
                 style={{

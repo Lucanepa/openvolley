@@ -214,6 +214,7 @@ export function DashboardOptionsMenu({
           borderRadius: '6px',
           cursor: 'pointer'
         }}
+        aria-label={t('options.title')}
         title={t('options.title')}
       >
         <span style={{ fontSize: '14px' }}>&#9881;</span>

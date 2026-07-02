@@ -471,6 +471,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         </h2>
         <button
           onClick={onClose}
+          aria-label={t('common.close', 'Close')}
           style={{
             width: `${Math.round(32 * scaleFactor)}px`,
             height: `${Math.round(32 * scaleFactor)}px`,
@@ -507,6 +508,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               <select
                 value={gender}
                 onChange={e => setGender(e.target.value)}
+                aria-label={t('loadOfficialMatch.gender', 'Gender')}
                 style={selectStyle}
               >
                 <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
@@ -522,6 +524,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 <select
                   value={league}
                   onChange={e => setLeague(e.target.value)}
+                  aria-label={t('loadOfficialMatch.league', 'League')}
                   style={{ ...selectStyle, opacity: gender ? 1 : 0.5 }}
                   disabled={!gender}
                 >
@@ -635,6 +638,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
+              aria-label={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
               style={{
                 width: '100%',
                 padding: `${Math.round(8 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,

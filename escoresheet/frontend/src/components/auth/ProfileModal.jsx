@@ -200,6 +200,7 @@ export default function ProfileModal({ open, onClose }) {
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               background: 'none',
               border: 'none',
@@ -285,6 +286,7 @@ export default function ProfileModal({ open, onClose }) {
                   value={newEmail}
                   onChange={e => setNewEmail(e.target.value)}
                   placeholder={t('auth.newEmail', 'New email address')}
+                  aria-label={t('auth.newEmail', 'New email address')}
                   style={{ ...inputStyle, flex: 1 }}
                   autoFocus
                 />
@@ -385,6 +387,7 @@ export default function ProfileModal({ open, onClose }) {
                   type="text"
                   value={firstName}
                   onChange={e => setFirstName(e.target.value)}
+                  aria-label={t('auth.firstName', 'First name')}
                   style={inputStyle}
                 />
               </div>
@@ -396,6 +399,7 @@ export default function ProfileModal({ open, onClose }) {
                   type="text"
                   value={lastName}
                   onChange={e => setLastName(e.target.value)}
+                  aria-label={t('auth.lastName', 'Last name')}
                   style={inputStyle}
                 />
               </div>
@@ -413,6 +417,7 @@ export default function ProfileModal({ open, onClose }) {
                   onChange={e => setCountry(e.target.value.toUpperCase())}
                   placeholder="CHE"
                   maxLength={3}
+                  aria-label={t('auth.country', 'Country')}
                   style={{ ...inputStyle, textTransform: 'uppercase' }}
                 />
               </div>
@@ -424,6 +429,7 @@ export default function ProfileModal({ open, onClose }) {
                   type="date"
                   value={dob}
                   onChange={e => setDob(e.target.value)}
+                  aria-label={t('auth.dob', 'Date of birth')}
                   style={inputStyle}
                 />
               </div>
@@ -548,6 +554,7 @@ export default function ProfileModal({ open, onClose }) {
                 value={deleteEmailInput}
                 onChange={e => setDeleteEmailInput(e.target.value)}
                 placeholder={user?.email}
+                aria-label={t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
                 style={{
                   width: '100%',
                   padding: '12px 16px',

@@ -148,6 +148,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
           {/* Search Input */}
           <input
             type="text"
+            aria-label={t('refereeSelector.searchReferees')}
             placeholder={t('refereeSelector.searchReferees')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

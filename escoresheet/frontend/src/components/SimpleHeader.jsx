@@ -196,6 +196,7 @@ export default function SimpleHeader({
                 minWidth: '44px',
                 transition: 'all 0.15s'
               }}
+              aria-label={t('header.menu')}
               title={t('header.menu')}
             >
               {menuOpen ? '✕' : '☰'}
@@ -574,6 +575,7 @@ export default function SimpleHeader({
               gap: '6px',
               transition: 'all 0.15s'
             }}
+            aria-label={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
             title={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
           >
             {isFullscreen ? '⛶' : '⛶'}

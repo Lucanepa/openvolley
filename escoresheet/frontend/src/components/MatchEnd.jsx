@@ -1582,6 +1582,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           </div>
           <button
             onClick={() => setZoomedSection(null)}
+            aria-label={t('common.close', 'Close')}
             style={{
               position: 'absolute',
               top: '20px',
@@ -1628,6 +1629,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <textarea
               ref={remarksTextareaRef}
               placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
+              aria-label={t('matchEnd.remarks', 'Remarks')}
               value={remarksText}
               onChange={e => setRemarksText(e.target.value)}
               style={{
@@ -1720,6 +1722,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <input
               type="password"
               value={unlockPasswordInput}
+              aria-label={t('matchEnd.unlockPasswordPlaceholder', 'Password')}
               onChange={e => {
                 setUnlockPasswordInput(e.target.value)
                 setUnlockPasswordError('')

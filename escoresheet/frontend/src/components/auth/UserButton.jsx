@@ -151,6 +151,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
       <div style={{ position: 'relative', ...style }}>
         <button
           onClick={() => setShowDropdown(!showDropdown)}
+          aria-label={userName}
           style={{ ...loggedInButtonStyle,  }}
         >
           {fullWidth ? (

@@ -192,6 +192,7 @@ export default function ConnectionSetupModal({
               <div
                 role="switch"
                 aria-checked={!!enabled}
+                aria-label={label}
                 tabIndex={0}
                 onClick={() => handleToggleConnection(dbField, syncField, pinSyncField, !enabled)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleConnection(dbField, syncField, pinSyncField, !enabled) } }}

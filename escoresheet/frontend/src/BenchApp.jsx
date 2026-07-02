@@ -643,6 +643,7 @@ export default function BenchApp() {
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
               placeholder="000000"
+              aria-label={t('benchDashboard.enterPin')}
               maxLength={6}
               style={{
                 width: '80%',
@@ -1024,6 +1025,7 @@ export default function BenchApp() {
               type="button"
               onClick={loadMatches}
               disabled={loadingMatches}
+              aria-label={t('benchDashboard.loadGames', 'Load Games')}
               style={{
                 padding: '4px 10px',
                 fontSize: '12px',

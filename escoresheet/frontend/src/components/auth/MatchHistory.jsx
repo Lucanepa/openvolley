@@ -142,6 +142,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               background: 'none',
               border: 'none',

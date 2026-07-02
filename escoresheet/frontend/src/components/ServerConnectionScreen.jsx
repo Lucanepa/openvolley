@@ -249,6 +249,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               type="text"
+              aria-label={t('connection.enterIPAddress', 'Enter IP address')}
               value={localAddress}
               onChange={(e) => { setLocalAddress(e.target.value); setMode('local') }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleLocalConnect() }}

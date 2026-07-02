@@ -1791,6 +1791,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <input
+                                aria-label={t('roster.numberLabel')}
                                 type="number"
                                 inputMode="numeric"
                                 min="1" max="99"
@@ -1824,6 +1825,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <input
+                              aria-label={t('roster.name')}
                               type="text"
                               value={`${p.lastName || ''} ${p.firstName || ''}`.trim() || ''}
                               onChange={e => {
@@ -1840,6 +1842,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <input
+                              aria-label={t('roster.dateOfBirth')}
                               type="date"
                               value={p.dob ? formatDateToISO(p.dob) : ''}
                               onChange={e => {
@@ -1856,6 +1859,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <select
+                                aria-label={t('roster.libero')}
                                 value={p.libero || ''}
                                 onChange={e => {
                                   const updated = [...roster]
@@ -1941,6 +1945,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           <td style={{ verticalAlign: 'middle', padding: '4px' }}>
                             <button
                               type="button"
+                              aria-label={t('roster.deletePlayer', 'Delete player')}
                               className="secondary"
                               onClick={() => setDeletePlayerModal({ team: rosterModal, index: originalIdx })}
                               style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -1984,6 +1989,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                         <tr key={`bench-${originalIdx}`}>
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <select
+                              aria-label={t('roster.role')}
                               value={official.role || ''}
                               onChange={e => {
                                 const updated = [...bench]
@@ -2002,6 +2008,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <input
+                              aria-label={t('roster.name')}
                               type="text"
                               value={`${official.lastName || ''} ${official.firstName || ''}`.trim() || ''}
                               onChange={e => {
@@ -2017,6 +2024,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <input
+                              aria-label={t('roster.dateOfBirth')}
                               type="date"
                               value={official.dob ? formatDateToISO(official.dob) : ''}
                               onChange={e => {
@@ -2032,6 +2040,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           <td style={{ verticalAlign: 'middle', padding: '4px' }}>
                             <button
                               type="button"
+                              aria-label={t('roster.deleteOfficial', 'Delete official')}
                               className="secondary"
                               onClick={() => setBench(bench.filter((_, i) => i !== originalIdx))}
                               style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -2156,6 +2165,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div>
                 <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.numberLabel')}</label>
                 <input
+                  aria-label={t('roster.numberLabel')}
                   type="number"
                   inputMode="numeric"
                   value={num}
@@ -2167,6 +2177,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div>
                 <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.lastName')}</label>
                 <input
+                  aria-label={t('roster.lastName')}
                   type="text"
                   className="capitalize"
                   value={last}
@@ -2178,6 +2189,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div>
                 <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.firstName')}</label>
                 <input
+                  aria-label={t('roster.firstName')}
                   type="text"
                   className="capitalize"
                   value={first}
@@ -2189,6 +2201,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div>
                 <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.dateOfBirth')}</label>
                 <input
+                  aria-label={t('roster.dateOfBirth')}
                   type="date"
                   value={dob ? formatDateToISO(dob) : ''}
                   onChange={e => {
@@ -2202,6 +2215,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div>
                 <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.libero')}</label>
                 <select
+                  aria-label={t('roster.libero')}
                   value={libero}
                   onChange={e => {
                     let newValue = e.target.value
