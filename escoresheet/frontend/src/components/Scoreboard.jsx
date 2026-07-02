@@ -5060,11 +5060,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // Check for 5th set court switch at 8 points
-      // Only check if the team that JUST SCORED has reached 8 (not if either team has 8)
+      // Check for 5th set court switch at 8 points (FIVB 18.2.2). Use >= 8 (not
+      // === 8) so a score that lands past 8 — via a penalty point or a manual
+      // adjustment — still triggers the change "as soon as noticed"; the
+      // hasSwitchedCourts guard below keeps it a one-time switch.
       const is5thSet = data.set.index === 5
       const scoringTeamPoints = teamKey === 'home' ? homePoints : awayPoints
-      if (is5thSet && scoringTeamPoints === 8) {
+      if (is5thSet && scoringTeamPoints >= 8) {
         // Check if we've already switched courts in this set
         const hasSwitchedCourts = await db.matches.get(matchId).then(m => m?.set5CourtSwitched || false)
 
