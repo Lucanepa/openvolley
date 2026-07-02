@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
+import { validateManualSubstitution } from '../domain/substitutions'
 import { apiFrom } from '../lib/apiClient'
 
 // Standard volleyball team colors - keys for translation
@@ -397,6 +398,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }, [matchId, allEvents, recordChange])
 
   const addSubstitution = useCallback((team, setIndex, playerOut, playerIn, scoreA, scoreB) => {
+    // Enforce substitution legality (FIVB 15.5-15.6) — manual entries previously
+    // bypassed all checks. Pure + unit-tested (domain/substitutions).
+    const { legal, reason } = validateManualSubstitution(allEvents, team, setIndex, playerOut, playerIn)
+    if (!legal) {
+      showAlert(reason, 'error')
+      return false
+    }
     const newEvent = {
       id: `new_${Date.now()}`,
       matchId,
@@ -411,7 +419,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     recordChange('event', 'add', null, newEvent, `Added ${team} substitution: #${playerOut} → #${playerIn}`)
     setNewEvents(prev => [...prev, newEvent])
     setAllEvents(prev => [...prev, newEvent].sort((a, b) => (a.seq || 0) - (b.seq || 0)))
-  }, [matchId, allEvents, recordChange])
+    return true
+  }, [matchId, allEvents, recordChange, showAlert])
 
   const addSanction = useCallback((team, setIndex, sanctionType, playerType, playerNumber, scoreA, scoreB, role = null) => {
     const newEvent = {
@@ -468,7 +477,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const handleAddSubSubmit = useCallback(() => {
     const { team, setIndex, playerOut, playerIn, scoreA, scoreB } = newSubData
     if (!playerOut || !playerIn) return
-    addSubstitution(team, setIndex, parseInt(playerOut, 10), parseInt(playerIn, 10), scoreA, scoreB)
+    const ok = addSubstitution(team, setIndex, parseInt(playerOut, 10), parseInt(playerIn, 10), scoreA, scoreB)
+    if (ok === false) return // illegal — keep the modal open so the scorer can correct
     setShowAddSub(false)
     setNewSubData({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
   }, [newSubData, addSubstitution])
