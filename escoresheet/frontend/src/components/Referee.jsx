@@ -9,7 +9,6 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
-import { ConnectionManager } from '../utils/connectionManager'
 import { setsToWin, isMatchFinished as isMatchFinishedUtil } from '../utils/matchFormat'
 import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
