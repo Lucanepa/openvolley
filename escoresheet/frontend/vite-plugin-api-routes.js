@@ -435,8 +435,13 @@ export function vitePluginApiRoutes(options = {}) {
           return next()
         }
         
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*')
+        // CORS headers — reflect only same-origin/localhost/LAN origins so an
+        // arbitrary website a developer visits cannot read dev-server responses.
+        const devOrigin = req.headers.origin
+        if (devOrigin && /^https?:\/\/(localhost|127\.0\.0\.1|(\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(devOrigin)) {
+          res.setHeader('Access-Control-Allow-Origin', devOrigin)
+          res.setHeader('Vary', 'Origin')
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
 
@@ -557,7 +562,7 @@ export function vitePluginApiRoutes(options = {}) {
               scheduledAt: match.scheduledAt,
               dateTime,
               status: match.status,
-              refereePin: match.refereePin,
+              // refereePin intentionally NOT returned — validated via /api/match/validate-pin
               refereeConnectionEnabled: match.refereeConnectionEnabled === true
             }
           }).filter(m => {

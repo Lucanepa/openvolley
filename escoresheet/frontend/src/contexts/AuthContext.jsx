@@ -46,7 +46,7 @@ export function AuthProvider({ children }) {
 
       const { data, error } = await Promise.race([queryPromise, timeoutPromise])
 
-      console.log('[AuthContext] Profile query result:', { data, error })
+      if (import.meta.env.DEV) console.log('[AuthContext] Profile query result:', { data, error })
 
       if (error) {
         console.warn('[AuthContext] Failed to fetch profile:', error.message, error)
@@ -55,7 +55,7 @@ export function AuthProvider({ children }) {
       }
 
       setProfile(data)
-      console.log('[AuthContext] Profile set successfully:', data)
+      if (import.meta.env.DEV) console.log('[AuthContext] Profile set successfully:', data)
       // Cache profile in localStorage for offline auto-fill
       localStorage.setItem('cachedProfile', JSON.stringify(data))
       return data

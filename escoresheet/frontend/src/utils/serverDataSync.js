@@ -4,6 +4,7 @@
  */
 
 import { apiFrom } from '../lib/apiClient'
+import { getApiUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
 
 /**
@@ -1041,6 +1042,8 @@ export async function listAvailableMatchesSupabase() {
  */
 export async function listAvailableMatchesForBenchSupabase() {
   try {
+    // NOTE: connection_pins is intentionally NOT selected — bench PINs must not
+    // be shipped to the client. PIN validation happens server-side on connect.
     const { data, error } = await apiFrom('matches')
       .select(`
         id,
@@ -1050,8 +1053,7 @@ export async function listAvailableMatchesForBenchSupabase() {
         scheduled_at,
         home_team,
         away_team,
-        connections,
-        connection_pins
+        connections
       `)
       .in('status', ['setup', 'live'])
       .order('scheduled_at', { ascending: true })
@@ -1090,7 +1092,6 @@ export async function listAvailableMatchesForBenchSupabase() {
       const homeTeamName = m.home_team?.name || 'Home'
       const awayTeamName = m.away_team?.name || 'Away'
       const connections = m.connections || {}
-      const connectionPins = m.connection_pins || {}
 
       return {
         id: m.external_id || m.id,
@@ -1104,8 +1105,6 @@ export async function listAvailableMatchesForBenchSupabase() {
         dateTime,
         homeBenchEnabled: connections.home_bench_enabled,
         awayBenchEnabled: connections.away_bench_enabled,
-        homeTeamPin: connectionPins.bench_home,
-        awayTeamPin: connectionPins.bench_away,
         status: m.status
       }
     })
@@ -1129,64 +1128,63 @@ export async function validatePinSupabase(pin, type = 'referee') {
       return { success: false, error: 'Invalid PIN format' }
     }
 
-    // Query matches by PIN in connection_pins JSONB
-    const { data, error } = await apiFrom('matches')
-      .select(`
-        id,
-        external_id,
-        game_n,
-        status,
-        scheduled_at,
-        home_team,
-        away_team,
-        connections,
-        connection_pins
-      `)
-      .in('status', ['setup', 'live'])
-      .eq('sport_type', 'indoor')
+    // SECURITY: the PIN is validated server-side. Match connection PINs are
+    // never sent to the client (previously this read connection_pins for every
+    // live match into the browser, defeating the PIN gate).
+    const apiUrl = getApiUrl('/api/match/validate-connection-pin')
+    if (!apiUrl) return { success: false, error: 'Backend not available' }
 
-    if (error) {
-      console.error('[validatePinSupabase] Error:', error)
-      return { success: false, error: error.message }
-    }
-
-    // Find match where PIN matches the appropriate type in connection_pins
-    const matchData = (data || []).find(m => {
-      const connectionPins = m.connection_pins || {}
-      const connections = m.connections || {}
-
-      if (type === 'referee') {
-        return connectionPins.referee === pinStr && connections.referee_enabled
-      } else if (type === 'bench_home') {
-        return connectionPins.bench_home === pinStr && connections.home_bench_enabled
-      } else if (type === 'bench_away') {
-        return connectionPins.bench_away === pinStr && connections.away_bench_enabled
-      }
-      return false
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: pinStr, type })
     })
 
-    if (!matchData) {
-      return { success: false, error: 'Invalid PIN code' }
+    let result
+    try {
+      result = await response.json()
+    } catch {
+      return { success: false, error: 'Validation failed' }
     }
 
-    // Read from JSONB columns only (clean schema)
-    const connections = matchData.connections || {}
-
-    const match = {
-      id: matchData.external_id || matchData.id,
-      gameNumber: matchData.game_n || matchData.external_id,
-      status: matchData.status,
-      scheduledAt: matchData.scheduled_at,
-      refereeConnectionEnabled: connections.referee_enabled,
-      homeTeam: matchData.home_team?.name || 'Home',
-      awayTeam: matchData.away_team?.name || 'Away',
-      homeTeamColor: matchData.home_team?.color,
-      awayTeamColor: matchData.away_team?.color
+    if (!response.ok || !result?.success) {
+      return { success: false, error: result?.error || 'Invalid PIN code' }
     }
 
-    return { success: true, match }
+    return { success: true, match: result.match }
   } catch (error) {
     console.error('[validatePinSupabase] Exception:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Validate a roster-upload PIN server-side (Supabase mode).
+ * The upload PINs are never sent to the client; the server compares them.
+ * @param {'home'|'away'} team
+ * @param {string} pin
+ */
+export async function validateUploadPinSupabase(team, pin) {
+  try {
+    const pinStr = String(pin).trim()
+    if (!pinStr || pinStr.length !== 6) {
+      return { success: false, error: 'Invalid PIN format' }
+    }
+    const apiUrl = getApiUrl('/api/match/validate-connection-pin')
+    if (!apiUrl) return { success: false, error: 'Backend not available' }
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: pinStr, type: team === 'home' ? 'upload_home' : 'upload_away' })
+    })
+    let result
+    try { result = await response.json() } catch { return { success: false, error: 'Validation failed' } }
+    if (!response.ok || !result?.success) {
+      return { success: false, error: result?.error || 'Invalid upload PIN' }
+    }
+    return { success: true, match: result.match }
+  } catch (error) {
+    console.error('[validateUploadPinSupabase] Exception:', error)
     return { success: false, error: error.message }
   }
 }

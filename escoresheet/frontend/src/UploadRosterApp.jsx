@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase, validateUploadPinSupabase } from './utils/serverDataSync'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -78,6 +78,9 @@ export default function UploadRosterApp() {
   const [uploading, setUploading] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const [manuallyValidated, setManuallyValidated] = useState(false) // For when no PIN is required
+  // Supabase mode: upload PINs are validated server-side (never sent to client).
+  // Fail-closed: upload stays blocked until the server confirms the PIN.
+  const [serverPinValidated, setServerPinValidated] = useState(false)
 
   // Signature states
   const [coachSignature, setCoachSignature] = useState(null)
@@ -420,6 +423,7 @@ export default function UploadRosterApp() {
     setValidationError('')
     setMatchStatusCheck(null)
     setManuallyValidated(false)
+    setServerPinValidated(false)
   }
 
   // Check if match exists and is in setup (not started or finished)
@@ -537,10 +541,33 @@ export default function UploadRosterApp() {
   useEffect(() => {
     if (!match) {
       setValidationError('')
+      setServerPinValidated(false)
       return
     }
 
-    // Handle both camelCase (local) and snake_case (Supabase) field names
+    // Supabase mode: the upload PIN is never sent to the client, so validate it
+    // server-side. Fail-closed — serverPinValidated stays false until confirmed.
+    if (activeConnection === 'supabase') {
+      setServerPinValidated(false)
+      if (uploadPin && uploadPin.length === 6) {
+        let cancelled = false
+        validateUploadPinSupabase(team, uploadPin).then(res => {
+          if (cancelled) return
+          if (res.success) {
+            setServerPinValidated(true)
+            setValidationError('')
+          } else {
+            setServerPinValidated(false)
+            setValidationError(res.error || 'Invalid upload PIN')
+          }
+        })
+        return () => { cancelled = true }
+      }
+      setValidationError('')
+      return
+    }
+
+    // Local / WebSocket mode: the match carries the PIN locally (LAN), compare it.
     const correctPin = team === 'home'
       ? (match.homeTeamUploadPin || match.home_team_upload_pin)
       : (match.awayTeamUploadPin || match.away_team_upload_pin)
@@ -562,7 +589,7 @@ export default function UploadRosterApp() {
     } else {
       setValidationError('')
     }
-  }, [uploadPin, match, team])
+  }, [uploadPin, match, team, activeConnection])
 
   // Load teams when match is found (already loaded in checkMatchStatus)
 
@@ -585,7 +612,21 @@ export default function UploadRosterApp() {
       setMatch(foundMatch)
       setMatchId(foundMatch.id)
 
-      // Handle both camelCase (local) and snake_case (Supabase) field names
+      // Supabase mode: validate the upload PIN server-side (never sent to client).
+      if (activeConnection === 'supabase') {
+        if (!uploadPin.trim()) {
+          setValidationError('Please enter an upload PIN')
+          return false
+        }
+        const res = await validateUploadPinSupabase(team, uploadPin.trim())
+        if (!res.success) {
+          setServerPinValidated(false)
+          setValidationError(res.error || 'Invalid upload PIN')
+          return false
+        }
+        setServerPinValidated(true)
+      } else {
+      // Local / WebSocket mode: match carries the PIN locally (LAN), compare it.
       const correctPin = team === 'home'
         ? (foundMatch.homeTeamUploadPin || foundMatch.home_team_upload_pin)
         : (foundMatch.awayTeamUploadPin || foundMatch.away_team_upload_pin)
@@ -601,6 +642,7 @@ export default function UploadRosterApp() {
           setValidationError('Invalid upload PIN')
           return false
         }
+      }
       }
 
       return true
@@ -863,6 +905,7 @@ export default function UploadRosterApp() {
     setMatchStatusCheck(null)
     setSelectedMatch(null)
     setManuallyValidated(false)
+    setServerPinValidated(false)
 
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -874,9 +917,17 @@ export default function UploadRosterApp() {
   const teamUploadPin = team === 'home'
     ? (match?.homeTeamUploadPin || match?.home_team_upload_pin)
     : (match?.awayTeamUploadPin || match?.away_team_upload_pin)
-  const isPinRequired = teamUploadPin != null && teamUploadPin !== ''
+  // Supabase mode: PIN is validated server-side (never sent to client), so a
+  // synced match always requires a server-confirmed PIN (fail-closed).
+  const isPinRequired = activeConnection === 'supabase'
+    ? true
+    : (teamUploadPin != null && teamUploadPin !== '')
   // When PIN is required, validate with PIN. When no PIN required, require manual validation click.
-  const isValid = match && matchId && (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
+  const isValid = match && matchId && (
+    activeConnection === 'supabase'
+      ? serverPinValidated
+      : (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
+  )
 
   // Handle connection mode change
   const handleConnectionModeChange = useCallback((mode) => {
@@ -1120,6 +1171,7 @@ export default function UploadRosterApp() {
                         setValidationError('')
                         setUploadPin('')
                         setManuallyValidated(false)
+                        setServerPinValidated(false)
                       }}
                       style={{
                         flex: 1,
@@ -1143,6 +1195,7 @@ export default function UploadRosterApp() {
                         setValidationError('')
                         setUploadPin('')
                         setManuallyValidated(false)
+                        setServerPinValidated(false)
                       }}
                       style={{
                         flex: 1,

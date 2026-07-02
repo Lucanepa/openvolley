@@ -8,7 +8,7 @@ import { createServer as createHttpServer } from 'http'
 import { createServer as createHttpsServer } from 'https'
 import { readFileSync, existsSync, statSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join, extname, basename } from 'path'
+import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
 
@@ -23,6 +23,15 @@ const PORT = process.env.PORT || 5173
 const WS_PORT = process.env.WS_PORT || 8080
 const DIST_DIR = join(__dirname, 'dist')
 const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
+
+// Secret fields that must never be returned to a client (PINs are the connection gate).
+const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin', 'connection_pins', 'connectionPins', 'game_pin', 'gamePin']
+function stripMatchSecrets(match) {
+  if (!match || typeof match !== 'object') return match
+  const clean = { ...match }
+  for (const k of MATCH_SECRET_FIELDS) delete clean[k]
+  return clean
+}
 
 // HTTPS configuration - default to true for production
 const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' || process.env.USE_HTTPS === 'true' || process.env.NODE_ENV === 'production')
@@ -442,11 +451,13 @@ const requestHandler = (req, res) => {
     })
     res.end(JSON.stringify({
       success: true,
-      ...matchData
+      ...matchData,
+      // Strip PINs — this endpoint is unauthenticated and PINs gate connections.
+      match: stripMatchSecrets(matchData.match)
     }))
     return
   }
-  
+
   // API endpoint to list available matches (for game number dropdown)
   if (urlPath === '/api/match/list' && req.method === 'GET') {
     const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {
@@ -477,7 +488,7 @@ const requestHandler = (req, res) => {
         scheduledAt: match.scheduledAt,
         dateTime,
         status: match.status,
-        refereePin: match.refereePin,
+        // refereePin intentionally NOT returned — PIN validation is done via /api/match/validate-pin
         refereeConnectionEnabled: match.refereeConnectionEnabled === true
       }
     }).filter(m => {
@@ -660,9 +671,10 @@ const requestHandler = (req, res) => {
   
   // Allow access to referee, bench, livescore, etc. even if main instance exists
   let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
-  
-  // Security: prevent directory traversal
-  if (!filePath.startsWith(DIST_DIR)) {
+
+  // Security: prevent directory traversal. Require a path separator after
+  // DIST_DIR so sibling dirs like "dist-backup" cannot pass a bare prefix check.
+  if (filePath !== DIST_DIR && !filePath.startsWith(DIST_DIR + sep)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' })
     res.end('Forbidden')
     return

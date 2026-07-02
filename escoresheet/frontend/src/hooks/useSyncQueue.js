@@ -545,15 +545,19 @@ export function useSyncQueue() {
 
   const flush = useCallback(async () => {
     if (busy.current) return
-    if (!hasBackend()) {
-      setSyncStatus('online_no_supabase')
-      return
-    }
-
-    const connected = await checkSupabaseConnection()
-    if (!connected) return
-
+    // Claim the flush BEFORE any await so two concurrent callers cannot both
+    // pass the guard and double-process the same jobs (restore/delete are not
+    // idempotent). Reset happens in the finally below.
+    busy.current = true
     try {
+      if (!hasBackend()) {
+        setSyncStatus('online_no_supabase')
+        return
+      }
+
+      const connected = await checkSupabaseConnection()
+      if (!connected) return
+
       const queued = await db.sync_queue.where('status').equals('queued').toArray()
 
       if (queued.length === 0) {
@@ -561,7 +565,6 @@ export function useSyncQueue() {
         return
       }
 
-      busy.current = true
       setSyncStatus('syncing')
       console.log(`[SyncQueue] Processing ${queued.length} queued items`)
 
