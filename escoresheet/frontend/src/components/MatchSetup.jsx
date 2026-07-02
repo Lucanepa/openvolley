@@ -823,23 +823,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     '#ec4899'  // Pink
   ]
 
+  const homeLiberoCount = homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
+  const awayLiberoCount = awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
   const homeCounts = {
     players: homeRoster.length,
-    liberos: homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
+    liberos: homeLiberoCount,
     bench: benchHome.filter(m => m.firstName || m.lastName || m.dob).length,
     // For coin toss validation: check all players have numbers, has captain, has coach
     allPlayersHaveNumbers: homeRoster.every(p => p.number !== null && p.number !== undefined && p.number !== ''),
     hasCaptain: homeRoster.some(p => p.isCaptain),
-    hasCoach: benchHome.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName))
+    hasCoach: benchHome.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName)),
+    // FIVB 19.1.1 / Swiss Art. 75a: with more than 12 players on the sheet, two
+    // liberos are mandatory. Rosters of 12 or fewer are unaffected.
+    liberosOk: homeRoster.length <= 12 || homeLiberoCount >= 2
   }
   const awayCounts = {
     players: awayRoster.length,
-    liberos: awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
+    liberos: awayLiberoCount,
     bench: benchAway.filter(m => m.firstName || m.lastName || m.dob).length,
     // For coin toss validation: check all players have numbers, has captain, has coach
     allPlayersHaveNumbers: awayRoster.every(p => p.number !== null && p.number !== undefined && p.number !== ''),
     hasCaptain: awayRoster.some(p => p.isCaptain),
-    hasCoach: benchAway.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName))
+    hasCoach: benchAway.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName)),
+    liberosOk: awayRoster.length <= 12 || awayLiberoCount >= 2
   }
 
   // Signatures
@@ -6736,8 +6742,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Roster validation for proceeding to coin toss (requires captain and coach)
   // Note: all players having numbers is only required when CONFIRMING coin toss, not proceeding to it
-  const homeConfigured = homeRosterExists && homeCounts.hasCaptain && homeCounts.hasCoach
-  const awayConfigured = awayRosterExists && awayCounts.hasCaptain && awayCounts.hasCoach
+  const homeConfigured = homeRosterExists && homeCounts.hasCaptain && homeCounts.hasCoach && homeCounts.liberosOk
+  const awayConfigured = awayRosterExists && awayCounts.hasCaptain && awayCounts.hasCoach && awayCounts.liberosOk
 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
@@ -6756,6 +6762,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       else {
         if (!homeCounts.hasCaptain) missing.push(t('warnings.homeCaptainMissing'))
         if (!homeCounts.hasCoach) missing.push(t('warnings.homeCoachMissing'))
+        if (!homeCounts.liberosOk) missing.push(t('warnings.homeTwoLiberosRequired', 'Home: 2 liberos required for more than 12 players'))
       }
     }
     if (!awayConfigured) {
@@ -6763,6 +6770,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       else {
         if (!awayCounts.hasCaptain) missing.push(t('warnings.awayCaptainMissing'))
         if (!awayCounts.hasCoach) missing.push(t('warnings.awayCoachMissing'))
+        if (!awayCounts.liberosOk) missing.push(t('warnings.awayTwoLiberosRequired', 'Away: 2 liberos required for more than 12 players'))
       }
     }
     return missing
