@@ -1152,6 +1152,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     return {
       startTime: startTimeStr,
       endTime: hasBeenPlayed && setInfo?.endTime ? formatTimeLocal(setInfo.endTime) : '',
+      setFinished: isSetFinished,
       leftLineup,
       rightLineup,
       leftPoints,
