@@ -71,6 +71,15 @@ body {
   box-sizing: border-box;
 }
 
+/* Accessibility: visible keyboard-focus rings. Uses :focus-visible so it only
+   shows for keyboard/AT users, not mouse clicks. !important overrides the many
+   inline `outline: none` styles. Interactive elements only. */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--ring, #3b82f6) !important;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .app-root {
   position: relative;
   height: 100vh;
