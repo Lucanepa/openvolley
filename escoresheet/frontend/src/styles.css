@@ -28,10 +28,14 @@
 }
 
 :root {
-  --bg: #0b1220;
-  --panel: #111827;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
+  /* LIGHT MODE palette (dark mode removed). Surfaces are light, text is dark;
+     accent/danger stay semantic. Kept in sync with the shadcn tokens in tailwind.css. */
+  --bg: #f1f5f9;        /* app background (slate-100) */
+  --panel: #ffffff;     /* cards / panels */
+  --panel-2: #f8fafc;   /* subtle raised surface (slate-50) */
+  --text: #0f172a;      /* primary text (slate-900) */
+  --muted: #64748b;     /* secondary text (slate-500) */
+  --border: #e2e8f0;    /* hairline borders (slate-200) */
   --accent: #22c55e;
   --danger: #ef4444;
   /* Scale factor for dynamic sizing - set by JavaScript */
