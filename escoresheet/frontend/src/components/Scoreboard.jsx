@@ -14561,14 +14561,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const activeLiberos = liberos.filter(p => !isLiberoUnable(teamKey, p.number))
               const unableLiberos = liberos.filter(p => isLiberoUnable(teamKey, p.number))
 
-              // Check if already redesignated
-              const alreadyRedesignated = data?.events?.some(e =>
-                e.type === 'libero_redesignation' &&
-                e.payload?.team === teamKey
-              )
-
-              // Show redesignation when ALL liberos are unable (whether 1 or 2)
-              const needsRedesignation = liberos.length > 0 && activeLiberos.length === 0 && !alreadyRedesignated
+              // Show redesignation whenever the team has NO available libero.
+              // FIVB 19.4.2.4: if a re-designated Libero later becomes unable,
+              // further re-designations are permitted — so we must NOT block on a
+              // prior re-designation (previously `&& !alreadyRedesignated`).
+              const needsRedesignation = liberos.length > 0 && activeLiberos.length === 0
 
               if (needsRedesignation) {
                 const lastUnable = unableLiberos[unableLiberos.length - 1]
@@ -17947,14 +17944,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const activeLiberos = liberos.filter(p => !isLiberoUnable(teamKey, p.number))
               const unableLiberos = liberos.filter(p => isLiberoUnable(teamKey, p.number))
 
-              // Check if already redesignated
-              const alreadyRedesignated = data?.events?.some(e =>
-                e.type === 'libero_redesignation' &&
-                e.payload?.team === teamKey
-              )
-
-              // Show redesignation when ALL liberos are unable (whether 1 or 2)
-              const needsRedesignation = liberos.length > 0 && activeLiberos.length === 0 && !alreadyRedesignated
+              // Show redesignation whenever the team has NO available libero.
+              // FIVB 19.4.2.4: if a re-designated Libero later becomes unable,
+              // further re-designations are permitted — so we must NOT block on a
+              // prior re-designation (previously `&& !alreadyRedesignated`).
+              const needsRedesignation = liberos.length > 0 && activeLiberos.length === 0
 
               if (needsRedesignation) {
                 const lastUnable = unableLiberos[unableLiberos.length - 1]
