@@ -105,7 +105,7 @@ export default function StartupConnectivityModal({
       )
     }
     if (status === 'not_available' || status === 'not_configured') {
-      return <span style={{ color: '#9ca3af', fontSize: 20, lineHeight: '20px' }}>—</span>
+      return <span style={{ color: 'var(--muted)', fontSize: 20, lineHeight: '20px' }}>—</span>
     }
     if (isStatusOk(status)) {
       return <span style={{ color: '#22c55e', fontSize: 20 }}>✓</span>
@@ -126,7 +126,7 @@ export default function StartupConnectivityModal({
 
   const getTextColor = (status) => {
     if (status === 'unknown' || status === 'connecting') return '#3b82f6'
-    if (status === 'not_available' || status === 'not_configured') return '#9ca3af'
+    if (status === 'not_available' || status === 'not_configured') return 'var(--muted)'
     if (isStatusOk(status)) return '#22c55e'
     return '#ef4444'
   }
@@ -136,7 +136,7 @@ export default function StartupConnectivityModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.9)',
+        background: 'rgba(15, 23, 42, 0.5)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -157,8 +157,8 @@ export default function StartupConnectivityModal({
 
       <div
         style={{
-          background: '#111827',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
           borderRadius: 16,
           padding: 32,
           minWidth: 320,
@@ -168,7 +168,7 @@ export default function StartupConnectivityModal({
         <h3 style={{
           margin: '0 0 24px 0',
           textAlign: 'center',
-          color: '#fff',
+          color: 'var(--text)',
           fontSize: 18
         }}>
           {primaryOk
@@ -195,7 +195,7 @@ export default function StartupConnectivityModal({
                 <div style={{ width: 24, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                   {getStatusIcon(status)}
                 </div>
-                <span style={{ fontWeight: 600, color: '#fff', fontSize: 14, minWidth: 90 }}>
+                <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14, minWidth: 90 }}>
                   {labelMap[key] || key}
                 </span>
                 <span style={{
@@ -225,7 +225,7 @@ export default function StartupConnectivityModal({
           }}>
             {t('startupConnectivity.noConnection', 'No server or cloud connection available. Scoring still works offline.')}
             <br />
-            <span style={{ color: '#9ca3af', fontSize: 12 }}>
+            <span style={{ color: 'var(--muted)', fontSize: 12 }}>
               {t('startupConnectivity.backgroundRetry', 'Connection will keep retrying in the background.')}
             </span>
           </div>
