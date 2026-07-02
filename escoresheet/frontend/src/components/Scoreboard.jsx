@@ -27,7 +27,8 @@ import { apiFrom } from '../lib/apiClient'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
-import { setsToWin, isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
+import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
+import { getSetResult, getFirstServeForSet } from '../domain/rules'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -2843,23 +2844,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const homePoints = data.set.homePoints || 0
     const awayPoints = data.set.awayPoints || 0
-    const is5thSet = data.set.index === 5
-    const pointsToWin = is5thSet ? 15 : 25
 
-    // Check if score indicates set should have ended
-    const homeWon = homePoints >= pointsToWin && homePoints - awayPoints >= 2
-    const awayWon = awayPoints >= pointsToWin && awayPoints - homePoints >= 2
+    // Sets won BEFORE this set (for bestOf-aware match-end detection)
+    const finishedSets = data.sets?.filter(s => s.finished) || []
+    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-    if (homeWon || awayWon) {
+    // Check if score indicates set should have ended (shared rules)
+    const { winner, isSetWon, isMatchEnd } = getSetResult(homePoints, awayPoints, data.set.index, {
+      bestOf: data?.match?.bestOf, homeSetsWon, awaySetsWon
+    })
+
+    if (isSetWon) {
       // Set should have ended - show modal
-      const winner = homeWon ? 'home' : 'away'
-
-      // Calculate if this is match end
-      const finishedSets = data.sets?.filter(s => s.finished) || []
-      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
-      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-      const isMatchEnd = winner === 'home' ? (homeSetsWon + 1) >= setsToWin(data?.match?.bestOf) : (awaySetsWon + 1) >= setsToWin(data?.match?.bestOf)
-
       setSetEndTimeModal({
         setIndex: data.set.index,
         winner,
@@ -4386,56 +4383,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Don't show modal if it's already open
     if (setEndTimeModal) return false
 
-    // Determine if this is the 5th set (tie-break set)
-    const is5thSet = set.index === 5
-    const pointsToWin = is5thSet ? 15 : 25
+    // Does this score end the set? (shared rules; deciding set = index 5, to 15)
+    const { winner, isSetWon } = getSetResult(homePoints, awayPoints, set.index)
+    if (!isSetWon) return false
 
-    // Check if this point would end the set
-    if (homePoints >= pointsToWin && homePoints - awayPoints >= 2) {
-      // Close all libero modals
-      setLiberoRotationModal(null)
-      setLiberoReentryModal(null)
-      setLiberoConfirm(null)
-      setLiberoDropdown(null)
-      setExchangeLiberoDropdown(null)
+    // Close all libero modals
+    setLiberoRotationModal(null)
+    setLiberoReentryModal(null)
+    setLiberoConfirm(null)
+    setLiberoDropdown(null)
+    setExchangeLiberoDropdown(null)
 
-      // Calculate current set scores to determine if this is match-ending
-      const allSets = await db.sets.where({ matchId }).toArray()
-      const finishedSets = allSets.filter(s => s.finished)
-      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
-      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+    // Sets won before this set -> bestOf-aware match-end
+    const allSets = await db.sets.where({ matchId }).toArray()
+    const finishedSets = allSets.filter(s => s.finished)
+    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+    const { isMatchEnd } = getSetResult(homePoints, awayPoints, set.index, {
+      bestOf: data?.match?.bestOf, homeSetsWon, awaySetsWon
+    })
 
-      // If home wins this set, will they have enough sets to win?
-      const isMatchEnd = (homeSetsWon + 1) >= setsToWin(data?.match?.bestOf)
-
-      // Show set end time confirmation modal
-      const defaultTime = new Date().toISOString()
-      setSetEndTimeModal({ setIndex: set.index, winner: 'home', homePoints, awayPoints, defaultTime, isMatchEnd })
-      return true
-    }
-    if (awayPoints >= pointsToWin && awayPoints - homePoints >= 2) {
-      // Close all libero modals
-      setLiberoRotationModal(null)
-      setLiberoReentryModal(null)
-      setLiberoConfirm(null)
-      setLiberoDropdown(null)
-      setExchangeLiberoDropdown(null)
-
-      // Calculate current set scores to determine if this is match-ending
-      const allSets = await db.sets.where({ matchId }).toArray()
-      const finishedSets = allSets.filter(s => s.finished)
-      const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
-      const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
-
-      // If away wins this set, will they have enough sets to win?
-      const isMatchEnd = (awaySetsWon + 1) >= setsToWin(data?.match?.bestOf)
-
-      // Show set end time confirmation modal
-      const defaultTime = new Date().toISOString()
-      setSetEndTimeModal({ setIndex: set.index, winner: 'away', homePoints, awayPoints, defaultTime, isMatchEnd })
-      return true
-    }
-    return false
+    const defaultTime = new Date().toISOString()
+    setSetEndTimeModal({ setIndex: set.index, winner, homePoints, awayPoints, defaultTime, isMatchEnd })
+    return true
   }, [matchId, setEndTimeModal])
 
   // Determine who has serve based on events
@@ -4445,28 +4415,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const setIndex = data.set.index
-    const set1FirstServe = data.match.firstServe || 'home'
-
-    // Calculate first serve for current set based on alternation pattern
-    // Set 1: set1FirstServe
-    // Set 2: opposite of set1FirstServe
-    // Set 3: same as set1FirstServe
-    // Set 4: opposite of set1FirstServe
-    // Set 5: uses set5FirstServe (separate coin toss)
-    let currentSetFirstServe
-
-    if (setIndex === 5 && data.match?.set5FirstServe) {
-      // Set 5 uses separate coin toss
-      const teamAKey = data.match.coinTossTeamA || 'home'
-      const teamBKey = data.match.coinTossTeamB || 'away'
-      currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
-    } else if (setIndex === 5) {
-      // Set 5 without set5FirstServe specified - fallback to alternation
-      currentSetFirstServe = set1FirstServe
-    } else {
-      // Sets 1-4: odd sets (1, 3) same as set 1, even sets (2, 4) opposite
-      currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-    }
+    // First serve for this set (shared alternation rules; set 5 = deciding-set toss)
+    const currentSetFirstServe = getFirstServeForSet(setIndex, data.match)
 
     if (!data?.events || data.events.length === 0) {
       return currentSetFirstServe
