@@ -103,14 +103,14 @@ export default function HomePage({
             {newMatchMenuOpen && (
               <div style={{
                 width: buttonWidth,
-                background: 'rgba(0, 0, 0, 0.98)',
+                background: 'var(--panel)',
                 borderRadius,
                 padding: `${Math.round(12 * scaleFactor)}px`,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: tinyGap,
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-                border: '1px solid rgba(255, 255, 255, 0.1)'
+                boxShadow: '0 8px 32px rgba(15, 23, 42, 0.15)',
+                border: '1px solid var(--border)'
               }}>
                 <button
                   onClick={() => {
@@ -269,7 +269,8 @@ export default function HomePage({
               width: buttonWidth,
               marginTop: tinyGap,
               padding: `${Math.round(12 * scaleFactor)}px ${Math.round(16 * scaleFactor)}px`,
-              background: 'rgba(255, 255, 255, 0.05)',
+              background: 'var(--panel-2)',
+              border: '1px solid var(--border)',
               borderRadius,
               textAlign: 'center'
             }}>
@@ -291,9 +292,9 @@ export default function HomePage({
               padding: smallPadding,
               fontSize: largeFontSize,
               fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'var(--panel)',
               color: 'var(--text)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              border: '1px solid var(--border)',
               borderRadius: smallBorderRadius,
               cursor: 'pointer',
               width: buttonWidth
@@ -341,21 +342,21 @@ export default function HomePage({
                 gap: tinyGap,
                 padding: smallPadding,
                 fontSize: `${Math.round(14 * scaleFactor)}px`,
-                color: 'rgba(255, 255, 255, 0.5)',
+                color: 'var(--muted)',
                 background: 'none',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: '1px solid var(--border)',
                 borderRadius: smallBorderRadius,
                 textDecoration: 'none',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)'
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                e.currentTarget.style.color = 'var(--text)'
+                e.currentTarget.style.borderColor = 'var(--muted)'
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)'
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                e.currentTarget.style.color = 'var(--muted)'
+                e.currentTarget.style.borderColor = 'var(--border)'
               }}
             >
               <span>↓</span>
