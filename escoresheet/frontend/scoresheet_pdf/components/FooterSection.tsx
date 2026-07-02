@@ -459,7 +459,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                  <div className="w-20 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Official</div>
                  <div className="w-28 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Name</div>
                  <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">Country</div>
-                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">DOB</div>
+                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">Lic.</div>
                  <div className="flex-1 text-center text-[9px] h-5 flex items-center justify-center">Signature</div>
             </div>
 
@@ -482,7 +482,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                         </div>
 
                          <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5">
-                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? (official?.dob || '') : ''}</div>
+                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? ((official as { license?: string })?.license || '') : ''}</div>
                         </div>
 
                         <div
