@@ -11805,11 +11805,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       flex: 1,
       fontSize: '4.65cqw',
       padding: '2.5cqw 1.25cqw',
-      background: 'rgba(156, 163, 175, 0.25)',
-      border: '1px solid rgba(156, 163, 175, 0.5)',
-      color: '#d1d5db',
+      background: 'var(--panel)',
+      border: '1px solid var(--border)',
+      color: 'var(--text)',
       fontWeight: 600,
-      boxShadow: '0 0 0 1px rgba(255,255,255,0.05)'
+      boxShadow: '0 0 0 1px var(--panel-2)'
     },
     delayWarning: {
       flex: 1,
@@ -11910,7 +11910,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const getConnectionStatus = useCallback((type) => {
     if (type === 'referee') {
       if (!refereeConnectionEnabled) {
-        return { status: 'disabled', color: '#6b7280' } // grey
+        return { status: 'disabled', color: 'var(--muted)' } // grey
       }
       if (isReferee1Connected || isReferee2Connected) {
         return { status: 'connected', color: '#22c55e' } // green
@@ -11919,7 +11919,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return { status: 'not_connected', color: '#eab308' } // yellow
     } else if (type === 'teamA') {
       if (!homeTeamConnectionEnabled) {
-        return { status: 'disabled', color: '#6b7280' } // grey
+        return { status: 'disabled', color: 'var(--muted)' } // grey
       }
       const hasPin = !!data?.match?.homeTeamPin
       if (!hasPin) {
@@ -11932,7 +11932,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return { status: 'not_connected', color: '#eab308' } // yellow
     } else if (type === 'teamB') {
       if (!awayTeamConnectionEnabled) {
-        return { status: 'disabled', color: '#6b7280' } // grey
+        return { status: 'disabled', color: 'var(--muted)' } // grey
       }
       const hasPin = !!data?.match?.awayTeamPin
       if (!hasPin) {
@@ -12160,7 +12160,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backgroundColor: 'rgba(15, 23, 42, 0.5)',
         zIndex: 9999,
         gap: '24px'
       }}>
@@ -12168,7 +12168,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <div style={{
           width: '64px',
           height: '64px',
-          border: '4px solid rgba(255, 255, 255, 0.1)',
+          border: '4px solid var(--border)',
           borderTopColor: '#3498db',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite'
@@ -12234,7 +12234,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }}>{t('scoreboard.duplicateTabTitle')}</h1>
         <p style={{
           fontSize: '16px',
-          color: 'rgba(255,255,255,0.7)',
+          color: 'var(--muted)',
           marginBottom: '24px',
           maxWidth: '400px'
         }}>
@@ -12269,7 +12269,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -12301,7 +12301,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </h2>
           <p style={{
             fontSize: '16px',
-            color: '#9ca3af',
+            color: 'var(--muted)',
             maxWidth: '300px',
             lineHeight: 1.5,
             marginBottom: '24px'
@@ -12352,7 +12352,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </button>
           <p style={{
             fontSize: '12px',
-            color: '#6b7280',
+            color: 'var(--muted)',
             marginTop: '12px'
           }}>
             {t('scoreboard.buttons.fullscreenHint')}
@@ -12930,11 +12930,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div style={{
                 marginTop: '12px',
                 padding: '12px',
-                background: '#1e293b',
+                background: 'var(--panel-2)',
                 borderRadius: '6px',
                 fontFamily: 'monospace',
                 fontSize: '12px',
-                color: '#cbd5e1',
+                color: 'var(--text)',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 maxHeight: '400px',
@@ -13163,7 +13163,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 )}
                 {/* Bench Officials Section */}
-                <div className="bench-officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <div className="bench-officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
                   <div className="roster-tables">
                     <div className="roster-table-wrapper">
                       <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.benchOfficials')}</h3>
@@ -13232,7 +13232,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                 </div>
                 {(data?.match?.officials && data.match.officials.length > 0) && (
-                  <div className="officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                  <div className="officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
                     <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>Match Officials</h3>
                     <table className="roster-table">
                       <thead>
@@ -13300,9 +13300,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -13472,8 +13472,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '8px 12px',
-              background: 'rgba(15, 23, 42, 0.95)',
-              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--panel)',
+              borderBottom: '1px solid var(--border)',
               zIndex: 10,
               flexShrink: 0
             }}>
@@ -13511,12 +13511,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <span style={{ color: leftTeam?.color || '#ef4444' }}>
                     {setsWon.left}
                   </span>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{t('scoreboard.labels.sets')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('scoreboard.labels.sets')}</span>
                   <span style={{ color: rightTeam?.color || '#3b82f6' }}>
                     {setsWon.right}
                   </span>
                 </div>
-                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                <span style={{ fontSize: '10px', color: 'var(--muted)', fontFamily: 'monospace' }}>
                   {formatDateTime(currentDateTime)}
                 </span>
               </div>
@@ -13567,8 +13567,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '8px 8px 32px 8px',
-                background: 'rgba(15, 23, 42, 0.4)',
-                borderRight: '1px solid rgba(255,255,255,0.1)',
+                background: 'var(--panel-2)',
+                borderRight: '1px solid var(--border)',
                 overflow: 'auto'
               }}>
                 <div style={{
@@ -13588,7 +13588,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
                   <div style={{
                     flex: 1,
-                    background: 'rgba(255,255,255,0.1)',
+                    background: 'var(--panel)',
                     padding: '6px',
                     borderRadius: '4px',
                     textAlign: 'center',
@@ -13599,7 +13599,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                   <div style={{
                     flex: 1,
-                    background: 'rgba(255,255,255,0.1)',
+                    background: 'var(--panel)',
                     padding: '6px',
                     borderRadius: '4px',
                     textAlign: 'center',
@@ -13618,9 +13618,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px',
                     fontSize: '13px',
                     fontWeight: 600,
-                    background: leftTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
+                    background: leftTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     marginBottom: '4px'
@@ -13631,7 +13631,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {leftTeamSanctionsExpanded && (
                   <div style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
+                    background: 'var(--panel-2)',
                     borderRadius: '6px',
                     padding: '8px',
                     marginBottom: '8px',
@@ -13644,7 +13644,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         width: '100%',
                         padding: '6px',
                         marginBottom: '4px',
-                        background: 'rgba(255,255,255,0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
                         border: 'none',
                         borderRadius: '4px',
@@ -13718,9 +13718,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: leftTeamBenchExpanded ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
+                    background: leftTeamBenchExpanded ? 'rgba(59, 130, 246, 0.3)' : 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer'
                   }}
@@ -13730,7 +13730,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {leftTeamBenchExpanded && (
                   <div style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
+                    background: 'var(--panel-2)',
                     borderRadius: '6px',
                     padding: '8px',
                     marginTop: '4px',
@@ -13754,7 +13754,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                           style={{
                             padding: '4px 8px',
-                            background: 'rgba(255,255,255,0.1)',
+                            background: 'var(--panel)',
                             borderRadius: '4px',
                             cursor: 'pointer'
                           }}
@@ -13813,7 +13813,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }}>
                     {leftIsHome ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)}
                   </span>
-                  <span style={{ fontSize: '24px', color: 'rgba(255,255,255,0.4)' }}>-</span>
+                  <span style={{ fontSize: '24px', color: 'var(--muted)' }}>-</span>
                   <span style={{
                     fontSize: '48px',
                     fontWeight: 700,
@@ -13835,7 +13835,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }}>
                     {/* Left Team Positions */}
                     <div style={{
-                      background: 'rgba(15, 23, 42, 0.6)',
+                      background: 'var(--panel-2)',
                       borderRadius: '6px',
                       padding: '8px',
                       border: `2px solid ${leftTeam?.color || '#ef4444'}`
@@ -13847,11 +13847,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           return (
                             <div key={pos} style={{
                               padding: '4px',
-                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                               borderRadius: '2px',
                               textAlign: 'center'
                             }}>
-                              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                              <div style={{ fontSize: '8px', color: 'var(--muted)' }}>{pos}</div>
                               <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
                             </div>
                           )
@@ -13862,11 +13862,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           return (
                             <div key={pos} style={{
                               padding: '4px',
-                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                               borderRadius: '2px',
                               textAlign: 'center'
                             }}>
-                              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                              <div style={{ fontSize: '8px', color: 'var(--muted)' }}>{pos}</div>
                               <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
                             </div>
                           )
@@ -13876,7 +13876,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     {/* Right Team Positions */}
                     <div style={{
-                      background: 'rgba(15, 23, 42, 0.6)',
+                      background: 'var(--panel-2)',
                       borderRadius: '6px',
                       padding: '8px',
                       border: `2px solid ${rightTeam?.color || '#3b82f6'}`
@@ -13888,11 +13888,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           return (
                             <div key={pos} style={{
                               padding: '4px',
-                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                               borderRadius: '2px',
                               textAlign: 'center'
                             }}>
-                              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                              <div style={{ fontSize: '8px', color: 'var(--muted)' }}>{pos}</div>
                               <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
                             </div>
                           )
@@ -13903,11 +13903,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           return (
                             <div key={pos} style={{
                               padding: '4px',
-                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255,255,255,0.1)',
+                              background: isServing ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                               borderRadius: '2px',
                               textAlign: 'center'
                             }}>
-                              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)' }}>{pos}</div>
+                              <div style={{ fontSize: '8px', color: 'var(--muted)' }}>{pos}</div>
                               <div style={{ fontWeight: 600 }}>{player?.number || '-'}</div>
                             </div>
                           )
@@ -13948,7 +13948,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div style={{
                         width: '60%',
                         height: '8px',
-                        background: 'rgba(255, 255, 255, 0.15)',
+                        background: 'var(--panel)',
                         borderRadius: '4px',
                         overflow: 'hidden',
                         marginTop: '8px',
@@ -13994,7 +13994,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div style={{
                         width: '60%',
                         height: '8px',
-                        background: 'rgba(255, 255, 255, 0.15)',
+                        background: 'var(--panel)',
                         borderRadius: '4px',
                         overflow: 'hidden',
                         marginTop: '8px',
@@ -14044,9 +14044,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={() => setSet5CoinTossDraft(prev => ({ ...prev, sideA: prev.sideA === 'left' ? 'right' : 'left' }))}
                                   style={{
                                     padding: '12px',
-                                    background: '#000',
-                                    color: '#fff',
-                                    border: '1px solid rgba(255,255,255,0.3)',
+                                    background: 'var(--panel)',
+                                    color: 'var(--text)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '8px',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -14064,9 +14064,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={() => setSet5CoinTossDraft(prev => ({ ...prev, serve: prev.serve === 'A' ? 'B' : 'A' }))}
                                   style={{
                                     padding: '12px',
-                                    background: '#000',
-                                    color: '#fff',
-                                    border: '1px solid rgba(255,255,255,0.3)',
+                                    background: 'var(--panel)',
+                                    color: 'var(--text)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '8px',
                                     cursor: 'pointer'
                                   }}
@@ -14195,9 +14195,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '10px',
                             fontSize: '12px',
                             fontWeight: 600,
-                            background: 'rgba(255,255,255,0.1)',
+                            background: 'var(--panel)',
                             color: 'var(--text)',
-                            border: '1px solid rgba(255,255,255,0.2)',
+                            border: '1px solid var(--border)',
                             borderRadius: '6px',
                             cursor: leftTimeouts >= 2 ? 'not-allowed' : 'pointer',
                             opacity: leftTimeouts >= 2 ? 0.5 : 1
@@ -14230,9 +14230,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '10px',
                             fontSize: '12px',
                             fontWeight: 600,
-                            background: 'rgba(255,255,255,0.1)',
+                            background: 'var(--panel)',
                             color: 'var(--text)',
-                            border: '1px solid rgba(255,255,255,0.2)',
+                            border: '1px solid var(--border)',
                             borderRadius: '6px',
                             cursor: rightTimeouts >= 2 ? 'not-allowed' : 'pointer',
                             opacity: rightTimeouts >= 2 ? 0.5 : 1
@@ -14253,8 +14253,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 display: 'flex',
                 flexDirection: 'column',
                 padding: '8px 8px 32px 8px',
-                background: 'rgba(15, 23, 42, 0.4)',
-                borderLeft: '1px solid rgba(255,255,255,0.1)',
+                background: 'var(--panel-2)',
+                borderLeft: '1px solid var(--border)',
                 overflow: 'auto'
               }}>
                 <div style={{
@@ -14274,7 +14274,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
                   <div style={{
                     flex: 1,
-                    background: 'rgba(255,255,255,0.1)',
+                    background: 'var(--panel)',
                     padding: '6px',
                     borderRadius: '4px',
                     textAlign: 'center',
@@ -14285,7 +14285,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                   <div style={{
                     flex: 1,
-                    background: 'rgba(255,255,255,0.1)',
+                    background: 'var(--panel)',
                     padding: '6px',
                     borderRadius: '4px',
                     textAlign: 'center',
@@ -14304,9 +14304,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px',
                     fontSize: '13px',
                     fontWeight: 600,
-                    background: rightTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255,255,255,0.1)',
+                    background: rightTeamSanctionsExpanded ? 'rgba(239, 68, 68, 0.3)' : 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     marginBottom: '4px'
@@ -14317,7 +14317,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {rightTeamSanctionsExpanded && (
                   <div style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
+                    background: 'var(--panel-2)',
                     borderRadius: '6px',
                     padding: '8px',
                     marginBottom: '8px',
@@ -14330,7 +14330,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         width: '100%',
                         padding: '6px',
                         marginBottom: '4px',
-                        background: 'rgba(255,255,255,0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
                         border: 'none',
                         borderRadius: '4px',
@@ -14404,9 +14404,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: rightTeamBenchExpanded ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.1)',
+                    background: rightTeamBenchExpanded ? 'rgba(59, 130, 246, 0.3)' : 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer'
                   }}
@@ -14416,7 +14416,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {rightTeamBenchExpanded && (
                   <div style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
+                    background: 'var(--panel-2)',
                     borderRadius: '6px',
                     padding: '8px',
                     marginTop: '4px',
@@ -14439,7 +14439,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                           style={{
                             padding: '4px 8px',
-                            background: 'rgba(255,255,255,0.1)',
+                            background: 'var(--panel)',
                             borderRadius: '4px',
                             cursor: 'pointer'
                           }}
@@ -14483,11 +14483,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'rgba(15, 23, 42, 0.95)',
-              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--panel)',
+              borderBottom: '1px solid var(--border)',
               flexShrink: 0
             }}>
-              <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
+              <span style={{ fontSize: '14px', color: 'var(--muted)', fontFamily: 'monospace' }}>
                 {formatDateTime(currentDateTime)}
               </span>
             </div>
@@ -14521,7 +14521,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <span style={{
                     marginLeft: '2px',
                     padding: '1px 4px',
-                    background: 'rgba(255, 255, 255, 0.2)',
+                    background: 'var(--panel)',
                     borderRadius: '4px',
                     fontWeight: 700,
                     flexShrink: 0
@@ -14547,7 +14547,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: getTimeoutsUsed('left') >= 2
                     ? 'rgba(239, 68, 68, 0.2)'
                     : (rallyStatus === 'in_play' || isRallyReplayed
-                      ? 'rgba(255, 255, 255, 0.05)'
+                      ? 'var(--panel-2)'
                       : 'rgba(34, 197, 94, 0.2)'),
                   borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
                   padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
@@ -14555,7 +14555,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   border: getTimeoutsUsed('left') >= 2
                     ? '1px solid rgba(239, 68, 68, 0.4)'
                     : (rallyStatus === 'in_play' || isRallyReplayed
-                      ? '1px solid rgba(255, 255, 255, 0.1)'
+                      ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
                   cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
@@ -14581,7 +14581,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ? 'rgba(239, 68, 68, 0.2)'
                     : getSubstitutionsUsed('left') >= 5
                       ? 'rgba(234, 179, 8, 0.2)'
-                      : 'rgba(255, 255, 255, 0.05)',
+                      : 'var(--panel-2)',
                   borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
                   padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
                   textAlign: 'center',
@@ -14589,7 +14589,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ? '1px solid rgba(239, 68, 68, 0.4)'
                     : getSubstitutionsUsed('left') >= 5
                       ? '1px solid rgba(234, 179, 8, 0.4)'
-                      : '1px solid rgba(255, 255, 255, 0.1)',
+                      : '1px solid var(--border)',
                   cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
                 }}
               >
@@ -14730,10 +14730,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
                   fontSize: '5.6cqw',
-                  background: 'rgba(156, 163, 175, 0.15)',
-                  border: '1px solid rgba(156, 163, 175, 0.3)',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--border)',
                   borderRadius: '1.25cqw',
-                  color: '#d1d5db'
+                  color: 'var(--text)'
                 }}>
                   {t('scoreboard.sanctions.sanctionedImproperRequest')}
                 </div>
@@ -14766,7 +14766,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
             {/* Bench Players, Liberos, and Bench Officials */}
-            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
               {leftTeamBench.benchPlayers.length > 0 && (
                 <div data-help-id="scoreboard-bench-left" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
@@ -14949,8 +14949,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   : isSubstitutedByLibero
                                     ? '#ffffff'  // White for libero-replaced
                                     : (wasSubstitutedOut && !showX && !hasComeBack)
-                                      ? '#0f172a'  // Black bg for substituted-out (only if can still sub back)
-                                      : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
+                                      ? 'var(--panel-2)'  // Black bg for substituted-out (only if can still sub back)
+                                      : (hasComeBack || showX ? 'var(--panel-2)' : 'var(--panel-2)'),
                               borderRadius: '1.25cqw',
                               fontSize: '6.6cqw',
                               display: 'flex',
@@ -14985,7 +14985,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 style={{
                                   fontSize: '4.2cqw',
                                   lineHeight: '1',
-                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  background: 'var(--panel)',
                                   color: '#ef4444',
                                   fontWeight: 700,
                                   padding: '0.3cqw 0.9cqw',
@@ -14995,7 +14995,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   justifyContent: 'center',
                                   minWidth: '3.75cqw',
                                   minHeight: '3.75cqw',
-                                  border: '1px solid rgba(255, 255, 255, 0.2)'
+                                  border: '1px solid var(--border)'
                                 }}
                                 title={
                                   isDisqualifiedSub || hasDisqualificationSanction
@@ -15015,7 +15015,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 style={{
                                   fontSize: '4.2cqw',
                                   lineHeight: '1',
-                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  background: 'var(--panel)',
                                   color: '#ef4444',
                                   fontWeight: 700,
                                   padding: '0.3cqw 0.9cqw',
@@ -15025,7 +15025,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   justifyContent: 'center',
                                   minWidth: '3.75cqw',
                                   minHeight: '3.75cqw',
-                                  border: '1px solid rgba(255, 255, 255, 0.2)'
+                                  border: '1px solid var(--border)'
                                 }}
                               >
                                 ✕
@@ -15040,12 +15040,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   flexDirection: 'row',
                                   alignItems: 'center',
                                   gap: '0.6cqw',
-                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  background: 'var(--panel)',
                                   padding: '0.3cqw 0.9cqw',
                                   borderRadius: '0.6cqw',
                                   minHeight: '3.75cqw',
                                   justifyContent: 'center',
-                                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                                  border: '1px solid var(--border)',
                                   opacity: waitingForPoint ? 0.5 : 1
                                 }}
                               >
@@ -15053,7 +15053,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <span style={{ color: '#ef4444', fontWeight: 900 }}>↓</span>
                                 {playerWhoReplacedThem && (
                                   <span style={{
-                                    color: 'rgba(255, 255, 255, 0.8)',
+                                    color: 'var(--text)',
                                     fontSize: '5.6cqw',
                                     fontWeight: 600,
                                     marginLeft: '0.6cqw'
@@ -15397,7 +15397,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: '1.25cqw 2.5cqw',
-                              background: 'rgba(255,255,255,0.05)',
+                              background: 'var(--panel-2)',
                               borderRadius: '1.25cqw',
                               fontSize: '5.1cqw',
                               display: 'flex',
@@ -15481,8 +15481,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     return (
                       <div style={{
-                        background: 'rgba(15, 23, 42, 0.6)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        background: 'var(--panel)',
+                        border: '1px solid var(--border)',
                         borderRadius: '6px',
                         padding: '8px',
                         fontSize: '10px',
@@ -15500,7 +15500,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', tableLayout: 'fixed' }}>
                           <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
                               <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>Set</th>
                               <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>P</th>
                               <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '9px', width: '20%' }}>W</th>
@@ -15525,7 +15525,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
-                                <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                <tr key={set.id} style={{ borderBottom: '1px solid var(--border)', color: rowColor }}>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{leftPoints}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{won}</td>
@@ -16419,7 +16419,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'rgba(0, 0, 0, 0.7)',
+                          background: 'rgba(15, 23, 42, 0.5)',
                           backdropFilter: 'blur(8px)',
                           display: 'flex',
                           flexDirection: 'column',
@@ -17029,7 +17029,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'rgba(0, 0, 0, 0.7)',
+                          background: 'rgba(15, 23, 42, 0.5)',
                           backdropFilter: 'blur(8px)',
                           display: 'flex',
                           flexDirection: 'column',
@@ -17102,7 +17102,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       return (
                         <span style={{
                           fontSize: '10px', fontWeight: 600,
-                          color: isBelowMin ? '#ef4444' : 'rgba(255,255,255,0.5)',
+                          color: isBelowMin ? '#ef4444' : 'var(--muted)',
                           background: isBelowMin ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
                           padding: '2px 6px', borderRadius: '3px', whiteSpace: 'nowrap'
                         }}>
@@ -17117,7 +17117,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       return (
                         <span style={{
                           fontSize: '10px', fontWeight: 600,
-                          color: isBelowMin ? '#ef4444' : 'rgba(255,255,255,0.5)',
+                          color: isBelowMin ? '#ef4444' : 'var(--muted)',
                           background: isBelowMin ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
                           padding: '2px 6px', borderRadius: '3px', whiteSpace: 'nowrap'
                         }}>
@@ -17196,8 +17196,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div
                         onClick={() => setSummaryTableZoom({ side: 'left', teamKey: currentLeftTeamKey })}
                         style={{
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          background: 'var(--panel)',
+                          border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
                           padding: `calc(12px * var(--scale-factor))`,
                           fontSize: `calc(15px * var(--scale-factor))`,
@@ -17216,7 +17216,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
                           <thead>
-                            <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
                               <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
                               <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
                               <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
@@ -17245,7 +17245,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
                                 <tr key={set.id} style={{
-                                  borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                  borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
                                   <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
@@ -17291,7 +17291,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <div style={{
                       width: '60%',
                       height: '8px',
-                      background: 'rgba(255, 255, 255, 0.15)',
+                      background: 'var(--panel)',
                       borderRadius: '4px',
                       overflow: 'hidden',
                       marginTop: '8px',
@@ -17417,7 +17417,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         <div style={{
                           width: '60%',
                           height: '8px',
-                          background: 'rgba(255, 255, 255, 0.15)',
+                          background: 'var(--panel)',
                           borderRadius: '4px',
                           overflow: 'hidden',
                           marginTop: '8px',
@@ -17451,7 +17451,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <div style={{
                       width: '60%',
                       height: '8px',
-                      background: 'rgba(255, 255, 255, 0.15)',
+                      background: 'var(--panel)',
                       borderRadius: '4px',
                       overflow: 'hidden',
                       marginTop: '8px',
@@ -17652,8 +17652,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div
                         onClick={() => setSummaryTableZoom({ side: 'right', teamKey: currentRightTeamKey })}
                         style={{
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          background: 'var(--panel)',
+                          border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
                           padding: `calc(12px * var(--scale-factor))`,
                           fontSize: `calc(15px * var(--scale-factor))`,
@@ -17672,7 +17672,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
                           <thead>
-                            <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
                               <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>Set</th>
                               <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>P</th>
                               <th style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(13px * var(--scale-factor))` }}>W</th>
@@ -17701,7 +17701,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
                                 <tr key={set.id} style={{
-                                  borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                  borderBottom: '1px solid var(--border)',
                                   color: rowColor
                                 }}>
                                   <td style={{ padding: `calc(4px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
@@ -17745,8 +17745,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         style={{
                           flex: '1 1 0',
                           minWidth: 0,
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          background: 'var(--panel)',
+                          border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
                           padding: `calc(8px * var(--scale-factor))`,
                           fontSize: `calc(13px * var(--scale-factor))`,
@@ -17764,7 +17764,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(12px * var(--scale-factor))` }}>
                           <thead>
-                            <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
                               <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>Set</th>
                               <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>P</th>
                               <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>W</th>
@@ -17787,7 +17787,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
-                                <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                <tr key={set.id} style={{ borderBottom: '1px solid var(--border)', color: rowColor }}>
                                   <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{leftPoints}</td>
                                   <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{won}</td>
@@ -17818,8 +17818,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         style={{
                           flex: '1 1 0',
                           minWidth: 0,
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          background: 'var(--panel)',
+                          border: '1px solid var(--border)',
                           borderRadius: `calc(8px * var(--scale-factor))`,
                           padding: `calc(8px * var(--scale-factor))`,
                           fontSize: `calc(13px * var(--scale-factor))`,
@@ -17837,7 +17837,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(12px * var(--scale-factor))` }}>
                           <thead>
-                            <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
                               <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>Set</th>
                               <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>P</th>
                               <th style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center', fontWeight: 600, fontSize: `calc(11px * var(--scale-factor))` }}>W</th>
@@ -17860,7 +17860,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               if (set.finished) rowColor = won === 1 ? '#22c55e' : '#ef4444'
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
-                                <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                <tr key={set.id} style={{ borderBottom: '1px solid var(--border)', color: rowColor }}>
                                   <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{rightPoints}</td>
                                   <td style={{ padding: `calc(3px * var(--scale-factor)) calc(2px * var(--scale-factor))`, textAlign: 'center' }}>{won}</td>
@@ -17933,7 +17933,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: getTimeoutsUsed('right') >= 2
                     ? 'rgba(239, 68, 68, 0.2)'
                     : (rallyStatus === 'in_play' || isRallyReplayed
-                      ? 'rgba(255, 255, 255, 0.05)'
+                      ? 'var(--panel-2)'
                       : 'rgba(34, 197, 94, 0.2)'),
                   borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
                   padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
@@ -17941,7 +17941,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   border: getTimeoutsUsed('right') >= 2
                     ? '1px solid rgba(239, 68, 68, 0.4)'
                     : (rallyStatus === 'in_play' || isRallyReplayed
-                      ? '1px solid rgba(255, 255, 255, 0.1)'
+                      ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
                   cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
@@ -17967,7 +17967,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ? 'rgba(239, 68, 68, 0.2)'
                     : getSubstitutionsUsed('right') >= 5
                       ? 'rgba(234, 179, 8, 0.2)'
-                      : 'rgba(255, 255, 255, 0.05)',
+                      : 'var(--panel-2)',
                   borderRadius: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw',
                   padding: (isCompactMode || isShortHeight) ? '1.25cqw' : '3.75cqw',
                   textAlign: 'center',
@@ -17975,7 +17975,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ? '1px solid rgba(239, 68, 68, 0.4)'
                     : getSubstitutionsUsed('right') >= 5
                       ? '1px solid rgba(234, 179, 8, 0.4)'
-                      : '1px solid rgba(255, 255, 255, 0.1)',
+                      : '1px solid var(--border)',
                   cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
                 }}
               >
@@ -18119,7 +18119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: 'rgba(156, 163, 175, 0.15)',
                   border: '1px solid rgba(156, 163, 175, 0.3)',
                   borderRadius: '1.25cqw',
-                  color: '#d1d5db'
+                  color: 'var(--text)'
                 }}>
                   {t('scoreboard.sanctions.sanctionedImproperRequest')}
                 </div>
@@ -18152,7 +18152,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
             {/* Bench Players, Liberos, and Bench Officials */}
-            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
               {rightTeamBench.benchPlayers.length > 0 && (
                 <div data-help-id="scoreboard-bench-right" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
@@ -18335,8 +18335,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   : isSubstitutedByLibero
                                     ? '#ffffff'  // White for libero-replaced
                                     : (wasSubstitutedOut && !showX && !hasComeBack)
-                                      ? '#0f172a'  // Black bg for substituted-out (only if can still sub back)
-                                      : (hasComeBack || showX ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)'),
+                                      ? 'var(--panel-2)'  // Black bg for substituted-out (only if can still sub back)
+                                      : (hasComeBack || showX ? 'var(--panel-2)' : 'var(--panel-2)'),
                               borderRadius: '1.25cqw',
                               fontSize: '6.6cqw',
                               display: 'flex',
@@ -18371,7 +18371,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 style={{
                                   fontSize: '4.2cqw',
                                   lineHeight: '1',
-                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  background: 'var(--panel)',
                                   color: '#ef4444',
                                   fontWeight: 700,
                                   padding: '0.3cqw 0.9cqw',
@@ -18381,7 +18381,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   justifyContent: 'center',
                                   minWidth: '3.75cqw',
                                   minHeight: '3.75cqw',
-                                  border: '1px solid rgba(255, 255, 255, 0.2)'
+                                  border: '1px solid var(--border)'
                                 }}
                                 title={
                                   isDisqualifiedSub || hasDisqualificationSanction
@@ -18401,7 +18401,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 style={{
                                   fontSize: '4.2cqw',
                                   lineHeight: '1',
-                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  background: 'var(--panel)',
                                   color: '#ef4444',
                                   fontWeight: 700,
                                   padding: '0.3cqw 0.9cqw',
@@ -18411,7 +18411,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   justifyContent: 'center',
                                   minWidth: '3.75cqw',
                                   minHeight: '3.75cqw',
-                                  border: '1px solid rgba(255, 255, 255, 0.2)'
+                                  border: '1px solid var(--border)'
                                 }}
                               >
                                 ✕
@@ -18426,12 +18426,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   flexDirection: 'row',
                                   alignItems: 'center',
                                   gap: '0.6cqw',
-                                  background: 'rgba(15, 23, 42, 0.95)',
+                                  background: 'var(--panel)',
                                   padding: '0.3cqw 0.9cqw',
                                   borderRadius: '0.6cqw',
                                   minHeight: '3.75cqw',
                                   justifyContent: 'center',
-                                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                                  border: '1px solid var(--border)',
                                   opacity: waitingForPoint ? 0.5 : 1
                                 }}
                               >
@@ -18439,7 +18439,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <span style={{ color: '#ef4444', fontWeight: 900 }}>↓</span>
                                 {playerWhoReplacedThem && (
                                   <span style={{
-                                    color: 'rgba(255, 255, 255, 0.8)',
+                                    color: 'var(--text)',
                                     fontSize: '5.6cqw',
                                     fontWeight: 600,
                                     marginLeft: '0.6cqw'
@@ -18768,7 +18768,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: '1.25cqw 2.5cqw',
-                              background: 'rgba(255,255,255,0.05)',
+                              background: 'var(--panel-2)',
                               borderRadius: '1.25cqw',
                               fontSize: '5.1cqw',
                               display: 'flex',
@@ -18852,8 +18852,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     return (
                       <div style={{
-                        background: 'rgba(15, 23, 42, 0.6)',
-                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        background: 'var(--panel)',
+                        border: '1px solid var(--border)',
                         borderRadius: '6px',
                         padding: '8px',
                         fontSize: '8px',
@@ -18871,7 +18871,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px', tableLayout: 'fixed' }}>
                           <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
                               <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>Set</th>
                               <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>P</th>
                               <th style={{ padding: '2px 1px', textAlign: 'center', fontWeight: 600, fontSize: '7px', width: '20%' }}>W</th>
@@ -18896,7 +18896,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                               const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                               return (
-                                <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                                <tr key={set.id} style={{ borderBottom: '1px solid var(--border)', color: rowColor }}>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{rightPoints}</td>
                                   <td style={{ padding: '2px 1px', textAlign: 'center' }}>{won}</td>
@@ -18930,20 +18930,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           <div style={{ padding: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowLogs(true)
@@ -18952,20 +18952,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {t('scoreboard.menu.showActionLog', 'Show Action Log')}
               </div>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowSanctions(true)
@@ -18974,20 +18974,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {t('scoreboard.menu.showSanctionsResults', 'Show Sanctions and Results')}
               </div>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowManualPanel(true)
@@ -18996,20 +18996,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {t('scoreboard.menu.manualChanges', 'Manual Changes')}
               </div>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowRemarks(true)
@@ -19018,20 +19018,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {t('scoreboard.menu.openRemarksRecording', 'Open Remarks Recording')}
               </div>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowRosters(true)
@@ -19040,20 +19040,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {t('scoreboard.showRosters')}
               </div>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowPinsModal(true)
@@ -19063,20 +19063,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </div>
               {onOpenMatchSetup && (
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel-2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   padding: '12px 16px',
                   cursor: 'pointer',
                   transition: 'all 0.2s'
                 }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                    e.currentTarget.style.background = 'var(--panel)'
+                    e.currentTarget.style.borderColor = 'var(--border)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                    e.currentTarget.style.background = 'var(--panel-2)'
+                    e.currentTarget.style.borderColor = 'var(--border)'
                   }}
                   onClick={() => {
                     onOpenMatchSetup()
@@ -19087,22 +19087,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               )}
 
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 marginTop: '8px',
-                borderTop: '1px solid rgba(255,255,255,0.1)'
+                borderTop: '1px solid var(--border)'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={async () => {
                   try {
@@ -19148,22 +19148,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 📥 {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
               </div>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel-2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px 16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 marginTop: '8px',
-                borderTop: '1px solid rgba(255,255,255,0.1)'
+                borderTop: '1px solid var(--border)'
               }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                  e.currentTarget.style.background = 'var(--panel)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                  e.currentTarget.style.background = 'var(--panel-2)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
                 }}
                 onClick={() => {
                   setShowOptionsInMenu(true)
@@ -19193,8 +19193,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   width: '100%'
                 }}>
                   <div style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     padding: '16px',
                     flex: 1,
@@ -19220,8 +19220,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   width: '100%'
                 }}>
                   <div style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     padding: '16px',
                     flex: 1,
@@ -19249,8 +19249,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }}>
                     {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled === true && (
                       <div style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel-2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         padding: '16px',
                         flex: 1,
@@ -19271,8 +19271,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled === true && (
                       <div style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel-2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         padding: '16px',
                         flex: 1,
@@ -19352,9 +19352,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 padding: '10px',
                 fontSize: '13px',
                 fontWeight: 600,
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel)',
                 color: 'var(--muted)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 cursor: 'pointer'
               }}
@@ -19494,21 +19494,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       key={topic.id}
                       onClick={() => setSelectedHelpTopic(topic.id)}
                       style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel-2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         padding: '16px',
                         cursor: 'pointer',
                         transition: 'all 0.2s'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                        e.currentTarget.style.background = 'var(--panel)'
+                        e.currentTarget.style.borderColor = 'var(--border)'
                         e.currentTarget.style.transform = 'translateY(-2px)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
+                        e.currentTarget.style.borderColor = 'var(--border)'
                         e.currentTarget.style.transform = 'translateY(0)'
                       }}
                     >
@@ -19529,9 +19529,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   style={{
                     marginBottom: '20px',
                     padding: '8px 16px',
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     fontSize: '14px'
@@ -19564,8 +19564,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 style={{
                   padding: '8px 12px',
                   fontSize: '14px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--border)',
                   borderRadius: '6px',
                   color: 'var(--text)',
                   width: '100%'
@@ -19912,8 +19912,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }}>
                     <thead>
                       <tr style={{
-                        borderBottom: '2px solid rgba(255,255,255,0.2)',
-                        background: 'rgba(255,255,255,0.05)'
+                        borderBottom: '2px solid var(--border)',
+                        background: 'var(--panel-2)'
                       }}>
                         <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>ID</th>
                         <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Time</th>
@@ -19956,11 +19956,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               <tr
                                 key={event.id}
                                 style={{
-                                  borderBottom: '1px solid rgba(255,255,255,0.1)',
+                                  borderBottom: '1px solid var(--border)',
                                   transition: 'background 0.2s'
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                                  e.currentTarget.style.background = 'var(--panel-2)'
                                 }}
                                 onMouseLeave={(e) => {
                                   e.currentTarget.style.background = 'transparent'
@@ -20019,9 +20019,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Collapsible Section: Current Set */}
             <div style={{
               marginBottom: '12px',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--border)',
               overflow: 'hidden'
             }}>
               <button
@@ -20091,7 +20091,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             flexDirection: 'column',
                             gap: '12px',
                             paddingBottom: '16px',
-                            borderBottom: '1px solid rgba(255,255,255,0.08)'
+                            borderBottom: '1px solid var(--border)'
                           }}
                         >
                           <div style={{ fontWeight: 600, marginBottom: '4px' }}>Teams Setup</div>
@@ -20106,9 +20106,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             justifyContent: 'center',
                             gap: '8px',
                             padding: '16px',
-                            background: 'rgba(255,255,255,0.03)',
+                            background: 'var(--panel-2)',
                             borderRadius: '12px',
-                            border: '1px solid rgba(255,255,255,0.08)'
+                            border: '1px solid var(--border)'
                           }}>
                             {/* Left Team */}
                             <div style={{
@@ -20133,7 +20133,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <div style={{
                               width: '4px',
                               height: '60px',
-                              background: 'rgba(255,255,255,0.3)',
+                              background: 'var(--border)',
                               borderRadius: '2px'
                             }} />
 
@@ -20321,7 +20321,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             flexDirection: 'column',
                             gap: '8px',
                             paddingTop: '16px',
-                            borderTop: '1px solid rgba(255,255,255,0.08)'
+                            borderTop: '1px solid var(--border)'
                           }}
                         >
                           <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.changeCurrentLineup')}</div>
@@ -20375,7 +20375,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               flexDirection: 'column',
                               gap: '8px',
                               paddingTop: '16px',
-                              borderTop: '1px solid rgba(255,255,255,0.08)'
+                              borderTop: '1px solid var(--border)'
                             }}
                           >
                             <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editCurrentSetScore')}</div>
@@ -20419,7 +20419,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     padding: '6px 8px',
                                     fontSize: '14px',
                                     background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -20461,7 +20461,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     padding: '6px 8px',
                                     fontSize: '14px',
                                     background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -20480,9 +20480,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Collapsible Section: Score & Sets */}
             <div style={{
               marginBottom: '12px',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--border)',
               overflow: 'hidden'
             }}>
               <button
@@ -20561,7 +20561,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.08)'
+                          borderTop: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editAllSets')}</div>
@@ -20575,7 +20575,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               alignItems: 'center',
                               gap: '12px',
                               padding: '8px',
-                              background: 'rgba(255,255,255,0.03)',
+                              background: 'var(--panel-2)',
                               borderRadius: '6px'
                             }}>
                               <div style={{ fontWeight: 600, minWidth: '60px' }}>{t('scoreboard.edit.setNumber', { number: set.index })}</div>
@@ -20606,7 +20606,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     padding: '4px 6px',
                                     fontSize: '12px',
                                     background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -20639,7 +20639,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     padding: '4px 6px',
                                     fontSize: '12px',
                                     background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -20685,9 +20685,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Collapsible Section: Match Settings */}
             <div style={{
               marginBottom: '12px',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--border)',
               overflow: 'hidden'
             }}>
               <button
@@ -20726,7 +20726,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         flexDirection: 'column',
                         gap: '8px',
                         paddingTop: '16px',
-                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                        borderTop: '1px solid var(--border)'
                       }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editMatchInfo')}</div>
@@ -20761,16 +20761,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               flex: 1,
                               padding: '6px 8px',
                               fontSize: '12px',
-                              background: '#1e293b',
-                              border: '1px solid rgba(255,255,255,0.2)',
+                              background: 'var(--panel)',
+                              border: '1px solid var(--border)',
                               borderRadius: '4px',
                               color: 'var(--text)'
                             }}
                           >
-                            <option value="setup" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.setup')}</option>
-                            <option value="live" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.live')}</option>
-                            <option value="final" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.final')}</option>
-                            <option value="paused" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.paused')}</option>
+                            <option value="setup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.setup')}</option>
+                            <option value="live" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.live')}</option>
+                            <option value="final" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.final')}</option>
+                            <option value="paused" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.paused')}</option>
                           </select>
                         </div>
                         {data?.set?.index === 5 && (
@@ -20789,14 +20789,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 flex: 1,
                                 padding: '6px 8px',
                                 fontSize: '12px',
-                                background: '#1e293b',
-                                border: '1px solid rgba(255,255,255,0.2)',
+                                background: 'var(--panel)',
+                                border: '1px solid var(--border)',
                                 borderRadius: '4px',
                                 color: 'var(--text)'
                               }}
                             >
-                              <option value="A" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.teamA')}</option>
-                              <option value="B" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.edit.teamB')}</option>
+                              <option value="A" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.teamA')}</option>
+                              <option value="B" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.teamB')}</option>
                             </select>
                           </div>
                         )}
@@ -20812,9 +20812,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Collapsible Section: Event History */}
             <div style={{
               marginBottom: '12px',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--border)',
               overflow: 'hidden'
             }}>
               <button
@@ -20855,7 +20855,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingBottom: '16px',
-                          borderBottom: '1px solid rgba(255,255,255,0.08)'
+                          borderBottom: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Points ({pointEvents.length} most recent)</div>
@@ -20893,7 +20893,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 gap: '8px',
                                 padding: '8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px'
                               }}>
@@ -20914,15 +20914,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '80px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
+                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
                                 <button
@@ -20967,7 +20967,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.08)'
+                          borderTop: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Timeouts ({timeoutEvents.length} most recent)</div>
@@ -21005,7 +21005,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 gap: '8px',
                                 padding: '8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
@@ -21026,15 +21026,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
+                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 <button
@@ -21078,7 +21078,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.08)'
+                          borderTop: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Substitutions ({substitutionEvents.length} most recent)</div>
@@ -21119,7 +21119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 gap: '8px',
                                 padding: '8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
@@ -21140,15 +21140,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
+                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 <select
@@ -21166,15 +21166,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     width: '45px'
                                   }}
                                 >
                                   {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
-                                    <option key={pos} value={pos} style={{ background: '#1e293b', color: '#fff' }}>{pos}</option>
+                                    <option key={pos} value={pos} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{pos}</option>
                                   ))}
                                 </select>
                                 <span style={{ fontSize: '10px' }}>Out:</span>
@@ -21197,8 +21197,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     width: '40px',
                                     padding: '4px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -21223,8 +21223,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     width: '40px',
                                     padding: '4px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -21395,7 +21395,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.08)'
+                          borderTop: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Sanctions ({sanctionEvents.length} most recent)</div>
@@ -21437,7 +21437,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 gap: '8px',
                                 padding: '8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
@@ -21458,15 +21458,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
+                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <select
                                   value={sanctionType || 'warning'}
@@ -21483,20 +21483,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '90px'
                                   }}
                                 >
-                                  <option value="warning" style={{ background: '#1e293b', color: '#fff' }}>Warning</option>
-                                  <option value="penalty" style={{ background: '#1e293b', color: '#fff' }}>Penalty</option>
-                                  <option value="expulsion" style={{ background: '#1e293b', color: '#fff' }}>Expulsion</option>
-                                  <option value="disqualification" style={{ background: '#1e293b', color: '#fff' }}>Disqualif.</option>
-                                  <option value="improper_request" style={{ background: '#1e293b', color: '#fff' }}>Improper Req</option>
-                                  <option value="delay_warning" style={{ background: '#1e293b', color: '#fff' }}>Delay Warn</option>
-                                  <option value="delay_penalty" style={{ background: '#1e293b', color: '#fff' }}>Delay Pen</option>
+                                  <option value="warning" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Warning</option>
+                                  <option value="penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Penalty</option>
+                                  <option value="expulsion" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Expulsion</option>
+                                  <option value="disqualification" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Disqualif.</option>
+                                  <option value="improper_request" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Improper Req</option>
+                                  <option value="delay_warning" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay Warn</option>
+                                  <option value="delay_penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay Pen</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 {playerNumber !== undefined && playerNumber !== null && (
@@ -21521,8 +21521,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         width: '40px',
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)'
                                       }}
@@ -21545,15 +21545,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     style={{
                                       padding: '4px',
                                       fontSize: '11px',
-                                      background: '#1e293b',
-                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      background: 'var(--panel)',
+                                      border: '1px solid var(--border)',
                                       borderRadius: '4px',
                                       color: 'var(--text)',
                                       width: '45px'
                                     }}
                                   >
                                     {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
-                                      <option key={pos} value={pos} style={{ background: '#1e293b', color: '#fff' }}>{pos}</option>
+                                      <option key={pos} value={pos} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{pos}</option>
                                     ))}
                                   </select>
                                 )}
@@ -21573,18 +21573,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     style={{
                                       padding: '4px',
                                       fontSize: '11px',
-                                      background: '#1e293b',
-                                      border: '1px solid rgba(255,255,255,0.2)',
+                                      background: 'var(--panel)',
+                                      border: '1px solid var(--border)',
                                       borderRadius: '4px',
                                       color: 'var(--text)',
                                       minWidth: '70px'
                                     }}
                                   >
-                                    <option value="Coach" style={{ background: '#1e293b', color: '#fff' }}>Coach</option>
-                                    <option value="Assistant Coach 1" style={{ background: '#1e293b', color: '#fff' }}>Asst 1</option>
-                                    <option value="Assistant Coach 2" style={{ background: '#1e293b', color: '#fff' }}>Asst 2</option>
-                                    <option value="Physiotherapist" style={{ background: '#1e293b', color: '#fff' }}>Physio</option>
-                                    <option value="Medic" style={{ background: '#1e293b', color: '#fff' }}>Medic</option>
+                                    <option value="Coach" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Coach</option>
+                                    <option value="Assistant Coach 1" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Asst 1</option>
+                                    <option value="Assistant Coach 2" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Asst 2</option>
+                                    <option value="Physiotherapist" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Physio</option>
+                                    <option value="Medic" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Medic</option>
                                   </select>
                                 )}
                                 <button
@@ -21633,7 +21633,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.08)'
+                          borderTop: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Libero Actions ({liberoEvents.length} most recent)</div>
@@ -21672,7 +21672,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 gap: '8px',
                                 padding: '8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
@@ -21696,15 +21696,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
+                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 {eventType === 'libero_entry' && (
@@ -21729,8 +21729,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         width: '40px',
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)'
                                       }}
@@ -21755,8 +21755,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         width: '40px',
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)'
                                       }}
@@ -21776,15 +21776,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       style={{
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)',
                                         minWidth: '45px'
                                       }}
                                     >
-                                      <option value="libero1" style={{ background: '#1e293b', color: '#fff' }}>L1</option>
-                                      <option value="libero2" style={{ background: '#1e293b', color: '#fff' }}>L2</option>
+                                      <option value="libero1" style={{ background: 'var(--panel)', color: 'var(--text)' }}>L1</option>
+                                      <option value="libero2" style={{ background: 'var(--panel)', color: 'var(--text)' }}>L2</option>
                                     </select>
                                   </>
                                 )}
@@ -21810,8 +21810,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         width: '40px',
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)'
                                       }}
@@ -21836,8 +21836,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         width: '40px',
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)'
                                       }}
@@ -21866,8 +21866,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         width: '40px',
                                         padding: '4px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)'
                                       }}
@@ -21887,16 +21887,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       style={{
                                         padding: '4px 6px',
                                         fontSize: '11px',
-                                        background: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        background: 'var(--panel)',
+                                        border: '1px solid var(--border)',
                                         borderRadius: '4px',
                                         color: 'var(--text)',
                                         minWidth: '120px'
                                       }}
                                     >
-                                      <option value="injury" style={{ background: '#1e293b', color: '#fff' }}>Injury</option>
-                                      <option value="expulsion" style={{ background: '#1e293b', color: '#fff' }}>Expulsion</option>
-                                      <option value="disqualification" style={{ background: '#1e293b', color: '#fff' }}>Disqualification</option>
+                                      <option value="injury" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Injury</option>
+                                      <option value="expulsion" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Expulsion</option>
+                                      <option value="disqualification" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Disqualification</option>
                                     </select>
                                   </>
                                 )}
@@ -21940,7 +21940,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           flexDirection: 'column',
                           gap: '8px',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.08)'
+                          borderTop: '1px solid var(--border)'
                         }}
                       >
                         <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Initial Lineups ({lineupEvents.length} most recent)</div>
@@ -21966,7 +21966,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 gap: '8px',
                                 padding: '8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px',
                                 flexWrap: 'wrap'
@@ -21982,15 +21982,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   style={{
                                     padding: '4px 6px',
                                     fontSize: '11px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     minWidth: '70px'
                                   }}
                                 >
-                                  <option value="home" style={{ background: '#1e293b', color: '#fff' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: '#1e293b', color: '#fff' }}>{t('common.away')}</option>
+                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
                                   {lineup.I || '-'}/{lineup.II || '-'}/{lineup.III || '-'}/{lineup.IV || '-'}/{lineup.V || '-'}/{lineup.VI || '-'}
@@ -22037,9 +22037,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Collapsible Section: Advanced */}
             <div style={{
               marginBottom: '12px',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--border)',
               overflow: 'hidden'
             }}>
               <button
@@ -22076,7 +22076,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         flexDirection: 'column',
                         gap: '8px',
                         paddingBottom: '16px',
-                        borderBottom: '1px solid rgba(255,255,255,0.08)'
+                        borderBottom: '1px solid var(--border)'
                       }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Set Times</div>
@@ -22090,7 +22090,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             flexDirection: 'column',
                             gap: '8px',
                             padding: '8px',
-                            background: 'rgba(255,255,255,0.03)',
+                            background: 'var(--panel-2)',
                             borderRadius: '6px'
                           }}>
                             <div style={{ fontWeight: 600, fontSize: '12px' }}>{t('common.setIndex', { index: set.index })}</div>
@@ -22118,7 +22118,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     padding: '4px 6px',
                                     fontSize: '11px',
                                     background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -22147,7 +22147,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     padding: '4px 6px',
                                     fontSize: '11px',
                                     background: 'var(--bg-secondary)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)'
                                   }}
@@ -22168,7 +22168,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       flexDirection: 'column',
                       gap: '8px',
                       paddingTop: '16px',
-                      borderTop: '1px solid rgba(255,255,255,0.08)'
+                      borderTop: '1px solid var(--border)'
                     }}
                   >
                     <div style={{ fontWeight: 600, marginBottom: '8px' }}>Add New Event</div>
@@ -22184,25 +22184,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             flex: 1,
                             padding: '6px 8px',
                             fontSize: '12px',
-                            background: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.2)',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             color: 'var(--text)'
                           }}
                         >
-                          <option value="point" style={{ background: '#1e293b', color: 'var(--text)' }}>Point</option>
-                          <option value="timeout" style={{ background: '#1e293b', color: 'var(--text)' }}>Timeout</option>
-                          <option value="substitution" style={{ background: '#1e293b', color: 'var(--text)' }}>Substitution</option>
-                          <option value="sanction" style={{ background: '#1e293b', color: 'var(--text)' }}>Sanction</option>
-                          <option value="lineup" style={{ background: '#1e293b', color: 'var(--text)' }}>Lineup</option>
-                          <option value="libero_entry" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Entry</option>
-                          <option value="libero_exit" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Exit</option>
-                          <option value="libero_substitution" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Substitution</option>
-                          <option value="libero_unable" style={{ background: '#1e293b', color: 'var(--text)' }}>Libero Unable</option>
-                          <option value="replay" style={{ background: '#1e293b', color: 'var(--text)' }}>Replay</option>
-                          <option value="rally_start" style={{ background: '#1e293b', color: 'var(--text)' }}>Rally Start</option>
-                          <option value="set_start" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.actionLog.setStart')}</option>
-                          <option value="set_end" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('scoreboard.actionLog.setEnd')}</option>
+                          <option value="point" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Point</option>
+                          <option value="timeout" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Timeout</option>
+                          <option value="substitution" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Substitution</option>
+                          <option value="sanction" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Sanction</option>
+                          <option value="lineup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Lineup</option>
+                          <option value="libero_entry" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Entry</option>
+                          <option value="libero_exit" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Exit</option>
+                          <option value="libero_substitution" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Substitution</option>
+                          <option value="libero_unable" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Unable</option>
+                          <option value="replay" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Replay</option>
+                          <option value="rally_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Rally Start</option>
+                          <option value="set_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.actionLog.setStart')}</option>
+                          <option value="set_end" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.actionLog.setEnd')}</option>
                         </select>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -22213,14 +22213,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             flex: 1,
                             padding: '6px 8px',
                             fontSize: '12px',
-                            background: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.2)',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             color: 'var(--text)'
                           }}
                         >
                           {data?.sets?.sort((a, b) => a.index - b.index).map(set => (
-                            <option key={set.id} value={set.index} style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.setIndex', { index: set.index })}</option>
+                            <option key={set.id} value={set.index} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.setIndex', { index: set.index })}</option>
                           ))}
                         </select>
                       </div>
@@ -22232,14 +22232,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             flex: 1,
                             padding: '6px 8px',
                             fontSize: '12px',
-                            background: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.2)',
+                            background: 'var(--panel)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             color: 'var(--text)'
                           }}
                         >
-                          <option value="home" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.home')}</option>
-                          <option value="away" style={{ background: '#1e293b', color: 'var(--text)' }}>{t('common.away')}</option>
+                          <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
+                          <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
                         </select>
                       </div>
                       <button
@@ -22314,7 +22314,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         flexDirection: 'column',
                         gap: '8px',
                         paddingTop: '16px',
-                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                        borderTop: '1px solid var(--border)'
                       }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: '8px' }}>Delete Events (Quick)</div>
@@ -22357,7 +22357,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 padding: '6px 8px',
-                                background: 'rgba(255,255,255,0.03)',
+                                background: 'var(--panel-2)',
                                 borderRadius: '4px',
                                 fontSize: '11px'
                               }}>
@@ -22395,9 +22395,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Collapsible Section: Manual Changes Summary */}
             <div style={{
               marginBottom: '12px',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--border)',
               overflow: 'hidden'
             }}>
               <button
@@ -22468,9 +22468,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           return (
                             <div key={idx} style={{
                               padding: '10px 12px',
-                              background: 'rgba(255,255,255,0.03)',
+                              background: 'var(--panel-2)',
                               borderRadius: '6px',
-                              border: '1px solid rgba(255,255,255,0.06)',
+                              border: '1px solid var(--border)',
                               fontSize: '12px'
                             }}>
                               <div style={{
@@ -22521,7 +22521,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div style={{
                         marginTop: '8px',
                         paddingTop: '12px',
-                        borderTop: '1px solid rgba(255,255,255,0.08)'
+                        borderTop: '1px solid var(--border)'
                       }}>
                         <button
                           className="secondary"
@@ -22613,7 +22613,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   fontSize: '14px',
                   fontFamily: 'monospace',
                   background: 'var(--bg-secondary)',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '6px',
                   color: 'var(--text)',
                   resize: 'vertical'
@@ -22829,7 +22829,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             width: '28px',
                             height: '28px',
                             borderRadius: '50%',
-                            border: '2px solid rgba(255,255,255,0.3)',
+                            border: '2px solid var(--border)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -22861,7 +22861,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {/* Sanctions Table */}
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                     <thead>
-                      <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
                         <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Warn</th>
                         <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Pen</th>
                         <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Exp</th>
@@ -22927,7 +22927,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           const scoreDisplay = `${sanctionedTeamScore}:${otherTeamScore}`
 
                           return (
-                            <tr key={event.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                            <tr key={event.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
                               <td style={{ padding: '6px 4px', textAlign: 'center' }}>
                                 {sanctionType === 'warning' && identifier}
                                 {sanctionType === 'delay_warning' && !identifier && 'D'}
@@ -23061,7 +23061,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
                             <thead>
                               <tr>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '42%' }}>
+                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '42%' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
                                     <span style={{
@@ -23075,7 +23075,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   </div>
                                 </th>
                                 <th style={{ padding: '4px', fontSize: '8px', width: '16%' }}>Dur</th>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '42%' }}>
+                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '42%' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
                                     <span style={{
@@ -23089,7 +23089,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   </div>
                                 </th>
                               </tr>
-                              <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                              <tr style={{ borderBottom: '2px solid var(--border)' }}>
                                 <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
                                 <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
                                 <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
@@ -23102,7 +23102,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </tr>
                             </thead>
                             <tbody>
-                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                 <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalTimeouts}</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalSubs}</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalWins}</td>
@@ -23119,7 +23119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {/* Match time information */}
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px', marginTop: '12px' }}>
                             <tbody>
-                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match start time:</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
                                   {matchStartTime ? `${String(matchStartTime.getUTCHours()).padStart(2, '0')}:${String(matchStartTime.getUTCMinutes()).padStart(2, '0')}:${String(matchStartTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
@@ -23149,7 +23149,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {t('scoreboard.captainLabel', { team: data?.homeTeam?.name || t('common.home') })}
                               </div>
                               {homeCaptainSignature ? (
-                                <div style={{ border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'rgba(255,255,255,0.05)' }}>
+                                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'var(--panel-2)' }}>
                                   <img src={homeCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
                                 </div>
                               ) : (
@@ -23159,8 +23159,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     width: '100%',
                                     padding: '8px',
                                     fontSize: '9px',
-                                    background: 'rgba(255,255,255,0.1)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     cursor: 'pointer'
@@ -23175,7 +23175,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {t('scoreboard.captainLabel', { team: data?.awayTeam?.name || t('common.away') })}
                               </div>
                               {awayCaptainSignature ? (
-                                <div style={{ border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'rgba(255,255,255,0.05)' }}>
+                                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'var(--panel-2)' }}>
                                   <img src={awayCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
                                 </div>
                               ) : (
@@ -23185,8 +23185,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     width: '100%',
                                     padding: '8px',
                                     fontSize: '9px',
-                                    background: 'rgba(255,255,255,0.1)',
-                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'var(--panel)',
+                                    border: '1px solid var(--border)',
                                     borderRadius: '4px',
                                     color: 'var(--text)',
                                     cursor: 'pointer'
@@ -23216,7 +23216,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         <thead>
                           <tr>
                             <th style={{ padding: '4px 2px', textAlign: 'center', width: '8%' }}></th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '38%' }}>
+                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '38%' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
                                 <span style={{
@@ -23230,7 +23230,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </div>
                             </th>
                             <th style={{ padding: '4px 2px', fontSize: '8px', width: '8%' }}>Dur</th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.2)', width: '38%' }}>
+                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '38%' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
                                 <span style={{
@@ -23244,7 +23244,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </div>
                             </th>
                           </tr>
-                          <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                          <tr style={{ borderBottom: '2px solid var(--border)' }}>
                             <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
                             <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
                             <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
@@ -23294,7 +23294,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }
 
                             return (
-                              <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <tr key={set.id} style={{ borderBottom: '1px solid var(--border)' }}>
                                 <td style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>{toRoman(set.index)}</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftTimeouts || 0}</td>
                                 <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftSubs || 0}</td>
@@ -23320,8 +23320,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ marginTop: '24px' }}>
                   <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.remarks')}</h4>
                   <div style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     padding: '12px',
                     fontSize: '12px',
@@ -23534,8 +23534,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-player-action-menu
                 style={{
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '2px solid var(--border)',
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '140px',
@@ -24003,9 +24003,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: '#000',
-                      color: '#fff',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      color: 'var(--text)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -24017,11 +24017,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       width: '100%'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#1a1a1a'
+                      e.currentTarget.style.background = 'var(--panel-2)'
                       e.currentTarget.style.transform = 'scale(1.02)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#000'
+                      e.currentTarget.style.background = 'var(--panel)'
                       e.currentTarget.style.transform = 'scale(1)'
                     }}
                   >
@@ -24037,9 +24037,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '6px 10px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          background: canGetWarning ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                          background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
                           color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          border: '1px solid var(--border)',
                           borderRadius: '4px',
                           cursor: canGetWarning ? 'pointer' : 'not-allowed',
                           textAlign: 'left',
@@ -24059,9 +24059,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '6px 10px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          background: canGetPenalty ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                          background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
                           color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          border: '1px solid var(--border)',
                           borderRadius: '4px',
                           cursor: canGetPenalty ? 'pointer' : 'not-allowed',
                           textAlign: 'left',
@@ -24081,9 +24081,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '6px 10px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          background: canGetExpulsion ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                          background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
                           color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          border: '1px solid var(--border)',
                           borderRadius: '4px',
                           cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
                           textAlign: 'left',
@@ -24102,9 +24102,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '6px 10px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          background: 'var(--panel-2)',
                           color: 'var(--text)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          border: '1px solid var(--border)',
                           borderRadius: '4px',
                           cursor: 'pointer',
                           textAlign: 'left',
@@ -24265,8 +24265,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-substitution-dropdown
                 style={{
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '2px solid var(--border)',
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
@@ -24275,7 +24275,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
-                <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '8px' }}>
+                <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
                   {isExceptional ? t('scoreboard.modals.exceptionalSubstitution') : t('scoreboard.substitution')}
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
@@ -24300,9 +24300,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '4px 6px',
                           fontSize: '13px',
                           fontWeight: 700,
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          background: 'var(--panel-2)',
                           color: 'var(--accent)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          border: '1px solid var(--border)',
                           borderRadius: '6px',
                           cursor: 'pointer',
                           textAlign: 'center',
@@ -24314,13 +24314,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           justifyContent: 'center'
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                          e.currentTarget.style.background = 'var(--panel)'
+                          e.currentTarget.style.borderColor = 'var(--border)'
                           e.currentTarget.style.transform = 'scale(1.05)'
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                          e.currentTarget.style.background = 'var(--panel-2)'
+                          e.currentTarget.style.borderColor = 'var(--border)'
                           e.currentTarget.style.transform = 'scale(1)'
                         }}
                       >
@@ -24705,8 +24705,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-sanction-dropdown
                 style={{
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '2px solid var(--border)',
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '160px',
@@ -24715,7 +24715,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
-                <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '6px' }}>
+                <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '6px' }}>
                   {(() => {
                     const { type, playerNumber, role } = sanctionDropdown
                     if (type === 'official') {
@@ -24767,9 +24767,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '4px 8px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            background: canGetWarning ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                            background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
                             color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             cursor: canGetWarning ? 'pointer' : 'not-allowed',
                             textAlign: 'left',
@@ -24781,14 +24781,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                           onMouseEnter={(e) => {
                             if (canGetWarning) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                              e.currentTarget.style.background = 'var(--panel)'
+                              e.currentTarget.style.borderColor = 'var(--border)'
                             }
                           }}
                           onMouseLeave={(e) => {
                             if (canGetWarning) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                              e.currentTarget.style.background = 'var(--panel-2)'
+                              e.currentTarget.style.borderColor = 'var(--border)'
                             }
                           }}
                         >
@@ -24802,9 +24802,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '4px 8px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            background: canGetPenalty ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                            background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
                             color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             cursor: canGetPenalty ? 'pointer' : 'not-allowed',
                             textAlign: 'left',
@@ -24816,14 +24816,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                           onMouseEnter={(e) => {
                             if (canGetPenalty) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                              e.currentTarget.style.background = 'var(--panel)'
+                              e.currentTarget.style.borderColor = 'var(--border)'
                             }
                           }}
                           onMouseLeave={(e) => {
                             if (canGetPenalty) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                              e.currentTarget.style.background = 'var(--panel-2)'
+                              e.currentTarget.style.borderColor = 'var(--border)'
                             }
                           }}
                         >
@@ -24837,9 +24837,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '4px 8px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            background: canGetExpulsion ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                            background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
                             color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
                             textAlign: 'left',
@@ -24851,14 +24851,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                           onMouseEnter={(e) => {
                             if (canGetExpulsion) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                              e.currentTarget.style.background = 'var(--panel)'
+                              e.currentTarget.style.borderColor = 'var(--border)'
                             }
                           }}
                           onMouseLeave={(e) => {
                             if (canGetExpulsion) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                              e.currentTarget.style.background = 'var(--panel-2)'
+                              e.currentTarget.style.borderColor = 'var(--border)'
                             }
                           }}
                         >
@@ -24872,9 +24872,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '4px 8px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            background: 'rgba(255, 255, 255, 0.05)',
+                            background: 'var(--panel-2)',
                             color: 'var(--text)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            border: '1px solid var(--border)',
                             borderRadius: '4px',
                             cursor: 'pointer',
                             textAlign: 'left',
@@ -24884,12 +24884,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             transition: 'all 0.2s'
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                            e.currentTarget.style.background = 'var(--panel)'
+                            e.currentTarget.style.borderColor = 'var(--border)'
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                            e.currentTarget.style.background = 'var(--panel-2)'
+                            e.currentTarget.style.borderColor = 'var(--border)'
                           }}
                         >
                           <div className="sanction-cards-separate" style={{ flexShrink: 0 }}>
@@ -24994,8 +24994,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-bench-player-action-menu
                 style={{
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '2px solid var(--border)',
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '140px',
@@ -25030,9 +25030,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: canSubstitute ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'rgba(255, 255, 255, 0.05)',
+                      background: canSubstitute ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'var(--panel-2)',
                       color: canSubstitute ? '#000' : 'var(--muted)',
-                      border: canSubstitute ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      border: canSubstitute ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: canSubstitute ? 'pointer' : 'not-allowed',
                       textAlign: 'left',
@@ -25170,9 +25170,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '8px 12px',
                           fontSize: '12px',
                           fontWeight: 600,
-                          background: '#000',
-                          color: '#fff',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          background: 'var(--panel)',
+                          color: 'var(--text)',
+                          border: '1px solid var(--border)',
                           borderRadius: '6px',
                           cursor: 'pointer',
                           textAlign: 'left',
@@ -25184,11 +25184,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           width: '100%'
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#1a1a1a'
+                          e.currentTarget.style.background = 'var(--panel-2)'
                           e.currentTarget.style.transform = 'scale(1.02)'
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#000'
+                          e.currentTarget.style.background = 'var(--panel)'
                           e.currentTarget.style.transform = 'scale(1)'
                         }}
                       >
@@ -25204,9 +25204,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               padding: '6px 10px',
                               fontSize: '11px',
                               fontWeight: 600,
-                              background: canGetWarning ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                              background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
                               color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              border: '1px solid var(--border)',
                               borderRadius: '4px',
                               cursor: canGetWarning ? 'pointer' : 'not-allowed',
                               textAlign: 'left',
@@ -25226,9 +25226,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               padding: '6px 10px',
                               fontSize: '11px',
                               fontWeight: 600,
-                              background: canGetPenalty ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                              background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
                               color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              border: '1px solid var(--border)',
                               borderRadius: '4px',
                               cursor: canGetPenalty ? 'pointer' : 'not-allowed',
                               textAlign: 'left',
@@ -25248,9 +25248,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               padding: '6px 10px',
                               fontSize: '11px',
                               fontWeight: 600,
-                              background: canGetExpulsion ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                              background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
                               color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              border: '1px solid var(--border)',
                               borderRadius: '4px',
                               cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
                               textAlign: 'left',
@@ -25269,9 +25269,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               padding: '6px 10px',
                               fontSize: '11px',
                               fontWeight: 600,
-                              background: 'rgba(255, 255, 255, 0.05)',
+                              background: 'var(--panel-2)',
                               color: 'var(--text)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              border: '1px solid var(--border)',
                               borderRadius: '4px',
                               cursor: 'pointer',
                               textAlign: 'left',
@@ -25424,8 +25424,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-injury-dropdown
                 style={{
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '2px solid var(--border)',
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
@@ -25434,7 +25434,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
               >
-                <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '6px' }}>
+                <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '6px' }}>
                   Injury
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
@@ -25506,8 +25506,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '2px solid var(--border)',
                   borderRadius: '12px',
                   padding: '24px',
                   fontSize: '16px',
@@ -25530,7 +25530,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </h4>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                   <thead>
-                    <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.2)' }}>
+                    <tr style={{ borderBottom: '2px solid var(--border)' }}>
                       <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>Set</th>
                       <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>P</th>
                       <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>W</th>
@@ -25555,7 +25555,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }
                       const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                       return (
-                        <tr key={set.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: rowColor }}>
+                        <tr key={set.id} style={{ borderBottom: '1px solid var(--border)', color: rowColor }}>
                           <td style={{ padding: '6px 4px', textAlign: 'center' }}>{romanNumerals[set.index - 1] || set.index}</td>
                           <td style={{ padding: '6px 4px', textAlign: 'center' }}>{teamPoints}</td>
                           <td style={{ padding: '6px 4px', textAlign: 'center' }}>{won}</td>
@@ -25584,7 +25584,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={500}
         >
           <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
-            <p style={{ marginBottom: '16px', fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>
+            <p style={{ marginBottom: '16px', fontSize: '12px', color: 'var(--muted)' }}>
               {t('scoreboard.keybindings.instruction', 'Click on a key to change it. Press the new key to assign, or Escape to cancel.')}
             </p>
             {[
@@ -25605,7 +25605,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '10px 12px',
-                  background: editingKey === key ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  background: editingKey === key ? 'rgba(59, 130, 246, 0.2)' : 'var(--panel-2)',
                   borderRadius: '6px',
                   marginBottom: '8px',
                   border: editingKey === key ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent'
@@ -25613,7 +25613,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               >
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: '13px' }}>{t(labelKey, label)}</div>
-                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{t(descKey, description)}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{t(descKey, description)}</div>
                 </div>
                 <button
                   onClick={() => {
@@ -25642,9 +25642,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '6px 12px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: editingKey === key ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                    background: editingKey === key ? '#3b82f6' : 'var(--panel)',
                     color: editingKey === key ? '#fff' : 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '4px',
                     cursor: 'pointer',
                     minWidth: '80px',
@@ -25675,9 +25675,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '8px 16px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '6px',
                   cursor: 'pointer'
                 }}
@@ -25746,9 +25746,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -25799,9 +25799,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -25859,9 +25859,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -25946,9 +25946,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px 16px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer'
                   }}
@@ -26079,9 +26079,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '14px 29px',
                     fontSize: '17px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '10px',
                     cursor: 'pointer'
                   }}
@@ -26587,21 +26587,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '14px',
                         fontSize: '17px',
                         fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.05)',
+                        background: 'var(--panel-2)',
                         color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        border: '1px solid var(--border)',
                         borderRadius: '7px',
                         cursor: 'pointer',
                         textAlign: 'left',
                         transition: 'all 0.2s'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                        e.currentTarget.style.background = 'var(--panel)'
+                        e.currentTarget.style.borderColor = 'var(--border)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
+                        e.currentTarget.style.borderColor = 'var(--border)'
                       }}
                     >
                       #{player.number} - {player.lastName || player.name} {player.firstName}
@@ -26616,9 +26616,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '14px 29px',
                     fontSize: '17px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '10px',
                     cursor: 'pointer'
                   }}
@@ -26686,9 +26686,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -26758,8 +26758,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             />
             <div style={menuStyle}>
               <div style={{
-                background: 'rgba(15, 23, 42, 0.98)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '8px',
                 display: 'flex',
@@ -26863,7 +26863,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       fontWeight: 600,
                       background: '#ef4444',
                       color: '#fff',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -26970,9 +26970,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px 12px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: '#000',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'var(--panel-2)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     textAlign: 'left',
@@ -26983,10 +26983,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     gap: '6px'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#1a1a1a'
+                    e.currentTarget.style.background = 'var(--panel)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#000'
+                    e.currentTarget.style.background = 'var(--panel-2)'
                   }}
                 >
                   <span>Sanction</span>
@@ -27302,9 +27302,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '14px 29px',
                   fontSize: '17px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '10px',
                   cursor: 'pointer'
                 }}
@@ -27473,9 +27473,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -27510,8 +27510,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               position: 'absolute',
               left: `${connectionModalPosition.x}px`,
               top: `${connectionModalPosition.y}px`,
-              background: 'rgba(15, 23, 42, 0.98)',
-              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px',
               minWidth: '200px',
@@ -27529,7 +27529,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               height: 0,
               borderLeft: '8px solid transparent',
               borderRight: '8px solid transparent',
-              borderBottom: '8px solid rgba(15, 23, 42, 0.98)'
+              borderBottom: '8px solid var(--panel)'
             }} />
             <div style={{
               position: 'absolute',
@@ -27539,7 +27539,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               height: 0,
               borderLeft: '8px solid transparent',
               borderRight: '8px solid transparent',
-              borderBottom: '8px solid rgba(255,255,255,0.2)'
+              borderBottom: '8px solid var(--border)'
             }} />
 
             <div style={{ marginBottom: '12px' }}>
@@ -27587,7 +27587,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   position: 'relative',
                   width: '44px',
                   height: '24px',
-                  background: (connectionModal === 'referee' ? refereeConnectionEnabled : connectionModal === 'teamA' ? homeTeamConnectionEnabled : awayTeamConnectionEnabled) ? '#22c55e' : '#6b7280',
+                  background: (connectionModal === 'referee' ? refereeConnectionEnabled : connectionModal === 'teamA' ? homeTeamConnectionEnabled : awayTeamConnectionEnabled) ? '#22c55e' : 'var(--muted)',
                   borderRadius: '12px',
                   transition: 'background 0.2s',
                   cursor: 'pointer'
@@ -27656,9 +27656,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '4px 8px',
                         fontSize: '10px',
                         fontWeight: 600,
-                        background: 'rgba(255,255,255,0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
-                        border: '1px solid rgba(255,255,255,0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '4px',
                         cursor: 'pointer',
                         whiteSpace: 'nowrap'
@@ -27714,7 +27714,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   letterSpacing: '4px',
                   fontFamily: 'monospace',
                   background: 'var(--bg)',
-                  border: pinError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                  border: pinError ? '2px solid #ef4444' : '2px solid var(--border)',
                   borderRadius: '8px',
                   color: 'var(--text)'
                 }}
@@ -27736,9 +27736,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '10px 20px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255,255,255,0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -28036,7 +28036,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </div>
 
               {/* Cancel/Forfeit option */}
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
                 <button
                   onClick={async () => {
                     await handleForfait(team, reason === 'expulsion' ? 'expulsion' : 'disqualification')
@@ -28101,9 +28101,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   gap: '16px',
                   alignItems: 'center',
                   padding: '16px',
-                  background: 'rgba(255, 255, 255, 0.05)',
+                  background: 'var(--panel-2)',
                   borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  border: '1px solid var(--border)'
                 }}>
                   {/* Team A Box */}
                   <div style={{
@@ -28112,7 +28112,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '16px',
                     background: leftTeamColor,
                     borderRadius: '8px',
-                    border: '2px solid rgba(255, 255, 255, 0.3)',
+                    border: '2px solid var(--border)',
                     position: 'relative'
                   }}>
                     <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
@@ -28144,7 +28144,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '16px',
                     background: rightTeamColor,
                     borderRadius: '8px',
-                    border: '2px solid rgba(255, 255, 255, 0.3)',
+                    border: '2px solid var(--border)',
                     position: 'relative'
                   }}>
                     <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
@@ -28180,9 +28180,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 16px',
                       fontSize: '14px',
                       fontWeight: 600,
-                      background: 'rgba(255, 255, 255, 0.1)',
+                      background: 'var(--panel)',
                       color: 'var(--text)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       whiteSpace: 'nowrap'
@@ -28202,9 +28202,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 16px',
                       fontSize: '14px',
                       fontWeight: 600,
-                      background: 'rgba(255, 255, 255, 0.1)',
+                      background: 'var(--panel)',
                       color: 'var(--text)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       whiteSpace: 'nowrap'
@@ -28440,9 +28440,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   padding: '12px 24px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -28527,8 +28527,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   style={{
                     flex: 1,
                     padding: '12px 16px',
-                    background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
+                    border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -28542,7 +28542,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     width: '18px',
                     height: '18px',
                     borderRadius: '50%',
-                    border: selectedOption === 'swap' ? '5px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
+                    border: selectedOption === 'swap' ? '5px solid #eab308' : '2px solid var(--border)',
                     background: selectedOption === 'swap' ? '#eab308' : 'transparent',
                     flexShrink: 0
                   }} />
@@ -28555,8 +28555,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   style={{
                     flex: 1,
                     padding: '12px 16px',
-                    background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                    border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
+                    border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -28570,7 +28570,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     width: '18px',
                     height: '18px',
                     borderRadius: '50%',
-                    border: selectedOption === 'replay' ? '5px solid #eab308' : '2px solid rgba(255, 255, 255, 0.3)',
+                    border: selectedOption === 'replay' ? '5px solid #eab308' : '2px solid var(--border)',
                     background: selectedOption === 'replay' ? '#eab308' : 'transparent',
                     flexShrink: 0
                   }} />
@@ -28589,7 +28589,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', fontSize: '13px', color: 'var(--muted)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '55px', textAlign: 'right' }}>Current:</span>
-                    <div style={{ background: 'rgba(255, 255, 255, 0.1)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.2)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ background: 'var(--panel)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ background: homeColor, color: isBrightColor(homeColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
                       <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
                       <span style={{ background: awayColor, color: isBrightColor(awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
@@ -28639,9 +28639,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '12px 32px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer'
                   }}
@@ -28704,7 +28704,7 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
             height: '16px',
             cursor: 'pointer',
             background: 'rgba(0, 0, 0, 0.3)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            borderBottom: '1px solid var(--border)',
             transition: 'all 0.2s'
           }}
           onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
@@ -28723,7 +28723,7 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
             height: '16px',
             cursor: 'pointer',
             background: 'rgba(0, 0, 0, 0.3)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            borderBottom: '1px solid var(--border)',
             transition: 'all 0.2s'
           }}
           onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
@@ -29270,8 +29270,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 <div style={{
                   width: '60px',
                   height: '24px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--border)',
                   borderRadius: '4px 4px 0 0',
                   display: 'flex',
                   alignItems: 'center',
@@ -29330,9 +29330,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       textAlign: 'center',
                       background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
                       borderTop: 'none',
-                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
-                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
-                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
+                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
+                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
+                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
                       borderRadius: '0 0 8px 8px',
                       color: 'var(--text)',
                       transition: 'background 0.15s, border-color 0.15s'
@@ -29381,8 +29381,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 <div style={{
                   width: '60px',
                   height: '24px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--border)',
                   borderRadius: '4px 4px 0 0',
                   display: 'flex',
                   alignItems: 'center',
@@ -29441,9 +29441,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                       textAlign: 'center',
                       background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
                       borderTop: 'none',
-                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
-                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
-                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'rgba(255,255,255,0.2)'}`,
+                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
+                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
+                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
                       borderRadius: '0 0 8px 8px',
                       color: 'var(--text)',
                       transition: 'background 0.15s, border-color 0.15s'
@@ -29479,7 +29479,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         <div style={{
           marginBottom: '16px',
           padding: '12px',
-          background: 'rgba(255, 255, 255, 0.05)',
+          background: 'var(--panel-2)',
           borderRadius: '8px'
         }}>
           <div style={{
@@ -29841,9 +29841,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               className="secondary"
               onClick={handleModify}
               style={{
-                background: 'rgba(0, 0, 0, 1)',
-                color: '#fff',
-                border: '1px solid rgba(0, 0, 0, 1)',
+                background: 'var(--panel-2)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
                 borderRadius: '10px',
                 cursor: 'point  er'
               }}
@@ -29918,9 +29918,9 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
               padding: '12px 24px',
               fontSize: '14px',
               fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'var(--panel)',
               color: 'var(--text)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               cursor: 'pointer'
             }}
@@ -29951,9 +29951,9 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
                     key={index}
                     style={{
                       padding: '12px',
-                      background: 'rgba(255, 255, 255, 0.05)',
+                      background: 'var(--panel-2)',
                       borderRadius: '8px',
-                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                      border: '1px solid var(--border)'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -29982,9 +29982,9 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
                     key={index}
                     style={{
                       padding: '12px',
-                      background: 'rgba(255, 255, 255, 0.05)',
+                      background: 'var(--panel-2)',
                       borderRadius: '8px',
-                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                      border: '1px solid var(--border)'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -30195,8 +30195,8 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
   }
 
   const inputStyle = {
-    background: 'rgba(255,255,255,0.08)',
-    border: '1px solid rgba(255,255,255,0.15)',
+    background: 'var(--panel-2)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     color: 'var(--text)',
     fontSize: '13px',
@@ -30375,16 +30375,16 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
         </div>
 
         {/* Save / Cancel buttons */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
           <button
             onClick={onClose}
             style={{
               padding: '10px 20px',
               fontSize: '14px',
               fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'var(--panel)',
               color: 'var(--text)',
-              border: '1px solid rgba(255,255,255,0.2)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               cursor: 'pointer'
             }}

@@ -461,7 +461,7 @@ button {
 }
 
 button.secondary {
-  background: #334155;
+  background: var(--panel-2);
   color: var(--text);
 }
 
@@ -901,7 +901,7 @@ button:disabled {
   align-items: center;
   gap: 0.76cqw;
   padding: 0.6cqw 0.85cqw;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: calc(12px * var(--scale-factor));
   position: sticky;
@@ -1064,7 +1064,7 @@ button:disabled {
   font-size: 2.55cqw;
   font-weight: 800;
   letter-spacing: 0.1cqw;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   padding: 0.6cqw 1.3cqw;
   border-radius: 0.6cqw;
   border: 0.1cqw solid rgba(255, 255, 255, 0.1);
@@ -1081,7 +1081,7 @@ button:disabled {
 
 .roster-panel {
   padding: calc(20px * var(--scale-factor));
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--panel-2);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: calc(12px * var(--scale-factor));
 }
@@ -1107,13 +1107,13 @@ button:disabled {
 .roster-table {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--panel-2);
   border-radius: calc(8px * var(--scale-factor));
   overflow: hidden;
 }
 
 .roster-table thead {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border-bottom: calc(2px * var(--scale-factor)) solid rgba(255, 255, 255, 0.1);
 }
 
@@ -1298,7 +1298,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: calc(10px * var(--scale-factor));
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: calc(12px * var(--scale-factor));
   padding: calc(10px * var(--scale-factor));
@@ -1370,7 +1370,7 @@ button:disabled {
   flex-direction: column;
   gap: calc(16px * var(--scale-factor));
   padding: calc(16px * var(--scale-factor));
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: calc(12px * var(--scale-factor));
   flex-shrink: 1;
@@ -1413,7 +1413,7 @@ button:disabled {
   font-size: calc(61px * var(--scale-factor));
   font-weight: 800;
   letter-spacing: 0;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -1594,7 +1594,7 @@ button:disabled {
   left: -2cqh;
   width: 5.5cqh;
   height: 5.5cqh;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 1cqh;
   display: flex;
@@ -1611,7 +1611,7 @@ button:disabled {
   left: -2cqh;
   width: 5.5cqh;
   height: 5.5cqh;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--panel);
   border: 1px solid var(--accent);
   border-radius: 1cqh;
   display: flex;
@@ -1710,7 +1710,7 @@ button.start-rally-button {
   flex-wrap: wrap;
   justify-content: center;
   padding: 12px 16px;
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
 }
@@ -1734,7 +1734,7 @@ button.start-rally-button {
 .remarks-area {
   width: 100%;
   min-height: 120px;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   color: var(--text);
@@ -1791,7 +1791,7 @@ button.start-rally-button {
 }
 
 .game-card {
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--panel-2);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 20px;
@@ -1802,7 +1802,7 @@ button.start-rally-button {
 }
 
 .game-card:hover {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border-color: rgba(255, 255, 255, 0.15);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -1908,7 +1908,7 @@ button.start-rally-button {
 
 /* Match Status Banner */
 .connection-status-banner {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 12px 20px;
@@ -1951,7 +1951,7 @@ button.start-rally-button {
 }
 
 .match-status-banner {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 16px 20px;

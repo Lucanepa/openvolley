@@ -1876,8 +1876,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         width: '100vw',
         maxWidth: '800px',
         margin: '0 auto',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
         flexDirection: 'column',
@@ -1892,8 +1892,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           justifyContent: 'space-between',
           alignItems: 'center',
           padding: '0 12px',
-          background: 'rgba(0, 0, 0, 0.3)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+          background: 'var(--panel-2)',
+          borderBottom: '1px solid var(--border)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
@@ -1902,9 +1902,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 padding: '4px 10px',
                 fontSize: '11px',
                 fontWeight: 600,
-                background: 'rgba(255,255,255,0.1)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'var(--panel)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 height: '25px',
@@ -1922,9 +1922,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 padding: '2px 8px',
                 fontSize: '9px',
                 fontWeight: 600,
-                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.1)',
-                color: wakeLockActive ? '#22c55e' : '#fff',
-                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid rgba(255,255,255,0.2)',
+                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'var(--panel)',
+                color: wakeLockActive ? '#22c55e' : 'var(--text)',
+                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid var(--border)',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 height: '25px',
@@ -1997,9 +1997,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   display: 'flex',
                   gap: '4px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '4px',
                   cursor: 'pointer'
                 }}
@@ -2028,8 +2028,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     top: '100%',
                     right: 0,
                     marginTop: '4px',
-                    background: '#1a1a2e',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     overflow: 'hidden',
                     zIndex: 1000,
@@ -2053,7 +2053,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                           fontSize: '12px',
                           fontWeight: i18n.language === lang.code ? 600 : 400,
                           background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
-                          color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                          color: i18n.language === lang.code ? '#4ade80' : 'var(--text)',
                           border: 'none',
                           cursor: 'pointer',
                           textAlign: 'left',
@@ -2061,7 +2061,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         }}
                         onMouseEnter={(e) => {
                           if (i18n.language !== lang.code) {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                            e.currentTarget.style.background = 'var(--panel-2)'
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -2080,7 +2080,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
 
             {/* Version */}
-            <span style={{ fontSize: '8px', color: 'rgba(255, 255, 255, 0.5)' }}>
+            <span style={{ fontSize: '8px', color: 'var(--muted)' }}>
               v{currentVersion}
             </span>
             {/* Exit Button with Icon */}
@@ -2145,7 +2145,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           <div style={{
             fontSize: 'clamp(14px, 3vw, 18px)',
-            color: 'rgba(255, 255, 255, 0.7)',
+            color: 'var(--muted)',
             textAlign: 'center',
             maxWidth: '400px'
           }}>
@@ -2156,7 +2156,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <div style={{
             width: '40px',
             height: '40px',
-            border: '3px solid rgba(255, 255, 255, 0.2)',
+            border: '3px solid var(--border)',
             borderTopColor: '#fbbf24',
             borderRadius: '50%',
             animation: 'awaiting-spin 1s linear infinite'
@@ -2317,7 +2317,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         aspectRatio: '1/1',
         height: 'auto',
         padding: '4px',
-        border: isRecentlySub ? '3px solid #f97316' : '1px solid rgba(255, 255, 255, 0.4)',
+        border: isRecentlySub ? '3px solid #f97316' : '1px solid var(--border)',
         borderRadius: '50%',
         background: isRecentlySub ? '#fdba74' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
         color: isRecentlySub ? '#000' : isLibero ? '#000' : '#fff',
@@ -2357,7 +2357,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           width: 'clamp(16px, 4vw, 22px)',
           height: 'clamp(16px, 4vw, 22px)',
           background: 'rgba(15, 23, 42, 0.95)',
-          border: '2px solid rgba(255, 255, 255, 0.5)',
+          border: '2px solid var(--border)',
           borderRadius: '4px',
           display: 'flex',
           alignItems: 'center',
@@ -2379,7 +2379,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             padding: '0 4px',
             height: 'clamp(14px, 3.5vw, 18px)',
             background: isLfp ? 'rgba(249, 115, 22, 0.95)' : 'rgba(147, 51, 234, 0.95)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            border: '1px solid var(--border)',
             borderRadius: '3px',
             display: 'flex',
             alignItems: 'center',
@@ -2428,7 +2428,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             height: 'clamp(16px, 4vw, 22px)',
             padding: '0 3px',
             background: '#3b82f6',
-            border: '2px solid rgba(255, 255, 255, 0.3)',
+            border: '2px solid var(--border)',
             borderRadius: '4px',
             display: 'flex',
             alignItems: 'center',
@@ -2525,8 +2525,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         width: '100vw',
         maxWidth: '800px',
         margin: '0 auto',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
         flexDirection: 'column',
@@ -2540,7 +2540,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         <div style={{
           fontSize: '18px',
           fontWeight: 500,
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: 'var(--muted)',
           textTransform: 'uppercase',
           letterSpacing: '2px'
         }}>
@@ -2571,9 +2571,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             padding: '12px 24px',
             fontSize: '16px',
             fontWeight: 600,
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            background: 'var(--panel)',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
             cursor: 'pointer',
             transition: 'background 0.2s',
@@ -2593,8 +2593,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       width: '100vw',
       maxWidth: '800px',
       margin: '0 auto',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      color: '#fff',
+      background: 'var(--bg)',
+      color: 'var(--text)',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       display: 'flex',
       flexDirection: 'column',
@@ -2608,7 +2608,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -2683,7 +2683,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
+            background: 'rgba(15, 23, 42, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2694,7 +2694,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+              background: 'var(--panel)',
               borderRadius: '24px',
               padding: '32px',
               textAlign: 'center',
@@ -2718,7 +2718,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             </div>
             <div style={{
               fontSize: '14px',
-              color: 'rgba(255, 255, 255, 0.7)',
+              color: 'var(--muted)',
               marginBottom: '24px'
             }}>
               {setterSelectionModal === 'left' ? leftTeamData?.name : rightTeamData?.name}
@@ -2732,7 +2732,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(() => {
                 const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
                 const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
-                if (!teamLineup) return <div style={{ gridColumn: '1/-1', color: 'rgba(255,255,255,0.5)' }}>No lineup available</div>
+                if (!teamLineup) return <div style={{ gridColumn: '1/-1', color: 'var(--muted)' }}>No lineup available</div>
 
                 return Object.entries(teamLineup).map(([position, posData]) => {
                   // Handle both rich format (posData is object with number) and legacy format (posData is number)
@@ -2752,11 +2752,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         fontWeight: 700,
                         background: String(playerNum) === String(currentSetter)
                           ? 'rgba(139, 92, 246, 0.4)'
-                          : 'rgba(255, 255, 255, 0.1)',
-                        color: String(playerNum) === String(currentSetter) ? '#a78bfa' : '#fff',
+                          : 'var(--panel)',
+                        color: String(playerNum) === String(currentSetter) ? '#a78bfa' : 'var(--text)',
                         border: String(playerNum) === String(currentSetter)
                           ? '2px solid #8b5cf6'
-                          : '1px solid rgba(255, 255, 255, 0.2)',
+                          : '1px solid var(--border)',
                         borderRadius: '12px',
                         cursor: 'pointer',
                         display: 'flex',
@@ -2766,7 +2766,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         transition: 'all 0.2s'
                       }}
                     >
-                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>{position}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{position}</span>
                       <span>#{playerNum}</span>
                     </button>
                   )
@@ -2800,9 +2800,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   padding: '10px 20px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -2896,7 +2896,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }}>
 
         {/* SECTION 2A: Set Counter Row - 8% */}
-        <div style={{ flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'rgba(0, 0, 0, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
+        <div style={{ flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'var(--panel-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
           {/* Left: Team Name (centered in its space) + A/B */}
           <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
             <div ref={section2AContainerRef} style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
@@ -2921,7 +2921,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           {/* Center: Set scores + SET n */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1vw, 12px)', flexShrink: 0, marginLeft: '8px', marginRight: '8px' }}>
             <div style={{
-              padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '8px',
+              padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'var(--panel)', borderRadius: '8px',
               fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800
             }}>
               {leftSetsWon}</div>
@@ -2930,7 +2930,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <span style={{ fontSize: vmin(4), fontWeight: 800 }}>{displaySetIndex}</span>
             </div>
             <div style={{
-              padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'rgba(255, 255, 255, 0.15)',
+              padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'var(--panel)',
               borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800
             }}>{rightSetsWon}</div>
           </div>
@@ -2977,7 +2977,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         <div style={{
           flex: '0 0 15%',
           padding: '4px 0',
-          background: 'rgba(0, 0, 0, 0.2)',
+          background: 'var(--panel-2)',
           display: 'flex',
           flexDirection: 'row',
           alignItems: 'center',
@@ -3116,7 +3116,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '2px 8px',
-            background: 'rgba(0, 0, 0, 0.15)',
+            background: 'var(--panel-2)',
             flex: '0 0 auto'
           }}>
             {/* Left team advanced mode button - only show when receiving and 2R view */}
@@ -3128,9 +3128,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: advancedMode.left ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                    color: advancedMode.left ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
-                    border: advancedMode.left ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
+                    background: advancedMode.left ? 'rgba(139, 92, 246, 0.3)' : 'var(--panel)',
+                    color: advancedMode.left ? '#a78bfa' : 'var(--muted)',
+                    border: advancedMode.left ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -3158,9 +3158,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: advancedMode.right ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                    color: advancedMode.right ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
-                    border: advancedMode.right ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
+                    background: advancedMode.right ? 'rgba(139, 92, 246, 0.3)' : 'var(--panel)',
+                    color: advancedMode.right ? '#a78bfa' : 'var(--muted)',
+                    border: advancedMode.right ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -3197,7 +3197,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
               background: 'linear-gradient(90deg, rgba(234, 179, 8, 0.12), rgba(234, 179, 8, 0.08))',
-              border: '2px solid rgba(255, 255, 255, 0.1)',
+              border: '2px solid var(--border)',
               overflow: 'hidden'
             }}>
               {/* Net */}
@@ -3221,7 +3221,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 bottom: 0,
                 left: 'calc(50% - 22.667%)',
                 width: '2px',
-                background: 'rgba(255, 255, 255, 0.15)',
+                background: 'var(--panel)',
                 zIndex: 1
               }} />
               <div style={{
@@ -3230,7 +3230,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 bottom: 0,
                 left: 'calc(50% + 22.667%)',
                 width: '2px',
-                background: 'rgba(255, 255, 255, 0.15)',
+                background: 'var(--panel)',
                 zIndex: 1
               }} />
 
@@ -3258,9 +3258,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       width: '32px',
                       height: '32px',
                       borderRadius: '50%',
-                      background: receptionMode.left === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.15)',
-                      border: receptionMode.left === 'reception' ? '2px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.3)',
-                      color: receptionMode.left === 'reception' ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
+                      background: receptionMode.left === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'var(--panel)',
+                      border: receptionMode.left === 'reception' ? '2px solid #8b5cf6' : '1px solid var(--border)',
+                      color: receptionMode.left === 'reception' ? '#a78bfa' : 'var(--muted)',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -3357,7 +3357,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.75)',
+                    background: 'rgba(15, 23, 42, 0.5)',
                     backdropFilter: 'blur(8px)',
                     display: 'flex',
                     flexDirection: 'column',
@@ -3422,9 +3422,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       width: '32px',
                       height: '32px',
                       borderRadius: '50%',
-                      background: receptionMode.right === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'rgba(255, 255, 255, 0.15)',
-                      border: receptionMode.right === 'reception' ? '2px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.3)',
-                      color: receptionMode.right === 'reception' ? '#a78bfa' : 'rgba(255, 255, 255, 0.7)',
+                      background: receptionMode.right === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'var(--panel)',
+                      border: receptionMode.right === 'reception' ? '2px solid #8b5cf6' : '1px solid var(--border)',
+                      color: receptionMode.right === 'reception' ? '#a78bfa' : 'var(--muted)',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -3520,7 +3520,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: 'rgba(0, 0, 0, 0.75)',
+                    background: 'rgba(15, 23, 42, 0.5)',
                     backdropFilter: 'blur(8px)',
                     display: 'flex',
                     flexDirection: 'column',
@@ -3567,12 +3567,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* SECTION 4: Combined TO/SUB counters + Sanctions - fills remaining space */}
         <div style={{
           flex: '1 1 auto',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: '1px solid var(--border)',
           display: 'grid',
           gridTemplateColumns: 'auto 1fr auto',
           alignItems: 'center',
           padding: '6px 12px',
-          background: 'rgba(0, 0, 0, 0.06)',
+          background: 'var(--panel-2)',
           gap: '12px',
           minHeight: 0,
           overflow: 'hidden'
@@ -3588,30 +3588,30 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
             {/* TO counter */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>TO</span>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>TO</span>
               <span style={{
-                background: leftStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+                background: leftStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'var(--panel)',
                 padding: '7px 14px',
                 borderRadius: '6px',
-                border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+                border: leftStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid var(--border)',
                 minWidth: '42px',
                 aspectRatio: '1',
                 textAlign: 'center',
-                color: leftStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
+                color: leftStats.timeouts >= 2 ? '#ef4444' : 'var(--text)'
               }}>{leftStats.timeouts}</span>
             </div>
             {/* SUB counter */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>SUB</span>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>SUB</span>
               <span style={{
-                background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+                background: leftStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : leftStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                 padding: '7px 14px',
                 aspectRatio: '1',
                 borderRadius: '6px',
-                border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+                border: leftStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : leftStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid var(--border)',
                 minWidth: '42px',
                 textAlign: 'center',
-                color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
+                color: leftStats.substitutions >= 6 ? '#ef4444' : leftStats.substitutions >= 5 ? '#eab308' : 'var(--text)'
               }}>{leftStats.substitutions}</span>
             </div>
           </div>
@@ -3632,17 +3632,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'flex-start',
               gap: '4px',
-              border: (leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) ? '1px solid rgba(255,255,255,0.15)' : 'none',
+              border: (leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) ? '1px solid var(--border)' : 'none',
               padding: '4px',
               height: '100%',
 
             }}>
               {/* Sanctions title if any sanctions exist */}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(255, 255, 255, 1)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
               )}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               )}
               {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest) && (
@@ -3673,7 +3673,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 </div>
               )}
               {(leftTeamSanctions.formalWarning || leftTeamSanctions.improperRequest || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty || leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               )}
               {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
               {(leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0 || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty) && (
@@ -3821,16 +3821,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               alignItems: 'center',
               justifyContent: 'flex-start',
               gap: '4px',
-              border: (rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) ? '1px solid rgba(255,255,255,0.15)' : 'none',
+              border: (rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) ? '1px solid var(--border)' : 'none',
               padding: '4px',
               height: '100%',
             }}>
               {/* Sanctions title if any sanctions exist */}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ fontSize: '15px', fontWeight: 600, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Sanctions</div>
               )}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               )}
               {/* Team-level sanctions at top (Formal warning, Improper Request only) */}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest) && (
@@ -3861,7 +3861,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 </div>
               )}
               {(rightTeamSanctions.formalWarning || rightTeamSanctions.improperRequest || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty || rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0) && (
-                <div style={{ border: '1px solid rgba(255,255,255,0.15)', height: '1px', width: '100%', margin: '4px 0' }}></div>
+                <div style={{ border: '1px solid var(--border)', height: '1px', width: '100%', margin: '4px 0' }}></div>
               )}
               {/* Personal sanctions in grid: W|P|E|D columns, DW/DP below */}
               {(rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0 || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty) && (
@@ -3973,30 +3973,30 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
             {/* TO counter */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>TO</span>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>TO</span>
               <span style={{
-                background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+                background: rightStats.timeouts >= 2 ? 'rgba(239, 68, 68, 0.3)' : 'var(--panel)',
                 padding: '7px 14px',
                 borderRadius: '6px',
                 aspectRatio: '1',
-                border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+                border: rightStats.timeouts >= 2 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid var(--border)',
                 minWidth: '42px',
                 textAlign: 'center',
-                color: rightStats.timeouts >= 2 ? '#ef4444' : 'rgba(255, 255, 255, 0.9)'
+                color: rightStats.timeouts >= 2 ? '#ef4444' : 'var(--text)'
               }}>{rightStats.timeouts}</span>
             </div>
             {/* SUB counter */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              <span style={{ fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.6em' }}>SUB</span>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>SUB</span>
               <span style={{
-                background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(255, 255, 255, 0.15)',
+                background: rightStats.substitutions >= 6 ? 'rgba(239, 68, 68, 0.3)' : rightStats.substitutions >= 5 ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
                 padding: '7px 14px',
                 borderRadius: '6px',
                 aspectRatio: '1',
-                border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid rgba(255, 255, 255, 0.3)',
+                border: rightStats.substitutions >= 6 ? '1px solid rgba(239, 68, 68, 0.6)' : rightStats.substitutions >= 5 ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid var(--border)',
                 minWidth: '42px',
                 textAlign: 'center',
-                color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'rgba(255, 255, 255, 0.9)'
+                color: rightStats.substitutions >= 6 ? '#ef4444' : rightStats.substitutions >= 5 ? '#eab308' : 'var(--text)'
               }}>{rightStats.substitutions}</span>
             </div>
           </div>
@@ -4009,10 +4009,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           alignItems: 'center',
           justifyContent: 'center',
           padding: '0 12px',
-          background: 'rgba(0, 0, 0, 0.3)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          background: 'var(--panel-2)',
+          borderTop: '1px solid var(--border)',
           fontSize: 'clamp(11px, 2.5vw, 14px)',
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: 'var(--muted)',
           overflow: 'hidden',
           minHeight: 0
         }}>
