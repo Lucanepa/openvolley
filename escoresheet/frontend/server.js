@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
+import { stripMatchSecrets } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -24,14 +25,7 @@ const WS_PORT = process.env.WS_PORT || 8080
 const DIST_DIR = join(__dirname, 'dist')
 const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
 
-// Secret fields that must never be returned to a client (PINs are the connection gate).
-const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin', 'connection_pins', 'connectionPins', 'game_pin', 'gamePin']
-function stripMatchSecrets(match) {
-  if (!match || typeof match !== 'object') return match
-  const clean = { ...match }
-  for (const k of MATCH_SECRET_FIELDS) delete clean[k]
-  return clean
-}
+// stripMatchSecrets now imported from ./lanRelayCore.js (shared with the dev plugin).
 
 // HTTPS configuration - default to true for production
 const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' || process.env.USE_HTTPS === 'true' || process.env.NODE_ENV === 'production')
