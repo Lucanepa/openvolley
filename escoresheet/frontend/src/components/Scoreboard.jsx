@@ -29,6 +29,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet } from '../domain/rules'
+import { resolveSanction, isDelaySanction } from '../domain/sanctions'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -5252,9 +5253,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const confirmSanction = useCallback(async () => {
     if (!sanctionConfirm || !data?.match || !data?.set) return
 
-    const { side, type } = sanctionConfirm
+    const { side, type: requestedType } = sanctionConfirm
     const teamKey = mapSideToTeamKey(side)
     const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
+
+    // Enforce the delay ladder + improper-request escalation (FIVB 15.11 / 16.2):
+    // the first delay is a warning and subsequent delays are penalties; a repeated
+    // improper request becomes a delay. resolveSanction is pure + unit-tested.
+    const teamSanctions = (data.events || []).filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
+    const priorDelayCount = teamSanctions.filter(e => isDelaySanction(e.payload?.type)).length
+    const priorImproperCount = teamSanctions.filter(e => e.payload?.type === 'improper_request').length
+    const type = resolveSanction(requestedType, { priorDelayCount, priorImproperCount })
 
     // Update match sanctions for improper request and delay warning
     // Store by team key (Home/Away) so sanctions follow the team when sides switch
@@ -6961,7 +6970,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       cLogger.logHandler('handleTimeout', { side })
       const teamKey = mapSideToTeamKey(side)
       const used = (timeoutsUsed && timeoutsUsed[teamKey]) || 0
-      if (used >= 2) return
+      if (used >= 2) {
+        // Requesting a time-out after both are used is an improper request
+        // (FIVB 15.11.1.4). Route it into the improper-request ladder — the first
+        // is recorded with no consequence, a repeat becomes a delay — instead of
+        // silently discarding it. The scorer can still cancel in the dialog.
+        if (rallyStatus === 'idle') setSanctionConfirm({ side, type: 'improper_request' })
+        return
+      }
 
       // Check for duplicate timeout (same team, no points scored since last TO)
       if (data?.events && data?.set) {
@@ -6985,7 +7001,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       setTimeoutModal({ team: teamKey, countdown: 30, started: false })
     },
-    [mapSideToTeamKey, timeoutsUsed, data?.events, data?.set]
+    [mapSideToTeamKey, timeoutsUsed, data?.events, data?.set, rallyStatus]
   )
 
   const confirmTimeout = useCallback(async () => {
