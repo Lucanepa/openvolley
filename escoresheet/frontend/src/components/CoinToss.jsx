@@ -1531,7 +1531,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 <div style={{
                   position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
                   marginTop: '8px', zIndex: 10,
-                  background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--card)', border: '1px solid var(--border)',
                   borderRadius: '8px', padding: isCompact ? '8px' : '12px',
                   display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
                 }}>
@@ -1606,7 +1606,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 <div style={{
                   position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
                   marginTop: '8px', zIndex: 10,
-                  background: 'var(--card)', border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--card)', border: '1px solid var(--border)',
                   borderRadius: '8px', padding: isCompact ? '8px' : '12px',
                   display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px'
                 }}>
@@ -1894,7 +1894,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                   width: '20px',
                                   height: '20px',
                                   borderRadius: '4px',
-                                  border: p.isCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                                  border: p.isCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
                                   background: p.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1902,7 +1902,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                   cursor: 'pointer',
                                   fontSize: '10px',
                                   fontWeight: 700,
-                                  color: p.isCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                                  color: p.isCaptain ? '#22c55e' : 'var(--muted)',
                                   userSelect: 'none'
                                 }}
                               >
@@ -1922,7 +1922,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                   width: '20px',
                                   height: '20px',
                                   borderRadius: '4px',
-                                  border: p.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                                  border: p.isLfp ? '2px solid #f97316' : '2px solid var(--border)',
                                   background: p.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1930,7 +1930,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                   cursor: 'pointer',
                                   fontSize: '8px',
                                   fontWeight: 700,
-                                  color: p.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                                  color: p.isLfp ? '#f97316' : 'var(--muted)',
                                   userSelect: 'none'
                                 }}
                               >
@@ -1956,7 +1956,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               </div>
 
               {/* Bench Officials Section */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16 }}>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('roster.benchOfficialsCount', { count: bench.length })}</h4>
                   <button
@@ -2047,7 +2047,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               </div>
 
               {/* Signatures Section */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16, marginTop: 16 }}>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
                 <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>{t('roster.signatures')}</h4>
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <button
@@ -2072,12 +2072,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               {/* Signature Pad Modal */}
               {rosterModalSignature && (
                 <div style={{
-                  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+                  position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.5)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
                 }}>
                   <div style={{
-                    background: '#111827', padding: 16, borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.1)', maxWidth: '90vw'
+                    background: 'var(--panel)', padding: 16, borderRadius: 12,
+                    border: '1px solid var(--border)', maxWidth: '90vw'
                   }}>
                     <h3 style={{ margin: '0 0 12px 0' }}>
                       {t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })}
@@ -2100,7 +2100,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </div>
 
             {/* Custom Close/Modify Button */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
               {hasChanges && (
                 <button
                   type="button"
@@ -2161,7 +2161,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   value={num}
                   onChange={e => currentTeam === 'home' ? setHomeNum(e.target.value) : setAwayNum(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
                 />
               </div>
               <div>
@@ -2172,7 +2172,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   value={last}
                   onChange={e => currentTeam === 'home' ? setHomeLast(e.target.value) : setAwayLast(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
                 />
               </div>
               <div>
@@ -2183,7 +2183,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   value={first}
                   onChange={e => currentTeam === 'home' ? setHomeFirst(e.target.value) : setAwayFirst(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
                 />
               </div>
               <div>
@@ -2196,7 +2196,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     currentTeam === 'home' ? setHomeDob(value) : setAwayDob(value)
                   }}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
                 />
               </div>
               <div>
@@ -2211,7 +2211,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     }
                     currentTeam === 'home' ? setHomeLibero(newValue) : setAwayLibero(newValue)
                   }}
-                  style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
                 >
                   <option value="">{t('roster.none')}</option>
                   {!roster.some(p => p.libero === 'libero1') && <option value="libero1">{t('roster.liberoFull1')}</option>}
@@ -2225,7 +2225,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     width: '28px',
                     height: '28px',
                     borderRadius: '4px',
-                    border: captain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                    border: captain ? '2px solid #22c55e' : '2px solid var(--border)',
                     background: captain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -2233,7 +2233,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     cursor: 'pointer',
                     fontSize: '14px',
                     fontWeight: 700,
-                    color: captain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                    color: captain ? '#22c55e' : 'var(--muted)',
                     userSelect: 'none'
                   }}
                 >
@@ -2424,7 +2424,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     alignItems: 'center',
                     gap: 10,
                     padding: '8px 12px',
-                    borderBottom: '1px solid rgba(255,255,255,0.06)'
+                    borderBottom: '1px solid var(--border)'
                   }}>
                     <span style={{ width: 20, textAlign: 'center', fontSize: 14, flexShrink: 0 }}>
                       {check.status === 'pending' && (
@@ -2439,17 +2439,17 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                       {check.status === 'pass' && <span style={{ color: '#22c55e' }}>✓</span>}
                       {check.status === 'warn' && <span style={{ color: '#eab308' }}>!</span>}
                       {check.status === 'fail' && <span style={{ color: '#ef4444' }}>✕</span>}
-                      {check.status === 'skip' && <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
+                      {check.status === 'skip' && <span style={{ color: 'var(--muted)' }}>—</span>}
                     </span>
                     <span style={{
                       fontSize: 13,
-                      color: check.status === 'skip' ? 'rgba(255,255,255,0.3)' : 'var(--text)',
+                      color: check.status === 'skip' ? 'var(--muted)' : 'var(--text)',
                       flex: 1
                     }}>
                       {check.label}
                     </span>
                     {check.detail && (
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
                         {check.detail}
                       </span>
                     )}

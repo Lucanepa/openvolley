@@ -549,8 +549,8 @@ export default function RefereeApp() {
       maxWidth: '100vw',
       margin: '0 auto',
       overflow: 'hidden',
-      background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
-      color: '#fff',
+      background: 'var(--bg)',
+      color: 'var(--text)',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -607,7 +607,7 @@ export default function RefereeApp() {
               style={{
                 padding: '24px',
                 width: 'auto',
-                background: 'rgba(255, 255, 255, 0.05)',
+                background: 'var(--panel-2)',
                 borderRadius: '12px',
                 textAlign: 'center',
                 cursor: 'default',
@@ -631,7 +631,7 @@ export default function RefereeApp() {
                   padding: '10px 20px',
                   fontSize: '14px',
                   background: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   color: 'var(--accent)',
                   cursor: loadingMatches ? 'not-allowed' : 'pointer',
@@ -667,7 +667,7 @@ export default function RefereeApp() {
                       padding: '4px 10px',
                       fontSize: '12px',
                       background: 'transparent',
-                      border: '1px solid rgba(255,255,255,0.15)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       color: 'var(--accent)',
                       cursor: loadingMatches ? 'not-allowed' : 'pointer',
@@ -686,7 +686,7 @@ export default function RefereeApp() {
                     padding: '12px',
                     fontSize: '16px',
                     background: 'var(--bg)',
-                    border: '2px solid rgba(255,255,255,0.2)',
+                    border: '2px solid var(--border)',
                     borderRadius: '8px',
                     color: 'var(--text)',
                     cursor: isLoading ? 'not-allowed' : 'pointer',
@@ -710,7 +710,7 @@ export default function RefereeApp() {
                       <div style={{
                         padding: '12px',
                         width: '300px',
-                        background: 'rgba(13, 16, 14, 0.1)',
+                        background: 'var(--panel-2)',
                         border: '1px solid rgba(59, 130, 246, 0.3)',
                         borderRadius: '8px',
                         textAlign: 'center'
@@ -760,7 +760,7 @@ export default function RefereeApp() {
                   textAlign: 'center',
                   letterSpacing: '8px',
                   background: 'var(--bg)',
-                  border: error ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                  border: error ? '2px solid #ef4444' : '2px solid var(--border)',
                   borderRadius: '8px',
                   color: 'var(--text)',
                   boxSizing: 'border-box'
@@ -793,8 +793,8 @@ export default function RefereeApp() {
                 padding: '16px',
                 fontSize: '16px',
                 fontWeight: 600,
-                background: isLoading ? 'rgba(255,255,255,0.3)' : 'var(--accent)',
-                color: isLoading ? '#fff' : '#000',
+                background: isLoading ? 'var(--border)' : 'var(--accent)',
+                color: isLoading ? 'var(--muted)' : '#000',
                 border: 'none',
                 borderRadius: '8px',
                 cursor: isLoading ? 'not-allowed' : 'pointer'
@@ -840,10 +840,10 @@ export default function RefereeApp() {
                   padding: '16px',
                   background: selectedGameNumber === String(m.gameNumber) 
                     ? 'rgba(59, 130, 246, 0.2)' 
-                    : 'rgba(255, 255, 255, 0.05)',
+                    : 'var(--panel-2)',
                   border: selectedGameNumber === String(m.gameNumber)
                     ? '2px solid rgba(59, 130, 246, 0.5)'
-                    : '1px solid rgba(255, 255, 255, 0.1)',
+                    : '1px solid var(--border)',
                   borderRadius: '8px',
                   color: 'var(--text)',
                   cursor: 'pointer',

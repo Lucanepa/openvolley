@@ -191,8 +191,8 @@ export default function LivescoreApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
         flexDirection: 'column'
@@ -205,7 +205,7 @@ export default function LivescoreApp() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.95)',
+            backgroundColor: 'rgba(15, 23, 42, 0.5)',
             zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
@@ -306,13 +306,13 @@ export default function LivescoreApp() {
               <div style={{ fontSize: 'clamp(60px, 18vw, 150px)', fontWeight: 700, lineHeight: 1 }}>
                 {leftScore}
               </div>
-              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'rgba(255,255,255,0.7)', marginTop: '8px' }}>
+              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'var(--muted)', marginTop: '8px' }}>
                 {leftName}
               </div>
             </div>
 
             {/* Colon */}
-            <div style={{ fontSize: 'clamp(40px, 12vw, 100px)', color: 'rgba(255,255,255,0.4)', lineHeight: 1 }}>
+            <div style={{ fontSize: 'clamp(40px, 12vw, 100px)', color: 'var(--muted)', lineHeight: 1 }}>
               :
             </div>
 
@@ -321,7 +321,7 @@ export default function LivescoreApp() {
               <div style={{ fontSize: 'clamp(60px, 18vw, 150px)', fontWeight: 700, lineHeight: 1 }}>
                 {rightScore}
               </div>
-              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'rgba(255,255,255,0.7)', marginTop: '8px' }}>
+              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'var(--muted)', marginTop: '8px' }}>
                 {rightName}
               </div>
             </div>
@@ -364,9 +364,9 @@ export default function LivescoreApp() {
                     {setResults.map((s) => (
                       <div key={s.set} style={{
                         fontSize: 'clamp(14px, 4vw, 20px)',
-                        color: 'rgba(255,255,255,0.6)',
+                        color: 'var(--muted)',
                         padding: '4px 12px',
-                        background: 'rgba(255,255,255,0.05)',
+                        background: 'var(--panel-2)',
                         borderRadius: '6px'
                       }}>
                         {s.left}-{s.right}
@@ -382,7 +382,7 @@ export default function LivescoreApp() {
                   fontSize: 'clamp(32px, 10vw, 80px)',
                   fontWeight: 700,
                   padding: '8px 16px',
-                  background: 'rgba(255,255,255,0.1)',
+                  background: 'var(--panel)',
                   borderRadius: '8px'
                 }}>
                   {leftSets}
@@ -399,7 +399,7 @@ export default function LivescoreApp() {
                   fontSize: 'clamp(32px, 10vw, 80px)',
                   fontWeight: 700,
                   padding: '8px 16px',
-                  background: 'rgba(255,255,255,0.1)',
+                  background: 'var(--panel)',
                   borderRadius: '8px'
                 }}>
                   {rightSets}
@@ -421,8 +421,8 @@ export default function LivescoreApp() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      color: '#fff',
+      background: 'var(--bg)',
+      color: 'var(--text)',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       {/* Narrow screen blocking overlay */}
@@ -433,7 +433,7 @@ export default function LivescoreApp() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -508,7 +508,7 @@ export default function LivescoreApp() {
       {/* Content */}
       <div style={{ padding: '16px' }}>
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
             {t('common.loading', 'Loading...')}
           </div>
         ) : error ? (
@@ -518,10 +518,10 @@ export default function LivescoreApp() {
               onClick={fetchLiveGames}
               style={{
                 padding: '10px 20px',
-                background: 'rgba(255,255,255,0.1)',
+                background: 'var(--panel)',
                 border: 'none',
                 borderRadius: '6px',
-                color: '#fff',
+                color: 'var(--text)',
                 cursor: 'pointer'
               }}
             >
@@ -529,7 +529,7 @@ export default function LivescoreApp() {
             </button>
           </div>
         ) : liveGames.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
             <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
             <div>{t('livescore.noActiveGame', 'No live games')}</div>
           </div>
@@ -551,10 +551,10 @@ export default function LivescoreApp() {
                   onClick={() => setSelectedGame(game.match_id)}
                   style={{
                     padding: '16px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '12px',
-                    color: '#fff',
+                    color: 'var(--text)',
                     cursor: 'pointer',
                     textAlign: 'left',
                     transition: 'background 0.2s',
@@ -566,7 +566,7 @@ export default function LivescoreApp() {
                     <div style={{
                       marginBottom: '8px',
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.5)',
+                      color: 'var(--muted)',
                       textAlign: 'center'
                     }}>
                       {gameN && <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Game {gameN}</span>}
@@ -599,7 +599,7 @@ export default function LivescoreApp() {
 
                     {/* Score - colon centered */}
                     <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'right', minWidth: '24px' }}>{leftScore}</span>
-                    <span style={{ fontSize: '20px', color: 'rgba(255,255,255,0.4)' }}>:</span>
+                    <span style={{ fontSize: '20px', color: 'var(--muted)' }}>:</span>
                     <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'left', minWidth: '24px' }}>{rightScore}</span>
 
                     {/* Right Team - left aligned */}
@@ -622,7 +622,7 @@ export default function LivescoreApp() {
                   <div style={{
                     marginTop: '8px',
                     fontSize: '12px',
-                    color: isMatchEnded ? '#22c55e' : 'rgba(255,255,255,0.5)',
+                    color: isMatchEnded ? '#22c55e' : 'var(--muted)',
                     textAlign: 'center',
                     fontWeight: isMatchEnded ? 600 : 400
                   }}>

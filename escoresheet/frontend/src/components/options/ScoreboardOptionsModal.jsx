@@ -23,8 +23,8 @@ function InfoDot({ title }) {
           width: '16px',
           height: '16px',
           borderRadius: '50%',
-          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.2)',
-          color: 'rgba(255, 255, 255, 0.7)',
+          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'var(--border)',
+          color: 'var(--muted)',
           fontSize: '11px',
           fontWeight: 600,
           cursor: 'pointer'
@@ -42,11 +42,11 @@ function InfoDot({ title }) {
             transform: 'translateX(-50%)',
             marginTop: '8px',
             padding: '8px 12px',
-            background: '#1f2937',
-            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
             fontSize: '12px',
-            color: 'rgba(255,255,255,0.9)',
+            color: 'var(--text)',
             whiteSpace: 'normal',
             width: 'max-content',
             maxWidth: '250px',
@@ -71,7 +71,7 @@ function ToggleSwitch({ value, onToggle }) {
         borderRadius: '14px',
         border: 'none',
         cursor: 'pointer',
-        background: value ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+        background: value ? '#22c55e' : 'var(--border)',
         position: 'relative',
         transition: 'background 0.2s',
         flexShrink: 0,
@@ -100,7 +100,7 @@ function Row({ children, style }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '12px 16px',
-        background: 'rgba(255, 255, 255, 0.05)',
+        background: 'var(--panel-2)',
         borderRadius: '8px',
         ...style
       }}
@@ -112,7 +112,7 @@ function Row({ children, style }) {
 
 function Section({ title, children, borderBottom = true, paddingBottom = '24px' }) {
   return (
-    <div style={{ marginBottom: '24px', paddingBottom: borderBottom ? paddingBottom : 0, borderBottom: borderBottom ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
+    <div style={{ marginBottom: '24px', paddingBottom: borderBottom ? paddingBottom : 0, borderBottom: borderBottom ? '1px solid var(--border)' : 'none' }}>
       {title ? (
         <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>{title}</h3>
       ) : null}
@@ -141,8 +141,8 @@ function DurationInput({ value, onChange, label }) {
     fontFamily: 'monospace',
     fontWeight: 600,
     textAlign: 'center',
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
+    background: 'var(--panel)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     color: 'var(--text)'
   }
@@ -315,8 +315,8 @@ export default function ScoreboardOptionsModal({
       <div style={{
         position: 'sticky',
         top: 0,
-        background: '#1f2937',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--panel)',
+        borderBottom: '1px solid var(--border)',
         padding: '12px 24px',
         display: 'flex',
         alignItems: 'center',
@@ -331,7 +331,7 @@ export default function ScoreboardOptionsModal({
             height: '32px',
             borderRadius: '6px',
             border: 'none',
-            background: 'rgba(255,255,255,0.1)',
+            background: 'var(--panel)',
             color: 'var(--text)',
             fontSize: '18px',
             cursor: 'pointer',
@@ -360,7 +360,7 @@ export default function ScoreboardOptionsModal({
                     <span style={{ color: '#10b981', fontWeight: 600 }}>●</span>
                     <span style={{ fontWeight: 600 }}>{t('options.serverRunning')}</span>
                   </div>
-                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginLeft: '24px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginLeft: '24px' }}>
                     <div>{t('options.hostname')}: <span style={{ fontFamily: 'monospace' }}>{serverStatus.hostname || 'escoresheet.local'}</span></div>
                     <div>{t('options.ipAddress')}: <span style={{ fontFamily: 'monospace' }}>{serverStatus.localIP}</span></div>
                     <div>{t('options.protocol')}: <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span></div>
@@ -368,7 +368,7 @@ export default function ScoreboardOptionsModal({
                 </div>
 
                 <div style={{
-                  background: 'rgba(15, 23, 42, 0.5)',
+                  background: 'var(--panel-2)',
                   padding: '12px',
                   borderRadius: '8px',
                   marginBottom: '12px',
@@ -377,19 +377,19 @@ export default function ScoreboardOptionsModal({
                   <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('options.connectionUrls')}:</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontFamily: 'monospace', fontSize: '11px' }}>
                     <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>{t('options.main')}: </span>
+                      <span style={{ color: 'var(--muted)' }}>{t('options.main')}: </span>
                       {serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>{t('header.referee')}: </span>
+                      <span style={{ color: 'var(--muted)' }}>{t('header.referee')}: </span>
                       {serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>{t('header.bench')}: </span>
+                      <span style={{ color: 'var(--muted)' }}>{t('header.bench')}: </span>
                       {serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}
                     </div>
                     <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'rgba(255,255,255,0.6)' }}>{t('options.websocket')}: </span>
+                      <span style={{ color: 'var(--muted)' }}>{t('options.websocket')}: </span>
                       {serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}
                     </div>
                   </div>
@@ -428,7 +428,7 @@ export default function ScoreboardOptionsModal({
                     <span style={{ fontWeight: 600 }}>{t('options.serverNotRunning')}</span>
                   </div>
                 </div>
-                <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
+                <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '12px' }}>
                   {t('options.startServerToConnect')}
                 </p>
                 <button
@@ -463,7 +463,7 @@ export default function ScoreboardOptionsModal({
               </div>
               {checkAccidentalRallyStart && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.duration')}:</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -478,14 +478,14 @@ export default function ScoreboardOptionsModal({
                       width: '50px',
                       padding: '4px 8px',
                       fontSize: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       textAlign: 'center'
                     }}
                   />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.seconds')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -507,7 +507,7 @@ export default function ScoreboardOptionsModal({
               </div>
               {checkAccidentalPointAward && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.duration')}:</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -522,14 +522,14 @@ export default function ScoreboardOptionsModal({
                       width: '50px',
                       padding: '4px 8px',
                       fontSize: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       textAlign: 'center'
                     }}
                   />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.seconds')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -659,7 +659,7 @@ export default function ScoreboardOptionsModal({
                       </span>
                       <span style={{
                         fontSize: '12px',
-                        color: 'rgba(255,255,255,0.5)',
+                        color: 'var(--muted)',
                         transition: 'transform 0.2s',
                         transform: fontSelectorOpen ? 'rotate(180deg)' : 'rotate(0deg)'
                       }}>
@@ -684,9 +684,9 @@ export default function ScoreboardOptionsModal({
                             padding: '10px 14px',
                             fontSize: '14px',
                             fontWeight: 500,
-                            background: scoreFont === option.value ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                            background: scoreFont === option.value ? 'rgba(59, 130, 246, 0.2)' : 'var(--panel-2)',
                             color: 'var(--text)',
-                            border: scoreFont === option.value ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.15)',
+                            border: scoreFont === option.value ? '2px solid #3b82f6' : '1px solid var(--border)',
                             borderRadius: '8px',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
@@ -765,7 +765,7 @@ export default function ScoreboardOptionsModal({
               </div>
               {lfpTrackingEnabled && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.minimumLfpsOnCourt')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
                     onChange={(e) => {
@@ -776,8 +776,8 @@ export default function ScoreboardOptionsModal({
                     style={{
                       padding: '4px 4px',
                       fontSize: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       textAlign: 'center',
@@ -785,7 +785,7 @@ export default function ScoreboardOptionsModal({
                     }}
                   >
                     {[1, 2, 3, 4, 5, 6].map(n => (
-                      <option key={n} value={n} style={{ background: '#1e293b', color: '#fff' }}>{n}</option>
+                      <option key={n} value={n} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{n}</option>
                     ))}
                   </select>
                 </div>
@@ -829,9 +829,9 @@ export default function ScoreboardOptionsModal({
                       padding: '8px 16px',
                       fontSize: '13px',
                       fontWeight: 600,
-                      background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                      background: displayMode === mode ? '#3b82f6' : 'var(--panel)',
                       color: displayMode === mode ? '#fff' : 'var(--text)',
-                      border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                      border: displayMode === mode ? '1px solid #3b82f6' : '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textTransform: 'capitalize',
@@ -853,8 +853,8 @@ export default function ScoreboardOptionsModal({
                           width: '14px',
                           height: '14px',
                           borderRadius: '50%',
-                          background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.2)',
-                          color: displayMode === mode ? '#fff' : 'rgba(255, 255, 255, 0.7)',
+                          background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'var(--border)',
+                          color: displayMode === mode ? '#fff' : 'var(--muted)',
                           fontSize: '10px',
                           fontWeight: 600,
                           cursor: 'help'
@@ -950,7 +950,7 @@ export default function ScoreboardOptionsModal({
               {backupsLoading ? t('options.loading') : t('options.browseCloudBackups')}
             </button>
             {!matchId && (
-              <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)' }}>
                 {t('options.startMatchToAccessBackups')}
               </p>
             )}
@@ -1022,7 +1022,7 @@ export default function ScoreboardOptionsModal({
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'rgba(0, 0, 0, 0.7)',
+              background: 'rgba(15, 23, 42, 0.5)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1032,8 +1032,8 @@ export default function ScoreboardOptionsModal({
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                background: '#1f2937',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '24px',
                 maxWidth: '500px',
@@ -1043,12 +1043,12 @@ export default function ScoreboardOptionsModal({
                 flexDirection: 'column'
               }}
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
                 {t('options.cloudBackups')}
               </h3>
 
               {cloudBackups.length === 0 ? (
-                <p style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', padding: '24px 0' }}>
+                <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '24px 0' }}>
                   {t('options.noCloudBackupsFound')}
                 </p>
               ) : (
@@ -1070,9 +1070,9 @@ export default function ScoreboardOptionsModal({
                     padding: '10px 20px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer'
                   }}
@@ -1094,7 +1094,7 @@ export default function ScoreboardOptionsModal({
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
+              background: 'rgba(15, 23, 42, 0.5)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1104,22 +1104,22 @@ export default function ScoreboardOptionsModal({
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                background: '#1f2937',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '24px',
                 maxWidth: '400px',
                 width: '90%'
               }}
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
                 {t('options.confirmRestore')}
               </h3>
-              <p style={{ margin: '0 0 8px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 8px 0', color: 'var(--text)', lineHeight: 1.5 }}>
                 {t('options.restoreMatchToThisState')}
               </p>
               <div style={{
-                background: 'rgba(255,255,255,0.05)',
+                background: 'var(--panel-2)',
                 padding: '12px',
                 borderRadius: '8px',
                 marginBottom: '16px'
@@ -1131,7 +1131,7 @@ export default function ScoreboardOptionsModal({
                     restoreConfirm.name
                   )}
                 </div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
                   {restoreConfirm.timestamp || restoreConfirm.created_at}
                 </div>
               </div>
@@ -1145,9 +1145,9 @@ export default function ScoreboardOptionsModal({
                     padding: '10px 20px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer'
                   }}
@@ -1184,7 +1184,7 @@ export default function ScoreboardOptionsModal({
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'rgba(0, 0, 0, 0.7)',
+              background: 'rgba(15, 23, 42, 0.5)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1194,18 +1194,18 @@ export default function ScoreboardOptionsModal({
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                background: '#1f2937',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '24px',
                 maxWidth: '400px',
                 width: '90%'
               }}
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
                 {t('options.confirmClearCache')}
               </h3>
-              <p style={{ margin: '0 0 16px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 16px 0', color: 'var(--text)', lineHeight: 1.5 }}>
                 {clearCacheModal.type === 'all'
                   ? t('options.clearAllWarning')
                   : t('options.clearCacheWarning')
@@ -1223,9 +1223,9 @@ export default function ScoreboardOptionsModal({
                     padding: '10px 20px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer'
                   }}

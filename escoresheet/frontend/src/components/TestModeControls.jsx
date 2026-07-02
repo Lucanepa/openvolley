@@ -401,7 +401,7 @@ export default function TestModeControls({ matchId, onRefresh }) {
       position: 'fixed',
       bottom: '10px',
       right: '10px',
-      background: 'rgba(0, 0, 0, 0.9)',
+      background: 'var(--panel)',
       borderRadius: '12px',
       padding: '12px',
       zIndex: 9999,
@@ -470,7 +470,7 @@ export default function TestModeControls({ matchId, onRefresh }) {
       {lastAction && (
         <div style={{
           fontSize: '10px',
-          color: 'rgba(255,255,255,0.6)',
+          color: 'var(--muted)',
           textAlign: 'center',
           marginTop: '4px'
         }}>

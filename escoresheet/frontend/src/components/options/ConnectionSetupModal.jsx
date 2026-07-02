@@ -122,7 +122,7 @@ export default function ConnectionSetupModal({
 
   const renderModeSelector = () => (
     <div style={{ marginBottom: 24 }}>
-      <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', marginBottom: 16, textAlign: 'center' }}>
+      <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 16, textAlign: 'center' }}>
         {t('connection.chooseConnection')}
       </p>
       <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
@@ -132,9 +132,9 @@ export default function ConnectionSetupModal({
             flex: 1,
             maxWidth: 200,
             padding: '20px 16px',
-            background: connectionMode === 'lan' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
-            color: connectionMode === 'lan' ? '#000' : '#fff',
-            border: connectionMode === 'lan' ? 'none' : '1px solid rgba(255,255,255,0.2)',
+            background: connectionMode === 'lan' ? 'var(--accent)' : 'var(--panel)',
+            color: connectionMode === 'lan' ? '#000' : 'var(--text)',
+            border: connectionMode === 'lan' ? 'none' : '1px solid var(--border)',
             borderRadius: 12,
             cursor: 'pointer',
             textAlign: 'center'
@@ -151,9 +151,9 @@ export default function ConnectionSetupModal({
             flex: 1,
             maxWidth: 200,
             padding: '20px 16px',
-            background: connectionMode === 'internet' ? 'var(--accent)' : 'rgba(255,255,255,0.1)',
-            color: connectionMode === 'internet' ? '#000' : '#fff',
-            border: connectionMode === 'internet' ? 'none' : '1px solid rgba(255,255,255,0.2)',
+            background: connectionMode === 'internet' ? 'var(--accent)' : 'var(--panel)',
+            color: connectionMode === 'internet' ? '#000' : 'var(--text)',
+            border: connectionMode === 'internet' ? 'none' : '1px solid var(--border)',
             borderRadius: 12,
             cursor: 'pointer',
             textAlign: 'center',
@@ -178,7 +178,7 @@ export default function ConnectionSetupModal({
 
     return (
       <div key={role} style={{
-        background: 'rgba(255,255,255,0.05)',
+        background: 'var(--panel-2)',
         borderRadius: 8,
         padding: 16,
         marginBottom: 12,
@@ -245,7 +245,7 @@ export default function ConnectionSetupModal({
             {/* PIN display */}
             {pin && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>PIN:</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>PIN:</span>
                 <code style={{
                   background: `${color}15`,
                   padding: '4px 10px',
@@ -262,10 +262,10 @@ export default function ConnectionSetupModal({
                   style={{
                     padding: '2px 8px',
                     fontSize: 11,
-                    background: copyFeedback === `${role}-pin` ? '#22c55e' : 'rgba(255,255,255,0.08)',
+                    background: copyFeedback === `${role}-pin` ? '#22c55e' : 'var(--panel-2)',
                     border: 'none',
                     borderRadius: 4,
-                    color: '#fff',
+                    color: 'var(--text)',
                     cursor: 'pointer'
                   }}
                 >
@@ -284,7 +284,7 @@ export default function ConnectionSetupModal({
                   <code style={{
                     display: 'block',
                     fontSize: 11,
-                    color: 'rgba(255,255,255,0.4)',
+                    color: 'var(--muted)',
                     wordBreak: 'break-all',
                     lineHeight: 1.4
                   }}>
@@ -296,10 +296,10 @@ export default function ConnectionSetupModal({
                       marginTop: 4,
                       padding: '2px 8px',
                       fontSize: 11,
-                      background: copyFeedback === `${role}-url` ? '#22c55e' : 'rgba(255,255,255,0.08)',
+                      background: copyFeedback === `${role}-url` ? '#22c55e' : 'var(--panel-2)',
                       border: 'none',
                       borderRadius: 4,
-                      color: '#fff',
+                      color: 'var(--text)',
                       cursor: 'pointer'
                     }}
                   >
@@ -316,7 +316,7 @@ export default function ConnectionSetupModal({
 
   const renderNetworkInfo = () => (
     <div style={{
-      background: 'rgba(255,255,255,0.05)',
+      background: 'var(--panel-2)',
       borderRadius: 8,
       padding: 16,
       marginBottom: 20
@@ -328,7 +328,7 @@ export default function ConnectionSetupModal({
       </h4>
       {connectionMode === 'lan' ? (
         loading ? (
-          <p style={{ color: 'rgba(255,255,255,0.5)' }}>{t('connection.detectingNetwork')}</p>
+          <p style={{ color: 'var(--muted)' }}>{t('connection.detectingNetwork')}</p>
         ) : localIP ? (
           <div style={{ fontFamily: 'monospace', fontSize: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -404,27 +404,27 @@ export default function ConnectionSetupModal({
 
   const renderConnectedDevices = () => (
     <div style={{
-      background: 'rgba(255,255,255,0.05)',
+      background: 'var(--panel-2)',
       borderRadius: 8,
       padding: 16,
       marginTop: 8
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8
+        padding: 12, background: 'var(--panel-2)', borderRadius: 8
       }}>
         <span style={{
           fontSize: 28, fontWeight: 700,
-          color: connectionCount.totalClients > 0 ? '#22c55e' : 'rgba(255,255,255,0.3)'
+          color: connectionCount.totalClients > 0 ? '#22c55e' : 'var(--muted)'
         }}>
           {connectionCount.totalClients}
         </span>
-        <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>
+        <span style={{ fontSize: 14, color: 'var(--muted)' }}>
           {connectionCount.totalClients === 1 ? t('connection.deviceConnected') : t('connection.devicesConnected')}
         </span>
       </div>
       {matchId && connectionCount.matchSubscriptions && (
-        <div style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
           {t('connection.watchingThisMatch', { count: connectionCount.matchSubscriptions[matchId] || 0 })}
         </div>
       )}

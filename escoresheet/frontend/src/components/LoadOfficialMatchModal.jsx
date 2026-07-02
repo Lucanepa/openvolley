@@ -138,10 +138,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     minWidth: `${Math.round(80 * scaleFactor)}px`,
     padding: `${Math.round(10 * scaleFactor)}px ${Math.round(32 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
     fontSize: `${Math.round(14 * scaleFactor)}px`,
-    background: '#000000',
-    border: '1px solid rgba(255,255,255,0.3)',
+    background: 'var(--panel)',
+    border: '1px solid var(--border)',
     borderRadius: `${Math.round(8 * scaleFactor)}px`,
-    color: '#ffffff',
+    color: 'var(--text)',
     cursor: 'pointer',
     appearance: 'none',
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
@@ -153,17 +153,17 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     display: 'block',
     fontSize: `${Math.round(12 * scaleFactor)}px`,
     fontWeight: 600,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'var(--muted)',
     marginBottom: `${Math.round(6 * scaleFactor)}px`
   }
 
   const filterButtonStyle = {
     padding: `${Math.round(6 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
     fontSize: `${Math.round(12 * scaleFactor)}px`,
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
+    background: 'var(--panel)',
+    border: '1px solid var(--border)',
     borderRadius: `${Math.round(6 * scaleFactor)}px`,
-    color: '#ffffff',
+    color: 'var(--text)',
     cursor: 'pointer',
     transition: 'all 0.15s'
   }
@@ -457,8 +457,8 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       <div style={{
         position: 'sticky',
         top: Math.round(-16 * scaleFactor),
-        background: '#111827',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--panel)',
+        borderBottom: '1px solid var(--border)',
         padding: `${Math.round(12 * scaleFactor)}px 0`,
         marginBottom: `${Math.round(16 * scaleFactor)}px`,
         display: 'flex',
@@ -475,7 +475,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
             width: `${Math.round(32 * scaleFactor)}px`,
             height: `${Math.round(32 * scaleFactor)}px`,
             borderRadius: `${Math.round(6 * scaleFactor)}px`,
-            background: 'rgba(255,255,255,0.1)',
+            background: 'var(--panel)',
             border: 'none',
             color: 'var(--text)',
             fontSize: `${Math.round(18 * scaleFactor)}px`,
@@ -492,7 +492,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       {/* Filters - 2 Dropdowns */}
       <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
         {loadingConfig ? (
-          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: `${Math.round(14 * scaleFactor)}px` }}>
+          <div style={{ color: 'var(--muted)', fontSize: `${Math.round(14 * scaleFactor)}px` }}>
             {t('loadOfficialMatch.loading', 'Loading...')}
           </div>
         ) : (
@@ -568,7 +568,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                           top: '100%',
                           right: 0,
                           marginTop: Math.round(8 * scaleFactor),
-                          background: '#1f2937',
+                          background: 'var(--panel)',
                           border: '1px solid #f59e0b',
                           borderRadius: Math.round(8 * scaleFactor),
                           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(14 * scaleFactor)}px`,
@@ -594,7 +594,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         {/* Selection Path - shown when selections are made */}
         {gender && (
           <div style={{
-            borderTop: '1px solid rgba(255,255,255,0.2)',
+            borderTop: '1px solid var(--border)',
             marginTop: `${Math.round(12 * scaleFactor)}px`,
             paddingTop: `${Math.round(10 * scaleFactor)}px`
           }}>
@@ -603,14 +603,14 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               alignItems: 'center',
               gap: `${Math.round(8 * scaleFactor)}px`,
               fontSize: `${Math.round(13 * scaleFactor)}px`,
-              color: 'rgba(255,255,255,0.8)'
+              color: 'var(--text)'
             }}>
               <span>
                 {gender === 'men' ? `${t('matchSetup.men', 'Men')} ♂` : `${t('matchSetup.women', 'Women')} ♀`}
               </span>
               {league && (
                 <>
-                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>|</span>
+                  <span style={{ color: 'var(--muted)' }}>|</span>
                   <span style={{ fontWeight: 600 }}>{formatLeagueDisplay(league, gender)}</span>
                 </>
               )}
@@ -639,10 +639,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 width: '100%',
                 padding: `${Math.round(8 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
                 fontSize: `${Math.round(13 * scaleFactor)}px`,
-                background: '#000000',
-                border: '1px solid rgba(255,255,255,0.3)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: `${Math.round(6 * scaleFactor)}px`,
-                color: '#ffffff',
+                color: 'var(--text)',
                 outline: 'none'
               }}
             />
@@ -683,7 +683,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       {/* Matches Table */}
       <div style={{ maxHeight: `${Math.round(350 * scaleFactor)}px`, overflowY: 'auto' }}>
         {loading && (
-          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'var(--muted)' }}>
             <div style={{ fontSize: `${Math.round(24 * scaleFactor)}px`, marginBottom: `${Math.round(8 * scaleFactor)}px` }}>⏳</div>
             {t('loadOfficialMatch.loading', 'Loading matches...')}
           </div>
@@ -702,13 +702,13 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         )}
 
         {!loading && !error && league && matches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'var(--muted)' }}>
             {t('loadOfficialMatch.noUpcomingMatches', 'No upcoming matches found')}
           </div>
         )}
 
         {!loading && !error && matches.length > 0 && filteredMatches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'var(--muted)' }}>
             {t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
           </div>
         )}
@@ -723,8 +723,8 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               padding: `${Math.round(8 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px`,
               fontSize: `${Math.round(11 * scaleFactor)}px`,
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.5)',
-              borderBottom: '2px solid rgba(255,255,255,0.2)',
+              color: 'var(--muted)',
+              borderBottom: '2px solid var(--border)',
               marginBottom: `${Math.round(2 * scaleFactor)}px`,
               alignItems: 'center'
             }}>
@@ -745,13 +745,13 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                   gap: `${Math.round(8 * scaleFactor)}px`,
                   alignItems: 'center',
                   padding: `${Math.round(10 * scaleFactor)}px`,
-                  background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
+                  background: index % 2 === 0 ? 'var(--panel-2)' : 'transparent',
                   cursor: 'pointer',
                   borderRadius: `${Math.round(4 * scaleFactor)}px`,
                   transition: 'background 0.15s'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
-                onMouseLeave={e => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
+                onMouseLeave={e => e.currentTarget.style.background = index % 2 === 0 ? 'var(--panel-2)' : 'transparent'}
               >
                 <span style={{ fontWeight: 600, textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
                   {match.gameN}
@@ -769,7 +769,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                   fontSize: `${Math.round(12 * scaleFactor)}px`
                 }}>
                   <span style={{ fontWeight: 600 }}>{match.home}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.5)', margin: `0 ${Math.round(6 * scaleFactor)}px` }}>{t('common.vs', 'vs')}</span>
+                  <span style={{ color: 'var(--muted)', margin: `0 ${Math.round(6 * scaleFactor)}px` }}>{t('common.vs', 'vs')}</span>
                   <span style={{ fontWeight: 600 }}>{match.away}</span>
                 </span>
               </div>
