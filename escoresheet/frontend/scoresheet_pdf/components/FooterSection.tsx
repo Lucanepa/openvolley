@@ -274,8 +274,10 @@ export const Results: React.FC<ResultsProps> = ({
                      <div className="flex-1 flex flex-col">
                         {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
-                            // For best-of-3, the deciding set is stored at index 5
-                            const displayLabel = isBestOf3 && set === 5 ? "5'" : set;
+                            // For best-of-3 the deciding set is stored internally at index 5
+                            // but is the 3rd set played, so it is numbered "3" on the sheet
+                            // (Swiss Matchblatt records sets in play order 1,2,3).
+                            const displayLabel = isBestOf3 && set === 5 ? "3" : set;
                             // Only show set 4 and 5 labels (in best-of-5) if they were actually played
                             const showSetNumber = isBestOf3 || set <= 3 || (setData && setData.teamATimeouts !== null);
                             return (
