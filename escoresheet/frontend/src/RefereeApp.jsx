@@ -544,7 +544,7 @@ export default function RefereeApp() {
 
   return (
     <div style={{
-      height: '100vh',
+      height: '100dvh',
       width: '100vw',
       maxWidth: '100vw',
       margin: '0 auto',
