@@ -414,6 +414,7 @@ export default function HomeOptionsModal({
                     min="1"
                     max="10"
                     value={accidentalRallyStartDuration}
+                    aria-label={t('options.duration')}
                     onChange={(e) => {
                       const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
                       setAccidentalRallyStartDuration(val)
@@ -458,6 +459,7 @@ export default function HomeOptionsModal({
                     min="1"
                     max="10"
                     value={accidentalPointAwardDuration}
+                    aria-label={t('options.duration')}
                     onChange={(e) => {
                       const val = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3))
                       setAccidentalPointAwardDuration(val)
@@ -594,6 +596,7 @@ export default function HomeOptionsModal({
                   <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
+                    aria-label={t('options.minimumLfpsOnCourt')}
                     onChange={(e) => {
                       const val = parseInt(e.target.value, 10)
                       setLfpMinimumOnCourt(val)
@@ -1415,6 +1418,7 @@ export default function HomeOptionsModal({
                   setKeybindingsModalOpen(false)
                   setEditingKey(null)
                 }}
+                aria-label={t('common.close', 'Close')}
                 style={{
                   width: '28px',
                   height: '28px',

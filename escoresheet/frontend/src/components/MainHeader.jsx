@@ -479,6 +479,7 @@ export default function MainHeader({
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
             }}
+            aria-label={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
             title={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
           >
             <span style={{ transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}>▲</span>
@@ -589,6 +590,7 @@ export default function MainHeader({
                 e.stopPropagation()
                 onTriggerAlarm()
               }}
+              aria-label={t('header.alarmBellNotify')}
               title={t('header.alarmBellNotify')}
               style={{
                 display: 'flex',
@@ -1267,6 +1269,7 @@ export default function MainHeader({
                     <>
                       <input
                         type="number"
+                        aria-label={t('header.viewportWidth', 'Viewport width')}
                         value={editingSize.width}
                         onChange={(e) => setEditingSize({ ...editingSize, width: e.target.value })}
                         onKeyDown={handleKeyDown}
@@ -1287,6 +1290,7 @@ export default function MainHeader({
                       <span>×</span>
                       <input
                         type="number"
+                        aria-label={t('header.viewportHeight', 'Viewport height')}
                         value={editingSize.height}
                         onChange={(e) => setEditingSize({ ...editingSize, height: e.target.value })}
                         onKeyDown={handleKeyDown}
@@ -1397,6 +1401,7 @@ export default function MainHeader({
                       e.currentTarget.style.background = 'var(--panel-2)'
                     }
                   }}
+                  aria-label={t('header.menu', 'Menu')}
                   title={t('header.menu', 'Menu')}
                 >
                   <span>{actionsMenuOpen ? '✕' : '☰'}</span>

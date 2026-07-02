@@ -114,6 +114,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               background: 'none',
               border: 'none',
@@ -169,6 +170,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder={t('auth.email', 'Email')}
+                  aria-label={t('auth.email', 'Email')}
                   style={inputStyle}
                   required
                 />
@@ -201,6 +203,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder={t('auth.email', 'Email')}
+                    aria-label={t('auth.email', 'Email')}
                     style={inputStyle}
                     required
                   />
@@ -211,6 +214,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder={t('auth.password', 'Password')}
+                    aria-label={t('auth.password', 'Password')}
                     style={inputStyle}
                     required
                   />

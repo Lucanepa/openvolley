@@ -287,6 +287,7 @@ export default function DashboardHeader({
                 minWidth: '44px',
                 transition: 'all 0.15s'
               }}
+              aria-label={t('header.menu')}
               title={t('header.menu')}
             >
               {menuOpen ? '✕' : '☰'}
@@ -650,6 +651,7 @@ export default function DashboardHeader({
               gap: '6px',
               transition: 'all 0.15s'
             }}
+            aria-label={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
             title={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
           >
             ⛶

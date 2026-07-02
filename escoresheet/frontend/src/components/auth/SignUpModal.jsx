@@ -116,6 +116,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               background: 'none',
               border: 'none',
@@ -173,6 +174,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                       type="text"
                       value={firstName}
                       onChange={e => setFirstName(e.target.value)}
+                      aria-label={t('auth.firstName', 'First name')}
                       style={inputStyle}
                     />
                   </div>
@@ -184,6 +186,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                       type="text"
                       value={lastName}
                       onChange={e => setLastName(e.target.value)}
+                      aria-label={t('auth.lastName', 'Last name')}
                       style={inputStyle}
                     />
                   </div>
@@ -201,6 +204,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                       onChange={e => setCountry(e.target.value.toUpperCase())}
                       placeholder="CHE"
                       maxLength={3}
+                      aria-label={t('auth.country', 'Country')}
                       style={{ ...inputStyle, textTransform: 'uppercase' }}
                     />
                   </div>
@@ -212,6 +216,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                       type="date"
                       value={dob}
                       onChange={e => setDob(e.target.value)}
+                      aria-label={t('auth.dob', 'Date of birth')}
                       style={inputStyle}
                     />
                   </div>
@@ -226,6 +231,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
+                    aria-label={t('auth.email', 'Email')}
                     style={inputStyle}
                     required
                   />
@@ -240,6 +246,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    aria-label={t('auth.password', 'Password')}
                     style={inputStyle}
                     required
                   />
@@ -254,6 +261,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                     type="password"
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
+                    aria-label={t('auth.confirmPassword', 'Confirm password')}
                     style={inputStyle}
                     required
                   />

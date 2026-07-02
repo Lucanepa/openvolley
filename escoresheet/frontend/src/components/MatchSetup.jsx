@@ -307,10 +307,10 @@ const OfficialCard = memo(function OfficialCard({
       {!isCollapsed && (
         <div style={{ padding: '12px 16px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
-            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.country')}</label><input style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div className="field"><label>{t('matchSetup.lastName')}</label><input aria-label={t('matchSetup.lastName')} className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.firstName')}</label><input aria-label={t('matchSetup.firstName')} className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.country')}</label><input aria-label={t('matchSetup.country')} style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input aria-label={t('matchSetup.dateOfBirth')} style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
           </div>
         </div>
       )}
@@ -359,10 +359,10 @@ const LineJudgesCard = memo(function LineJudgesCard({
       {!isCollapsed && (
         <div style={{ padding: '12px 16px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input aria-label={t('matchSetup.lineJudge1')} className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input aria-label={t('matchSetup.lineJudge2')} className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input aria-label={t('matchSetup.lineJudge3')} className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input aria-label={t('matchSetup.lineJudge4')} className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
           </div>
         </div>
       )}
@@ -3338,6 +3338,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.date')}</label>
                 <input
+                  aria-label={t('matchSetup.date')}
                   className="w-100"
                   type="date"
                   value={date}
@@ -3349,6 +3350,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.time')}</label>
                 <input
+                  aria-label={t('matchSetup.time')}
                   className="w-100"
                   type="text"
                   value={time}
@@ -3369,6 +3371,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.city')}</label>
                 <input
+                  aria-label={t('matchSetup.city')}
                   className="w-160 capitalize"
                   value={city}
                   onChange={e => setCity(e.target.value)}
@@ -3379,7 +3382,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {citiesZurich.map(c => <option key={c} value={c} />)}
                 </datalist>
               </div>
-              <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.hall')}</label><input className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
+              <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.hall')}</label><input aria-label={t('matchSetup.hall')} className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
             </div>
           </div>
 
@@ -3390,7 +3393,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.matchType')}</label>
-                <select className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
+                <select aria-label={t('matchSetup.matchType')} className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
                   <option value="championship">{t('matchSetup.championship')}</option>
                   <option value="cup">{t('matchSetup.cup')}</option>
                   <option value="friendly">{t('matchSetup.friendly')}</option>
@@ -3401,12 +3404,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {type1 === 'other' && (
                 <div className="field" style={{ gap: '2px' }}>
                   <label>{t('matchSetup.specify')}</label>
-                  <input className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                  <input aria-label={t('matchSetup.specify')} className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
                 </div>
               )}
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.championshipType')}</label>
-                <select className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
+                <select aria-label={t('matchSetup.championshipType')} className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
                   <option value="regional">{t('matchSetup.regional')}</option>
                   <option value="national">{t('matchSetup.national')}</option>
                   <option value="international">{t('matchSetup.international')}</option>
@@ -3416,7 +3419,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {championshipType === 'other' && (
                 <div className="field" style={{ gap: '2px' }}>
                   <label>{t('matchSetup.specify')}</label>
-                  <input className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                  <input aria-label={t('matchSetup.specify')} className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
                 </div>
               )}
             </div>
@@ -3429,14 +3432,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.gender')}</label>
-                <select className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
+                <select aria-label={t('matchSetup.gender')} className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
                   <option value="men">{t('matchSetup.men')}</option>
                   <option value="women">{t('matchSetup.women')}</option>
                 </select>
               </div>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.matchLevel')}</label>
-                <select className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
+                <select aria-label={t('matchSetup.matchLevel')} className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
                   <option value="senior">{t('matchSetup.senior')}</option>
                   <option value="U23">U23</option>
                   <option value="U21">U21</option>
@@ -3448,7 +3451,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {type3 === 'other' && (
                 <div className="field" style={{ gap: '2px' }}>
                   <label>{t('matchSetup.specify')}</label>
-                  <input className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
+                  <input aria-label={t('matchSetup.specify')} className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
                 </div>
               )}
             </div>
@@ -3460,12 +3463,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
-                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
+                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.gameNumber')}</label><input aria-label={t('matchSetup.gameNumber')} className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
+                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.league')}</label><input aria-label={t('matchSetup.league')} className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
               </div>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.matchFormat')}</label>
-                <select style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
+                <select aria-label={t('matchSetup.matchFormat')} style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
                   <option value={5}>{t('matchSetup.bestOf5')}</option>
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
                 </select>
@@ -3611,6 +3614,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
+                      aria-label={`${t('common.home')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={home}
                       onChange={e => setHome(e.target.value)}
@@ -3621,6 +3625,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
+                      aria-label={`${t('common.home')} ${t('matchSetup.short')}`}
                       type="text"
                       value={homeShortName}
                       onChange={e => setHomeShortName(e.target.value.toUpperCase())}
@@ -3700,6 +3705,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
+                      aria-label={`${t('common.away')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={away}
                       onChange={e => setAway(e.target.value)}
@@ -3710,6 +3716,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
+                      aria-label={`${t('common.away')} ${t('matchSetup.short')}`}
                       type="text"
                       value={awayShortName}
                       onChange={e => setAwayShortName(e.target.value.toUpperCase())}
@@ -3756,6 +3763,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     </label>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input
+                        aria-label={t('matchSetup.notificationEmail')}
                         type="email"
                         placeholder={t('matchSetup.notificationEmailPlaceholder')}
                         value={notificationEmail}
@@ -3929,6 +3937,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <button
                       key={color}
                       type="button"
+                      aria-label={`${t('matchSetup.selectColour', 'Select colour')} ${color}`}
                       onClick={() => {
                         if (colorPickerModal.team === 'home') {
                           setHomeColor(color)
@@ -4361,11 +4370,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div data-help-id="setup-add-player" className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
-                <input placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <select data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
+                <input aria-label={t('matchSetup.playerNumber', 'Player number')} placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <select aria-label={t('matchSetup.libero', 'Libero')} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
@@ -4490,6 +4499,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (homeLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (homeLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
                 <input
+                  aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder="#"
                   type="number"
                   inputMode="numeric"
@@ -4522,6 +4532,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.lastName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
@@ -4533,6 +4544,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.firstName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
@@ -4544,6 +4556,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.dateOfBirth')}
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
                   type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -4555,6 +4568,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <select
+                  aria-label={t('matchSetup.libero', 'Libero')}
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...homeRoster]
@@ -4677,7 +4691,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const originalIdx = benchHome.findIndex(b => b === m)
             return (
               <div key={`bh-${originalIdx}`} className="bench-grid-row">
-                <select value={m.role || 'Coach'} onChange={e => {
+                <select aria-label={t('matchSetup.role')} value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
                   if (isRoleTaken) return
@@ -4696,9 +4710,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
                   <button type="button" className="secondary" onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
@@ -5690,6 +5704,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
                 <input
+                  aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder={t('matchSetup.numberPlaceholder')}
                   type="number"
                   inputMode="numeric"
@@ -5699,10 +5714,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onChange={e => setAwayNum(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 />
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <select value={awayLibero} onChange={e => {
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <select aria-label={t('matchSetup.libero', 'Libero')} value={awayLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
@@ -5825,6 +5840,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (awayLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (awayLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
                 <input
+                  aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder="#"
                   type="number"
                   inputMode="numeric"
@@ -5856,6 +5872,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.lastName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
@@ -5867,6 +5884,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.firstName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
@@ -5878,6 +5896,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.dateOfBirth')}
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
                   type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -5889,6 +5908,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <select
+                  aria-label={t('matchSetup.libero', 'Libero')}
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...awayRoster]
@@ -6007,7 +6027,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const originalIdx = benchAway.findIndex(b => b === m)
             return (
               <div key={`ba-${originalIdx}`} className="bench-grid-row">
-                <select value={m.role || 'Coach'} onChange={e => {
+                <select aria-label={t('matchSetup.role')} value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
                   if (isRoleTaken) return
@@ -6026,9 +6046,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
                   <button type="button" className="secondary" onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)
@@ -7973,6 +7993,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <button
                     key={color}
                     type="button"
+                    aria-label={`${t('matchSetup.selectColour', 'Select colour')} ${color}`}
                     onClick={async () => {
                       const isHome = colorPickerModal.team === 'home'
                       if (isHome) {
@@ -8369,6 +8390,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {t('matchSetup.modals.enterNew6DigitPin')}
               </label>
               <input
+                aria-label={t('matchSetup.modals.enterNew6DigitPin')}
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"

@@ -1228,6 +1228,7 @@ export default function UploadRosterApp() {
                         setUploadPin(val)
                       }}
                       placeholder={t('uploadRoster.enterPin')}
+                      aria-label={t('uploadRoster.uploadPin')}
                       style={{
                         width: '100%',
                         padding: '12px',
@@ -1300,6 +1301,7 @@ export default function UploadRosterApp() {
               type="file"
               accept=".pdf"
               onChange={handleFileSelect}
+              aria-label={t('uploadRoster.selectPdfFile')}
               style={{ display: 'none' }}
             />
             <button
@@ -1407,6 +1409,7 @@ export default function UploadRosterApp() {
                     value={player.number || ''}
                     onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
                     placeholder="#"
+                    aria-label={t('rosterSetup.number', 'Number')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1424,6 +1427,7 @@ export default function UploadRosterApp() {
                     value={player.lastName}
                     onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
                     placeholder={t('rosterSetup.lastName', 'Last Name')}
+                    aria-label={t('rosterSetup.lastName', 'Last Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1440,6 +1444,7 @@ export default function UploadRosterApp() {
                     value={player.firstName}
                     onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
                     placeholder={t('rosterSetup.firstName', 'First Name')}
+                    aria-label={t('rosterSetup.firstName', 'First Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1455,6 +1460,7 @@ export default function UploadRosterApp() {
                     type="date"
                     value={player.dob ? formatDateToISO(player.dob) : ''}
                     onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                    aria-label={t('rosterSetup.dob', 'DOB')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1469,6 +1475,7 @@ export default function UploadRosterApp() {
                   <select
                     value={player.libero}
                     onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
+                    aria-label={t('rosterSetup.libero', 'Libero')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1576,6 +1583,7 @@ export default function UploadRosterApp() {
                   <select
                     value={official.role}
                     onChange={(e) => handleBenchChange(index, 'role', e.target.value)}
+                    aria-label={t('rosterSetup.role', 'Role')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1598,6 +1606,7 @@ export default function UploadRosterApp() {
                     value={official.lastName}
                     onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
                     placeholder={t('rosterSetup.lastName', 'Last Name')}
+                    aria-label={t('rosterSetup.lastName', 'Last Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1614,6 +1623,7 @@ export default function UploadRosterApp() {
                     value={official.firstName}
                     onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
                     placeholder={t('rosterSetup.firstName', 'First Name')}
+                    aria-label={t('rosterSetup.firstName', 'First Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
@@ -1629,6 +1639,7 @@ export default function UploadRosterApp() {
                     type="date"
                     value={official.dob ? formatDateToISO(official.dob) : ''}
                     onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                    aria-label={t('rosterSetup.dob', 'DOB')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',

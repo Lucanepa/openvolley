@@ -45,6 +45,7 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
         style={{
           width: '100%',
           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
@@ -91,6 +92,7 @@ function TextArea({ label, value, onChange, placeholder, rows = 4, required = fa
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
         rows={rows}
         style={{
           width: '100%',
@@ -126,6 +128,7 @@ function TextInput({ label, value, onChange, placeholder, type = 'text', require
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
         style={{
           width: '100%',
           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
@@ -176,6 +179,7 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
         type="file"
         multiple
         onChange={handleFileSelect}
+        aria-label={label}
         style={{ display: 'none' }}
         accept="image/*,.json,.txt,.log,.pdf,.csv"
       />
@@ -212,6 +216,7 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
               </span>
               <button
                 onClick={() => removeFile(index)}
+                aria-label={`${t('common.remove', 'Remove')} ${file.name}`}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -368,6 +373,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
           </h2>
           <button
             onClick={handleClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               width: `${Math.round(32 * scaleFactor)}px`,
               height: `${Math.round(32 * scaleFactor)}px`,
@@ -436,6 +442,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
         </h2>
         <button
           onClick={handleClose}
+          aria-label={t('common.close', 'Close')}
           style={{
             width: `${Math.round(32 * scaleFactor)}px`,
             height: `${Math.round(32 * scaleFactor)}px`,

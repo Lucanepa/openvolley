@@ -3240,6 +3240,7 @@ export default function App() {
                           setDeletePinError('')
                         }}
                         placeholder="Game PIN"
+                        aria-label="Game PIN"
                         style={{
                           width: '100%',
                           maxWidth: '200px',
@@ -3340,6 +3341,7 @@ export default function App() {
                               setCloudBackupGameN(value)
                             }}
                             placeholder="123456"
+                            aria-label={t('settings.backup.gameN')}
                             style={{
                               width: '100%',
                               padding: '12px',
@@ -3372,6 +3374,7 @@ export default function App() {
                             }}
                             placeholder="000000"
                             maxLength={6}
+                            aria-label={t('settings.backup.gamePin')}
                             style={{
                               width: '100%',
                               padding: '12px',
