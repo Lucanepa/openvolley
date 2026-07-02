@@ -29,12 +29,12 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
     <header className="border border-black bg-white">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-0.5">
         <div className="flex items-center justify-center min-w-[120px]">
-            {/* Swiss Volley Logo Section with Fallback */}
+            {/* Swiss Volley logo (left slot), matching the official Matchblatt */}
             {!imageError ? (
                 <img
-                    src={openvolleyLogo}
-                    alt="Openvolley eScoresheet"
-                    style={{ aspectRatio: '1/1', height:'45px' }}
+                    src={swissvolleyLogo}
+                    alt="Swiss Volley"
+                    style={{ height:'40px' }}
                     onError={() => setImageError(true)}
                 />
             ) : null}
