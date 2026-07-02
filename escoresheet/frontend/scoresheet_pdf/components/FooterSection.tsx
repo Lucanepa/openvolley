@@ -650,8 +650,9 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
         setOpenSignature(null);
     };
 
-    // Expanded DOB column (50px), Number (25px), Name (Remaining)
-    const gridClass = "grid grid-cols-[50px_25px_1fr]";
+    // DoB (44px), Number (20px), Licence-No (40px), Name (Remaining).
+    // The official Swiss Matchblatt roster records each player's Lizenz-Nr.
+    const gridClass = "grid grid-cols-[44px_20px_40px_1fr]";
     // Unified height for Libero and Bench Official cells
     const rowHeight = "h-4";
 
@@ -682,6 +683,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             <div className={`bg-white border-b border-r border-black ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`}>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">DoB</div>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">No</div>
+                <div className="border-r border-black text-center h-full flex items-center justify-center text-[9px]">Lic.</div>
                 <div className="pl-1 h-full flex items-center">Name</div>
             </div>
 
@@ -701,6 +703,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                                 </svg>
                             )}
                         </div>
+                        <div className="border-r border-black flex items-center justify-center text-center text-[8px]">{player?.license || ''}</div>
                         <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
                             <span>{player?.name || ''}</span>
                             {player?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
@@ -720,6 +723,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                         <div key={i} className={`${gridClass} ${rowHeight} text-[9px]`}>
                             <div className="border-r border-black text-center flex items-center justify-center">{libero?.dob || ''}</div>
                             <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
+                            <div className="border-r border-black text-center flex items-center justify-center text-[8px]">{libero?.license || ''}</div>
                             <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
                                 <span>{liberoName}</span>
                                 {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
@@ -747,6 +751,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                          <div key={roleLabel} className={`${gridClass} text-[9px] items-center ${rowHeight}`}>
                              <div className="text-center flex items-center justify-center">{official?.dob || ''}</div>
                              <div className="font-bold text-center border-r border-l border-black h-full flex items-center justify-center bg-white text-[9px]">{roleLabel}</div>
+                             <div className="border-r border-black h-full flex items-center justify-center text-[8px]">{(official as { license?: string })?.license || ''}</div>
                              <div className="uppercase bg-white px-1 text-left flex items-center">{fullName}</div>
                          </div>
                      );
