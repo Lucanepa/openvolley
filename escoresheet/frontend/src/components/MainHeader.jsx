@@ -317,8 +317,8 @@ export default function MainHeader({
           left: '50%',
           transform: 'translateX(-50%)',
           padding: '8px 12px',
-          background: 'rgba(0, 0, 0, 0.95)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
           borderRadius: '8px',
           minWidth: '280px',
           zIndex: 1000,
@@ -329,8 +329,8 @@ export default function MainHeader({
         }}
       >
         {/* Match Number */}
-        <div style={{ fontSize: '12px', fontWeight: 500, color: '#94a3b8' }}>{t('header.notSynced')}</div>
-        <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>
+        <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--muted)' }}>{t('header.notSynced')}</div>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', textAlign: 'center' }}>
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
 
@@ -338,7 +338,7 @@ export default function MainHeader({
         {matchId && (
           <div style={{
             fontSize: '10px',
-            color: 'rgba(255, 255, 255, 0.4)',
+            color: 'var(--muted)',
             textAlign: 'center',
             fontFamily: 'monospace'
           }}>
@@ -347,14 +347,14 @@ export default function MainHeader({
         )}
 
         {/* Teams */}
-        <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.9)', textAlign: 'center', fontWeight: 500 }}>
+        <div style={{ fontSize: '13px', color: 'var(--text)', textAlign: 'center', fontWeight: 500 }}>
           {(matchData.homeTeam?.name && matchData.awayTeam?.name)
             ? `${matchData.homeTeam.name} - ${matchData.awayTeam.name}`
             : t('header.notSet')}
         </div>
 
         {/* Date and Time */}
-        <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>
+        <div style={{ fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
           {matchData.match.scheduledAt ? (
             (() => {
               try {
@@ -380,8 +380,8 @@ export default function MainHeader({
           textAlign: 'center',
           padding: '6px 12px',
           borderRadius: '4px',
-          background: matchData.match.test ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-          color: matchData.match.test ? '#fbbf24' : '#fff',
+          background: matchData.match.test ? 'rgba(251, 191, 36, 0.2)' : 'var(--panel-2)',
+          color: matchData.match.test ? '#fbbf24' : 'var(--text)',
           fontWeight: 600,
           fontFamily: matchData.match.test ? 'inherit' : 'monospace',
           letterSpacing: matchData.match.test ? '0.5px' : '2px'
@@ -420,9 +420,9 @@ export default function MainHeader({
             padding: '5px 12px',
             fontSize: 'clamp(12px, 1.2vw, 14px)',
             fontWeight: 600,
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: isTest ? '#fbbf24' : 'rgba(255, 255, 255, 0.9)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            background: 'var(--panel-2)',
+            color: isTest ? '#fbbf24' : 'var(--text)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
             cursor: 'pointer',
             transition: 'all 0.2s',
@@ -438,10 +438,10 @@ export default function MainHeader({
             letterSpacing: '0.5px'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+            e.currentTarget.style.background = 'var(--panel-2)'
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+            e.currentTarget.style.background = 'var(--panel-2)'
           }}
         >
           <span>{buttonText}</span>
@@ -503,8 +503,8 @@ export default function MainHeader({
           justifyContent: 'space-between',
           alignItems: 'center',
           padding: effectivelyCollapsed ? '0' : `0 ${Math.round(12 * scaleFactor)}px`,
-          background: 'rgba(0, 0, 0, 0.2)',
-          borderBottom: effectivelyCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+          background: 'var(--panel)',
+          borderBottom: effectivelyCollapsed ? 'none' : '1px solid var(--border)',
           flexShrink: 0,
           gap: `${Math.round(10 * scaleFactor)}px`,
           overflow: effectivelyCollapsed ? 'hidden' : 'visible',
@@ -533,7 +533,7 @@ export default function MainHeader({
               whiteSpace: 'nowrap'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+              e.currentTarget.style.background = 'var(--panel-2)'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent'
@@ -682,8 +682,8 @@ export default function MainHeader({
                     right: `${dashboardMenuPos.right}px`,
                     maxWidth: 'calc(100vw - 24px)',
                     width: '280px',
-                    background: 'rgba(0, 0, 0, 0.95)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     padding: '12px',
                     zIndex: 1000,
@@ -693,10 +693,10 @@ export default function MainHeader({
                   <div style={{
                     fontSize: '11px',
                     fontWeight: 600,
-                    color: 'rgba(255, 255, 255, 0.6)',
+                    color: 'var(--muted)',
                     marginBottom: '10px',
                     paddingBottom: '6px',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+                    borderBottom: '1px solid var(--border)'
                   }}>
                     {t('header.dashboardConnectionInfo')}
                   </div>
@@ -726,13 +726,13 @@ export default function MainHeader({
                     marginBottom: '12px',
                     textAlign: 'center'
                   }}>
-                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '4px' }}>
                       {t('header.connectDevicesToIp')}
                     </div>
                     <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'monospace', color: '#22c55e' }}>
                       {dashboardServer.serverIP || t('header.notAvailable')}
                       {dashboardServer.serverPort && dashboardServer.serverPort !== 80 && dashboardServer.serverPort !== 443 && (
-                        <span style={{ color: 'rgba(255,255,255,0.7)' }}>:{dashboardServer.serverPort}</span>
+                        <span style={{ color: 'var(--muted)' }}>:{dashboardServer.serverPort}</span>
                       )}
                     </div>
                   </div>
@@ -740,24 +740,24 @@ export default function MainHeader({
                   {/* Connection URLs */}
                   {dashboardServer.serverIP && (
                     <div style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
+                      background: 'var(--panel-2)',
                       borderRadius: '6px',
                       padding: '10px',
                       marginBottom: '12px'
                     }}>
-                      <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.8)' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
                         {t('header.dashboardUrls')}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', fontFamily: 'monospace' }}>
                         {dashboardServer.connectionUrl && (
                           <div style={{ wordBreak: 'break-all' }}>
-                            <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>{t('header.referee')}:</span>
+                            <span style={{ color: 'var(--muted)', marginRight: '4px' }}>{t('header.referee')}:</span>
                             <span>{dashboardServer.connectionUrl}/referee</span>
                           </div>
                         )}
                         {dashboardServer.connectionUrl && (
                           <div style={{ wordBreak: 'break-all' }}>
-                            <span style={{ color: 'rgba(255,255,255,0.5)', marginRight: '4px' }}>{t('header.bench')}:</span>
+                            <span style={{ color: 'var(--muted)', marginRight: '4px' }}>{t('header.bench')}:</span>
                             <span>{dashboardServer.connectionUrl}/bench</span>
                           </div>
                         )}
@@ -767,25 +767,25 @@ export default function MainHeader({
 
                   {/* Connected Dashboards Count */}
                   <div style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
+                    background: 'var(--panel-2)',
                     borderRadius: '6px',
                     padding: '10px',
                     marginBottom: '12px'
                   }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.8)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
                       {t('header.connectedDevices')}
                     </div>
                     <div style={{ display: 'flex', gap: '16px', fontSize: '12px' }}>
                       <div>
-                        <span style={{ color: 'rgba(255,255,255,0.5)' }}>{t('header.total')}: </span>
+                        <span style={{ color: 'var(--muted)' }}>{t('header.total')}: </span>
                         <span style={{ fontWeight: 600 }}>{dashboardServer.dashboardCount || 0}</span>
                       </div>
                       <div>
-                        <span style={{ color: 'rgba(255,255,255,0.5)' }}>{t('header.referees')}: </span>
+                        <span style={{ color: 'var(--muted)' }}>{t('header.referees')}: </span>
                         <span style={{ fontWeight: 600 }}>{dashboardServer.refereeCount || 0}</span>
                       </div>
                       <div>
-                        <span style={{ color: 'rgba(255,255,255,0.5)' }}>{t('header.bench')}: </span>
+                        <span style={{ color: 'var(--muted)' }}>{t('header.bench')}: </span>
                         <span style={{ fontWeight: 600 }}>{dashboardServer.benchCount || 0}</span>
                       </div>
                     </div>
@@ -800,7 +800,7 @@ export default function MainHeader({
                       padding: '10px',
                       marginBottom: '12px'
                     }}>
-                      <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>{t('header.matchPin')}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>{t('header.matchPin')}</div>
                       <div style={{ fontSize: '18px', fontWeight: 600, fontFamily: 'monospace', color: '#3b82f6', letterSpacing: '2px' }}>
                         {dashboardServer.refereePin}
                       </div>
@@ -818,9 +818,9 @@ export default function MainHeader({
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: 'rgba(255, 255, 255, 0.1)',
+                      background: 'var(--panel-2)',
                       color: 'var(--text)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer'
                     }}
@@ -881,9 +881,9 @@ export default function MainHeader({
                     height: '32px',
                     fontSize: '15px',
                     fontWeight: 700,
-                    background: helpPanelOpen ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                    color: helpPanelOpen ? '#60a5fa' : '#fff',
-                    border: `1px solid ${helpPanelOpen ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.2)'}`,
+                    background: helpPanelOpen ? 'rgba(59, 130, 246, 0.3)' : 'var(--panel-2)',
+                    color: helpPanelOpen ? '#60a5fa' : 'var(--text)',
+                    border: `1px solid ${helpPanelOpen ? 'rgba(59, 130, 246, 0.4)' : 'var(--border)'}`,
                     borderRadius: '6px',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
@@ -911,20 +911,20 @@ export default function MainHeader({
                     height: '32px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: actionsMenuOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: actionsMenuOpen ? 'var(--panel)' : 'var(--panel-2)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     gap: '6px',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+                    e.currentTarget.style.background = 'var(--panel)'
                   }}
                   onMouseLeave={(e) => {
                     if (!actionsMenuOpen) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.background = 'var(--panel-2)'
                     }
                   }}
                 >
@@ -948,8 +948,8 @@ export default function MainHeader({
                       right: 0,
                       marginTop: '4px',
                       padding: '8px',
-                      background: 'rgba(0, 0, 0, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
                       minWidth: '160px',
                       zIndex: 1000,
@@ -973,8 +973,8 @@ export default function MainHeader({
                         padding: '8px 12px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        color: '#fff',
+                        background: 'var(--panel-2)',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -983,10 +983,10 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+                        e.currentTarget.style.background = 'var(--panel)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                     >
                       <span>⛶</span>
@@ -1006,8 +1006,8 @@ export default function MainHeader({
                         padding: '8px 12px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: versionMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
-                        color: 'rgba(255, 255, 255, 0.8)',
+                        background: versionMenuOpen ? 'var(--panel-2)' : 'transparent',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1016,7 +1016,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         if (!versionMenuOpen) {
@@ -1041,8 +1041,8 @@ export default function MainHeader({
                         padding: '8px 12px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: languageMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
-                        color: 'rgba(255, 255, 255, 0.8)',
+                        background: languageMenuOpen ? 'var(--panel-2)' : 'transparent',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1051,7 +1051,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         if (!languageMenuOpen) {
@@ -1068,7 +1068,7 @@ export default function MainHeader({
                       <div
                         style={{
                           padding: '8px',
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          background: 'var(--panel-2)',
                           borderRadius: '6px'
                         }}
                       >
@@ -1089,7 +1089,7 @@ export default function MainHeader({
                               fontSize: '12px',
                               fontWeight: i18n.language === lang.code ? 600 : 400,
                               background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.2)' : 'transparent',
-                              color: i18n.language === lang.code ? '#4ade80' : '#fff',
+                              color: i18n.language === lang.code ? '#4ade80' : 'var(--text)',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
@@ -1098,7 +1098,7 @@ export default function MainHeader({
                             }}
                             onMouseEnter={(e) => {
                               if (i18n.language !== lang.code) {
-                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                                e.currentTarget.style.background = 'var(--panel-2)'
                               }
                             }}
                             onMouseLeave={(e) => {
@@ -1127,8 +1127,8 @@ export default function MainHeader({
                         padding: '8px 12px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: scaleMenuOpen ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
-                        color: 'rgba(255, 255, 255, 0.8)',
+                        background: scaleMenuOpen ? 'var(--panel-2)' : 'transparent',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1137,7 +1137,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         if (!scaleMenuOpen) {
@@ -1165,7 +1165,7 @@ export default function MainHeader({
                       <div
                         style={{
                           padding: '8px',
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          background: 'var(--panel-2)',
                           borderRadius: '6px'
                         }}
                       >
@@ -1186,7 +1186,7 @@ export default function MainHeader({
                               fontSize: '12px',
                               fontWeight: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 600 : 400,
                               background: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                              color: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? '#3b82f6' : '#fff',
+                              color: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? '#3b82f6' : 'var(--text)',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
@@ -1195,7 +1195,7 @@ export default function MainHeader({
                             }}
                             onMouseEnter={(e) => {
                               if (!(userScaleOverride === scale || (userScaleOverride === null && scale === 1.0))) {
-                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                                e.currentTarget.style.background = 'var(--panel-2)'
                               }
                             }}
                             onMouseLeave={(e) => {
@@ -1260,7 +1260,7 @@ export default function MainHeader({
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: 'clamp(10px, 1.2vw, 12px)',
-                  color: 'rgba(255, 255, 255, 0.6)',
+                  color: 'var(--muted)',
                   whiteSpace: 'nowrap'
                 }}>
                   {isEditing ? (
@@ -1275,9 +1275,9 @@ export default function MainHeader({
                         style={{
                           width: '60px',
                           fontSize: 'clamp(10px, 1.2vw, 12px)',
-                          color: 'rgba(255, 255, 255, 0.9)',
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          color: 'var(--text)',
+                          background: 'var(--panel-2)',
+                          border: '1px solid var(--border)',
                           borderRadius: '4px',
                           padding: '2px 4px',
                           textAlign: 'center',
@@ -1294,9 +1294,9 @@ export default function MainHeader({
                         style={{
                           width: '60px',
                           fontSize: 'clamp(10px, 1.2vw, 12px)',
-                          color: 'rgba(255, 255, 255, 0.9)',
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          color: 'var(--text)',
+                          background: 'var(--panel-2)',
+                          border: '1px solid var(--border)',
                           borderRadius: '4px',
                           padding: '2px 4px',
                           textAlign: 'center',
@@ -1320,12 +1320,12 @@ export default function MainHeader({
                         transition: 'all 0.2s'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
+                        e.currentTarget.style.color = 'var(--text)'
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'transparent'
-                        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'
+                        e.currentTarget.style.color = 'var(--muted)'
                       }}
                       title={t('header.clickToEditViewport')}
                     >
@@ -1350,9 +1350,9 @@ export default function MainHeader({
                     height: '32px',
                     fontSize: '15px',
                     fontWeight: 700,
-                    background: helpPanelOpen ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                    color: helpPanelOpen ? '#60a5fa' : '#fff',
-                    border: `1px solid ${helpPanelOpen ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.2)'}`,
+                    background: helpPanelOpen ? 'rgba(59, 130, 246, 0.3)' : 'var(--panel-2)',
+                    color: helpPanelOpen ? '#60a5fa' : 'var(--text)',
+                    border: `1px solid ${helpPanelOpen ? 'rgba(59, 130, 246, 0.4)' : 'var(--border)'}`,
                     borderRadius: '6px',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
@@ -1381,20 +1381,20 @@ export default function MainHeader({
                     height: '32px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: actionsMenuOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: actionsMenuOpen ? 'var(--panel)' : 'var(--panel-2)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     gap: '6px',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+                    e.currentTarget.style.background = 'var(--panel)'
                   }}
                   onMouseLeave={(e) => {
                     if (!actionsMenuOpen) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.background = 'var(--panel-2)'
                     }
                   }}
                   title={t('header.menu', 'Menu')}
@@ -1412,8 +1412,8 @@ export default function MainHeader({
                       right: 0,
                       marginTop: '4px',
                       padding: '8px',
-                      background: 'rgba(0, 0, 0, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
                       minWidth: '200px',
                       zIndex: 1000,
@@ -1467,7 +1467,7 @@ export default function MainHeader({
                     )}
 
                     {/* Divider */}
-                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                    <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
 
                     {/* Language Selector */}
                     <button
@@ -1482,8 +1482,8 @@ export default function MainHeader({
                         padding: '10px 14px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: languageMenuOpen ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                        color: 'rgba(255, 255, 255, 0.8)',
+                        background: languageMenuOpen ? 'var(--panel-2)' : 'transparent',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1492,7 +1492,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         if (!languageMenuOpen) {
@@ -1514,7 +1514,7 @@ export default function MainHeader({
                     {/* Language Options - nested */}
                     {languageMenuOpen && (
                       <div style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
+                        background: 'var(--panel-2)',
                         borderRadius: '6px',
                         padding: '4px'
                       }}>
@@ -1535,7 +1535,7 @@ export default function MainHeader({
                               fontSize: '12px',
                               fontWeight: i18n.language === lang.code ? 600 : 400,
                               background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.2)' : 'transparent',
-                              color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                              color: i18n.language === lang.code ? '#4ade80' : 'var(--text)',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
@@ -1544,7 +1544,7 @@ export default function MainHeader({
                             }}
                             onMouseEnter={(e) => {
                               if (i18n.language !== lang.code) {
-                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                                e.currentTarget.style.background = 'var(--panel-2)'
                               }
                             }}
                             onMouseLeave={(e) => {
@@ -1573,8 +1573,8 @@ export default function MainHeader({
                         padding: '10px 14px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: scaleMenuOpen ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                        color: 'rgba(255, 255, 255, 0.8)',
+                        background: scaleMenuOpen ? 'var(--panel-2)' : 'transparent',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1583,7 +1583,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         if (!scaleMenuOpen) {
@@ -1613,7 +1613,7 @@ export default function MainHeader({
                     {/* Scale Options - nested */}
                     {scaleMenuOpen && (
                       <div style={{
-                        background: 'rgba(255, 255, 255, 0.05)',
+                        background: 'var(--panel-2)',
                         borderRadius: '6px',
                         padding: '4px'
                       }}>
@@ -1634,7 +1634,7 @@ export default function MainHeader({
                               fontSize: '12px',
                               fontWeight: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 600 : 400,
                               background: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                              color: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? '#3b82f6' : 'rgba(255, 255, 255, 0.8)',
+                              color: (userScaleOverride === scale || (userScaleOverride === null && scale === 1.0)) ? '#3b82f6' : 'var(--text)',
                               border: 'none',
                               borderRadius: '4px',
                               cursor: 'pointer',
@@ -1643,7 +1643,7 @@ export default function MainHeader({
                             }}
                             onMouseEnter={(e) => {
                               if (!(userScaleOverride === scale || (userScaleOverride === null && scale === 1.0))) {
-                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                                e.currentTarget.style.background = 'var(--panel-2)'
                               }
                             }}
                             onMouseLeave={(e) => {
@@ -1671,8 +1671,8 @@ export default function MainHeader({
                         padding: '10px 14px',
                         fontSize: '13px',
                         fontWeight: 500,
-                        background: versionMenuOpen ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                        color: 'rgba(255, 255, 255, 0.8)',
+                        background: versionMenuOpen ? 'var(--panel-2)' : 'transparent',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1681,7 +1681,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         if (!versionMenuOpen) {
@@ -1696,7 +1696,7 @@ export default function MainHeader({
                     {/* Version history removed */}
 
                     {/* Divider */}
-                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                    <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
 
                     {/* Fullscreen Action */}
                     <button
@@ -1713,7 +1713,7 @@ export default function MainHeader({
                         fontSize: '13px',
                         fontWeight: 500,
                         background: 'transparent',
-                        color: '#fff',
+                        color: 'var(--text)',
                         border: 'none',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -1722,7 +1722,7 @@ export default function MainHeader({
                         textAlign: 'left'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'transparent'
@@ -1750,12 +1750,12 @@ export default function MainHeader({
             width: '100%',
             height: '16px',
             cursor: 'pointer',
-            background: 'rgba(0, 0, 0, 0.3)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'var(--panel)',
+            borderBottom: '1px solid var(--border)',
             transition: 'all 0.2s'
           }}
           onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'var(--panel)'}
         >
           <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: 700 }}>▼</span>
         </div>
