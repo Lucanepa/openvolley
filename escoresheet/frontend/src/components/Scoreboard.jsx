@@ -4556,10 +4556,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const openManualLineup = useCallback(
     teamKey => {
       if (!data?.set) return
+      // FIVB 7.3.4/7.3.5: before the set's first rally the delivered line-up may be
+      // freely rectified (no sanction); once the set has started, the line-up can
+      // only change through a regular substitution. Block a free-form rewrite after
+      // the first point and steer the scorer to the substitution controls.
+      const setHasStarted = (data.events || []).some(
+        e => e.type === 'point' && (e.setIndex ?? 1) === data.set.index
+      )
+      if (setHasStarted) {
+        showAlert('The set has started — change players with a substitution, not a line-up edit (FIVB 7.3.4).', 'warning')
+        return
+      }
       const existingLineup = getCurrentLineup(teamKey)
       setLineupModal({ team: teamKey, mode: 'manual', lineup: existingLineup })
     },
-    [data?.set, getCurrentLineup]
+    [data?.set, data?.events, getCurrentLineup, showAlert]
   )
 
   // Rotate lineup: II→I, III→II, IV→III, V→IV, VI→V, I→VI
