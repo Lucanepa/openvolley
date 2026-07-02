@@ -139,7 +139,7 @@ export default function ProfileModal({ open, onClose }) {
   const modalStyle = {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0,0,0,.85)',
+    background: 'rgba(15, 23, 42, 0.5)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -149,7 +149,7 @@ export default function ProfileModal({ open, onClose }) {
   const contentStyle = {
     width: 'min(90vw, 440px)',
     maxHeight: '90vh',
-    background: '#111827',
+    background: 'var(--panel)',
     border: '2px solid #3b82f6',
     borderRadius: 12,
     overflow: 'hidden',
@@ -169,10 +169,10 @@ export default function ProfileModal({ open, onClose }) {
   const inputStyle = {
     width: '100%',
     padding: '12px 16px',
-    background: '#1f2937',
-    border: '1px solid #374151',
+    background: 'var(--panel-2)',
+    border: '1px solid var(--border)',
     borderRadius: 8,
-    color: '#e5e7eb',
+    color: 'var(--text)',
     fontSize: 16,
     outline: 'none',
     boxSizing: 'border-box'
@@ -195,7 +195,7 @@ export default function ProfileModal({ open, onClose }) {
       <div style={contentStyle} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: 20, fontWeight: 600 }}>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
             {t('auth.profile', 'Profile')}
           </h2>
           <button
@@ -203,7 +203,7 @@ export default function ProfileModal({ open, onClose }) {
             style={{
               background: 'none',
               border: 'none',
-              color: '#9ca3af',
+              color: 'var(--muted)',
               fontSize: 24,
               cursor: 'pointer',
               padding: 0,
@@ -246,7 +246,7 @@ export default function ProfileModal({ open, onClose }) {
 
           {/* Email */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+            <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
               {t('auth.email', 'Email')}
             </label>
 
@@ -313,8 +313,8 @@ export default function ProfileModal({ open, onClose }) {
                   }}
                   style={{
                     padding: '12px 16px',
-                    background: '#374151',
-                    color: '#e5e7eb',
+                    background: 'var(--panel-2)',
+                    color: 'var(--text)',
                     border: 'none',
                     borderRadius: 8,
                     fontWeight: 500,
@@ -330,8 +330,8 @@ export default function ProfileModal({ open, onClose }) {
                 <div style={{
                   ...inputStyle,
                   flex: 1,
-                  background: '#0f172a',
-                  color: '#6b7280'
+                  background: 'var(--panel-2)',
+                  color: 'var(--muted)'
                 }}>
                   {user?.email}
                 </div>
@@ -356,7 +356,7 @@ export default function ProfileModal({ open, onClose }) {
 
           {/* Role (read-only) */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+            <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
               {t('auth.roles', 'Role')}
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -378,7 +378,7 @@ export default function ProfileModal({ open, onClose }) {
             {/* Name fields */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
               <div style={{ flex: 1 }}>
-                <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                   {t('auth.firstName', 'First name')}
                 </label>
                 <input
@@ -389,7 +389,7 @@ export default function ProfileModal({ open, onClose }) {
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                   {t('auth.lastName', 'Last name')}
                 </label>
                 <input
@@ -404,7 +404,7 @@ export default function ProfileModal({ open, onClose }) {
             {/* Country and DOB */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
               <div style={{ flex: 1 }}>
-                <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                   {t('auth.country', 'Country')}
                 </label>
                 <input
@@ -417,7 +417,7 @@ export default function ProfileModal({ open, onClose }) {
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                   {t('auth.dob', 'Date of birth')}
                 </label>
                 <input
@@ -487,7 +487,7 @@ export default function ProfileModal({ open, onClose }) {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,.9)',
+            background: 'rgba(15, 23, 42, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -498,7 +498,7 @@ export default function ProfileModal({ open, onClose }) {
           <div
             style={{
               width: 'min(90vw, 400px)',
-              background: '#111827',
+              background: 'var(--panel)',
               border: '2px solid #ef4444',
               borderRadius: 12,
               overflow: 'hidden'
@@ -522,10 +522,10 @@ export default function ProfileModal({ open, onClose }) {
                 {t('auth.deleteAccountConfirmMessage', 'This action is permanent. All your data will be deleted.')}
               </p>
 
-              <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 8 }}>
+              <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
                 {t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
               </p>
-              <p style={{ color: '#6b7280', fontSize: 12, marginBottom: 8, fontFamily: 'monospace' }}>
+              <p style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8, fontFamily: 'monospace' }}>
                 {user?.email}
               </p>
 
@@ -551,10 +551,10 @@ export default function ProfileModal({ open, onClose }) {
                 style={{
                   width: '100%',
                   padding: '12px 16px',
-                  background: '#1f2937',
-                  border: '1px solid #374151',
+                  background: 'var(--panel-2)',
+                  border: '1px solid var(--border)',
                   borderRadius: 8,
-                  color: '#e5e7eb',
+                  color: 'var(--text)',
                   fontSize: 14,
                   outline: 'none',
                   boxSizing: 'border-box',
@@ -568,8 +568,8 @@ export default function ProfileModal({ open, onClose }) {
                   style={{
                     flex: 1,
                     padding: '12px 16px',
-                    background: '#374151',
-                    color: '#e5e7eb',
+                    background: 'var(--panel-2)',
+                    color: 'var(--text)',
                     border: 'none',
                     borderRadius: 8,
                     fontWeight: 500,

@@ -1450,14 +1450,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
           <div style={{
-            background: '#111827',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             maxWidth: '400px',
@@ -1492,7 +1492,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1542,7 +1542,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
+            background: 'rgba(15, 23, 42, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1691,14 +1691,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
           <div style={{
-            background: 'var(--bg-secondary, #1f2937)',
+            background: 'var(--bg-secondary, var(--panel))',
             borderRadius: '12px',
             padding: '24px',
             maxWidth: '400px',
@@ -1737,9 +1737,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 borderRadius: '6px',
                 border: unlockPasswordError
                   ? '2px solid #ef4444'
-                  : '1px solid rgba(255, 255, 255, 0.2)',
-                background: 'rgba(0, 0, 0, 0.3)',
-                color: '#fff',
+                  : '1px solid var(--border)',
+                background: 'var(--panel-2)',
+                color: 'var(--text)',
                 boxSizing: 'border-box',
                 marginBottom: '8px'
               }}

@@ -742,7 +742,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
   if (!data) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#fff' }}>
+      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text)' }}>
         {t('common.loading', 'Loading...')}
       </div>
     )
@@ -758,22 +758,22 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const inputStyle = {
     padding: '8px 12px',
     fontSize: '14px',
-    background: 'rgba(0,0,0,0.3)',
-    border: '1px solid rgba(255,255,255,0.2)',
+    background: 'var(--panel-2)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
-    color: '#fff'
+    color: 'var(--text)'
   }
 
   const labelStyle = {
     display: 'block',
     marginBottom: '6px',
     fontSize: '13px',
-    color: 'rgba(255,255,255,0.6)'
+    color: 'var(--muted)'
   }
 
   const cardStyle = {
     padding: '16px',
-    background: 'rgba(255,255,255,0.05)',
+    background: 'var(--panel-2)',
     borderRadius: '8px',
     marginBottom: '16px'
   }
@@ -805,8 +805,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: '#1a1a2e',
-      color: '#fff',
+      backgroundColor: 'var(--panel)',
+      color: 'var(--text)',
       overflow: 'auto',
       zIndex: 1000
     }}>
@@ -816,8 +816,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '16px 24px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-        background: 'rgba(0,0,0,0.3)'
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--panel-2)'
       }}>
         <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>
           {t('manualAdjustmentsEditor.title', 'Manual Adjustments')}
@@ -829,9 +829,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               padding: '10px 20px',
               fontSize: '14px',
               fontWeight: 600,
-              background: 'rgba(255,255,255,0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'var(--panel)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               cursor: 'pointer'
             }}
@@ -846,7 +846,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               padding: '10px 20px',
               fontSize: '14px',
               fontWeight: 600,
-              background: changes.length > 0 ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' : 'rgba(255,255,255,0.1)',
+              background: changes.length > 0 ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' : 'var(--panel)',
               color: '#fff',
               border: 'none',
               borderRadius: '8px',
@@ -864,8 +864,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         display: 'flex',
         gap: '4px',
         padding: '12px 24px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-        background: 'rgba(0,0,0,0.2)',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--panel-2)',
         flexWrap: 'wrap'
       }}>
         {tabs.map(tab => (
@@ -878,7 +878,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               fontSize: '14px',
               fontWeight: 600,
               background: activeTab === tab.id ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-              color: activeTab === tab.id ? '#60a5fa' : 'rgba(255,255,255,0.6)',
+              color: activeTab === tab.id ? '#60a5fa' : 'var(--muted)',
               border: activeTab === tab.id ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
               borderRadius: '8px',
               cursor: 'pointer',
@@ -895,7 +895,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         {/* ==================== SCORES TAB ==================== */}
         {activeTab === 'scores' && (
           <div>
-            <h2 style={{ fontSize: '18px', marginBottom: '20px', color: 'rgba(255,255,255,0.9)' }}>
+            <h2 style={{ fontSize: '18px', marginBottom: '20px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.setScores', 'Set Scores')}
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -912,7 +912,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 >
                   <div style={{ fontWeight: 600 }}>{t('common.setIndex', { index: set.index })}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.6)', minWidth: '80px' }}>
+                    <span style={{ color: 'var(--muted)', minWidth: '80px' }}>
                       {editedHomeTeam?.name || t('common.home')}:
                     </span>
                     <input
@@ -922,9 +922,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600 }}
                     />
                   </div>
-                  <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>vs</div>
+                  <div style={{ textAlign: 'center', color: 'var(--muted)' }}>vs</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.6)', minWidth: '80px' }}>
+                    <span style={{ color: 'var(--muted)', minWidth: '80px' }}>
                       {editedAwayTeam?.name || t('common.away')}:
                     </span>
                     <input
@@ -952,7 +952,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       }}
                       style={{ width: '18px', height: '18px' }}
                     />
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
                   </label>
                 </div>
               ))}
@@ -968,7 +968,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div>
                 {/* Team Info */}
                 <div style={cardStyle}>
-                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
                     {t('manualAdjustmentsEditor.teamAHome', 'Team A (Home)')}
                   </h2>
@@ -997,17 +997,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       <select
                         value={editedHomeTeam?.color || '#3b82f6'}
                         onChange={(e) => updateTeam('color', e.target.value, true)}
-                        style={{ ...inputStyle, width: '100%', background: '#1a1a2e' }}
+                        style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
                         {TEAM_COLORS.map(c => (
-                          <option key={c.value} value={c.value} style={{ background: '#1a1a2e', color: c.value === '#f8fafc' ? '#888' : '#fff' }}>
+                          <option key={c.value} value={c.value} style={{ background: 'var(--panel)', color: c.value === '#f8fafc' ? '#888' : 'var(--text)' }}>
                             {t(`manualAdjustmentsEditor.colors.${c.key}`, c.key)} ■
                           </option>
                         ))}
                       </select>
                       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedHomeTeam?.color || '#3b82f6', border: '1px solid rgba(255,255,255,0.3)' }} />
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
+                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedHomeTeam?.color || '#3b82f6', border: '1px solid var(--border)' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
                       </div>
                     </div>
                     <div>
@@ -1022,7 +1022,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div>
                 {/* Team Info */}
                 <div style={cardStyle}>
-                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
                     {t('manualAdjustmentsEditor.teamBAway', 'Team B (Away)')}
                   </h2>
@@ -1051,17 +1051,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       <select
                         value={editedAwayTeam?.color || '#ef4444'}
                         onChange={(e) => updateTeam('color', e.target.value, false)}
-                        style={{ ...inputStyle, width: '100%', background: '#1a1a2e' }}
+                        style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
                         {TEAM_COLORS.map(c => (
-                          <option key={c.value} value={c.value} style={{ background: '#1a1a2e', color: c.value === '#f8fafc' ? '#888' : '#fff' }}>
+                          <option key={c.value} value={c.value} style={{ background: 'var(--panel)', color: c.value === '#f8fafc' ? '#888' : 'var(--text)' }}>
                             {t(`manualAdjustmentsEditor.colors.${c.key}`, c.key)} ■
                           </option>
                         ))}
                       </select>
                       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedAwayTeam?.color || '#ef4444', border: '1px solid rgba(255,255,255,0.3)' }} />
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
+                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedAwayTeam?.color || '#ef4444', border: '1px solid var(--border)' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
                       </div>
                     </div>
                   </div>
@@ -1076,7 +1076,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             {/* Timeouts Section */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.timeouts', 'Timeouts')} ({timeoutEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
@@ -1084,14 +1084,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '4px' }}>
                     <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
                     <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <button onClick={() => deleteEvent(event.id)} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
                 <button onClick={() => setShowAddTimeout(true)} style={{ ...buttonStyle, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none' }}>
                   {t('manualAdjustmentsEditor.addTimeout', '+ Add Timeout')}
                 </button>
@@ -1100,7 +1100,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Substitutions Section */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.substitutions', 'Substitutions')} ({substitutionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
@@ -1115,7 +1115,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '13px' }}>
                       #{event.payload?.playerOut} → #{event.payload?.playerIn}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <button onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, padding: '4px 8px', fontSize: '10px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
@@ -1123,7 +1123,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
                 <button onClick={() => setShowAddSub(true)} style={{ ...buttonStyle, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none' }}>
                   {t('manualAdjustmentsEditor.addSubstitution', '+ Add Substitution')}
                 </button>
@@ -1132,7 +1132,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Sanctions Section */}
             <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.allSanctions', 'All Sanctions')} ({sanctionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
@@ -1150,7 +1150,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '13px' }}>
                       {event.payload?.playerType}: #{event.payload?.playerNumber}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       Score: {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <span />
@@ -1168,7 +1168,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             {/* Match Details */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.matchDetails', 'Match Details')}
               </h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1257,13 +1257,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Match Officials */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.matchOfficials', 'Match Officials')}
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* 1st Referee */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1297,7 +1297,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* 2nd Referee */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1331,7 +1331,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Scorer */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1358,7 +1358,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Assistant Scorer */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1395,7 +1395,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
               {changes.map((change, i) => (
-                <div key={i} style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)' }}>
+                <div key={i} style={{ fontSize: '12px', color: 'var(--muted)' }}>
                   • {change.description}
                 </div>
               ))}
@@ -1412,24 +1412,24 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
             </h3>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '4px' }}>
                 {t('manualAdjustmentsEditor.target', 'Target')}: {showAddSanction.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
                 {showAddSanction.playerType === 'player' && ` - ${t('manualAdjustmentsEditor.player', 'Player')} #${showAddSanction.playerNumber}`}
                 {showAddSanction.playerType === 'bench_official' && ` - ${showAddSanction.role}`}
@@ -1493,9 +1493,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1529,20 +1529,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.editSanction', 'Edit Sanction')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1600,9 +1600,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1636,20 +1636,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1708,9 +1708,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1744,20 +1744,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '450px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1842,9 +1842,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1882,26 +1882,26 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '450px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.editSubstitutionTitle', 'Edit Substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>{t('manualAdjustmentsEditor.team', 'Team')}</label>
-                <div style={{ ...inputStyle, padding: '8px 12px', background: 'rgba(255,255,255,0.05)' }}>
+                <div style={{ ...inputStyle, padding: '8px 12px', background: 'var(--panel-2)' }}>
                   {editingSub.payload?.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
                 </div>
               </div>
@@ -1972,9 +1972,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}

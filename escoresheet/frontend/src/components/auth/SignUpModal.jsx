@@ -55,7 +55,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const modalStyle = {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0,0,0,.85)',
+    background: 'rgba(15, 23, 42, 0.5)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -65,7 +65,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const contentStyle = {
     width: 'min(90vw, 440px)',
     maxHeight: '90vh',
-    background: '#111827',
+    background: 'var(--panel)',
     border: '2px solid #22c55e',
     borderRadius: 12,
     overflow: 'hidden',
@@ -85,10 +85,10 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const inputStyle = {
     width: '100%',
     padding: '12px 16px',
-    background: '#1f2937',
-    border: '1px solid #374151',
+    background: 'var(--panel-2)',
+    border: '1px solid var(--border)',
     borderRadius: 8,
-    color: '#e5e7eb',
+    color: 'var(--text)',
     fontSize: 16,
     outline: 'none',
     boxSizing: 'border-box'
@@ -111,7 +111,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
       <div style={contentStyle} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: 20, fontWeight: 600 }}>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
             {t('auth.createAccount', 'Create Account')}
           </h2>
           <button
@@ -119,7 +119,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
             style={{
               background: 'none',
               border: 'none',
-              color: '#9ca3af',
+              color: 'var(--muted)',
               fontSize: 24,
               cursor: 'pointer',
               padding: 0,
@@ -150,7 +150,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
             <div style={{ textAlign: 'center', color: '#22c55e', padding: '20px 0' }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
               <p style={{ marginBottom: 8 }}>{t('auth.accountCreated', 'Account created successfully!')}</p>
-              <p style={{ color: '#9ca3af', fontSize: 14 }}>
+              <p style={{ color: 'var(--muted)', fontSize: 14 }}>
                 {t('auth.checkEmail', 'Check your email to confirm your account')}
               </p>
               <button
@@ -166,7 +166,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                 {/* Name fields */}
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                       {t('auth.firstName', 'First name')}
                     </label>
                     <input
@@ -177,7 +177,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                       {t('auth.lastName', 'Last name')}
                     </label>
                     <input
@@ -192,7 +192,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                 {/* Country and DOB */}
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                       {t('auth.country', 'Country')}
                     </label>
                     <input
@@ -205,7 +205,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                     />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                       {t('auth.dob', 'Date of birth')}
                     </label>
                     <input
@@ -219,7 +219,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
 
                 {/* Email */}
                 <div style={{ marginBottom: 12 }}>
-                  <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                  <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                     {t('auth.email', 'Email')} *
                   </label>
                   <input
@@ -233,7 +233,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
 
                 {/* Password */}
                 <div style={{ marginBottom: 12 }}>
-                  <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                  <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                     {t('auth.password', 'Password')} *
                   </label>
                   <input
@@ -247,7 +247,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
 
                 {/* Confirm password */}
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ color: '#9ca3af', fontSize: 13, marginBottom: 4, display: 'block' }}>
+                  <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
                     {t('auth.confirmPassword', 'Confirm password')} *
                   </label>
                   <input
@@ -267,7 +267,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
               <div style={{
                 marginTop: 20,
                 textAlign: 'center',
-                color: '#9ca3af',
+                color: 'var(--muted)',
                 fontSize: 14
               }}>
                 {t('auth.haveAccount', 'Already have an account?')}{' '}

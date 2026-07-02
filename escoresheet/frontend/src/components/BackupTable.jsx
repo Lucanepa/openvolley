@@ -129,8 +129,8 @@ export default function BackupTable({
         padding: '8px 10px',
         fontSize: '11px',
         fontWeight: 600,
-        color: 'rgba(255,255,255,0.5)',
-        borderBottom: '2px solid rgba(255,255,255,0.2)',
+        color: 'var(--muted)',
+        borderBottom: '2px solid var(--border)',
         marginBottom: '2px',
         alignItems: 'center'
       }}>
@@ -189,7 +189,7 @@ export default function BackupTable({
           gap: '2px',
           alignItems: 'center',
           padding: '8px 10px',
-          background: index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
+          background: index % 2 === 0 ? 'var(--panel-2)' : 'transparent',
           cursor: isDisabled ? 'not-allowed' : 'pointer',
           textAlign: 'left'
         }
@@ -206,7 +206,7 @@ export default function BackupTable({
                 width: '100%',
                 color: 'var(--text)',
                 border: 'none',
-                borderBottom: index < backups.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                borderBottom: index < backups.length - 1 ? '1px solid var(--border)' : 'none',
                 fontSize: '12px'
               }}
             >
@@ -229,10 +229,10 @@ export default function BackupTable({
                   ? `${backup.leftScore}:${backup.rightScore}`
                   : 'N/A'}
               </span>
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '11px' }}>
+              <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
                 {lastAction}
               </span>
-              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', textAlign: 'right' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'right' }}>
                 {formattedTime}
               </span>
               {showRestoreButton && <div></div>}
@@ -251,7 +251,7 @@ export default function BackupTable({
                 transition: 'background 0.2s'
               }}
               onMouseEnter={(e) => !isDisabled && (e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)')}
-              onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'}
+              onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'var(--panel-2)' : 'transparent'}
             >
               {(hasMixedSources || hasAnyPb) && (
                 <span style={{ textAlign: 'center' }}>
@@ -272,10 +272,10 @@ export default function BackupTable({
                   ? `${backup.leftScore}:${backup.rightScore}`
                   : 'N/A'}
               </span>
-              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
                 {lastAction}
               </span>
-              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', textAlign: 'right' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'right' }}>
                 {formattedTime}
               </span>
               {showRestoreButton && (

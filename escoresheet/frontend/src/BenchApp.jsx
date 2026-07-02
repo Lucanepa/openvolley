@@ -531,8 +531,8 @@ export default function BenchApp() {
     return (
       <div style={{
         height: '100vh',
-        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -577,8 +577,8 @@ export default function BenchApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
@@ -653,7 +653,7 @@ export default function BenchApp() {
                 textAlign: 'center',
                 letterSpacing: '8px',
                 background: 'var(--bg)',
-                border: error ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                border: error ? '2px solid #ef4444' : '2px solid var(--border)',
                 borderRadius: '8px',
                 color: 'var(--text)',
                 marginBottom: '16px'
@@ -706,7 +706,7 @@ export default function BenchApp() {
               fontWeight: 500,
               background: 'transparent',
               color: 'var(--muted)',
-              border: '1px solid rgba(255,255,255,0.2)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               cursor: 'pointer'
             }}
@@ -724,8 +724,8 @@ export default function BenchApp() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
@@ -834,7 +834,7 @@ export default function BenchApp() {
               fontWeight: 500,
               background: 'transparent',
               color: 'var(--muted)',
-              border: '1px solid rgba(255,255,255,0.2)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               cursor: 'pointer'
             }}
@@ -851,8 +851,8 @@ export default function BenchApp() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, rgb(82, 82, 113) 0%, rgb(62, 22, 27) 100%)',
-      color: '#fff',
+      background: 'var(--bg)',
+      color: 'var(--text)',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
@@ -865,7 +865,7 @@ export default function BenchApp() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -977,7 +977,7 @@ export default function BenchApp() {
             onClick={handleTestModeClick}
             style={{
               padding: '24px',
-              background: 'rgba(255, 255, 255, 0.05)',
+              background: 'var(--panel-2)',
               borderRadius: '12px',
               textAlign: 'center',
               cursor: 'default',
@@ -1000,7 +1000,7 @@ export default function BenchApp() {
                 padding: '10px 20px',
                 fontSize: '14px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.2)',
+                border: '1px solid var(--border)',
                 borderRadius: '8px',
                 color: 'var(--accent)',
                 cursor: loadingMatches ? 'not-allowed' : 'pointer',
@@ -1028,7 +1028,7 @@ export default function BenchApp() {
                 padding: '4px 10px',
                 fontSize: '12px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.15)',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 color: 'var(--accent)',
                 cursor: loadingMatches ? 'not-allowed' : 'pointer',

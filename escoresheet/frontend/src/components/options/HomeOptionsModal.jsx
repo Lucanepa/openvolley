@@ -25,8 +25,8 @@ function InfoDot({ title }) {
           width: '16px',
           height: '16px',
           borderRadius: '50%',
-          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.2)',
-          color: 'rgba(255, 255, 255, 0.7)',
+          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'var(--border)',
+          color: 'var(--muted)',
           fontSize: '11px',
           fontWeight: 600,
           cursor: 'pointer'
@@ -44,11 +44,11 @@ function InfoDot({ title }) {
             transform: 'translateX(-50%)',
             marginTop: '8px',
             padding: '8px 12px',
-            background: '#1f2937',
-            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
             fontSize: '12px',
-            color: 'rgba(255,255,255,0.9)',
+            color: 'var(--text)',
             whiteSpace: 'normal',
             width: 'max-content',
             maxWidth: '250px',
@@ -77,7 +77,7 @@ function ToggleSwitch({ value, onToggle }) {
         borderRadius: '14px',
         border: 'none',
         cursor: 'pointer',
-        background: value ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+        background: value ? '#22c55e' : 'var(--border)',
         position: 'relative',
         transition: 'background 0.2s',
         flexShrink: 0,
@@ -106,7 +106,7 @@ function Row({ children, style }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '8px 16px',
-        background: 'rgba(255, 255, 255, 0.05)',
+        background: 'var(--panel-2)',
         borderRadius: '8px',
         flexShrink: 0,
         height: 'auto',
@@ -120,7 +120,7 @@ function Row({ children, style }) {
 
 function Section({ title, children, borderBottom = true }) {
   return (
-    <div style={{ marginBottom: '24px', paddingBottom: borderBottom ? '24px' : 0, borderBottom: borderBottom ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
+    <div style={{ marginBottom: '24px', paddingBottom: borderBottom ? '24px' : 0, borderBottom: borderBottom ? '1px solid var(--border)' : 'none' }}>
       {title ? (
         <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>{title}</h3>
       ) : null}
@@ -149,8 +149,8 @@ function DurationInput({ value, onChange, label }) {
     fontFamily: 'monospace',
     fontWeight: 600,
     textAlign: 'center',
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
+    background: 'var(--panel)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     color: 'var(--text)'
   }
@@ -344,8 +344,8 @@ export default function HomeOptionsModal({
       <div style={{
         position: 'sticky',
         top: 0,
-        background: '#1f2937',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--panel)',
+        borderBottom: '1px solid var(--border)',
         padding: '12px 24px',
         display: 'flex',
         alignItems: 'center',
@@ -377,7 +377,7 @@ export default function HomeOptionsModal({
               height: '32px',
               borderRadius: '6px',
               border: 'none',
-              background: 'rgba(255,255,255,0.1)',
+              background: 'var(--panel)',
               color: 'var(--text)',
               fontSize: '18px',
               cursor: 'pointer',
@@ -408,7 +408,7 @@ export default function HomeOptionsModal({
               </div>
               {checkAccidentalRallyStart && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.duration')}:</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -423,14 +423,14 @@ export default function HomeOptionsModal({
                       width: '50px',
                       padding: '4px 8px',
                       fontSize: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       textAlign: 'center'
                     }}
                   />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.seconds')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -452,7 +452,7 @@ export default function HomeOptionsModal({
               </div>
               {checkAccidentalPointAward && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.duration')}:</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -467,14 +467,14 @@ export default function HomeOptionsModal({
                       width: '50px',
                       padding: '4px 8px',
                       fontSize: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       textAlign: 'center'
                     }}
                   />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.seconds')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -591,7 +591,7 @@ export default function HomeOptionsModal({
               </div>
               {lfpTrackingEnabled && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{t('options.minimumLfpsOnCourt')}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
                     onChange={(e) => {
@@ -602,8 +602,8 @@ export default function HomeOptionsModal({
                     style={{
                       padding: '4px 4px',
                       fontSize: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       textAlign: 'center',
@@ -611,7 +611,7 @@ export default function HomeOptionsModal({
                     }}
                   >
                     {[1, 2, 3, 4, 5, 6].map(n => (
-                      <option key={n} value={n} style={{ background: '#1e293b', color: '#fff' }}>{n}</option>
+                      <option key={n} value={n} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{n}</option>
                     ))}
                   </select>
                 </div>
@@ -655,9 +655,9 @@ export default function HomeOptionsModal({
                       padding: '8px 16px',
                       fontSize: '13px',
                       fontWeight: 600,
-                      background: displayMode === mode ? '#3b82f6' : 'rgba(255, 255, 255, 0.1)',
+                      background: displayMode === mode ? '#3b82f6' : 'var(--panel)',
                       color: displayMode === mode ? '#fff' : 'var(--text)',
-                      border: displayMode === mode ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                      border: displayMode === mode ? '1px solid #3b82f6' : '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textTransform: 'capitalize',
@@ -679,8 +679,8 @@ export default function HomeOptionsModal({
                           width: '14px',
                           height: '14px',
                           borderRadius: '50%',
-                          background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.2)',
-                          color: displayMode === mode ? '#fff' : 'rgba(255, 255, 255, 0.7)',
+                          background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'var(--border)',
+                          color: displayMode === mode ? '#fff' : 'var(--muted)',
                           fontSize: '10px',
                           fontWeight: 600,
                           cursor: 'help'
@@ -741,13 +741,13 @@ export default function HomeOptionsModal({
               <>
                 {/* Server Status */}
                 <div style={{
-                  background: 'rgba(255,255,255,0.05)',
+                  background: 'var(--panel-2)',
                   borderRadius: '8px',
                   padding: '16px',
                   marginBottom: '12px'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{t('options.serverStatus')}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('options.serverStatus')}</span>
                     <span style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -768,14 +768,14 @@ export default function HomeOptionsModal({
                   {dashboardServer.serverRunning && dashboardServer.connectionUrl && (
                     <>
                       <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
                           {t('options.connectDashboardsTo')}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <code style={{
                             flex: 1,
                             padding: '10px 12px',
-                            background: 'rgba(0,0,0,0.3)',
+                            background: 'var(--panel-2)',
                             borderRadius: '6px',
                             fontSize: '14px',
                             fontFamily: 'monospace',
@@ -790,10 +790,10 @@ export default function HomeOptionsModal({
                               padding: '10px 14px',
                               fontSize: '12px',
                               fontWeight: 600,
-                              background: copyFeedback === 'URL' ? '#22c55e' : 'rgba(255,255,255,0.1)',
+                              background: copyFeedback === 'URL' ? '#22c55e' : 'var(--panel)',
                               border: 'none',
                               borderRadius: '6px',
-                              color: '#fff',
+                              color: 'var(--text)',
                               cursor: 'pointer',
                               whiteSpace: 'nowrap'
                             }}
@@ -805,7 +805,7 @@ export default function HomeOptionsModal({
 
                       {dashboardServer.refereePin && (
                         <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
                             {t('options.refereePin')}:
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -827,10 +827,10 @@ export default function HomeOptionsModal({
                                 padding: '10px 14px',
                                 fontSize: '12px',
                                 fontWeight: 600,
-                                background: copyFeedback === 'PIN' ? '#22c55e' : 'rgba(255,255,255,0.1)',
+                                background: copyFeedback === 'PIN' ? '#22c55e' : 'var(--panel)',
                                 border: 'none',
                                 borderRadius: '6px',
-                                color: '#fff',
+                                color: 'var(--text)',
                                 cursor: 'pointer',
                                 whiteSpace: 'nowrap'
                               }}
@@ -846,7 +846,7 @@ export default function HomeOptionsModal({
                         <div style={{ background: '#fff', padding: 6, borderRadius: 6, display: 'inline-block' }}>
                           <QRCodeSVG value={`${dashboardServer.connectionUrl}/referee`} size={120} level="L" />
                         </div>
-                        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '6px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '6px' }}>
                           {t('options.scanToOpen')}
                         </div>
                       </div>
@@ -860,22 +860,22 @@ export default function HomeOptionsModal({
                       border: '1px solid rgba(239, 68, 68, 0.3)',
                       borderRadius: '6px',
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.8)'
+                      color: 'var(--text)'
                     }}>
                       <strong style={{ color: '#ef4444' }}>{t('options.serverNotDetected')}</strong>
                       <br />
-                      {t('options.startBackendServer')} <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
+                      {t('options.startBackendServer')} <code style={{ background: 'var(--panel-2)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
                     </div>
                   )}
                 </div>
 
                 {/* Connected Dashboards */}
                 <div style={{
-                  background: 'rgba(255,255,255,0.05)',
+                  background: 'var(--panel-2)',
                   borderRadius: '8px',
                   padding: '16px'
                 }}>
-                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>
                     {t('options.connectedDashboards')}
                   </div>
                   <div style={{
@@ -884,24 +884,24 @@ export default function HomeOptionsModal({
                     justifyContent: 'center',
                     gap: '12px',
                     padding: '16px',
-                    background: 'rgba(0,0,0,0.2)',
+                    background: 'var(--panel-2)',
                     borderRadius: '8px'
                   }}>
                     <span style={{
                       fontSize: '36px',
                       fontWeight: 700,
-                      color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'rgba(255,255,255,0.3)'
+                      color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'var(--muted)'
                     }}>
                       {dashboardServer.dashboardCount || 0}
                     </span>
                     <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>
+                      <div style={{ fontSize: '14px', color: 'var(--text)' }}>
                         {dashboardServer.dashboardCount === 1
                           ? t('options.dashboardConnected', { count: dashboardServer.dashboardCount || 0 })
                           : t('options.dashboardsConnected', { count: dashboardServer.dashboardCount || 0 })}
                       </div>
                       {dashboardServer.dashboardCount > 0 && (
-                        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
                           {t('options.refereeBenchCount', { refereeCount: dashboardServer.refereeCount || 0, benchCount: dashboardServer.benchCount || 0 })}
                         </div>
                       )}
@@ -919,7 +919,7 @@ export default function HomeOptionsModal({
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '8px 12px',
-                            background: 'rgba(255,255,255,0.03)',
+                            background: 'var(--panel-2)',
                             borderRadius: '6px',
                             marginBottom: idx < dashboardServer.connectedDashboards.length - 1 ? '6px' : 0
                           }}
@@ -936,7 +936,7 @@ export default function HomeOptionsModal({
                               {client.team && ` (${client.team})`}
                             </span>
                           </div>
-                          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'monospace' }}>
                             {client.ip}
                           </span>
                         </div>
@@ -1013,7 +1013,7 @@ export default function HomeOptionsModal({
               {backup.hasFileSystemAccess ? (
                 // Chrome/Edge: Folder selection
                 <div style={{ marginTop: '8px' }}>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
                     {t('options.backupLocation')}: {backup.backupDirName || t('common.notSet')}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1064,11 +1064,11 @@ export default function HomeOptionsModal({
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#fbbf24', marginBottom: '4px' }}>
                       {t('options.limitedBrowserSupport')}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', lineHeight: '1.4' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: '1.4' }}>
                       {t('options.limitedBrowserSupportDesc')}
                     </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
                     {t('options.eventBasedAutoDownload')}:
                   </div>
                   <div style={{
@@ -1076,7 +1076,7 @@ export default function HomeOptionsModal({
                     gridTemplateColumns: 'repeat(2, 1fr)',
                     gap: '6px',
                     fontSize: '11px',
-                    color: 'rgba(255,255,255,0.7)'
+                    color: 'var(--muted)'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ color: '#22c55e' }}>✓</span> {t('options.setStart')}
@@ -1091,14 +1091,14 @@ export default function HomeOptionsModal({
                       <span style={{ color: '#22c55e' }}>✓</span> {t('options.timeoutCalled')}
                     </div>
                   </div>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '8px' }}>
                     {t('options.eventBasedNote')}
                   </div>
                 </div>
               )}
 
               {backup.lastBackup && (
-                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
                   {t('options.lastBackup')}: {backup.lastBackup.toLocaleTimeString()}
                 </div>
               )}
@@ -1124,9 +1124,9 @@ export default function HomeOptionsModal({
                     padding: '8px 16px',
                     fontSize: '13px',
                     fontWeight: 600,
-                    background: backup.isBackingUp ? 'rgba(255, 255, 255, 0.1)' : 'rgba(34, 197, 94, 0.2)',
-                    color: backup.isBackingUp ? 'rgba(255,255,255,0.5)' : '#22c55e',
-                    border: backup.isBackingUp ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(34, 197, 94, 0.4)',
+                    background: backup.isBackingUp ? 'var(--panel)' : 'rgba(34, 197, 94, 0.2)',
+                    color: backup.isBackingUp ? 'var(--muted)' : '#22c55e',
+                    border: backup.isBackingUp ? '1px solid var(--border)' : '1px solid rgba(34, 197, 94, 0.4)',
                     borderRadius: '6px',
                     cursor: backup.isBackingUp ? 'not-allowed' : 'pointer'
                   }}
@@ -1143,7 +1143,7 @@ export default function HomeOptionsModal({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.currentVersion')}</div>
-                <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>
                   v{currentVersion}
                 </div>
               </div>
@@ -1154,9 +1154,9 @@ export default function HomeOptionsModal({
                   padding: '8px 16px',
                   fontSize: '13px',
                   fontWeight: 600,
-                  background: updateCheck.checking ? 'rgba(255, 255, 255, 0.1)' : 'rgba(59, 130, 246, 0.2)',
-                  color: updateCheck.checking ? 'rgba(255,255,255,0.5)' : '#3b82f6',
-                  border: updateCheck.checking ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(59, 130, 246, 0.4)',
+                  background: updateCheck.checking ? 'var(--panel)' : 'rgba(59, 130, 246, 0.2)',
+                  color: updateCheck.checking ? 'var(--muted)' : '#3b82f6',
+                  border: updateCheck.checking ? '1px solid var(--border)' : '1px solid rgba(59, 130, 246, 0.4)',
                   borderRadius: '6px',
                   cursor: updateCheck.checking ? 'not-allowed' : 'pointer'
                 }}
@@ -1180,7 +1180,7 @@ export default function HomeOptionsModal({
                   <div style={{ fontSize: '13px', fontWeight: 600, color: '#22c55e' }}>
                     {t('options.updateAvailable')}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>
                     {currentVersion} → {newVersion}
                   </div>
                 </div>
@@ -1209,7 +1209,7 @@ export default function HomeOptionsModal({
                 border: '1px solid rgba(59, 130, 246, 0.2)',
                 borderRadius: '6px',
                 fontSize: '13px',
-                color: 'rgba(255,255,255,0.8)'
+                color: 'var(--text)'
               }}>
                 {t('options.latestVersion')}
               </div>
@@ -1295,7 +1295,7 @@ export default function HomeOptionsModal({
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'rgba(0, 0, 0, 0.7)',
+              background: 'rgba(15, 23, 42, 0.5)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1305,18 +1305,18 @@ export default function HomeOptionsModal({
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                background: '#1f2937',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '24px',
                 maxWidth: '400px',
                 width: '90%'
               }}
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: '#fff' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
                 {t('options.confirmClearCache')}
               </h3>
-              <p style={{ margin: '0 0 16px 0', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 16px 0', color: 'var(--text)', lineHeight: 1.5 }}>
                 {clearCacheModal.type === 'all'
                   ? t('options.clearAllWarning')
                   : t('options.clearCacheWarning')
@@ -1334,9 +1334,9 @@ export default function HomeOptionsModal({
                     padding: '10px 20px',
                     fontSize: '14px',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel)',
                     color: 'var(--text)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '8px',
                     cursor: 'pointer'
                   }}
@@ -1366,7 +1366,7 @@ export default function HomeOptionsModal({
         <div style={{
           marginTop: '24px',
           paddingTop: '24px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          borderTop: '1px solid var(--border)',
           textAlign: 'center',
           fontSize: '12px',
           color: 'var(--muted)'
@@ -1388,7 +1388,7 @@ export default function HomeOptionsModal({
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
+            background: 'rgba(15, 23, 42, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1398,7 +1398,7 @@ export default function HomeOptionsModal({
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: '#1f2937',
+              background: 'var(--panel)',
               borderRadius: '12px',
               padding: '24px',
               minWidth: '360px',
@@ -1420,7 +1420,7 @@ export default function HomeOptionsModal({
                   height: '28px',
                   borderRadius: '6px',
                   border: 'none',
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
                   fontSize: '16px',
                   cursor: 'pointer',
@@ -1442,11 +1442,11 @@ export default function HomeOptionsModal({
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '10px 12px',
-                    background: 'rgba(255, 255, 255, 0.05)',
+                    background: 'var(--panel-2)',
                     borderRadius: '8px'
                   }}
                 >
-                  <span style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>{t(`options.keybindingLabels.${key}`)}</span>
+                  <span style={{ fontSize: '14px', color: 'var(--text)' }}>{t(`options.keybindingLabels.${key}`)}</span>
                   <button
                     onClick={() => {
                       if (editingKey === key) {
@@ -1474,9 +1474,9 @@ export default function HomeOptionsModal({
                       fontSize: '13px',
                       fontWeight: 600,
                       fontFamily: 'monospace',
-                      background: editingKey === key ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)',
-                      color: editingKey === key ? '#60a5fa' : '#fff',
-                      border: editingKey === key ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.2)',
+                      background: editingKey === key ? 'rgba(59, 130, 246, 0.3)' : 'var(--panel)',
+                      color: editingKey === key ? '#60a5fa' : 'var(--text)',
+                      border: editingKey === key ? '1px solid #3b82f6' : '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       minWidth: '80px',
@@ -1509,9 +1509,9 @@ export default function HomeOptionsModal({
                   padding: '8px 16px',
                   fontSize: '13px',
                   fontWeight: 600,
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '6px',
                   cursor: 'pointer'
                 }}
