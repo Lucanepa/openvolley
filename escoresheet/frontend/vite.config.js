@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -61,13 +62,17 @@ export default defineConfig({
     include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks']
   },
   resolve: {
-    dedupe: ['react', 'react-dom', 'dexie']
+    dedupe: ['react', 'react-dom', 'dexie'],
+    alias: {
+      '@': resolve(__dirname, 'src')
+    }
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion)
   },
   plugins: [
     react(),
+    tailwindcss(),
     // Rewrite clean URLs to their index.html files
     {
       name: 'html-rewrite-handler',
