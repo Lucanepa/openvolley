@@ -29074,11 +29074,14 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         )
 
         if (homeLineupSet && awayLineupSet) {
-          // Both lineups are set - check for pending penalty sanctions in this set
+          // Both lineups are set - check for pending penalty sanctions in this set.
+          // Both a misconduct 'penalty' AND a 'delay_penalty' award a point to the
+          // opponent (FIVB 16.2.3 / 21.3), so both must be granted here — the
+          // delay_penalty deferral (confirmSanction) promises this point.
           const pendingPenalties = allEvents.filter(e =>
             e.type === 'sanction' &&
             e.setIndex === setIndex &&
-            e.payload?.type === 'penalty'
+            (e.payload?.type === 'penalty' || e.payload?.type === 'delay_penalty')
           )
 
           // Check if points have already been awarded for these penalties
