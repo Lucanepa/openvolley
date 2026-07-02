@@ -30,6 +30,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction } from '../domain/sanctions'
+import { rotateLineup as rotateLineupPure } from '../domain/rotation'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -4573,21 +4574,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     [data?.set, data?.events, getCurrentLineup, showAlert]
   )
 
-  // Rotate lineup: II→I, III→II, IV→III, V→IV, VI→V, I→VI
-  const rotateLineup = useCallback((lineup) => {
-    if (!lineup) return null
-
-    const newLineup = {
-      I: lineup.II || '',
-      II: lineup.III || '',
-      III: lineup.IV || '',
-      IV: lineup.V || '',
-      V: lineup.VI || '',
-      VI: lineup.I || ''
-    }
-
-    return newLineup
-  }, [])
+  // Rotate lineup one position clockwise (II→I, III→II, …, I→VI).
+  // Delegates to the pure, unit-tested domain/rotation implementation.
+  const rotateLineup = useCallback((lineup) => rotateLineupPure(lineup), [])
 
   const handlePoint = useCallback(
     async (side, skipConfirmation = false) => {
