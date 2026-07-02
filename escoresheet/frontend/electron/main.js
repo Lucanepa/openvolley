@@ -53,10 +53,24 @@ function createWindow() {
     mainWindow = null
   })
 
-  // Handle external links
+  // Handle external links — only hand http(s) URLs to the OS handler so a
+  // renderer cannot invoke arbitrary schemes (file:, custom protocol handlers).
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    require('electron').shell.openExternal(url)
+    try {
+      const scheme = new URL(url).protocol
+      if (scheme === 'https:' || scheme === 'http:') {
+        require('electron').shell.openExternal(url)
+      }
+    } catch { /* invalid URL — ignore */ }
     return { action: 'deny' }
+  })
+
+  // Block in-window navigation to remote content (defense in depth).
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const isDevServer = isDev && url.startsWith('http://localhost:5173')
+    if (!isDevServer && !url.startsWith('file://')) {
+      event.preventDefault()
+    }
   })
 }
 
