@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { apiFrom, apiAuth } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
 
@@ -255,7 +255,7 @@ export function AuthProvider({ children }) {
     }
   }, [user])
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     profile,
     loading,
@@ -269,7 +269,7 @@ export function AuthProvider({ children }) {
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }
+  }), [user, profile, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 
 // Context for sharing scale state across all components
 const ScaleContext = createContext(null)
@@ -21,13 +21,27 @@ export function ScaleProvider({ children }) {
 
   const [viewport, setViewport] = useState(getViewportSize)
 
+  // Throttle resize to one update per animation frame so rapid resize/scroll
+  // (mobile browser chrome, orientation) doesn't trigger a re-render storm
+  // across every scaled consumer (Scoreboard, MatchSetup).
+  const rafRef = useRef(0)
   useEffect(() => {
-    const handleResize = () => setViewport(getViewportSize())
+    const handleResize = () => {
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0
+        setViewport((prev) => {
+          const next = getViewportSize()
+          return (prev.width === next.width && prev.height === next.height) ? prev : next
+        })
+      })
+    }
     window.addEventListener('resize', handleResize)
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', handleResize)
     }
     return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
       window.removeEventListener('resize', handleResize)
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', handleResize)
@@ -70,7 +84,7 @@ export function ScaleProvider({ children }) {
     localStorage.removeItem('userScaleOverride')
   }, [])
 
-  const value = {
+  const value = useMemo(() => ({
     scaleFactor,
     vmin,
     viewport,
@@ -78,7 +92,7 @@ export function ScaleProvider({ children }) {
     userScaleOverride,
     setUserScaleOverride,
     resetToAuto
-  }
+  }), [scaleFactor, vmin, viewport, viewportVmin, userScaleOverride, setUserScaleOverride, resetToAuto])
 
   return (
     <ScaleContext.Provider value={value}>
