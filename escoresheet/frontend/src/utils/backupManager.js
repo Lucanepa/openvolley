@@ -9,30 +9,14 @@ import { db } from '../db/db'
 import { apiFrom, apiStorage } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getApiUrl } from './backendConfig'
+import { filterMatchPayload } from '../db/matchRepository'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
 const BACKUP_DIR_HANDLE_KEY = 'backup_directory_handle'
 
-// Valid Supabase matches table columns - used to filter restore payloads
-// to prevent sending invalid columns that don't exist in the schema
-const VALID_MATCH_COLUMNS = [
-  'external_id', 'game_n', 'game_pin', 'status', 'connections', 'connection_pins',
-  'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
-  'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
-  'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
-  'set_results', 'final_score', 'sanctions', 'winner'
-]
-
-/**
- * Filter match payload to only include valid Supabase columns
- * Prevents sync errors from old backup formats with invalid column names
- */
-function filterMatchPayload(payload) {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key]) => VALID_MATCH_COLUMNS.includes(key))
-  )
-}
+// filterMatchPayload now imported from ../db/matchRepository (shared). The local
+// copy here was missing `sport_type`, silently dropping it from restore payloads.
 
 /**
  * Check if File System Access API is available
