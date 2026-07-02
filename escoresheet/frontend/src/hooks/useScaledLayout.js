@@ -6,7 +6,7 @@ import { useScale } from '../contexts/ScaleContext'
  * Design Philosophy:
  * - Content uses the vmin() function which converts vmin-like values to pixels
  * - The scale factor adjusts all sizes proportionally
- * - User can adjust the scale with a dropdown (50%-400%)
+ * - User can adjust the scale with a dropdown (50%-150%, clamped in ScaleContext)
  * - Scale state is shared across all components via context
  *
  * Usage:
