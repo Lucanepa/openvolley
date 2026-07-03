@@ -1,0 +1,81 @@
+name: Build Desktop App (Tauri)
+
+# Builds the offline scoretable desktop app (Rust/Tauri) for Windows + Linux.
+# Trigger manually, or push a tag like `desktop-v1.20.0`.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+          - os: ubuntu-22.04
+            label: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: escoresheet/frontend/src-tauri -> target
+
+      - name: Install frontend dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+
+      # Native canvas is not needed for the desktop bundle and can break installs.
+      - name: Remove canvas native dependency
+        working-directory: escoresheet/frontend
+        shell: bash
+        run: |
+          if [ -d "node_modules/canvas" ]; then rm -rf node_modules/canvas; fi
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        with:
+          projectPath: escoresheet/frontend
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: escoresheet-desktop-${{ matrix.label }}
+          path: |
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.exe
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.msi
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.AppImage
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.deb
+          retention-days: 14
+          if-no-files-found: warn
