@@ -1694,21 +1694,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
 
-      // Clear all matches from server when component unmounts (scoreboard is source of truth)
+      // Close the socket cleanly on unmount, but DO NOT broadcast
+      // 'clear-all-matches' here: Scoreboard unmounts whenever the scorer opens a
+      // sub-view (Manual Adjustments / Match Setup / Coin Toss / Match End) for the
+      // SAME live match, and wiping the relay each time blanks every connected
+      // referee/bench/livescore dashboard for up to 30s. Relay clearing is a
+      // deliberate match-close action owned by App (which keeps dashboards
+      // connected when navigating — see App.jsx "Don't clear matches when going to
+      // home"). Removing it also stops a relay wipe when this effect re-runs.
       if (wsRef.current) {
         const ws = wsRef.current
         const readyState = ws.readyState
-
-        // Clear all matches from server before closing
-        if (readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({
-              type: 'clear-all-matches'
-            }))
-          } catch (err) {
-            // Silently ignore errors during cleanup
-          }
-        }
 
         // Remove all handlers first to prevent error logs
         try {
@@ -1733,7 +1729,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         wsRef.current = null
       }
     }
-  }, [matchId, serverStatus])
+    // Depend on the wsPort PRIMITIVE, not the serverStatus object: the Electron
+    // poll replaces serverStatus every 5s with a fresh object, which otherwise
+    // re-runs this effect every tick — tearing down + rebuilding the socket
+    // continuously for the whole match. Mirrors the App.jsx WS effect.
+  }, [matchId, serverStatus?.wsPort])
 
   // Sync when connection settings change (e.g., referee dashboard enabled/disabled)
   useEffect(() => {
