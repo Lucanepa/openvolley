@@ -1,8 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import UserButton from '../auth/UserButton'
 import { useScaledLayout } from '../../hooks/useScaledLayout'
+
+const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
+const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
 
 function detectDesktopOS() {
   const ua = navigator.userAgent
@@ -11,6 +14,12 @@ function detectDesktopOS() {
   if (/Mac OS X|Macintosh/i.test(ua)) return 'macos'
   if (/Linux/i.test(ua)) return 'linux'
   return null
+}
+
+// Already running inside the Electron/Tauri desktop app — no point offering the download.
+function isInsideDesktopApp() {
+  return typeof window !== 'undefined' &&
+    (!!window.electronAPI || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__)
 }
 
 export default function HomePage({
@@ -33,6 +42,33 @@ export default function HomePage({
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const { scaleFactor } = useScaledLayout()
   const desktopOS = useMemo(() => detectDesktopOS(), [])
+  const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
+
+  // Direct installer links from the newest desktop-v* GitHub release. On any
+  // failure (offline, rate limit, no release yet) the section falls back to
+  // linking the releases page.
+  const [desktopApp, setDesktopApp] = useState(null)
+  useEffect(() => {
+    if (!desktopOS || inDesktopApp) return
+    let cancelled = false
+    fetch(RELEASES_API)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(releases => {
+        if (cancelled || !Array.isArray(releases)) return
+        const rel = releases.find(r => !r.draft && !r.prerelease && r.tag_name?.startsWith('desktop-v'))
+        if (!rel) return
+        const asset = ext => rel.assets?.find(a => a.name?.toLowerCase().endsWith(ext))?.browser_download_url
+        setDesktopApp({
+          version: rel.tag_name.replace('desktop-v', ''),
+          exe: asset('.exe'),
+          appimage: asset('.appimage'),
+          deb: asset('.deb'),
+          page: rel.html_url
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [desktopOS, inDesktopApp])
 
   // Scaled dimensions
   const buttonWidth = `${Math.round(400 * scaleFactor)}px`
@@ -329,41 +365,74 @@ export default function HomePage({
           </button>
         </div>
 
-        {/* Download Server - desktop only */}
-        {desktopOS && (
-          <div style={{ marginTop: gap, textAlign: 'center' }}>
-            <a
-              href="https://github.com/Lucanepa/openvolley/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: tinyGap,
-                padding: smallPadding,
-                fontSize: `${Math.round(14 * scaleFactor)}px`,
-                color: 'var(--muted)',
-                background: 'none',
-                border: '1px solid var(--border)',
-                borderRadius: smallBorderRadius,
-                textDecoration: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--text)'
-                e.currentTarget.style.borderColor = 'var(--muted)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--muted)'
-                e.currentTarget.style.borderColor = 'var(--border)'
-              }}
-            >
-              <span>↓</span>
-              <span>{t('home.downloadServer', 'Download Server — Referee without internet')}</span>
-            </a>
-          </div>
-        )}
+        {/* Downloads (desktop app + server) - desktop browsers only, hidden inside the app */}
+        {desktopOS && !inDesktopApp && (() => {
+          const downloadLinkStyle = {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: tinyGap,
+            padding: smallPadding,
+            fontSize: `${Math.round(14 * scaleFactor)}px`,
+            color: 'var(--muted)',
+            background: 'none',
+            border: '1px solid var(--border)',
+            borderRadius: smallBorderRadius,
+            textDecoration: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }
+          const hoverIn = (e) => {
+            e.currentTarget.style.color = 'var(--text)'
+            e.currentTarget.style.borderColor = 'var(--muted)'
+          }
+          const hoverOut = (e) => {
+            e.currentTarget.style.color = 'var(--muted)'
+            e.currentTarget.style.borderColor = 'var(--border)'
+          }
+          const appHref =
+            (desktopOS === 'windows' && desktopApp?.exe) ||
+            (desktopOS === 'linux' && desktopApp?.appimage) ||
+            desktopApp?.page || RELEASES_PAGE
+          const appLabel = t('home.downloadApp', 'Download the desktop app — offline scoretable + tablet server') +
+            (desktopApp?.version ? ` (v${desktopApp.version})` : '')
+          return (
+            <div style={{ marginTop: gap, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: tinyGap }}>
+              <a
+                href={appHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={downloadLinkStyle}
+                onMouseEnter={hoverIn}
+                onMouseLeave={hoverOut}
+              >
+                <span>↓</span>
+                <span>{appLabel}</span>
+              </a>
+              {desktopOS === 'linux' && desktopApp?.deb && (
+                <a
+                  href={desktopApp.deb}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ ...downloadLinkStyle, border: 'none', padding: 0, fontSize: `${Math.round(12 * scaleFactor)}px` }}
+                  onMouseEnter={hoverIn}
+                  onMouseLeave={hoverOut}
+                >
+                  {t('home.downloadAppDeb', 'or get the .deb package')}
+                </a>
+              )}
+              <a
+                href={RELEASES_PAGE}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...downloadLinkStyle, border: 'none', padding: 0, fontSize: `${Math.round(12 * scaleFactor)}px` }}
+                onMouseEnter={hoverIn}
+                onMouseLeave={hoverOut}
+              >
+                {t('home.downloadServer', 'Download Server — Referee without internet')}
+              </a>
+            </div>
+          )
+        })()}
 
         {/* Support & Feedback Modal */}
         <SupportFeedbackModal
