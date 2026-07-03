@@ -40,6 +40,8 @@ function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
   return entry.count > maxRequests
 }
 
+// unref: this module is imported by vite.config.js for every vite command,
+// so without it this interval keeps `vite build` from ever exiting.
 setInterval(() => {
   const now = Date.now()
   for (const [ip, entry] of rateLimitMap.entries()) {
@@ -47,7 +49,7 @@ setInterval(() => {
       rateLimitMap.delete(ip)
     }
   }
-}, 5 * 60 * 1000)
+}, 5 * 60 * 1000).unref()
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
 
