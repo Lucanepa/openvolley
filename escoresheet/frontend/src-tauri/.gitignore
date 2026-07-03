@@ -1,0 +1,5 @@
+# Rust / Cargo build output
+/target/
+
+# Tauri-generated schemas (regenerated on build)
+/gen/schemas

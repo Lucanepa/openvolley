@@ -291,4 +291,25 @@ db.version(16).stores({
   })
 })
 
+// Request DURABLE storage for the origin. All match state lives in IndexedDB;
+// without this the browser treats it as "best-effort" and may evict it under
+// storage pressure or inactivity (e.g. iOS/Safari ~7-day eviction), which could
+// silently lose a completed-but-unsynced match on a match tablet. Feature-detected
+// and non-blocking — safe to call once at module load in every entry that uses db.
+export async function requestPersistentStorage() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) return null
+    if (await navigator.storage.persisted?.()) return true
+    const granted = await navigator.storage.persist()
+    if (!granted) console.warn('[db] Persistent storage not granted — IndexedDB is evictable')
+    return granted
+  } catch (e) {
+    console.warn('[db] persist() request failed:', e?.message)
+    return null
+  }
+}
+
+// Fire once on load (does not block the module).
+requestPersistentStorage()
+
 

@@ -41,6 +41,8 @@ interface StandardSetProps {
   
   // Ref for measuring position box width
   positionBoxRef?: React.RefObject<HTMLDivElement>;
+  // True when the set is finished — enables T-bar finalization of unused numbers
+  setFinished?: boolean;
 }
 
 // PointBox is now imported from ./PointsCol/87umn
@@ -296,7 +298,8 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     rightMarkedPoints = [],
     rightCircledPoints = [],
     rightServiceRounds = [],
-    positionBoxRef
+    positionBoxRef,
+    setFinished = false
 }) => {
   // A/B labels are always shown based on position (left=A when not swapped, left=B when swapped)
   const leftTeamLabel = isSwapped ? 'B' : 'A';
@@ -376,13 +379,13 @@ export const StandardSet: React.FC<StandardSetProps> = ({
             {/* Team Left Block - fixed width to match header */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                 <TeamServiceGrid lineup={leftLineup} subs={leftSubs} startsReceiving={leftServes === 'R'} positionBoxRef={positionBoxRef} serviceRounds={leftServiceRounds} />
-                <PointsColumn timeouts={leftTimeouts} markedPoints={leftMarkedPoints} circledPoints={leftCircledPoints} maxScore={maxScore} />
+                <PointsColumn timeouts={leftTimeouts} markedPoints={leftMarkedPoints} circledPoints={leftCircledPoints} maxScore={maxScore} setFinished={setFinished} finalScore={typeof leftPoints === 'number' ? leftPoints : Number(leftPoints) || 0} />
             </div>
 
             {/* Team Right Block - fixed width to match header */}
              <div className="flex shrink-0" style={{ width: '75mm' }}>
                 <TeamServiceGrid lineup={rightLineup} subs={rightSubs} startsReceiving={rightServes === 'R'} serviceRounds={rightServiceRounds} />
-                <PointsColumn isLast={true} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} maxScore={maxScore} />
+                <PointsColumn isLast={true} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} maxScore={maxScore} setFinished={setFinished} finalScore={typeof rightPoints === 'number' ? rightPoints : Number(rightPoints) || 0} />
             </div>
         </div>
     </div>

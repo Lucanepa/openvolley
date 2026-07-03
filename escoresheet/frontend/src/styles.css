@@ -28,10 +28,14 @@
 }
 
 :root {
-  --bg: #0b1220;
-  --panel: #111827;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
+  /* LIGHT MODE palette (dark mode removed). Surfaces are light, text is dark;
+     accent/danger stay semantic. Kept in sync with the shadcn tokens in tailwind.css. */
+  --bg: #f1f5f9;        /* app background (slate-100) */
+  --panel: #ffffff;     /* cards / panels */
+  --panel-2: #f8fafc;   /* subtle raised surface (slate-50) */
+  --text: #0f172a;      /* primary text (slate-900) */
+  --muted: #64748b;     /* secondary text (slate-500) */
+  --border: #e2e8f0;    /* hairline borders (slate-200) */
   --accent: #22c55e;
   --danger: #ef4444;
   /* Scale factor for dynamic sizing - set by JavaScript */
@@ -67,6 +71,15 @@ body {
   box-sizing: border-box;
 }
 
+/* Accessibility: visible keyboard-focus rings. Uses :focus-visible so it only
+   shows for keyboard/AT users, not mouse clicks. !important overrides the many
+   inline `outline: none` styles. Interactive elements only. */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--ring, #3b82f6) !important;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .app-root {
   position: relative;
   height: 100vh;
@@ -76,6 +89,13 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Respect iOS/Android notches & rounded corners (0 on non-notch devices).
+     Requires viewport-fit=cover on the viewport meta. box-sizing:border-box
+     (global) keeps the shell at 100dvh while insetting content. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* Prevent scroll when on home page */
@@ -450,7 +470,7 @@ button {
 }
 
 button.secondary {
-  background: #334155;
+  background: var(--panel-2);
   color: var(--text);
 }
 
@@ -890,7 +910,7 @@ button:disabled {
   align-items: center;
   gap: 0.76cqw;
   padding: 0.6cqw 0.85cqw;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: calc(12px * var(--scale-factor));
   position: sticky;
@@ -1053,7 +1073,7 @@ button:disabled {
   font-size: 2.55cqw;
   font-weight: 800;
   letter-spacing: 0.1cqw;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   padding: 0.6cqw 1.3cqw;
   border-radius: 0.6cqw;
   border: 0.1cqw solid rgba(255, 255, 255, 0.1);
@@ -1070,7 +1090,7 @@ button:disabled {
 
 .roster-panel {
   padding: calc(20px * var(--scale-factor));
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--panel-2);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: calc(12px * var(--scale-factor));
 }
@@ -1096,13 +1116,13 @@ button:disabled {
 .roster-table {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--panel-2);
   border-radius: calc(8px * var(--scale-factor));
   overflow: hidden;
 }
 
 .roster-table thead {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border-bottom: calc(2px * var(--scale-factor)) solid rgba(255, 255, 255, 0.1);
 }
 
@@ -1287,7 +1307,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: calc(10px * var(--scale-factor));
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: calc(12px * var(--scale-factor));
   padding: calc(10px * var(--scale-factor));
@@ -1359,7 +1379,7 @@ button:disabled {
   flex-direction: column;
   gap: calc(16px * var(--scale-factor));
   padding: calc(16px * var(--scale-factor));
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: calc(12px * var(--scale-factor));
   flex-shrink: 1;
@@ -1402,7 +1422,7 @@ button:disabled {
   font-size: calc(61px * var(--scale-factor));
   font-weight: 800;
   letter-spacing: 0;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -1583,7 +1603,7 @@ button:disabled {
   left: -2cqh;
   width: 5.5cqh;
   height: 5.5cqh;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 1cqh;
   display: flex;
@@ -1600,7 +1620,7 @@ button:disabled {
   left: -2cqh;
   width: 5.5cqh;
   height: 5.5cqh;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--panel);
   border: 1px solid var(--accent);
   border-radius: 1cqh;
   display: flex;
@@ -1699,7 +1719,7 @@ button.start-rally-button {
   flex-wrap: wrap;
   justify-content: center;
   padding: 12px 16px;
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
 }
@@ -1723,7 +1743,7 @@ button.start-rally-button {
 .remarks-area {
   width: 100%;
   min-height: 120px;
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   color: var(--text);
@@ -1780,7 +1800,7 @@ button.start-rally-button {
 }
 
 .game-card {
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--panel-2);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 20px;
@@ -1791,7 +1811,7 @@ button.start-rally-button {
 }
 
 .game-card:hover {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border-color: rgba(255, 255, 255, 0.15);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -1897,7 +1917,7 @@ button.start-rally-button {
 
 /* Match Status Banner */
 .connection-status-banner {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 12px 20px;
@@ -1940,7 +1960,7 @@ button.start-rally-button {
 }
 
 .match-status-banner {
-  background: rgba(15, 23, 42, 0.8);
+  background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 16px 20px;

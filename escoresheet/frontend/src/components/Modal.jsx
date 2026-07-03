@@ -21,7 +21,7 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
   if (position === 'custom') {
     return (
       <div
-        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex, pointerEvents:'auto' }}
+        style={{ position:'fixed', inset:0, background:'rgba(15, 23, 42, 0.5)', zIndex, pointerEvents:'auto' }}
         onClick={handleBackdropClick}
         onTouchStart={handleBackdropClick}
       >
@@ -30,8 +30,8 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
             width: modalWidth,
             maxHeight:'90vh',
             overflow:'auto',
-            background:'#111827',
-            border:'1px solid rgba(255,255,255,.08)',
+            background:'var(--panel)',
+            border:'1px solid var(--border)',
             borderRadius: borderRadius,
             padding: padding,
             ...customStyle
@@ -52,8 +52,8 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
 
   // Regular positioning
   const overlayStyle = position === 'left' || position === 'right'
-    ? { position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'flex', alignItems:'center', justifyContent: position === 'left' ? 'flex-start' : 'flex-end', zIndex, padding: '0 20px' }
-    : { position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex }
+    ? { position:'fixed', inset:0, background:'rgba(15, 23, 42, 0.5)', display:'flex', alignItems:'center', justifyContent: position === 'left' ? 'flex-start' : 'flex-end', zIndex, padding: '0 20px' }
+    : { position:'fixed', inset:0, background:'rgba(15, 23, 42, 0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex }
 
   return (
     <div
@@ -62,7 +62,7 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
       onTouchStart={handleBackdropClick}
     >
       <div
-        style={{ width: modalWidth, maxHeight:'90vh', overflow:'auto', background:'#111827', border:'1px solid rgba(255,255,255,.08)', borderRadius: borderRadius, padding: padding }}
+        style={{ width: modalWidth, maxHeight:'90vh', overflow:'auto', background:'var(--panel)', border:'1px solid var(--border)', borderRadius: borderRadius, padding: padding }}
         onClick={(e) => e.stopPropagation()}
       >
         {(title || !hideCloseButton) && (

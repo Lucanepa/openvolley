@@ -724,7 +724,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       events
     }
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-    const url = action === 'preview' ? `/scoresheet?matchId=${matchId}` : `/scoresheet?matchId=${matchId}&action=${action}`
+    const url = action === 'preview' ? `/scoresheet/?matchId=${matchId}` : `/scoresheet/?matchId=${matchId}&action=${action}`
     window.open(url, '_blank', 'width=1600,height=1200')
   }
 
@@ -809,7 +809,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       })
 
       // Open scoresheet window with getBlob action
-      window.open(`/scoresheet?matchId=${matchId}&action=getBlob`, '_blank', 'width=1600,height=1200')
+      window.open(`/scoresheet/?matchId=${matchId}&action=getBlob`, '_blank', 'width=1600,height=1200')
 
       // Wait for PDF blob - but don't let failures block approval
       let pdfResult = null
@@ -1450,14 +1450,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
           <div style={{
-            background: '#111827',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             maxWidth: '400px',
@@ -1492,7 +1492,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1542,7 +1542,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
+            background: 'rgba(15, 23, 42, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1582,6 +1582,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           </div>
           <button
             onClick={() => setZoomedSection(null)}
+            aria-label={t('common.close', 'Close')}
             style={{
               position: 'absolute',
               top: '20px',
@@ -1628,6 +1629,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <textarea
               ref={remarksTextareaRef}
               placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
+              aria-label={t('matchEnd.remarks', 'Remarks')}
               value={remarksText}
               onChange={e => setRemarksText(e.target.value)}
               style={{
@@ -1691,14 +1693,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
           <div style={{
-            background: 'var(--bg-secondary, #1f2937)',
+            background: 'var(--bg-secondary, var(--panel))',
             borderRadius: '12px',
             padding: '24px',
             maxWidth: '400px',
@@ -1720,6 +1722,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <input
               type="password"
               value={unlockPasswordInput}
+              aria-label={t('matchEnd.unlockPasswordPlaceholder', 'Password')}
               onChange={e => {
                 setUnlockPasswordInput(e.target.value)
                 setUnlockPasswordError('')
@@ -1737,9 +1740,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 borderRadius: '6px',
                 border: unlockPasswordError
                   ? '2px solid #ef4444'
-                  : '1px solid rgba(255, 255, 255, 0.2)',
-                background: 'rgba(0, 0, 0, 0.3)',
-                color: '#fff',
+                  : '1px solid var(--border)',
+                background: 'var(--panel-2)',
+                color: 'var(--text)',
                 boxSizing: 'border-box',
                 marginBottom: '8px'
               }}

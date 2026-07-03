@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import './tailwind.css'
 import './styles.css'
 import { initLogger } from './utils/logger'
 import './i18n'  // Initialize i18n for localization

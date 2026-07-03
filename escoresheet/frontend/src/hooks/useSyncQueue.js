@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef, useState } from 'react'
 import { db } from '../db/db'
 import { apiFrom } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
+import { VALID_MATCH_COLUMNS, filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 
 /**
  * ============================================================================
@@ -54,21 +55,9 @@ const MAX_DEPENDENCY_RETRIES = 10
 // Auto-retry interval for errored jobs (every 30 seconds when online)
 const ERROR_RETRY_INTERVAL = 30000
 
-// Valid Supabase matches table columns - filters out invalid columns from old backup formats
-const VALID_MATCH_COLUMNS = [
-  'external_id', 'game_n', 'game_pin', 'status', 'connections', 'connection_pins',
-  'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
-  'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
-  'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
-  'set_results', 'final_score', 'sanctions', 'winner', 'sport_type'
-]
-
-// Filter match payload to only include valid Supabase columns
-function filterMatchPayload(payload) {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key]) => VALID_MATCH_COLUMNS.includes(key))
-  )
-}
+// VALID_MATCH_COLUMNS + filterMatchPayload now live in ../db/matchRepository
+// (imported above) so useSyncQueue, useSequentialSync, and backupManager share
+// one definition instead of drifting copies.
 
 /**
  * Internal helper: Reset errored jobs to queued (non-hook function)
@@ -198,8 +187,8 @@ export function useSyncQueue() {
       if (job.resource === 'match' && job.action === 'update') {
         const { id, ...updateData } = job.payload
 
-        // JSONB columns that need to be merged instead of replaced
-        const jsonbColumns = ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
+        // JSONB columns that need to be merged instead of replaced (shared list)
+        const jsonbColumns = JSONB_COLUMNS
         const hasJsonbColumns = jsonbColumns.some(col => updateData[col] !== undefined)
 
         let finalUpdateData = { ...updateData }
@@ -545,15 +534,19 @@ export function useSyncQueue() {
 
   const flush = useCallback(async () => {
     if (busy.current) return
-    if (!hasBackend()) {
-      setSyncStatus('online_no_supabase')
-      return
-    }
-
-    const connected = await checkSupabaseConnection()
-    if (!connected) return
-
+    // Claim the flush BEFORE any await so two concurrent callers cannot both
+    // pass the guard and double-process the same jobs (restore/delete are not
+    // idempotent). Reset happens in the finally below.
+    busy.current = true
     try {
+      if (!hasBackend()) {
+        setSyncStatus('online_no_supabase')
+        return
+      }
+
+      const connected = await checkSupabaseConnection()
+      if (!connected) return
+
       const queued = await db.sync_queue.where('status').equals('queued').toArray()
 
       if (queued.length === 0) {
@@ -561,7 +554,6 @@ export function useSyncQueue() {
         return
       }
 
-      busy.current = true
       setSyncStatus('syncing')
       console.log(`[SyncQueue] Processing ${queued.length} queued items`)
 

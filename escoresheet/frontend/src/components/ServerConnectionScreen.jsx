@@ -163,10 +163,10 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
                 marginLeft: 12,
                 padding: '4px 12px',
                 fontSize: 12,
-                background: 'rgba(255,255,255,0.1)',
+                background: 'var(--panel)',
                 border: 'none',
                 borderRadius: 4,
-                color: '#fff',
+                color: 'var(--text)',
                 cursor: 'pointer'
               }}
             >
@@ -181,19 +181,19 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0a0a0a',
+      background: 'var(--bg)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       padding: 24,
-      color: '#fff'
+      color: 'var(--text)'
     }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 600, textAlign: 'center' }}>
           {t('connection.connectToServer', 'Connect to Server')}
         </h2>
-        <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', margin: '0 0 32px', fontSize: 14 }}>
+        <p style={{ color: 'var(--muted)', textAlign: 'center', margin: '0 0 32px', fontSize: 14 }}>
           {t('connection.selectServerMode', 'Choose how to connect')}
         </p>
 
@@ -204,10 +204,10 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
           style={{
             width: '100%',
             padding: '16px 20px',
-            background: mode === 'online' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.05)',
+            background: mode === 'online' ? 'rgba(59, 130, 246, 0.15)' : 'var(--panel-2)',
             border: '1px solid rgba(59, 130, 246, 0.3)',
             borderRadius: 12,
-            color: '#fff',
+            color: 'var(--text)',
             cursor: status === 'checking' ? 'wait' : 'pointer',
             textAlign: 'left',
             marginBottom: 12,
@@ -221,7 +221,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
             <div style={{ fontWeight: 600, fontSize: 16 }}>
               {t('connection.onlineAutomatic', 'Online (automatic)')}
             </div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
               backend.openvolley.app
             </div>
           </div>
@@ -230,7 +230,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
         {/* Local server */}
         <div style={{
           padding: '16px 20px',
-          background: mode === 'local' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.05)',
+          background: mode === 'local' ? 'rgba(16, 185, 129, 0.15)' : 'var(--panel-2)',
           border: '1px solid rgba(16, 185, 129, 0.3)',
           borderRadius: 12,
           marginBottom: 12
@@ -241,7 +241,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
               <div style={{ fontWeight: 600, fontSize: 16 }}>
                 {t('connection.localServer', 'Local server')}
               </div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                 {t('connection.enterIPAddress', 'Enter IP address')}
               </div>
             </div>
@@ -249,6 +249,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               type="text"
+              aria-label={t('connection.enterIPAddress', 'Enter IP address')}
               value={localAddress}
               onChange={(e) => { setLocalAddress(e.target.value); setMode('local') }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleLocalConnect() }}
@@ -256,10 +257,10 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
               style={{
                 flex: 1,
                 padding: '10px 14px',
-                background: 'rgba(0,0,0,0.3)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: 8,
-                color: '#fff',
+                color: 'var(--text)',
                 fontSize: 14,
                 fontFamily: 'monospace',
                 outline: 'none'
@@ -270,7 +271,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
               disabled={!localAddress.trim() || status === 'checking'}
               style={{
                 padding: '10px 16px',
-                background: localAddress.trim() ? '#10b981' : 'rgba(255,255,255,0.1)',
+                background: localAddress.trim() ? '#10b981' : 'var(--border)',
                 border: 'none',
                 borderRadius: 8,
                 color: '#fff',
@@ -294,10 +295,10 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
               width: '100%',
               marginTop: 12,
               padding: '10px 16px',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--panel-2)',
+              border: '1px solid var(--border)',
               borderRadius: 8,
-              color: 'rgba(255,255,255,0.6)',
+              color: 'var(--muted)',
               cursor: 'pointer',
               textAlign: 'center',
               fontSize: 13
@@ -305,7 +306,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
           >
             {t('connection.lastUsed', 'Last used')}: {lastServer.label || lastServer.url}
             {lastServer.url !== (getBackendOverride() || getBackendUrl()) && (
-              <span style={{ marginLeft: 8, color: 'rgba(255,255,255,0.3)' }}>
+              <span style={{ marginLeft: 8, color: 'var(--muted)' }}>
                 ({new URL(lastServer.url).host})
               </span>
             )}

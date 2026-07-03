@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
+import { validateManualSubstitution } from '../domain/substitutions'
 import { apiFrom } from '../lib/apiClient'
 
 // Standard volleyball team colors - keys for translation
@@ -397,6 +398,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }, [matchId, allEvents, recordChange])
 
   const addSubstitution = useCallback((team, setIndex, playerOut, playerIn, scoreA, scoreB) => {
+    // Enforce substitution legality (FIVB 15.5-15.6) — manual entries previously
+    // bypassed all checks. Pure + unit-tested (domain/substitutions).
+    const { legal, reason } = validateManualSubstitution(allEvents, team, setIndex, playerOut, playerIn)
+    if (!legal) {
+      showAlert(reason, 'error')
+      return false
+    }
     const newEvent = {
       id: `new_${Date.now()}`,
       matchId,
@@ -411,7 +419,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     recordChange('event', 'add', null, newEvent, `Added ${team} substitution: #${playerOut} → #${playerIn}`)
     setNewEvents(prev => [...prev, newEvent])
     setAllEvents(prev => [...prev, newEvent].sort((a, b) => (a.seq || 0) - (b.seq || 0)))
-  }, [matchId, allEvents, recordChange])
+    return true
+  }, [matchId, allEvents, recordChange, showAlert])
 
   const addSanction = useCallback((team, setIndex, sanctionType, playerType, playerNumber, scoreA, scoreB, role = null) => {
     const newEvent = {
@@ -468,7 +477,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const handleAddSubSubmit = useCallback(() => {
     const { team, setIndex, playerOut, playerIn, scoreA, scoreB } = newSubData
     if (!playerOut || !playerIn) return
-    addSubstitution(team, setIndex, parseInt(playerOut, 10), parseInt(playerIn, 10), scoreA, scoreB)
+    const ok = addSubstitution(team, setIndex, parseInt(playerOut, 10), parseInt(playerIn, 10), scoreA, scoreB)
+    if (ok === false) return // illegal — keep the modal open so the scorer can correct
     setShowAddSub(false)
     setNewSubData({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
   }, [newSubData, addSubstitution])
@@ -742,7 +752,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
   if (!data) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#fff' }}>
+      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text)' }}>
         {t('common.loading', 'Loading...')}
       </div>
     )
@@ -758,22 +768,22 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const inputStyle = {
     padding: '8px 12px',
     fontSize: '14px',
-    background: 'rgba(0,0,0,0.3)',
-    border: '1px solid rgba(255,255,255,0.2)',
+    background: 'var(--panel-2)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
-    color: '#fff'
+    color: 'var(--text)'
   }
 
   const labelStyle = {
     display: 'block',
     marginBottom: '6px',
     fontSize: '13px',
-    color: 'rgba(255,255,255,0.6)'
+    color: 'var(--muted)'
   }
 
   const cardStyle = {
     padding: '16px',
-    background: 'rgba(255,255,255,0.05)',
+    background: 'var(--panel-2)',
     borderRadius: '8px',
     marginBottom: '16px'
   }
@@ -805,8 +815,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: '#1a1a2e',
-      color: '#fff',
+      backgroundColor: 'var(--panel)',
+      color: 'var(--text)',
       overflow: 'auto',
       zIndex: 1000
     }}>
@@ -816,8 +826,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '16px 24px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-        background: 'rgba(0,0,0,0.3)'
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--panel-2)'
       }}>
         <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>
           {t('manualAdjustmentsEditor.title', 'Manual Adjustments')}
@@ -829,9 +839,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               padding: '10px 20px',
               fontSize: '14px',
               fontWeight: 600,
-              background: 'rgba(255,255,255,0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'var(--panel)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
               borderRadius: '8px',
               cursor: 'pointer'
             }}
@@ -846,7 +856,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               padding: '10px 20px',
               fontSize: '14px',
               fontWeight: 600,
-              background: changes.length > 0 ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' : 'rgba(255,255,255,0.1)',
+              background: changes.length > 0 ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' : 'var(--panel)',
               color: '#fff',
               border: 'none',
               borderRadius: '8px',
@@ -864,8 +874,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         display: 'flex',
         gap: '4px',
         padding: '12px 24px',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
-        background: 'rgba(0,0,0,0.2)',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--panel-2)',
         flexWrap: 'wrap'
       }}>
         {tabs.map(tab => (
@@ -878,7 +888,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               fontSize: '14px',
               fontWeight: 600,
               background: activeTab === tab.id ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-              color: activeTab === tab.id ? '#60a5fa' : 'rgba(255,255,255,0.6)',
+              color: activeTab === tab.id ? '#60a5fa' : 'var(--muted)',
               border: activeTab === tab.id ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
               borderRadius: '8px',
               cursor: 'pointer',
@@ -895,7 +905,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         {/* ==================== SCORES TAB ==================== */}
         {activeTab === 'scores' && (
           <div>
-            <h2 style={{ fontSize: '18px', marginBottom: '20px', color: 'rgba(255,255,255,0.9)' }}>
+            <h2 style={{ fontSize: '18px', marginBottom: '20px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.setScores', 'Set Scores')}
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -912,25 +922,27 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 >
                   <div style={{ fontWeight: 600 }}>{t('common.setIndex', { index: set.index })}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.6)', minWidth: '80px' }}>
+                    <span style={{ color: 'var(--muted)', minWidth: '80px' }}>
                       {editedHomeTeam?.name || t('common.home')}:
                     </span>
                     <input
                       type="number"
                       value={set.homePoints}
                       onChange={(e) => updateSetScore(set.id, 'homePoints', e.target.value)}
+                      aria-label={`${editedHomeTeam?.name || t('common.home')} ${t('manualAdjustmentsEditor.points', 'points')}`}
                       style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600 }}
                     />
                   </div>
-                  <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>vs</div>
+                  <div style={{ textAlign: 'center', color: 'var(--muted)' }}>vs</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.6)', minWidth: '80px' }}>
+                    <span style={{ color: 'var(--muted)', minWidth: '80px' }}>
                       {editedAwayTeam?.name || t('common.away')}:
                     </span>
                     <input
                       type="number"
                       value={set.awayPoints}
                       onChange={(e) => updateSetScore(set.id, 'awayPoints', e.target.value)}
+                      aria-label={`${editedAwayTeam?.name || t('common.away')} ${t('manualAdjustmentsEditor.points', 'points')}`}
                       style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600 }}
                     />
                   </div>
@@ -952,7 +964,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       }}
                       style={{ width: '18px', height: '18px' }}
                     />
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
                   </label>
                 </div>
               ))}
@@ -968,7 +980,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div>
                 {/* Team Info */}
                 <div style={cardStyle}>
-                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
                     {t('manualAdjustmentsEditor.teamAHome', 'Team A (Home)')}
                   </h2>
@@ -979,6 +991,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         type="text"
                         value={editedHomeTeam?.name || ''}
                         onChange={(e) => updateTeam('name', e.target.value, true)}
+                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -989,6 +1002,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         maxLength={8}
                         value={editedHomeTeam?.shortName || ''}
                         onChange={(e) => updateTeam('shortName', e.target.value.toUpperCase(), true)}
+                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short Name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -997,17 +1011,18 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       <select
                         value={editedHomeTeam?.color || '#3b82f6'}
                         onChange={(e) => updateTeam('color', e.target.value, true)}
-                        style={{ ...inputStyle, width: '100%', background: '#1a1a2e' }}
+                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
+                        style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
                         {TEAM_COLORS.map(c => (
-                          <option key={c.value} value={c.value} style={{ background: '#1a1a2e', color: c.value === '#f8fafc' ? '#888' : '#fff' }}>
+                          <option key={c.value} value={c.value} style={{ background: 'var(--panel)', color: c.value === '#f8fafc' ? '#888' : 'var(--text)' }}>
                             {t(`manualAdjustmentsEditor.colors.${c.key}`, c.key)} ■
                           </option>
                         ))}
                       </select>
                       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedHomeTeam?.color || '#3b82f6', border: '1px solid rgba(255,255,255,0.3)' }} />
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
+                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedHomeTeam?.color || '#3b82f6', border: '1px solid var(--border)' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
                       </div>
                     </div>
                     <div>
@@ -1022,7 +1037,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div>
                 {/* Team Info */}
                 <div style={cardStyle}>
-                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
                     {t('manualAdjustmentsEditor.teamBAway', 'Team B (Away)')}
                   </h2>
@@ -1033,6 +1048,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         type="text"
                         value={editedAwayTeam?.name || ''}
                         onChange={(e) => updateTeam('name', e.target.value, false)}
+                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -1043,6 +1059,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         maxLength={8}
                         value={editedAwayTeam?.shortName || ''}
                         onChange={(e) => updateTeam('shortName', e.target.value.toUpperCase(), false)}
+                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short Name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -1051,17 +1068,18 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       <select
                         value={editedAwayTeam?.color || '#ef4444'}
                         onChange={(e) => updateTeam('color', e.target.value, false)}
-                        style={{ ...inputStyle, width: '100%', background: '#1a1a2e' }}
+                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
+                        style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
                         {TEAM_COLORS.map(c => (
-                          <option key={c.value} value={c.value} style={{ background: '#1a1a2e', color: c.value === '#f8fafc' ? '#888' : '#fff' }}>
+                          <option key={c.value} value={c.value} style={{ background: 'var(--panel)', color: c.value === '#f8fafc' ? '#888' : 'var(--text)' }}>
                             {t(`manualAdjustmentsEditor.colors.${c.key}`, c.key)} ■
                           </option>
                         ))}
                       </select>
                       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedAwayTeam?.color || '#ef4444', border: '1px solid rgba(255,255,255,0.3)' }} />
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
+                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedAwayTeam?.color || '#ef4444', border: '1px solid var(--border)' }} />
+                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
                       </div>
                     </div>
                   </div>
@@ -1076,7 +1094,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             {/* Timeouts Section */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.timeouts', 'Timeouts')} ({timeoutEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
@@ -1084,14 +1102,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '4px' }}>
                     <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
                     <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
-                    <button onClick={() => deleteEvent(event.id)} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
+                    <button onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
                 <button onClick={() => setShowAddTimeout(true)} style={{ ...buttonStyle, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none' }}>
                   {t('manualAdjustmentsEditor.addTimeout', '+ Add Timeout')}
                 </button>
@@ -1100,7 +1118,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Substitutions Section */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.substitutions', 'Substitutions')} ({substitutionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
@@ -1115,15 +1133,15 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '13px' }}>
                       #{event.payload?.playerOut} → #{event.payload?.playerIn}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <button onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, padding: '4px 8px', fontSize: '10px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
                 <button onClick={() => setShowAddSub(true)} style={{ ...buttonStyle, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none' }}>
                   {t('manualAdjustmentsEditor.addSubstitution', '+ Add Substitution')}
                 </button>
@@ -1132,7 +1150,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Sanctions Section */}
             <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.allSanctions', 'All Sanctions')} ({sanctionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
@@ -1150,12 +1168,12 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '13px' }}>
                       {event.payload?.playerType}: #{event.payload?.playerNumber}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       Score: {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <span />
                     <button onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, padding: '4px 8px', fontSize: '10px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
               </div>
@@ -1168,7 +1186,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             {/* Match Details */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.matchDetails', 'Match Details')}
               </h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1178,6 +1196,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     type="text"
                     value={editedMatch.hall || ''}
                     onChange={(e) => updateMatchInfo('hall', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.hall', 'Hall')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1187,6 +1206,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     type="text"
                     value={editedMatch.city || ''}
                     onChange={(e) => updateMatchInfo('city', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.city', 'City')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1196,6 +1216,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     type="text"
                     value={editedMatch.league || ''}
                     onChange={(e) => updateMatchInfo('league', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.league', 'League')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1205,6 +1226,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     type="text"
                     value={editedMatch.championshipType || ''}
                     onChange={(e) => updateMatchInfo('championshipType', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.championshipType', 'Championship Type')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1214,6 +1236,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     type="text"
                     value={editedMatch.gameN || editedMatch.gameNumber || ''}
                     onChange={(e) => updateMatchInfo('gameN', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.gameNumber', 'Game Number')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1222,6 +1245,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <select
                     value={editedMatch.status || 'ended'}
                     onChange={(e) => updateMatchInfo('status', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.status', 'Status')}
                     style={{ ...inputStyle, width: '100%' }}
                   >
                     <option value="setup">{t('manualAdjustmentsEditor.statusSetup', 'Setup')}</option>
@@ -1236,6 +1260,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <select
                     value={editedMatch.match_type_2 || 'M'}
                     onChange={(e) => updateMatchInfo('match_type_2', e.target.value)}
+                    aria-label={t('manualAdjustmentsEditor.matchTypeGender', 'Match Type (Gender)')}
                     style={{ ...inputStyle, width: '100%' }}
                   >
                     <option value="M">{t('manualAdjustmentsEditor.genderMen', 'Men')}</option>
@@ -1249,6 +1274,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     type="datetime-local"
                     value={editedMatch.scheduledAt ? new Date(editedMatch.scheduledAt).toISOString().slice(0, 16) : ''}
                     onChange={(e) => updateMatchInfo('scheduledAt', e.target.value ? new Date(e.target.value).toISOString() : null)}
+                    aria-label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled Date/Time')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1257,19 +1283,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Match Officials */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'rgba(255,255,255,0.9)' }}>
+              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
                 {t('manualAdjustmentsEditor.matchOfficials', 'Match Officials')}
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* 1st Referee */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
                       value={editedOfficials.ref1.firstName}
                       onChange={(e) => updateOfficial('ref1', 'firstName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1277,6 +1304,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
                       value={editedOfficials.ref1.lastName}
                       onChange={(e) => updateOfficial('ref1', 'lastName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1284,12 +1312,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.country', 'Country')}
                       value={editedOfficials.ref1.country}
                       onChange={(e) => updateOfficial('ref1', 'country', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.ref1.dob)}
                       onChange={(e) => updateOfficial('ref1', 'dob', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1297,13 +1327,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* 2nd Referee */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
                       value={editedOfficials.ref2.firstName}
                       onChange={(e) => updateOfficial('ref2', 'firstName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1311,6 +1342,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
                       value={editedOfficials.ref2.lastName}
                       onChange={(e) => updateOfficial('ref2', 'lastName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1318,12 +1350,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.country', 'Country')}
                       value={editedOfficials.ref2.country}
                       onChange={(e) => updateOfficial('ref2', 'country', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.ref2.dob)}
                       onChange={(e) => updateOfficial('ref2', 'dob', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1331,13 +1365,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Scorer */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
                       value={editedOfficials.scorer.firstName}
                       onChange={(e) => updateOfficial('scorer', 'firstName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1345,12 +1380,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
                       value={editedOfficials.scorer.lastName}
                       onChange={(e) => updateOfficial('scorer', 'lastName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.scorer.dob)}
                       onChange={(e) => updateOfficial('scorer', 'dob', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1358,13 +1395,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Assistant Scorer */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
                       value={editedOfficials.asstScorer.firstName}
                       onChange={(e) => updateOfficial('asstScorer', 'firstName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1372,12 +1410,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
                       value={editedOfficials.asstScorer.lastName}
                       onChange={(e) => updateOfficial('asstScorer', 'lastName', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.asstScorer.dob)}
                       onChange={(e) => updateOfficial('asstScorer', 'dob', e.target.value)}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1395,7 +1435,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
               {changes.map((change, i) => (
-                <div key={i} style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)' }}>
+                <div key={i} style={{ fontSize: '12px', color: 'var(--muted)' }}>
                   • {change.description}
                 </div>
               ))}
@@ -1412,24 +1452,24 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
             </h3>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '4px' }}>
                 {t('manualAdjustmentsEditor.target', 'Target')}: {showAddSanction.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
                 {showAddSanction.playerType === 'player' && ` - ${t('manualAdjustmentsEditor.player', 'Player')} #${showAddSanction.playerNumber}`}
                 {showAddSanction.playerType === 'bench_official' && ` - ${showAddSanction.role}`}
@@ -1441,6 +1481,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newSanctionData.type}
                   onChange={(e) => setNewSanctionData(prev => ({ ...prev, type: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction Type')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (Yellow)')}</option>
@@ -1454,6 +1495,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newSanctionData.setIndex}
                   onChange={(e) => setNewSanctionData(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
+                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
@@ -1469,6 +1511,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={newSanctionData.scoreA}
                   onChange={(e) => setNewSanctionData(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1480,6 +1523,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={newSanctionData.scoreB}
                   onChange={(e) => setNewSanctionData(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1493,9 +1537,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1529,20 +1573,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.editSanction', 'Edit Sanction')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1551,6 +1595,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={editingSanction.type || 'warning'}
                   onChange={(e) => setEditingSanction(prev => ({ ...prev, type: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction Type')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (Yellow)')}</option>
@@ -1564,6 +1609,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={editingSanction.setIndex}
                   onChange={(e) => setEditingSanction(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
+                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
@@ -1579,6 +1625,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={editingSanction.scoreA || 0}
                   onChange={(e) => setEditingSanction(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1590,6 +1637,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={editingSanction.scoreB || 0}
                   onChange={(e) => setEditingSanction(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1600,9 +1648,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1636,20 +1684,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '400px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1658,6 +1706,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newTimeoutData.team}
                   onChange={(e) => setNewTimeoutData(prev => ({ ...prev, team: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.team', 'Team')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="home">{editedHomeTeam?.name || t('common.home')}</option>
@@ -1669,6 +1718,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newTimeoutData.setIndex}
                   onChange={(e) => setNewTimeoutData(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
+                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
@@ -1684,6 +1734,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={newTimeoutData.scoreA}
                   onChange={(e) => setNewTimeoutData(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1695,6 +1746,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={newTimeoutData.scoreB}
                   onChange={(e) => setNewTimeoutData(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1708,9 +1760,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1744,20 +1796,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '450px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1766,6 +1818,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newSubData.team}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, team: e.target.value, playerOut: '', playerIn: '' }))}
+                  aria-label={t('manualAdjustmentsEditor.team', 'Team')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="home">{editedHomeTeam?.name || t('common.home')}</option>
@@ -1777,6 +1830,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newSubData.setIndex}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
+                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
@@ -1789,6 +1843,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newSubData.playerOut}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, playerOut: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player Out')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1802,6 +1857,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={newSubData.playerIn}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, playerIn: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player In')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1818,6 +1874,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={newSubData.scoreA}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1829,6 +1886,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={newSubData.scoreB}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1842,9 +1900,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}
@@ -1882,26 +1940,26 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
+          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
           <div style={{
-            background: '#1a1a2e',
+            background: 'var(--panel)',
             borderRadius: '12px',
             padding: '24px',
             minWidth: '450px',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: '1px solid var(--border)'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#fff' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
               {t('manualAdjustmentsEditor.editSubstitutionTitle', 'Edit Substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>{t('manualAdjustmentsEditor.team', 'Team')}</label>
-                <div style={{ ...inputStyle, padding: '8px 12px', background: 'rgba(255,255,255,0.05)' }}>
+                <div style={{ ...inputStyle, padding: '8px 12px', background: 'var(--panel-2)' }}>
                   {editingSub.payload?.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
                 </div>
               </div>
@@ -1910,6 +1968,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={editingSub.setIndex}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
+                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   {editedSets.map(s => (
@@ -1922,6 +1981,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={editingSub.playerOut || editingSub.payload?.playerOut || ''}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, playerOut: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player Out')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1935,6 +1995,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <select
                   value={editingSub.playerIn || editingSub.payload?.playerIn || ''}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, playerIn: e.target.value }))}
+                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player In')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1951,6 +2012,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={editingSub.scoreA ?? editingSub.stateSnapshot?.pointsA ?? editingSub.stateSnapshot?.scoreA ?? 0}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1962,6 +2024,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   max="99"
                   value={editingSub.scoreB ?? editingSub.stateSnapshot?.pointsB ?? editingSub.stateSnapshot?.scoreB ?? 0}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
+                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </div>
@@ -1972,9 +2035,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}

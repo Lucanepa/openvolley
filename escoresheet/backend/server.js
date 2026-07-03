@@ -125,6 +125,46 @@ const ALLOWED_COLUMNS = {
   teams: ['id']
 }
 
+// Columns/JSONB keys that must NEVER be returned to a client. Match PINs are the
+// only access-control gate for referee/bench, so they are stripped from every
+// select response (validation happens server-side via /api/match/validate-connection-pin).
+const SECRET_COLUMNS = {
+  matches: ['game_pin', 'connection_pins'],
+  events: ['game_pin'],
+  match_live_state: ['game_pin', 'connection_pins']
+}
+
+// Tables that are per-user private: every action requires a valid token AND is
+// constrained to rows the caller owns (user_id === auth user id).
+const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
+
+// Columns a client may never write (privilege / identity fields).
+const WRITE_DENYLIST = {
+  profiles: ['roles', 'user_id', 'id'],
+  user_matches: ['user_id', 'id']
+}
+
+// Secret fields on an in-memory match object that must never reach a client.
+const MATCH_SECRET_FIELDS = ['refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin', 'connection_pins', 'connectionPins', 'game_pin', 'gamePin']
+function stripMatchSecrets(match) {
+  if (!match || typeof match !== 'object') return match
+  const clean = { ...match }
+  for (const k of MATCH_SECRET_FIELDS) delete clean[k]
+  return clean
+}
+
+function redactSecrets(table, rows) {
+  const secrets = SECRET_COLUMNS[table]
+  if (!secrets || rows == null) return rows
+  const scrub = (row) => {
+    if (row && typeof row === 'object') {
+      for (const k of secrets) delete row[k]
+    }
+    return row
+  }
+  return Array.isArray(rows) ? rows.map(scrub) : scrub(rows)
+}
+
 
 // Option 1: Resend API (recommended - uses HTTPS, never blocked)
 // RESEND_API_KEY
@@ -418,22 +458,14 @@ function isValidPin(pin) {
 }
 
 // --- Client IP extraction (X-Forwarded-For hardening) ---
+// SECURITY: client-supplied X-Forwarded-For is never trusted. Only the
+// Cloudflare CF-Connecting-IP header (set by the proxy, stripped from client
+// input) is honored, and only in cloud mode. In every other mode we key on the
+// real socket address so per-IP rate limits cannot be defeated by spoofing XFF.
 function getClientIp(req) {
-  // In cloud mode behind Cloudflare, use CF-Connecting-IP (unspoofable by clients)
   if (IS_CLOUD) {
     const cfIp = req.headers['cf-connecting-ip']
     if (cfIp) return cfIp.trim()
-  }
-  // In local mode, use socket address directly (no reverse proxy on LAN)
-  if (IS_LOCAL) {
-    const addr = req.socket.remoteAddress || 'unknown'
-    return addr.replace('::ffff:', '')
-  }
-  // Fallback: X-Forwarded-For leftmost entry (per spec)
-  const xff = req.headers['x-forwarded-for']
-  if (xff) {
-    const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
-    if (parts.length > 0) return parts[0]
   }
   const addr = req.socket.remoteAddress || 'unknown'
   return addr.replace('::ffff:', '')
@@ -701,26 +733,35 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:3000'
 ]
 
+// Returns { origin, credentials } — credentials are only allowed when the
+// origin is explicitly trusted, never when we reflect an arbitrary/`*` origin.
+function isTrustedOrigin(origin) {
+  if (!origin) return false
+  if (ALLOWED_ORIGINS.includes(origin)) return true
+  if (/^https:\/\/[a-z0-9-]+\.openvolley\.app$/.test(origin)) return true
+  // LAN origins for the local/standalone server (http on private ranges + localhost)
+  if (!IS_CLOUD && /^https?:\/\/(localhost|127\.0\.0\.1|(\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(origin)) return true
+  return false
+}
+
 function getCorsOrigin(req) {
   const origin = req.headers.origin
-  // In local mode, reflect the requesting origin for LAN access.
-  // Intentionally permissive — local server is on a trusted network.
-  if (!IS_CLOUD) return origin || '*'
-  // In production, check against allowed list
-  if (origin && ALLOWED_ORIGINS.includes(origin)) return origin
-  // Allow any openvolley.app subdomain
-  if (origin && origin.match(/^https:\/\/[a-z0-9-]+\.openvolley\.app$/)) return origin
-  return ALLOWED_ORIGINS[0] // Default to main domain
+  if (isTrustedOrigin(origin)) return { origin, credentials: true }
+  // Non-cloud (LAN) fallback: reflect the origin for read access, but WITHOUT
+  // credentials so a malicious site cannot make credentialed cross-origin calls.
+  if (!IS_CLOUD) return { origin: origin || '*', credentials: false }
+  return { origin: ALLOWED_ORIGINS[0], credentials: false }
 }
 
 // Create HTTP server
 const server = createServer((req, res) => {
   // Enable CORS with proper origin handling
-  const corsOrigin = getCorsOrigin(req)
-  res.setHeader('Access-Control-Allow-Origin', corsOrigin)
+  const cors = getCorsOrigin(req)
+  res.setHeader('Access-Control-Allow-Origin', cors.origin)
+  res.setHeader('Vary', 'Origin')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  if (cors.credentials) res.setHeader('Access-Control-Allow-Credentials', 'true')
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
@@ -729,18 +770,21 @@ const server = createServer((req, res) => {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   }
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
-  // Content Security Policy — cloud mode only (local mode needs permissive access for LAN IPs)
-  if (IS_CLOUD) {
-    res.setHeader('Content-Security-Policy', [
-      "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "connect-src 'self' wss://*.openvolley.app https://*.supabase.co",
-      "font-src 'self'",
-      "frame-ancestors 'none'"
-    ].join('; '))
-  }
+  // Content Security Policy — emitted in all modes so LAN/self-hosted deployments
+  // are not left without a policy. connect-src is widened in non-cloud mode so LAN
+  // clients can reach arbitrary same-network IPs.
+  const connectSrc = IS_CLOUD
+    ? "connect-src 'self' wss://*.openvolley.app https://*.supabase.co"
+    : "connect-src 'self' ws: wss: http: https:"
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    connectSrc,
+    "font-src 'self'",
+    "frame-ancestors 'none'"
+  ].join('; '))
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200)
@@ -792,33 +836,35 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ data: [], error: 'pocketbase_not_available' }))
       return
     }
-    try {
-      const gameNumber = url.searchParams.get('game_number')
-      const sportType = url.searchParams.get('sport_type')
-      const filterParams = {}
-      const filterParts = []
-      if (gameNumber) {
-        filterParts.push('game_number = {:gn}')
-        filterParams.gn = parseInt(gameNumber)
+    ;(async () => {
+      try {
+        const gameNumber = url.searchParams.get('game_number')
+        const sportType = url.searchParams.get('sport_type')
+        const filterParams = {}
+        const filterParts = []
+        if (gameNumber) {
+          filterParts.push('game_number = {:gn}')
+          filterParams.gn = parseInt(gameNumber)
+        }
+        if (sportType && /^(indoor|beach)$/.test(sportType)) {
+          filterParts.push('sport_type = {:st}')
+          filterParams.st = sportType
+        }
+        const filter = filterParts.length
+          ? pbClient.filter(filterParts.join(' && '), filterParams)
+          : undefined
+        const records = await pbClient.collection('matches').getFullList({
+          sort: '-updated_at',
+          filter,
+          fields: 'id,match_id,external_id,status,sport_type,game_number,updated_at,home_team,away_team,sets'
+        })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: records }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: [], error: err.message }))
       }
-      if (sportType && /^(indoor|beach)$/.test(sportType)) {
-        filterParts.push('sport_type = {:st}')
-        filterParams.st = sportType
-      }
-      const filter = filterParts.length
-        ? pbClient.filter(filterParts.join(' && '), filterParams)
-        : undefined
-      const records = await pbClient.collection('matches').getFullList({
-        sort: '-updated_at',
-        filter,
-        fields: 'id,match_id,external_id,status,sport_type,game_number,updated_at,home_team,away_team,sets'
-      })
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: records }))
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: [], error: err.message }))
-    }
+    })()
     return
   }
 
@@ -841,21 +887,23 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ data: null, error: 'match_id required' }))
       return
     }
-    try {
-      const record = await pbClient.collection('matches').getFirstListItem(
-        pbClient.filter('match_id = {:id}', { id: String(matchId) })
-      )
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ data: record }))
-    } catch (err) {
-      if (err.status === 404) {
-        res.writeHead(404, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: null, error: 'Match not found' }))
-      } else {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: null, error: err.message }))
+    ;(async () => {
+      try {
+        const record = await pbClient.collection('matches').getFirstListItem(
+          pbClient.filter('match_id = {:id}', { id: String(matchId) })
+        )
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: record }))
+      } catch (err) {
+        if (err.status === 404) {
+          res.writeHead(404, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: 'Match not found' }))
+        } else {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: err.message }))
+        }
       }
-    }
+    })()
     return
   }
 
@@ -928,7 +976,8 @@ const server = createServer((req, res) => {
         if (matchFound) {
           console.log(`[API] PIN validated for ${type}: match ${matchFound.id}`)
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: true, match: matchFound }))
+          // Strip all PINs from the response — knowing one PIN must not disclose the others.
+          res.end(JSON.stringify({ success: true, match: stripMatchSecrets(matchFound) }))
         } else {
           console.log(`[API] PIN validation failed for ${type}`)
           res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -1042,7 +1091,8 @@ const server = createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: true,
-        match: matchData.match,
+        // Strip PINs — this endpoint is unauthenticated and PINs are the connection gate.
+        match: stripMatchSecrets(matchData.match),
         homeTeam,
         awayTeam,
         homePlayers: matchData.homePlayers || [],
@@ -1495,7 +1545,7 @@ Generated by eScoresheet
 
   // Get available leagues for official matches (flat list)
   if (url.pathname === '/api/official-matches/leagues' && req.method === 'GET') {
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
+    const clientIp = getClientIp(req)
     if (isRateLimited(clientIp, ICAL_RATE_LIMIT_MAX, 'ical')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Too many requests' }))
@@ -1529,6 +1579,111 @@ Generated by eScoresheet
   }
 
   // ==================== SUPABASE PROXY ENDPOINTS ====================
+
+  // Server-side connection-PIN validation. Replaces the old client-side check
+  // that shipped every match's connection_pins to the browser. The PIN is
+  // compared server-side and never returned to the client.
+  if (url.pathname === '/api/match/validate-connection-pin' && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ success: false, error: 'Too many attempts. Please wait a minute before trying again.' }))
+      return
+    }
+    if (!supabaseAdmin) {
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, error: 'Supabase not configured on server' }))
+      return
+    }
+    ;(async () => {
+      try {
+        const { pin, type = 'referee' } = await readJsonBody(req)
+        if (!isValidPin(pin)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid PIN format' }))
+          return
+        }
+        // enabledKey null => no enable flag gates this PIN type (upload PINs)
+        const TYPE_CONFIG = {
+          referee: { pinKey: 'referee', enabledKey: 'referee_enabled' },
+          bench_home: { pinKey: 'bench_home', enabledKey: 'home_bench_enabled' },
+          bench_away: { pinKey: 'bench_away', enabledKey: 'away_bench_enabled' },
+          upload_home: { pinKey: 'upload_home', enabledKey: null },
+          upload_away: { pinKey: 'upload_away', enabledKey: null }
+        }
+        const cfg = TYPE_CONFIG[type]
+        if (!cfg) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
+          return
+        }
+        const pinStr = String(pin).trim()
+        const { data, error } = await supabaseAdmin
+          .from('matches')
+          .select('id, external_id, game_n, status, scheduled_at, home_team, away_team, connections, connection_pins')
+          .in('status', ['setup', 'live'])
+          .eq('sport_type', 'indoor')
+        if (error) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Validation failed' }))
+          return
+        }
+        const matchRow = (data || []).find(m => {
+          const pins = m.connection_pins || {}
+          const conns = m.connections || {}
+          const expected = pins[cfg.pinKey] != null ? String(pins[cfg.pinKey]).trim() : ''
+          if (!expected || (cfg.enabledKey && !conns[cfg.enabledKey])) return false
+          // constant-time compare of equal-length PINs
+          const a = Buffer.from(pinStr, 'utf8'); const b = Buffer.from(expected, 'utf8')
+          return a.length === b.length && timingSafeEqual(a, b)
+        })
+        if (!matchRow) {
+          res.writeHead(404, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid PIN code' }))
+          return
+        }
+        const conns = matchRow.connections || {}
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({
+          success: true,
+          match: {
+            id: matchRow.external_id || matchRow.id,
+            gameNumber: matchRow.game_n || matchRow.external_id,
+            status: matchRow.status,
+            scheduledAt: matchRow.scheduled_at,
+            refereeConnectionEnabled: conns.referee_enabled,
+            homeTeam: matchRow.home_team?.name || 'Home',
+            awayTeam: matchRow.away_team?.name || 'Away',
+            homeTeamColor: matchRow.home_team?.color,
+            awayTeamColor: matchRow.away_team?.color
+          }
+        }))
+      } catch (err) {
+        console.error('[validate-connection-pin] Error:', err.message)
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
+      }
+    })()
+    return
+  }
+
+  // Helper: require a valid Supabase bearer token. Writes a 401 and returns null on failure.
+  const requireAuthUser = async () => {
+    const authHeader = req.headers['authorization']
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    if (!token) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Authentication required' }))
+      return null
+    }
+    const { data, error } = await supabaseAdmin.auth.getUser(token)
+    if (error || !data?.user) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid or expired token' }))
+      return null
+    }
+    return data.user
+  }
 
   // Helper: read JSON body
   const readJsonBody = (req, maxSize = MAX_BODY_SIZE) => new Promise((resolve, reject) => {
@@ -1568,25 +1723,42 @@ Generated by eScoresheet
           return
         }
 
-        // Require auth token for write operations (insert/update/upsert/delete)
         const WRITE_ACTIONS = ['insert', 'update', 'upsert', 'delete']
-        if (WRITE_ACTIONS.includes(action)) {
+        const isWrite = WRITE_ACTIONS.includes(action)
+        const ownerScoped = OWNER_SCOPED_TABLES.has(table)
+
+        // Resolve the authenticated user. Required for any write, and for ALL
+        // actions on owner-scoped tables (profiles/user_matches).
+        let authUser = null
+        if (isWrite || ownerScoped) {
           const authHeader = req.headers['authorization']
           const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-
           if (!token) {
             res.writeHead(401, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Authentication required' }))
             return
           }
-
-          // Verify token with Supabase
           const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token)
           if (authError || !userData?.user) {
             res.writeHead(401, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Invalid or expired token' }))
             return
           }
+          authUser = userData.user
+        }
+
+        // Strip columns a client may never write, and force ownership on
+        // owner-scoped inserts/upserts so a caller cannot write another user's rows.
+        const sanitizeWriteData = (data) => {
+          const deny = WRITE_DENYLIST[table] || []
+          const one = (row) => {
+            if (!row || typeof row !== 'object') return row
+            const clean = { ...row }
+            for (const k of deny) delete clean[k]
+            if (ownerScoped && authUser) clean.user_id = authUser.id
+            return clean
+          }
+          return Array.isArray(data) ? data.map(one) : one(data)
         }
 
         let query = supabaseAdmin.from(table)
@@ -1595,11 +1767,11 @@ Generated by eScoresheet
         if (action === 'select') {
           query = query.select(params.columns || '*', params.count ? { count: params.count, head: params.head || false } : undefined)
         } else if (action === 'insert') {
-          query = query.insert(params.data)
+          query = query.insert(sanitizeWriteData(params.data))
         } else if (action === 'upsert') {
-          query = query.upsert(params.data, params.onConflict ? { onConflict: params.onConflict } : undefined)
+          query = query.upsert(sanitizeWriteData(params.data), params.onConflict ? { onConflict: params.onConflict } : undefined)
         } else if (action === 'update') {
-          query = query.update(params.data)
+          query = query.update(sanitizeWriteData(params.data))
         } else if (action === 'delete') {
           query = query.delete()
         } else {
@@ -1611,6 +1783,7 @@ Generated by eScoresheet
         // Apply filters (validate column names against per-table whitelist)
         const ALLOWED_FILTER_TYPES = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'in', 'contains', 'is']
         const tableColumns = ALLOWED_COLUMNS[table]
+        let filterCount = 0
         if (params.filters) {
           for (const f of params.filters) {
             if (!f.column || !ALLOWED_FILTER_TYPES.includes(f.type) || (tableColumns && !tableColumns.includes(f.column))) {
@@ -1618,6 +1791,10 @@ Generated by eScoresheet
               res.end(JSON.stringify({ error: 'Invalid request' }))
               return
             }
+            // On owner-scoped tables, a client-supplied user_id filter is ignored;
+            // ownership is enforced by the forced .eq('user_id', authUser.id) below.
+            if (ownerScoped && f.column === 'user_id') continue
+            filterCount++
             if (f.type === 'eq') query = query.eq(f.column, f.value)
             else if (f.type === 'neq') query = query.neq(f.column, f.value)
             else if (f.type === 'gt') query = query.gt(f.column, f.value)
@@ -1630,6 +1807,19 @@ Generated by eScoresheet
             else if (f.type === 'contains') query = query.contains(f.column, f.value)
             else if (f.type === 'is') query = query.is(f.column, f.value)
           }
+        }
+
+        // Enforce row ownership on owner-scoped tables for every action.
+        if (ownerScoped && authUser) {
+          query = query.eq('user_id', authUser.id)
+          filterCount++
+        }
+
+        // Never allow an unfiltered update/delete (would mutate the whole table).
+        if ((action === 'update' || action === 'delete') && filterCount === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'A filter is required for update/delete' }))
+          return
         }
 
         // Apply modifiers
@@ -1655,7 +1845,7 @@ Generated by eScoresheet
           res.end(JSON.stringify({ data: null, error: { message: 'Database operation failed' } }))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data, error: null, count: count ?? undefined }))
+          res.end(JSON.stringify({ data: redactSecrets(table, data), error: null, count: count ?? undefined }))
         }
       } catch (err) {
         console.error('[DB Proxy] Error:', err.message)
@@ -1800,6 +1990,7 @@ Generated by eScoresheet
 
     ;(async () => {
       try {
+        if (!(await requireAuthUser())) return
         const { bucket, path: filePath } = await readJsonBody(req)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -1848,6 +2039,7 @@ Generated by eScoresheet
 
     ;(async () => {
       try {
+        if (!(await requireAuthUser())) return
         const { bucket, path: dirPath, options } = await readJsonBody(req)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -1893,6 +2085,7 @@ Generated by eScoresheet
 
     ;(async () => {
       try {
+        if (!(await requireAuthUser())) return
         const { bucket, path: filePath, expiresIn } = await readJsonBody(req)
         if (!ALLOWED_BUCKETS.includes(bucket)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -1955,11 +2148,16 @@ Generated by eScoresheet
             break
           }
           case 'sign-up': {
+            // SECURITY: never trust client-supplied roles (the profiles trigger
+            // copies user_metadata.roles into profiles.roles). Strip privileged
+            // keys so a signup cannot self-assign roles.
+            const safeMeta = { ...(body.metadata || {}) }
+            delete safeMeta.roles
             const { data, error } = await supabaseAdmin.auth.admin.createUser({
               email: body.email,
               password: body.password,
               email_confirm: true,
-              user_metadata: body.metadata || {}
+              user_metadata: safeMeta
             })
             result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
             break
@@ -1982,8 +2180,17 @@ Generated by eScoresheet
             break
           }
           case 'reset-password': {
+            // SECURITY: only honor redirectTo if it targets a trusted origin, so
+            // the recovery-token link can't be pointed at an attacker domain.
+            let safeRedirect
+            try {
+              if (body.redirectTo) {
+                const r = new URL(body.redirectTo)
+                if (isTrustedOrigin(r.origin)) safeRedirect = body.redirectTo
+              }
+            } catch { /* invalid URL — ignore */ }
             const { data, error } = await supabaseAdmin.auth.resetPasswordForEmail(body.email, {
-              redirectTo: body.redirectTo
+              redirectTo: safeRedirect
             })
             result = { data, error: error ? { message: error.message } : null }
             break
@@ -2104,11 +2311,17 @@ Generated by eScoresheet
         // Active matches info
         const matchList = []
         for (const [matchId, matchData] of activeMatches.entries()) {
+          // Synced matches store { homeTeam, awayTeam, ... }; the legacy path
+          // stored { data: {...} }. Read both so names actually render.
           const d = matchData.data || {}
+          const homeName = (typeof matchData.homeTeam === 'object' ? matchData.homeTeam?.name : matchData.homeTeam)
+            || d.homeTeamName || d.home_team_name || 'Home'
+          const awayName = (typeof matchData.awayTeam === 'object' ? matchData.awayTeam?.name : matchData.awayTeam)
+            || d.awayTeamName || d.away_team_name || 'Away'
           matchList.push({
             id: matchId,
-            home: d.homeTeamName || d.home_team_name || 'Home',
-            away: d.awayTeamName || d.away_team_name || 'Away',
+            home: homeName,
+            away: awayName,
             updatedAt: matchData.updatedAt
           })
         }
@@ -2441,12 +2654,12 @@ wss.on('connection', (ws, req) => {
 
         case 'clear-all-matches':
           // Clear all matches (or all except one)
-          handleClearMatches(message)
+          handleClearMatches(clientInfo, message)
           break
 
         case 'delete-match':
           // Delete a specific match
-          handleDeleteMatch(message)
+          handleDeleteMatch(clientInfo, message)
           break
 
         case 'ping':
@@ -2728,6 +2941,19 @@ function handleSyncMatchData(clientInfo, message) {
     return
   }
 
+  // SECURITY: don't let a non-scoreboard/fresh socket overwrite a match that is
+  // still owned by another connected scoreboard (live match hijack). Reconnecting
+  // scoreboards and PocketBase-recovered matches (no active owner) are still allowed.
+  const existingMatch = activeMatches.get(String(matchId))
+  if (existingMatch && clientInfo.role !== 'scoreboard' && existingMatch.updatedBy !== clientInfo.id) {
+    const owner = connections.get(existingMatch.updatedBy)
+    const ownerActive = owner && owner.ws.readyState === 1 && owner.role === 'scoreboard'
+    if (ownerActive) {
+      clientInfo.ws.send(JSON.stringify({ type: 'error', message: 'Match already has an active scoreboard' }))
+      return
+    }
+  }
+
   // Store/update match in activeMatches with all the data
   activeMatches.set(String(matchId), {
     matchId: String(matchId),
@@ -2768,12 +2994,12 @@ function handleSyncMatchData(clientInfo, message) {
     clientInfo.role = 'scoreboard'
   }
 
-  // Broadcast to other clients in the room
-  // Use remapped variables (homeTeam, awayTeam, etc.) for consistency with storage and client
+  // Broadcast to other clients in the room. Subscribers (referee/bench/livescore)
+  // must never receive the connection PINs — strip them from the broadcast match.
   broadcastToRoom(matchId, {
     type: 'match-data-update',
     matchId,
-    match,
+    match: stripMatchSecrets(match),
     homeTeam,
     awayTeam,
     homePlayers,
@@ -2811,7 +3037,13 @@ function handleMatchAction(clientInfo, message) {
 }
 
 // Handle clear-all-matches
-function handleClearMatches(message) {
+function handleClearMatches(clientInfo, message) {
+  // Only a client that has acted as the scoreboard may destroy match state.
+  // A fresh/anonymous socket has role null and is rejected.
+  if (!clientInfo || clientInfo.role !== 'scoreboard') {
+    clientInfo?.ws?.send(JSON.stringify({ type: 'error', message: 'Not authorized to clear matches' }))
+    return
+  }
   const keepMatchId = message.keepMatchId
 
   if (keepMatchId) {
@@ -2839,7 +3071,12 @@ function handleClearMatches(message) {
 }
 
 // Handle delete-match
-function handleDeleteMatch(message) {
+function handleDeleteMatch(clientInfo, message) {
+  // Only a client that has acted as the scoreboard may delete a match.
+  if (!clientInfo || clientInfo.role !== 'scoreboard') {
+    clientInfo?.ws?.send(JSON.stringify({ type: 'error', message: 'Not authorized to delete match' }))
+    return
+  }
   const { matchId } = message
 
   if (!matchId) return

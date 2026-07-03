@@ -3,7 +3,7 @@
  * Provides logging functions to all components via useLogging hook
  */
 
-import React, { createContext, useContext, useEffect, useRef, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   initComprehensiveLogger,
   setGameContext,
@@ -84,7 +84,7 @@ export function LoggingProvider({
   }, [gameNumber, matchId])
 
   // Memoized logging functions
-  const value = {
+  const value = useMemo(() => ({
     // Core logging functions
     log,
     logUI,
@@ -111,7 +111,7 @@ export function LoggingProvider({
     logHandler: (component, handlerName, payload = {}) => logFunction('handler_call', component, handlerName, payload),
     logMount: (component) => logNavigation('component_mount', component, 'mount', {}),
     logUnmount: (component) => logNavigation('component_unmount', component, 'unmount', {})
-  }
+  }), [log, logUI, logFunction, logState, logNavigation, logError, setGameContext, downloadLogs, exportLogsAsBlob, exportLogsAsNDJSON, getLogsSummary, getLogCount, clearLogs, createComponentLogger])
 
   return (
     <LoggingContext.Provider value={value}>

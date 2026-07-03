@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './scoresheet.css'; // compiled Tailwind (was cdn.tailwindcss.com — broke offline)
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import App from './App_Scoresheet';

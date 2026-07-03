@@ -159,12 +159,17 @@ export async function apiRpc(fn, params = {}) {
   const apiUrl = getApiUrl('/api/db/rpc')
   if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ fn, params })
-  })
-  return safeJsonResponse(response, 'RPC operation failed')
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ fn, params })
+    })
+    return safeJsonResponse(response, 'RPC operation failed')
+  } catch (err) {
+    // Offline: reject symmetrically with apiFrom instead of throwing 'Failed to fetch'
+    return { data: null, error: { message: err?.message || 'Network unavailable' } }
+  }
 }
 
 // ==================== Storage ====================
@@ -192,29 +197,38 @@ export const apiStorage = {
           fileBase64 = btoa(typeof fileData === 'object' ? JSON.stringify(fileData) : String(fileData))
         }
 
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            bucket,
-            path,
-            fileBase64,
-            contentType: options.contentType,
-            upsert: options.upsert
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              bucket,
+              path,
+              fileBase64,
+              contentType: options.contentType,
+              upsert: options.upsert
+            })
           })
-        })
-        return safeJsonResponse(response, 'Storage upload failed')
+          return safeJsonResponse(response, 'Storage upload failed')
+        } catch (err) {
+          return { data: null, error: { message: err?.message || 'Network unavailable' } }
+        }
       },
 
       async download(path) {
         const apiUrl = getApiUrl('/api/storage/download')
         if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ bucket, path })
-        })
+        let response
+        try {
+          response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ bucket, path })
+          })
+        } catch (err) {
+          return { data: null, error: { message: err?.message || 'Network unavailable' } }
+        }
         if (!response.ok) {
           return await safeJsonResponse(response, 'Storage download failed')
         }
@@ -240,12 +254,16 @@ export const apiStorage = {
         const apiUrl = getApiUrl('/api/storage/list')
         if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ bucket, path: dirPath, options })
-        })
-        return safeJsonResponse(response, 'Storage list failed')
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ bucket, path: dirPath, options })
+          })
+          return safeJsonResponse(response, 'Storage list failed')
+        } catch (err) {
+          return { data: null, error: { message: err?.message || 'Network unavailable' } }
+        }
       }
     }
   }
@@ -257,12 +275,16 @@ async function authRequest(action, body = {}) {
   const apiUrl = getApiUrl(`/api/auth/${action}`)
   if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  })
-  return safeJsonResponse(response, 'Auth request failed')
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    return safeJsonResponse(response, 'Auth request failed')
+  } catch (err) {
+    return { data: null, error: { message: err?.message || 'Network unavailable' } }
+  }
 }
 
 // Session token management
