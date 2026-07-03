@@ -185,10 +185,14 @@ export default defineConfig({
     },
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['openvolley_no_bg.png'],
+      includeAssets: ['openvolley_no_bg.png', 'favicon.ico', 'ball.png', 'fonts/*.woff2'],
       workbox: {
         // Disable workbox console logs in production
         mode: 'production',
+        // PRECACHE fonts + images + icons too (not just js/css/html). Without this
+        // they are only runtime-cached after a first ONLINE render, so a true cold
+        // offline start shows system fonts + missing logos/backgrounds.
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         // Don't skip waiting automatically - let user choose when to update
         skipWaiting: false,
         clientsClaim: true,
@@ -208,6 +212,23 @@ export default defineConfig({
                 maxAgeSeconds: 60 * 60 * 24 // 24 hours
               },
               networkTimeoutSeconds: 10,
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            // Google Fonts (stylesheet + font files) - cache so the display fonts
+            // (Orbitron / Segment7) survive offline. The css2 URL has no extension
+            // so it matches none of the extension-based rules below.
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts',
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+              },
               cacheableResponse: {
                 statuses: [0, 200]
               }
