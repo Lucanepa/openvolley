@@ -1,0 +1,14 @@
+/**
+ * Full Tailwind for the standalone scoresheet entry (compiled + hashed by
+ * @tailwindcss/vite, then precached by the service worker). Replaces the former
+ * runtime CDN (cdn.tailwindcss.com), which left the printable scoresheet — the
+ * flagship OFFLINE deliverable — completely unstyled when offline or CDN-down.
+ *
+ * Unlike the main app's src/tailwind.css (preflight omitted for legacy-CSS
+ * coexistence), the scoresheet is a standalone document, so it uses the full
+ * import including preflight — matching what the CDN provided.
+ */
+@import 'tailwindcss';
+
+/* Make sure the scoresheet_pdf components are scanned for utility classes. */
+@source '.';
