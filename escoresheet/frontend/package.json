@@ -15,6 +15,7 @@
     "dev": "vite",
     "dev:https": "cross-env VITE_HTTPS=true vite",
     "build": "vite build",
+    "tauri": "tauri",
     "build:subdomains": "node scripts/build-subdomains.js",
     "build:referee": "node scripts/build-subdomains.js referee",
     "build:bench": "node scripts/build-subdomains.js bench",
