@@ -254,12 +254,12 @@ async fn server_status(State(state): State<Arc<AppState>>) -> Response {
             "urls": {
                 "main": format!("http://{ip}:{p}/"),
                 "mainIP": format!("http://{ip}:{p}/"),
-                "referee": format!("http://{ip}:{p}/referee.html"),
-                "refereeIP": format!("http://{ip}:{p}/referee.html"),
-                "bench": format!("http://{ip}:{p}/bench.html"),
-                "benchIP": format!("http://{ip}:{p}/bench.html"),
-                "livescore": format!("http://{ip}:{p}/livescore.html"),
-                "livescoreIP": format!("http://{ip}:{p}/livescore.html"),
+                "referee": format!("http://{ip}:{p}/referee"),
+                "refereeIP": format!("http://{ip}:{p}/referee"),
+                "bench": format!("http://{ip}:{p}/bench"),
+                "benchIP": format!("http://{ip}:{p}/bench"),
+                "livescore": format!("http://{ip}:{p}/livescore"),
+                "livescoreIP": format!("http://{ip}:{p}/livescore"),
                 "websocket": format!("ws://{ip}:{ws}"),
                 "websocketIP": format!("ws://{ip}:{ws}"),
             }
@@ -512,9 +512,9 @@ async fn static_handler(
                 "<!DOCTYPE html><html><head><title>Main Instance Already Running</title></head><body>\
                  <h1>Main Scoresheet Already Running</h1>\
                  <p>Another scoretable is active. You can still open:</p>\
-                 <ul><li><a href=\"/referee.html\">Referee</a></li>\
-                 <li><a href=\"/bench.html\">Bench</a></li>\
-                 <li><a href=\"/livescore.html\">Livescore</a></li></ul></body></html>",
+                 <ul><li><a href=\"/referee\">Referee</a></li>\
+                 <li><a href=\"/bench\">Bench</a></li>\
+                 <li><a href=\"/livescore\">Livescore</a></li></ul></body></html>",
             )
                 .into_response();
         }

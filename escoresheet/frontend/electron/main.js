@@ -265,9 +265,9 @@ function showTabletInfo() {
     message: 'Tablets on the same Wi-Fi can open these addresses:',
     detail:
       `Scoretable / main:  http://${ip}:${port}/\n` +
-      `Referee:            http://${ip}:${port}/referee.html\n` +
-      `Bench:              http://${ip}:${port}/bench.html\n` +
-      `Livescore display:  http://${ip}:${port}/livescore.html\n\n` +
+      `Referee:            http://${ip}:${port}/referee\n` +
+      `Bench:              http://${ip}:${port}/bench\n` +
+      `Livescore display:  http://${ip}:${port}/livescore\n\n` +
       'The tablet must be on the same Wi-Fi/LAN as this computer.\n' +
       '(Camera/QR scanning works on this desktop, but not on tablets over plain HTTP.)',
     buttons: ['OK'],
