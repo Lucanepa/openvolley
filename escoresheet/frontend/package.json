@@ -1,6 +1,6 @@
 {
   "name": "escoresheet",
-  "version": "1.19.5",
+  "version": "1.20.0",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -15,6 +15,7 @@
     "dev": "vite",
     "dev:https": "cross-env VITE_HTTPS=true vite",
     "build": "vite build",
+    "tauri": "tauri",
     "build:subdomains": "node scripts/build-subdomains.js",
     "build:referee": "node scripts/build-subdomains.js referee",
     "build:bench": "node scripts/build-subdomains.js bench",
@@ -72,6 +73,7 @@
     "@capacitor/core": "^8.1.0",
     "@capacitor/ios": "^8.1.0",
     "@tailwindcss/vite": "^4.3.2",
+    "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^5.1.4",
