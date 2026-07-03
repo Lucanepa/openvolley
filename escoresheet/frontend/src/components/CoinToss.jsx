@@ -947,6 +947,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     const maxAttempts = 30 // 15 seconds max
     let attempts = 0
 
+    // Offline-first: the match is already live locally, so don't block the scorer
+    // behind a cloud sync that can't happen. When offline (or in explicit offline
+    // mode) skip the wait entirely — the sync queue flushes automatically when
+    // connectivity returns. Otherwise this loop burns the full 15s on every
+    // offline match start because the queue never drains.
+    if (!navigator.onLine || localStorage.getItem('offlineMode') === 'true') {
+      syncComplete = true
+    }
+
     while (attempts < maxAttempts && !syncComplete) {
       await new Promise(resolve => setTimeout(resolve, 500))
       const queuedCount = await db.sync_queue.where('status').equals('queued').count()
