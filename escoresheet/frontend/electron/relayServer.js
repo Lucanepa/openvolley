@@ -183,12 +183,12 @@ function start(opts = {}) {
           urls: {
             main: `http://${HOSTNAME}:${PORT}/`,
             mainIP: `http://${localIP}:${PORT}/`,
-            referee: `http://${HOSTNAME}:${PORT}/referee.html`,
-            refereeIP: `http://${localIP}:${PORT}/referee.html`,
-            bench: `http://${HOSTNAME}:${PORT}/bench.html`,
-            benchIP: `http://${localIP}:${PORT}/bench.html`,
-            livescore: `http://${HOSTNAME}:${PORT}/livescore.html`,
-            livescoreIP: `http://${localIP}:${PORT}/livescore.html`,
+            referee: `http://${HOSTNAME}:${PORT}/referee`,
+            refereeIP: `http://${localIP}:${PORT}/referee`,
+            bench: `http://${HOSTNAME}:${PORT}/bench`,
+            benchIP: `http://${localIP}:${PORT}/bench`,
+            livescore: `http://${HOSTNAME}:${PORT}/livescore`,
+            livescoreIP: `http://${localIP}:${PORT}/livescore`,
             websocket: `ws://${HOSTNAME}:${WS_PORT}`,
             websocketIP: `ws://${localIP}:${WS_PORT}`,
           },
@@ -433,9 +433,9 @@ function start(opts = {}) {
             <p>Another instance of the main scoresheet is already active.</p>
             <p>You can still access:</p>
             <ul style="list-style:none;padding:0">
-            <li><a href="/referee.html">Referee App</a></li>
-            <li><a href="/bench.html">Bench App</a></li>
-            <li><a href="/livescore.html">Livescore App</a></li>
+            <li><a href="/referee">Referee App</a></li>
+            <li><a href="/bench">Bench App</a></li>
+            <li><a href="/livescore">Livescore App</a></li>
             </ul></body></html>`)
           return
         }

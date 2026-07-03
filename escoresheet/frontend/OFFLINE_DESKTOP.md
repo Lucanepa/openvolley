@@ -23,7 +23,7 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
    │    • HTTP  :5173  (static site + /api/*)    │  + WebSocket relay :8080 │
    └────────────────────────────────────────────┼──────────────────────────┘
                                                  │  same Wi-Fi / LAN
-            tablets/phones open  http://<LAN-IP>:5173/referee.html  etc.
+            tablets/phones open  http://<LAN-IP>:5173/referee  etc.
 ```
 
 - The relay starts **in-process** when the app launches; the window then loads
@@ -74,9 +74,9 @@ npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
 1. Make sure the tablet is on the **same Wi-Fi/LAN** as the computer.
 2. On the desktop, open **Help → Connect a Tablet…** to see the addresses, e.g.:
    - Scoretable: `http://192.168.1.42:5173/`
-   - Referee:    `http://192.168.1.42:5173/referee.html`
-   - Bench:      `http://192.168.1.42:5173/bench.html`
-   - Livescore:  `http://192.168.1.42:5173/livescore.html`
+   - Referee:    `http://192.168.1.42:5173/referee`
+   - Bench:      `http://192.168.1.42:5173/bench`
+   - Livescore:  `http://192.168.1.42:5173/livescore`
 3. Type the address into the tablet's browser and enter the match PIN.
 
 ## Why plain HTTP (and the tablet-camera trade-off)

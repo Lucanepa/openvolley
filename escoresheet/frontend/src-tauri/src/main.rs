@@ -54,9 +54,9 @@ fn main() {
                 let msg = format!(
                     "Tablets on the same Wi-Fi can open:\n\n\
                      Scoretable:  http://{ip}:{http}/\n\
-                     Referee:     http://{ip}:{http}/referee.html\n\
-                     Bench:       http://{ip}:{http}/bench.html\n\
-                     Livescore:   http://{ip}:{http}/livescore.html\n\n\
+                     Referee:     http://{ip}:{http}/referee\n\
+                     Bench:       http://{ip}:{http}/bench\n\
+                     Livescore:   http://{ip}:{http}/livescore\n\n\
                      The tablet must be on the same Wi-Fi/LAN as this computer.\n\
                      (Camera/QR scanning works on this desktop, not on tablets over plain HTTP.)"
                 );
