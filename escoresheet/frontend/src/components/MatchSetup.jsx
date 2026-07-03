@@ -2658,7 +2658,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
     // Open scoresheet in new window with matchId parameter for reliable data loading
-    const scoresheetWindow = window.open(`/scoresheet?matchId=${matchId}`, '_blank', 'width=1200,height=900')
+    const scoresheetWindow = window.open(`/scoresheet/?matchId=${matchId}`, '_blank', 'width=1200,height=900')
 
     if (!scoresheetWindow) {
       setNoticeModal({ message: t('matchSetup.allowPopups') })
