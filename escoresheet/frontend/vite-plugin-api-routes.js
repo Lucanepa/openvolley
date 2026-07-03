@@ -10,6 +10,7 @@ import { createServer as createHttpServer } from 'http'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
+import { stripMatchSecrets } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -39,6 +40,8 @@ function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
   return entry.count > maxRequests
 }
 
+// unref: this module is imported by vite.config.js for every vite command,
+// so without it this interval keeps `vite build` from ever exiting.
 setInterval(() => {
   const now = Date.now()
   for (const [ip, entry] of rateLimitMap.entries()) {
@@ -46,7 +49,7 @@ setInterval(() => {
       rateLimitMap.delete(ip)
     }
   }
-}, 5 * 60 * 1000)
+}, 5 * 60 * 1000).unref()
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
 
@@ -338,7 +341,7 @@ export function vitePluginApiRoutes(options = {}) {
               if (pending && pending.res && !pending.res.headersSent) {
                 if (matchData) {
                   pending.res.writeHead(200, { 'Content-Type': 'application/json' })
-                  pending.res.end(JSON.stringify({ success: true, ...matchData }))
+                  pending.res.end(JSON.stringify({ success: true, ...matchData, match: stripMatchSecrets(matchData.match) }))
                 } else {
                   pending.res.writeHead(404, { 'Content-Type': 'application/json' })
                   pending.res.end(JSON.stringify({ success: false, error: 'Match not found' }))
@@ -435,8 +438,13 @@ export function vitePluginApiRoutes(options = {}) {
           return next()
         }
         
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*')
+        // CORS headers — reflect only same-origin/localhost/LAN origins so an
+        // arbitrary website a developer visits cannot read dev-server responses.
+        const devOrigin = req.headers.origin
+        if (devOrigin && /^https?:\/\/(localhost|127\.0\.0\.1|(\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(devOrigin)) {
+          res.setHeader('Access-Control-Allow-Origin', devOrigin)
+          res.setHeader('Vary', 'Origin')
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
 
@@ -557,7 +565,7 @@ export function vitePluginApiRoutes(options = {}) {
               scheduledAt: match.scheduledAt,
               dateTime,
               status: match.status,
-              refereePin: match.refereePin,
+              // refereePin intentionally NOT returned — validated via /api/match/validate-pin
               refereeConnectionEnabled: match.refereeConnectionEnabled === true
             }
           }).filter(m => {
@@ -667,7 +675,7 @@ export function vitePluginApiRoutes(options = {}) {
               }
               
               if (matchFound) {
-                sendResponse(200, { success: true, match: matchFound })
+                sendResponse(200, { success: true, match: stripMatchSecrets(matchFound) })
               } else {
                 // Request from main instance via WebSocket
                 const requestId = `pin-request-${Date.now()}-${Math.random()}`
@@ -732,7 +740,7 @@ export function vitePluginApiRoutes(options = {}) {
           
           if (matchData) {
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: true, ...matchData }))
+            res.end(JSON.stringify({ success: true, ...matchData, match: stripMatchSecrets(matchData.match) }))
           } else {
             // Request from main instance
             const requestId = `match-data-request-${Date.now()}-${Math.random()}`
@@ -783,9 +791,9 @@ export function vitePluginApiRoutes(options = {}) {
           
           if (matchFound) {
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ 
-              success: true, 
-              match: matchFound.match,
+            res.end(JSON.stringify({
+              success: true,
+              match: stripMatchSecrets(matchFound.match),
               matchId: matchFound.matchId
             }))
           } else {

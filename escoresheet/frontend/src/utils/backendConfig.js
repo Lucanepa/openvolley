@@ -11,6 +11,30 @@ const CLOUD_RELAY_URL = 'https://backend.openvolley.app'
 const OVERRIDE_KEY = 'openvolley_backend_override'
 
 /**
+ * SECURITY: the backend override decides where the app sends requests carrying
+ * the user's auth token. It can be set from the ?server= query param, so it must
+ * be restricted to trusted targets (LAN/localhost or an openvolley.app host) —
+ * otherwise a crafted link could exfiltrate the session token to any origin.
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isAllowedBackendUrl(url) {
+  if (!url || typeof url !== 'string') return false
+  let u
+  try { u = new URL(url) } catch { return false }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+  const host = u.hostname
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+  if (host.endsWith('.openvolley.app') || host === 'openvolley.app') return true
+  if (host.endsWith('.local')) return true // mDNS LAN hostnames
+  // Private (RFC1918) LAN ranges
+  if (/^10\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  return false
+}
+
+/**
  * Set a runtime backend URL override (persists in localStorage)
  * Used when connecting to a local server at a custom IP:port
  * @param {string|null} url - Backend URL to override with, or null to clear
@@ -18,6 +42,10 @@ const OVERRIDE_KEY = 'openvolley_backend_override'
 export function setBackendOverride(url) {
   try {
     if (url) {
+      if (!isAllowedBackendUrl(url)) {
+        console.warn('[backendConfig] Rejected untrusted backend override:', url)
+        return
+      }
       localStorage.setItem(OVERRIDE_KEY, url)
     } else {
       localStorage.removeItem(OVERRIDE_KEY)
@@ -26,12 +54,17 @@ export function setBackendOverride(url) {
 }
 
 /**
- * Get the current backend URL override, if set
+ * Get the current backend URL override, if set (and still trusted)
  * @returns {string|null}
  */
 export function getBackendOverride() {
   try {
-    return localStorage.getItem(OVERRIDE_KEY) || null
+    const v = localStorage.getItem(OVERRIDE_KEY) || null
+    if (v && !isAllowedBackendUrl(v)) {
+      localStorage.removeItem(OVERRIDE_KEY)
+      return null
+    }
+    return v
   } catch { return null }
 }
 

@@ -2934,7 +2934,7 @@ export default function App() {
           alignItems: 'center',
           padding: '40px 20px',
           textAlign: 'center',
-          color: 'rgba(255, 255, 255, 0.9)',
+          color: 'var(--text)',
           gap: '20px'
         }}>
           <div style={{
@@ -2953,13 +2953,13 @@ export default function App() {
           </div>
           <div style={{
             fontSize: '14px',
-            color: 'rgba(255, 255, 255, 0.6)'
+            color: 'var(--muted)'
           }}>
             Current: {viewportSize.width} × {viewportSize.height}px
           </div>
           <div style={{
             fontSize: '13px',
-            color: 'rgba(255, 255, 255, 0.5)',
+            color: 'var(--muted)',
             marginTop: '10px'
           }}>
             Try rotating your device or entering fullscreen mode.
@@ -2986,7 +2986,7 @@ export default function App() {
           </button>
           <div style={{
             fontSize: '12px',
-            color: 'rgba(255, 255, 255, 0.4)',
+            color: 'var(--muted)',
             marginTop: '12px'
           }}>
             Fullscreen removes browser headers to maximize screen space.
@@ -3240,6 +3240,7 @@ export default function App() {
                           setDeletePinError('')
                         }}
                         placeholder="Game PIN"
+                        aria-label="Game PIN"
                         style={{
                           width: '100%',
                           maxWidth: '200px',
@@ -3248,8 +3249,8 @@ export default function App() {
                           fontWeight: 600,
                           textAlign: 'center',
                           letterSpacing: '4px',
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          border: deletePinError ? '2px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                          background: 'var(--panel)',
+                          border: deletePinError ? '2px solid #ef4444' : '1px solid var(--border)',
                           borderRadius: '8px',
                           color: 'var(--text)'
                         }}
@@ -3284,9 +3285,9 @@ export default function App() {
                         padding: '12px 24px',
                         fontSize: '14px',
                         fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         cursor: 'pointer'
                       }}
@@ -3322,12 +3323,12 @@ export default function App() {
                       <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
                         {t('settings.backup.restoreFromCloudBackup')}
                       </h3>
-                      <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginBottom: '12px' }}>
+                      <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>
                         {t('settings.backup.restoreFromCloudDesc')}
                       </p>
                       <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
                         <div style={{ flex: 1 }}>
-                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
                             {t('settings.backup.gameN')}:
                           </label>
                           <input
@@ -3340,6 +3341,7 @@ export default function App() {
                               setCloudBackupGameN(value)
                             }}
                             placeholder="123456"
+                            aria-label={t('settings.backup.gameN')}
                             style={{
                               width: '100%',
                               padding: '12px',
@@ -3348,7 +3350,7 @@ export default function App() {
                               textAlign: 'center',
                               fontFamily: 'monospace',
                               background: 'var(--bg)',
-                              border: '2px solid rgba(255,255,255,0.2)',
+                              border: '2px solid var(--border)',
                               borderRadius: '8px',
                               color: 'var(--text)',
                               outline: 'none'
@@ -3356,7 +3358,7 @@ export default function App() {
                           />
                         </div>
                         <div style={{ flex: 1.5 }}>
-                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
                             {t('settings.backup.gamePin')}:
                           </label>
                           <input
@@ -3372,6 +3374,7 @@ export default function App() {
                             }}
                             placeholder="000000"
                             maxLength={6}
+                            aria-label={t('settings.backup.gamePin')}
                             style={{
                               width: '100%',
                               padding: '12px',
@@ -3381,7 +3384,7 @@ export default function App() {
                               letterSpacing: '4px',
                               fontFamily: 'monospace',
                               background: 'var(--bg)',
-                              border: '2px solid rgba(255,255,255,0.2)',
+                              border: '2px solid var(--border)',
                               borderRadius: '8px',
                               color: 'var(--text)',
                               outline: 'none'
@@ -3442,7 +3445,7 @@ export default function App() {
                       )}
                       {cloudBackups.length > 0 && (
                         <div style={{
-                          border: '1px solid rgba(255,255,255,0.2)',
+                          border: '1px solid var(--border)',
                           borderRadius: '8px',
                           marginTop: '8px',
                           maxHeight: '300px',
@@ -3487,9 +3490,9 @@ export default function App() {
                     gap: '16px',
                     marginBottom: '24px'
                   }}>
-                    <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
-                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>{t('settings.backup.or')}</span>
-                    <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('settings.backup.or')}</span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
                   </div>
 
                   {/* Offline/File restore */}
@@ -3592,7 +3595,7 @@ export default function App() {
 
                     // Helper to render lineup
                     const renderLineup = (lineup, teamName) => {
-                      if (!lineup) return <span style={{ color: 'rgba(255,255,255,0.4)' }}>No lineup data</span>
+                      if (!lineup) return <span style={{ color: 'var(--muted)' }}>No lineup data</span>
                       const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
@@ -3604,12 +3607,12 @@ export default function App() {
                             return (
                               <div key={pos} style={{
                                 padding: '6px 8px',
-                                background: isServing ? 'rgba(34, 197, 94, 0.2)' : isLibero ? 'rgba(249, 115, 22, 0.2)' : 'rgba(255,255,255,0.05)',
+                                background: isServing ? 'rgba(34, 197, 94, 0.2)' : isLibero ? 'rgba(249, 115, 22, 0.2)' : 'var(--panel-2)',
                                 borderRadius: '4px',
                                 textAlign: 'center',
                                 fontSize: '13px'
                               }}>
-                                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>{pos}</span>
+                                <span style={{ color: 'var(--muted)', fontSize: '11px' }}>{pos}</span>
                                 <br />
                                 <span style={{ fontWeight: 600 }}>{num || '-'}</span>
                                 {isServing && <span style={{ color: '#22c55e', marginLeft: '4px' }}>●</span>}
@@ -3645,7 +3648,7 @@ export default function App() {
                           {restorePreviewData.backupName && (
                             <span style={{
                               padding: '4px 12px',
-                              background: 'rgba(255,255,255,0.1)',
+                              background: 'var(--panel)',
                               borderRadius: '12px',
                               fontSize: '12px',
                               fontFamily: 'monospace'
@@ -3661,21 +3664,21 @@ export default function App() {
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           padding: '16px',
-                          background: 'rgba(255,255,255,0.05)',
+                          background: 'var(--panel-2)',
                           borderRadius: '8px',
                           marginBottom: '16px'
                         }}>
                           <div style={{ textAlign: 'center', flex: 1 }}>
                             <div style={{ fontSize: '18px', fontWeight: 700 }}>{homeTeamName}</div>
-                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Home</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Home</div>
                           </div>
                           <div style={{ textAlign: 'center', padding: '0 16px' }}>
                             <div style={{ fontSize: '24px', fontWeight: 700 }}>{homePoints} - {awayPoints}</div>
-                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Set {currentSetIndex}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Set {currentSetIndex}</div>
                           </div>
                           <div style={{ textAlign: 'center', flex: 1 }}>
                             <div style={{ fontSize: '18px', fontWeight: 700 }}>{awayTeamName}</div>
-                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Away</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Away</div>
                           </div>
                         </div>
 
@@ -3719,20 +3722,20 @@ export default function App() {
                         }}>
                           <div style={{
                             padding: '12px',
-                            background: 'rgba(255,255,255,0.05)',
+                            background: 'var(--panel-2)',
                             borderRadius: '8px',
                             textAlign: 'center'
                           }}>
-                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>Timeouts</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Timeouts</div>
                             <div style={{ fontSize: '20px', fontWeight: 700 }}>{homeTimeouts}/2</div>
                           </div>
                           <div style={{
                             padding: '12px',
-                            background: 'rgba(255,255,255,0.05)',
+                            background: 'var(--panel-2)',
                             borderRadius: '8px',
                             textAlign: 'center'
                           }}>
-                            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>Timeouts</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Timeouts</div>
                             <div style={{ fontSize: '20px', fontWeight: 700 }}>{awayTimeouts}/2</div>
                           </div>
                         </div>
@@ -3746,22 +3749,22 @@ export default function App() {
                             marginBottom: '16px'
                           }}>
                             <div>
-                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
                                 Substitutions ({homeSubs.length})
                               </h4>
                               {homeSubs.length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>None</span>
+                                <span style={{ fontSize: '12px', color: 'var(--muted)' }}>None</span>
                               ) : (
                                 homeSubs.map((sub, i) => (
                                   <div key={i} style={{
                                     fontSize: '12px',
                                     padding: '4px 8px',
-                                    background: 'rgba(255,255,255,0.05)',
+                                    background: 'var(--panel-2)',
                                     borderRadius: '4px',
                                     marginBottom: '4px'
                                   }}>
                                     #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
-                                    <span style={{ color: 'rgba(255,255,255,0.4)', marginLeft: '8px' }}>
+                                    <span style={{ color: 'var(--muted)', marginLeft: '8px' }}>
                                       @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
                                     </span>
                                   </div>
@@ -3769,22 +3772,22 @@ export default function App() {
                               )}
                             </div>
                             <div>
-                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
                                 Substitutions ({awaySubs.length})
                               </h4>
                               {awaySubs.length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>None</span>
+                                <span style={{ fontSize: '12px', color: 'var(--muted)' }}>None</span>
                               ) : (
                                 awaySubs.map((sub, i) => (
                                   <div key={i} style={{
                                     fontSize: '12px',
                                     padding: '4px 8px',
-                                    background: 'rgba(255,255,255,0.05)',
+                                    background: 'var(--panel-2)',
                                     borderRadius: '4px',
                                     marginBottom: '4px'
                                   }}>
                                     #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
-                                    <span style={{ color: 'rgba(255,255,255,0.4)', marginLeft: '8px' }}>
+                                    <span style={{ color: 'var(--muted)', marginLeft: '8px' }}>
                                       @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
                                     </span>
                                   </div>
@@ -3797,7 +3800,7 @@ export default function App() {
                         {/* Sanctions */}
                         {sanctionEvents.length > 0 && (
                           <div style={{ marginBottom: '16px' }}>
-                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
                               Sanctions ({sanctionEvents.length})
                             </h4>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -3805,7 +3808,7 @@ export default function App() {
                                 <div key={i} style={{
                                   padding: '4px 8px',
                                   background: s.payload?.type === 'red' ? 'rgba(239, 68, 68, 0.2)' :
-                                    s.payload?.type === 'yellow' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.1)',
+                                    s.payload?.type === 'yellow' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel)',
                                   borderRadius: '4px',
                                   fontSize: '12px'
                                 }}>
@@ -3819,18 +3822,18 @@ export default function App() {
                         {/* Set scores summary */}
                         {sets.length > 0 && (
                           <div style={{ marginBottom: '24px' }}>
-                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'rgba(255,255,255,0.7)' }}>
+                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
                               Set Scores
                             </h4>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               {[...sets].sort((a, b) => (a.index || 0) - (b.index || 0)).map(s => (
                                 <div key={s.index} style={{
                                   padding: '8px 12px',
-                                  background: s.finished ? 'rgba(255,255,255,0.1)' : 'rgba(59, 130, 246, 0.2)',
+                                  background: s.finished ? 'var(--panel)' : 'rgba(59, 130, 246, 0.2)',
                                   borderRadius: '6px',
                                   textAlign: 'center'
                                 }}>
-                                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>Set {s.index}</div>
+                                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Set {s.index}</div>
                                   <div style={{ fontSize: '14px', fontWeight: 600 }}>
                                     {s.homePoints ?? s.home_points ?? 0} - {s.awayPoints ?? s.away_points ?? 0}
                                   </div>
@@ -3846,7 +3849,7 @@ export default function App() {
                           gap: '12px',
                           justifyContent: 'center',
                           paddingTop: '16px',
-                          borderTop: '1px solid rgba(255,255,255,0.1)'
+                          borderTop: '1px solid var(--border)'
                         }}>
                           <button
                             onClick={async () => {
@@ -3920,9 +3923,9 @@ export default function App() {
                               padding: '12px 24px',
                               fontSize: '14px',
                               fontWeight: 600,
-                              background: 'rgba(255,255,255,0.1)',
+                              background: 'var(--panel)',
                               color: 'var(--text)',
-                              border: '1px solid rgba(255,255,255,0.2)',
+                              border: '1px solid var(--border)',
                               borderRadius: '8px',
                               cursor: restoreLoading ? 'not-allowed' : 'pointer'
                             }}
@@ -3996,9 +3999,9 @@ export default function App() {
                         padding: '12px 24px',
                         fontSize: '14px',
                         fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         cursor: 'pointer'
                       }}
@@ -4079,9 +4082,9 @@ export default function App() {
                         padding: '12px 24px',
                         fontSize: '14px',
                         fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         cursor: 'pointer'
                       }}

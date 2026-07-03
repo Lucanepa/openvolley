@@ -38,19 +38,20 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
         marginBottom: `${Math.round(6 * scaleFactor)}px`,
         fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
-        color: 'rgba(255,255,255,0.9)'
+        color: 'var(--text)'
       }}>
         {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
       </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
         style={{
           width: '100%',
           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
           fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'rgba(255,255,255,0.1)',
-          border: '1px solid rgba(255,255,255,0.2)',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
           borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           cursor: 'pointer',
@@ -61,9 +62,9 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
           backgroundSize: `${Math.round(16 * scaleFactor)}px`
         }}
       >
-        <option value="" style={{ background: '#1f2937' }}>{placeholder}</option>
+        <option value="" style={{ background: 'var(--panel)' }}>{placeholder}</option>
         {options.map(opt => (
-          <option key={typeof opt === 'object' ? opt.value : opt} value={typeof opt === 'object' ? opt.value : opt} style={{ background: '#1f2937' }}>
+          <option key={typeof opt === 'object' ? opt.value : opt} value={typeof opt === 'object' ? opt.value : opt} style={{ background: 'var(--panel)' }}>
             {typeof opt === 'object'
               ? (translationPrefix ? t(`${translationPrefix}.${opt.label}`) : opt.label)
               : (translationPrefix ? t(`${translationPrefix}.${opt}`) : opt)
@@ -83,7 +84,7 @@ function TextArea({ label, value, onChange, placeholder, rows = 4, required = fa
         marginBottom: `${Math.round(6 * scaleFactor)}px`,
         fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
-        color: 'rgba(255,255,255,0.9)'
+        color: 'var(--text)'
       }}>
         {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
       </label>
@@ -91,13 +92,14 @@ function TextArea({ label, value, onChange, placeholder, rows = 4, required = fa
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
         rows={rows}
         style={{
           width: '100%',
           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
           fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'rgba(255,255,255,0.1)',
-          border: '1px solid rgba(255,255,255,0.2)',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
           borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           resize: 'vertical',
@@ -117,7 +119,7 @@ function TextInput({ label, value, onChange, placeholder, type = 'text', require
         marginBottom: `${Math.round(6 * scaleFactor)}px`,
         fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
-        color: 'rgba(255,255,255,0.9)'
+        color: 'var(--text)'
       }}>
         {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
       </label>
@@ -126,12 +128,13 @@ function TextInput({ label, value, onChange, placeholder, type = 'text', require
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={label}
         style={{
           width: '100%',
           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
           fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'rgba(255,255,255,0.1)',
-          border: '1px solid rgba(255,255,255,0.2)',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
           borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           boxSizing: 'border-box'
@@ -167,7 +170,7 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
         marginBottom: `${Math.round(6 * scaleFactor)}px`,
         fontSize: `${Math.round(14 * scaleFactor)}px`,
         fontWeight: 600,
-        color: 'rgba(255,255,255,0.9)'
+        color: 'var(--text)'
       }}>
         {label}
       </label>
@@ -176,6 +179,7 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
         type="file"
         multiple
         onChange={handleFileSelect}
+        aria-label={label}
         style={{ display: 'none' }}
         accept="image/*,.json,.txt,.log,.pdf,.csv"
       />
@@ -184,8 +188,8 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
         style={{
           padding: `${Math.round(10 * scaleFactor)}px ${Math.round(16 * scaleFactor)}px`,
           fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'rgba(255,255,255,0.1)',
-          border: '1px dashed rgba(255,255,255,0.3)',
+          background: 'var(--panel)',
+          border: '1px dashed var(--border)',
           borderRadius: `${Math.round(8 * scaleFactor)}px`,
           color: 'var(--text)',
           cursor: 'pointer',
@@ -203,7 +207,7 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: `${Math.round(6 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px`,
-              background: 'rgba(255,255,255,0.05)',
+              background: 'var(--panel-2)',
               borderRadius: `${Math.round(6 * scaleFactor)}px`,
               fontSize: `${Math.round(12 * scaleFactor)}px`
             }}>
@@ -212,6 +216,7 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
               </span>
               <button
                 onClick={() => removeFile(index)}
+                aria-label={`${t('common.remove', 'Remove')} ${file.name}`}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -355,8 +360,8 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
         <div style={{
           position: 'sticky',
           top: 0,
-          background: '#1f2937',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--panel)',
+          borderBottom: '1px solid var(--border)',
           padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
           display: 'flex',
           alignItems: 'center',
@@ -368,12 +373,13 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
           </h2>
           <button
             onClick={handleClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               width: `${Math.round(32 * scaleFactor)}px`,
               height: `${Math.round(32 * scaleFactor)}px`,
               borderRadius: `${Math.round(6 * scaleFactor)}px`,
               border: 'none',
-              background: 'rgba(255,255,255,0.1)',
+              background: 'var(--panel)',
               color: 'var(--text)',
               fontSize: `${Math.round(18 * scaleFactor)}px`,
               cursor: 'pointer',
@@ -387,7 +393,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
         </div>
         <div style={{ padding: `${Math.round(24 * scaleFactor)}px`, textAlign: 'center' }}>
           <div style={{ fontSize: `${Math.round(48 * scaleFactor)}px`, marginBottom: `${Math.round(16 * scaleFactor)}px` }}>✓</div>
-          <p style={{ fontSize: `${Math.round(16 * scaleFactor)}px`, color: 'rgba(255,255,255,0.9)', marginBottom: `${Math.round(24 * scaleFactor)}px` }}>
+          <p style={{ fontSize: `${Math.round(16 * scaleFactor)}px`, color: 'var(--text)', marginBottom: `${Math.round(24 * scaleFactor)}px` }}>
             {successMessage}
           </p>
           <button
@@ -423,8 +429,8 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
       <div style={{
         position: 'sticky',
         top: 0,
-        background: '#1f2937',
-        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--panel)',
+        borderBottom: '1px solid var(--border)',
         padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
         display: 'flex',
         alignItems: 'center',
@@ -436,12 +442,13 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
         </h2>
         <button
           onClick={handleClose}
+          aria-label={t('common.close', 'Close')}
           style={{
             width: `${Math.round(32 * scaleFactor)}px`,
             height: `${Math.round(32 * scaleFactor)}px`,
             borderRadius: `${Math.round(6 * scaleFactor)}px`,
             border: 'none',
-            background: 'rgba(255,255,255,0.1)',
+            background: 'var(--panel)',
             color: 'var(--text)',
             fontSize: `${Math.round(18 * scaleFactor)}px`,
             cursor: 'pointer',

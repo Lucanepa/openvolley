@@ -735,8 +735,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -790,8 +790,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       <div style={{
         minHeight: embedded ? 'auto' : '100vh',
         height: embedded ? '100%' : 'auto',
-        background: embedded ? 'transparent' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
+        background: embedded ? 'transparent' : 'var(--bg)',
+        color: 'var(--text)',
         padding: embedded ? '12px' : '20px',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
@@ -804,7 +804,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         <div style={{
           fontSize: '18px',
           fontWeight: 500,
-          color: 'rgba(255, 255, 255, 0.7)',
+          color: 'var(--muted)',
           textTransform: 'uppercase',
           letterSpacing: '2px'
         }}>
@@ -853,9 +853,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               padding: '12px 24px',
               fontSize: '16px',
               fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'var(--panel)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
               cursor: 'pointer',
               transition: 'background 0.2s',
@@ -873,8 +873,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     <div style={{
       minHeight: embedded ? 'auto' : '100vh',
       height: embedded ? '100%' : 'auto',
-      background: embedded ? 'transparent' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      color: '#fff',
+      background: embedded ? 'transparent' : 'var(--bg)',
+      color: 'var(--text)',
       padding: embedded ? '8px' : '12px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       display: 'flex',
@@ -896,9 +896,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               padding: '8px 16px',
               fontSize: '13px',
               fontWeight: 600,
-              background: 'rgba(255,255,255,0.1)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'var(--panel)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
               cursor: 'pointer'
             }}
@@ -926,42 +926,42 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         }}>
           {/* TO Counter */}
           <div style={{
-            background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)',
+            background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'var(--panel-2)',
             borderRadius: '8px',
             padding: '6px 12px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.1)',
+            border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid var(--border)',
             minWidth: '50px'
           }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.to', 'TO')}</div>
             <div style={{
               fontSize: '28px',
               fontWeight: 800,
-              color: timeoutsUsed >= 2 ? '#ef4444' : '#fff'
+              color: timeoutsUsed >= 2 ? '#ef4444' : 'var(--text)'
             }}>
               {timeoutsUsed}
             </div>
           </div>
           {/* SUB Counter */}
           <div style={{
-            background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'rgba(255,255,255,0.05)',
+            background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
             borderRadius: '8px',
             padding: '6px 12px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid rgba(255,255,255,0.1)',
+            border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid var(--border)',
             minWidth: '50px'
           }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.sub', 'SUB')}</div>
             <div style={{
               fontSize: '28px',
               fontWeight: 800,
-              color: substitutionsUsed >= 6 ? '#ef4444' : substitutionsUsed >= 5 ? '#eab308' : '#fff'
+              color: substitutionsUsed >= 6 ? '#ef4444' : substitutionsUsed >= 5 ? '#eab308' : 'var(--text)'
             }}>
               {substitutionsUsed}
             </div>
@@ -970,7 +970,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Center: Score and Set Counter */}
         <div style={{
-          background: 'rgba(255,255,255,0.05)',
+          background: 'var(--panel-2)',
           borderRadius: '8px',
           padding: '8px 12px',
           display: 'flex',
@@ -993,12 +993,12 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             <span style={{
               fontSize: '24px',
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.4)'
+              color: 'var(--muted)'
             }}>:</span>
             <span style={{
               fontSize: '28px',
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.5)'
+              color: 'var(--muted)'
             }}>{points.opponent}</span>
           </div>
           {/* Set Score */}
@@ -1014,10 +1014,10 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               color: '#22c55e',
               fontSize: '18px'
             }}>{setsWon.team}</span>
-            <span style={{ color: 'rgba(255,255,255,0.4)' }}>-</span>
+            <span style={{ color: 'var(--muted)' }}>-</span>
             <span style={{
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.5)',
+              color: 'var(--muted)',
               fontSize: '14px'
             }}>{setsWon.opponent}</span>
           </div>
@@ -1025,7 +1025,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Right: Sanctions */}
         <div style={{
-          background: 'rgba(255,255,255,0.03)',
+          background: 'var(--panel-2)',
           borderRadius: '8px',
           padding: '6px 10px',
           display: 'flex',
@@ -1037,7 +1037,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         }}>
           <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600 }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
           {allSanctionsForDisplay.length === 0 ? (
-            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>{t('matchEntry.none', 'None')}</div>
+            <div style={{ color: 'var(--muted)', fontSize: '10px' }}>{t('matchEntry.none', 'None')}</div>
           ) : (
             allSanctionsForDisplay.slice(0, 3).map((s, idx) => (
               <div key={idx} style={{
@@ -1269,7 +1269,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
       {/* SECTION 3: Bench - Players, Liberos, Officials (N and Codes only) */}
       <div style={{
-        background: 'rgba(255,255,255,0.03)',
+        background: 'var(--panel-2)',
         borderRadius: '8px',
         padding: '8px 12px',
         display: 'flex',
@@ -1284,7 +1284,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             alignItems: 'center',
             gap: '4px',
             padding: '4px 8px',
-            background: 'rgba(255,255,255,0.05)',
+            background: 'var(--panel-2)',
             borderRadius: '4px',
             fontSize: '13px'
           }}>
@@ -1304,7 +1304,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Separator if both players and liberos exist */}
         {benchPlayersWithSanctions.length > 0 && benchLiberos.length > 0 && (
-          <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)' }}></div>
+          <div style={{ width: '1px', height: '20px', background: 'var(--border)' }}></div>
         )}
 
         {/* Liberos */}
@@ -1348,7 +1348,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Separator if liberos/players and officials exist */}
         {(benchPlayersWithSanctions.length > 0 || benchLiberos.length > 0) && benchOfficials.length > 0 && (
-          <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)' }}></div>
+          <div style={{ width: '1px', height: '20px', background: 'var(--border)' }}></div>
         )}
 
         {/* Officials - show role codes */}
@@ -1366,12 +1366,12 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               alignItems: 'center',
               gap: '4px',
               padding: '4px 8px',
-              background: 'rgba(255,255,255,0.05)',
+              background: 'var(--panel-2)',
               borderRadius: '4px',
               fontSize: '13px'
             }}>
               <span style={{
-                background: 'rgba(255,255,255,0.2)',
+                background: 'var(--panel-2)',
                 padding: '1px 4px',
                 borderRadius: '2px',
                 fontSize: '10px',
@@ -1393,7 +1393,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Empty state */}
         {benchPlayersWithSanctions.length === 0 && benchLiberos.length === 0 && benchOfficials.length === 0 && (
-          <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+          <div style={{ color: 'var(--muted)', fontSize: '12px' }}>
             {t('matchEntry.noBenchData', 'No bench data')}
           </div>
         )}

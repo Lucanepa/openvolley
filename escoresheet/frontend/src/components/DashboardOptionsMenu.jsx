@@ -208,12 +208,13 @@ export function DashboardOptionsMenu({
           padding: '4px 10px',
           fontSize: '12px',
           fontWeight: 600,
-          background: isOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-          color: '#fff',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
+          background: isOpen ? 'var(--panel)' : 'var(--panel-2)',
+          color: 'var(--text)',
+          border: '1px solid var(--border)',
           borderRadius: '6px',
           cursor: 'pointer'
         }}
+        aria-label={t('options.title')}
         title={t('options.title')}
       >
         <span style={{ fontSize: '14px' }}>&#9881;</span>
@@ -226,8 +227,8 @@ export function DashboardOptionsMenu({
           top: 'calc(100% + 8px)',
           right: 0,
           minWidth: '240px',
-          background: 'rgba(30, 30, 40, 0.98)',
-          border: '1px solid rgba(255, 255, 255, 0.15)',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
           borderRadius: '8px',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
           zIndex: 1000,
@@ -236,10 +237,10 @@ export function DashboardOptionsMenu({
           {/* Header */}
           <div style={{
             padding: '12px 16px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+            borderBottom: '1px solid var(--border)',
             fontSize: '13px',
             fontWeight: 600,
-            color: 'rgba(255, 255, 255, 0.7)'
+            color: 'var(--muted)'
           }}>
             {t('dashboardOptions.options', 'Options')}
           </div>
@@ -247,7 +248,7 @@ export function DashboardOptionsMenu({
           {/* Connection status */}
           <div style={{
             padding: '12px 16px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+            borderBottom: '1px solid var(--border)'
           }}>
             <div style={{
               display: 'flex',
@@ -255,7 +256,7 @@ export function DashboardOptionsMenu({
               alignItems: 'center',
               marginBottom: '8px'
             }}>
-              <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
                 {t('dashboardOptions.connection', 'Connection')}
               </span>
               <span style={{
@@ -277,7 +278,7 @@ export function DashboardOptionsMenu({
             </div>
             <div style={{
               fontSize: '11px',
-              color: 'rgba(255, 255, 255, 0.5)'
+              color: 'var(--muted)'
             }}>
               {t('dashboardOptions.active', 'Active:')} {getConnectionLabel()}
             </div>
@@ -287,11 +288,11 @@ export function DashboardOptionsMenu({
           {showConnectionOptions && (
             <div style={{
               padding: '12px 16px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+              borderBottom: '1px solid var(--border)'
             }}>
               <div style={{
                 fontSize: '12px',
-                color: 'rgba(255, 255, 255, 0.6)',
+                color: 'var(--muted)',
                 marginBottom: '8px'
               }}>
                 {t('dashboardOptions.connectionType', 'Connection Type')}
@@ -314,7 +315,7 @@ export function DashboardOptionsMenu({
                       flexDirection: 'column',
                       alignItems: 'flex-start',
                       padding: '8px 12px',
-                      background: connectionType === type ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      background: connectionType === type ? 'rgba(59, 130, 246, 0.2)' : 'var(--panel-2)',
                       border: connectionType === type ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -325,13 +326,13 @@ export function DashboardOptionsMenu({
                     <span style={{
                       fontSize: '12px',
                       fontWeight: 600,
-                      color: connectionType === type ? '#3b82f6' : '#fff'
+                      color: connectionType === type ? '#3b82f6' : 'var(--text)'
                     }}>
                       {label}
                     </span>
                     <span style={{
                       fontSize: '10px',
-                      color: 'rgba(255, 255, 255, 0.5)'
+                      color: 'var(--muted)'
                     }}>
                       {desc}
                     </span>
@@ -344,11 +345,11 @@ export function DashboardOptionsMenu({
           {/* Language selector */}
           <div style={{
             padding: '12px 16px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+            borderBottom: '1px solid var(--border)'
           }}>
             <div style={{
               fontSize: '12px',
-              color: 'rgba(255, 255, 255, 0.6)',
+              color: 'var(--muted)',
               marginBottom: '8px'
             }}>
               {t('settings.language', 'Language')}
@@ -369,7 +370,7 @@ export function DashboardOptionsMenu({
                     padding: '6px 10px',
                     background: i18n.language === code || (i18n.language?.startsWith(code))
                       ? 'rgba(59, 130, 246, 0.2)'
-                      : 'rgba(255, 255, 255, 0.05)',
+                      : 'var(--panel-2)',
                     border: i18n.language === code || (i18n.language?.startsWith(code))
                       ? '1px solid rgba(59, 130, 246, 0.5)'
                       : '1px solid transparent',
@@ -377,7 +378,7 @@ export function DashboardOptionsMenu({
                     cursor: 'pointer',
                     fontSize: '12px',
                     fontWeight: 500,
-                    color: i18n.language === code || (i18n.language?.startsWith(code)) ? '#3b82f6' : '#fff'
+                    color: i18n.language === code || (i18n.language?.startsWith(code)) ? '#3b82f6' : 'var(--text)'
                   }}
                 >
                   <img src={flagUrl} alt={label} style={{ width: '20px', height: '14px', objectFit: 'cover', borderRadius: '2px' }} />
@@ -391,7 +392,7 @@ export function DashboardOptionsMenu({
           {onReconnect && (
             <div style={{
               padding: '12px 16px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+              borderBottom: '1px solid var(--border)'
             }}>
               <button
                 onClick={() => {

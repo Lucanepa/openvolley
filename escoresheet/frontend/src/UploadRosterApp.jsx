@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase, validateUploadPinSupabase } from './utils/serverDataSync'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -78,6 +78,9 @@ export default function UploadRosterApp() {
   const [uploading, setUploading] = useState(false)
   const [matchStatusCheck, setMatchStatusCheck] = useState(null) // 'checking', 'valid', 'invalid', null
   const [manuallyValidated, setManuallyValidated] = useState(false) // For when no PIN is required
+  // Supabase mode: upload PINs are validated server-side (never sent to client).
+  // Fail-closed: upload stays blocked until the server confirms the PIN.
+  const [serverPinValidated, setServerPinValidated] = useState(false)
 
   // Signature states
   const [coachSignature, setCoachSignature] = useState(null)
@@ -420,6 +423,7 @@ export default function UploadRosterApp() {
     setValidationError('')
     setMatchStatusCheck(null)
     setManuallyValidated(false)
+    setServerPinValidated(false)
   }
 
   // Check if match exists and is in setup (not started or finished)
@@ -537,10 +541,33 @@ export default function UploadRosterApp() {
   useEffect(() => {
     if (!match) {
       setValidationError('')
+      setServerPinValidated(false)
       return
     }
 
-    // Handle both camelCase (local) and snake_case (Supabase) field names
+    // Supabase mode: the upload PIN is never sent to the client, so validate it
+    // server-side. Fail-closed — serverPinValidated stays false until confirmed.
+    if (activeConnection === 'supabase') {
+      setServerPinValidated(false)
+      if (uploadPin && uploadPin.length === 6) {
+        let cancelled = false
+        validateUploadPinSupabase(team, uploadPin).then(res => {
+          if (cancelled) return
+          if (res.success) {
+            setServerPinValidated(true)
+            setValidationError('')
+          } else {
+            setServerPinValidated(false)
+            setValidationError(res.error || 'Invalid upload PIN')
+          }
+        })
+        return () => { cancelled = true }
+      }
+      setValidationError('')
+      return
+    }
+
+    // Local / WebSocket mode: the match carries the PIN locally (LAN), compare it.
     const correctPin = team === 'home'
       ? (match.homeTeamUploadPin || match.home_team_upload_pin)
       : (match.awayTeamUploadPin || match.away_team_upload_pin)
@@ -562,7 +589,7 @@ export default function UploadRosterApp() {
     } else {
       setValidationError('')
     }
-  }, [uploadPin, match, team])
+  }, [uploadPin, match, team, activeConnection])
 
   // Load teams when match is found (already loaded in checkMatchStatus)
 
@@ -585,7 +612,21 @@ export default function UploadRosterApp() {
       setMatch(foundMatch)
       setMatchId(foundMatch.id)
 
-      // Handle both camelCase (local) and snake_case (Supabase) field names
+      // Supabase mode: validate the upload PIN server-side (never sent to client).
+      if (activeConnection === 'supabase') {
+        if (!uploadPin.trim()) {
+          setValidationError('Please enter an upload PIN')
+          return false
+        }
+        const res = await validateUploadPinSupabase(team, uploadPin.trim())
+        if (!res.success) {
+          setServerPinValidated(false)
+          setValidationError(res.error || 'Invalid upload PIN')
+          return false
+        }
+        setServerPinValidated(true)
+      } else {
+      // Local / WebSocket mode: match carries the PIN locally (LAN), compare it.
       const correctPin = team === 'home'
         ? (foundMatch.homeTeamUploadPin || foundMatch.home_team_upload_pin)
         : (foundMatch.awayTeamUploadPin || foundMatch.away_team_upload_pin)
@@ -601,6 +642,7 @@ export default function UploadRosterApp() {
           setValidationError('Invalid upload PIN')
           return false
         }
+      }
       }
 
       return true
@@ -863,6 +905,7 @@ export default function UploadRosterApp() {
     setMatchStatusCheck(null)
     setSelectedMatch(null)
     setManuallyValidated(false)
+    setServerPinValidated(false)
 
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -874,9 +917,17 @@ export default function UploadRosterApp() {
   const teamUploadPin = team === 'home'
     ? (match?.homeTeamUploadPin || match?.home_team_upload_pin)
     : (match?.awayTeamUploadPin || match?.away_team_upload_pin)
-  const isPinRequired = teamUploadPin != null && teamUploadPin !== ''
+  // Supabase mode: PIN is validated server-side (never sent to client), so a
+  // synced match always requires a server-confirmed PIN (fail-closed).
+  const isPinRequired = activeConnection === 'supabase'
+    ? true
+    : (teamUploadPin != null && teamUploadPin !== '')
   // When PIN is required, validate with PIN. When no PIN required, require manual validation click.
-  const isValid = match && matchId && (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
+  const isValid = match && matchId && (
+    activeConnection === 'supabase'
+      ? serverPinValidated
+      : (isPinRequired ? (uploadPin && teamUploadPin === uploadPin) : manuallyValidated)
+  )
 
   // Handle connection mode change
   const handleConnectionModeChange = useCallback((mode) => {
@@ -934,9 +985,9 @@ export default function UploadRosterApp() {
 
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      color: '#fff',
+      minHeight: '100dvh',
+      background: 'var(--bg)',
+      color: 'var(--text)',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -987,7 +1038,7 @@ export default function UploadRosterApp() {
           }}>
             <p style={{
               fontSize: '16px',
-              color: 'rgba(255, 255, 255, 0.7)',
+              color: 'var(--muted)',
               marginBottom: '16px',
               textAlign: 'center'
             }}>
@@ -997,7 +1048,7 @@ export default function UploadRosterApp() {
             {loadingMatches ? (
               <div style={{
                 padding: '20px',
-                color: 'rgba(255, 255, 255, 0.7)',
+                color: 'var(--muted)',
                 fontSize: '16px'
               }}>
                 {t('uploadRoster.loadingGames')}
@@ -1016,21 +1067,21 @@ export default function UploadRosterApp() {
                     onClick={() => handleMatchSelect(match)}
                     style={{
                       padding: '16px 20px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '2px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '2px solid var(--border)',
                       borderRadius: '12px',
-                      color: '#fff',
+                      color: 'var(--text)',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                       textAlign: 'left'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'
+                      e.currentTarget.style.background = 'var(--panel-2)'
+                      e.currentTarget.style.borderColor = 'var(--border)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                      e.currentTarget.style.background = 'var(--panel)'
+                      e.currentTarget.style.borderColor = 'var(--border)'
                     }}
                   >
                     <div style={{
@@ -1055,7 +1106,7 @@ export default function UploadRosterApp() {
                 onClick={handleTestModeClick}
                 style={{
                   padding: '20px',
-                  color: 'rgba(255, 255, 255, 0.5)',
+                  color: 'var(--muted)',
                   fontSize: '14px',
                   textAlign: 'center',
                   cursor: 'default',
@@ -1084,7 +1135,7 @@ export default function UploadRosterApp() {
             {/* Match info */}
             <div style={{
               padding: '16px 24px',
-              background: 'rgba(255, 255, 255, 0.05)',
+              background: 'var(--panel-2)',
               borderRadius: '8px',
               textAlign: 'center',
               marginBottom: '8px'
@@ -1120,15 +1171,16 @@ export default function UploadRosterApp() {
                         setValidationError('')
                         setUploadPin('')
                         setManuallyValidated(false)
+                        setServerPinValidated(false)
                       }}
                       style={{
                         flex: 1,
                         padding: '12px',
                         fontSize: '16px',
                         fontWeight: 600,
-                        background: team === 'home' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
+                        background: team === 'home' ? 'var(--accent)' : 'var(--panel)',
                         color: team === 'home' ? '#000' : 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         width: 'auto',
@@ -1143,15 +1195,16 @@ export default function UploadRosterApp() {
                         setValidationError('')
                         setUploadPin('')
                         setManuallyValidated(false)
+                        setServerPinValidated(false)
                       }}
                       style={{
                         flex: 1,
                         padding: '12px',
                         fontSize: '16px',
                         fontWeight: 600,
-                        background: team === 'away' ? 'var(--accent)' : 'rgba(255, 255, 255, 0.1)',
+                        background: team === 'away' ? 'var(--accent)' : 'var(--panel)',
                         color: team === 'away' ? '#000' : 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         width: 'auto',
@@ -1175,18 +1228,19 @@ export default function UploadRosterApp() {
                         setUploadPin(val)
                       }}
                       placeholder={t('uploadRoster.enterPin')}
+                      aria-label={t('uploadRoster.uploadPin')}
                       style={{
                         width: '100%',
                         padding: '12px',
                         fontSize: '18px',
                         fontFamily: 'monospace',
                         textAlign: 'center',
-                        background: 'rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel)',
                         border: isValid
                           ? '1px solid #10b981'
                           : validationError && uploadPin.length === 6
                           ? '1px solid #ef4444'
-                          : '1px solid rgba(255, 255, 255, 0.2)',
+                          : '1px solid var(--border)',
                         borderRadius: '6px',
                         color: 'var(--text)'
                       }}
@@ -1206,7 +1260,7 @@ export default function UploadRosterApp() {
                       </p>
                     ) : (
                       <>
-                        <p style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '13px', margin: '0 0 12px 0' }}>
+                        <p style={{ color: 'var(--muted)', fontSize: '13px', margin: '0 0 12px 0' }}>
                           {t('uploadRoster.noPinRequired', 'No PIN required')}
                         </p>
                         <button
@@ -1247,6 +1301,7 @@ export default function UploadRosterApp() {
               type="file"
               accept=".pdf"
               onChange={handleFileSelect}
+              aria-label={t('uploadRoster.selectPdfFile')}
               style={{ display: 'none' }}
             />
             <button
@@ -1257,9 +1312,9 @@ export default function UploadRosterApp() {
                 padding: '12px 24px',
                 fontSize: '16px',
                 fontWeight: 600,
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel)',
                 color: 'var(--text)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 cursor: pdfLoading ? 'not-allowed' : 'pointer'
               }}
@@ -1271,7 +1326,7 @@ export default function UploadRosterApp() {
               <>
                 <div style={{
                   padding: '12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
+                  background: 'var(--panel-2)',
                   borderRadius: '6px',
                   fontSize: '14px',
                   textAlign: 'center'
@@ -1327,7 +1382,7 @@ export default function UploadRosterApp() {
               marginBottom: '4px',
               fontSize: '12px',
               fontWeight: 600,
-              color: 'rgba(255, 255, 255, 0.6)'
+              color: 'var(--muted)'
             }}>
               <span>{t('rosterSetup.number', '#')}</span>
               <span>{t('rosterSetup.lastName', 'Last Name')}</span>
@@ -1342,7 +1397,7 @@ export default function UploadRosterApp() {
               {parsedData.players.map((player, index) => (
                 <div key={index} style={{
                   padding: '12px 16px',
-                  background: 'rgba(255, 255, 255, 0.05)',
+                  background: 'var(--panel-2)',
                   borderRadius: '8px',
                   display: 'grid',
                   gridTemplateColumns: '60px 1fr 1fr 140px 100px 100px 70px',
@@ -1354,11 +1409,12 @@ export default function UploadRosterApp() {
                     value={player.number || ''}
                     onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
                     placeholder="#"
+                    aria-label={t('rosterSetup.number', 'Number')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1371,11 +1427,12 @@ export default function UploadRosterApp() {
                     value={player.lastName}
                     onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
                     placeholder={t('rosterSetup.lastName', 'Last Name')}
+                    aria-label={t('rosterSetup.lastName', 'Last Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1387,11 +1444,12 @@ export default function UploadRosterApp() {
                     value={player.firstName}
                     onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
                     placeholder={t('rosterSetup.firstName', 'First Name')}
+                    aria-label={t('rosterSetup.firstName', 'First Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1402,11 +1460,12 @@ export default function UploadRosterApp() {
                     type="date"
                     value={player.dob ? formatDateToISO(player.dob) : ''}
                     onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                    aria-label={t('rosterSetup.dob', 'DOB')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1416,11 +1475,12 @@ export default function UploadRosterApp() {
                   <select
                     value={player.libero}
                     onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
+                    aria-label={t('rosterSetup.libero', 'Libero')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1437,7 +1497,7 @@ export default function UploadRosterApp() {
                       width: '24px',
                       height: '24px',
                       borderRadius: '4px',
-                      border: player.isCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      border: player.isCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
                       background: player.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -1445,7 +1505,7 @@ export default function UploadRosterApp() {
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 700,
-                      color: player.isCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      color: player.isCaptain ? '#22c55e' : 'var(--muted)',
                       userSelect: 'none',
                       margin: '0 auto'
                     }}
@@ -1477,9 +1537,9 @@ export default function UploadRosterApp() {
                 padding: '10px 20px',
                 fontSize: '14px',
                 fontWeight: 600,
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel)',
                 color: 'var(--text)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 marginBottom: '24px'
@@ -1500,7 +1560,7 @@ export default function UploadRosterApp() {
               marginBottom: '4px',
               fontSize: '12px',
               fontWeight: 600,
-              color: 'rgba(255, 255, 255, 0.6)'
+              color: 'var(--muted)'
             }}>
               <span>{t('rosterSetup.role', 'Role')}</span>
               <span>{t('rosterSetup.lastName', 'Last Name')}</span>
@@ -1513,7 +1573,7 @@ export default function UploadRosterApp() {
               {parsedData.bench.map((official, index) => (
                 <div key={index} style={{
                   padding: '12px 16px',
-                  background: 'rgba(255, 255, 255, 0.05)',
+                  background: 'var(--panel-2)',
                   borderRadius: '8px',
                   display: 'grid',
                   gridTemplateColumns: '180px 1fr 1fr 140px 70px',
@@ -1523,11 +1583,12 @@ export default function UploadRosterApp() {
                   <select
                     value={official.role}
                     onChange={(e) => handleBenchChange(index, 'role', e.target.value)}
+                    aria-label={t('rosterSetup.role', 'Role')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1545,11 +1606,12 @@ export default function UploadRosterApp() {
                     value={official.lastName}
                     onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
                     placeholder={t('rosterSetup.lastName', 'Last Name')}
+                    aria-label={t('rosterSetup.lastName', 'Last Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1561,11 +1623,12 @@ export default function UploadRosterApp() {
                     value={official.firstName}
                     onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
                     placeholder={t('rosterSetup.firstName', 'First Name')}
+                    aria-label={t('rosterSetup.firstName', 'First Name')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1576,11 +1639,12 @@ export default function UploadRosterApp() {
                     type="date"
                     value={official.dob ? formatDateToISO(official.dob) : ''}
                     onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                    aria-label={t('rosterSetup.dob', 'DOB')}
                     style={{
                       padding: '8px',
                       fontSize: '14px',
-                      background: 'rgba(26, 26, 46, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel)',
+                      border: '1px solid var(--border)',
                       borderRadius: '4px',
                       color: 'var(--text)',
                       width: '100%',
@@ -1614,9 +1678,9 @@ export default function UploadRosterApp() {
                 padding: '10px 20px',
                 fontSize: '14px',
                 fontWeight: 600,
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'var(--panel)',
                 color: 'var(--text)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 marginBottom: '24px'
@@ -1629,9 +1693,9 @@ export default function UploadRosterApp() {
             <div style={{
               marginTop: '32px',
               padding: '20px',
-              background: 'rgba(255,255,255,0.05)',
+              background: 'var(--panel-2)',
               borderRadius: '8px',
-              border: '1px solid rgba(255,255,255,0.1)'
+              border: '1px solid var(--border)'
             }}>
               <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
                 {t('rosterSetup.signatures', 'Signatures')}
@@ -1650,8 +1714,8 @@ export default function UploadRosterApp() {
                     style={{
                       width: '100%',
                       height: '100px',
-                      background: coachSignature ? 'white' : 'rgba(255,255,255,0.05)',
-                      border: coachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                      background: coachSignature ? 'white' : 'var(--panel-2)',
+                      border: coachSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       display: 'flex',
@@ -1697,8 +1761,8 @@ export default function UploadRosterApp() {
                     style={{
                       width: '100%',
                       height: '100px',
-                      background: captainSignature ? 'white' : 'rgba(255,255,255,0.05)',
-                      border: captainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                      background: captainSignature ? 'white' : 'var(--panel-2)',
+                      border: captainSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       display: 'flex',
@@ -1771,7 +1835,7 @@ export default function UploadRosterApp() {
                   <div style={{
                     width: '48px',
                     height: '48px',
-                    border: '4px solid rgba(255,255,255,0.2)',
+                    border: '4px solid var(--border)',
                     borderTop: '4px solid var(--accent)',
                     borderRadius: '50%',
                     animation: 'spin 1s linear infinite',
@@ -1793,9 +1857,9 @@ export default function UploadRosterApp() {
                         padding: '12px 32px',
                         fontSize: '16px',
                         fontWeight: 600,
-                        background: 'rgba(255, 255, 255, 0.1)',
+                        background: 'var(--panel)',
                         color: 'var(--text)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
                         cursor: 'pointer'
                       }}

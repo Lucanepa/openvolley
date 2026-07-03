@@ -53,7 +53,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const modalStyle = {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0,0,0,.85)',
+    background: 'rgba(15, 23, 42, 0.5)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -62,7 +62,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
 
   const contentStyle = {
     width: 'min(90vw, 400px)',
-    background: '#111827',
+    background: 'var(--panel)',
     border: '2px solid #3b82f6',
     borderRadius: 12,
     padding: 0,
@@ -81,10 +81,10 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const inputStyle = {
     width: '100%',
     padding: '12px 16px',
-    background: '#1f2937',
-    border: '1px solid #374151',
+    background: 'var(--panel-2)',
+    border: '1px solid var(--border)',
     borderRadius: 8,
-    color: '#e5e7eb',
+    color: 'var(--text)',
     fontSize: 16,
     outline: 'none',
     boxSizing: 'border-box'
@@ -107,17 +107,18 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
       <div style={contentStyle} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: 20, fontWeight: 600 }}>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
             {showForgotPassword
               ? t('auth.resetPassword', 'Reset Password')
               : t('auth.signIn', 'Sign In')}
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               background: 'none',
               border: 'none',
-              color: '#9ca3af',
+              color: 'var(--muted)',
               fontSize: 24,
               cursor: 'pointer',
               padding: 0,
@@ -160,7 +161,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
             </div>
           ) : showForgotPassword ? (
             <form onSubmit={handleForgotPassword}>
-              <p style={{ color: '#9ca3af', marginBottom: 16, fontSize: 14 }}>
+              <p style={{ color: 'var(--muted)', marginBottom: 16, fontSize: 14 }}>
                 {t('auth.resetInstructions', 'Enter your email and we\'ll send you a reset link')}
               </p>
               <div style={{ marginBottom: 16 }}>
@@ -169,6 +170,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder={t('auth.email', 'Email')}
+                  aria-label={t('auth.email', 'Email')}
                   style={inputStyle}
                   required
                 />
@@ -183,7 +185,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                   width: '100%',
                   padding: '12px 16px',
                   background: 'transparent',
-                  color: '#9ca3af',
+                  color: 'var(--muted)',
                   border: 'none',
                   cursor: 'pointer',
                   marginTop: 8
@@ -201,6 +203,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder={t('auth.email', 'Email')}
+                    aria-label={t('auth.email', 'Email')}
                     style={inputStyle}
                     required
                   />
@@ -211,6 +214,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder={t('auth.password', 'Password')}
+                    aria-label={t('auth.password', 'Password')}
                     style={inputStyle}
                     required
                   />
@@ -239,7 +243,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
               <div style={{
                 marginTop: 20,
                 textAlign: 'center',
-                color: '#9ca3af',
+                color: 'var(--muted)',
                 fontSize: 14
               }}>
                 {t('auth.noAccount', "Don't have an account?")}{' '}

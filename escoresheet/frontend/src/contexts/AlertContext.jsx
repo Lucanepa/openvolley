@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const AlertContext = createContext(null)
@@ -127,8 +127,10 @@ export function AlertProvider({ children }) {
   // Show only the first alert (queue behavior)
   const currentAlert = alerts[0] || null
 
+  const value = useMemo(() => ({ showAlert }), [showAlert])
+
   return (
-    <AlertContext.Provider value={{ showAlert }}>
+    <AlertContext.Provider value={value}>
       {children}
       <AlertModal
         alert={currentAlert}

@@ -172,11 +172,30 @@ export default function useAutoBackup(activeMatchId = null) {
       }
     }
 
-    // Dexie's on('changes') hook
-    db.on('changes', handleChanges)
+    // Dexie's 'changes' event only exists with the dexie-observable addon, which
+    // is NOT installed. Feature-detect so this never throws, and fall back to a
+    // periodic backup so continuous folder backup still works on Chrome/Edge.
+    let usedChangeEvents = false
+    try {
+      const ev = db.on && db.on('changes')
+      if (ev && typeof ev.subscribe === 'function') {
+        ev.subscribe(handleChanges)
+        usedChangeEvents = true
+      }
+    } catch {
+      usedChangeEvents = false
+    }
+
+    let intervalId = null
+    if (!usedChangeEvents) {
+      intervalId = setInterval(() => debouncedBackup(activeMatchId), 15000)
+    }
 
     return () => {
-      db.on('changes').unsubscribe(handleChanges)
+      try {
+        if (usedChangeEvents) db.on('changes').unsubscribe(handleChanges)
+      } catch { /* addon not present */ }
+      if (intervalId) clearInterval(intervalId)
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current)
       }

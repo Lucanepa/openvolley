@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import UploadRosterApp from './UploadRosterApp'
+import './tailwind.css'
 import './styles.css'
 import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'

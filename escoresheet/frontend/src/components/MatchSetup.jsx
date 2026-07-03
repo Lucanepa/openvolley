@@ -215,7 +215,7 @@ const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle }) {
         width: '36px',
         height: '20px',
         borderRadius: '10px',
-        background: on ? 'rgba(59, 130, 246, 0.6)' : 'rgba(255,255,255,0.2)',
+        background: on ? 'rgba(59, 130, 246, 0.6)' : 'var(--border)',
         position: 'relative',
         cursor: 'pointer',
         transition: 'background 0.2s',
@@ -259,16 +259,16 @@ const OfficialCard = memo(function OfficialCard({
   const isCollapsed = collapsible && collapsed && !forceExpanded
   return (
     <div style={{
-      border: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
+      border: isCollapsed ? 'none' : '1px solid var(--border)',
       borderRadius: '8px',
-      background: isCollapsed ? 'transparent' : 'rgba(15, 23, 42, 0.2)',
+      background: isCollapsed ? 'transparent' : 'var(--panel-2)',
       overflow: 'hidden',
       transition: 'border 0.2s, background 0.2s'
     }}>
       <div
         style={{
           padding: '10px 16px',
-          background: isCollapsed ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+          background: isCollapsed ? 'transparent' : 'var(--panel)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -276,7 +276,7 @@ const OfficialCard = memo(function OfficialCard({
           transition: 'background 0.2s'
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: '12px', color: isCollapsed ? 'rgba(255,255,255,0.5)' : 'inherit', transition: 'color 0.2s', whiteSpace: 'nowrap' }}>{title}</span>
+        <span style={{ fontWeight: 600, fontSize: '12px', color: isCollapsed ? 'var(--muted)' : 'inherit', transition: 'color 0.2s', whiteSpace: 'nowrap' }}>{title}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           {hasDatabase && !isCollapsed && (
             <button
@@ -307,10 +307,10 @@ const OfficialCard = memo(function OfficialCard({
       {!isCollapsed && (
         <div style={{ padding: '12px 16px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
-            <div className="field"><label>{t('matchSetup.lastName')}</label><input className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.firstName')}</label><input className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.country')}</label><input style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
-            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
+            <div className="field"><label>{t('matchSetup.lastName')}</label><input aria-label={t('matchSetup.lastName')} className="capitalize" style={{ width: '100%' }} value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.firstName')}</label><input aria-label={t('matchSetup.firstName')} className="capitalize" style={{ width: '100%' }} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.country')}</label><input aria-label={t('matchSetup.country')} style={{ width: '100%' }} value={country} onChange={e => setCountry(e.target.value)} /></div>
+            <div className="field"><label>{t('matchSetup.dateOfBirth')}</label><input aria-label={t('matchSetup.dateOfBirth')} style={{ width: '100%' }} type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></div>
           </div>
         </div>
       )}
@@ -336,16 +336,16 @@ const LineJudgesCard = memo(function LineJudgesCard({
   const isCollapsed = collapsed && !forceExpanded
   return (
     <div style={{
-      border: isCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
+      border: isCollapsed ? 'none' : '1px solid var(--border)',
       borderRadius: '8px',
-      background: isCollapsed ? 'transparent' : 'rgba(15, 23, 42, 0.2)',
+      background: isCollapsed ? 'transparent' : 'var(--panel-2)',
       overflow: 'hidden',
       transition: 'border 0.2s, background 0.2s'
     }}>
       <div
         style={{
           padding: '10px 16px',
-          background: isCollapsed ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+          background: isCollapsed ? 'transparent' : 'var(--panel)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -353,16 +353,16 @@ const LineJudgesCard = memo(function LineJudgesCard({
           transition: 'background 0.2s'
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: '12px', color: isCollapsed ? 'rgba(255,255,255,0.5)' : 'inherit', transition: 'color 0.2s', whiteSpace: 'nowrap' }}>{t('matchSetup.lineJudges')}</span>
+        <span style={{ fontWeight: 600, fontSize: '12px', color: isCollapsed ? 'var(--muted)' : 'inherit', transition: 'color 0.2s', whiteSpace: 'nowrap' }}>{t('matchSetup.lineJudges')}</span>
         <ToggleSwitch on={!isCollapsed} onToggle={() => setCollapsed(c => !c)} />
       </div>
       {!isCollapsed && (
         <div style={{ padding: '12px 16px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
-            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge1')}</label><input aria-label={t('matchSetup.lineJudge1')} className="capitalize" style={{ width: '100%' }} value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge2')}</label><input aria-label={t('matchSetup.lineJudge2')} className="capitalize" style={{ width: '100%' }} value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge3')}</label><input aria-label={t('matchSetup.lineJudge3')} className="capitalize" style={{ width: '100%' }} value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></div>
+            <div className="field"><label>{t('matchSetup.lineJudge4')}</label><input aria-label={t('matchSetup.lineJudge4')} className="capitalize" style={{ width: '100%' }} value={lineJudge4} onChange={e => setLineJudge4(e.target.value)} placeholder={t('matchSetup.name')} /></div>
           </div>
         </div>
       )}
@@ -544,7 +544,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
-              background: '#1f2937',
+              background: 'var(--panel)',
               border: '1px solid #f59e0b',
               borderRadius: s(8),
               padding: `${s(10)}px ${s(14)}px`,
@@ -823,23 +823,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     '#ec4899'  // Pink
   ]
 
+  const homeLiberoCount = homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
+  const awayLiberoCount = awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
   const homeCounts = {
     players: homeRoster.length,
-    liberos: homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
+    liberos: homeLiberoCount,
     bench: benchHome.filter(m => m.firstName || m.lastName || m.dob).length,
     // For coin toss validation: check all players have numbers, has captain, has coach
     allPlayersHaveNumbers: homeRoster.every(p => p.number !== null && p.number !== undefined && p.number !== ''),
     hasCaptain: homeRoster.some(p => p.isCaptain),
-    hasCoach: benchHome.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName))
+    hasCoach: benchHome.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName)),
+    // FIVB 19.1.1 / Swiss Art. 75a: with more than 12 players on the sheet, two
+    // liberos are mandatory. Rosters of 12 or fewer are unaffected.
+    liberosOk: homeRoster.length <= 12 || homeLiberoCount >= 2
   }
   const awayCounts = {
     players: awayRoster.length,
-    liberos: awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length,
+    liberos: awayLiberoCount,
     bench: benchAway.filter(m => m.firstName || m.lastName || m.dob).length,
     // For coin toss validation: check all players have numbers, has captain, has coach
     allPlayersHaveNumbers: awayRoster.every(p => p.number !== null && p.number !== undefined && p.number !== ''),
     hasCaptain: awayRoster.some(p => p.isCaptain),
-    hasCoach: benchAway.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName))
+    hasCoach: benchAway.some(m => m.role?.toLowerCase() === 'coach' && (m.firstName || m.lastName)),
+    liberosOk: awayRoster.length <= 12 || awayLiberoCount >= 2
   }
 
   // Signatures
@@ -2652,7 +2658,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
     // Open scoresheet in new window with matchId parameter for reliable data loading
-    const scoresheetWindow = window.open(`/scoresheet?matchId=${matchId}`, '_blank', 'width=1200,height=900')
+    const scoresheetWindow = window.open(`/scoresheet/?matchId=${matchId}`, '_blank', 'width=1200,height=900')
 
     if (!scoresheetWindow) {
       setNoticeModal({ message: t('matchSetup.allowPopups') })
@@ -3330,14 +3336,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div style={{ width: 80 }}></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
-          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.dateTime')}</span>
             </div>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.date')}</label>
                 <input
+                  aria-label={t('matchSetup.date')}
                   className="w-100"
                   type="date"
                   value={date}
@@ -3349,6 +3356,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.time')}</label>
                 <input
+                  aria-label={t('matchSetup.time')}
                   className="w-100"
                   type="text"
                   value={time}
@@ -3361,14 +3369,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
 
-          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.location')}</span>
             </div>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.city')}</label>
                 <input
+                  aria-label={t('matchSetup.city')}
                   className="w-160 capitalize"
                   value={city}
                   onChange={e => setCity(e.target.value)}
@@ -3379,18 +3388,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {citiesZurich.map(c => <option key={c} value={c} />)}
                 </datalist>
               </div>
-              <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.hall')}</label><input className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
+              <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.hall')}</label><input aria-label={t('matchSetup.hall')} className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
             </div>
           </div>
 
-          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.matchType')}</span>
             </div>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.matchType')}</label>
-                <select className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
+                <select aria-label={t('matchSetup.matchType')} className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
                   <option value="championship">{t('matchSetup.championship')}</option>
                   <option value="cup">{t('matchSetup.cup')}</option>
                   <option value="friendly">{t('matchSetup.friendly')}</option>
@@ -3401,12 +3410,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {type1 === 'other' && (
                 <div className="field" style={{ gap: '2px' }}>
                   <label>{t('matchSetup.specify')}</label>
-                  <input className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                  <input aria-label={t('matchSetup.specify')} className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
                 </div>
               )}
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.championshipType')}</label>
-                <select className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
+                <select aria-label={t('matchSetup.championshipType')} className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
                   <option value="regional">{t('matchSetup.regional')}</option>
                   <option value="national">{t('matchSetup.national')}</option>
                   <option value="international">{t('matchSetup.international')}</option>
@@ -3416,27 +3425,27 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {championshipType === 'other' && (
                 <div className="field" style={{ gap: '2px' }}>
                   <label>{t('matchSetup.specify')}</label>
-                  <input className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                  <input aria-label={t('matchSetup.specify')} className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
                 </div>
               )}
             </div>
           </div>
 
-          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.categoryLevel')}</span>
             </div>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.gender')}</label>
-                <select className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
+                <select aria-label={t('matchSetup.gender')} className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
                   <option value="men">{t('matchSetup.men')}</option>
                   <option value="women">{t('matchSetup.women')}</option>
                 </select>
               </div>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.matchLevel')}</label>
-                <select className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
+                <select aria-label={t('matchSetup.matchLevel')} className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
                   <option value="senior">{t('matchSetup.senior')}</option>
                   <option value="U23">U23</option>
                   <option value="U21">U21</option>
@@ -3448,24 +3457,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {type3 === 'other' && (
                 <div className="field" style={{ gap: '2px' }}>
                   <label>{t('matchSetup.specify')}</label>
-                  <input className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
+                  <input aria-label={t('matchSetup.specify')} className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
                 </div>
               )}
             </div>
           </div>
 
-          <div style={{ border: '1px solid rgba(255, 255, 255, 0.2)', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.gameDetails')}</span>
             </div>
             <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.gameNumber')}</label><input className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
-                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.league')}</label><input className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
+                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.gameNumber')}</label><input aria-label={t('matchSetup.gameNumber')} className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
+                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.league')}</label><input aria-label={t('matchSetup.league')} className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
               </div>
               <div className="field" style={{ gap: '2px' }}>
                 <label>{t('matchSetup.matchFormat')}</label>
-                <select style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
+                <select aria-label={t('matchSetup.matchFormat')} style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
                   <option value={5}>{t('matchSetup.bestOf5')}</option>
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
                 </select>
@@ -3611,22 +3620,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
+                      aria-label={`${t('common.home')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={home}
                       onChange={e => setHome(e.target.value)}
                       placeholder={t('matchSetup.homeTeamName')}
-                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
+                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
                     />
                   </div>
                   <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
+                      aria-label={`${t('common.home')} ${t('matchSetup.short')}`}
                       type="text"
                       value={homeShortName}
                       onChange={e => setHomeShortName(e.target.value.toUpperCase())}
                       maxLength={8}
                       placeholder={t('common.home').toUpperCase()}
-                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
+                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
                     />
                   </div>
                 </div>
@@ -3645,7 +3656,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   fontSize: '22px',
                   fontWeight: 700,
                   fontStyle: 'italic',
-                  color: 'rgb(255, 255, 255)'
+                  color: 'var(--text)'
                 }}>VS</span>
               </div>
 
@@ -3700,22 +3711,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
                     <input
+                      aria-label={`${t('common.away')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={away}
                       onChange={e => setAway(e.target.value)}
                       placeholder={t('matchSetup.awayTeamName')}
-                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
+                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
                     />
                   </div>
                   <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
                     <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
                     <input
+                      aria-label={`${t('common.away')} ${t('matchSetup.short')}`}
                       type="text"
                       value={awayShortName}
                       onChange={e => setAwayShortName(e.target.value.toUpperCase())}
                       maxLength={8}
                       placeholder={t('common.away').toUpperCase()}
-                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px' }}
+                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
                     />
                   </div>
 
@@ -3732,7 +3745,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div
               style={{
                 padding: '12px 24px',
-                background: 'rgba(255, 255, 255, 0.05)',
+                background: 'var(--panel-2)',
                 borderRadius: '8px',
                 fontFamily: 'monospace',
                 fontSize: '18px',
@@ -3756,6 +3769,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     </label>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input
+                        aria-label={t('matchSetup.notificationEmail')}
                         type="email"
                         placeholder={t('matchSetup.notificationEmailPlaceholder')}
                         value={notificationEmail}
@@ -3765,8 +3779,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           padding: '10px 12px',
                           fontSize: '14px',
                           borderRadius: '6px',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--border)',
+                          background: 'var(--panel-2)',
                           color: 'inherit'
                         }}
                       />
@@ -3899,7 +3913,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 position: 'fixed',
                 inset: 0,
                 zIndex: 999,
-                background: 'rgba(0, 0, 0, 0.6)'
+                background: 'rgba(15, 23, 42, 0.5)'
               }}
               onClick={() => setColorPickerModal(null)}
             />
@@ -3910,8 +3924,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 top: '50%',
                 transform: 'translate(-50%, -50%)',
                 zIndex: 1000,
-                background: '#1f2937',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '16px',
                 boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
@@ -3929,6 +3943,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <button
                       key={color}
                       type="button"
+                      aria-label={`${t('matchSetup.selectColour', 'Select colour')} ${color}`}
                       onClick={() => {
                         if (colorPickerModal.team === 'home') {
                           setHomeColor(color)
@@ -3944,7 +3959,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         gap: '8px',
                         padding: '12px 8px',
                         background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                        border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.1)',
+                        border: isSelected ? '2px solid #3b82f6' : '1px solid var(--border)',
                         borderRadius: '8px',
                         cursor: 'pointer',
                         transition: 'all 0.2s',
@@ -3978,7 +3993,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <MatchSetupHomeTeamView>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{home || t('matchSetup.homeTeam')}</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'var(--panel)' }}>{home || t('matchSetup.homeTeam')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -4025,10 +4040,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
           {/* Left: Upload section */}
           <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            border: '1px solid var(--border)',
             borderRadius: '8px',
             padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
+            background: 'var(--panel-2)',
             flex: 1
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -4065,7 +4080,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   borderRadius: '6px',
                   padding: '2px',
                   gap: '2px'
@@ -4078,7 +4093,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       fontSize: '12px',
                       fontWeight: 600,
                       background: homeUploadMode === 'local' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: homeUploadMode === 'local' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                      color: homeUploadMode === 'local' ? '#60a5fa' : 'var(--muted)',
                       border: homeUploadMode === 'local' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                       borderRadius: '4px',
                       cursor: 'pointer',
@@ -4095,7 +4110,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       fontSize: '12px',
                       fontWeight: 600,
                       background: homeUploadMode === 'remote' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: homeUploadMode === 'remote' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                      color: homeUploadMode === 'remote' ? '#60a5fa' : 'var(--muted)',
                       border: homeUploadMode === 'remote' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                       borderRadius: '4px',
                       cursor: 'pointer',
@@ -4188,10 +4203,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                   {match?.pendingHomeRoster && (
                     <div style={{
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
                       padding: '12px',
-                      background: 'rgba(15, 23, 42, 0.2)',
+                      background: 'var(--panel-2)',
                       marginTop: '12px'
                     }}>
                       <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
@@ -4288,7 +4303,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             if (!matchId) return
                             await db.matches.update(matchId, { pendingHomeRoster: null })
                           }}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: 'var(--panel)', color: 'var(--text)', flex: 1 }}
                         >
                           {t('matchSetup.rejectRoster')}
                         </button>
@@ -4306,10 +4321,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const homeHasError = !homeCaptain || homeNonLiberoCount < 6
             return (
               <div style={{
-                border: homeHasError ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                border: homeHasError ? '1px solid #ef4444' : '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px',
-                background: homeHasError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.2)',
+                background: homeHasError ? 'rgba(239, 68, 68, 0.15)' : 'var(--panel-2)',
                 flex: 1,
                 display: 'flex',
                 alignItems: 'center',
@@ -4317,14 +4332,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 gap: '16px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.players')}:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.players')}:</span>
                   <span style={{ fontSize: '18px', fontWeight: 700, color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{homeRoster.length}</span>
-                  <span style={{ fontSize: '16px', color: homeNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.5)' }}>
+                  <span style={{ fontSize: '16px', color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>
                     ({homeNonLiberoCount} + {homeRoster.filter(p => p.libero).length} {homeRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: !homeCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.captain')}:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: !homeCaptain ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.captain')}:</span>
                   {homeCaptain ? (
                     <span style={{
                       display: 'inline-flex',
@@ -4349,10 +4364,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* Add new player section */}
         {homeRoster.length < 14 && (
           <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            border: '1px solid var(--border)',
             borderRadius: '8px',
             padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
+            background: 'var(--panel-2)',
             marginBottom: '8px',
             width: 'max-content',
             margin: '0 auto 8px',
@@ -4361,11 +4376,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div data-help-id="setup-add-player" className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
-                <input placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <select data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
+                <input aria-label={t('matchSetup.playerNumber', 'Player number')} placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <select aria-label={t('matchSetup.libero', 'Libero')} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
@@ -4387,7 +4402,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       width: '24px',
                       height: '24px',
                       borderRadius: '4px',
-                      border: homeCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      border: homeCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
                       background: homeCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -4395,7 +4410,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 700,
-                      color: homeCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      color: homeCaptain ? '#22c55e' : 'var(--muted)',
                       userSelect: 'none'
                     }}
                   >C</div>
@@ -4408,7 +4423,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         width: '24px',
                         height: '24px',
                         borderRadius: '4px',
-                        border: homeLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        border: homeLfp ? '2px solid #f97316' : '2px solid var(--border)',
                         background: homeLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -4416,7 +4431,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         cursor: 'pointer',
                         fontSize: '10px',
                         fontWeight: 700,
-                        color: homeLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        color: homeLfp ? '#f97316' : 'var(--muted)',
                         userSelect: 'none'
                       }}
                     >{homeLfp ? 'LFP' : '\u2014'}</div>
@@ -4479,8 +4494,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }
             } else if (isLibero) {
               borderStyle = {
-                border: '2px solid rgba(255, 255, 255, 0.8)',
-                background: 'rgba(255, 255, 255, 0.05)'
+                border: '2px solid var(--border)',
+                background: 'var(--panel-2)'
               }
             }
 
@@ -4490,6 +4505,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (homeLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (homeLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
                 <input
+                  aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder="#"
                   type="number"
                   inputMode="numeric"
@@ -4522,6 +4538,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.lastName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
@@ -4533,6 +4550,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.firstName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
@@ -4544,6 +4562,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.dateOfBirth')}
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
                   type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -4555,6 +4574,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <select
+                  aria-label={t('matchSetup.libero', 'Libero')}
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...homeRoster]
@@ -4610,7 +4630,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       width: '24px',
                       height: '24px',
                       borderRadius: '4px',
-                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid var(--border)',
                       background: (p.isCaptain || false) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -4618,7 +4638,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 700,
-                      color: (p.isCaptain || false) ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      color: (p.isCaptain || false) ? '#22c55e' : 'var(--muted)',
                       userSelect: 'none'
                     }}
                   >C</div>
@@ -4635,7 +4655,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         width: '24px',
                         height: '24px',
                         borderRadius: '4px',
-                        border: p.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        border: p.isLfp ? '2px solid #f97316' : '2px solid var(--border)',
                         background: p.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -4643,7 +4663,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         cursor: 'pointer',
                         fontSize: '10px',
                         fontWeight: 700,
-                        color: p.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        color: p.isLfp ? '#f97316' : 'var(--muted)',
                         userSelect: 'none'
                       }}
                     >{p.isLfp ? 'LFP' : '\u2014'}</div>
@@ -4677,7 +4697,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const originalIdx = benchHome.findIndex(b => b === m)
             return (
               <div key={`bh-${originalIdx}`} className="bench-grid-row">
-                <select value={m.role || 'Coach'} onChange={e => {
+                <select aria-label={t('matchSetup.role')} value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
                   if (isRoleTaken) return
@@ -4696,9 +4716,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
                   <button type="button" className="secondary" onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
@@ -4737,9 +4757,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div style={{
           marginTop: '24px',
           padding: '16px',
-          background: 'rgba(255,255,255,0.05)',
+          background: 'var(--panel-2)',
           borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.1)'
+          border: '1px solid var(--border)'
         }}>
           <h4 style={{ margin: 0, marginBottom: '12px' }}>
             {t('rosterSetup.signatures', 'Signatures')}
@@ -4758,8 +4778,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 style={{
                   width: '100%',
                   height: '80px',
-                  background: homeCoachSignature ? 'white' : 'rgba(255,255,255,0.05)',
-                  border: homeCoachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  background: homeCoachSignature ? 'white' : 'var(--panel-2)',
+                  border: homeCoachSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
                   borderRadius: '6px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -4805,8 +4825,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 style={{
                   width: '100%',
                   height: '80px',
-                  background: homeCaptainSignature ? 'white' : 'rgba(255,255,255,0.05)',
-                  border: homeCaptainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  background: homeCaptainSignature ? 'white' : 'var(--panel-2)',
+                  border: homeCaptainSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
                   borderRadius: '6px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -5072,11 +5092,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
                   {t('matchSetup.modals.playersCount', { count: importSummaryModal.players })}
                 </div>
-                <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
                   {t('matchSetup.modals.successfullyImported')}
                 </div>
                 {importSummaryModal.benchOfficials > 0 && (
-                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '8px' }}>
                     {importSummaryModal.benchOfficials > 1 ? t('matchSetup.modals.benchOfficialsCountPlural', { count: importSummaryModal.benchOfficials }) : t('matchSetup.modals.benchOfficialsCount', { count: importSummaryModal.benchOfficials })}
                   </div>
                 )}
@@ -5091,7 +5111,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
                   {t('matchSetup.modals.reviewImportedData')}
                 </div>
-                <ul style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
+                <ul style={{ fontSize: '12px', color: 'var(--muted)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
                   <li>{t('matchSetup.modals.reviewAddBenchOfficials')}</li>
                   <li>{t('matchSetup.modals.reviewVerifyDob')}</li>
                   <li>{t('matchSetup.modals.reviewSetCaptainLibero')}</li>
@@ -5171,7 +5191,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <div style={{ marginBottom: '16px' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
-                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
                             <th style={{ padding: '8px', textAlign: 'left' }}>#</th>
                             <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
                             <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
@@ -5181,7 +5201,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         </thead>
                         <tbody>
                           {(roster.players || []).map((p, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                               <td style={{ padding: '6px 8px' }}>{p.number}</td>
                               <td style={{ padding: '6px 8px' }}>{p.lastName || ''}</td>
                               <td style={{ padding: '6px 8px' }}>{p.firstName || ''}</td>
@@ -5200,7 +5220,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         <div>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                             <thead>
-                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                 <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.role')}</th>
                                 <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
                                 <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
@@ -5208,7 +5228,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             </thead>
                             <tbody>
                               {roster.bench.map((b, i) => (
-                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                                   <td style={{ padding: '6px 8px' }}>{b.role || ''}</td>
                                   <td style={{ padding: '6px 8px' }}>{b.lastName || ''}</td>
                                   <td style={{ padding: '6px 8px' }}>{b.firstName || ''}</td>
@@ -5308,7 +5328,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <MatchSetupAwayTeamView>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.1)' }}>{away || t('matchSetup.awayTeam')}</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'var(--panel)' }}>{away || t('matchSetup.awayTeam')}</h2>
           <div style={{ width: 80 }}></div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -5355,10 +5375,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
           {/* Left: Upload section */}
           <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            border: '1px solid var(--border)',
             borderRadius: '8px',
             padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
+            background: 'var(--panel-2)',
             flex: 1
           }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -5394,7 +5414,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
-                  background: 'rgba(255, 255, 255, 0.1)',
+                  background: 'var(--panel)',
                   borderRadius: '6px',
                   padding: '2px',
                   gap: '2px'
@@ -5407,7 +5427,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       fontSize: '12px',
                       fontWeight: 600,
                       background: awayUploadMode === 'local' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: awayUploadMode === 'local' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                      color: awayUploadMode === 'local' ? '#60a5fa' : 'var(--muted)',
                       border: awayUploadMode === 'local' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                       borderRadius: '4px',
                       cursor: 'pointer',
@@ -5424,7 +5444,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       fontSize: '12px',
                       fontWeight: 600,
                       background: awayUploadMode === 'remote' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: awayUploadMode === 'remote' ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)',
+                      color: awayUploadMode === 'remote' ? '#60a5fa' : 'var(--muted)',
                       border: awayUploadMode === 'remote' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                       borderRadius: '4px',
                       cursor: 'pointer',
@@ -5517,10 +5537,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                   {match?.pendingAwayRoster && (
                     <div style={{
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
                       padding: '12px',
-                      background: 'rgba(15, 23, 42, 0.2)',
+                      background: 'var(--panel-2)',
                       marginTop: '12px'
                     }}>
                       <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
@@ -5617,7 +5637,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             if (!matchId) return
                             await db.matches.update(matchId, { pendingAwayRoster: null })
                           }}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text)', flex: 1 }}
+                          style={{ padding: '8px 16px', fontSize: '12px', background: 'var(--panel)', color: 'var(--text)', flex: 1 }}
                         >
                           {t('matchSetup.rejectRoster')}
                         </button>
@@ -5635,10 +5655,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const awayHasError = !awayCaptain || awayNonLiberoCount < 6
             return (
               <div style={{
-                border: awayHasError ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
+                border: awayHasError ? '1px solid #ef4444' : '1px solid var(--border)',
                 borderRadius: '8px',
                 padding: '12px',
-                background: awayHasError ? 'rgba(239, 68, 68, 0.15)' : 'rgba(15, 23, 42, 0.2)',
+                background: awayHasError ? 'rgba(239, 68, 68, 0.15)' : 'var(--panel-2)',
                 flex: 1,
                 display: 'flex',
                 alignItems: 'center',
@@ -5646,14 +5666,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 gap: '16px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.players')}:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.players')}:</span>
                   <span style={{ fontSize: '18px', fontWeight: 700, color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{awayRoster.length}</span>
-                  <span style={{ fontSize: '16px', color: awayNonLiberoCount < 6 ? '#ef4444' : 'rgba(255, 255, 255, 0.5)' }}>
+                  <span style={{ fontSize: '16px', color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>
                     ({awayNonLiberoCount} + {awayRoster.filter(p => p.libero).length} {awayRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: !awayCaptain ? '#ef4444' : 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.captain')}:</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: !awayCaptain ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.captain')}:</span>
                   {awayCaptain ? (
                     <span style={{
                       display: 'inline-flex',
@@ -5678,10 +5698,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* Add new player section */}
         {awayRoster.length < 14 && (
           <div style={{
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            border: '1px solid var(--border)',
             borderRadius: '8px',
             padding: '12px',
-            background: 'rgba(15, 23, 42, 0.2)',
+            background: 'var(--panel-2)',
             width: 'max-content',
             margin: '0 auto 8px',
           }}>
@@ -5690,6 +5710,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
                 <input
+                  aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder={t('matchSetup.numberPlaceholder')}
                   type="number"
                   inputMode="numeric"
@@ -5699,10 +5720,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onChange={e => setAwayNum(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 />
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <select value={awayLibero} onChange={e => {
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <select aria-label={t('matchSetup.libero', 'Libero')} value={awayLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
@@ -5724,7 +5745,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       width: '24px',
                       height: '24px',
                       borderRadius: '4px',
-                      border: awayCaptain ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      border: awayCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
                       background: awayCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -5732,7 +5753,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 700,
-                      color: awayCaptain ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      color: awayCaptain ? '#22c55e' : 'var(--muted)',
                       userSelect: 'none'
                     }}
                   >C</div>
@@ -5745,7 +5766,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         width: '24px',
                         height: '24px',
                         borderRadius: '4px',
-                        border: awayLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        border: awayLfp ? '2px solid #f97316' : '2px solid var(--border)',
                         background: awayLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -5753,7 +5774,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         cursor: 'pointer',
                         fontSize: '10px',
                         fontWeight: 700,
-                        color: awayLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        color: awayLfp ? '#f97316' : 'var(--muted)',
                         userSelect: 'none'
                       }}
                     >{awayLfp ? 'LFP' : '\u2014'}</div>
@@ -5814,8 +5835,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               }
             } else if (isLibero) {
               borderStyle = {
-                border: '2px solid rgba(255, 255, 255, 0.8)',
-                background: 'rgba(255, 255, 255, 0.05)'
+                border: '2px solid var(--border)',
+                background: 'var(--panel-2)'
               }
             }
 
@@ -5825,6 +5846,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (awayLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (awayLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
                 <input
+                  aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder="#"
                   type="number"
                   inputMode="numeric"
@@ -5856,6 +5878,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.lastName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
@@ -5867,6 +5890,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.firstName')}
                   className="capitalize"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
@@ -5878,6 +5902,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <input
+                  aria-label={t('matchSetup.dateOfBirth')}
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
                   type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -5889,6 +5914,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <select
+                  aria-label={t('matchSetup.libero', 'Libero')}
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...awayRoster]
@@ -5940,7 +5966,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       width: '24px',
                       height: '24px',
                       borderRadius: '4px',
-                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.3)',
+                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid var(--border)',
                       background: (p.isCaptain || false) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -5948,7 +5974,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       cursor: 'pointer',
                       fontSize: '12px',
                       fontWeight: 700,
-                      color: (p.isCaptain || false) ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                      color: (p.isCaptain || false) ? '#22c55e' : 'var(--muted)',
                       userSelect: 'none'
                     }}
                   >C</div>
@@ -5965,7 +5991,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         width: '24px',
                         height: '24px',
                         borderRadius: '4px',
-                        border: p.isLfp ? '2px solid #f97316' : '2px solid rgba(255,255,255,0.3)',
+                        border: p.isLfp ? '2px solid #f97316' : '2px solid var(--border)',
                         background: p.isLfp ? 'rgba(249, 115, 22, 0.15)' : 'transparent',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -5973,7 +5999,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         cursor: 'pointer',
                         fontSize: '10px',
                         fontWeight: 700,
-                        color: p.isLfp ? '#f97316' : 'rgba(255,255,255,0.3)',
+                        color: p.isLfp ? '#f97316' : 'var(--muted)',
                         userSelect: 'none'
                       }}
                     >{p.isLfp ? 'LFP' : '\u2014'}</div>
@@ -6007,7 +6033,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const originalIdx = benchAway.findIndex(b => b === m)
             return (
               <div key={`ba-${originalIdx}`} className="bench-grid-row">
-                <select value={m.role || 'Coach'} onChange={e => {
+                <select aria-label={t('matchSetup.role')} value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
                   if (isRoleTaken) return
@@ -6026,9 +6052,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
-                <input className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
-                <input className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
-                <input placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
                   <button type="button" className="secondary" onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)
@@ -6067,9 +6093,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div style={{
           marginTop: '24px',
           padding: '16px',
-          background: 'rgba(255,255,255,0.05)',
+          background: 'var(--panel-2)',
           borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.1)'
+          border: '1px solid var(--border)'
         }}>
           <h4 style={{ margin: 0, marginBottom: '12px' }}>
             {t('rosterSetup.signatures', 'Signatures')}
@@ -6088,8 +6114,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 style={{
                   width: '100%',
                   height: '80px',
-                  background: awayCoachSignature ? 'white' : 'rgba(255,255,255,0.05)',
-                  border: awayCoachSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  background: awayCoachSignature ? 'white' : 'var(--panel-2)',
+                  border: awayCoachSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
                   borderRadius: '6px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -6135,8 +6161,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 style={{
                   width: '100%',
                   height: '80px',
-                  background: awayCaptainSignature ? 'white' : 'rgba(255,255,255,0.05)',
-                  border: awayCaptainSignature ? '2px solid #22c55e' : '2px dashed rgba(255,255,255,0.3)',
+                  background: awayCaptainSignature ? 'white' : 'var(--panel-2)',
+                  border: awayCaptainSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
                   borderRadius: '6px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -6403,11 +6429,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
                   {t('matchSetup.modals.playersCount', { count: importSummaryModal.players })}
                 </div>
-                <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
                   {t('matchSetup.modals.successfullyImported')}
                 </div>
                 {importSummaryModal.benchOfficials > 0 && (
-                  <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '8px' }}>
                     {importSummaryModal.benchOfficials > 1 ? t('matchSetup.modals.benchOfficialsCountPlural', { count: importSummaryModal.benchOfficials }) : t('matchSetup.modals.benchOfficialsCount', { count: importSummaryModal.benchOfficials })}
                   </div>
                 )}
@@ -6422,7 +6448,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div style={{ fontSize: '13px', color: '#eab308', fontWeight: 500, marginBottom: '4px' }}>
                   {t('matchSetup.modals.reviewImportedData')}
                 </div>
-                <ul style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
+                <ul style={{ fontSize: '12px', color: 'var(--muted)', margin: '8px 0 0 0', paddingLeft: '20px', lineHeight: '1.6' }}>
                   <li>{t('matchSetup.modals.reviewAddBenchOfficials')}</li>
                   <li>{t('matchSetup.modals.reviewVerifyDob')}</li>
                   <li>{t('matchSetup.modals.reviewSetCaptainLibero')}</li>
@@ -6502,7 +6528,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <div style={{ marginBottom: '16px' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
-                          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
                             <th style={{ padding: '8px', textAlign: 'left' }}>#</th>
                             <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
                             <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
@@ -6512,7 +6538,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         </thead>
                         <tbody>
                           {(roster.players || []).map((p, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                               <td style={{ padding: '6px 8px' }}>{p.number}</td>
                               <td style={{ padding: '6px 8px' }}>{p.lastName || ''}</td>
                               <td style={{ padding: '6px 8px' }}>{p.firstName || ''}</td>
@@ -6531,7 +6557,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         <div>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                             <thead>
-                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
                                 <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.role')}</th>
                                 <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.lastName')}</th>
                                 <th style={{ padding: '8px', textAlign: 'left' }}>{t('rosterSetup.firstName')}</th>
@@ -6539,7 +6565,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             </thead>
                             <tbody>
                               {roster.bench.map((b, i) => (
-                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                                   <td style={{ padding: '6px 8px' }}>{b.role || ''}</td>
                                   <td style={{ padding: '6px 8px' }}>{b.lastName || ''}</td>
                                   <td style={{ padding: '6px 8px' }}>{b.firstName || ''}</td>
@@ -6716,8 +6742,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Roster validation for proceeding to coin toss (requires captain and coach)
   // Note: all players having numbers is only required when CONFIRMING coin toss, not proceeding to it
-  const homeConfigured = homeRosterExists && homeCounts.hasCaptain && homeCounts.hasCoach
-  const awayConfigured = awayRosterExists && awayCounts.hasCaptain && awayCounts.hasCoach
+  const homeConfigured = homeRosterExists && homeCounts.hasCaptain && homeCounts.hasCoach && homeCounts.liberosOk
+  const awayConfigured = awayRosterExists && awayCounts.hasCaptain && awayCounts.hasCoach && awayCounts.liberosOk
 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
@@ -6736,6 +6762,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       else {
         if (!homeCounts.hasCaptain) missing.push(t('warnings.homeCaptainMissing'))
         if (!homeCounts.hasCoach) missing.push(t('warnings.homeCoachMissing'))
+        if (!homeCounts.liberosOk) missing.push(t('warnings.homeTwoLiberosRequired', 'Home: 2 liberos required for more than 12 players'))
       }
     }
     if (!awayConfigured) {
@@ -6743,6 +6770,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       else {
         if (!awayCounts.hasCaptain) missing.push(t('warnings.awayCaptainMissing'))
         if (!awayCounts.hasCoach) missing.push(t('warnings.awayCoachMissing'))
+        if (!awayCounts.liberosOk) missing.push(t('warnings.awayTwoLiberosRequired', 'Away: 2 liberos required for more than 12 players'))
       }
     }
     return missing
@@ -6858,9 +6886,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         flexDirection: 'column',
         gap: '4px',
         padding: '8px 12px',
-        background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
+        background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'var(--panel-2)',
         borderRadius: '8px',
-        border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255,255,255,0.1)',
+        border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid var(--border)',
         minWidth: '100px',
         flex: 1
       }}>
@@ -6931,9 +6959,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         flexDirection: 'column',
         gap: '4px',
         padding: '8px 12px',
-        background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(255,255,255,0.03)',
+        background: enabled ? 'rgba(34, 197, 94, 0.1)' : 'var(--panel-2)',
         borderRadius: '8px',
-        border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255,255,255,0.1)',
+        border: enabled ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid var(--border)',
         minWidth: '140px',
         flex: 1
       }}>
@@ -7079,7 +7107,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(12) }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
               <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
-              <h3 style={{ margin: 0, background: 'rgba(255, 255, 255, 0.1)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchInfo')}</h3>
+              <h3 style={{ margin: 0, background: 'var(--panel)', padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: s(17) }}>{t('matchSetup.matchInfo')}</h3>
               <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: s(8) }}>
@@ -7218,7 +7246,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
           {/* Row 3: Color selector + Shirt + Roster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: s(12), marginTop: s(30) }}>
-            <span style={{ fontSize: s(13), color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
+            <span style={{ fontSize: s(13), color: 'var(--muted)' }}>{t('matchSetup.selectColour')}</span>
             <div
               className="shirt"
               style={{ background: homeColor, cursor: 'pointer', transform: `scale(${scaleFactor})` }}
@@ -7306,7 +7334,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
           {/* Row 3: Color selector + Shirt + Roster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: s(12), marginTop: s(30) }}>
-            <span style={{ fontSize: s(13), color: 'rgba(255, 255, 255, 0.7)' }}>{t('matchSetup.selectColour')}</span>
+            <span style={{ fontSize: s(13), color: 'var(--muted)' }}>{t('matchSetup.selectColour')}</span>
             <div
               className="shirt"
               style={{ background: awayColor, cursor: 'pointer', transform: `scale(${scaleFactor})` }}
@@ -7348,7 +7376,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span>
                   </div>
                   <div style={{
-                    background: 'rgba(15, 23, 42, 0.5)',
+                    background: 'var(--panel-2)',
                     padding: '12px',
                     borderRadius: '8px',
                     marginTop: '12px',
@@ -7357,19 +7385,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     <div style={{ fontWeight: 600, marginBottom: 8 }}>Connection URLs:</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'monospace', fontSize: '11px' }}>
                       <div>
-                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>Main:</div>
+                        <div style={{ color: 'var(--muted)' }}>Main:</div>
                         <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}</div>
                       </div>
                       <div>
-                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>Referee:</div>
+                        <div style={{ color: 'var(--muted)' }}>Referee:</div>
                         <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}</div>
                       </div>
                       <div>
-                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>Bench:</div>
+                        <div style={{ color: 'var(--muted)' }}>Bench:</div>
                         <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}</div>
                       </div>
                       <div>
-                        <div style={{ color: 'rgba(255,255,255,0.6)' }}>WebSocket:</div>
+                        <div style={{ color: 'var(--muted)' }}>WebSocket:</div>
                         <div style={{ wordBreak: 'break-all' }}>{serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}</div>
                       </div>
                     </div>
@@ -7377,16 +7405,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </div>
               ) : (
                 <div style={{ marginTop: 12 }}>
-                  <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.6)', marginBottom: 12 }}>
+                  <p className="text-sm" style={{ color: 'var(--muted)', marginBottom: 12 }}>
                     Start the live server to allow referee, bench, and livescore apps to connect.
                   </p>
                   {typeof window !== 'undefined' && !window.electronAPI?.server && (
                     <div style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
+                      background: 'var(--panel-2)',
                       padding: '12px',
                       borderRadius: '8px',
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.7)',
+                      color: 'var(--muted)',
                       marginTop: '12px'
                     }}>
                       <div style={{ marginBottom: '8px', fontWeight: 600 }}>To start from browser/PWA:</div>
@@ -7933,7 +7961,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               position: 'fixed',
               inset: 0,
               zIndex: 999,
-              background: 'rgba(0, 0, 0, 0.6)',
+              background: 'rgba(15, 23, 42, 0.5)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -7948,8 +7976,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               top: '50%',
               transform: 'translate(-50%, -50%)',
               zIndex: 1000,
-              background: '#1f2937',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
               borderRadius: '12px',
               padding: '16px',
               boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
@@ -7973,6 +8001,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <button
                     key={color}
                     type="button"
+                    aria-label={`${t('matchSetup.selectColour', 'Select colour')} ${color}`}
                     onClick={async () => {
                       const isHome = colorPickerModal.team === 'home'
                       if (isHome) {
@@ -8046,7 +8075,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       gap: '8px',
                       padding: '12px 8px',
                       background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                      border: isSelected ? '2px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.1)',
+                      border: isSelected ? '2px solid #3b82f6' : '1px solid var(--border)',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
@@ -8054,14 +8083,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }}
                     onMouseEnter={(e) => {
                       if (!isSelected) {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                        e.currentTarget.style.background = 'var(--panel-2)'
+                        e.currentTarget.style.borderColor = 'var(--border)'
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isSelected) {
                         e.currentTarget.style.background = 'transparent'
-                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                        e.currentTarget.style.borderColor = 'var(--border)'
                       }
                     }}
                   >
@@ -8141,11 +8170,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e', marginBottom: '8px' }}>
                 {t('matchSetup.modals.playersCount', { count: importSummaryModal.players })}
               </div>
-              <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+              <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
                 {t('matchSetup.modals.successfullyImported')}
               </div>
               {importSummaryModal.benchOfficials > 0 && (
-                <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '8px' }}>
                   {importSummaryModal.benchOfficials > 1 ? t('matchSetup.modals.benchOfficialsCountPlural', { count: importSummaryModal.benchOfficials }) : t('matchSetup.modals.benchOfficialsCount', { count: importSummaryModal.benchOfficials })}
                 </div>
               )}
@@ -8164,7 +8193,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   {importSummaryModal.errors.length} {importSummaryModal.errors.length > 1 ? t('common.error') + 's' : t('common.error')}
                 </div>
                 {importSummaryModal.errors.map((err, i) => (
-                  <div key={i} style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>{err}</div>
+                  <div key={i} style={{ fontSize: '12px', color: 'var(--muted)' }}>{err}</div>
                 ))}
               </div>
             )}
@@ -8182,7 +8211,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
               <ul style={{
                 fontSize: '12px',
-                color: 'rgba(255,255,255,0.7)',
+                color: 'var(--muted)',
                 margin: '8px 0 0 0',
                 paddingLeft: '20px',
                 lineHeight: '1.6'
@@ -8235,7 +8264,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               marginBottom: '16px'
             }}>
               <div style={{ marginBottom: '16px' }}>
-                <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
+                <span style={{ fontSize: '14px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
                   {t('matchSetup.modals.matchId')}
                 </span>
                 <span style={{
@@ -8249,7 +8278,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 </span>
               </div>
               <div>
-                <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '4px' }}>
+                <span style={{ fontSize: '14px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
                   {t('matchSetup.gamePin')}
                 </span>
                 <span style={{
@@ -8272,12 +8301,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               padding: '16px',
               marginBottom: '20px'
             }}>
-              <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'rgba(255,255,255,0.9)' }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'var(--text)' }}>
                 {t('matchSetup.modals.connectionPins')}
               </div>
               <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
                     {t('matchSetup.refereePinLabel')}
                   </span>
                   <span style={{
@@ -8291,7 +8320,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </span>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
                     {t('matchSetup.homeBenchPinLabel')}
                   </span>
                   <span style={{
@@ -8305,7 +8334,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </span>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
                     {t('matchSetup.awayBenchPinLabel')}
                   </span>
                   <span style={{
@@ -8323,7 +8352,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
             <p style={{
               fontSize: '13px',
-              color: 'rgba(255,255,255,0.7)',
+              color: 'var(--muted)',
               marginBottom: '20px',
               lineHeight: 1.5
             }}>
@@ -8369,6 +8398,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {t('matchSetup.modals.enterNew6DigitPin')}
               </label>
               <input
+                aria-label={t('matchSetup.modals.enterNew6DigitPin')}
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -8391,7 +8421,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   letterSpacing: '4px',
                   fontFamily: 'monospace',
                   background: 'var(--bg)',
-                  border: pinError ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.2)',
+                  border: pinError ? '2px solid #ef4444' : '2px solid var(--border)',
                   borderRadius: '8px',
                   color: 'var(--text)'
                 }}
@@ -8413,9 +8443,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   padding: '10px 20px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  background: 'rgba(255,255,255,0.1)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: '1px solid var(--border)',
                   borderRadius: '8px',
                   cursor: 'pointer'
                 }}

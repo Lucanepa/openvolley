@@ -105,7 +105,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const modalStyle = {
     position: 'fixed',
     inset: 0,
-    background: 'rgba(0,0,0,.85)',
+    background: 'rgba(15, 23, 42, 0.5)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -115,7 +115,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const contentStyle = {
     width: 'min(90vw, 500px)',
     maxHeight: '80vh',
-    background: '#111827',
+    background: 'var(--panel)',
     border: '2px solid #3b82f6',
     borderRadius: 12,
     overflow: 'hidden',
@@ -137,15 +137,16 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
       <div style={contentStyle} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: 20, fontWeight: 600 }}>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
             {t('matchHistory.title', 'My Matches')}
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close', 'Close')}
             style={{
               background: 'none',
               border: 'none',
-              color: '#9ca3af',
+              color: 'var(--muted)',
               fontSize: 24,
               cursor: 'pointer',
               padding: 0,
@@ -173,11 +174,11 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
           )}
 
           {loading ? (
-            <div style={{ textAlign: 'center', color: '#9ca3af', padding: 40 }}>
+            <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 40 }}>
               {t('common.loading', 'Loading...')}
             </div>
           ) : matches.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#9ca3af', padding: 40 }}>
+            <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 40 }}>
               <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>📋</div>
               <p>{t('matchHistory.noMatches', 'No matches yet')}</p>
               <p style={{ fontSize: 13, marginTop: 8 }}>
@@ -192,8 +193,8 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                   onClick={() => onSelectMatch?.(match)}
                   style={{
                     padding: '14px 16px',
-                    background: '#1f2937',
-                    border: '1px solid #374151',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: 8,
                     cursor: onSelectMatch ? 'pointer' : 'default',
                     transition: 'border-color 0.2s'
@@ -202,7 +203,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                     if (onSelectMatch) e.currentTarget.style.borderColor = '#3b82f6'
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = '#374151'
+                    e.currentTarget.style.borderColor = 'var(--border)'
                   }}
                 >
                   {/* Top row: Teams and score */}
@@ -213,13 +214,13 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                     marginBottom: 8
                   }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ color: '#e5e7eb', fontWeight: 500 }}>
+                      <div style={{ color: 'var(--text)', fontWeight: 500 }}>
                         {getTeamName(match.team_a)}
                       </div>
-                      <div style={{ color: '#9ca3af', fontSize: 13 }}>
+                      <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                         {t('matchHistory.vs', 'vs')}
                       </div>
-                      <div style={{ color: '#e5e7eb', fontWeight: 500 }}>
+                      <div style={{ color: 'var(--text)', fontWeight: 500 }}>
                         {getTeamName(match.team_b)}
                       </div>
                     </div>
@@ -242,15 +243,15 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                     justifyContent: 'space-between',
                     fontSize: 12
                   }}>
-                    <div style={{ color: '#6b7280' }}>
+                    <div style={{ color: 'var(--muted)' }}>
                       {formatDate(match.start_time || match.created_at)}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <span style={{
                         padding: '2px 8px',
-                        background: '#374151',
+                        background: 'var(--panel-2)',
                         borderRadius: 4,
-                        color: '#9ca3af',
+                        color: 'var(--muted)',
                         textTransform: 'capitalize'
                       }}>
                         {match.userRole || 'scorer'}
@@ -277,7 +278,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
         {/* Footer */}
         <div style={{
           padding: '12px 16px',
-          borderTop: '1px solid #374151',
+          borderTop: '1px solid var(--border)',
           display: 'flex',
           justifyContent: 'flex-end'
         }}>
@@ -285,8 +286,8 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
             onClick={onClose}
             style={{
               padding: '8px 20px',
-              background: '#374151',
-              color: '#e5e7eb',
+              background: 'var(--panel-2)',
+              color: 'var(--text)',
               border: 'none',
               borderRadius: 6,
               cursor: 'pointer'

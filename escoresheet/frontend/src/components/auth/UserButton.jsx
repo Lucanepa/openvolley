@@ -151,6 +151,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
       <div style={{ position: 'relative', ...style }}>
         <button
           onClick={() => setShowDropdown(!showDropdown)}
+          aria-label={userName}
           style={{ ...loggedInButtonStyle,  }}
         >
           {fullWidth ? (
@@ -186,8 +187,8 @@ export default function UserButton({ style = {}, fullWidth = false }) {
               ...(fullWidth ? { left: '50%', transform: 'translateX(-50%)' } : { right: 0 }),
               marginTop: 8,
               width: fullWidth ? 300 : 200,
-              background: '#1f2937',
-              border: '1px solid #374151',
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
               borderRadius: 8,
               boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
               zIndex: 1000,
@@ -196,12 +197,12 @@ export default function UserButton({ style = {}, fullWidth = false }) {
               {/* User info */}
               <div style={{
                 padding: '12px 16px',
-                borderBottom: '1px solid #374151'
+                borderBottom: '1px solid var(--border)'
               }}>
-                <div style={{ color: '#fff', fontWeight: 500, fontSize: fullWidth ? 16 : 14 }}>
+                <div style={{ color: 'var(--text)', fontWeight: 500, fontSize: fullWidth ? 16 : 14 }}>
                   {userName}
                 </div>
-                <div style={{ color: '#9ca3af', fontSize: fullWidth ? 14 : 12, marginTop: 2 }}>
+                <div style={{ color: 'var(--muted)', fontSize: fullWidth ? 14 : 12, marginTop: 2 }}>
                   {user.email}
                 </div>
                 <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
@@ -230,7 +231,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
                   padding: fullWidth ? '12px 16px' : '10px 16px',
                   background: 'transparent',
                   border: 'none',
-                  color: '#e5e7eb',
+                  color: 'var(--text)',
                   textAlign: 'left',
                   cursor: 'pointer',
                   fontSize: fullWidth ? 16 : 14,
@@ -256,7 +257,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
                   padding: fullWidth ? '12px 16px' : '10px 16px',
                   background: 'transparent',
                   border: 'none',
-                  color: '#e5e7eb',
+                  color: 'var(--text)',
                   textAlign: 'left',
                   cursor: 'pointer',
                   fontSize: fullWidth ? 16 : 14,
@@ -288,7 +289,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
-                  borderTop: '1px solid #374151'
+                  borderTop: '1px solid var(--border)'
                 }}
               >
                 <svg width={fullWidth ? "18" : "16"} height={fullWidth ? "18" : "16"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

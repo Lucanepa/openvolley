@@ -132,8 +132,8 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
         <div
           data-referee-selector
           style={{
-            background: 'rgba(15, 23, 42, 0.95)',
-            border: '2px solid rgba(255, 255, 255, 0.2)',
+            background: 'var(--panel)',
+            border: '2px solid var(--border)',
             borderRadius: '8px',
             padding: '8px',
             minWidth: '300px',
@@ -148,6 +148,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
           {/* Search Input */}
           <input
             type="text"
+            aria-label={t('refereeSelector.searchReferees')}
             placeholder={t('refereeSelector.searchReferees')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -155,10 +156,10 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
               width: '100%',
               padding: '8px 12px',
               marginBottom: '8px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
               borderRadius: '4px',
-              color: '#fff',
+              color: 'var(--text)',
               fontSize: '14px',
               boxSizing: 'border-box'
             }}
@@ -174,15 +175,15 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
             gap: '4px'
           }}>
             {!isOnline ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
+              <div style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)' }}>
                 {t('refereeSelector.connectToInternet')}
               </div>
             ) : loading ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
+              <div style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)' }}>
                 {t('common.loading')}
               </div>
             ) : filteredReferees.length === 0 ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)' }}>
+              <div style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)' }}>
                 {searchQuery ? t('refereeSelector.noRefereesFound') : t('refereeSelector.noRefereeHistory')}
               </div>
             ) : (
@@ -196,10 +197,10 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                   }}
                   style={{
                     padding: '8px 12px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '4px',
-                    color: '#fff',
+                    color: 'var(--text)',
                     fontSize: '14px',
                     textAlign: 'left',
                     cursor: 'pointer',
@@ -209,12 +210,12 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                     justifyContent: 'space-between'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+                    e.currentTarget.style.background = 'var(--panel)'
+                    e.currentTarget.style.borderColor = 'var(--border)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                    e.currentTarget.style.background = 'var(--panel-2)'
+                    e.currentTarget.style.borderColor = 'var(--border)'
                   }}
                 >
                   <span>{referee.lastName}, {referee.firstName}</span>

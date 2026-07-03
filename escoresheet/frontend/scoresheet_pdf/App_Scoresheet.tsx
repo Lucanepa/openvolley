@@ -1152,6 +1152,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     return {
       startTime: startTimeStr,
       endTime: hasBeenPlayed && setInfo?.endTime ? formatTimeLocal(setInfo.endTime) : '',
+      setFinished: setInfo?.finished || false,
       leftLineup,
       rightLineup,
       leftPoints,
@@ -2845,7 +2846,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       <span>E</span>
                       <span>T</span>
                     </div>
-                    <div className="font-black text-sm mt-1">3</div>
+                    <div className="font-black text-sm mt-1">{isBestOf3 ? '' : '3'}</div>
                   </div>
                   <div className="flex-1">
                     <StandardSet
@@ -2864,7 +2865,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       <span>E</span>
                       <span>T</span>
                     </div>
-                    <div className="font-black text-sm mt-1">4</div>
+                    <div className="font-black text-sm mt-1">{isBestOf3 ? '' : '4'}</div>
                   </div>
                   <div className="flex-1">
                     <StandardSet
@@ -2938,7 +2939,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       <span>E</span>
                       <span>T</span>
                     </div>
-                    <div className="font-black text-sm mt-1">5</div>
+                    <div className="font-black text-sm mt-1">{isBestOf3 ? '3' : '5'}</div>
                   </div>
                   <div className="flex-1">
                     <SetFive

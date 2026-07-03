@@ -190,9 +190,9 @@ export default function LivescoreApp() {
 
     return (
       <div style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-        color: '#fff',
+        minHeight: '100dvh',
+        background: 'var(--bg)',
+        color: 'var(--text)',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
         flexDirection: 'column'
@@ -205,7 +205,7 @@ export default function LivescoreApp() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.95)',
+            backgroundColor: 'rgba(15, 23, 42, 0.5)',
             zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
@@ -288,49 +288,49 @@ export default function LivescoreApp() {
             display: 'grid',
             gridTemplateColumns: isMatchEnded ? '1fr auto 1fr' : 'auto 1fr auto 1fr auto',
             alignItems: 'center',
-            gap: '10px',
+            gap: '2vmin',
             width: '100%',
-            maxWidth: '800px'
+            maxWidth: 'min(96vw, 2600px)'
           }}>
             {/* Left Ball - hidden when match ended */}
             {!isMatchEnded && (
-              <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: 'clamp(48px, 14vmin, 260px)', display: 'flex', justifyContent: 'center' }}>
                 {servingTeam === 'left' && (
-                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: 'clamp(36px, 11vmin, 200px)', height: 'clamp(36px, 11vmin, 200px)' }} />
                 )}
               </div>
             )}
 
             {/* Left Score + Name */}
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'clamp(60px, 18vw, 150px)', fontWeight: 700, lineHeight: 1 }}>
+              <div style={{ fontSize: 'clamp(64px, 30vmin, 640px)', fontWeight: 700, lineHeight: 1 }}>
                 {leftScore}
               </div>
-              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'rgba(255,255,255,0.7)', marginTop: '8px' }}>
+              <div style={{ fontSize: 'clamp(18px, 6vmin, 130px)', color: 'var(--muted)', marginTop: '1vmin' }}>
                 {leftName}
               </div>
             </div>
 
             {/* Colon */}
-            <div style={{ fontSize: 'clamp(40px, 12vw, 100px)', color: 'rgba(255,255,255,0.4)', lineHeight: 1 }}>
+            <div style={{ fontSize: 'clamp(40px, 20vmin, 400px)', color: 'var(--muted)', lineHeight: 1 }}>
               :
             </div>
 
             {/* Right Score + Name */}
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'clamp(60px, 18vw, 150px)', fontWeight: 700, lineHeight: 1 }}>
+              <div style={{ fontSize: 'clamp(64px, 30vmin, 640px)', fontWeight: 700, lineHeight: 1 }}>
                 {rightScore}
               </div>
-              <div style={{ fontSize: 'clamp(14px, 3vw, 24px)', color: 'rgba(255,255,255,0.7)', marginTop: '8px' }}>
+              <div style={{ fontSize: 'clamp(18px, 6vmin, 130px)', color: 'var(--muted)', marginTop: '1vmin' }}>
                 {rightName}
               </div>
             </div>
 
             {/* Right Ball - hidden when match ended */}
             {!isMatchEnded && (
-              <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: 'clamp(48px, 14vmin, 260px)', display: 'flex', justifyContent: 'center' }}>
                 {servingTeam === 'right' && (
-                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: '50px', height: '50px' }} />
+                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: 'clamp(36px, 11vmin, 200px)', height: 'clamp(36px, 11vmin, 200px)' }} />
                 )}
               </div>
             )}
@@ -348,7 +348,7 @@ export default function LivescoreApp() {
               /* Show FINAL badge and each set's final score */
               <>
                 <div style={{
-                  fontSize: 'clamp(28px, 8vw, 56px)',
+                  fontSize: 'clamp(28px, 10vmin, 220px)',
                   fontWeight: 800,
                   color: '#22c55e'
                 }}>
@@ -363,10 +363,10 @@ export default function LivescoreApp() {
                   }}>
                     {setResults.map((s) => (
                       <div key={s.set} style={{
-                        fontSize: 'clamp(14px, 4vw, 20px)',
-                        color: 'rgba(255,255,255,0.6)',
-                        padding: '4px 12px',
-                        background: 'rgba(255,255,255,0.05)',
+                        fontSize: 'clamp(14px, 4vmin, 64px)',
+                        color: 'var(--muted)',
+                        padding: '0.5vmin 1.5vmin',
+                        background: 'var(--panel-2)',
                         borderRadius: '6px'
                       }}>
                         {s.left}-{s.right}
@@ -379,27 +379,27 @@ export default function LivescoreApp() {
               /* Show set scores during match */
               <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                 <div style={{
-                  fontSize: 'clamp(32px, 10vw, 80px)',
+                  fontSize: 'clamp(32px, 14vmin, 300px)',
                   fontWeight: 700,
-                  padding: '8px 16px',
-                  background: 'rgba(255,255,255,0.1)',
+                  padding: '1vmin 2vmin',
+                  background: 'var(--panel)',
                   borderRadius: '8px'
                 }}>
                   {leftSets}
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
+                  <div style={{ fontSize: 'clamp(24px, 8vmin, 170px)', fontWeight: 800 }}>
                     {t('livescore.set', 'SET')}
                   </div>
-                  <div style={{ fontSize: 'clamp(24px, 6vw, 48px)', fontWeight: 800 }}>
+                  <div style={{ fontSize: 'clamp(24px, 8vmin, 170px)', fontWeight: 800 }}>
                     {currentSet}
                   </div>
                 </div>
                 <div style={{
-                  fontSize: 'clamp(32px, 10vw, 80px)',
+                  fontSize: 'clamp(32px, 14vmin, 300px)',
                   fontWeight: 700,
-                  padding: '8px 16px',
-                  background: 'rgba(255,255,255,0.1)',
+                  padding: '1vmin 2vmin',
+                  background: 'var(--panel)',
                   borderRadius: '8px'
                 }}>
                   {rightSets}
@@ -420,9 +420,9 @@ export default function LivescoreApp() {
   // List view - show all games
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      color: '#fff',
+      minHeight: '100dvh',
+      background: 'var(--bg)',
+      color: 'var(--text)',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       {/* Narrow screen blocking overlay */}
@@ -433,7 +433,7 @@ export default function LivescoreApp() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -508,7 +508,7 @@ export default function LivescoreApp() {
       {/* Content */}
       <div style={{ padding: '16px' }}>
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
             {t('common.loading', 'Loading...')}
           </div>
         ) : error ? (
@@ -518,10 +518,10 @@ export default function LivescoreApp() {
               onClick={fetchLiveGames}
               style={{
                 padding: '10px 20px',
-                background: 'rgba(255,255,255,0.1)',
+                background: 'var(--panel)',
                 border: 'none',
                 borderRadius: '6px',
-                color: '#fff',
+                color: 'var(--text)',
                 cursor: 'pointer'
               }}
             >
@@ -529,7 +529,7 @@ export default function LivescoreApp() {
             </button>
           </div>
         ) : liveGames.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.6)' }}>
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
             <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
             <div>{t('livescore.noActiveGame', 'No live games')}</div>
           </div>
@@ -551,10 +551,10 @@ export default function LivescoreApp() {
                   onClick={() => setSelectedGame(game.match_id)}
                   style={{
                     padding: '16px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: 'var(--panel-2)',
+                    border: '1px solid var(--border)',
                     borderRadius: '12px',
-                    color: '#fff',
+                    color: 'var(--text)',
                     cursor: 'pointer',
                     textAlign: 'left',
                     transition: 'background 0.2s',
@@ -566,7 +566,7 @@ export default function LivescoreApp() {
                     <div style={{
                       marginBottom: '8px',
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.5)',
+                      color: 'var(--muted)',
                       textAlign: 'center'
                     }}>
                       {gameN && <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Game {gameN}</span>}
@@ -599,7 +599,7 @@ export default function LivescoreApp() {
 
                     {/* Score - colon centered */}
                     <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'right', minWidth: '24px' }}>{leftScore}</span>
-                    <span style={{ fontSize: '20px', color: 'rgba(255,255,255,0.4)' }}>:</span>
+                    <span style={{ fontSize: '20px', color: 'var(--muted)' }}>:</span>
                     <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'left', minWidth: '24px' }}>{rightScore}</span>
 
                     {/* Right Team - left aligned */}
@@ -622,7 +622,7 @@ export default function LivescoreApp() {
                   <div style={{
                     marginTop: '8px',
                     fontSize: '12px',
-                    color: isMatchEnded ? '#22c55e' : 'rgba(255,255,255,0.5)',
+                    color: isMatchEnded ? '#22c55e' : 'var(--muted)',
                     textAlign: 'center',
                     fontWeight: isMatchEnded ? 600 : 400
                   }}>

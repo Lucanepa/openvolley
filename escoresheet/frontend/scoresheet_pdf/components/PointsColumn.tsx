@@ -6,30 +6,40 @@ export const PointBox: React.FC<{
     filledState?: 0 | 1;
     isCircled?: boolean;
     showNumberOnly?: boolean;
-}> = ({ num, filledState = 0, isCircled = false, showNumberOnly = false }) => {
+    voided?: boolean;
+}> = ({ num, filledState = 0, isCircled = false, showNumberOnly = false, voided = false }) => {
     // type: 0 = none (blank), 1 = slash (scored)
     // showNumberOnly: display number without slash (for pre-change points in Set 5 Panel 3)
-    // Only show number if scored (filledState === 1), circled (penalty point), or showNumberOnly
-    const showNumber = filledState === 1 || isCircled || showNumberOnly;
+    // voided: at set end, strike remaining unused numbers vertically with a "T" (Swiss
+    // Schreiberanleitung / scorekeeper course slide 39 — done as the last step).
+    // Only show number if scored (filledState === 1), circled (penalty point), showNumberOnly, or voided
+    const showNumber = filledState === 1 || isCircled || showNumberOnly || voided;
 
     return (
         <div
             className="flex-1 w-full relative flex items-center justify-center"
         >
-            {/* Background Number - only show if scored or circled */}
+            {/* Background Number - only show if scored, circled, or voided */}
             {showNumber && (
                 <span className="text-[8px] leading-none text-black">{num}</span>
             )}
             {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
-            {filledState === 1 && !isCircled && (
+            {filledState === 1 && !isCircled && !voided && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="4" />
                  </svg>
             )}
             {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
-            {isCircled && (
+            {isCircled && !voided && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="4" />
+                </svg>
+            )}
+            {/* Set-end finalization: vertical "T" strike through the unused number */}
+            {voided && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <line x1="50" y1="14" x2="50" y2="86" stroke="black" strokeWidth="4" />
+                    <line x1="28" y1="14" x2="72" y2="14" stroke="black" strokeWidth="4" />
                 </svg>
             )}
         </div>
@@ -54,7 +64,9 @@ export const PointsColumn: React.FC<{
     markedPoints?: number[];
     circledPoints?: number[];
     maxScore?: number;
-}> = ({ isLast, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0 }) => {
+    setFinished?: boolean;
+    finalScore?: number;
+}> = ({ isLast, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0, setFinished = false, finalScore = 0 }) => {
     const rowsPerColumn = calculateRowsPerColumn(maxScore);
     const offsets = [0, rowsPerColumn, rowsPerColumn * 2, rowsPerColumn * 3];
     const maxPoints = rowsPerColumn * 4;
@@ -78,7 +90,9 @@ export const PointsColumn: React.FC<{
                             if (markedPoints.includes(num)) {
                                 state = 1;
                             }
-                            return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} />;
+                            // Set-end: void unused numbers above this team's final score with a "T".
+                            const voided = setFinished && finalScore > 0 && num > finalScore && num <= maxPoints;
+                            return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} voided={voided} />;
                         })}
                     </div>
                 ))}

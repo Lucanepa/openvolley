@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import ScoresheetApp from './ScoresheetApp'
+import './tailwind.css'
 import './styles.css'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow)

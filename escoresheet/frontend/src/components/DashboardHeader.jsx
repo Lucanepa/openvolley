@@ -213,8 +213,8 @@ export default function DashboardHeader({
       justifyContent: 'space-between',
       alignItems: 'center',
       padding: '0 12px',
-      background: 'rgba(0, 0, 0, 0.3)',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+      background: 'var(--panel)',
+      borderBottom: '1px solid var(--border)'
     }}>
       {/* LEFT: Title/Version */}
       <div style={{
@@ -227,7 +227,7 @@ export default function DashboardHeader({
         <span style={{
           fontSize: 'clamp(12px, 3vw, 15px)',
           fontWeight: 700,
-          color: '#fff',
+          color: 'var(--text)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis'
@@ -237,7 +237,7 @@ export default function DashboardHeader({
         {subtitle && (
           <span style={{
             fontSize: '11px',
-            color: 'rgba(255, 255, 255, 0.6)',
+            color: 'var(--muted)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis'
@@ -247,7 +247,7 @@ export default function DashboardHeader({
         )}
         <span style={{
           fontSize: '9px',
-          color: 'rgba(255, 255, 255, 0.5)',
+          color: 'var(--muted)',
           flexShrink: 0
         }}>
           v{currentVersion}
@@ -275,9 +275,9 @@ export default function DashboardHeader({
               style={{
                 padding: '6px 14px',
                 fontSize: '16px',
-                background: menuOpen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                color: '#fff',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: menuOpen ? 'var(--panel)' : 'var(--panel-2)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -287,6 +287,7 @@ export default function DashboardHeader({
                 minWidth: '44px',
                 transition: 'all 0.15s'
               }}
+              aria-label={t('header.menu')}
               title={t('header.menu')}
             >
               {menuOpen ? '✕' : '☰'}
@@ -313,8 +314,8 @@ export default function DashboardHeader({
                   left: '50%',
                   transform: 'translateX(-50%)',
                   marginTop: '6px',
-                  background: '#1a1a2e',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: 'var(--panel)',
+                  border: '1px solid var(--border)',
                   borderRadius: '10px',
                   overflow: 'hidden',
                   zIndex: 1000,
@@ -330,7 +331,7 @@ export default function DashboardHeader({
                           key={`divider-${index}`}
                           style={{
                             height: '1px',
-                            background: 'rgba(255, 255, 255, 0.1)',
+                            background: 'var(--border)',
                             margin: '4px 0'
                           }}
                         />
@@ -346,7 +347,7 @@ export default function DashboardHeader({
                             padding: '8px 14px 4px',
                             fontSize: '10px',
                             fontWeight: 700,
-                            color: 'rgba(255, 255, 255, 0.4)',
+                            color: 'var(--muted)',
                             textTransform: 'uppercase',
                             letterSpacing: '0.5px'
                           }}
@@ -378,11 +379,11 @@ export default function DashboardHeader({
                           fontSize: '13px',
                           fontWeight: 500,
                           background: item.active
-                            ? (item.color ? `${item.color}20` : 'rgba(255, 255, 255, 0.1)')
+                            ? (item.color ? `${item.color}20` : 'var(--panel-2)')
                             : 'transparent',
                           color: item.disabled
-                            ? 'rgba(255, 255, 255, 0.3)'
-                            : (item.color || '#fff'),
+                            ? 'var(--muted)'
+                            : (item.color || 'var(--text)'),
                           border: 'none',
                           cursor: item.disabled ? 'not-allowed' : 'pointer',
                           textAlign: 'left',
@@ -399,8 +400,8 @@ export default function DashboardHeader({
                             padding: '2px 6px',
                             fontSize: '9px',
                             fontWeight: 700,
-                            background: item.badgeColor || 'rgba(255, 255, 255, 0.2)',
-                            color: item.badgeTextColor || '#fff',
+                            background: item.badgeColor || 'var(--border)',
+                            color: item.badgeTextColor || 'var(--text)',
                             borderRadius: '4px'
                           }}>
                             {item.badge}
@@ -412,7 +413,7 @@ export default function DashboardHeader({
                           <span style={{
                             width: '36px',
                             height: '20px',
-                            background: item.toggle ? '#22c55e' : 'rgba(255, 255, 255, 0.2)',
+                            background: item.toggle ? '#22c55e' : 'var(--border)',
                             borderRadius: '10px',
                             position: 'relative',
                             transition: 'background 0.2s',
@@ -435,7 +436,7 @@ export default function DashboardHeader({
                   })}
 
                   {/* Language selector */}
-                  {menuItems.length > 0 && <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />}
+                  {menuItems.length > 0 && <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -450,7 +451,7 @@ export default function DashboardHeader({
                       fontSize: '11px',
                       fontWeight: 500,
                       background: 'transparent',
-                      color: 'rgba(255, 255, 255, 0.6)',
+                      color: 'var(--muted)',
                       border: 'none',
                       cursor: 'pointer',
                       textAlign: 'left'
@@ -470,8 +471,8 @@ export default function DashboardHeader({
                   {/* Language options */}
                   {languageExpanded && (
                     <div style={{
-                      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-                      background: 'rgba(0, 0, 0, 0.2)'
+                      borderTop: '1px solid var(--border)',
+                      background: 'var(--panel-2)'
                     }}>
                       {languages.map((lang) => (
                         <button
@@ -490,7 +491,7 @@ export default function DashboardHeader({
                             fontSize: '12px',
                             fontWeight: i18n.language === lang.code ? 600 : 400,
                             background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
-                            color: i18n.language === lang.code ? '#4ade80' : 'rgba(255, 255, 255, 0.8)',
+                            color: i18n.language === lang.code ? '#4ade80' : 'var(--text)',
                             border: 'none',
                             borderLeft: i18n.language === lang.code ? '3px solid #22c55e' : '3px solid transparent',
                             cursor: 'pointer',
@@ -499,7 +500,7 @@ export default function DashboardHeader({
                           }}
                           onMouseEnter={(e) => {
                             if (i18n.language !== lang.code) {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                              e.currentTarget.style.background = 'var(--panel-2)'
                             }
                           }}
                           onMouseLeave={(e) => {
@@ -516,7 +517,7 @@ export default function DashboardHeader({
                   )}
 
                   {/* Version info at bottom */}
-                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -531,7 +532,7 @@ export default function DashboardHeader({
                       fontSize: '11px',
                       fontWeight: 500,
                       background: 'transparent',
-                      color: 'rgba(255, 255, 255, 0.6)',
+                      color: 'var(--muted)',
                       border: 'none',
                       cursor: 'pointer',
                       textAlign: 'left'
@@ -542,7 +543,7 @@ export default function DashboardHeader({
                   </button>
 
                   {/* Clear Cache */}
-                  <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+                  <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
                   {!confirmingClearCache ? (
                     <button
                       onClick={(e) => {
@@ -572,7 +573,7 @@ export default function DashboardHeader({
                     </button>
                   ) : (
                     <div style={{ padding: '10px 14px' }}>
-                      <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text)', marginBottom: '8px' }}>
                         {t('options.clearCacheConfirm', 'Clear cache and reload?')}
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -603,8 +604,8 @@ export default function DashboardHeader({
                             padding: '4px 12px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            color: 'rgba(255, 255, 255, 0.8)',
+                            background: 'var(--panel)',
+                            color: 'var(--text)',
                             border: 'none',
                             borderRadius: '4px',
                             cursor: 'pointer'
@@ -638,9 +639,9 @@ export default function DashboardHeader({
               padding: '6px 12px',
               fontSize: '14px',
               fontWeight: 600,
-              background: isFullscreen ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-              color: isFullscreen ? '#22c55e' : '#fff',
-              border: isFullscreen ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(255, 255, 255, 0.2)',
+              background: isFullscreen ? 'rgba(34, 197, 94, 0.2)' : 'var(--panel)',
+              color: isFullscreen ? '#22c55e' : 'var(--text)',
+              border: isFullscreen ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid var(--border)',
               borderRadius: '6px',
               cursor: 'pointer',
               height: '28px',
@@ -650,6 +651,7 @@ export default function DashboardHeader({
               gap: '6px',
               transition: 'all 0.15s'
             }}
+            aria-label={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
             title={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
           >
             ⛶

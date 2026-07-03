@@ -278,8 +278,8 @@ export default function ConnectionStatus({
             maxWidth: '300px',
             width: 'max-content',
             minWidth: '200px',
-            background: 'rgba(0, 0, 0, 0.95)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
             borderRadius: '8px',
             padding: '12px',
             maxHeight: `${menuPosition.maxHeight}px`,
@@ -292,10 +292,10 @@ export default function ConnectionStatus({
           <div style={{
             fontSize: '11px',
             fontWeight: 600,
-            color: 'rgba(255, 255, 255, 0.6)',
+            color: 'var(--muted)',
             marginBottom: '8px',
             paddingBottom: '4px',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+            borderBottom: '1px solid var(--border)'
           }}>
             {t('connectionStatus.title', 'Connection Status')}
           </div>
@@ -368,7 +368,7 @@ export default function ConnectionStatus({
                   <div style={{
                     padding: '8px',
                     margin: '0 8px 8px',
-                    background: 'rgba(255, 255, 255, 0.05)',
+                    background: 'var(--panel-2)',
                     borderRadius: '4px',
                     fontSize: '11px',
                     display: 'flex',
@@ -417,8 +417,8 @@ export default function ConnectionStatus({
                     style={{
                       marginTop: '4px',
                       marginBottom: '8px',
-                      background: 'rgba(30, 30, 40, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: 'var(--panel-2)',
+                      border: '1px solid var(--border)',
                       borderRadius: '6px',
                       padding: '10px',
                       fontSize: '11px',
@@ -434,7 +434,7 @@ export default function ConnectionStatus({
                     }}>
                       {t('connectionStatus.statusInformation', 'Status Information')}
                     </div>
-                    <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.9)' }}>
+                    <div style={{ marginBottom: '6px', color: 'var(--text)' }}>
                       <strong>{t('connectionStatus.statusLabel', 'Status:')}</strong> {(() => {
                         const statusText = (debugInfo?.status || status || '').toString()
                         return statusText
@@ -444,11 +444,11 @@ export default function ConnectionStatus({
                           .join(' ')
                       })()}
                     </div>
-                    <div style={{ marginBottom: '6px', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    <div style={{ marginBottom: '6px', color: 'var(--text)' }}>
                       <strong>{t('connectionStatus.messageLabel', 'Message:')}</strong> {debugInfo?.message || t('connectionStatus.connectionIssueDetected', 'Connection issue detected')}
                     </div>
                     {debugInfo?.details && (
-                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.2)', color: 'rgba(255, 255, 255, 0.7)', fontSize: '10px' }}>
+                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)', color: 'var(--muted)', fontSize: '10px' }}>
                         {debugInfo.details}
                       </div>
                     )}

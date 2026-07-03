@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
 import { apiFrom } from '../lib/apiClient'
+import { JSONB_COLUMNS } from '../db/matchRepository'
 
 /**
  * useSequentialSync - Hook for sequential sync operations at set end
@@ -165,8 +166,8 @@ export function useSequentialSync() {
       if (job.resource === 'match' && job.action === 'update') {
         const { id, ...updateData } = job.payload
 
-        // JSONB columns that need to be merged instead of replaced
-        const jsonbColumns = ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
+        // JSONB columns that need to be merged instead of replaced (shared list)
+        const jsonbColumns = JSONB_COLUMNS
         const hasJsonbColumns = jsonbColumns.some(col => updateData[col] !== undefined)
 
         let finalUpdateData = { ...updateData }
