@@ -74,7 +74,13 @@ export class RelaySubscriber extends EventEmitter {
         if (this.matchId && String(msg.matchId) !== this.matchId) return
         const liveState = msg.data?.liveState
         if (liveState) this.emit('state', liveState)
-        else this.emit('nostate', msg) // relay payload has no computed live-state
+        else this.emit('nostate', msg) // raw match sync without the computed live-state
+        break
+      }
+      case 'live-state-update': {
+        // Dedicated, fresh live-state push (see server.js). This is the normal path.
+        if (this.matchId && String(msg.matchId) !== this.matchId) return
+        if (msg.liveState) this.emit('state', msg.liveState)
         break
       }
       case 'match-deleted':

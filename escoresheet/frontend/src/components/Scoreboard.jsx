@@ -2006,6 +2006,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         sport_type: 'indoor'
       }
 
+      // Also push the computed live-state over the LAN relay so offline consumers
+      // (referee dashboard, LedBox bridge) receive it without needing Supabase.
+      try {
+        const relayWs = wsRef.current
+        if (relayWs && relayWs.readyState === WebSocket.OPEN) {
+          relayWs.send(JSON.stringify({ type: 'live-state-update', matchId, liveState: liveStateData }))
+        }
+      } catch { /* ignore relay send errors */ }
+
       console.log('[LiveState] Syncing to Supabase:', {
         eventType,
         teamAKey: snapshot.teamAKey,
