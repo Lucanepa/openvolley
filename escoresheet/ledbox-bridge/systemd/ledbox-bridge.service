@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenVolley LedBox bridge (mirror live score to a Tech4Sport LedBox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust the user and paths to match your install location.
+User=pi-kscw
+WorkingDirectory=/home/pi-kscw/ledbox-bridge
+EnvironmentFile=/home/pi-kscw/ledbox-bridge/.env
+ExecStart=/usr/bin/node src/bridge.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

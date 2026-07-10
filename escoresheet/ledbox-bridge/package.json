@@ -1,0 +1,22 @@
+{
+  "name": "@openvolley/ledbox-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mirror OpenVolley live match state onto a Tech4Sport LedBox scoreboard.",
+  "bin": {
+    "ledbox-bridge": "src/bridge.js"
+  },
+  "scripts": {
+    "start": "node src/bridge.js",
+    "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs",
+    "test:mapper": "node test/mapper-selftest.mjs",
+    "test:relay": "node test/relay-selftest.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "ws": "^8.18.0"
+  }
+}

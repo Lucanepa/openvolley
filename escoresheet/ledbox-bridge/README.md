@@ -1,0 +1,58 @@
+# @openvolley/ledbox-bridge
+
+Mirrors an OpenVolley live match onto a **Tech4Sport LedBox** LED scoreboard.
+
+```
+ eScoresheet (Scoreboard)                 LedBox bridge (this service)            Tech4Sport LedBox
+        │  computes liveState                       │                                    │
+        └── sync-match-data (WS) ──▶  LAN relay ──▶  RelaySubscriber                      │
+                                                     │  data.liveState                    │
+                                                     ▼                                    │
+                                            volleyballMapper ── SetSections ──▶ LedboxClient ──gzip/TCP:8889──▶ 📟
+```
+
+Small Node service, **no production dependencies** (uses Node 22's built-in global
+`WebSocket` for the relay client and `node:net` for the LedBox). It subscribes to the
+LAN relay, maps the live match state onto the LedBox `volleyball_matchscore` layout,
+and pushes it over TCP with the documented gzip/JSON protocol.
+
+## Fields shown
+points · team short names (in team colour) · sets won · timeouts (**T**) · substitutions (**S**) · serve indicator
+
+## Configure
+Copy `.env.example` → `.env`. Key vars: `RELAY_URL`, `MATCH_ID`, `LEDBOX_HOST`.
+
+## Test / run
+```bash
+# unit test: mapper → client → mock LedBox (no deps, no hardware) — the on-Pi smoke test
+npm run test:mapper
+
+# integration test: mock relay → bridge → mock LedBox (needs devDeps)
+npm install && npm run test:relay
+
+# run for real against the built-in mock (no hardware):
+MOCK=1 MATCH_ID=123 RELAY_URL=ws://127.0.0.1:8080 node src/bridge.js
+
+# run against a real LedBox:
+MATCH_ID=123 LEDBOX_HOST=172.24.1.1 node src/bridge.js
+```
+
+## Deploy on the Pi (systemd)
+```bash
+# on the Pi (reachable as `ssh openvolley`):
+cd ~/ledbox-bridge
+cp .env.example .env && nano .env        # set MATCH_ID, LEDBOX_HOST
+sudo cp systemd/ledbox-bridge.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now ledbox-bridge
+journalctl -u ledbox-bridge -f
+```
+
+## Status / open items
+- **Validated:** mapper + protocol + TCP client, on the Pi 5 against a mock (`npm run test:mapper`).
+- **Pending (app side):** the Scoreboard currently sends its computed `liveState` only to
+  Supabase. For offline operation it must also include `liveState` in the LAN relay
+  `sync-match-data` payload so `data.liveState` reaches the bridge. (Small change in
+  `Scoreboard.jsx` + pass-through in `server.js`.)
+- **Pending (hardware):** confirm the real LedBox's `volleyball_matchscore` section
+  names — especially `sub1`/`sub2` and the team-name fields — and upload a custom
+  layout via TCP :12345 if they differ.
