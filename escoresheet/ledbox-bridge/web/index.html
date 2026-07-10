@@ -112,13 +112,13 @@
     border-radius:8px; cursor:pointer; line-height:1; }
   .smbtn:active { background:var(--btn-h); }
 
-  .serve { display:flex; gap:6px; margin:12px 0 6px; }
+  .serve { display:flex; align-items:center; gap:6px; margin:12px 0 6px; }
   .serve button { flex:1; padding:12px; font-size:14px; font-weight:700;
     border:1px solid var(--line); background:var(--panel); color:var(--muted);
     border-radius:10px; cursor:pointer; }
   .serve button.on { background:var(--ok); border-color:var(--ok); color:#04210c; }
-  .serve .glbl { flex:0 0 100%; text-align:center; font-size:12px;
-    color:var(--muted); margin-bottom:2px; }
+  .serve .serveind { flex:0 0 auto; min-width:58px; text-align:center; font-size:22px;
+    letter-spacing:1px; white-space:nowrap; transition:opacity .15s; }
 
   .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
   .actions button { flex:1 1 30%; padding:14px; font-size:15px; font-weight:700;
@@ -233,9 +233,9 @@
   </div>
 
   <div class="serve">
-    <span class="glbl">Serving (auto-follows the last point)</span>
-    <button data-serve="left">LEFT</button>
-    <button data-serve="right">RIGHT</button>
+    <button data-serve="left">Serve LEFT</button>
+    <span class="serveind" id="serveInd" aria-hidden="true">🏐</span>
+    <button data-serve="right">Serve RIGHT</button>
   </div>
 
   <div class="actions">
@@ -426,6 +426,11 @@
     const serving = s ? s.serving : null;
     $$('[data-serve]').forEach((b) =>
       b.classList.toggle("on", serving === b.dataset.serve));
+    const ind = $("#serveInd");
+    if (ind) {
+      ind.textContent = serving === "left" ? "◀ 🏐" : serving === "right" ? "🏐 ▶" : "🏐";
+      ind.style.opacity = serving ? "1" : ".35";
+    }
   }
 
   // Don't clobber an input the operator is currently editing.
