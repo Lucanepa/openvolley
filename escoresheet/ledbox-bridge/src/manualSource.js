@@ -47,6 +47,10 @@ export class ManualSource extends EventEmitter {
       rightSub: num(pick(s.subs_b, s.subs_a)),
       serving: s.serving_team ?? null, // already 'left' | 'right' | null
     }
+    // Completed-set final scores, stored per physical side (swapped on _swap()).
+    this.results = (Array.isArray(s.set_results) ? s.set_results : []).map((r) => ({
+      left: num(pick(r.a, r.b)), right: num(pick(r.b, r.a)),
+    }))
   }
 
   // Project the left/right model back to the a/b liveState contract (a=left).
@@ -61,6 +65,7 @@ export class ManualSource extends EventEmitter {
       timeouts_a: m.leftTO, timeouts_b: m.rightTO,
       subs_a: m.leftSub, subs_b: m.rightSub,
       serving_team: m.serving,
+      set_results: this.results.map((r) => ({ a: r.left, b: r.right })),
     }
   }
 
@@ -78,13 +83,17 @@ export class ManualSource extends EventEmitter {
         if (d > 0) {
           // Rally scoring: the side that wins the point serves next.
           m.serving = side
-          // Set win: first to 25 (15 in a deciding 5th set) with a >=2 lead, uncapped.
-          // Fire only on the transition INTO a win, so extra points don't re-count it.
-          const target = (m.leftSets === 2 && m.rightSets === 2) ? 15 : 25
+          const deciding = m.leftSets === 2 && m.rightSets === 2 // the 5th (deciding) set
+          const target = deciding ? 15 : 25
           const won = (p) => p >= target && p - m[other + 'Points'] >= 2
           if (won(m[side + 'Points']) && !won(before)) {
+            // Set win: first to 25 (15 in the 5th) by >=2, uncapped. Fires once, on the transition.
             m[side + 'Sets'] = clamp0(m[side + 'Sets'] + 1)
-            this.lastEvent = 'set-end'
+            this.results.push({ left: m.leftPoints, right: m.rightPoints })
+            this.lastEvent = m[side + 'Sets'] >= 3 ? 'match-end' : 'set-end'
+          } else if (deciding && before < 8 && m[other + 'Points'] < 8 && m[side + 'Points'] >= 8) {
+            // Deciding set: the first team to reach 8 triggers a side switch.
+            this.lastEvent = 'switch-8'
           }
         }
         break
@@ -112,10 +121,21 @@ export class ManualSource extends EventEmitter {
         break
       }
       case 'next-set':
-        // Start the next set: clear points only (keep sets, names, colours, serving).
+        // Start the next set: clear points, then switch ends — teams change sides after
+        // every set EXCEPT going into the deciding 5th (its sides are set by coin toss).
         m.leftPoints = 0
         m.rightPoints = 0
+        if (m.leftSets + m.rightSets !== 4) this._swap()
         break
+      case 'remove-set': {
+        // Undo the last recorded set: drop its result and its set point.
+        const last = this.results.pop()
+        if (last) {
+          const w = last.left > last.right ? 'left' : (last.right > last.left ? 'right' : null)
+          if (w) m[w + 'Sets'] = clamp0(m[w + 'Sets'] - 1)
+        }
+        break
+      }
       case 'reset':
         this._fromLiveState(NEUTRAL)
         break
@@ -139,6 +159,7 @@ export class ManualSource extends EventEmitter {
     }
     if (m.serving === 'left') m.serving = 'right'
     else if (m.serving === 'right') m.serving = 'left'
+    for (const r of this.results) { const t = r.left; r.left = r.right; r.right = t }
   }
 
   start() {} // no-op; present for the uniform Source interface

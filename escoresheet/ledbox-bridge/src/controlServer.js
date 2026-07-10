@@ -17,7 +17,7 @@ const BLANK = {
   timeouts_a: 0, timeouts_b: 0, subs_a: 0, subs_b: 0, serving_team: null,
 }
 
-const ACTION_TYPES = new Set(['point', 'set', 'timeout', 'sub', 'serve', 'swap', 'team', 'next-set', 'reset', 'set-state'])
+const ACTION_TYPES = new Set(['point', 'set', 'timeout', 'sub', 'serve', 'swap', 'team', 'next-set', 'remove-set', 'reset', 'set-state'])
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
