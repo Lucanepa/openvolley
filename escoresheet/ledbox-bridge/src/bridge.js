@@ -46,7 +46,7 @@ export async function startBridge(config = loadConfig()) {
   relay.on('open', () => log(`[relay] connected ${config.relayUrl}; following match ${config.matchId ?? '(NONE SET)'}`))
   relay.on('close', () => log('[relay] disconnected'))
   relay.on('error', (e) => log('[relay] error:', e.message))
-  relay.on('nostate', () => log('[relay] update carried no liveState (is the Scoreboard shipping it over the relay yet?)'))
+  relay.on('nostate', () => { if (config.debug) log('[relay] raw match sync without liveState (ignored)') })
   relay.on('match-gone', () => log('[relay] match ended/deleted'))
   relay.on('state', (liveState) => {
     if (config.debug) {

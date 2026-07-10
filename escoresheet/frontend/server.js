@@ -903,6 +903,27 @@ wss.on('connection', (ws, req) => {
             data: matchData
           }))
         }
+      } else if (data.type === 'live-state-update') {
+        // The Scoreboard's computed live-state (points/sets/timeouts/subs, serving
+        // as left/right, team names+colours). Merge it into the store so late
+        // subscribers get it via match-full-data, and fan it out to subscribers.
+        const matchId = String(data.matchId)
+        if (data.liveState) {
+          const existing = matchDataStore.get(matchId)
+          if (existing) existing.liveState = data.liveState
+          const subscribers = matchSubscriptions.get(matchId)
+          if (subscribers) {
+            subscribers.forEach(client => {
+              if (client !== ws && client.readyState === 1) {
+                try {
+                  client.send(JSON.stringify({ type: 'live-state-update', matchId, liveState: data.liveState }))
+                } catch (err) {
+                  console.error('[WebSocket] Error sending live-state-update:', err)
+                }
+              }
+            })
+          }
+        }
       } else if (data.type === 'pin-validation-response') {
         // Main scoresheet responded to a PIN validation request
         const requestId = data.requestId

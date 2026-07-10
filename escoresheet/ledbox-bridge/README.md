@@ -5,7 +5,7 @@ Mirrors an OpenVolley live match onto a **Tech4Sport LedBox** LED scoreboard.
 ```
  eScoresheet (Scoreboard)                 LedBox bridge (this service)            Tech4Sport LedBox
         │  computes liveState                       │                                    │
-        └── sync-match-data (WS) ──▶  LAN relay ──▶  RelaySubscriber                      │
+        └── live-state-update (WS) ─▶  LAN relay ──▶  RelaySubscriber                     │
                                                      │  data.liveState                    │
                                                      ▼                                    │
                                             volleyballMapper ── SetSections ──▶ LedboxClient ──gzip/TCP:8889──▶ 📟
@@ -48,11 +48,12 @@ journalctl -u ledbox-bridge -f
 ```
 
 ## Status / open items
-- **Validated:** mapper + protocol + TCP client, on the Pi 5 against a mock (`npm run test:mapper`).
-- **Pending (app side):** the Scoreboard currently sends its computed `liveState` only to
-  Supabase. For offline operation it must also include `liveState` in the LAN relay
-  `sync-match-data` payload so `data.liveState` reaches the bridge. (Small change in
-  `Scoreboard.jsx` + pass-through in `server.js`.)
+- **Validated:** mapper + protocol + TCP client + relay subscriber, on the Pi 5 against
+  mocks (`npm test`).
+- **Wired (app side):** the Scoreboard now also pushes its computed live-state over the
+  LAN relay as a `live-state-update` message (`Scoreboard.jsx`); `server.js` merges it
+  into the match store and fans it out to subscribers, and the bridge consumes it.
+  Verified with mocks — still needs a live end-to-end run with a real scoreboard + relay.
 - **Pending (hardware):** confirm the real LedBox's `volleyball_matchscore` section
   names — especially `sub1`/`sub2` and the team-name fields — and upload a custom
   layout via TCP :12345 if they differ.

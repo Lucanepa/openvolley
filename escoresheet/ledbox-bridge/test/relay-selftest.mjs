@@ -70,6 +70,15 @@ broadcast({ ...base, points_a: 13 })
 await wait(200)
 assert(mock.text('score1') === '13', 'points updated to 13 over the relay')
 
+console.log('\n[3] Live update via the dedicated live-state-update message: POL -> 10')
+for (const ws of clients) {
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'live-state-update', matchId: MATCH_ID, liveState: { ...base, points_a: 13, points_b: 10 } }))
+  }
+}
+await wait(200)
+assert(mock.text('score2') === '10', 'points updated via live-state-update message')
+
 relay.stop(); ledbox.disconnect(); await mock.close(); wss.close()
 console.log(`\n${failures === 0 ? '✅ ALL PASSED' : `❌ ${failures} FAILED`}\n`)
 process.exit(failures === 0 ? 0 : 1)
