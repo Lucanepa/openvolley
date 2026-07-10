@@ -26,10 +26,12 @@
   .hrow h1 { font-size: 18px; margin: 0; flex: 1; }
   #dot { font-size: 14px; }
   #mode { font-size: 13px; color: var(--muted); margin-top: 4px;
-    display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   #mode b { color: var(--fg); }
+  #setNo { background:var(--panel2); border:1px solid var(--line); padding:1px 9px;
+    border-radius:20px; font-weight:800; color:var(--fg); }
 
-  /* Countdown banner */
+  /* Countdown banner (timeout 30s / set interval 3min / side switch 5s) */
   #cd { position: sticky; top: 56px; z-index: 4; display:flex; align-items:center;
     gap:12px; margin:10px 0 0; padding:10px 14px; border-radius:12px;
     background:var(--panel2); border:1px solid var(--warn); }
@@ -38,9 +40,19 @@
   #cd .cd-time { font-size:34px; font-weight:800; font-variant-numeric:tabular-nums; }
   #cd .cd-stop { width:38px; height:38px; border-radius:9px; font-size:18px; font-weight:700;
     border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
-  #cd.done { border-color:var(--bad); animation: cdflash .5s steps(1) 6; }
-  #cd.done .cd-label, #cd.done .cd-time { color:var(--bad); }
-  @keyframes cdflash { 50% { background:var(--bad); } }
+
+  /* Completed-set results strip */
+  .setstrip { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:2px 0 10px; }
+  .setstrip[hidden] { display:none; }
+  .setpill { display:inline-flex; align-items:center; gap:2px; padding:4px 10px;
+    background:var(--panel); border:1px solid var(--line); border-radius:20px;
+    font-size:13px; font-variant-numeric:tabular-nums; }
+  .setpill .sn { font-style:normal; font-size:10px; font-weight:700; color:var(--muted); margin-right:3px; }
+  .setpill b { font-weight:600; color:var(--muted); }
+  .setpill b.w { color:var(--fg); font-weight:800; }
+  .setpill em { font-style:normal; color:var(--muted); padding:0 1px; }
+  .setundo { width:30px; height:26px; border-radius:8px; font-size:13px;
+    border:1px solid var(--line); background:var(--btn); color:var(--muted); cursor:pointer; }
 
   .tabs { display:flex; gap:6px; margin: 10px 0; }
   .tabs button { flex:1; padding:12px; font-size:15px; font-weight:600;
@@ -63,6 +75,8 @@
   input.short { flex:1; min-width:0; padding:8px; font-size:16px; font-weight:700;
     text-transform:uppercase; background:var(--panel2); color:var(--fg);
     border:1px solid var(--line); border-radius:8px; }
+  input.short.flashname { animation: nameflash 1s ease 3; }
+  @keyframes nameflash { 50% { background:var(--ok); color:#04210c; border-color:var(--ok); } }
   input.color { width:38px; height:38px; padding:0; border:1px solid var(--line);
     border-radius:8px; background:var(--panel2); cursor:pointer; }
 
@@ -77,10 +91,10 @@
     gap:6px; margin:6px 0; }
   .score .val { font-size:46px; font-weight:800; font-variant-numeric:tabular-nums;
     min-width:1.6ch; text-align:center; border-radius:10px; }
-  .score .val.flash { animation: ptflash .7s ease; }
+  .score .val.flash { animation: ptflash .8s ease; }
   @keyframes ptflash {
     0%   { transform:scale(1); }
-    28%  { transform:scale(1.34); color:var(--ok); text-shadow:0 0 14px var(--ok); }
+    25%  { transform:scale(1.4); color:var(--ok); text-shadow:0 0 16px var(--ok); }
     100% { transform:scale(1); }
   }
   .bigbtn { width:56px; height:56px; font-size:30px; font-weight:700; flex:0 0 auto;
@@ -111,7 +125,6 @@
     border:1px solid var(--line); background:var(--panel); color:var(--fg);
     border-radius:10px; cursor:pointer; }
   .actions button:active { background:var(--btn-h); }
-  .actions .primary { border-color:var(--accent); color:var(--accent); }
   .actions .danger { color:var(--bad); }
 
   /* LINK tab */
@@ -136,9 +149,9 @@
   .note { color:var(--muted); font-size:13px; padding:8px 2px; }
   .err { color:var(--bad); font-size:13px; padding:6px 2px; }
   #toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
-    background:var(--bad); color:#fff; padding:10px 16px; border-radius:10px;
-    font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none;
-    max-width:90%; z-index:20; }
+    background:var(--btn); color:var(--fg); border:1px solid var(--line);
+    padding:10px 16px; border-radius:10px; font-size:14px; opacity:0;
+    transition:opacity .2s; pointer-events:none; max-width:90%; z-index:20; text-align:center; }
   #toast.show { opacity:1; }
 </style>
 
@@ -147,14 +160,14 @@
     <h1>LedBox Control</h1>
     <span id="dot" title="LedBox connection">🔴</span>
   </div>
-  <div id="mode">mode <b id="modeName">…</b><span id="matchTag"></span></div>
+  <div id="mode">mode <b id="modeName">…</b><span id="setNo"></span><span id="matchTag"></span></div>
 </header>
 
-<!-- Countdown banner (timeout 30s / set interval 3min) -->
+<!-- Countdown banner -->
 <div id="cd" hidden>
   <span class="cd-label" id="cdLabel"></span>
   <span class="cd-time" id="cdTime">0:00</span>
-  <button class="cd-stop" id="cdStop" title="Stop">✕</button>
+  <button class="cd-stop" id="cdStop" title="Skip">✕</button>
 </div>
 
 <div class="tabs">
@@ -164,6 +177,7 @@
 
 <!-- MANUAL -->
 <section id="tab-manual" class="tab active">
+  <div id="setStrip" class="setstrip" hidden></div>
   <div class="board">
     <div class="side left" data-side="left">
       <div class="sidehdr">
@@ -225,7 +239,6 @@
   </div>
 
   <div class="actions">
-    <button id="nextSetBtn" class="primary">Next set</button>
     <button id="swapBtn">⇄ Swap</button>
     <button id="resetBtn" class="danger">Reset</button>
     <button id="blankBtn" class="danger">Blank</button>
@@ -263,7 +276,7 @@
     const t = $("#toast");
     t.textContent = msg; t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
   }
 
   async function api(path, opts) {
@@ -281,30 +294,35 @@
 
   let lastLedbox = {};   // remembered so optimistic renders keep the status dot right
 
-  // --- countdown (timeout 30s / set interval 3min) ------------------------
-  let cdTimer = null, cdEnd = 0;
+  // --- countdown ----------------------------------------------------------
+  // On finish OR ✕ it disappears (back to normal scoring); an optional onFinish
+  // runs then (set interval -> next set; set-5 8-switch -> swap sides).
+  let cdTimer = null, cdEnd = 0, cdOnFinish = null;
   const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
-  function startCountdown(seconds, label) {
-    stopCountdown();
+  function clearCountdown() {
+    if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
+    cdOnFinish = null;
+    $("#cd").hidden = true;
+  }
+  function finishCountdown() {
+    const cb = cdOnFinish;
+    clearCountdown();
+    if (cb) cb();
+  }
+  function startCountdown(seconds, label, onFinish) {
+    clearCountdown();
+    cdOnFinish = onFinish || null;
     cdEnd = Date.now() + seconds * 1000;
     $("#cdLabel").textContent = label;
-    const cd = $("#cd"); cd.hidden = false; cd.classList.remove("done");
+    $("#cd").hidden = false;
     const tick = () => {
       const left = (cdEnd - Date.now()) / 1000;
       $("#cdTime").textContent = fmt(left);
-      if (left <= 0) {
-        clearInterval(cdTimer); cdTimer = null;
-        cd.classList.add("done"); $("#cdTime").textContent = "0:00";
-        setTimeout(() => { if (cd.classList.contains("done")) stopCountdown(); }, 5000);
-      }
+      if (left <= 0) finishCountdown();
     };
     tick(); cdTimer = setInterval(tick, 250);
   }
-  function stopCountdown() {
-    if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
-    const cd = $("#cd"); cd.hidden = true; cd.classList.remove("done");
-  }
-  $("#cdStop").addEventListener("click", stopCountdown);
+  $("#cdStop").addEventListener("click", finishCountdown);
 
   // --- state -> physical left/right (honour side_a) -----------------------
   function sides(state) {
@@ -327,12 +345,15 @@
     };
   }
 
+  // Which physical side does the higher a/b value sit on? (winner detection)
+  function sideOf(state, aWins) {
+    const aIsLeft = state.side_a !== "right";
+    return aWins === aIsLeft ? "left" : "right";
+  }
+
   // --- render -------------------------------------------------------------
   let linkedMatchId = null;
   const MODE_LABELS = { manual: "Manual", lan: "Live (LAN)", cloud: "Cloud", idle: "Idle" };
-  // Flash detection keyed by TEAM (a/b) so a side-swap never false-triggers a flash.
-  let prevPts = { a: null, b: null };
-  let lastMode = null;
 
   function renderStatus(st) {
     lastLedbox = st.ledbox || lastLedbox;
@@ -343,30 +364,50 @@
       : "LedBox not connected";
     $("#modeName").textContent = MODE_LABELS[st.mode]
       || (st.mode ? st.mode[0].toUpperCase() + st.mode.slice(1) : "Idle");
+    $("#setNo").textContent = setLabel(st.state);
     linkedMatchId = st.matchId != null ? String(st.matchId) : null;
     $("#matchTag").textContent = st.matchId ? " · match " + st.matchId : "";
-    flashOnPoint(st);
     renderBoard(sides(st.state));
+    renderSetStrip(st.state);
     markLinked();
   }
 
-  // Flash the side whose score just went up (rally won).
-  function flashOnPoint(st) {
-    const s = st.state;
-    if (!s) return;
-    const aIsLeft = s.side_a !== "right";
-    // On any mode change, resync baselines silently (e.g. linking a match mid-game).
-    if (st.mode !== lastMode) { prevPts.a = null; prevPts.b = null; lastMode = st.mode; }
-    for (const team of ["a", "b"]) {
-      const val = num(s["points_" + team]);
-      const prev = prevPts[team];
-      if (prev != null && val > prev) {
-        const side = (team === "a") === aIsLeft ? "left" : "right";
-        const el = $(`.side.${side} [data-val="points"]`);
-        if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
-      }
-      prevPts[team] = val;
-    }
+  function setLabel(state) {
+    if (!state) return "";
+    const a = num(state.sets_won_a), b = num(state.sets_won_b);
+    if (a >= 3 || b >= 3) return "Final";
+    return "Set " + Math.min(5, a + b + 1);
+  }
+
+  function flashSide(side) {
+    const el = $(`.side.${side} [data-val="points"]`);
+    if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+  }
+  function flashName(side) {
+    const el = $(`.side.${side} .short`);
+    if (el) { el.classList.remove("flashname"); void el.offsetWidth; el.classList.add("flashname"); }
+  }
+
+  // Completed-set results strip (a/b in state, projected to left/right by side_a).
+  function renderSetStrip(state) {
+    const strip = $("#setStrip");
+    const results = (state && state.set_results) || [];
+    if (!results.length) { strip.hidden = true; strip.innerHTML = ""; return; }
+    const aIsLeft = !state || state.side_a !== "right";
+    strip.hidden = false;
+    strip.innerHTML = "";
+    results.forEach((r, i) => {
+      const l = num(aIsLeft ? r.a : r.b), rt = num(aIsLeft ? r.b : r.a);
+      const pill = document.createElement("span");
+      pill.className = "setpill";
+      pill.innerHTML = `<i class="sn">S${i + 1}</i>` +
+        `<b class="${l > rt ? "w" : ""}">${l}</b><em>–</em><b class="${rt > l ? "w" : ""}">${rt}</b>`;
+      strip.appendChild(pill);
+    });
+    const undo = document.createElement("button");
+    undo.className = "setundo"; undo.title = "Remove last set"; undo.textContent = "⌫";
+    undo.addEventListener("click", () => { if (confirm("Remove the last set result?")) sendAction({ type: "remove-set" }); });
+    strip.appendChild(undo);
   }
 
   function renderBoard(s) {
@@ -410,13 +451,30 @@
   async function sendAction(action) {
     try {
       const r = await postJSON("/api/action", { action });
-      if (r && r.state) renderStatus({
-        mode: "manual", matchId: null,
-        ledbox: lastLedbox, state: r.state,
-      });
-      if (r && r.event === "set-end") startCountdown(180, "Set interval");
+      const s = r && r.state;
+      if (s) renderStatus({ mode: "manual", matchId: null, ledbox: lastLedbox, state: s });
+      handleEvent(r && r.event, s);
       refreshStatus();
     } catch (e) { toast(e.message); }
+  }
+
+  // Game-flow reactions signalled by the backend on a point.
+  function handleEvent(event, s) {
+    if (!event || !s) return;
+    if (event === "set-end") {
+      // Flash the set-winning side; run the interval; advance (+switch ends) when done.
+      flashSide(sideOf(s, num(s.points_a) > num(s.points_b)));
+      startCountdown(180, "Set interval — next set when done", () => sendAction({ type: "next-set" }));
+    } else if (event === "match-end") {
+      const winSide = sideOf(s, num(s.sets_won_a) > num(s.sets_won_b));
+      const name = (winSide === "left" ? sides(s).left.short : sides(s).right.short) || winSide.toUpperCase();
+      flashSide(sideOf(s, num(s.points_a) > num(s.points_b)));
+      flashName(winSide);
+      toast("🏆 " + name + " wins the match");
+    } else if (event === "switch-8") {
+      // Deciding set: first to 8 -> show "Side switch" for 5s, then swap sides.
+      startCountdown(5, "Side switch", () => sendAction({ type: "swap" }));
+    }
   }
 
   async function blank() {
@@ -520,13 +578,12 @@
     () => sendAction({ type: "serve", side: b.dataset.serve })));
 
   // global actions
-  $("#nextSetBtn").addEventListener("click", () => { stopCountdown(); sendAction({ type: "next-set" }); });
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
   $("#resetBtn").addEventListener("click", () => {
-    if (confirm("Reset the board to neutral?")) { stopCountdown(); sendAction({ type: "reset" }); }
+    if (confirm("Reset the board to neutral?")) { clearCountdown(); sendAction({ type: "reset" }); }
   });
   $("#blankBtn").addEventListener("click", () => {
-    if (confirm("Blank the LedBox display?")) { stopCountdown(); blank(); }
+    if (confirm("Blank the LedBox display?")) { clearCountdown(); blank(); }
   });
   $("#refreshBtn").addEventListener("click", refreshMatches);
 
