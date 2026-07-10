@@ -265,6 +265,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const num = (x) => Array.isArray(x) ? x.length : (Number(x) || 0);
+  const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII"];
+  const roman = (n) => ROMAN[n] || String(n);
 
   // Preset team colours — tap-friendly on mobile (the native picker is fiddly).
   const PRESETS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#22c55e", "#14b8a6",
@@ -376,7 +378,7 @@
     if (!state) return "";
     const a = num(state.sets_won_a), b = num(state.sets_won_b);
     if (a >= 3 || b >= 3) return "Final";
-    return "Set " + Math.min(5, a + b + 1);
+    return "Set " + roman(Math.min(5, a + b + 1));
   }
 
   function flashSide(side) {
@@ -400,7 +402,7 @@
       const l = num(aIsLeft ? r.a : r.b), rt = num(aIsLeft ? r.b : r.a);
       const pill = document.createElement("span");
       pill.className = "setpill";
-      pill.innerHTML = `<i class="sn">S${i + 1}</i>` +
+      pill.innerHTML = `<i class="sn">${roman(i + 1)}</i>` +
         `<b class="${l > rt ? "w" : ""}">${l}</b><em>–</em><b class="${rt > l ? "w" : ""}">${rt}</b>`;
       strip.appendChild(pill);
     });
