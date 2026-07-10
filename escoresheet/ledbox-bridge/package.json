@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node src/bridge.js",
+    "appliance": "node src/appliance.js",
     "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs",
+    "test:appliance": "node test/appliance-selftest.mjs",
     "test:mapper": "node test/mapper-selftest.mjs",
     "test:relay": "node test/relay-selftest.mjs",
     "test:e2e": "node test/e2e-live.mjs"
