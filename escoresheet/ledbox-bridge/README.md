@@ -37,6 +37,19 @@ MOCK=1 MATCH_ID=123 RELAY_URL=ws://127.0.0.1:8080 node src/bridge.js
 MATCH_ID=123 LEDBOX_HOST=172.24.1.1 node src/bridge.js
 ```
 
+## Appliance — web control UI (manual + link)
+Instead of the headless bridge, run the **appliance**: a phone-friendly control page
+served by the Pi (`CONTROL_PORT`, default 8890) with two modes — **Manual** (drive the
+board by hand: names, ±points, sets, timeouts, subs, serve, swap) and **Link** (list LAN
+matches from the relay and mirror one live). Cloud/Supabase source is a stub.
+```bash
+npm run appliance                 # open http://<pi-ip>:8890  (or http://openvolley:8890 over Tailscale)
+MOCK=1 npm run appliance          # in-process mock LedBox, no hardware
+npm run test:appliance            # API → source → mapper → mock LedBox integration test
+```
+Architecture and the remaining phases (cloud source, auth, persistence) are in
+[`DESIGN-appliance.md`](./DESIGN-appliance.md).
+
 ## Deploy on the Pi (systemd)
 ```bash
 # on the Pi (reachable as `ssh openvolley`):

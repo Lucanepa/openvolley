@@ -1,0 +1,221 @@
+// HTTP control server for the LedBox appliance — serves the web UI and a small JSON API
+// to drive the board manually or link it to a live LAN match. Zero dependencies (node:http/fs).
+//
+//   web UI --fetch--> controlServer --> SourceManager --state--> LedboxClient --> LedBox
+
+import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+import { EventEmitter } from 'node:events'
+import { LanSource } from './lanSource.js'
+
+// Board shown when the operator picks "Blank" (all short names + serve cleared).
+const BLANK = {
+  side_a: 'left', team_a_name: '', team_a_short: '', team_a_color: '#2563eb',
+  team_b_name: '', team_b_short: '', team_b_color: '#ef4444',
+  points_a: 0, points_b: 0, sets_won_a: 0, sets_won_b: 0,
+  timeouts_a: 0, timeouts_b: 0, subs_a: 0, subs_b: 0, serving_team: null,
+}
+
+const ACTION_TYPES = new Set(['point', 'set', 'timeout', 'sub', 'serve', 'swap', 'team', 'reset', 'set-state'])
+
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+}
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+// Max accepted request body — one bad/slow-drip POST must not exhaust the heap.
+const MAX_BODY = 1 << 20 // 1 MiB
+
+// A trivial idle source so /api/blank can put the SourceManager into an idle meta via the
+// uniform Source interface (stops the previous source). It carries the state it was seeded
+// with so the SourceManager caches it — keeping /api/status in sync with the blanked board.
+class IdleSource extends EventEmitter {
+  constructor(state = null) { super(); this._state = state }
+  getState() { return this._state }
+  start() {}
+  stop() {}
+}
+
+export function createControlServer({ sourceManager, manualSource, ledbox, relayHttpUrl, relayUrl, webDir, reconnectMs }) {
+  const server = http.createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, 'http://localhost')
+      const { pathname } = url
+
+      if (req.method === 'OPTIONS') return send(res, 204, null)
+
+      if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname)
+
+      // Static web UI.
+      return serveStatic(res, pathname, webDir)
+    } catch (err) {
+      // Malformed JSON bodies are a client error, not a server crash.
+      if (err instanceof SyntaxError) return sendJson(res, 400, { error: 'invalid JSON body' })
+      // A tagged client error (e.g. body too large) carries its own status code.
+      if (err && err.statusCode) return sendJson(res, err.statusCode, { error: err.message })
+      // Don't leak internal error detail to clients; log it server-side instead.
+      console.error('[control] request error:', err)
+      return sendJson(res, 500, { error: 'internal error' })
+    }
+  })
+
+  async function handleApi(req, res, pathname) {
+    // GET /api/status
+    if (pathname === '/api/status' && req.method === 'GET') {
+      return sendJson(res, 200, status())
+    }
+    // GET /api/matches
+    if (pathname === '/api/matches' && req.method === 'GET') {
+      return sendJson(res, 200, await listMatches())
+    }
+    // POST /api/manual
+    if (pathname === '/api/manual' && req.method === 'POST') {
+      await readJson(req) // drain
+      sourceManager.setSource(manualSource, { mode: 'manual' })
+      return sendJson(res, 200, status())
+    }
+    // POST /api/action { action }
+    if (pathname === '/api/action' && req.method === 'POST') {
+      const body = await readJson(req)
+      const action = body && body.action
+      if (!action || !ACTION_TYPES.has(action.type)) {
+        return sendJson(res, 400, { error: 'unknown or missing action.type' })
+      }
+      if (sourceManager.status.mode !== 'manual') {
+        sourceManager.setSource(manualSource, { mode: 'manual' })
+      }
+      manualSource.apply(action)
+      return sendJson(res, 200, { ok: true, state: manualSource.getState() })
+    }
+    // POST /api/link { source, matchId }
+    if (pathname === '/api/link' && req.method === 'POST') {
+      const body = await readJson(req)
+      const source = body && body.source
+      if (source === 'cloud') return sendJson(res, 501, { error: 'cloud not implemented' })
+      if (source !== 'lan') return sendJson(res, 400, { error: 'unknown source' })
+      if (body.matchId == null) return sendJson(res, 400, { error: 'matchId required' })
+      const lan = new LanSource({ relayUrl, matchId: String(body.matchId), reconnectMs })
+      sourceManager.setSource(lan, { mode: 'lan', matchId: String(body.matchId) })
+      return sendJson(res, 200, status())
+    }
+    // POST /api/blank
+    if (pathname === '/api/blank' && req.method === 'POST') {
+      await readJson(req) // drain
+      // Seed the idle source with BLANK so SourceManager caches it and pushes it to the
+      // board — /api/status.state then matches the physical (blanked) board.
+      sourceManager.setSource(new IdleSource(BLANK), { mode: 'idle', matchId: null })
+      await ledbox.pushState(BLANK)
+      return sendJson(res, 200, status())
+    }
+    return sendJson(res, 404, { error: 'not found' })
+  }
+
+  function status() {
+    const { mode, matchId } = sourceManager.status
+    return {
+      mode, matchId,
+      ledbox: { connected: ledbox.ready === true, host: ledbox.host, port: ledbox.port },
+      state: sourceManager.getState(),
+    }
+  }
+
+  // Query the OpenVolley relay for its match list; never throws (failures land in errors[]).
+  async function listMatches() {
+    const errors = []
+    const matches = []
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 2000)
+      let data
+      try {
+        const resp = await fetch(`${relayHttpUrl}/api/match/list`, { signal: ctrl.signal })
+        if (!resp.ok) throw new Error(`relay responded ${resp.status}`)
+        data = await resp.json()
+      } finally {
+        clearTimeout(timer)
+      }
+      const list = Array.isArray(data) ? data : (data.matches || data.list || [])
+      for (const m of list) {
+        const num = m.gameNumber || m.game_n || m.id
+        const home = m.homeShort || m.home_short || m.homeTeam || m.home || ''
+        const away = m.awayShort || m.away_short || m.awayTeam || m.away || ''
+        const teams = home || away ? ` ${home}-${away}` : ''
+        matches.push({ source: 'lan', id: String(m.id), label: `${num}${teams}`, live: m.status === 'live' })
+      }
+    } catch (err) {
+      errors.push(`lan: ${err.message}`)
+    }
+    return { matches, errors }
+  }
+
+  return server
+}
+
+// --- helpers ---
+
+// Serve a file from webDir (or index.html for "/"), rejecting any path escaping webDir.
+function serveStatic(res, pathname, webDir) {
+  const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
+  const full = path.resolve(webDir, rel)
+  const root = path.resolve(webDir)
+  if (full !== root && !full.startsWith(root + path.sep)) return send(res, 403, 'forbidden')
+  fs.readFile(full, (err, buf) => {
+    if (err) return send(res, 404, 'not found')
+    const type = CONTENT_TYPES[path.extname(full).toLowerCase()] || 'application/octet-stream'
+    send(res, 200, buf, { 'Content-Type': type })
+  })
+}
+
+// Read + JSON-parse a request body. Empty body -> {}. Invalid JSON throws SyntaxError.
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    // Reject an oversized Content-Length up front so a well-behaved client still gets
+    // a clean 413 (leave the socket alive to carry the response).
+    const declared = Number(req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > MAX_BODY) {
+      const e = new Error('request body too large'); e.statusCode = 413
+      return reject(e)
+    }
+    let raw = ''
+    let size = 0
+    let done = false
+    req.on('data', (c) => {
+      if (done) return
+      size += c.length
+      // Cap accumulation so a slow-drip / chunked body can't exhaust the heap; a client
+      // that lies about its length gets the connection torn down.
+      if (size > MAX_BODY) {
+        done = true
+        const e = new Error('request body too large'); e.statusCode = 413
+        req.destroy()
+        return reject(e)
+      }
+      raw += c
+    })
+    req.on('end', () => {
+      if (!raw.trim()) return resolve({})
+      try { resolve(JSON.parse(raw)) } catch (e) { reject(e) }
+    })
+    req.on('error', reject)
+  })
+}
+
+function sendJson(res, code, obj) {
+  send(res, code, obj == null ? '' : JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8' })
+}
+
+function send(res, code, body, headers = {}) {
+  res.writeHead(code, { ...CORS, ...headers })
+  res.end(body == null ? undefined : body)
+}

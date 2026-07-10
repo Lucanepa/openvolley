@@ -1,7 +1,8 @@
 # LedBox Appliance — design blueprint
 
-Status: **planned** (build next session). This extends the existing `ledbox-bridge`
-into a self-contained LedBox controller running on the Pi.
+Status: **Phase A (manual control UI) + Phase B (LAN link) BUILT & tested on the Pi 5.**
+Cloud/Supabase source is a stub; polish (auth, persistence, status WS) remains. This
+doc stays as the reference/roadmap. Run it with `npm run appliance` (see README).
 
 ## Goal
 Plug in the Pi, open its web page from any phone/browser (venue LAN or Tailscale),

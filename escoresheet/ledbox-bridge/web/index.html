@@ -1,0 +1,416 @@
+<!doctype html>
+<!-- LedBox appliance control UI — self-contained, offline, mobile-first. Talks to the control API on its own origin over relative URLs. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LedBox Control</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --line: #2a3340;
+    --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --accent2: #1f6feb;
+    --ok: #3fb950; --bad: #f85149; --btn: #21262d; --btn-h: #30363d;
+    --left: #2563eb; --right: #ef4444;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f8fa; --panel:#fff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#636c76; --btn:#eaeef2; --btn-h:#dfe4ea; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--fg);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { max-width: 760px; margin: 0 auto; padding: 0 12px 40px; }
+
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg);
+    padding: 12px 2px 8px; border-bottom: 1px solid var(--line); }
+  .hrow { display:flex; align-items:center; gap:10px; }
+  .hrow h1 { font-size: 18px; margin: 0; flex: 1; }
+  #dot { font-size: 14px; }
+  #mode { font-size: 13px; color: var(--muted); margin-top: 4px;
+    display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  #mode b { color: var(--fg); }
+
+  .tabs { display:flex; gap:6px; margin: 10px 0; }
+  .tabs button { flex:1; padding:12px; font-size:15px; font-weight:600;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted);
+    border-radius:10px; cursor:pointer; }
+  .tabs button.active { background:var(--accent); border-color:var(--accent);
+    color:#fff; }
+
+  .tab { display:none; }
+  .tab.active { display:block; }
+
+  .board { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .side { background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:12px; border-top:4px solid var(--edge); }
+  .side.left  { --edge: var(--left); }
+  .side.right { --edge: var(--right); }
+  .sidehdr { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .sidehdr .lbl { font-size:12px; font-weight:700; letter-spacing:.08em;
+    color:var(--muted); }
+  input.short { flex:1; min-width:0; padding:8px; font-size:16px; font-weight:700;
+    text-transform:uppercase; background:var(--panel2); color:var(--fg);
+    border:1px solid var(--line); border-radius:8px; }
+  input.color { width:38px; height:38px; padding:0; border:1px solid var(--line);
+    border-radius:8px; background:var(--panel2); cursor:pointer; }
+
+  .score { display:flex; align-items:center; justify-content:space-between;
+    gap:6px; margin:6px 0; }
+  .score .val { font-size:46px; font-weight:800; font-variant-numeric:tabular-nums;
+    min-width:1.6ch; text-align:center; }
+  .bigbtn { width:56px; height:56px; font-size:30px; font-weight:700; flex:0 0 auto;
+    border:1px solid var(--line); background:var(--btn); color:var(--fg);
+    border-radius:12px; cursor:pointer; line-height:1; }
+  .bigbtn:active { background:var(--btn-h); }
+
+  .stat { display:flex; align-items:center; gap:6px; margin:6px 0;
+    font-size:14px; }
+  .stat .name { flex:1; color:var(--muted); }
+  .stat .num { min-width:1.4ch; text-align:center; font-weight:700;
+    font-variant-numeric:tabular-nums; }
+  .smbtn { width:34px; height:34px; font-size:18px; font-weight:700;
+    border:1px solid var(--line); background:var(--btn); color:var(--fg);
+    border-radius:8px; cursor:pointer; line-height:1; }
+  .smbtn:active { background:var(--btn-h); }
+
+  .serve { display:flex; gap:6px; margin:12px 0 6px; }
+  .serve button { flex:1; padding:12px; font-size:14px; font-weight:700;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted);
+    border-radius:10px; cursor:pointer; }
+  .serve button.on { background:var(--ok); border-color:var(--ok); color:#04210c; }
+  .serve .glbl { flex:0 0 100%; text-align:center; font-size:12px;
+    color:var(--muted); margin-bottom:2px; }
+
+  .actions { display:flex; gap:8px; margin-top:12px; }
+  .actions button { flex:1; padding:14px; font-size:15px; font-weight:700;
+    border:1px solid var(--line); background:var(--panel); color:var(--fg);
+    border-radius:10px; cursor:pointer; }
+  .actions button:active { background:var(--btn-h); }
+  .actions .danger { color:var(--bad); }
+
+  /* LINK tab */
+  .linkbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+  .linkbar button { padding:12px 16px; font-size:15px; font-weight:700;
+    border:1px solid var(--accent); background:var(--accent); color:#fff;
+    border-radius:10px; cursor:pointer; }
+  #matches { list-style:none; padding:0; margin:0; display:flex;
+    flex-direction:column; gap:8px; }
+  #matches li { display:flex; align-items:center; gap:10px; padding:12px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  #matches .info { flex:1; min-width:0; }
+  #matches .label { font-weight:600; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; }
+  #matches .sub { font-size:12px; color:var(--muted); }
+  .live { font-size:11px; font-weight:800; letter-spacing:.05em; color:#04210c;
+    background:var(--ok); padding:2px 7px; border-radius:20px; }
+  #matches li.linked { border-color:var(--accent); }
+  #matches .linkbtn { padding:10px 14px; font-weight:700; border:1px solid var(--accent);
+    background:transparent; color:var(--accent); border-radius:8px; cursor:pointer; }
+  #matches li.linked .linkbtn { background:var(--accent); color:#fff; }
+  .note { color:var(--muted); font-size:13px; padding:8px 2px; }
+  .err { color:var(--bad); font-size:13px; padding:6px 2px; }
+  #toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+    background:var(--bad); color:#fff; padding:10px 16px; border-radius:10px;
+    font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none;
+    max-width:90%; z-index:20; }
+  #toast.show { opacity:1; }
+</style>
+
+<header>
+  <div class="hrow">
+    <h1>LedBox Control</h1>
+    <span id="dot" title="LedBox connection">🔴</span>
+  </div>
+  <div id="mode">mode <b id="modeName">…</b><span id="matchTag"></span></div>
+</header>
+
+<div class="tabs">
+  <button id="tabManualBtn" class="active" data-tab="manual">Manual</button>
+  <button id="tabLinkBtn" data-tab="link">Link</button>
+</div>
+
+<!-- MANUAL -->
+<section id="tab-manual" class="tab active">
+  <div class="board">
+    <div class="side left" data-side="left">
+      <div class="sidehdr">
+        <span class="lbl">LEFT</span>
+        <input class="short" data-field="short" maxlength="12" placeholder="HOME">
+        <input class="color" type="color" data-field="color" value="#2563eb">
+      </div>
+      <div class="score">
+        <button class="bigbtn" data-pt="-1">−</button>
+        <span class="val" data-val="points">0</span>
+        <button class="bigbtn" data-pt="1">+</button>
+      </div>
+      <div class="stat"><span class="name">Set</span>
+        <button class="smbtn" data-stat="set" data-d="-1">−</button>
+        <span class="num" data-val="sets">0</span>
+        <button class="smbtn" data-stat="set" data-d="1">+</button></div>
+      <div class="stat"><span class="name">Timeout</span>
+        <button class="smbtn" data-stat="timeout" data-d="-1">−</button>
+        <span class="num" data-val="to">0</span>
+        <button class="smbtn" data-stat="timeout" data-d="1">+</button></div>
+      <div class="stat"><span class="name">Sub</span>
+        <button class="smbtn" data-stat="sub" data-d="-1">−</button>
+        <span class="num" data-val="sub">0</span>
+        <button class="smbtn" data-stat="sub" data-d="1">+</button></div>
+    </div>
+
+    <div class="side right" data-side="right">
+      <div class="sidehdr">
+        <span class="lbl">RIGHT</span>
+        <input class="short" data-field="short" maxlength="12" placeholder="AWAY">
+        <input class="color" type="color" data-field="color" value="#ef4444">
+      </div>
+      <div class="score">
+        <button class="bigbtn" data-pt="-1">−</button>
+        <span class="val" data-val="points">0</span>
+        <button class="bigbtn" data-pt="1">+</button>
+      </div>
+      <div class="stat"><span class="name">Set</span>
+        <button class="smbtn" data-stat="set" data-d="-1">−</button>
+        <span class="num" data-val="sets">0</span>
+        <button class="smbtn" data-stat="set" data-d="1">+</button></div>
+      <div class="stat"><span class="name">Timeout</span>
+        <button class="smbtn" data-stat="timeout" data-d="-1">−</button>
+        <span class="num" data-val="to">0</span>
+        <button class="smbtn" data-stat="timeout" data-d="1">+</button></div>
+      <div class="stat"><span class="name">Sub</span>
+        <button class="smbtn" data-stat="sub" data-d="-1">−</button>
+        <span class="num" data-val="sub">0</span>
+        <button class="smbtn" data-stat="sub" data-d="1">+</button></div>
+    </div>
+  </div>
+
+  <div class="serve">
+    <span class="glbl">Serving</span>
+    <button data-serve="left">LEFT</button>
+    <button data-serve="right">RIGHT</button>
+  </div>
+
+  <div class="actions">
+    <button id="swapBtn">⇄ Swap</button>
+    <button id="resetBtn" class="danger">Reset</button>
+    <button id="blankBtn" class="danger">Blank</button>
+  </div>
+</section>
+
+<!-- LINK -->
+<section id="tab-link" class="tab">
+  <div class="linkbar">
+    <button id="refreshBtn">↻ Refresh matches</button>
+  </div>
+  <div id="linkErrs"></div>
+  <ul id="matches"></ul>
+  <p class="note" id="matchesNote">Tap “Refresh matches” to discover live matches on the LAN.</p>
+</section>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  // --- tiny helpers -------------------------------------------------------
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const num = (x) => Array.isArray(x) ? x.length : (Number(x) || 0);
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("#toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    let body = null;
+    try { body = await res.json(); } catch { /* non-JSON */ }
+    if (!res.ok) throw new Error((body && body.error) || (path + " → " + res.status));
+    return body;
+  }
+  const postJSON = (path, obj) => api(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(obj || {}),
+  });
+
+  let lastLedbox = {};   // remembered so optimistic renders keep the status dot right
+
+  // --- state -> physical left/right (honour side_a) -----------------------
+  function sides(state) {
+    if (!state) return null;
+    const a = {
+      short: state.team_a_short || "", color: state.team_a_color || "#2563eb",
+      points: num(state.points_a), sets: num(state.sets_won_a),
+      to: num(state.timeouts_a), sub: num(state.subs_a),
+    };
+    const b = {
+      short: state.team_b_short || "", color: state.team_b_color || "#ef4444",
+      points: num(state.points_b), sets: num(state.sets_won_b),
+      to: num(state.timeouts_b), sub: num(state.subs_b),
+    };
+    const aIsLeft = state.side_a !== "right";
+    return {
+      left: aIsLeft ? a : b,
+      right: aIsLeft ? b : a,
+      serving: state.serving_team || null,
+    };
+  }
+
+  // --- render -------------------------------------------------------------
+  let linkedMatchId = null;
+
+  function renderStatus(st) {
+    lastLedbox = st.ledbox || lastLedbox;
+    const connected = !!(st.ledbox && st.ledbox.connected);
+    $("#dot").textContent = connected ? "🟢" : "🔴";
+    $("#dot").title = connected
+      ? `LedBox connected (${st.ledbox.host}:${st.ledbox.port})`
+      : "LedBox not connected";
+    $("#modeName").textContent = st.mode || "idle";
+    linkedMatchId = st.matchId != null ? String(st.matchId) : null;
+    $("#matchTag").textContent = st.matchId ? " · match " + st.matchId : "";
+    renderBoard(sides(st.state));
+    markLinked();
+  }
+
+  function renderBoard(s) {
+    for (const side of ["left", "right"]) {
+      const root = $(`.side.${side}`);
+      const d = s ? s[side] : { short: "", color: "#888", points: 0, sets: 0, to: 0, sub: 0 };
+      setIfIdle(root, ".short", d.short);
+      setColorIfIdle(root, ".color", d.color);
+      root.style.setProperty("--edge", d.color || "var(--" + side + ")");
+      $('[data-val="points"]', root).textContent = d.points;
+      $('[data-val="sets"]', root).textContent = d.sets;
+      $('[data-val="to"]', root).textContent = d.to;
+      $('[data-val="sub"]', root).textContent = d.sub;
+    }
+    const serving = s ? s.serving : null;
+    $$('[data-serve]').forEach((b) =>
+      b.classList.toggle("on", serving === b.dataset.serve));
+  }
+
+  // Don't clobber an input the operator is currently editing.
+  function setIfIdle(root, sel, v) {
+    const el = $(sel, root);
+    if (document.activeElement !== el) el.value = v;
+  }
+  function setColorIfIdle(root, sel, v) {
+    const el = $(sel, root);
+    if (document.activeElement !== el && /^#[0-9a-fA-F]{6}$/.test(v || "")) el.value = v;
+  }
+
+  // --- actions ------------------------------------------------------------
+  async function refreshStatus() {
+    try { renderStatus(await api("/api/status")); }
+    catch (e) { $("#dot").textContent = "🔴"; /* keep quiet on poll errors */ }
+  }
+
+  async function sendAction(action) {
+    try {
+      const r = await postJSON("/api/action", { action });
+      if (r && r.state) renderStatus({
+        mode: "manual", matchId: null,
+        ledbox: lastLedbox, state: r.state,
+      });
+      refreshStatus();
+    } catch (e) { toast(e.message); }
+  }
+
+  async function blank() {
+    try { await postJSON("/api/blank"); toast("Board blanked"); refreshStatus(); }
+    catch (e) { toast(e.message); }
+  }
+
+  // --- LINK ---------------------------------------------------------------
+  async function refreshMatches() {
+    const list = $("#matches"), note = $("#matchesNote"), errs = $("#linkErrs");
+    errs.innerHTML = ""; note.textContent = "Loading…";
+    try {
+      const r = await api("/api/matches");
+      const matches = (r && r.matches) || [];
+      (r && r.errors || []).forEach((m) => {
+        const p = document.createElement("div");
+        p.className = "err"; p.textContent = "⚠ " + m; errs.appendChild(p);
+      });
+      list.innerHTML = "";
+      if (!matches.length) { note.textContent = "No matches found."; return; }
+      note.textContent = "";
+      for (const m of matches) {
+        const li = document.createElement("li");
+        li.dataset.id = String(m.id); li.dataset.source = m.source || "lan";
+        li.innerHTML =
+          `<div class="info"><div class="label"></div>` +
+          `<div class="sub">${(m.source || "lan").toUpperCase()} · id ${m.id}</div></div>` +
+          (m.live ? `<span class="live">LIVE</span>` : "") +
+          `<button class="linkbtn">Link</button>`;
+        li.querySelector(".label").textContent = m.label || String(m.id);
+        li.querySelector(".linkbtn").addEventListener("click", () => linkMatch(m));
+        list.appendChild(li);
+      }
+      markLinked();
+    } catch (e) { note.textContent = ""; toast(e.message); }
+  }
+
+  function markLinked() {
+    $$("#matches li").forEach((li) => {
+      const on = linkedMatchId != null && li.dataset.id === linkedMatchId;
+      li.classList.toggle("linked", on);
+      const b = li.querySelector(".linkbtn");
+      if (b) b.textContent = on ? "Linked" : "Link";
+    });
+  }
+
+  async function linkMatch(m) {
+    try {
+      await postJSON("/api/link", { source: m.source || "lan", matchId: m.id });
+      toast("Linked to " + (m.label || m.id));
+      refreshStatus();
+    } catch (e) { toast(e.message); }
+  }
+
+  // --- wiring -------------------------------------------------------------
+  // tabs
+  $$(".tabs button").forEach((b) => b.addEventListener("click", () => {
+    $$(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+    $$(".tab").forEach((t) => t.classList.toggle(
+      "active", t.id === "tab-" + b.dataset.tab));
+    if (b.dataset.tab === "link" && !$("#matches").children.length) refreshMatches();
+  }));
+
+  // per-side controls
+  $$(".side").forEach((root) => {
+    const side = root.dataset.side;
+    root.querySelectorAll("[data-pt]").forEach((b) => b.addEventListener("click",
+      () => sendAction({ type: "point", side, delta: Number(b.dataset.pt) })));
+    root.querySelectorAll("[data-stat]").forEach((b) => b.addEventListener("click",
+      () => sendAction({ type: b.dataset.stat, side, delta: Number(b.dataset.d) })));
+    const shortEl = $(".short", root), colorEl = $(".color", root);
+    shortEl.addEventListener("change",
+      () => sendAction({ type: "team", side, short: shortEl.value }));
+    colorEl.addEventListener("change",
+      () => sendAction({ type: "team", side, color: colorEl.value }));
+  });
+
+  // serve toggle
+  $$('[data-serve]').forEach((b) => b.addEventListener("click",
+    () => sendAction({ type: "serve", side: b.dataset.serve })));
+
+  // global actions
+  $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
+  $("#resetBtn").addEventListener("click", () => {
+    if (confirm("Reset the board to neutral?")) sendAction({ type: "reset" });
+  });
+  $("#blankBtn").addEventListener("click", () => {
+    if (confirm("Blank the LedBox display?")) blank();
+  });
+  $("#refreshBtn").addEventListener("click", refreshMatches);
+
+  // boot
+  refreshStatus();
+  setInterval(refreshStatus, 1500);
+})();
+</script>

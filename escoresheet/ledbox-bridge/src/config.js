@@ -21,5 +21,22 @@ export function loadConfig(env = process.env) {
     mock: bool(env.MOCK),
     // Verbose per-update logging.
     debug: bool(env.DEBUG),
+    // Appliance web control server (manual + LAN link UI) listen port.
+    controlPort: Number(env.CONTROL_PORT || 8890),
+    // OpenVolley relay HTTP base (for /api/match/list). Derived from relayUrl if unset:
+    // ws->http, wss->https, and the relay's HTTP port is 5173 (Vite dev server / API host).
+    relayHttpUrl: env.RELAY_HTTP_URL || httpFromWs(env.RELAY_URL || 'ws://127.0.0.1:8080'),
+  }
+}
+
+// Derive the relay HTTP base from its WS url: swap scheme and force port 5173.
+function httpFromWs(wsUrl) {
+  try {
+    const u = new URL(wsUrl)
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:'
+    u.port = '5173'
+    return u.origin
+  } catch {
+    return 'http://127.0.0.1:5173'
   }
 }
