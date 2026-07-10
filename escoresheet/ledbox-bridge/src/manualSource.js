@@ -22,6 +22,7 @@ const num = (v) => (Array.isArray(v) ? v.length : Number(v) || 0)
 export class ManualSource extends EventEmitter {
   constructor() {
     super()
+    this.lastEvent = null // transient: the notable event from the last apply() (e.g. 'set-end')
     this._fromLiveState(NEUTRAL)
   }
 
@@ -65,11 +66,29 @@ export class ManualSource extends EventEmitter {
 
   apply(action = {}) {
     const m = this.m
+    this.lastEvent = null
     const key = (base, side) => (side === 'right' ? 'right' : 'left') + base
     switch (action.type) {
-      case 'point':
-        m[key('Points', action.side)] = clamp0(m[key('Points', action.side)] + (Number(action.delta) || 0))
+      case 'point': {
+        const side = action.side === 'right' ? 'right' : 'left'
+        const other = side === 'left' ? 'right' : 'left'
+        const before = m[side + 'Points']
+        const d = Number(action.delta) || 0
+        m[side + 'Points'] = clamp0(before + d)
+        if (d > 0) {
+          // Rally scoring: the side that wins the point serves next.
+          m.serving = side
+          // Set win: first to 25 (15 in a deciding 5th set) with a >=2 lead, uncapped.
+          // Fire only on the transition INTO a win, so extra points don't re-count it.
+          const target = (m.leftSets === 2 && m.rightSets === 2) ? 15 : 25
+          const won = (p) => p >= target && p - m[other + 'Points'] >= 2
+          if (won(m[side + 'Points']) && !won(before)) {
+            m[side + 'Sets'] = clamp0(m[side + 'Sets'] + 1)
+            this.lastEvent = 'set-end'
+          }
+        }
         break
+      }
       case 'set':
         m[key('Sets', action.side)] = clamp0(m[key('Sets', action.side)] + (Number(action.delta) || 0))
         break
@@ -92,6 +111,11 @@ export class ManualSource extends EventEmitter {
         if (action.color != null) m[side + 'Color'] = String(action.color)
         break
       }
+      case 'next-set':
+        // Start the next set: clear points only (keep sets, names, colours, serving).
+        m.leftPoints = 0
+        m.rightPoints = 0
+        break
       case 'reset':
         this._fromLiveState(NEUTRAL)
         break

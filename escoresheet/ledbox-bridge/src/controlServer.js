@@ -17,7 +17,7 @@ const BLANK = {
   timeouts_a: 0, timeouts_b: 0, subs_a: 0, subs_b: 0, serving_team: null,
 }
 
-const ACTION_TYPES = new Set(['point', 'set', 'timeout', 'sub', 'serve', 'swap', 'team', 'reset', 'set-state'])
+const ACTION_TYPES = new Set(['point', 'set', 'timeout', 'sub', 'serve', 'swap', 'team', 'next-set', 'reset', 'set-state'])
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -96,7 +96,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
         sourceManager.setSource(manualSource, { mode: 'manual' })
       }
       manualSource.apply(action)
-      return sendJson(res, 200, { ok: true, state: manualSource.getState() })
+      return sendJson(res, 200, { ok: true, state: manualSource.getState(), event: manualSource.lastEvent })
     }
     // POST /api/link { source, matchId }
     if (pathname === '/api/link' && req.method === 'POST') {

@@ -3,11 +3,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LedBox Control</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%90%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --line: #2a3340;
     --fg: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --accent2: #1f6feb;
-    --ok: #3fb950; --bad: #f85149; --btn: #21262d; --btn-h: #30363d;
+    --ok: #3fb950; --bad: #f85149; --warn: #d29922; --btn: #21262d; --btn-h: #30363d;
     --left: #2563eb; --right: #ef4444;
   }
   @media (prefers-color-scheme: light) {
@@ -27,6 +28,19 @@
   #mode { font-size: 13px; color: var(--muted); margin-top: 4px;
     display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   #mode b { color: var(--fg); }
+
+  /* Countdown banner */
+  #cd { position: sticky; top: 56px; z-index: 4; display:flex; align-items:center;
+    gap:12px; margin:10px 0 0; padding:10px 14px; border-radius:12px;
+    background:var(--panel2); border:1px solid var(--warn); }
+  #cd[hidden] { display:none; }
+  #cd .cd-label { font-size:13px; font-weight:700; letter-spacing:.03em; color:var(--warn); flex:1; }
+  #cd .cd-time { font-size:34px; font-weight:800; font-variant-numeric:tabular-nums; }
+  #cd .cd-stop { width:38px; height:38px; border-radius:9px; font-size:18px; font-weight:700;
+    border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
+  #cd.done { border-color:var(--bad); animation: cdflash .5s steps(1) 6; }
+  #cd.done .cd-label, #cd.done .cd-time { color:var(--bad); }
+  @keyframes cdflash { 50% { background:var(--bad); } }
 
   .tabs { display:flex; gap:6px; margin: 10px 0; }
   .tabs button { flex:1; padding:12px; font-size:15px; font-weight:600;
@@ -52,10 +66,23 @@
   input.color { width:38px; height:38px; padding:0; border:1px solid var(--line);
     border-radius:8px; background:var(--panel2); cursor:pointer; }
 
+  /* Preset colour swatches */
+  .swatches { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 8px; }
+  .swatches .sw { width:26px; height:26px; border-radius:6px; padding:0; cursor:pointer;
+    border:1px solid rgba(128,128,128,.45); }
+  .swatches .sw:active { transform:scale(.92); }
+  .swatches .sw.on { outline:2px solid var(--fg); outline-offset:1px; }
+
   .score { display:flex; align-items:center; justify-content:space-between;
     gap:6px; margin:6px 0; }
   .score .val { font-size:46px; font-weight:800; font-variant-numeric:tabular-nums;
-    min-width:1.6ch; text-align:center; }
+    min-width:1.6ch; text-align:center; border-radius:10px; }
+  .score .val.flash { animation: ptflash .7s ease; }
+  @keyframes ptflash {
+    0%   { transform:scale(1); }
+    28%  { transform:scale(1.34); color:var(--ok); text-shadow:0 0 14px var(--ok); }
+    100% { transform:scale(1); }
+  }
   .bigbtn { width:56px; height:56px; font-size:30px; font-weight:700; flex:0 0 auto;
     border:1px solid var(--line); background:var(--btn); color:var(--fg);
     border-radius:12px; cursor:pointer; line-height:1; }
@@ -79,11 +106,12 @@
   .serve .glbl { flex:0 0 100%; text-align:center; font-size:12px;
     color:var(--muted); margin-bottom:2px; }
 
-  .actions { display:flex; gap:8px; margin-top:12px; }
-  .actions button { flex:1; padding:14px; font-size:15px; font-weight:700;
+  .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .actions button { flex:1 1 30%; padding:14px; font-size:15px; font-weight:700;
     border:1px solid var(--line); background:var(--panel); color:var(--fg);
     border-radius:10px; cursor:pointer; }
   .actions button:active { background:var(--btn-h); }
+  .actions .primary { border-color:var(--accent); color:var(--accent); }
   .actions .danger { color:var(--bad); }
 
   /* LINK tab */
@@ -122,6 +150,13 @@
   <div id="mode">mode <b id="modeName">…</b><span id="matchTag"></span></div>
 </header>
 
+<!-- Countdown banner (timeout 30s / set interval 3min) -->
+<div id="cd" hidden>
+  <span class="cd-label" id="cdLabel"></span>
+  <span class="cd-time" id="cdTime">0:00</span>
+  <button class="cd-stop" id="cdStop" title="Stop">✕</button>
+</div>
+
 <div class="tabs">
   <button id="tabManualBtn" class="active" data-tab="manual">Manual</button>
   <button id="tabLinkBtn" data-tab="link">Link</button>
@@ -136,6 +171,7 @@
         <input class="short" data-field="short" maxlength="12" placeholder="HOME">
         <input class="color" type="color" data-field="color" value="#2563eb">
       </div>
+      <div class="swatches"></div>
       <div class="score">
         <button class="bigbtn" data-pt="-1">−</button>
         <span class="val" data-val="points">0</span>
@@ -161,6 +197,7 @@
         <input class="short" data-field="short" maxlength="12" placeholder="AWAY">
         <input class="color" type="color" data-field="color" value="#ef4444">
       </div>
+      <div class="swatches"></div>
       <div class="score">
         <button class="bigbtn" data-pt="-1">−</button>
         <span class="val" data-val="points">0</span>
@@ -182,12 +219,13 @@
   </div>
 
   <div class="serve">
-    <span class="glbl">Serving</span>
+    <span class="glbl">Serving (auto-follows the last point)</span>
     <button data-serve="left">LEFT</button>
     <button data-serve="right">RIGHT</button>
   </div>
 
   <div class="actions">
+    <button id="nextSetBtn" class="primary">Next set</button>
     <button id="swapBtn">⇄ Swap</button>
     <button id="resetBtn" class="danger">Reset</button>
     <button id="blankBtn" class="danger">Blank</button>
@@ -215,6 +253,11 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const num = (x) => Array.isArray(x) ? x.length : (Number(x) || 0);
 
+  // Preset team colours — tap-friendly on mobile (the native picker is fiddly).
+  const PRESETS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#22c55e", "#14b8a6",
+    "#0ea5e9", "#3b82f6", "#2563eb", "#6366f1", "#a855f7", "#ec4899",
+    "#ffffff", "#111827"];
+
   let toastTimer;
   function toast(msg) {
     const t = $("#toast");
@@ -237,6 +280,31 @@
   });
 
   let lastLedbox = {};   // remembered so optimistic renders keep the status dot right
+
+  // --- countdown (timeout 30s / set interval 3min) ------------------------
+  let cdTimer = null, cdEnd = 0;
+  const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  function startCountdown(seconds, label) {
+    stopCountdown();
+    cdEnd = Date.now() + seconds * 1000;
+    $("#cdLabel").textContent = label;
+    const cd = $("#cd"); cd.hidden = false; cd.classList.remove("done");
+    const tick = () => {
+      const left = (cdEnd - Date.now()) / 1000;
+      $("#cdTime").textContent = fmt(left);
+      if (left <= 0) {
+        clearInterval(cdTimer); cdTimer = null;
+        cd.classList.add("done"); $("#cdTime").textContent = "0:00";
+        setTimeout(() => { if (cd.classList.contains("done")) stopCountdown(); }, 5000);
+      }
+    };
+    tick(); cdTimer = setInterval(tick, 250);
+  }
+  function stopCountdown() {
+    if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
+    const cd = $("#cd"); cd.hidden = true; cd.classList.remove("done");
+  }
+  $("#cdStop").addEventListener("click", stopCountdown);
 
   // --- state -> physical left/right (honour side_a) -----------------------
   function sides(state) {
@@ -261,6 +329,10 @@
 
   // --- render -------------------------------------------------------------
   let linkedMatchId = null;
+  const MODE_LABELS = { manual: "Manual", lan: "Live (LAN)", cloud: "Cloud", idle: "Idle" };
+  // Flash detection keyed by TEAM (a/b) so a side-swap never false-triggers a flash.
+  let prevPts = { a: null, b: null };
+  let lastMode = null;
 
   function renderStatus(st) {
     lastLedbox = st.ledbox || lastLedbox;
@@ -269,11 +341,32 @@
     $("#dot").title = connected
       ? `LedBox connected (${st.ledbox.host}:${st.ledbox.port})`
       : "LedBox not connected";
-    $("#modeName").textContent = st.mode || "idle";
+    $("#modeName").textContent = MODE_LABELS[st.mode]
+      || (st.mode ? st.mode[0].toUpperCase() + st.mode.slice(1) : "Idle");
     linkedMatchId = st.matchId != null ? String(st.matchId) : null;
     $("#matchTag").textContent = st.matchId ? " · match " + st.matchId : "";
+    flashOnPoint(st);
     renderBoard(sides(st.state));
     markLinked();
+  }
+
+  // Flash the side whose score just went up (rally won).
+  function flashOnPoint(st) {
+    const s = st.state;
+    if (!s) return;
+    const aIsLeft = s.side_a !== "right";
+    // On any mode change, resync baselines silently (e.g. linking a match mid-game).
+    if (st.mode !== lastMode) { prevPts.a = null; prevPts.b = null; lastMode = st.mode; }
+    for (const team of ["a", "b"]) {
+      const val = num(s["points_" + team]);
+      const prev = prevPts[team];
+      if (prev != null && val > prev) {
+        const side = (team === "a") === aIsLeft ? "left" : "right";
+        const el = $(`.side.${side} [data-val="points"]`);
+        if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      }
+      prevPts[team] = val;
+    }
   }
 
   function renderBoard(s) {
@@ -287,6 +380,7 @@
       $('[data-val="sets"]', root).textContent = d.sets;
       $('[data-val="to"]', root).textContent = d.to;
       $('[data-val="sub"]', root).textContent = d.sub;
+      markSwatch(root, d.color);
     }
     const serving = s ? s.serving : null;
     $$('[data-serve]').forEach((b) =>
@@ -302,6 +396,10 @@
     const el = $(sel, root);
     if (document.activeElement !== el && /^#[0-9a-fA-F]{6}$/.test(v || "")) el.value = v;
   }
+  function markSwatch(root, color) {
+    const c = String(color || "").toLowerCase();
+    $$(".swatches .sw", root).forEach((sw) => sw.classList.toggle("on", sw.dataset.c === c));
+  }
 
   // --- actions ------------------------------------------------------------
   async function refreshStatus() {
@@ -316,6 +414,7 @@
         mode: "manual", matchId: null,
         ledbox: lastLedbox, state: r.state,
       });
+      if (r && r.event === "set-end") startCountdown(180, "Set interval");
       refreshStatus();
     } catch (e) { toast(e.message); }
   }
@@ -381,13 +480,34 @@
     if (b.dataset.tab === "link" && !$("#matches").children.length) refreshMatches();
   }));
 
+  // preset colour swatches (per side)
+  $$(".side").forEach((root) => {
+    const side = root.dataset.side;
+    const wrap = $(".swatches", root);
+    PRESETS.forEach((c) => {
+      const sw = document.createElement("button");
+      sw.className = "sw"; sw.style.background = c; sw.title = c; sw.dataset.c = c.toLowerCase();
+      sw.addEventListener("click", () => {
+        $(".color", root).value = c;
+        sendAction({ type: "team", side, color: c });
+      });
+      wrap.appendChild(sw);
+    });
+  });
+
   // per-side controls
   $$(".side").forEach((root) => {
     const side = root.dataset.side;
     root.querySelectorAll("[data-pt]").forEach((b) => b.addEventListener("click",
       () => sendAction({ type: "point", side, delta: Number(b.dataset.pt) })));
-    root.querySelectorAll("[data-stat]").forEach((b) => b.addEventListener("click",
-      () => sendAction({ type: b.dataset.stat, side, delta: Number(b.dataset.d) })));
+    root.querySelectorAll("[data-stat]").forEach((b) => b.addEventListener("click", () => {
+      const stat = b.dataset.stat, d = Number(b.dataset.d);
+      sendAction({ type: stat, side, delta: d });
+      if (stat === "timeout" && d > 0) {
+        const nm = ($(".short", root).value || side).toUpperCase();
+        startCountdown(30, "Timeout — " + nm);
+      }
+    }));
     const shortEl = $(".short", root), colorEl = $(".color", root);
     shortEl.addEventListener("change",
       () => sendAction({ type: "team", side, short: shortEl.value }));
@@ -400,12 +520,13 @@
     () => sendAction({ type: "serve", side: b.dataset.serve })));
 
   // global actions
+  $("#nextSetBtn").addEventListener("click", () => { stopCountdown(); sendAction({ type: "next-set" }); });
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
   $("#resetBtn").addEventListener("click", () => {
-    if (confirm("Reset the board to neutral?")) sendAction({ type: "reset" });
+    if (confirm("Reset the board to neutral?")) { stopCountdown(); sendAction({ type: "reset" }); }
   });
   $("#blankBtn").addEventListener("click", () => {
-    if (confirm("Blank the LedBox display?")) blank();
+    if (confirm("Blank the LedBox display?")) { stopCountdown(); blank(); }
   });
   $("#refreshBtn").addEventListener("click", refreshMatches);
 
