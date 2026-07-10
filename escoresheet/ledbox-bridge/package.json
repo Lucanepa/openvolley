@@ -11,7 +11,8 @@
     "start": "node src/bridge.js",
     "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs",
     "test:mapper": "node test/mapper-selftest.mjs",
-    "test:relay": "node test/relay-selftest.mjs"
+    "test:relay": "node test/relay-selftest.mjs",
+    "test:e2e": "node test/e2e-live.mjs"
   },
   "engines": {
     "node": ">=22"
