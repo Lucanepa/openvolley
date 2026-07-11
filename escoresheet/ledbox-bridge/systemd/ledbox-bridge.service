@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenVolley LedBox bridge (mirror live score to a Tech4Sport LedBox)
+Description=OpenVolley LedBox appliance (control UI + virtual board, mirrors live score to a Tech4Sport LedBox)
 After=network-online.target
 Wants=network-online.target
 
@@ -8,8 +8,14 @@ Type=simple
 # Adjust the user and paths to match your install location.
 User=pi-kscw
 WorkingDirectory=/home/pi-kscw/ledbox-bridge
-EnvironmentFile=/home/pi-kscw/ledbox-bridge/.env
-ExecStart=/usr/bin/node src/bridge.js
+# Optional overrides (RELAY_URL, MATCH_ID, LEDBOX_HOST, MOCK, ...). The leading '-'
+# makes a missing file non-fatal, so the appliance still boots on config defaults.
+EnvironmentFile=-/home/pi-kscw/ledbox-bridge/.env
+# No LedBox hardware wired yet: run the in-process mock so the board + control UI
+# come up "connected". Remove this line (or set MOCK=0 in .env) once a real
+# Tech4Sport LedBox is on the LAN (defaults to its hotspot 172.24.1.1:8889).
+Environment=MOCK=1
+ExecStart=/usr/bin/node src/appliance.js
 Restart=always
 RestartSec=5
 

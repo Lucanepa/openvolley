@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import { LanSource } from './lanSource.js'
+import { toSections } from './volleyballMapper.js'
 
 // Board shown when the operator picks "Blank" (all short names + serve cleared).
 const BLANK = {
@@ -48,6 +49,40 @@ class IdleSource extends EventEmitter {
 }
 
 export function createControlServer({ sourceManager, manualSource, ledbox, relayHttpUrl, relayUrl, webDir, reconnectMs }) {
+  // Ephemeral display countdown (timeout 30s / set interval / side switch). Owned here
+  // so it reaches every surface from ONE source: the control UI banner, the
+  // /mockledbox mirror (via /api/board), AND the physical LedBox (pushed once a second
+  // by the ticker below). Not part of the board liveState — a transient overlay.
+  let countdown = null // { label, endsAt } | null
+  let cdTicker = null
+  function countdownView() {
+    if (!countdown) return null
+    const remainingMs = countdown.endsAt - Date.now()
+    if (remainingMs <= 0) { stopCountdown(); return null }
+    return { label: countdown.label, remainingMs }
+  }
+  function startCountdown(seconds, label) {
+    countdown = { label: String(label || ''), endsAt: Date.now() + seconds * 1000 }
+    if (cdTicker) clearInterval(cdTicker)
+    const tick = () => {
+      const remainingMs = countdown ? countdown.endsAt - Date.now() : -1
+      if (remainingMs <= 0) return stopCountdown()
+      // Best-effort push to the physical board (no-op when not ready / no method).
+      if (ledbox && typeof ledbox.pushCountdown === 'function') {
+        ledbox.pushCountdown(Math.ceil(remainingMs / 1000), countdown.label).catch(() => {})
+      }
+    }
+    tick()
+    cdTicker = setInterval(tick, 1000)
+    // Don't let this daemon-side timer keep the process (or a test) alive.
+    if (cdTicker.unref) cdTicker.unref()
+  }
+  function stopCountdown() {
+    countdown = null
+    if (cdTicker) { clearInterval(cdTicker); cdTicker = null }
+    if (ledbox && typeof ledbox.pushCountdown === 'function') ledbox.pushCountdown(null).catch(() => {})
+  }
+
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost')
@@ -56,6 +91,11 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       if (req.method === 'OPTIONS') return send(res, 204, null)
 
       if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname)
+
+      // Pretty route for the virtual-board mirror (both the correct + user-typed spelling).
+      if (pathname === '/mockledbox' || pathname === '/mochledbox') {
+        return serveStatic(res, '/mockledbox.html', webDir)
+      }
 
       // Static web UI.
       return serveStatic(res, pathname, webDir)
@@ -74,6 +114,10 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     // GET /api/status
     if (pathname === '/api/status' && req.method === 'GET') {
       return sendJson(res, 200, status())
+    }
+    // GET /api/board — the exact section map pushed to the LedBox (1:1 mirror for the web view)
+    if (pathname === '/api/board' && req.method === 'GET') {
+      return sendJson(res, 200, board())
     }
     // GET /api/matches
     if (pathname === '/api/matches' && req.method === 'GET') {
@@ -109,6 +153,22 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       sourceManager.setSource(lan, { mode: 'lan', matchId: String(body.matchId) })
       return sendJson(res, 200, status())
     }
+    // POST /api/countdown { seconds, label } — start/replace the shared display timer
+    if (pathname === '/api/countdown' && req.method === 'POST') {
+      const body = await readJson(req)
+      const seconds = Number(body && body.seconds)
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        return sendJson(res, 400, { error: 'seconds must be a positive number' })
+      }
+      startCountdown(seconds, body && body.label)
+      return sendJson(res, 200, { ok: true })
+    }
+    // POST /api/countdown/stop — clear the display timer (skip / finished / reset)
+    if (pathname === '/api/countdown/stop' && req.method === 'POST') {
+      await readJson(req) // drain
+      stopCountdown()
+      return sendJson(res, 200, { ok: true })
+    }
     // POST /api/blank
     if (pathname === '/api/blank' && req.method === 'POST') {
       await readJson(req) // drain
@@ -127,6 +187,21 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       mode, matchId,
       ledbox: { connected: ledbox.ready === true, host: ledbox.host, port: ledbox.port },
       state: sourceManager.getState(),
+    }
+  }
+
+  // The exact SetSections payload the LedBox is showing right now, folded into a
+  // { sectionName: {text,color} } map so a browser can render a 1:1 mirror of the
+  // physical board. Works with or without hardware (it maps the live liveState the
+  // same way the LedboxClient does before pushing).
+  function board() {
+    const state = sourceManager.getState() || {}
+    return {
+      layout: ledbox.layout,
+      connected: ledbox.ready === true,
+      mode: sourceManager.status.mode,
+      countdown: countdownView(),
+      screen: sectionsToScreen(toSections(state)),
     }
   }
 
@@ -163,6 +238,22 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
 }
 
 // --- helpers ---
+
+// Fold a SetSections `value` array into { sectionName: { text, color } } — mirrors
+// MockLedbox._applySections so the web view shows exactly what the device holds.
+function sectionsToScreen(sections) {
+  const screen = {}
+  for (const s of sections) {
+    const attrs = Array.isArray(s.value) ? s.value : [s.value]
+    const cur = {}
+    for (const a of attrs) {
+      if (a.attrib === 'text') cur.text = a.value
+      if (a.attrib === 'color') cur.color = a.value
+    }
+    screen[s.name] = cur
+  }
+  return screen
+}
 
 // Serve a file from webDir (or index.html for "/"), rejecting any path escaping webDir.
 function serveStatic(res, pathname, webDir) {

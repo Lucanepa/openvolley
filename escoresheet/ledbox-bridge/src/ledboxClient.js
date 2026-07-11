@@ -20,10 +20,11 @@ export class LedboxClient extends EventEmitter {
     sport = 'volleyball',
     apiVersion = 1.30,
     layout = 'volleyball_matchscore',
+    timerSection = 'timer', // board section for the countdown; confirm on real hardware
     reconnectMs = 3000,
   } = {}) {
     super()
-    Object.assign(this, { host, port, alias, sport, apiVersion, layout, reconnectMs })
+    Object.assign(this, { host, port, alias, sport, apiVersion, layout, timerSection, reconnectMs })
     this.socket = null
     this.decoder = new StreamDecoder()
     this.ready = false
@@ -104,6 +105,20 @@ export class LedboxClient extends EventEmitter {
     this._lastState = state
     if (!this.ready) return Promise.resolve(false)
     return this.send('SetSections', toSections(state))
+  }
+
+  // Show (or clear, when secondsLeft == null) a timeout/interval countdown on the board.
+  // HARDWARE-UNVERIFIED: the `timer` section name is a best guess for the
+  // `volleyball_matchscore` layout — confirm against a real Tech4Sport LedBox at the
+  // hardware smoke-test (it may need a custom layout uploaded via TCP :12345). Harmless
+  // on the mock (it just stores the section); safe no-op until the board is ready.
+  pushCountdown(secondsLeft, label = '') {
+    if (!this.ready) return Promise.resolve(false)
+    const text = secondsLeft == null
+      ? ''
+      : `${Math.floor(secondsLeft / 60)}:${String(Math.max(0, secondsLeft) % 60).padStart(2, '0')}`
+    const sections = [{ name: this.timerSection || 'timer', value: [{ attrib: 'text', value: text }] }]
+    return this.send('SetSections', sections).catch(() => false)
   }
 
   disconnect() {

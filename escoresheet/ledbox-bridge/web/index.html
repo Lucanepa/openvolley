@@ -24,6 +24,8 @@
     padding: 12px 2px 8px; border-bottom: 1px solid var(--line); }
   .hrow { display:flex; align-items:center; gap:10px; }
   .hrow h1 { font-size: 18px; margin: 0; flex: 1; }
+  #boardLink { font-size: 18px; text-decoration: none; line-height: 1; opacity:.85; }
+  #boardLink:active { opacity: .5; }
   #dot { font-size: 14px; }
   #mode { font-size: 13px; color: var(--muted); margin-top: 4px;
     display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -158,6 +160,8 @@
 <header>
   <div class="hrow">
     <h1>LedBox Control</h1>
+    <a id="boardLink" href="/mockledbox" target="_blank" rel="noopener"
+       title="Open the virtual LedBox — a 1:1 mirror of the board">📺</a>
     <span id="dot" title="LedBox connection">🔴</span>
   </div>
   <div id="mode">Mode <b id="modeName">…</b><span id="setNo"></span><span id="matchTag"></span></div>
@@ -301,6 +305,9 @@
   // runs then (set interval -> next set; set-5 8-switch -> swap sides).
   let cdTimer = null, cdEnd = 0, cdOnFinish = null;
   const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  // Mirror the countdown onto the server so the /mockledbox board shows the same timer.
+  const publishCountdown = (seconds, label) => postJSON("/api/countdown", { seconds, label }).catch(() => {});
+  const stopServerCountdown = () => postJSON("/api/countdown/stop").catch(() => {});
   function clearCountdown() {
     if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
     cdOnFinish = null;
@@ -309,6 +316,7 @@
   function finishCountdown() {
     const cb = cdOnFinish;
     clearCountdown();
+    stopServerCountdown();
     if (cb) cb();
   }
   function startCountdown(seconds, label, onFinish) {
@@ -317,6 +325,7 @@
     cdEnd = Date.now() + seconds * 1000;
     $("#cdLabel").textContent = label;
     $("#cd").hidden = false;
+    publishCountdown(seconds, label);
     const tick = () => {
       const left = (cdEnd - Date.now()) / 1000;
       $("#cdTime").textContent = fmt(left);
