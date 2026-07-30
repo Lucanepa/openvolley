@@ -86,6 +86,19 @@
   .stat .name { font-size:10px; font-weight:800; letter-spacing:.02em; color:var(--muted);
     text-transform:uppercase; }
   .stat .num { min-width:1.2ch; text-align:center; font-weight:800; font-variant-numeric:tabular-nums; }
+  /* Limit warnings: 2 timeouts and 6 substitutions per set are the maximum, so the
+     counter turns amber one short of the limit and dark red once it is reached. */
+  .stat.warn  { background:#4a3b00; border-color:var(--warn); }
+  .stat.warn  .num, .stat.warn  .name { color:var(--warn); }
+  .stat.maxed { background:#4a0f14; border-color:#b00020; }
+  .stat.maxed .num, .stat.maxed .name { color:#ff6b6b; }
+  @media (prefers-color-scheme: light) {
+    .stat.warn  { background:#fff4d6; }
+    .stat.maxed { background:#ffe0e3; }
+    .stat.maxed .num, .stat.maxed .name { color:#b00020; }
+  }
+  .stat .num.bump { animation: numbump .5s ease; }
+  @keyframes numbump { 40% { transform:scale(1.5); color:var(--ok); } }
   .smbtn { flex:0 0 auto; width:30px; height:30px; font-size:17px; font-weight:700; line-height:1;
     border:1px solid var(--line); background:var(--btn); color:var(--fg);
     border-radius:7px; cursor:pointer; }
@@ -128,8 +141,17 @@
   #cd .cd-time { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--warn); }
   #cd .cd-label { font-size:14px; font-weight:800; letter-spacing:.03em; color:var(--fg);
     text-transform:uppercase; }
-  #cd .cd-stop { width:34px; height:34px; border-radius:8px; font-size:16px; font-weight:700;
-    border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
+  #cd .cd-stop { min-width:34px; height:34px; padding:0 10px; border-radius:8px; font-size:15px;
+    font-weight:800; border:1px solid var(--line); background:var(--btn); color:var(--fg);
+    cursor:pointer; white-space:nowrap; }
+  /* A set interval halts play for three minutes — at pill size it was easy to miss and
+     looked like nothing had happened. Between sets the overlay takes over the screen. */
+  #cd.major { top:50%; transform:translate(-50%,-50%); flex-direction:column; gap:6px;
+    padding:18px 34px; border-width:2px; }
+  #cd.major .cd-time { font-size:64px; }
+  #cd.major .cd-label { font-size:16px; }
+  #cd.major .cd-stop { height:42px; font-size:16px; padding:0 18px;
+    background:var(--accent); border-color:var(--accent); color:#fff; }
 
   /* ---- LINK ---- */
   .link { padding:12px; gap:0; overflow-y:auto; }
@@ -254,6 +276,7 @@
         <div class="barrow">
           <div id="setStrip" class="setstrip" hidden></div>
           <div class="actions">
+            <button id="warmupBtn" title="10-minute pre-match warm-up countdown">⏱ Warm-up</button>
             <button id="swapBtn">⇄ Swap</button>
             <button id="resetBtn" class="danger">Reset</button>
             <button id="blankBtn" class="danger">Blank</button>
@@ -355,6 +378,7 @@
     if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
     cdOnFinish = null;
     $("#cd").hidden = true;
+    $("#cd").classList.remove("major");
   }
   function finishCountdown() {
     const cb = cdOnFinish;
@@ -362,11 +386,17 @@
     stopServerCountdown();
     if (cb) cb();
   }
-  function startCountdown(seconds, label, onFinish) {
+  // opts.major = take over the screen (set interval / warm-up, where play has stopped).
+  // opts.action = label for the button, which RUNS onFinish rather than just dismissing —
+  // "✕" read as "cancel" when it actually means "start the next set now".
+  function startCountdown(seconds, label, onFinish, opts = {}) {
     clearCountdown();
     cdOnFinish = onFinish || null;
     cdEnd = Date.now() + seconds * 1000;
     $("#cdLabel").textContent = label;
+    $("#cdStop").textContent = opts.action || "✕";
+    $("#cdStop").title = opts.action ? label : "Skip";
+    $("#cd").classList.toggle("major", !!opts.major);
     $("#cd").hidden = false;
     publishCountdown(seconds, label);
     const tick = () => {
@@ -464,6 +494,10 @@
     strip.appendChild(undo);
   }
 
+  // Last values actually painted, so we can flash only what CHANGED. Driven off state
+  // rather than off the button press, so a point entered on another phone flashes here too.
+  const shown = { left: {}, right: {} };
+
   function renderBoard(s) {
     for (const side of ["left", "right"]) {
       const root = $(`.side.${side}`);
@@ -471,10 +505,16 @@
       setIfIdle(root, ".short", d.short);
       setColorIfIdle(root, ".color", d.color);
       root.style.setProperty("--edge", d.color || "var(--" + side + ")");
-      $('[data-val="points"]', root).textContent = d.points;
-      $('[data-val="sets"]', root).textContent = d.sets;
-      $('[data-val="to"]', root).textContent = d.to;
-      $('[data-val="sub"]', root).textContent = d.sub;
+      const prev = shown[side];
+      // The point just assigned pulses green — confirmation that the tap registered.
+      paint($('[data-val="points"]', root), d.points, prev.points, "flash");
+      paint($('[data-val="sets"]', root), d.sets, prev.sets, "bump");
+      paint($('[data-val="to"]', root), d.to, prev.to, "bump");
+      paint($('[data-val="sub"]', root), d.sub, prev.sub, "bump");
+      // 2 timeouts and 6 subs are the per-set maximums (FIVB); warn one short of each.
+      limitClass($('[data-val="to"]', root).closest(".stat"), d.to, 2, 2);
+      limitClass($('[data-val="sub"]', root).closest(".stat"), d.sub, 5, 6);
+      shown[side] = d;
     }
     const serving = s ? s.serving : null;
     $$('[data-serve]').forEach((b) =>
@@ -484,6 +524,23 @@
       ind.textContent = serving === "left" ? "◀ 🏐" : serving === "right" ? "🏐 ▶" : "🏐";
       ind.style.opacity = serving ? "1" : ".35";
     }
+  }
+
+  // Write a value and, when it actually changed, replay the animation. Re-adding the
+  // class alone won't restart a CSS animation — the reflow between is what does it.
+  function paint(el, value, previous, cls) {
+    if (!el) return;
+    el.textContent = value;
+    if (previous === undefined || previous === value) return;
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  function limitClass(stat, value, warnAt, maxAt) {
+    if (!stat) return;
+    stat.classList.toggle("warn", value >= warnAt && value < maxAt);
+    stat.classList.toggle("maxed", value >= maxAt);
   }
 
   // Don't clobber an input the operator is currently editing.
@@ -525,7 +582,10 @@
     if (event === "set-end") {
       // Flash the set-winning side; run the interval; advance (+switch ends) when done.
       flashSide(sideOf(s, num(s.points_a) > num(s.points_b)));
-      startCountdown(180, "Set interval — next set when done", () => sendAction({ type: "next-set" }));
+      // The board keeps showing the final score through the interval (that is the point of
+      // it); the reset happens when the countdown ends or the operator says go.
+      startCountdown(180, "Set interval", () => sendAction({ type: "next-set" }),
+        { major: true, action: "Start next set →" });
     } else if (event === "match-end") {
       const winSide = sideOf(s, num(s.sets_won_a) > num(s.sets_won_b));
       const name = (winSide === "left" ? sides(s).left.short : sides(s).right.short) || winSide.toUpperCase();
@@ -625,6 +685,9 @@
     () => sendAction({ type: "serve", side: b.dataset.serve })));
 
   // global actions
+  // Pre-match warm-up: a plain 10-minute clock, no side effects when it ends.
+  $("#warmupBtn").addEventListener("click", () =>
+    startCountdown(600, "Warm-up", null, { major: true, action: "End warm-up" }));
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
   $("#resetBtn").addEventListener("click", () => {
     if (confirm("Reset the board to neutral?")) { clearCountdown(); sendAction({ type: "reset" }); }
