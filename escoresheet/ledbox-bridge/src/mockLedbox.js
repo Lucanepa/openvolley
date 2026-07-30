@@ -13,7 +13,9 @@ import { encode, StreamDecoder } from './ledboxProtocol.js'
 const KNOWN_SECTIONS = new Set([
   'team1', 'team2', 'score1', 'score2', 'set1', 'set2',
   'timeout1', 'timeout2', 'sub1', 'sub2', 'serve1', 'serve2',
-  'vs', 'lbl_to', 'lbl_sub', 'bg_score1', 'bg_score2', 'mode', 'banner', 'timer',
+  'vs', 'lbl_to', 'lbl_sub', 'bg_score1', 'bg_score2', 'mode', 'banner',
+  // volleyball_matchscore_timeout_02, read off the real device with GetSections:
+  'timer', 'lbl', 'sep', 'media',
 ])
 const KNOWN_LAYOUTS = new Set([
   'waiting', 'volleyball_matchscore_02',
