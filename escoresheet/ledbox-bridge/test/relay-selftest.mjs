@@ -52,8 +52,8 @@ const broadcast = (liveState) => {
 const { relay, ledbox, mock } = await startBridge({
   relayUrl: `ws://127.0.0.1:${port}`,
   matchId: MATCH_ID,
-  ledboxHost: '127.0.0.1', ledboxPort: 0, ledboxLayout: 'volleyball_matchscore',
-  ledboxAlias: 'test', ledboxApiVersion: 1.30, reconnectMs: 0, mock: true, debug: false,
+  ledboxHost: '127.0.0.1', ledboxPort: 0, ledboxLayout: 'volleyball_matchscore_02',
+  ledboxAlias: 'test', ledboxApiVersion: 2, reconnectMs: 0, mock: true, debug: false,
 })
 
 await wait(400) // connect + subscribe + initial match-full-data + paint

@@ -12,9 +12,9 @@ export function loadConfig(env = process.env) {
     // Physical Tech4Sport LedBox. Default = its own Wi-Fi hotspot address.
     ledboxHost: env.LEDBOX_HOST || '172.24.1.1',
     ledboxPort: Number(env.LEDBOX_PORT || 8889),
-    ledboxLayout: env.LEDBOX_LAYOUT || 'volleyball_matchscore',
+    ledboxLayout: env.LEDBOX_LAYOUT || 'volleyball_matchscore_02',
     ledboxAlias: env.LEDBOX_ALIAS || 'openvolley',
-    ledboxApiVersion: Number(env.LEDBOX_API_VERSION || 1.30),
+    ledboxApiVersion: Number(env.LEDBOX_API_VERSION || 2),
     // Reconnect backoff (ms) for both the relay and the LedBox sockets.
     reconnectMs: Number(env.RECONNECT_MS || 3000),
     // Run an in-process mock LedBox instead of talking to real hardware (for testing).
