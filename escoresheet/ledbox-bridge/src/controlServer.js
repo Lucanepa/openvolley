@@ -244,13 +244,15 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
 function sectionsToScreen(sections) {
   const screen = {}
   for (const s of sections) {
+    // The WRITE shape carries ONE attribute per entry, so a section appears once per
+    // attribute. Accumulate into the existing entry — replacing it lets the `color`
+    // entry wipe the `text` the same section set a moment earlier.
+    const cur = screen[s.name] || (screen[s.name] = {})
     const attrs = Array.isArray(s.value) ? s.value : [s.value]
-    const cur = {}
     for (const a of attrs) {
       if (a.attrib === 'text') cur.text = a.value
       if (a.attrib === 'color') cur.color = a.value
     }
-    screen[s.name] = cur
   }
   return screen
 }
