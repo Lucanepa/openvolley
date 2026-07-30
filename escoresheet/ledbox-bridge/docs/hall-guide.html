@@ -1,0 +1,242 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LedBox — Hall Guide</title>
+<style>
+  @page { size: A4; margin: 14mm 13mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font: 11.5pt/1.45 "Helvetica Neue", Arial, sans-serif; color: #111; margin: 0; }
+  h1 { font-size: 25pt; margin: 0 0 2mm; letter-spacing: -.4pt; }
+  h1 + .sub { font-size: 11pt; color: #555; margin: 0 0 6mm; }
+  h2 { font-size: 15pt; margin: 8mm 0 3mm; padding-bottom: 1.5mm;
+       border-bottom: 2.5pt solid #111; page-break-after: avoid; }
+  h3 { font-size: 12pt; margin: 5mm 0 2mm; page-break-after: avoid; }
+  p { margin: 0 0 2.5mm; }
+  .page-break { page-break-before: always; }
+  .no-break { page-break-inside: avoid; }
+
+  /* Big numbered steps — one action per line, impossible to lose your place. */
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 0 0 4mm 13mm;
+                  page-break-inside: avoid; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: -.5mm;
+    width: 9mm; height: 9mm; border-radius: 50%; background: #111; color: #fff;
+    font-weight: 700; font-size: 12pt; text-align: center; line-height: 9mm; }
+  ol.steps .what { font-weight: 700; font-size: 12.5pt; }
+  ol.steps .why  { color: #444; font-size: 10.5pt; }
+
+  /* "You should see" checkpoint — the reader confirms before moving on. */
+  .check { margin: 1.5mm 0 0; padding: 1.8mm 3mm; background: #eef6ee;
+           border-left: 3pt solid #2e7d32; font-size: 10.5pt; }
+  .check b { color: #2e7d32; }
+  .warn { margin: 1.5mm 0 0; padding: 1.8mm 3mm; background: #fdf1e7;
+          border-left: 3pt solid #d2691e; font-size: 10.5pt; }
+
+  .callout { border: 2pt solid #b00020; border-radius: 2mm; padding: 4mm 5mm;
+             margin: 0 0 6mm; page-break-inside: avoid; }
+  .callout h3 { margin-top: 0; color: #b00020; font-size: 13pt; }
+
+  ul.bring { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 8mm; }
+  ul.bring li { padding: 1.6mm 0 1.6mm 8mm; position: relative;
+                break-inside: avoid; font-size: 11.5pt; }
+  ul.bring li::before { content: ""; position: absolute; left: 0; top: 2.2mm;
+    width: 4.5mm; height: 4.5mm; border: 1.4pt solid #111; border-radius: .8mm; }
+  ul.bring li i { display: block; font-style: normal; color: #555; font-size: 9.5pt; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+  th { text-align: left; background: #111; color: #fff; padding: 2mm 2.5mm; font-size: 10pt; }
+  td { padding: 2.2mm 2.5mm; border-bottom: .75pt solid #ccc; vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  td:first-child { font-weight: 700; width: 33%; }
+  code { font: 10.5pt "SF Mono", Menlo, Consolas, monospace; background: #f0f0f0;
+         padding: .4mm 1.2mm; border-radius: .8mm; }
+  .url { font: 700 13pt "SF Mono", Menlo, Consolas, monospace; }
+
+  .facts { display: flex; flex-wrap: wrap; gap: 3mm; margin: 0; padding: 0; list-style: none; }
+  .facts li { flex: 1 1 45%; border: .75pt solid #bbb; border-radius: 1.5mm; padding: 2.5mm 3mm; }
+  .facts b { display: block; font-size: 9pt; color: #666; text-transform: uppercase;
+             letter-spacing: .4pt; font-weight: 700; }
+  .facts span { font: 11.5pt "SF Mono", Menlo, Consolas, monospace; }
+  .foot { margin-top: 6mm; padding-top: 2mm; border-top: .75pt solid #ccc;
+          font-size: 9pt; color: #777; }
+</style>
+
+<h1>LedBox — Hall Guide</h1>
+<p class="sub">Setting up the LED scoreboard at a venue. Follow the steps in order. Don't skip the green checks.</p>
+
+<div class="callout">
+  <h3>⚠ Do this ONCE at home, before the first match</h3>
+  <p>In a hall there is no wifi you trust, so <b>your phone's hotspot</b> is how you reach the
+     scoreboard controller. The Pi has to learn that hotspot <b>once, at home</b> — it cannot
+     learn it at the venue, because you need the connection in order to set it up.</p>
+  <p style="margin-bottom:0"><b>How:</b> turn your phone's hotspot ON, then from a computer on
+     your home network run:<br>
+     <code>ssh openvolley</code><br>
+     <code>sudo nmcli device wifi connect "YOUR-HOTSPOT-NAME" password "YOUR-PASSWORD"</code><br>
+     Do this once. From then on the Pi joins your hotspot automatically whenever it sees it.</p>
+</div>
+
+<h2>1 · What to bring</h2>
+<ul class="bring">
+  <li>LedBox scoreboard<i>the panel itself</i></li>
+  <li>LedBox power cable<i>mains plug</i></li>
+  <li>The Pi — small box labelled OpenVolley<i>this is the brain; nothing works without it</i></li>
+  <li>Pi power supply<i>USB-C. Use THIS one, not a phone charger</i></li>
+  <li>Ethernet cable<i>at least 3 m — links Pi to the board</i></li>
+  <li>Spare ethernet cable<i>the #1 thing that fails</i></li>
+  <li>Power strip + extension lead<i>you will be short of sockets</i></li>
+  <li>Your phone<i>this is the remote control</i></li>
+</ul>
+
+<h2>2 · Setting up — in this order</h2>
+<ol class="steps">
+  <li>
+    <div class="what">Hang or stand the board where players can see it. Plug it into mains.</div>
+    <div class="why">Do the board first — it takes the longest to start.</div>
+    <div class="check"><b>✓ You should see:</b> the board lights up within about 30 seconds and shows a waiting/idle screen.</div>
+  </li>
+  <li>
+    <div class="what">Plug the ethernet cable from the board into the Pi.</div>
+    <div class="why">Either end, either way round — it is not directional.</div>
+    <div class="check"><b>✓ You should see:</b> small lights blinking at both sockets.</div>
+  </li>
+  <li>
+    <div class="what">Turn ON your phone's hotspot. Leave it on for the whole match.</div>
+    <div class="why">This is the private network the Pi and your phone talk over. No hotspot, no control.</div>
+  </li>
+  <li>
+    <div class="what">Now plug in the Pi. Wait 60 seconds.</div>
+    <div class="why">Always AFTER the hotspot is on, so it can join straight away. Do not unplug it while it starts.</div>
+    <div class="check"><b>✓ You should see:</b> your phone's hotspot screen reports <b>1 device connected</b>.</div>
+  </li>
+  <li>
+    <div class="what">On your phone, open the browser and go to:</div>
+    <div class="url">http://raspberrypi.local:8890</div>
+    <div class="why">Bookmark it now, on the day, while it works. If that address fails see <b>Trouble 2</b>.</div>
+    <div class="check"><b>✓ You should see:</b> the control page, with team panels and big + / − buttons.</div>
+  </li>
+  <li>
+    <div class="what">Look at the dot at the top-left of the page.</div>
+    <div class="why"><b>🟢 green</b> = talking to the board, you are ready. <b>🔴 red</b> = not talking to it — see <b>Trouble 1</b>.</div>
+  </li>
+  <li>
+    <div class="what">Type the two team names, set the colours, and start scoring.</div>
+    <div class="why">Turn the phone sideways (landscape). Press the full-screen button (the square icon, top right) so nothing is in the way.</div>
+  </li>
+</ol>
+
+<h2>3 · Using it during the match</h2>
+<table>
+  <tr><th style="width:33%">Button</th><th>What it does</th></tr>
+  <tr><td>+ and −</td><td>Adds or removes a point. The serve indicator follows the point automatically.</td></tr>
+  <tr><td>SET</td><td>Sets won. Normally counts itself when a set ends — only touch it to correct a mistake.</td></tr>
+  <tr><td>T/O</td><td>Timeouts used. Pressing + also starts a 30-second countdown on the board.</td></tr>
+  <tr><td>SUB</td><td>Substitutions used by that team.</td></tr>
+  <tr><td>Serve LEFT / RIGHT</td><td>Forces who is serving. Use after a mistake — normally it is automatic.</td></tr>
+  <tr><td>⇄ Swap</td><td>Teams change ends. Swaps names, colours and scores together.</td></tr>
+  <tr><td>Reset</td><td>Clears everything back to 0–0. Asks first. Use between matches.</td></tr>
+  <tr><td>Blank</td><td>Empties the board but keeps the score in the app. Use during breaks.</td></tr>
+  <tr><td>Full screen<br><span style="font-weight:400;color:#555;font-size:9.5pt">square icon, top right</span></td><td>Fills the phone screen with the controls. Press again to leave.</td></tr>
+</table>
+
+<h3>Keep in mind</h3>
+<p>Keep the phone's hotspot ON and the phone awake — if the phone sleeps the hotspot may drop and
+   you lose control of the board. <b>The score is safe:</b> it lives on the Pi, not on the phone.
+   Reconnect and it is all still there.</p>
+
+<h2>4 · Packing up</h2>
+<ol class="steps">
+  <li>
+    <div class="what">Press <b>Blank</b> in the app.</div>
+    <div class="why">Leaves the board empty and tidy.</div>
+  </li>
+  <li>
+    <div class="what">Unplug the board from mains.</div>
+  </li>
+  <li>
+    <div class="what">Unplug the Pi.</div>
+    <div class="why">It has no on/off switch. Nothing is lost — it starts by itself next time.</div>
+    <div class="warn"><b>Better, if you have a laptop:</b> run <code>ssh openvolley "sudo poweroff"</code>,
+      wait 20 seconds, then unplug. Cleaner for the memory card. Pulling the plug is normally fine —
+      just avoid doing it while it is still starting up.</div>
+  </li>
+  <li>
+    <div class="what">Turn off your phone's hotspot. Coil the cables. Count them.</div>
+  </li>
+</ol>
+
+<h2>5 · Troubleshooting</h2>
+<p>Work down the list. Nine times out of ten it is the first row.</p>
+
+<table>
+  <tr><th style="width:26%">Problem</th><th style="width:30%">What it means</th><th>What to do</th></tr>
+
+  <tr>
+    <td>Trouble 1 — Red dot 🔴 in the app</td>
+    <td>The Pi is fine, but it cannot reach the board.</td>
+    <td>Check the ethernet cable at BOTH ends — push until it clicks. Check the board is powered
+        and lit. Try the spare cable. It reconnects on its own within about 5 seconds; no need to
+        restart anything.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 2 — The page will not open</td>
+    <td>Your phone cannot find the Pi by name.</td>
+    <td>First: is the hotspot ON and does it show 1 device connected? If yes, open your hotspot's
+        connected-devices list, read the Pi's address (e.g. <code>192.168.43.5</code>) and use
+        <code>http://THAT-ADDRESS:8890</code> instead. Write it on this sheet.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 3 — Board frozen on an old score</td>
+    <td>The link dropped and came back.</td>
+    <td>Press any + then − in the app. That forces a full repaint of the board.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 4 — Board stuck on the waiting screen</td>
+    <td>The Pi has not taken control of it yet.</td>
+    <td>Wait 60 seconds from powering the Pi. If still stuck, unplug the Pi, wait 10 seconds,
+        plug it back in.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 5 — Team name too long / cut off</td>
+    <td>Known limitation. The name field on the board fits only short names.</td>
+    <td><b>Use a short name</b> — <code>WIE</code>, <code>VOL</code>, <code>GEN</code>. Three or four
+        letters always fit. This is the reliable fix today.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 6 — Page is blank / buttons missing</td>
+    <td>Stale page in the phone's browser.</td>
+    <td>Pull down to refresh, or close the tab and reopen the address.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 7 — Nothing works at all</td>
+    <td>Start from zero.</td>
+    <td>Unplug BOTH the board and the Pi. Count to ten. Plug in the board first, wait for it to
+        light. Then plug in the Pi and wait 60 seconds. Reopen the page.</td>
+  </tr>
+
+  <tr>
+    <td>Trouble 8 — Someone must check deeper</td>
+    <td>For whoever has a laptop.</td>
+    <td><code>ssh openvolley</code> then <code>systemctl status ledbox-bridge</code> to see if it
+        is running, and <code>journalctl -u ledbox-bridge -n 50</code> to read what went wrong.
+        <code>sudo systemctl restart ledbox-bridge</code> restarts it.</td>
+  </tr>
+</table>
+
+<h2>6 · Numbers, if you need them</h2>
+<ul class="facts">
+  <li><b>Control page</b><span>http://raspberrypi.local:8890</span></li>
+  <li><b>Virtual board (test view)</b><span>…:8890/mockledbox</span></li>
+  <li><b>Scoreboard on the cable</b><span>192.168.5.1</span></li>
+  <li><b>Pi on the cable</b><span>192.168.5.50</span></li>
+  <li><b>Board's own wifi</b><span>ledbox_C0270</span></li>
+  <li><b>Service name on the Pi</b><span>ledbox-bridge</span></li>
+</ul>
+
+<p class="foot">The Pi starts the scoreboard software by itself every time it is powered on — there
+  is nothing to launch by hand. Written for the Tech4Sport C0270 (firmware 0.551).</p>

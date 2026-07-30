@@ -11,10 +11,9 @@ WorkingDirectory=/home/pi-kscw/ledbox-bridge
 # Optional overrides (RELAY_URL, MATCH_ID, LEDBOX_HOST, MOCK, ...). The leading '-'
 # makes a missing file non-fatal, so the appliance still boots on config defaults.
 EnvironmentFile=-/home/pi-kscw/ledbox-bridge/.env
-# No LedBox hardware wired yet: run the in-process mock so the board + control UI
-# come up "connected". Remove this line (or set MOCK=0 in .env) once a real
-# Tech4Sport LedBox is on the LAN (defaults to its hotspot 172.24.1.1:8889).
-Environment=MOCK=1
+# Drives the real Tech4Sport LedBox at LEDBOX_HOST (see .env — cabled installs use
+# 192.168.5.1, box-as-AP installs 172.24.1.1). For a hardware-free bench test, set
+# MOCK=1 in .env rather than here, so the venue unit always means "real board".
 ExecStart=/usr/bin/node src/appliance.js
 Restart=always
 RestartSec=5
