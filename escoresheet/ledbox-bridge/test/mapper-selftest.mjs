@@ -49,7 +49,7 @@ await settle() // let the SetLayout that fires just after 'ready' round-trip
 
 console.log('\n[1] Handshake')
 assert(commands.includes('Init'), 'client sent Init on connect')
-assert(mock.currentLayout === 'volleyball_matchscore', 'layout set to volleyball_matchscore')
+assert(mock.currentLayout === 'volleyball_matchscore_02', 'layout set to volleyball_matchscore_02')
 
 console.log('\n[2] Kickoff (0-0, Volero serving on the left)')
 await client.pushState(base); await settle()

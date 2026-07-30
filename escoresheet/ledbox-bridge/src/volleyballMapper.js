@@ -4,7 +4,7 @@
 //   Scoreboard.jsx:1958  (how the row is built; serving_team already left/right)
 //   LivescoreApp.jsx:143 (getLeftRight: side_a decides left/right; sets vs points)
 //
-// Target layout = the docs' `volleyball_matchscore` sections:
+// Target layout = the device's `volleyball_matchscore_02` sections:
 //   team1/team2, score1/score2 (big current-set points), set1/set2 (sets won),
 //   timeout1/timeout2 (T), sub1/sub2 (S, substitution counts),
 //   serve1/serve2 (rectangles lit in the serving team colour).
@@ -40,27 +40,40 @@ export function toLeftRight(state) {
   }
 }
 
-const section = (name, attrs) => ({ name, value: attrs })
+// The LEDbox SetSections WRITE shape is one { name, value: { attrib, value } } entry
+// PER attribute — this differs from the GetSections READ shape, which nests attribs
+// in an array. To set both text and colour on a section, emit that section name twice.
+// (Confirmed against a real Tech4Sport LedBox C0270, firmware 0.551, on 2026-07-30.)
+const attr = (name, attrib, value) => ({ name, value: { attrib, value: String(value) } })
 const text = (name, value, color) =>
-  section(name, color ? [{ attrib: 'text', value: String(value) }, { attrib: 'color', value: color }]
-                      : [{ attrib: 'text', value: String(value) }])
+  color ? [attr(name, 'text', value), attr(name, 'color', color)] : [attr(name, 'text', value)]
+const rect = (name, color) => [attr(name, 'color', color)]
+// The score box: keep the fill black (so the big number reads) and match the border to
+// the team colour. `bordercolor` is honoured by the device when supported and a harmless
+// no-op otherwise (an unknown attrib returns ok). Setting the fill also heals any stray
+// colour left on the private bg_score section.
+const box = (name, color) => [attr(name, 'color', '0,0,0'), attr(name, 'bordercolor', color)]
 
-// Returns the `value` array for a `SetSections` command.
+// Returns the `value` array for a `SetSections` command. Each side is painted uniformly
+// in its team colour — name, score, set count and score-box border all match — so the
+// board never shows one team in three different reds.
 export function toSections(state, { off = '30,30,30' } = {}) {
   const v = toLeftRight(state)
   return [
-    text('team1', v.leftName, v.leftColor),
-    text('team2', v.rightName, v.rightColor),
-    text('score1', v.leftPoints, v.leftColor),
-    text('score2', v.rightPoints, v.rightColor),
-    text('set1', v.leftSets),
-    text('set2', v.rightSets),
-    text('timeout1', v.leftTimeouts),
-    text('timeout2', v.rightTimeouts),
-    text('sub1', v.leftSubs),
-    text('sub2', v.rightSubs),
+    ...text('team1', v.leftName, v.leftColor),
+    ...text('team2', v.rightName, v.rightColor),
+    ...text('score1', v.leftPoints, v.leftColor),
+    ...text('score2', v.rightPoints, v.rightColor),
+    ...box('bg_score1', v.leftColor),
+    ...box('bg_score2', v.rightColor),
+    ...text('set1', v.leftSets, v.leftColor),
+    ...text('set2', v.rightSets, v.rightColor),
+    ...text('timeout1', v.leftTimeouts),
+    ...text('timeout2', v.rightTimeouts),
+    ...text('sub1', v.leftSubs),
+    ...text('sub2', v.rightSubs),
     // Serve indicators: light the serving side's rectangle in its team colour.
-    section('serve1', [{ attrib: 'color', value: v.serving === 'left' ? v.leftColor : off }]),
-    section('serve2', [{ attrib: 'color', value: v.serving === 'right' ? v.rightColor : off }]),
+    ...rect('serve1', v.serving === 'left' ? v.leftColor : off),
+    ...rect('serve2', v.serving === 'right' ? v.rightColor : off),
   ]
 }

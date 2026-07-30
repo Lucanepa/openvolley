@@ -18,8 +18,8 @@ export class LedboxClient extends EventEmitter {
     port = CONTROL_PORT,
     alias = 'openvolley',
     sport = 'volleyball',
-    apiVersion = 1.30,
-    layout = 'volleyball_matchscore',
+    apiVersion = 2,
+    layout = 'volleyball_matchscore_02',
     timerSection = 'timer', // board section for the countdown; confirm on real hardware
     reconnectMs = 3000,
   } = {}) {
@@ -117,7 +117,7 @@ export class LedboxClient extends EventEmitter {
     const text = secondsLeft == null
       ? ''
       : `${Math.floor(secondsLeft / 60)}:${String(Math.max(0, secondsLeft) % 60).padStart(2, '0')}`
-    const sections = [{ name: this.timerSection || 'timer', value: [{ attrib: 'text', value: text }] }]
+    const sections = [{ name: this.timerSection || 'timer', value: { attrib: 'text', value: text } }]
     return this.send('SetSections', sections).catch(() => false)
   }
 
