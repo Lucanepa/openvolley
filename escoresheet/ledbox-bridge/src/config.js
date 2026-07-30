@@ -9,8 +9,13 @@ export function loadConfig(env = process.env) {
     relayUrl: env.RELAY_URL || 'ws://127.0.0.1:8080',
     // Which match to mirror onto the LedBox (the numeric match id). Required unless MOCK.
     matchId: env.MATCH_ID || null,
-    // Physical Tech4Sport LedBox. Default = its own Wi-Fi hotspot address.
-    ledboxHost: env.LEDBOX_HOST || '172.24.1.1',
+    // Physical Tech4Sport LedBox. The board answers on a DIFFERENT address depending on
+    // how you reached it — 172.24.1.1 when everyone is on the board's own Wi-Fi (the
+    // venue setup), 192.168.5.1 over the ethernet cable (the bench setup). Pinning one
+    // means the other silently fails, so accept a comma-separated list and try each in
+    // turn on every connect. LEDBOX_HOST still works for a single address.
+    ledboxHosts: (env.LEDBOX_HOST || '172.24.1.1,192.168.5.1')
+      .split(',').map((h) => h.trim()).filter(Boolean),
     ledboxPort: Number(env.LEDBOX_PORT || 8889),
     ledboxLayout: env.LEDBOX_LAYOUT || 'volleyball_matchscore_02',
     ledboxAlias: env.LEDBOX_ALIAS || 'openvolley',
