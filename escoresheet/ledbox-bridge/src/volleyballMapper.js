@@ -54,6 +54,18 @@ const rect = (name, color) => [attr(name, 'color', color)]
 // colour left on the private bg_score section.
 const box = (name, color) => [attr(name, 'color', '0,0,0'), attr(name, 'bordercolor', color)]
 
+// Limit colouring for the timeout and substitution counters, so the referee's table can
+// read "this team has nothing left" off the board at a glance instead of doing arithmetic.
+// FIVB per-set maximums: 2 timeouts (12.1) and 6 substitutions (15.6).
+export const NEUTRAL_COUNTER = '200,200,200'
+export const WARN_COUNTER = '255,176,0'   // amber: one short of the limit
+export const MAXED_COUNTER = '170,0,20'   // dark red: none left
+export const TIMEOUT_MAX = 2
+export const SUB_WARN = 5
+export const SUB_MAX = 6
+const limitColor = (n, warnAt, maxAt) =>
+  (n >= maxAt ? MAXED_COUNTER : n >= warnAt ? WARN_COUNTER : NEUTRAL_COUNTER)
+
 // Returns the `value` array for a `SetSections` command. Each side is painted uniformly
 // in its team colour — name, score, set count and score-box border all match — so the
 // board never shows one team in three different reds.
@@ -68,10 +80,10 @@ export function toSections(state, { off = '30,30,30' } = {}) {
     ...box('bg_score2', v.rightColor),
     ...text('set1', v.leftSets, v.leftColor),
     ...text('set2', v.rightSets, v.rightColor),
-    ...text('timeout1', v.leftTimeouts),
-    ...text('timeout2', v.rightTimeouts),
-    ...text('sub1', v.leftSubs),
-    ...text('sub2', v.rightSubs),
+    ...text('timeout1', v.leftTimeouts, limitColor(v.leftTimeouts, TIMEOUT_MAX, TIMEOUT_MAX)),
+    ...text('timeout2', v.rightTimeouts, limitColor(v.rightTimeouts, TIMEOUT_MAX, TIMEOUT_MAX)),
+    ...text('sub1', v.leftSubs, limitColor(v.leftSubs, SUB_WARN, SUB_MAX)),
+    ...text('sub2', v.rightSubs, limitColor(v.rightSubs, SUB_WARN, SUB_MAX)),
     // Serve indicators: light the serving side's rectangle in its team colour.
     ...rect('serve1', v.serving === 'left' ? v.leftColor : off),
     ...rect('serve2', v.serving === 'right' ? v.rightColor : off),

@@ -25,7 +25,12 @@ export class LedboxClient extends EventEmitter {
     sport = 'volleyball',
     apiVersion = 2,
     layout = 'volleyball_matchscore_02',
-    timerSection = 'timer', // board section for the countdown; confirm on real hardware
+    // The device ships a purpose-built countdown layout with `timer` and `lbl` sections
+    // (confirmed by GetSections on a C0270 fw 0.551). Timeouts, set intervals and the
+    // warm-up clock all use it — we only change the label and the number.
+    countdownLayout = 'volleyball_matchscore_timeout_02',
+    timerSection = 'timer',
+    labelSection = 'lbl',
     reconnectMs = 3000,
     // A TCP connect to an address that isn't routable from here does NOT fail fast — it
     // sits until the kernel gives up (minutes). Without our own deadline the host list
@@ -33,7 +38,8 @@ export class LedboxClient extends EventEmitter {
     connectTimeoutMs = 4000,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, timerSection, reconnectMs, connectTimeoutMs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs })
+    this.currentLayout = null
     this.hosts = (hosts && hosts.length ? hosts : String(host).split(',').map((h) => h.trim()))
       .filter(Boolean)
     this._hostIdx = 0
@@ -65,9 +71,7 @@ export class LedboxClient extends EventEmitter {
         // The board advertises `noresend` and stays silent when asked for the layout it
         // already has, so this legitimately times out on every reconnect. Swallow that
         // one case; a real refusal (e.g. error 5, layout not on the device) still surfaces.
-        await this.setLayout(this.layout).catch((err) => {
-          if (!/timed out/.test(err.message)) throw err
-        })
+        await this.setLayoutIfNeeded(this.layout)
         if (this._lastState) await this.pushState(this._lastState) // repaint after reconnect
       } catch (err) {
         this.emit('error', err)
@@ -139,21 +143,46 @@ export class LedboxClient extends EventEmitter {
   pushState(state) {
     this._lastState = state
     if (!this.ready) return Promise.resolve(false)
+    // A countdown layout has none of the match sections; writing them there is an error 6.
+    // Hold the state instead — pushCountdown(null) repaints it when the countdown ends.
+    if (this.currentLayout && this.currentLayout !== this.layout) return Promise.resolve(false)
     return this.send('SetSections', toSections(state))
   }
 
-  // Show (or clear, when secondsLeft == null) a timeout/interval countdown on the board.
-  // HARDWARE-UNVERIFIED: the `timer` section name is a best guess for the
-  // `volleyball_matchscore` layout — confirm against a real Tech4Sport LedBox at the
-  // hardware smoke-test (it may need a custom layout uploaded via TCP :12345). Harmless
-  // on the mock (it just stores the section); safe no-op until the board is ready.
-  pushCountdown(secondsLeft, label = '') {
-    if (!this.ready) return Promise.resolve(false)
-    const text = secondsLeft == null
-      ? ''
-      : `${Math.floor(secondsLeft / 60)}:${String(Math.max(0, secondsLeft) % 60).padStart(2, '0')}`
-    const sections = [{ name: this.timerSection || 'timer', value: { attrib: 'text', value: text } }]
-    return this.send('SetSections', sections).catch(() => false)
+  // Show (or clear, when secondsLeft == null) a countdown on the board.
+  //
+  // The device ships `volleyball_matchscore_timeout_02` for exactly this — GetSections on a
+  // real C0270 reports it holding `lbl` ("TIMEOUT"), `timer` ("30"), both scores and both set
+  // counts. So a timeout, a set interval and the warm-up clock are all the same screen with a
+  // different label and number; we switch to it for the duration and switch back after.
+  async pushCountdown(secondsLeft, label = '') {
+    if (!this.ready) return false
+    try {
+      if (secondsLeft == null) {
+        await this.setLayoutIfNeeded(this.layout)
+        if (this._lastState) await this.pushState(this._lastState) // repaint the match
+        return true
+      }
+      await this.setLayoutIfNeeded(this.countdownLayout)
+      const s = Math.max(0, Math.round(secondsLeft))
+      // The layout's own default is a bare "30", so stay bare under a minute and only use
+      // M:SS once there are minutes to show (set interval, warm-up).
+      const text = s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      const sections = [{ name: this.timerSection, value: { attrib: 'text', value: text } }]
+      if (label) sections.push({ name: this.labelSection, value: { attrib: 'text', value: String(label).toUpperCase() } })
+      await this.send('SetSections', sections)
+      return true
+    } catch { return false }
+  }
+
+  // Switch layouts only when it actually changes. Re-asking for the current layout gets no
+  // reply at all (the device advertises noresend), which would stall for the full timeout.
+  async setLayoutIfNeeded(name) {
+    if (!name || this.currentLayout === name) return
+    await this.setLayout(name).catch((err) => {
+      if (!/timed out/.test(err.message)) throw err // silence here just means "already there"
+    })
+    this.currentLayout = name
   }
 
   disconnect() {
