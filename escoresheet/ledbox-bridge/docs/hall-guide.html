@@ -64,15 +64,11 @@
 <p class="sub">Setting up the LED scoreboard at a venue. Follow the steps in order. Don't skip the green checks.</p>
 
 <div class="callout">
-  <h3>⚠ Do this ONCE at home, before the first match</h3>
-  <p>In a hall there is no wifi you trust, so <b>your phone's hotspot</b> is how you reach the
-     scoreboard controller. The Pi has to learn that hotspot <b>once, at home</b> — it cannot
-     learn it at the venue, because you need the connection in order to set it up.</p>
-  <p style="margin-bottom:0"><b>How:</b> turn your phone's hotspot ON, then from a computer on
-     your home network run:<br>
-     <code>ssh openvolley</code><br>
-     <code>sudo nmcli device wifi connect "YOUR-HOTSPOT-NAME" password "YOUR-PASSWORD"</code><br>
-     Do this once. From then on the Pi joins your hotspot automatically whenever it sees it.</p>
+  <h3>The one rule</h3>
+  <p style="margin-bottom:0">The <b>scoreboard makes its own wifi network</b>. The Pi joins it by
+     itself, and your phone joins it too. There is no cable to the scoreboard, no venue wifi, and
+     nothing to set up on the day — but your phone must be on <b>that</b> wifi, not on mobile data.
+     See <b>Trouble 2</b> if the page will not open.</p>
 </div>
 
 <h2>1 · What to bring</h2>
@@ -81,8 +77,7 @@
   <li>LedBox power cable<i>mains plug</i></li>
   <li>The Pi — small box labelled OpenVolley<i>this is the brain; nothing works without it</i></li>
   <li>Pi power supply<i>USB-C. Use THIS one, not a phone charger</i></li>
-  <li>Ethernet cable<i>at least 3 m — links Pi to the board</i></li>
-  <li>Spare ethernet cable<i>the #1 thing that fails</i></li>
+  <li>Ethernet cable<i>backup only — normally not needed</i></li>
   <li>Power strip + extension lead<i>you will be short of sockets</i></li>
   <li>Your phone<i>this is the remote control</i></li>
 </ul>
@@ -91,27 +86,25 @@
 <ol class="steps">
   <li>
     <div class="what">Hang or stand the board where players can see it. Plug it into mains.</div>
-    <div class="why">Do the board first — it takes the longest to start.</div>
+    <div class="why">Do the board first. It creates the wifi network everything else joins.</div>
     <div class="check"><b>✓ You should see:</b> the board lights up within about 30 seconds and shows a waiting/idle screen.</div>
   </li>
   <li>
-    <div class="what">Plug the ethernet cable from the board into the Pi.</div>
-    <div class="why">Either end, either way round — it is not directional.</div>
-    <div class="check"><b>✓ You should see:</b> small lights blinking at both sockets.</div>
+    <div class="what">Plug in the Pi — the small box labelled OpenVolley. Wait 60 seconds.</div>
+    <div class="why">It finds the board's wifi and connects on its own. Do not unplug it while it starts.</div>
   </li>
   <li>
-    <div class="what">Turn ON your phone's hotspot. Leave it on for the whole match.</div>
-    <div class="why">This is the private network the Pi and your phone talk over. No hotspot, no control.</div>
+    <div class="what">On your phone, join the wifi network:</div>
+    <div class="url">ledbox_C0270 &nbsp;·&nbsp; password 47561052</div>
+    <div class="why">This network has no internet — that is normal and expected.</div>
+    <div class="warn"><b>Important:</b> your phone may try to jump back to mobile data because this
+      wifi has no internet. If pages will not load, turn <b>mobile data OFF</b> for the match, or
+      switch off "auto-switch to mobile data" in your wifi settings.</div>
   </li>
   <li>
-    <div class="what">Now plug in the Pi. Wait 60 seconds.</div>
-    <div class="why">Always AFTER the hotspot is on, so it can join straight away. Do not unplug it while it starts.</div>
-    <div class="check"><b>✓ You should see:</b> your phone's hotspot screen reports <b>1 device connected</b>.</div>
-  </li>
-  <li>
-    <div class="what">On your phone, open the browser and go to:</div>
-    <div class="url">http://raspberrypi.local:8890</div>
-    <div class="why">Bookmark it now, on the day, while it works. If that address fails see <b>Trouble 2</b>.</div>
+    <div class="what">Open the browser and go to:</div>
+    <div class="url">http://172.24.1.60:8890</div>
+    <div class="why">Bookmark it now, on the day, while it works. This address never changes.</div>
     <div class="check"><b>✓ You should see:</b> the control page, with team panels and big + / − buttons.</div>
   </li>
   <li>
@@ -139,9 +132,10 @@
 </table>
 
 <h3>Keep in mind</h3>
-<p>Keep the phone's hotspot ON and the phone awake — if the phone sleeps the hotspot may drop and
-   you lose control of the board. <b>The score is safe:</b> it lives on the Pi, not on the phone.
-   Reconnect and it is all still there.</p>
+<p>Keep the phone on the <code>ledbox_C0270</code> wifi. If you wander out of range the page stops
+   responding — walk back and it reconnects. <b>The score is safe:</b> it lives on the Pi, not on
+   the phone, so you can close the browser, swap phones, or hand over to someone else and nothing
+   is lost.</p>
 
 <h2>4 · Packing up</h2>
 <ol class="steps">
@@ -160,7 +154,7 @@
       just avoid doing it while it is still starting up.</div>
   </li>
   <li>
-    <div class="what">Turn off your phone's hotspot. Coil the cables. Count them.</div>
+    <div class="what">Put your phone back on its normal wifi / mobile data. Coil the cables. Count them.</div>
   </li>
 </ol>
 
@@ -180,10 +174,10 @@
 
   <tr>
     <td>Trouble 2 — The page will not open</td>
-    <td>Your phone cannot find the Pi by name.</td>
-    <td>First: is the hotspot ON and does it show 1 device connected? If yes, open your hotspot's
-        connected-devices list, read the Pi's address (e.g. <code>192.168.43.5</code>) and use
-        <code>http://THAT-ADDRESS:8890</code> instead. Write it on this sheet.</td>
+    <td>Your phone is not on the board's wifi, or has slipped back to mobile data.</td>
+    <td>Check the phone's wifi says <code>ledbox_C0270</code>. Turn <b>mobile data OFF</b> — phones
+        abandon a wifi that has no internet. Then reload <code>http://172.24.1.60:8890</code>.
+        If the network is not in the list at all, the board is not powered.</td>
   </tr>
 
   <tr>
@@ -230,7 +224,7 @@
 
 <h2>6 · Numbers, if you need them</h2>
 <ul class="facts">
-  <li><b>Control page</b><span>http://raspberrypi.local:8890</span></li>
+  <li><b>Control page</b><span>http://172.24.1.60:8890</span></li>
   <li><b>Virtual board (test view)</b><span>…:8890/mockledbox</span></li>
   <li><b>Scoreboard on the cable</b><span>192.168.5.1</span></li>
   <li><b>Pi on the cable</b><span>192.168.5.50</span></li>

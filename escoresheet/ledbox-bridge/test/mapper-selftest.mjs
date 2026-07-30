@@ -92,7 +92,22 @@ const rejection = await client.send('SetSections', [{ name: 'not_a_section', val
 assert(rejection !== null, 'unknown section is rejected')
 assert(/section not found/.test(rejection || ''), `error text preserved (got: ${rejection})`)
 
-console.log(`\n[7] Commands to LedBox: ${commands.length} (Init, SetLayout, ${commands.filter((c) => c === 'SetSections').length}x SetSections)`)
+console.log('\n[7] Host failover: a dead address must roll over to the live one')
+// The board answers on its Wi-Fi address at a venue and its cabled address on the bench;
+// the client walks the list until one completes a handshake.
+const failover = new LedboxClient({
+  hosts: ['no-such-host.invalid', '127.0.0.1'], port: PORT, reconnectMs: 20,
+})
+failover.on('error', () => {}) // the dead address is expected to fail
+const landed = await new Promise((resolve) => {
+  failover.once('ready', () => resolve(failover.host))
+  setTimeout(() => resolve(null), 4000)
+  failover.connect()
+})
+assert(landed === '127.0.0.1', `settled on the reachable address (got: ${landed})`)
+failover.disconnect()
+
+console.log(`\n[8] Commands to LedBox: ${commands.length} (Init, SetLayout, ${commands.filter((c) => c === 'SetSections').length}x SetSections)`)
 
 client.disconnect()
 await mock.close()

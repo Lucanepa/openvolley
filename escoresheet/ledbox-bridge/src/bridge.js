@@ -15,25 +15,29 @@ export async function startBridge(config = loadConfig()) {
   const log = (...a) => console.log(ts(), ...a)
 
   // Target: the real LedBox, or an in-process mock on an ephemeral port for testing.
-  let { ledboxHost, ledboxPort } = config
+  // Accept either the config's host list or a single (possibly comma-separated) host,
+  // so hand-built configs and the tests keep working.
+  let ledboxHosts = config.ledboxHosts
+    || String(config.ledboxHost || '172.24.1.1').split(',').map((h) => h.trim()).filter(Boolean)
+  let { ledboxPort } = config
   let mock = null
   if (config.mock) {
     mock = new MockLedbox()
     const addr = await mock.listen(0, '127.0.0.1')
-    ledboxHost = '127.0.0.1'
+    ledboxHosts = ['127.0.0.1']
     ledboxPort = addr.port
-    log(`[bridge] MOCK LedBox on ${ledboxHost}:${ledboxPort}`)
+    log(`[bridge] MOCK LedBox on ${ledboxHosts[0]}:${ledboxPort}`)
   }
 
   const ledbox = new LedboxClient({
-    host: ledboxHost,
+    hosts: ledboxHosts,
     port: ledboxPort,
     alias: config.ledboxAlias,
     layout: config.ledboxLayout,
     apiVersion: config.ledboxApiVersion,
     reconnectMs: config.reconnectMs,
   })
-  ledbox.on('ready', () => log(`[ledbox] ready (${ledboxHost}:${ledboxPort}, layout ${config.ledboxLayout})`))
+  ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, layout ${config.ledboxLayout})`))
   ledbox.on('close', () => log('[ledbox] disconnected'))
   ledbox.on('error', (e) => log('[ledbox] error:', e.message))
   ledbox.connect()
