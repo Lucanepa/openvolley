@@ -72,7 +72,12 @@ export class LedboxClient extends EventEmitter {
     if (waiter) {
       this._pending.delete(msg.sender)
       if (msg.status === 'Error' || msg.status === 'error') {
-        waiter.reject(new Error(`${msg.sender}: ${msg.message || 'error'} (${msg.error_code})`))
+        // The device names the field `error_message`; `message` is only our own mock's
+        // older spelling. Reading the wrong one threw away every diagnostic the board
+        // sends ("code 6 - section not found", "key 'attrib' not defined"), leaving a
+        // bare "error (9)" — which is what made the write-shape bug so hard to find.
+        const detail = msg.error_message || msg.message || 'error'
+        waiter.reject(new Error(`${msg.sender}: ${detail} (${msg.error_code})`))
       } else {
         waiter.resolve(msg.value)
       }

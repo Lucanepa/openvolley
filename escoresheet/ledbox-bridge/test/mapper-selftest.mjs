@@ -86,7 +86,13 @@ assert(mock.text('team2') === 'VZH' && mock.text('team1') === 'GEN', 'teams swap
 assert(mock.text('set2') === '1' && mock.text('set1') === '0', 'set score follows the swap')
 assert(mock.screen.score1.color === '37,99,235', 'left score now blue (Genève on left)')
 
-console.log(`\n[6] Commands to LedBox: ${commands.length} (Init, SetLayout, ${commands.filter((c) => c === 'SetSections').length}x SetSections)`)
+console.log('\n[6] Device errors carry their text (the board says WHY, not just a code)')
+const rejection = await client.send('SetSections', [{ name: 'not_a_section', value: { attrib: 'text', value: 'x' } }])
+  .then(() => null, (e) => e.message)
+assert(rejection !== null, 'unknown section is rejected')
+assert(/section not found/.test(rejection || ''), `error text preserved (got: ${rejection})`)
+
+console.log(`\n[7] Commands to LedBox: ${commands.length} (Init, SetLayout, ${commands.filter((c) => c === 'SetSections').length}x SetSections)`)
 
 client.disconnect()
 await mock.close()
