@@ -65,6 +65,7 @@ Colours are `"R,G,B"` decimal strings, not hex.
 | `color` | Verified. Reported by `GetSections`. |
 | `fontsize` | **Verified on the glass**, never reported by `GetSections`. See below. |
 | `bordercolor` | Unverified — accepted, but everything is. |
+| everything else | `GetSections` reports **only** text and color, on every layout — those two are all we can read back and verify. |
 | `animation`, `animation_velocity`, `blinking` | In the APK's vocabulary; applicability to *scoreboard* sections untested. Values include `none`, `static`, `scroller_left_right`, `scroller_right_left`, `scroller_top_bottom`, `scroller_bottom_top`, `scroller_x_lr`, `scroller_x_rl`, `scroller_y_bt`, `scroller_y_tb`. |
 
 **`fontsize` is real but uncalibrated.** Proven by a differential: `team1` at `6`
@@ -74,6 +75,79 @@ whole panel. Neither is usable. The APK also references `fontsizearray`, which
 suggests the panel offers a **discrete set of bitmap font heights** rather than a
 continuous scale; arbitrary values likely land between them and clip. The valid
 ladder is not yet known — it needs a sweep on hardware.
+
+## Layouts — the full inventory
+
+Enumerated on the device (`test/probe-board.mjs`). These four exist; **everything else we
+tried is absent** (`error 5`), including `volleyball_matchscore_01`, `volleyball_timeout_02`,
+`warmup`, and plain `timeout`/`set`.
+
+| Layout | Sections | Use |
+|---|---|---|
+| `volleyball_matchscore_02` | `team1 team2 score1 score2 set1 set2 timeout1 timeout2 sub1 sub2 serve1 serve2 vs mode` | the match screen |
+| `volleyball_matchscore_timeout_02` | `lbl` ("TIMEOUT") · `timer` ("30") · `score1 score2 set1 set2 sep bg_score1 bg_score2 media` | **any countdown** |
+| `volleyball_matchscore_set_02` | `media` only | an image screen; needs an upload to be useful |
+| `waiting` | — | the idle screen shown when no client is connected |
+
+Two things this settles:
+
+- **Countdowns have a purpose-built screen.** A timeout, a set interval and a warm-up clock
+  are all `volleyball_matchscore_timeout_02` with a different `lbl` and `timer`. There is no
+  `timer` section on the match layout — writing one there is an `error 6`.
+- **The match layout has a `vs` section** (default `"-"`), so a names-and-VS pre-match screen
+  needs no new protocol: paint `team1`, `team2`, `vs` and blank the rest.
+
+`waiting` could not be switched to while a client was connected — `GetLayout` kept reporting
+`volleyball_matchscore_02`. It appears to be the device's own no-client screen rather than a
+layout an app can select.
+
+`ReloadLayout` **requires the layout name** (bare `''` gives `error 5`) and resets that
+layout's sections to their defaults — which is how to undo a stray `fontsize`.
+
+## Why `fontsize` misaligns
+
+Layouts are **HTML pages** (see the vendor's `assets/Content/functions.js`: elements carry
+`name=` and `layoutattrib=` and are updated with jQuery). Each section is therefore a fixed,
+CSS-positioned box. `fontsize` changes the glyph size *inside* that box; it does not resize
+the box, re-centre it, or move its baseline. Small text ends up clipped against the box's
+anchor, large text overflows it — exactly what the hardware showed at 6 and 28.
+
+So `fontsize` is the wrong lever for a name that does not fit. The real options are a custom
+uploaded layout with a properly sized box, or the `scroller_*` marquee family.
+
+## Horn — CONFIRMED working
+
+```jsonc
+{ "cmd": "Horn", "value": { "times": 2, "sleep": 0.2 } }
+```
+
+Payload from the vendor's own `functions.js`; **verified audible on the hardware**
+(2026-07-30). `times` = how many beeps, `sleep` = gap in seconds. Defaults in the vendor code
+are `times: 1, sleep: 0.5`. An obvious end-of-set / match-point signal.
+
+## ChangeWaiting
+
+Takes an **object** and echoes it back with an `exist` flag:
+
+```
+{}                                  -> { exist: false }
+{ text: "KSC WIEDIKON" }            -> { text: "KSC WIEDIKON", exist: false }
+{ name: "waiting", value: "KSC …" } -> { name: "waiting", value: "KSC …", exist: false }
+```
+
+A bare string times out. `exist: false` on every attempt suggests it references a **stored
+media/interface that must already be uploaded**, rather than accepting literal text — so it
+likely needs the `Upload` path before it does anything visible. Unresolved.
+
+## Operational: the board's control port wedges
+
+If a client dies without disconnecting (e.g. the Pi reboots), the board **keeps port 8889
+closed to new connections** — observed closed for 80s straight while port 80 still answered
+HTTP 200, i.e. the device was healthy and only the scoreboard service was stuck. It does not
+self-heal; the board has to be power-cycled. After power-on, **8889 comes back at ~45s**.
+
+Practical consequence: "restart the Pi" is not a safe recovery step on its own — restarting
+the Pi while the board holds a stale session takes the board down with it.
 
 ## Errors
 
@@ -105,8 +179,8 @@ SetConfig  SetConfigs  GetConfig  GetConfigs  GetClients
 {Start,Pause,Stop}CustomText
 ```
 
-Unused by us and possibly useful: **`Horn`** (end-of-set signal), **`Clear`**,
-**`ReloadLayout`**, **`GetClients`**.
+**`Horn`** is confirmed working (see above). **`ReloadLayout`** needs the layout name.
+Still unused and possibly useful: **`Clear`**, **`GetClients`**.
 
 `GetConfig`/`GetConfigs` take `value: { section, field }`, but the surrounding APK
 strings (`ip_lan`, `ip_wifi`, `network_gateway`, `DHCP`) show they are **network**
