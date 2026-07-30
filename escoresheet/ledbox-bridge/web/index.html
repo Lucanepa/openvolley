@@ -1,7 +1,7 @@
 <!doctype html>
-<!-- LedBox appliance control UI — self-contained, offline, mobile-first. Talks to the control API on its own origin over relative URLs. -->
+<!-- LedBox appliance control UI — self-contained, offline, landscape-first. Talks to the control API on its own origin over relative URLs. -->
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>LedBox Control</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='22' y='72' width='56' height='22' rx='11' fill='%231e3a8a'/%3E%3Crect x='44' y='46' width='12' height='32' rx='6' fill='%232563eb'/%3E%3Ccircle cx='50' cy='34' r='24' fill='%23f8fafc' stroke='%230f172a' stroke-width='4'/%3E%3Cg fill='none' stroke='%230f172a' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M50 11 Q41 34 50 57'/%3E%3Cpath d='M31 18 Q50 32 43 55'/%3E%3Cpath d='M69 18 Q50 32 57 55'/%3E%3C/g%3E%3C/svg%3E">
 <style>
@@ -16,248 +16,291 @@
       --fg:#1f2328; --muted:#636c76; --btn:#eaeef2; --btn-h:#dfe4ea; }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin:0; background:var(--bg); color:var(--fg);
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
     font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  body { max-width: 760px; margin: 0 auto; padding: 0 12px 40px; }
+  button, input { font-family: inherit; }
 
-  header { position: sticky; top: 0; z-index: 5; background: var(--bg);
-    padding: 12px 2px 8px; border-bottom: 1px solid var(--line); }
-  .hrow { display:flex; align-items:center; gap:10px; }
-  .hrow h1 { font-size: 18px; margin: 0; flex: 1; }
-  #boardLink { font-size: 18px; text-decoration: none; line-height: 1; opacity:.85; }
-  #boardLink:active { opacity: .5; }
-  #dot { font-size: 14px; }
-  #mode { font-size: 13px; color: var(--muted); margin-top: 4px;
-    display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  #mode b { color: var(--fg); }
-  #setNo { background:var(--panel2); border:1px solid var(--line); padding:1px 9px;
+  /* App shell — one viewport, never scrolls. Respect landscape notch/gesture insets. */
+  #app { display:flex; flex-direction:column; height:100dvh; overflow:hidden;
+    padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right);
+    padding-top:env(safe-area-inset-top); }
+
+  .topbar { flex:0 0 auto; display:flex; align-items:center; gap:8px;
+    padding:6px 10px; border-bottom:1px solid var(--line); }
+  .brand { font-weight:800; font-size:15px; white-space:nowrap; }
+  #dot { font-size:13px; }
+  #mode { flex:1; min-width:0; font-size:12px; color:var(--muted);
+    display:flex; gap:7px; align-items:center; white-space:nowrap; overflow:hidden; }
+  #mode b { color:var(--fg); }
+  #setNo { background:var(--panel2); border:1px solid var(--line); padding:1px 8px;
     border-radius:20px; font-weight:800; color:var(--fg); }
+  .nav { display:flex; gap:4px; flex:0 0 auto; }
+  .nav button { padding:7px 12px; font-size:13px; font-weight:700; line-height:1;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted);
+    border-radius:8px; cursor:pointer; }
+  .nav button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #fsBtn { font-size:15px; }
 
-  /* Countdown banner (timeout 30s / set interval 3min / side switch 5s) */
-  #cd { position: sticky; top: 56px; z-index: 4; display:flex; align-items:center;
-    gap:12px; margin:10px 0 0; padding:10px 14px; border-radius:12px;
-    background:var(--panel2); border:1px solid var(--warn); }
-  #cd[hidden] { display:none; }
-  #cd .cd-label { font-size:13px; font-weight:700; letter-spacing:.03em; color:var(--warn); flex:1; }
-  #cd .cd-time { font-size:34px; font-weight:800; font-variant-numeric:tabular-nums; }
-  #cd .cd-stop { width:38px; height:38px; border-radius:9px; font-size:18px; font-weight:700;
-    border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
+  main { flex:1; position:relative; overflow:hidden; }
+  .tab { display:none; height:100%; }
+  .tab.active { display:flex; flex-direction:column; }
 
-  /* Completed-set results strip */
-  .setstrip { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:2px 0 10px; }
+  /* ---- GAME ---- */
+  .game { padding:8px; gap:8px; }
+  .board { flex:1; min-height:0; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .side { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    border-top:4px solid var(--edge); padding:8px 10px; display:flex;
+    flex-direction:column; gap:8px; min-width:0; min-height:0; overflow:hidden; }
+  .side.left  { --edge: var(--left); }
+  .side.right { --edge: var(--right); }
+  .sidehdr { flex:0 0 auto; display:flex; align-items:center; gap:6px; min-width:0; }
+  .side.right .sidehdr { flex-direction:row-reverse; }
+  .sidehdr .lbl { font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--muted); }
+  input.short { flex:1; min-width:0; padding:7px 9px; font-size:15px; font-weight:800;
+    text-transform:uppercase; background:var(--panel2); color:var(--fg);
+    border:1px solid var(--line); border-radius:8px; }
+  .side.right input.short { text-align:right; }
+  input.short.flashname { animation: nameflash 1s ease 3; }
+  @keyframes nameflash { 50% { background:var(--ok); color:#04210c; border-color:var(--ok); } }
+  input.color { width:34px; height:34px; padding:0; border:1px solid var(--line);
+    border-radius:8px; background:var(--panel2); cursor:pointer; flex:0 0 auto; }
+
+  .score { flex:1 1 auto; min-height:0; overflow:hidden; display:flex; align-items:center;
+    justify-content:space-between; gap:10px; }
+  .score .val { flex:1; min-width:0; text-align:center; font-weight:800; line-height:1;
+    color:var(--edge); font-variant-numeric:tabular-nums; font-size:clamp(40px, 13vh, 92px); }
+  .score .val.flash { animation: ptflash .8s ease; }
+  @keyframes ptflash {
+    0%   { transform:scale(1); }
+    25%  { transform:scale(1.35); color:var(--ok); text-shadow:0 0 16px var(--ok); }
+    100% { transform:scale(1); }
+  }
+  .bigbtn { flex:0 0 auto; width:clamp(52px, 9vw, 76px); height:clamp(52px, 9vw, 76px);
+    font-size:32px; font-weight:700; line-height:1; border:1px solid var(--line);
+    background:var(--btn); color:var(--fg); border-radius:14px; cursor:pointer; }
+  .bigbtn:active { background:var(--btn-h); }
+
+  .stats { flex:0 0 auto; display:flex; gap:6px; min-width:0; }
+  .stat { flex:1 1 0; min-width:0; display:flex; align-items:center; justify-content:center;
+    gap:4px; background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:4px 3px; }
+  .stat .name { font-size:10px; font-weight:800; letter-spacing:.02em; color:var(--muted);
+    text-transform:uppercase; }
+  .stat .num { min-width:1.2ch; text-align:center; font-weight:800; font-variant-numeric:tabular-nums; }
+  .smbtn { flex:0 0 auto; width:30px; height:30px; font-size:17px; font-weight:700; line-height:1;
+    border:1px solid var(--line); background:var(--btn); color:var(--fg);
+    border-radius:7px; cursor:pointer; }
+  .smbtn:active { background:var(--btn-h); }
+
+  /* Game footer: serve toggle + results/actions */
+  .gfooter { flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
+  .serve { display:flex; align-items:center; gap:8px; }
+  .serve button { flex:1; padding:9px; font-size:13px; font-weight:800; line-height:1;
+    border:1px solid var(--line); background:var(--panel); color:var(--muted);
+    border-radius:9px; cursor:pointer; }
+  .serve button.on { background:var(--ok); border-color:var(--ok); color:#04210c; }
+  .serve .serveind { flex:0 0 auto; min-width:56px; text-align:center; font-size:20px;
+    white-space:nowrap; transition:opacity .15s; }
+  .barrow { display:flex; align-items:center; gap:8px; }
+  .setstrip { flex:1; min-width:0; display:flex; flex-wrap:nowrap; align-items:center;
+    gap:5px; overflow-x:auto; }
   .setstrip[hidden] { display:none; }
-  .setpill { display:inline-flex; align-items:center; gap:2px; padding:4px 10px;
+  .setpill { flex:0 0 auto; display:inline-flex; align-items:center; gap:2px; padding:3px 9px;
     background:var(--panel); border:1px solid var(--line); border-radius:20px;
-    font-size:13px; font-variant-numeric:tabular-nums; }
+    font-size:12px; font-variant-numeric:tabular-nums; }
   .setpill .sn { font-style:normal; font-size:10px; font-weight:700; color:var(--muted); margin-right:3px; }
   .setpill b { font-weight:600; color:var(--muted); }
   .setpill b.w { color:var(--fg); font-weight:800; }
   .setpill em { font-style:normal; color:var(--muted); padding:0 1px; }
-  .setundo { width:30px; height:26px; border-radius:8px; font-size:13px;
+  .setundo { flex:0 0 auto; width:28px; height:24px; border-radius:8px; font-size:12px;
     border:1px solid var(--line); background:var(--btn); color:var(--muted); cursor:pointer; }
-
-  .tabs { display:flex; gap:6px; margin: 10px 0; }
-  .tabs button { flex:1; padding:12px; font-size:15px; font-weight:600;
-    border:1px solid var(--line); background:var(--panel); color:var(--muted);
-    border-radius:10px; cursor:pointer; }
-  .tabs button.active { background:var(--accent); border-color:var(--accent);
-    color:#fff; }
-
-  .tab { display:none; }
-  .tab.active { display:block; }
-
-  .board { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .side { background:var(--panel); border:1px solid var(--line);
-    border-radius:12px; padding:12px; border-top:4px solid var(--edge); }
-  .side.left  { --edge: var(--left); }
-  .side.right { --edge: var(--right); }
-  .sidehdr { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-  .sidehdr .lbl { font-size:12px; font-weight:700; letter-spacing:.08em;
-    color:var(--muted); }
-  input.short { flex:1; min-width:0; padding:8px; font-size:16px; font-weight:700;
-    text-transform:uppercase; background:var(--panel2); color:var(--fg);
-    border:1px solid var(--line); border-radius:8px; }
-  input.short.flashname { animation: nameflash 1s ease 3; }
-  @keyframes nameflash { 50% { background:var(--ok); color:#04210c; border-color:var(--ok); } }
-  input.color { width:38px; height:38px; padding:0; border:1px solid var(--line);
-    border-radius:8px; background:var(--panel2); cursor:pointer; }
-
-  /* Preset colour swatches */
-  .swatches { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 8px; }
-  .swatches .sw { width:26px; height:26px; border-radius:6px; padding:0; cursor:pointer;
-    border:1px solid rgba(128,128,128,.45); }
-  .swatches .sw:active { transform:scale(.92); }
-  .swatches .sw.on { outline:2px solid var(--fg); outline-offset:1px; }
-
-  .score { display:flex; align-items:center; justify-content:space-between;
-    gap:6px; margin:6px 0; }
-  .score .val { font-size:46px; font-weight:800; font-variant-numeric:tabular-nums;
-    min-width:1.6ch; text-align:center; border-radius:10px; }
-  .score .val.flash { animation: ptflash .8s ease; }
-  @keyframes ptflash {
-    0%   { transform:scale(1); }
-    25%  { transform:scale(1.4); color:var(--ok); text-shadow:0 0 16px var(--ok); }
-    100% { transform:scale(1); }
-  }
-  .bigbtn { width:56px; height:56px; font-size:30px; font-weight:700; flex:0 0 auto;
-    border:1px solid var(--line); background:var(--btn); color:var(--fg);
-    border-radius:12px; cursor:pointer; line-height:1; }
-  .bigbtn:active { background:var(--btn-h); }
-
-  .stat { display:flex; align-items:center; gap:6px; margin:6px 0;
-    font-size:14px; }
-  .stat .name { flex:1; color:var(--muted); }
-  .stat .num { min-width:1.4ch; text-align:center; font-weight:700;
-    font-variant-numeric:tabular-nums; }
-  .smbtn { width:34px; height:34px; font-size:18px; font-weight:700;
-    border:1px solid var(--line); background:var(--btn); color:var(--fg);
-    border-radius:8px; cursor:pointer; line-height:1; }
-  .smbtn:active { background:var(--btn-h); }
-
-  .serve { display:flex; align-items:center; gap:6px; margin:12px 0 6px; }
-  .serve button { flex:1; padding:12px; font-size:14px; font-weight:700;
-    border:1px solid var(--line); background:var(--panel); color:var(--muted);
-    border-radius:10px; cursor:pointer; }
-  .serve button.on { background:var(--ok); border-color:var(--ok); color:#04210c; }
-  .serve .serveind { flex:0 0 auto; min-width:58px; text-align:center; font-size:22px;
-    letter-spacing:1px; white-space:nowrap; transition:opacity .15s; }
-
-  .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
-  .actions button { flex:1 1 30%; padding:14px; font-size:15px; font-weight:700;
+  .actions { display:flex; gap:6px; flex:0 0 auto; }
+  .actions button { padding:9px 12px; font-size:13px; font-weight:800; white-space:nowrap;
     border:1px solid var(--line); background:var(--panel); color:var(--fg);
-    border-radius:10px; cursor:pointer; }
+    border-radius:9px; cursor:pointer; }
   .actions button:active { background:var(--btn-h); }
   .actions .danger { color:var(--bad); }
 
-  /* LINK tab */
+  /* Countdown overlay (timeout / set interval / side switch): TIME + label */
+  #cd { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:15;
+    display:flex; align-items:center; gap:14px; padding:8px 16px; border-radius:12px;
+    background:var(--panel2); border:1px solid var(--warn); box-shadow:0 8px 28px rgba(0,0,0,.45); }
+  #cd[hidden] { display:none; }
+  #cd .cd-time { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--warn); }
+  #cd .cd-label { font-size:14px; font-weight:800; letter-spacing:.03em; color:var(--fg);
+    text-transform:uppercase; }
+  #cd .cd-stop { width:34px; height:34px; border-radius:8px; font-size:16px; font-weight:700;
+    border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
+
+  /* ---- LINK ---- */
+  .link { padding:12px; gap:0; overflow-y:auto; }
   .linkbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
-  .linkbar button { padding:12px 16px; font-size:15px; font-weight:700;
+  .linkbar button { padding:11px 16px; font-size:14px; font-weight:700;
     border:1px solid var(--accent); background:var(--accent); color:#fff;
     border-radius:10px; cursor:pointer; }
-  #matches { list-style:none; padding:0; margin:0; display:flex;
-    flex-direction:column; gap:8px; }
-  #matches li { display:flex; align-items:center; gap:10px; padding:12px;
+  #matches { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+  #matches li { display:flex; align-items:center; gap:10px; padding:11px;
     background:var(--panel); border:1px solid var(--line); border-radius:10px; }
   #matches .info { flex:1; min-width:0; }
-  #matches .label { font-weight:600; overflow:hidden; text-overflow:ellipsis;
-    white-space:nowrap; }
+  #matches .label { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #matches .sub { font-size:12px; color:var(--muted); }
   .live { font-size:11px; font-weight:800; letter-spacing:.05em; color:#04210c;
     background:var(--ok); padding:2px 7px; border-radius:20px; }
   #matches li.linked { border-color:var(--accent); }
-  #matches .linkbtn { padding:10px 14px; font-weight:700; border:1px solid var(--accent);
+  #matches .linkbtn { padding:9px 14px; font-weight:700; border:1px solid var(--accent);
     background:transparent; color:var(--accent); border-radius:8px; cursor:pointer; }
   #matches li.linked .linkbtn { background:var(--accent); color:#fff; }
   .note { color:var(--muted); font-size:13px; padding:8px 2px; }
   .err { color:var(--bad); font-size:13px; padding:6px 2px; }
-  #toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+
+  /* ---- SETTINGS (Phase 2 placeholder) ---- */
+  .settings { padding:24px; align-items:center; justify-content:center; text-align:center;
+    color:var(--muted); gap:10px; }
+  .settings h2 { color:var(--fg); font-size:18px; margin:0; }
+  .settings ul { text-align:left; font-size:13px; line-height:1.7; margin:0; padding-left:18px; }
+
+  /* Rotate-to-landscape nudge (portrait phones only) */
+  #rotate { display:none; }
+  @media (orientation:portrait) and (max-width:820px) {
+    #rotate { display:flex; position:fixed; inset:0; z-index:50; flex-direction:column;
+      align-items:center; justify-content:center; gap:16px; background:var(--bg);
+      color:var(--fg); text-align:center; padding:28px; }
+    #rotate .ic { font-size:56px; animation: rothint 2.4s ease-in-out infinite; }
+    #rotate .t { font-size:17px; font-weight:800; }
+    #rotate .s { font-size:13px; color:var(--muted); max-width:280px; }
+    @keyframes rothint { 0%,55% { transform:rotate(0); } 78%,100% { transform:rotate(-90deg); } }
+  }
+
+  #toast { position:fixed; left:50%; bottom:16px; transform:translateX(-50%);
     background:var(--btn); color:var(--fg); border:1px solid var(--line);
     padding:10px 16px; border-radius:10px; font-size:14px; opacity:0;
-    transition:opacity .2s; pointer-events:none; max-width:90%; z-index:20; text-align:center; }
+    transition:opacity .2s; pointer-events:none; max-width:90%; z-index:60; text-align:center; }
   #toast.show { opacity:1; }
 </style>
 
-<header>
-  <div class="hrow">
-    <h1>LedBox Control</h1>
-    <a id="boardLink" href="/mockledbox" target="_blank" rel="noopener"
-       title="Open the virtual LedBox — a 1:1 mirror of the board">📺</a>
+<div id="app">
+  <header class="topbar">
+    <span class="brand">🏐 LedBox</span>
     <span id="dot" title="LedBox connection">🔴</span>
-  </div>
-  <div id="mode">Mode <b id="modeName">…</b><span id="setNo"></span><span id="matchTag"></span></div>
-</header>
+    <div id="mode">Mode <b id="modeName">…</b><span id="setNo"></span><span id="matchTag"></span></div>
+    <nav class="nav">
+      <button id="tabManualBtn" class="active" data-tab="manual">Game</button>
+      <button id="tabLinkBtn" data-tab="link">Link</button>
+      <button id="tabSettingsBtn" data-tab="settings" title="Settings">⚙</button>
+      <button id="fsBtn" title="Full screen (locks landscape)">⛶</button>
+    </nav>
+  </header>
 
-<!-- Countdown banner -->
-<div id="cd" hidden>
-  <span class="cd-label" id="cdLabel"></span>
-  <span class="cd-time" id="cdTime">0:00</span>
-  <button class="cd-stop" id="cdStop" title="Skip">✕</button>
-</div>
+  <main>
+    <!-- GAME -->
+    <section id="tab-manual" class="tab game active">
+      <div class="board">
+        <div class="side left" data-side="left">
+          <div class="sidehdr">
+            <span class="lbl">LEFT</span>
+            <input class="short" data-field="short" maxlength="12" placeholder="HOME">
+            <input class="color" type="color" data-field="color" value="#2563eb"
+                   aria-label="Left team colour">
+          </div>
+          <div class="score">
+            <button class="bigbtn" data-pt="-1" aria-label="Left minus point">−</button>
+            <span class="val" data-val="points">0</span>
+            <button class="bigbtn" data-pt="1" aria-label="Left plus point">+</button>
+          </div>
+          <div class="stats">
+            <div class="stat"><button class="smbtn" data-stat="set" data-d="-1" aria-label="Left set minus">−</button>
+              <span class="name">Set</span><span class="num" data-val="sets">0</span>
+              <button class="smbtn" data-stat="set" data-d="1" aria-label="Left set plus">+</button></div>
+            <div class="stat"><button class="smbtn" data-stat="timeout" data-d="-1" aria-label="Left timeout minus">−</button>
+              <span class="name">T/O</span><span class="num" data-val="to">0</span>
+              <button class="smbtn" data-stat="timeout" data-d="1" aria-label="Left timeout plus">+</button></div>
+            <div class="stat"><button class="smbtn" data-stat="sub" data-d="-1" aria-label="Left sub minus">−</button>
+              <span class="name">Sub</span><span class="num" data-val="sub">0</span>
+              <button class="smbtn" data-stat="sub" data-d="1" aria-label="Left sub plus">+</button></div>
+          </div>
+        </div>
 
-<div class="tabs">
-  <button id="tabManualBtn" class="active" data-tab="manual">Manual</button>
-  <button id="tabLinkBtn" data-tab="link">Link</button>
-</div>
-
-<!-- MANUAL -->
-<section id="tab-manual" class="tab active">
-  <div id="setStrip" class="setstrip" hidden></div>
-  <div class="board">
-    <div class="side left" data-side="left">
-      <div class="sidehdr">
-        <span class="lbl">LEFT</span>
-        <input class="short" data-field="short" maxlength="12" placeholder="HOME">
-        <input class="color" type="color" data-field="color" value="#2563eb">
+        <div class="side right" data-side="right">
+          <div class="sidehdr">
+            <span class="lbl">RIGHT</span>
+            <input class="short" data-field="short" maxlength="12" placeholder="AWAY">
+            <input class="color" type="color" data-field="color" value="#ef4444"
+                   aria-label="Right team colour">
+          </div>
+          <div class="score">
+            <button class="bigbtn" data-pt="-1" aria-label="Right minus point">−</button>
+            <span class="val" data-val="points">0</span>
+            <button class="bigbtn" data-pt="1" aria-label="Right plus point">+</button>
+          </div>
+          <div class="stats">
+            <div class="stat"><button class="smbtn" data-stat="set" data-d="-1" aria-label="Right set minus">−</button>
+              <span class="name">Set</span><span class="num" data-val="sets">0</span>
+              <button class="smbtn" data-stat="set" data-d="1" aria-label="Right set plus">+</button></div>
+            <div class="stat"><button class="smbtn" data-stat="timeout" data-d="-1" aria-label="Right timeout minus">−</button>
+              <span class="name">T/O</span><span class="num" data-val="to">0</span>
+              <button class="smbtn" data-stat="timeout" data-d="1" aria-label="Right timeout plus">+</button></div>
+            <div class="stat"><button class="smbtn" data-stat="sub" data-d="-1" aria-label="Right sub minus">−</button>
+              <span class="name">Sub</span><span class="num" data-val="sub">0</span>
+              <button class="smbtn" data-stat="sub" data-d="1" aria-label="Right sub plus">+</button></div>
+          </div>
+        </div>
       </div>
-      <div class="swatches"></div>
-      <div class="score">
-        <button class="bigbtn" data-pt="-1">−</button>
-        <span class="val" data-val="points">0</span>
-        <button class="bigbtn" data-pt="1">+</button>
+
+      <div class="gfooter">
+        <div class="serve">
+          <button data-serve="left">◀ Serve LEFT</button>
+          <span class="serveind" id="serveInd" aria-hidden="true">🏐</span>
+          <button data-serve="right">Serve RIGHT ▶</button>
+        </div>
+        <div class="barrow">
+          <div id="setStrip" class="setstrip" hidden></div>
+          <div class="actions">
+            <button id="swapBtn">⇄ Swap</button>
+            <button id="resetBtn" class="danger">Reset</button>
+            <button id="blankBtn" class="danger">Blank</button>
+          </div>
+        </div>
       </div>
-      <div class="stat"><span class="name">Set</span>
-        <button class="smbtn" data-stat="set" data-d="-1">−</button>
-        <span class="num" data-val="sets">0</span>
-        <button class="smbtn" data-stat="set" data-d="1">+</button></div>
-      <div class="stat"><span class="name">Timeout</span>
-        <button class="smbtn" data-stat="timeout" data-d="-1">−</button>
-        <span class="num" data-val="to">0</span>
-        <button class="smbtn" data-stat="timeout" data-d="1">+</button></div>
-      <div class="stat"><span class="name">Sub</span>
-        <button class="smbtn" data-stat="sub" data-d="-1">−</button>
-        <span class="num" data-val="sub">0</span>
-        <button class="smbtn" data-stat="sub" data-d="1">+</button></div>
+    </section>
+
+    <!-- LINK -->
+    <section id="tab-link" class="tab link">
+      <div class="linkbar">
+        <button id="refreshBtn">↻ Refresh matches</button>
+      </div>
+      <div id="linkErrs"></div>
+      <ul id="matches"></ul>
+      <p class="note" id="matchesNote">Tap “Refresh matches” to discover live matches on the LAN.</p>
+    </section>
+
+    <!-- SETTINGS (Phase 2 placeholder) -->
+    <section id="tab-settings" class="tab settings">
+      <h2>⚙ Settings</h2>
+      <p>Coming next — pre-match configuration:</p>
+      <ul>
+        <li>Team A / B name &amp; colour</li>
+        <li>Best-of 3 / 5</li>
+        <li>Set-interval length</li>
+        <li>Timeout countdown on / off</li>
+        <li>Set-interval countdown on / off</li>
+        <li>Substitution animation on / off</li>
+      </ul>
+    </section>
+
+    <!-- Countdown overlay: TIME + label (e.g. "TO WIEDIKON") -->
+    <div id="cd" hidden>
+      <span class="cd-time" id="cdTime">0:00</span>
+      <span class="cd-label" id="cdLabel"></span>
+      <button class="cd-stop" id="cdStop" title="Skip">✕</button>
     </div>
+  </main>
 
-    <div class="side right" data-side="right">
-      <div class="sidehdr">
-        <span class="lbl">RIGHT</span>
-        <input class="short" data-field="short" maxlength="12" placeholder="AWAY">
-        <input class="color" type="color" data-field="color" value="#ef4444">
-      </div>
-      <div class="swatches"></div>
-      <div class="score">
-        <button class="bigbtn" data-pt="-1">−</button>
-        <span class="val" data-val="points">0</span>
-        <button class="bigbtn" data-pt="1">+</button>
-      </div>
-      <div class="stat"><span class="name">Set</span>
-        <button class="smbtn" data-stat="set" data-d="-1">−</button>
-        <span class="num" data-val="sets">0</span>
-        <button class="smbtn" data-stat="set" data-d="1">+</button></div>
-      <div class="stat"><span class="name">Timeout</span>
-        <button class="smbtn" data-stat="timeout" data-d="-1">−</button>
-        <span class="num" data-val="to">0</span>
-        <button class="smbtn" data-stat="timeout" data-d="1">+</button></div>
-      <div class="stat"><span class="name">Sub</span>
-        <button class="smbtn" data-stat="sub" data-d="-1">−</button>
-        <span class="num" data-val="sub">0</span>
-        <button class="smbtn" data-stat="sub" data-d="1">+</button></div>
-    </div>
+  <!-- Portrait nudge -->
+  <div id="rotate">
+    <div class="ic">📱</div>
+    <div class="t">Rotate to landscape</div>
+    <div class="s">The scoreboard controller is built for a landscape screen.</div>
   </div>
-
-  <div class="serve">
-    <button data-serve="left">Serve LEFT</button>
-    <span class="serveind" id="serveInd" aria-hidden="true">🏐</span>
-    <button data-serve="right">Serve RIGHT</button>
-  </div>
-
-  <div class="actions">
-    <button id="swapBtn">⇄ Swap</button>
-    <button id="resetBtn" class="danger">Reset</button>
-    <button id="blankBtn" class="danger">Blank</button>
-  </div>
-</section>
-
-<!-- LINK -->
-<section id="tab-link" class="tab">
-  <div class="linkbar">
-    <button id="refreshBtn">↻ Refresh matches</button>
-  </div>
-  <div id="linkErrs"></div>
-  <ul id="matches"></ul>
-  <p class="note" id="matchesNote">Tap “Refresh matches” to discover live matches on the LAN.</p>
-</section>
+</div>
 
 <div id="toast"></div>
 
@@ -432,7 +475,6 @@
       $('[data-val="sets"]', root).textContent = d.sets;
       $('[data-val="to"]', root).textContent = d.to;
       $('[data-val="sub"]', root).textContent = d.sub;
-      markSwatch(root, d.color);
     }
     const serving = s ? s.serving : null;
     $$('[data-serve]').forEach((b) =>
@@ -453,15 +495,18 @@
     const el = $(sel, root);
     if (document.activeElement !== el && /^#[0-9a-fA-F]{6}$/.test(v || "")) el.value = v;
   }
-  function markSwatch(root, color) {
-    const c = String(color || "").toLowerCase();
-    $$(".swatches .sw", root).forEach((sw) => sw.classList.toggle("on", sw.dataset.c === c));
-  }
 
   // --- actions ------------------------------------------------------------
   async function refreshStatus() {
+    // Some browser extensions (mobile simulators, readers) replace the document body and
+    // re-load the page in their own frame. Our interval survives that, so bail out and
+    // stop polling instead of throwing on every tick against a DOM that no longer exists.
+    if (!document.getElementById("app")) { stopPolling(); return; }
     try { renderStatus(await api("/api/status")); }
-    catch (e) { $("#dot").textContent = "🔴"; /* keep quiet on poll errors */ }
+    catch (e) {
+      const dot = $("#dot");
+      if (dot) dot.textContent = "🔴"; // keep quiet on poll errors
+    }
   }
 
   async function sendAction(action) {
@@ -546,28 +591,14 @@
   }
 
   // --- wiring -------------------------------------------------------------
-  // tabs
-  $$(".tabs button").forEach((b) => b.addEventListener("click", () => {
-    $$(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
+  // tabs / nav — [data-tab] only: the nav also holds the fullscreen button, and letting
+  // that through would match no tab and blank the whole page.
+  $$(".nav button[data-tab]").forEach((b) => b.addEventListener("click", () => {
+    $$(".nav button[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
     $$(".tab").forEach((t) => t.classList.toggle(
       "active", t.id === "tab-" + b.dataset.tab));
     if (b.dataset.tab === "link" && !$("#matches").children.length) refreshMatches();
   }));
-
-  // preset colour swatches (per side)
-  $$(".side").forEach((root) => {
-    const side = root.dataset.side;
-    const wrap = $(".swatches", root);
-    PRESETS.forEach((c) => {
-      const sw = document.createElement("button");
-      sw.className = "sw"; sw.style.background = c; sw.title = c; sw.dataset.c = c.toLowerCase();
-      sw.addEventListener("click", () => {
-        $(".color", root).value = c;
-        sendAction({ type: "team", side, color: c });
-      });
-      wrap.appendChild(sw);
-    });
-  });
 
   // per-side controls
   $$(".side").forEach((root) => {
@@ -579,7 +610,7 @@
       sendAction({ type: stat, side, delta: d });
       if (stat === "timeout" && d > 0) {
         const nm = ($(".short", root).value || side).toUpperCase();
-        startCountdown(30, "Timeout — " + nm);
+        startCountdown(30, "TO " + nm);
       }
     }));
     const shortEl = $(".short", root), colorEl = $(".color", root);
@@ -603,8 +634,42 @@
   });
   $("#refreshBtn").addEventListener("click", refreshMatches);
 
+  // fullscreen (also locks landscape where the platform allows it)
+  const fsBtn = $("#fsBtn");
+  const inFS = () => document.fullscreenElement || document.webkitFullscreenElement;
+  async function toggleFS() {
+    if (inFS()) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) await exit.call(document).catch(() => {});
+      return;
+    }
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) { toast("Full screen isn't supported by this browser"); return; }
+    try {
+      await req.call(el);
+    } catch (e) {
+      // Most common cause: the page is inside an iframe without allow="fullscreen"
+      // (browser-extension device simulators do this). Say so instead of doing nothing.
+      toast(window.top !== window.self
+        ? "Full screen is blocked inside this frame — open the page in its own tab"
+        : "Full screen was refused: " + (e && e.message ? e.message : e));
+      return;
+    }
+    // Phone-only and gesture-bound; desktop Chrome rejects it. Never fatal.
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock("landscape").catch(() => {});
+    }
+  }
+  if (fsBtn) fsBtn.addEventListener("click", toggleFS);
+  const syncFsBtn = () => { if (fsBtn) fsBtn.textContent = inFS() ? "⤢" : "⛶"; };
+  document.addEventListener("fullscreenchange", syncFsBtn);
+  document.addEventListener("webkitfullscreenchange", syncFsBtn);
+
   // boot
+  let pollTimer = null;
+  const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
   refreshStatus();
-  setInterval(refreshStatus, 1500);
+  pollTimer = setInterval(refreshStatus, 1500);
 })();
 </script>
