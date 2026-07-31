@@ -25,6 +25,10 @@ export const DEFAULTS = {
   // Match format: best of 3 or 5. Decides how many sets win the match and which set is
   // the short deciding one.
   bestOf: 5,
+
+  // Shown on the set-interval and warm-up countdowns (a timeout shows the requesting team
+  // instead). Kept short because it lands in the layout's narrow label box.
+  clubName: 'KSC WIEDIKON',
 }
 
 const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval']
@@ -46,6 +50,8 @@ export function sanitize(patch = {}, base = DEFAULTS) {
     if (Number.isFinite(n)) out[k] = Math.min(hi, Math.max(lo, Math.round(n)))
   }
   if ('bestOf' in patch) out.bestOf = Number(patch.bestOf) === 3 ? 3 : 5
+  // Keep the club label short and printable; the layout box clips long strings.
+  if ('clubName' in patch) out.clubName = String(patch.clubName || '').replace(/[^\x20-\x7E]/g, '').slice(0, 20)
   return out
 }
 

@@ -286,6 +286,7 @@
         <div class="barrow">
           <div id="setStrip" class="setstrip" hidden></div>
           <div class="actions">
+            <button id="idleBtn" title="Show team names + VS on the board (pre-match)">🏐 VS screen</button>
             <button id="warmupBtn" title="10-minute pre-match warm-up countdown">⏱ Warm-up</button>
             <button id="swapBtn">⇄ Swap</button>
             <button id="resetBtn" class="danger">Reset</button>
@@ -336,6 +337,13 @@
             <select data-set="bestOf"><option value="3">3 sets</option><option value="5">5 sets</option></select></label>
           <p class="hint">Decides how many sets win the match, and which set is the short
             15-point decider.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Club</legend>
+          <label class="row"><span>Club name</span>
+            <input type="text" data-set="clubName" maxlength="20" style="width:130px"></label>
+          <p class="hint">Shown on the set-interval and warm-up countdowns. A timeout shows the
+            requesting team instead. Kept short — the board's label box is narrow.</p>
         </fieldset>
       </div>
       <p class="hint" id="setStatus">Saved on the Pi — these survive a restart.</p>
@@ -618,8 +626,8 @@
       // The board keeps showing the final score through the interval (that is the point of
       // it); the reset happens when the countdown ends or the operator says go.
       if (SETTINGS.countdownOnSetInterval === false) { sendAction({ type: "next-set" }); return; }
-      startCountdown(SETTINGS.setIntervalSeconds || 180, "Set interval", () => sendAction({ type: "next-set" }),
-        { major: true, action: "Start next set →" });
+      startCountdown(SETTINGS.setIntervalSeconds || 180, SETTINGS.clubName || "Set interval",
+        () => sendAction({ type: "next-set" }), { major: true, action: "Start next set →" });
     } else if (event === "match-end") {
       const winSide = sideOf(s, num(s.sets_won_a) > num(s.sets_won_b));
       const name = (winSide === "left" ? sides(s).left.short : sides(s).right.short) || winSide.toUpperCase();
@@ -721,9 +729,14 @@
     () => sendAction({ type: "serve", side: b.dataset.serve })));
 
   // global actions
+  // Pre-match "names + VS" screen on the board. Any scoring action lifts it automatically.
+  $("#idleBtn").addEventListener("click", async () => {
+    try { await postJSON("/api/idle", { on: true }); toast("VS screen on the board"); }
+    catch (e) { toast(e.message); }
+  });
   // Pre-match warm-up: a plain 10-minute clock, no side effects when it ends.
   $("#warmupBtn").addEventListener("click", () =>
-    startCountdown(SETTINGS.warmupSeconds || 600, "Warm-up", null, { major: true, action: "End warm-up" }));
+    startCountdown(SETTINGS.warmupSeconds || 600, SETTINGS.clubName || "Warm-up", null, { major: true, action: "End warm-up" }));
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
   $("#resetBtn").addEventListener("click", () => {
     if (confirm("Reset the board to neutral?")) { clearCountdown(); sendAction({ type: "reset" }); }
@@ -750,7 +763,10 @@
   async function saveSettings() {
     const patch = {};
     for (const el of setEls()) {
-      patch[el.dataset.set] = el.type === "checkbox" ? el.checked : Number(el.value);
+      patch[el.dataset.set] =
+        el.type === "checkbox" ? el.checked :
+        el.type === "number" ? Number(el.value) :
+        el.value; // text / select stay as strings; the server coerces + clamps
     }
     try {
       SETTINGS = await postJSON("/api/settings", patch);
