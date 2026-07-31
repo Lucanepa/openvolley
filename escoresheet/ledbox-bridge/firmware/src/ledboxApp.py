@@ -316,10 +316,9 @@ def processMessage(message, client=None, compress_message=False):
         data['sender'] = ''
         data['error_code'] = 2
         data['error_message'] = ErrorMessage.getMessage(data['error_code']).error_message
+        Debug('message not valid: %s' % error)
         json_data = json.dumps(data)
         return json_data
-        Debug('message not valid: %s' % error)
-        return False
 
     API.setClient(client.id)
     api_cmd = getattr(API, obj_msg['cmd'], None)

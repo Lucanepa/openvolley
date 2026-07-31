@@ -41,6 +41,13 @@ export class LedboxClient extends EventEmitter {
     connectTimeoutMs = 4000,
     // Give the panel time to bring a new layout up before painting into it.
     layoutSettleMs = 400,
+    // How often to re-assert the scoreboard layout and repaint. The board's layout can
+    // change without us: its own boot sequence paints an info screen and then forces the
+    // default layout, and any other client on 8889 can call SetLayout. Our `currentLayout`
+    // is only a cache, so once it disagrees with the device the board can sit on the wrong
+    // screen indefinitely while the bridge reports everything is fine. This bounds that to
+    // one interval. Set 0 to disable.
+    layoutGuardMs = 20000,
     // How long a point/substitution blinks on the board before settling, and the on/off
     // half-period of that blink. The board's native `blinking` animation ignores the runtime
     // colour (always blinks blue/red, the layout default), so we blink in software by toggling
@@ -55,7 +62,7 @@ export class LedboxClient extends EventEmitter {
     totalSubs = 6,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, idleLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, idleLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -88,6 +95,7 @@ export class LedboxClient extends EventEmitter {
         reachedReady = true
         socket.setTimeout(0) // connect deadline met; don't let it fire as an idle timeout
         this.emit('ready', info)
+        this._startLayoutGuard()
         // The board advertises `noresend` and stays silent when asked for the layout it
         // already has, so this legitimately times out on every reconnect. Swallow that
         // one case; a real refusal (e.g. error 5, layout not on the device) still surfaces.
@@ -109,6 +117,13 @@ export class LedboxClient extends EventEmitter {
     socket.on('close', () => {
       this.ready = false
       this.socket = null
+      clearInterval(this._layoutGuard)
+      // Forget which layout we thought the board had. `currentLayout` is a client-side
+      // cache used to skip redundant SetLayout calls, but a board that restarted comes
+      // back on its default (`waiting`) — so a stale cache makes setLayoutIfNeeded a
+      // no-op and every following section write lands on a layout that isn't loaded
+      // ("section team1 not found"), leaving the board stuck on the waiting screen.
+      this.currentLayout = null
       // Never got a handshake on this address — try the next one. Once an address has
       // worked we stay on it, so a transient drop doesn't send us wandering.
       if (!reachedReady && this.hosts.length > 1) this._hostIdx++
@@ -180,7 +195,17 @@ export class LedboxClient extends EventEmitter {
     // Idle overrides scoring: while the idle screen is up, a stray state push (e.g. a poll)
     // must not repaint the scoreboard over it. showIdle(false) lifts this.
     if (this._idle) return Promise.resolve(false)
-    return this.send('SetSections', toSections(state, { totalTimeouts: this.totalTimeouts, totalSubs: this.totalSubs }))
+    const paint = () => this.send('SetSections', toSections(state, { totalTimeouts: this.totalTimeouts, totalSubs: this.totalSubs }))
+    return paint().catch(async (err) => {
+      // "section not found (6)" means the board is on a different layout than we think.
+      // It happens whenever something changes the layout behind our back — most reliably
+      // the board's own boot sequence, which paints its info screen AFTER we've set ours.
+      // Re-assert the layout once and repaint, rather than silently dropping the score.
+      if (!/not found \(6\)/.test(err.message)) throw err
+      this.currentLayout = null
+      await this.setLayoutIfNeeded(this.layout)
+      return paint()
+    })
   }
 
   // Update the per-set allowances that drive the counter colours (from operator settings),
@@ -313,8 +338,24 @@ export class LedboxClient extends EventEmitter {
     if (this.layoutSettleMs) await new Promise((r) => setTimeout(r, this.layoutSettleMs))
   }
 
+  // Periodically re-assert the scoreboard layout and repaint, so a desync self-corrects.
+  // Deliberately bypasses the `currentLayout` cache — the cache is exactly what goes stale.
+  // Skipped while an idle screen or countdown is deliberately showing.
+  _startLayoutGuard() {
+    clearInterval(this._layoutGuard)
+    if (!this.layoutGuardMs) return
+    this._layoutGuard = setInterval(async () => {
+      if (!this.ready || this._suppressPaint || this._idle) return
+      if (this.currentLayout && this.currentLayout !== this.layout) return // countdown is up
+      await this.setLayout(this.layout).catch(() => {}) // no-op on the board if already set
+      this.currentLayout = this.layout
+      if (this._lastState) await this.pushState(this._lastState).catch(() => {})
+    }, this.layoutGuardMs)
+  }
+
   disconnect() {
     this._closing = true
+    clearInterval(this._layoutGuard)
     this.clearPulses() // stop any blink timers so they can't fire after we close
     if (this.socket) {
       try { this.socket.write(encode({ cmd: 'Disconnect', value: '' })) } catch { /* ignore */ }

@@ -53,7 +53,7 @@ def checkTest():
             thread_send.join()
             app.current_layout = app.layoutManager.loadLayout('waiting')
             r = 'Display OK\nUSB OK'
-            result = base64.b64encode(bytes(r))
+            result = base64.b64encode(r.encode('utf-8')).decode('ascii')
             verify = True
             url = base + 'api.php?task=setVerification&serialnumber=' + app.deviceName + '&verify=' + str(verify) + '&result=' + result
             response = urllib.request.urlopen(url).read()
@@ -110,11 +110,11 @@ def sendMessageFromUSB():
             time.sleep(2)
             out = io.BytesIO()
             with gzip.GzipFile(fileobj=out, mode='wb') as gz:
-                gz.write(json_data)
+                gz.write(json_data.encode('utf-8'))
                 gz.close()
                 coding_message = out.getvalue()
             try:
-                app.serialUSBClient.write(coding_message + '\r\n')
+                app.serialUSBClient.write(coding_message + b'\r\n')
             except Exception as e:
                 app.Debug('ERROR SEND USB ' + str(e))
                 print('ERROR - cable disconnected ' + str(e))
