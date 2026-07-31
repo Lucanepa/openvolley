@@ -38,14 +38,21 @@ export class LedboxClient extends EventEmitter {
     connectTimeoutMs = 4000,
     // Give the panel time to bring a new layout up before painting into it.
     layoutSettleMs = 400,
-    // How long a point/substitution blinks on the board before settling.
+    // How long a point/substitution blinks on the board before settling, and the on/off
+    // half-period of that blink. The board's native `blinking` animation ignores the runtime
+    // colour (always blinks blue/red, the layout default), so we blink in software by toggling
+    // the colour — kept near the vendor's ~1 Hz ceiling to avoid flooding the panel.
     pulseMs = 2000,
+    // 160ms commanded toggles: the panel can't render that fast (its own limit is ~1 Hz), so
+    // it smooths them into a clean, even blink — which reads better than a slower command rate
+    // that the board renders literally and choppily. Chosen on the glass.
+    pulseIntervalMs = 160,
     // Per-set allowances — drive the counter colours (set live from operator settings).
     totalTimeouts = 2,
     totalSubs = 6,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, totalTimeouts, totalSubs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
     this.currentLayout = null
@@ -232,36 +239,42 @@ export class LedboxClient extends EventEmitter {
   // layout XML alongside fontsize/color/align) and the firmware accepts it live over
   // SetSections; verified blinking on the real panel. That beats faking it by alternating
   // `color` from here, which would have meant writing far faster than the vendor ever does.
-  async pulse(section, ms = this.pulseMs, color = null) {
+  pulse(section, ms = this.pulseMs, color = null) {
     if (!this.ready || !section) return false
-    const stop = this._pulses.get(section)
-    if (stop) clearTimeout(stop) // re-scoring quickly just extends the blink, never doubles it
-    try {
-      // Assert the colour in the SAME frame as the animation: the board otherwise blinks the
-      // section in its LAYOUT-default colour (blue/red), ignoring the team colour we set on the
-      // static value. Emitting the colour here makes the blink match the team.
-      const on = [{ name: section, value: { attrib: 'animation', value: 'blinking' } }]
-      if (color) on.unshift({ name: section, value: { attrib: 'color', value: color } })
-      await this.send('SetSections', on)
-    } catch { return false }
-    this._pulses.set(section, setTimeout(() => {
+    // Software blink: alternate the section's colour between the team colour and off. The
+    // board's native `blinking` can't do team colours (it uses the layout default), so we
+    // drive it ourselves. Ends settled on the team colour.
+    const team = color || '255,255,255'
+    const OFF = '0,0,0'
+    const prev = this._pulses.get(section)
+    if (prev) { clearInterval(prev.timer); clearTimeout(prev.stop) } // re-scoring restarts, never stacks
+    const paint = (c) => this.send('SetSections', [{ name: section, value: { attrib: 'color', value: c } }]).catch(() => {})
+    let dark = true
+    paint(OFF)
+    const timer = setInterval(() => { dark = !dark; paint(dark ? OFF : team) }, this.pulseIntervalMs)
+    const stop = setTimeout(() => {
+      clearInterval(timer)
       this._pulses.delete(section)
-      this.send('SetSections', [{ name: section, value: { attrib: 'animation', value: '' } }]).catch(() => {})
-    }, ms))
+      paint(team) // settle on the team colour
+    }, ms)
+    if (timer.unref) timer.unref()
+    if (stop.unref) stop.unref()
+    this._pulses.set(section, { timer, stop, color: team })
     return true
   }
 
-  // Stop every running blink NOW — cancel the timers AND tell the board to stop animating,
-  // while the sections still exist (this runs just before a layout switch). Without the
-  // board-side stop, a blink left running would carry over — e.g. after a set the score box
-  // keeps blinking, in the newly-swapped team's colour, "for no reason".
+  // Stop every running blink NOW — cancel the timers and restore each section to its team
+  // colour, while the sections still exist (this runs just before a layout switch). Without
+  // it a blink could be left mid-toggle (a black score), or carry into the next set.
   clearPulses() {
-    const sections = [...this._pulses.keys()]
-    for (const [, t] of this._pulses) clearTimeout(t)
-    this._pulses.clear()
-    if (sections.length && this.ready) {
-      this.send('SetSections', sections.map((name) => ({ name, value: { attrib: 'animation', value: '' } }))).catch(() => {})
+    const restore = []
+    for (const [section, p] of this._pulses) {
+      clearInterval(p.timer)
+      clearTimeout(p.stop)
+      if (p.color) restore.push({ name: section, value: { attrib: 'color', value: p.color } })
     }
+    this._pulses.clear()
+    if (restore.length && this.ready) this.send('SetSections', restore).catch(() => {})
   }
 
   // Switch layouts only when it actually changes. Re-asking for the current layout gets no
@@ -277,6 +290,7 @@ export class LedboxClient extends EventEmitter {
 
   disconnect() {
     this._closing = true
+    this.clearPulses() // stop any blink timers so they can't fire after we close
     if (this.socket) {
       try { this.socket.write(encode({ cmd: 'Disconnect', value: '' })) } catch { /* ignore */ }
       this.socket.end()
