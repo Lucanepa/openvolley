@@ -140,6 +140,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
         sourceManager.setSource(manualSource, { mode: 'manual' })
       }
       manualSource.apply(action)
+      pulseForAction(ledbox, action)
       return sendJson(res, 200, { ok: true, state: manualSource.getState(), event: manualSource.lastEvent })
     }
     // POST /api/link { source, matchId }
@@ -235,6 +236,18 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
   }
 
   return server
+}
+
+// Acknowledge an entry ON THE BOARD, not just in the operator's app: the scored point (or
+// the substitution just used up) blinks for a couple of seconds. The mapper always paints
+// physical left -> section 1, so the action's side maps straight onto the section number.
+// Only additions blink — correcting a mistake downward should be quiet.
+function pulseForAction(ledbox, action = {}) {
+  if (!ledbox || typeof ledbox.pulse !== 'function') return
+  if (Number(action.delta) <= 0) return
+  const n = action.side === 'right' ? '2' : '1'
+  if (action.type === 'point') ledbox.pulse(`score${n}`)
+  else if (action.type === 'sub') ledbox.pulse(`sub${n}`)
 }
 
 // --- helpers ---
