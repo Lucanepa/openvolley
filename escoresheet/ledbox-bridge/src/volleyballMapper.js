@@ -73,11 +73,11 @@ const limitColor = (n, warnAt, maxAt) =>
 // It carries its own score1/score2/set1/set2, which are NOT the ones we paint on the match
 // layout, so without this the board shows 0-0 during a timeout while the real score sits
 // two points away on a screen nobody can see.
-// `content` picks what belongs on screen beside the clock — different breaks want
-// different things, and a number that is not relevant is just noise on a big LED panel:
-//   'full' (timeout)      points + sets — play resumes from exactly here
-//   'sets' (set interval) sets only; the points just ended and reset to 0-0 next
-//   'none' (warm-up)      the clock alone; there is no score yet
+// `content` picks what fills the two BIG score boxes and the small set line beside the clock —
+// different breaks want different headlines, and an irrelevant number is just noise on an LED:
+//   'full' (timeout)      big = points (play resumes here) · small line = the set score
+//   'sets' (set interval) big = the SET score (the headline of a set break) · small line hidden
+//   'none' (warm-up)      the clock alone; no numbers yet
 export function toCountdownSections(state, { timerText, label, content = 'full' } = {}) {
   const v = state ? toLeftRight(state) : null
   const out = []
@@ -86,17 +86,22 @@ export function toCountdownSections(state, { timerText, label, content = 'full' 
   // CSS boxes), so callers should keep this short.
   if (label) out.push(attr('lbl', 'text', String(label).toUpperCase()))
 
-  const showPoints = content === 'full'
-  const showSets = content === 'full' || content === 'sets'
-  // Blank by writing an empty string: the section keeps its box, it just stops showing a
-  // stale number. There is no way to hide a section outright over this protocol.
-  out.push(...text('score1', showPoints && v ? v.leftPoints : '', v?.leftColor))
-  out.push(...text('score2', showPoints && v ? v.rightPoints : '', v?.rightColor))
-  out.push(...text('set1', showSets && v ? v.leftSets : '', v?.leftColor))
-  out.push(...text('set2', showSets && v ? v.rightSets : '', v?.rightColor))
-  // `sep` is the "-" between the set counts; drop it when the sets are hidden.
-  out.push(attr('sep', 'text', showSets ? '-' : ''))
-  if (v) {
+  // big = the two large score boxes; small = the little set line above them.
+  let bigL = '', bigR = '', smallL = '', smallR = '', sep = ''
+  if (v && content === 'full') {
+    bigL = v.leftPoints; bigR = v.rightPoints
+    smallL = v.leftSets; smallR = v.rightSets; sep = '-'
+  } else if (v && content === 'sets') {
+    bigL = v.leftSets; bigR = v.rightSets // set score, shown large — the small line stays hidden
+  }
+  // Blank by writing an empty string: the section keeps its box, it just stops showing a number.
+  out.push(...text('score1', bigL, v?.leftColor))
+  out.push(...text('score2', bigR, v?.rightColor))
+  out.push(...text('set1', smallL, v?.leftColor))
+  out.push(...text('set2', smallR, v?.rightColor))
+  out.push(attr('sep', 'text', sep))
+  // Paint the box borders only when a number sits inside them (timeout + interval).
+  if (v && content !== 'none') {
     out.push(...box('bg_score1', v.leftColor))
     out.push(...box('bg_score2', v.rightColor))
   }

@@ -513,10 +513,16 @@
     $("#cd").classList.add("major");
     $("#cd").hidden = false;
     // The board stays on the match layout showing the final score — no publishCountdown here.
-    cdButton = () => {
-      if (SETTINGS.countdownOnSetInterval === false) { clearCountdown(); sendAction({ type: "next-set" }); return; }
-      startCountdown(SETTINGS.setIntervalSeconds || 180, "INTERVAL",
-        () => sendAction({ type: "next-set" }), { major: true, action: "Start next set →", content: "sets" });
+    cdButton = async () => {
+      // Swap ends + reset points NOW (before the countdown), so the interval already shows the
+      // set score in the teams' NEW positions — that's where they'll be when play resumes.
+      // (next-set skips the swap going into the deciding 5th set, which is correct.)
+      await sendAction({ type: "next-set" });
+      if (SETTINGS.countdownOnSetInterval === false) { clearCountdown(); return; }
+      // onFinish is null: the next set is already set up (0–0, swapped), so ending the interval
+      // just returns to the match view — which paints POINTS in the big boxes again.
+      startCountdown(SETTINGS.setIntervalSeconds || 180, "INTERVAL", null,
+        { major: true, action: "Start next set →", content: "sets" });
     };
   }
 
