@@ -107,3 +107,17 @@ is block-buffered otherwise and a traceback can look like a silent hang.
 - `SetSections` → `value` is a **list** of `{name, value:{attrib,value}}`.
   Passing a single dict makes the loop iterate the dict's *keys* and fail with
   `key name not defined`.
+
+## Editing a layout on the board
+
+Copy the XML into `/home/pi/ledbox/layout/` and **restart the app** — the change will not
+show otherwise. `ReloadLayout` looks like the right command and returns `ok`, but with
+`force_reload=True` `layoutManager.loadLayout` builds a fresh object *without* replacing
+the cached one, so the next `SetLayout` still serves the old geometry. Killing the app is
+enough; the watchdog restarts it in ~8-16s.
+
+Text is positioned by PIL's top-left anchor, and the useful numbers are what the renderer
+actually produces, not the font metrics: at fontsize 24 capital ink runs `y+9 .. y+25`,
+and an umlaut's dots start ~4px above the capitals. `firmware/render-mock.py` renders a
+candidate at true 192x64 with the board's own ARIAL.TTF, which is far quicker than
+restarting the app to look at each attempt.
