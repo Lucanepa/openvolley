@@ -92,8 +92,7 @@ export function toCountdownSections(state, { timerText, label, content = 'full' 
     bigL = v.leftPoints; bigR = v.rightPoints    // timeout: points big, set score small
     smallL = v.leftSets; smallR = v.rightSets; sep = '-'
   } else if (v && content === 'sets') {
-    bigL = v.leftSets; bigR = v.rightSets        // interval: set score big …
-    smallL = v.leftName; smallR = v.rightName    // … with the team names above (identity)
+    bigL = v.leftSets; bigR = v.rightSets        // interval: set score big, small line blank
   }
   // Blank by writing an empty string: the section keeps its box, it just stops showing a number.
   out.push(...text('score1', bigL, v?.leftColor))

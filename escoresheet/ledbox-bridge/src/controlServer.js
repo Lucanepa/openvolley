@@ -233,7 +233,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     const { mode, matchId } = sourceManager.status
     return {
       mode, matchId,
-      ledbox: { connected: ledbox.ready === true, host: ledbox.host, port: ledbox.port },
+      ledbox: { connected: ledbox.ready === true, host: ledbox.host, port: ledbox.port, layout: ledbox.currentLayout },
       state: sourceManager.getState(),
     }
   }
@@ -331,7 +331,9 @@ function serveStatic(res, pathname, webDir) {
   fs.readFile(full, (err, buf) => {
     if (err) return send(res, 404, 'not found')
     const type = CONTENT_TYPES[path.extname(full).toLowerCase()] || 'application/octet-stream'
-    send(res, 200, buf, { 'Content-Type': type })
+    // The whole UI is one self-contained file that we redeploy often; never let a phone serve a
+    // stale cached copy (that surfaced as "the board doesn't switch" after a fix was deployed).
+    send(res, 200, buf, { 'Content-Type': type, 'Cache-Control': 'no-cache, no-store, must-revalidate' })
   })
 }
 
