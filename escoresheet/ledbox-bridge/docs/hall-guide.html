@@ -2,235 +2,205 @@
 <meta charset="utf-8">
 <title>LedBox — Hall Guide</title>
 <style>
-  @page { size: A4; margin: 14mm 13mm 12mm; }
+  @page { size: A4; margin: 12mm 12mm 10mm; }
   * { box-sizing: border-box; }
-  body { font: 11.5pt/1.45 "Helvetica Neue", Arial, sans-serif; color: #111; margin: 0; }
-  h1 { font-size: 25pt; margin: 0 0 2mm; letter-spacing: -.4pt; }
-  h1 + .sub { font-size: 11pt; color: #555; margin: 0 0 6mm; }
-  h2 { font-size: 15pt; margin: 8mm 0 3mm; padding-bottom: 1.5mm;
-       border-bottom: 2.5pt solid #111; page-break-after: avoid; }
-  h3 { font-size: 12pt; margin: 5mm 0 2mm; page-break-after: avoid; }
-  p { margin: 0 0 2.5mm; }
+  body { font: 11pt/1.42 "Helvetica Neue", Arial, sans-serif; color: #111; margin: 0; }
+  h1 { font-size: 24pt; margin: 0 0 1mm; letter-spacing: -.4pt; }
+  h1 + .sub { font-size: 10.5pt; color: #555; margin: 0 0 5mm; }
+  h2 { font-size: 14pt; margin: 7mm 0 2.5mm; padding-bottom: 1.2mm;
+       border-bottom: 2.4pt solid #111; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 4mm 0 1.5mm; page-break-after: avoid; }
+  p { margin: 0 0 2mm; }
   .page-break { page-break-before: always; }
-  .no-break { page-break-inside: avoid; }
 
-  /* Big numbered steps — one action per line, impossible to lose your place. */
   ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
-  ol.steps > li { counter-increment: s; position: relative; padding: 0 0 4mm 13mm;
+  ol.steps > li { counter-increment: s; position: relative; padding: 0 0 3.5mm 12mm;
                   page-break-inside: avoid; }
   ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: -.5mm;
-    width: 9mm; height: 9mm; border-radius: 50%; background: #111; color: #fff;
-    font-weight: 700; font-size: 12pt; text-align: center; line-height: 9mm; }
-  ol.steps .what { font-weight: 700; font-size: 12.5pt; }
-  ol.steps .why  { color: #444; font-size: 10.5pt; }
+    width: 8.5mm; height: 8.5mm; border-radius: 50%; background: #111; color: #fff;
+    font-weight: 700; font-size: 11.5pt; text-align: center; line-height: 8.5mm; }
+  ol.steps .what { font-weight: 700; font-size: 12pt; }
+  ol.steps .why  { color: #444; font-size: 10pt; }
 
-  /* "You should see" checkpoint — the reader confirms before moving on. */
-  .check { margin: 1.5mm 0 0; padding: 1.8mm 3mm; background: #eef6ee;
-           border-left: 3pt solid #2e7d32; font-size: 10.5pt; }
+  .check { margin: 1.2mm 0 0; padding: 1.5mm 3mm; background: #eef6ee;
+           border-left: 3pt solid #2e7d32; font-size: 10pt; }
   .check b { color: #2e7d32; }
-  .warn { margin: 1.5mm 0 0; padding: 1.8mm 3mm; background: #fdf1e7;
-          border-left: 3pt solid #d2691e; font-size: 10.5pt; }
+  .warn { margin: 1.2mm 0 0; padding: 1.5mm 3mm; background: #fdf1e7;
+          border-left: 3pt solid #d2691e; font-size: 10pt; }
 
-  .callout { border: 2pt solid #b00020; border-radius: 2mm; padding: 4mm 5mm;
-             margin: 0 0 6mm; page-break-inside: avoid; }
-  .callout h3 { margin-top: 0; color: #b00020; font-size: 13pt; }
+  .callout { border: 2pt solid #b00020; border-radius: 2mm; padding: 3.5mm 4.5mm;
+             margin: 0 0 5mm; page-break-inside: avoid; }
+  .callout h3 { margin-top: 0; color: #b00020; font-size: 12.5pt; }
 
-  ul.bring { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 8mm; }
-  ul.bring li { padding: 1.6mm 0 1.6mm 8mm; position: relative;
-                break-inside: avoid; font-size: 11.5pt; }
-  ul.bring li::before { content: ""; position: absolute; left: 0; top: 2.2mm;
-    width: 4.5mm; height: 4.5mm; border: 1.4pt solid #111; border-radius: .8mm; }
-  ul.bring li i { display: block; font-style: normal; color: #555; font-size: 9.5pt; }
+  /* QR panel */
+  .qrs { display: flex; gap: 6mm; margin: 0 0 5mm; page-break-inside: avoid; }
+  .qrcard { flex: 1; border: 1.5pt solid #111; border-radius: 2mm; padding: 3mm 3mm 2.5mm;
+            text-align: center; }
+  .qrcard img { width: 34mm; height: 34mm; image-rendering: pixelated; }
+  .qrcard .step { font-size: 9pt; font-weight: 800; color: #fff; background: #111;
+    border-radius: 10mm; padding: .5mm 2.5mm; display: inline-block; margin-bottom: 1.5mm; }
+  .qrcard .lbl { font-weight: 700; font-size: 10.5pt; margin: 1.5mm 0 .5mm; }
+  .qrcard .val { font: 9.5pt "SF Mono", Menlo, Consolas, monospace; color: #333; }
+  .qrcard .note { font-size: 8.5pt; color: #777; margin-top: 1mm; }
 
-  table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
-  th { text-align: left; background: #111; color: #fff; padding: 2mm 2.5mm; font-size: 10pt; }
-  td { padding: 2.2mm 2.5mm; border-bottom: .75pt solid #ccc; vertical-align: top; }
+  ul.bring { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 7mm; }
+  ul.bring li { padding: 1.4mm 0 1.4mm 7mm; position: relative; break-inside: avoid; font-size: 11pt; }
+  ul.bring li::before { content: ""; position: absolute; left: 0; top: 2mm;
+    width: 4mm; height: 4mm; border: 1.3pt solid #111; border-radius: .8mm; }
+  ul.bring li i { display: block; font-style: normal; color: #555; font-size: 9pt; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  th { text-align: left; background: #111; color: #fff; padding: 1.8mm 2.4mm; font-size: 9.5pt; }
+  td { padding: 2mm 2.4mm; border-bottom: .75pt solid #ccc; vertical-align: top; }
   tr { page-break-inside: avoid; }
-  td:first-child { font-weight: 700; width: 33%; }
-  code { font: 10.5pt "SF Mono", Menlo, Consolas, monospace; background: #f0f0f0;
-         padding: .4mm 1.2mm; border-radius: .8mm; }
-  .url { font: 700 13pt "SF Mono", Menlo, Consolas, monospace; }
+  td:first-child { font-weight: 700; width: 30%; }
+  code { font: 9.5pt "SF Mono", Menlo, Consolas, monospace; background: #f0f0f0;
+         padding: .3mm 1mm; border-radius: .8mm; }
 
-  .facts { display: flex; flex-wrap: wrap; gap: 3mm; margin: 0; padding: 0; list-style: none; }
-  .facts li { flex: 1 1 45%; border: .75pt solid #bbb; border-radius: 1.5mm; padding: 2.5mm 3mm; }
-  .facts b { display: block; font-size: 9pt; color: #666; text-transform: uppercase;
-             letter-spacing: .4pt; font-weight: 700; }
-  .facts span { font: 11.5pt "SF Mono", Menlo, Consolas, monospace; }
-  .foot { margin-top: 6mm; padding-top: 2mm; border-top: .75pt solid #ccc;
-          font-size: 9pt; color: #777; }
+  .facts { display: flex; flex-wrap: wrap; gap: 2.5mm; margin: 0; padding: 0; list-style: none; }
+  .facts li { flex: 1 1 45%; border: .75pt solid #bbb; border-radius: 1.5mm; padding: 2mm 2.5mm; }
+  .facts b { display: block; font-size: 8.5pt; color: #666; text-transform: uppercase;
+             letter-spacing: .3pt; font-weight: 700; }
+  .facts span { font: 10.5pt "SF Mono", Menlo, Consolas, monospace; }
+  .foot { margin-top: 5mm; padding-top: 1.5mm; border-top: .75pt solid #ccc;
+          font-size: 8.5pt; color: #777; }
 </style>
 
 <h1>LedBox — Hall Guide</h1>
-<p class="sub">Setting up the LED scoreboard at a venue. Follow the steps in order. Don't skip the green checks.</p>
+<p class="sub">Set up the LED scoreboard and run a match. Follow the steps in order; don't skip the green checks.</p>
 
 <div class="callout">
   <h3>The one rule</h3>
-  <p style="margin-bottom:0">The <b>scoreboard makes its own wifi network</b>. The Pi joins it by
-     itself, and your phone joins it too. There is no cable to the scoreboard, no venue wifi, and
-     nothing to set up on the day — but your phone must be on <b>that</b> wifi, not on mobile data.
-     See <b>Trouble 2</b> if the page will not open.</p>
+  <p style="margin-bottom:0">The <b>scoreboard makes its own wifi</b>. The Pi joins it by itself,
+     and your phone joins it too — scan the codes below. No cable to the board, no venue wifi,
+     nothing to set up on the day. Your phone must be on <b>that</b> wifi, not on mobile data.</p>
+</div>
+
+<div class="qrs">
+  <div class="qrcard">
+    <span class="step">SCAN 1</span>
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQgAAAEICAIAAAAslP2oAAAE1klEQVR4nO3dwW4dKRRAwbxo/v+XPZtsIh0yIgIBnqp18uy0fYTUN8Dn6+vrB/C7n6e/AbiRMCAIA4IwIAgDgjAgCAOCMCAIA4IwIAgDgjAgCAOCMCAIA8I/s3/h8/ns+D6W273PZPQcRl939rnd9v3Pfs5tZv9dVgwIwoAgDAjCgCAMCMKAIAwI03OMkVPnU616j37qvf7s3OOVOcnrvw9WDAjCgCAMCMKAIAwIwoAgDAjL5hgjq94rr3ovvns+MLJqXrHq80+57fdhxIoBQRgQhAFBGBCEAUEYEIQBYfsc4xWr5gmrPv/U/GH3c3iFFQOCMCAIA4IwIAgDgjAgCAOCOcZ/uG2+sYp5xZ9ZMSAIA4IwIAgDgjAgCAOCMCBsn2O8/l78tvOmVn3+7nOuZr+f21gxIAgDgjAgCAOCMCAIA4IwICybY9x2D8Os3fdtv/LnV3n998GKAUEYEIQBQRgQhAFBGBCEAeHzyv+PX+XU+/VT+y5GnCv1Z1YMCMKAIAwIwoAgDAjCgCAMCNNzjFfuq379vf7u57b7fo/ddv9crBgQhAFBGBCEAUEYEIQBQRgQlu3H8N7979y2/+G2c65mf16rnqcVA4IwIAgDgjAgCAOCMCAIA8J1+zFO7aN4/d7ukdv2z9x2j8eIFQOCMCAIA4IwIAgDgjAgCAPCsnu+R3a/d9/9XvzUXGL3POH1ecXu+ZgVA4IwIAgDgjAgCAOCMCAIA8L2c6Vuuzdj1u79AN/1ObxyztiIFQOCMCAIA4IwIAgDgjAgCAPCdfdjvHKvwql7G0ZuO19rlvsx4AHCgCAMCMKAIAwIwoAgDAjL5hjTX3jR++lX7t+Y9cp+hu/6/K0YEIQBQRgQhAFBGBCEAUEYEKbvx3Cvwp2fs9vueYJ7vuEBwoAgDAjCgCAMCMKAIAwI0/sxXjm/6JX/9z/y+rlYq84BOzX/sWJAEAYEYUAQBgRhQBAGBGFAmN6PMfLKvoKR286Juu35nNp/Msv9GLCRMCAIA4IwIAgDgjAgCAPCdfsxbjt/6dS91yO37YuY/bojt81trBgQhAFBGBCEAUEYEIQBQRgQlu3HGJl9n33bvOK2z3/9XK/dX3fV87FiQBAGBGFAEAYEYUAQBgRhQNi+H2P3votZ/7d/73e1e/+GFQOCMCAIA4IwIAgDgjAgCAPC9BzjdafOWdrttv0eqz7/1PO3YkAQBgRhQBAGBGFAEAYEYUCYPlfqlf0Do/fcp/ZRnDr36ZVznG5jxYAgDAjCgCAMCMKAIAwIwoCw7H6MU++tV92/Mfv9r5pvrJozvHJO18htcyQrBgRhQBAGBGFAEAYEYUAQBoTr7vke2T0nOXXe0al5yOzXvW0fjnOl4ABhQBAGBGFAEAYEYUAQBoTtc4zXnTrf6bZzmXbvu9j9OfZjwALCgCAMCMKAIAwIwoAgDAjmGL/cdi7TqbnHqecwcuo5WDEgCAOCMCAIA4IwIAgDgjAgbJ9jvLKvYNW5UrvPp9p9H8jue7t3n3+1ihUDgjAgCAOCMCAIA4IwIAgDwrI5xm33J4y8fl/H7j9/ar4xy/0YcIAwIAgDgjAgCAOCMCAIA8Lntv0ScAMrBgRhQBAGBGFAEAYEYUAQBgRhQBAGBGFAEAYEYUAQBgRhQBAGhH8BgSMeJQLwfh0AAAAASUVORK5CYII=" alt="Wi-Fi QR">
+    <div class="lbl">Join the scoreboard's wifi</div>
+    <div class="val">ledbox_C0270 · 47561052</div>
+    <div class="note">Point your camera at the code → tap "Join". Then turn mobile data OFF.</div>
+  </div>
+  <div class="qrcard">
+    <span class="step">SCAN 2</span>
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOgAAADoCAIAAABqyz8vAAAEFklEQVR4nO3dsa4TMRBAUYL4/19+NLRbGHlk3+w5NWxCcuViZCafn5+fX1Dz+/QbgP8hXJKES5JwSRIuScIlSbgkCZck4ZIkXJKES5JwSRIuScIlSbgk/Vn9C5/PZ+J9bLfrnvHTv3f1+aee863flxOXJOGSJFyShEuScEkSLknCJWl5jvvk1H6G1Tnlrrnm6jx11+dz23NW7fr8nbgkCZck4ZIkXJKES5JwSRIuSdvmuE92ze2m546VPcG77vWuPn/V9OfpxCVJuCQJlyThkiRckoRLknBJGp/jVqzOL3ftQ1h9fmXePM2JS5JwSRIuScIlSbgkCZck4ZL0ujnu6h7Z+t7Zb+XEJUm4JAmXJOGSJFyShEuScEkan+N+6/3RXfPd2z6f297PEycuScIlSbgkCZck4ZIkXJKES9K2OW7lfuque7er887pe8DTex5u48QlSbgkCZck4ZIkXJKES5JwSVqe41bua1ZM72341u/LiUuScEkSLknCJUm4JAmXJOGS9Nl1j/PUvPC2vbbT92if3PY7bbte94kTlyThkiRckoRLknBJEi5JwiVpfK+CfQX/59TctLJvwYlLknBJEi5JwiVJuCQJlyThkrR8H3f5BYbnqaf+/KrpeWrl/vHqc544cUkSLknCJUm4JAmXJOGSJFySxue4jy8cmY+uquyjve2+sjkuryBckoRLknBJEi5JwiVJuCQt71Wo78d9Urnve+r+623zaScuScIlSbgkCZck4ZIkXJKES9K2/birbvt9tVPz4F1um7NOf19OXJKES5JwSRIuScIlSbgkCZekY3Pc6d8De5oXrs5ZK/sfbtsr/MReBV5NuCQJlyThkiRckoRLknBJGp/jTu8NuO0e6ql9vd+6R+KJE5ck4ZIkXJKES5JwSRIuScIlaXyOu2vOetsccdX0fdYKexV4NeGSJFyShEuScEkSLknCJWl5jlu//zr9nOl9CE9Ovf9TnLgkCZck4ZIkXJKES5JwSRIuSctz3Mqcb9d+XPeA73yOE5ck4ZIkXJKES5JwSRIuScIladtehVP3dKfno/X57qn7ytP7jJ24JAmXJOGSJFyShEuScEkSLknX/c7Zk9v2Oayanu+emmfveo77uLyCcEkSLknCJUm4JAmXJOGSND7HfZv677pV7hk7cUkSLknCJUm4JAmXJOGSJFySzHH/WZ1H7pqPrto1Zz31urvmu05ckoRLknBJEi5JwiVJuCQJl6TxOW59H8Kpuen0PdpVq78bN82JS5JwSRIuScIlSbgkCZck4ZK0bY47/f/od6n/btmTU3Nlc1xYIFyShEuScEkSLknCJUm4JH3q92V5JycuScIlSbgkCZck4ZIkXJKES5JwSRIuScIlSbgkCZck4ZIkXJKES9JfpJ+Z0cl9MvgAAAAASUVORK5CYII=" alt="Control UI QR">
+    <div class="lbl">Open the controller</div>
+    <div class="val">http://172.24.1.60:8890</div>
+    <div class="note">Scan after you've joined the wifi. Bookmark the page when it opens.</div>
+  </div>
 </div>
 
 <h2>1 · What to bring</h2>
 <ul class="bring">
   <li>LedBox scoreboard<i>the panel itself</i></li>
   <li>LedBox power cable<i>mains plug</i></li>
-  <li>The Pi — small box labelled OpenVolley<i>this is the brain; nothing works without it</i></li>
+  <li>The Pi — small box labelled OpenVolley<i>the brain; nothing works without it</i></li>
   <li>Pi power supply<i>USB-C. Use THIS one, not a phone charger</i></li>
-  <li>Ethernet cable<i>backup only — normally not needed</i></li>
-  <li>Power strip + extension lead<i>you will be short of sockets</i></li>
   <li>Your phone<i>this is the remote control</i></li>
+  <li>Ethernet cable<i>backup only — normally not needed</i></li>
+  <li>Power strip + extension<i>you'll be short of sockets</i></li>
+  <li>This sheet<i>the QR codes save typing</i></li>
 </ul>
 
 <h2>2 · Setting up — in this order</h2>
 <ol class="steps">
   <li>
-    <div class="what">Hang or stand the board where players can see it. Plug it into mains.</div>
-    <div class="why">Do the board first. It creates the wifi network everything else joins.</div>
-    <div class="check"><b>✓ You should see:</b> the board lights up within about 30 seconds and shows a waiting/idle screen.</div>
+    <div class="what">Stand or hang the board where players can see it. Plug it into mains.</div>
+    <div class="why">Do the board first — it creates the wifi everything else joins.</div>
+    <div class="check"><b>✓ You should see:</b> the board lights up within ~30s and shows a waiting screen.</div>
   </li>
   <li>
-    <div class="what">Plug in the Pi — the small box labelled OpenVolley. Wait 60 seconds.</div>
-    <div class="why">It finds the board's wifi and connects on its own. Do not unplug it while it starts.</div>
+    <div class="what">Plug in the Pi (the OpenVolley box). Wait 60 seconds.</div>
+    <div class="why">It finds the board's wifi and connects on its own. Don't unplug it while it starts.</div>
+    <div class="check"><b>✓ You should see:</b> the board switches to <b>HOME 0 – 0 AWAY</b> — the Pi has taken over.</div>
   </li>
   <li>
-    <div class="what">On your phone, join the wifi network:</div>
-    <div class="url">ledbox_C0270 &nbsp;·&nbsp; password 47561052</div>
-    <div class="why">This network has no internet — that is normal and expected.</div>
-    <div class="warn"><b>Important:</b> your phone may try to jump back to mobile data because this
-      wifi has no internet. If pages will not load, turn <b>mobile data OFF</b> for the match, or
-      switch off "auto-switch to mobile data" in your wifi settings.</div>
+    <div class="what">Scan <b>SCAN 1</b> to join the wifi, then turn mobile data OFF.</div>
+    <div class="why">The wifi has no internet — that's normal. Phones jump back to mobile data unless you stop them.</div>
   </li>
   <li>
-    <div class="what">Open the browser and go to:</div>
-    <div class="url">http://172.24.1.60:8890</div>
-    <div class="why">Bookmark it now, on the day, while it works. This address never changes.</div>
-    <div class="check"><b>✓ You should see:</b> the control page, with team panels and big + / − buttons.</div>
+    <div class="what">Scan <b>SCAN 2</b> to open the controller. Bookmark it.</div>
+    <div class="check"><b>✓ You should see:</b> the control page — team panels, big + / − buttons.</div>
   </li>
   <li>
-    <div class="what">Look at the dot at the top-left of the page.</div>
-    <div class="why"><b>🟢 green</b> = talking to the board, you are ready. <b>🔴 red</b> = not talking to it — see <b>Trouble 1</b>.</div>
+    <div class="what">Check the dot at the top-left.</div>
+    <div class="why"><b>🟢 green</b> = talking to the board, ready. <b>🔴 red</b> = see <b>Trouble 1</b>.</div>
   </li>
   <li>
-    <div class="what">Type the two team names, set the colours, and start scoring.</div>
-    <div class="why">Turn the phone sideways (landscape). Press the full-screen button (the square icon, top right) so nothing is in the way.</div>
+    <div class="what">Type both team names, pick colours. Turn the phone sideways; press ⛶ for full screen.</div>
+    <div class="why">Use SHORT names — <code>WIE</code>, <code>VOL</code>. Long names overflow on the board for now.</div>
   </li>
 </ol>
 
-<h2>3 · Using it during the match</h2>
+<div class="page-break"></div>
+
+<h2>3 · Running the match — and your live test</h2>
+<p>Do these in order the first time; it doubles as a full check that everything works.</p>
 <table>
-  <tr><th style="width:33%">Button</th><th>What it does</th></tr>
-  <tr><td>+ and −</td><td>Adds or removes a point. The serve indicator follows the point automatically.</td></tr>
-  <tr><td>SET</td><td>Sets won. Normally counts itself when a set ends — only touch it to correct a mistake.</td></tr>
-  <tr><td>T/O</td><td>Timeouts used. Pressing + also starts a 30-second countdown on the board.</td></tr>
-  <tr><td>SUB</td><td>Substitutions used by that team.</td></tr>
-  <tr><td>Serve LEFT / RIGHT</td><td>Forces who is serving. Use after a mistake — normally it is automatic.</td></tr>
-  <tr><td>⇄ Swap</td><td>Teams change ends. Swaps names, colours and scores together.</td></tr>
-  <tr><td>Reset</td><td>Clears everything back to 0–0. Asks first. Use between matches.</td></tr>
-  <tr><td>Blank</td><td>Empties the board but keeps the score in the app. Use during breaks.</td></tr>
-  <tr><td>Full screen<br><span style="font-weight:400;color:#555;font-size:9.5pt">square icon, top right</span></td><td>Fills the phone screen with the controls. Press again to leave.</td></tr>
+  <tr><th style="width:30%">Do this</th><th>On the board you should see</th></tr>
+  <tr><td>Tap + on a team</td><td>The point appears and <b>blinks in that team's colour</b>; the serve indicator moves to that side.</td></tr>
+  <tr><td>Tap − (a correction)</td><td>The point drops. It does <b>not</b> blink — only real points blink.</td></tr>
+  <tr><td>T/O + for a team</td><td>Board switches to a <b>timeout screen</b>: "TO &lt;team&gt;", the score, and a 30s clock. At zero, the <b>horn sounds</b>. Press ✕ to end early — no horn.</td></tr>
+  <tr><td>T/O + again (2nd)</td><td>That timeout counter turns <b>dark red</b> — none left.</td></tr>
+  <tr><td>Sub +</td><td>The sub counter <b>blinks</b>. At 5 it goes amber, at 6 dark red.</td></tr>
+  <tr><td>Reach 25 (2-point lead)</td><td>The set closes and is recorded; board shows the <b>INTERVAL</b> screen (sets only). Press "Start next set →" to skip the wait; the score resets and ends swap.</td></tr>
+  <tr><td>⏱ Warm-up</td><td>Full-screen <b>WARM UP</b> clock (10 min). Horn at zero.</td></tr>
+  <tr><td>🏐 VS screen</td><td>The two names with VS — a pre-match screen.</td></tr>
+  <tr><td>⇄ Swap</td><td>Teams change ends — names, colours, scores swap together.</td></tr>
+  <tr><td>⚙ Settings</td><td>Blink on/off, countdown lengths, horn on/off, best-of, club name. Saved on the Pi.</td></tr>
 </table>
 
 <h3>Keep in mind</h3>
-<p>Keep the phone on the <code>ledbox_C0270</code> wifi. If you wander out of range the page stops
-   responding — walk back and it reconnects. <b>The score is safe:</b> it lives on the Pi, not on
-   the phone, so you can close the browser, swap phones, or hand over to someone else and nothing
-   is lost.</p>
+<p>Keep the phone on the <code>ledbox_C0270</code> wifi. Wander out of range and the page stops
+   responding — walk back and it reconnects. <b>The score is safe:</b> it lives on the Pi, not the
+   phone, so you can lock the phone, swap phones, or hand over — nothing is lost.</p>
 
 <h2>4 · Packing up</h2>
 <ol class="steps">
-  <li>
-    <div class="what">Press <b>Blank</b> in the app.</div>
-    <div class="why">Leaves the board empty and tidy.</div>
+  <li><div class="what">Press <b>Blank</b> in the app.</div><div class="why">Leaves the board empty and tidy.</div></li>
+  <li><div class="what">Unplug the board from mains.</div></li>
+  <li><div class="what">Unplug the Pi.</div>
+    <div class="why">No on/off switch. Nothing is lost — it starts itself next time.</div>
+    <div class="warn"><b>Cleaner, if you have a laptop:</b> <code>ssh openvolley "sudo poweroff"</code>, wait 20s, then unplug. Pulling the plug is normally fine — just not while it's still starting.</div>
   </li>
-  <li>
-    <div class="what">Unplug the board from mains.</div>
-  </li>
-  <li>
-    <div class="what">Unplug the Pi.</div>
-    <div class="why">It has no on/off switch. Nothing is lost — it starts by itself next time.</div>
-    <div class="warn"><b>Better, if you have a laptop:</b> run <code>ssh openvolley "sudo poweroff"</code>,
-      wait 20 seconds, then unplug. Cleaner for the memory card. Pulling the plug is normally fine —
-      just avoid doing it while it is still starting up.</div>
-  </li>
-  <li>
-    <div class="what">Put your phone back on its normal wifi / mobile data. Coil the cables. Count them.</div>
-  </li>
+  <li><div class="what">Put the phone back on its normal wifi / mobile data. Coil the cables. Count them.</div></li>
 </ol>
 
+<div class="page-break"></div>
+
 <h2>5 · Troubleshooting</h2>
-<p>Work down the list. Nine times out of ten it is the first row.</p>
-
+<p>Work down the list. Nine times out of ten it's the first row.</p>
 <table>
-  <tr><th style="width:26%">Problem</th><th style="width:30%">What it means</th><th>What to do</th></tr>
-
-  <tr>
-    <td>Trouble 1 — Red dot 🔴 in the app</td>
-    <td>The Pi is fine, but it cannot reach the board.</td>
-    <td>Check the ethernet cable at BOTH ends — push until it clicks. Check the board is powered
-        and lit. Try the spare cable. It reconnects on its own within about 5 seconds; no need to
-        restart anything.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 2 — The page will not open</td>
-    <td>Your phone is not on the board's wifi, or has slipped back to mobile data.</td>
-    <td>Check the phone's wifi says <code>ledbox_C0270</code>. Turn <b>mobile data OFF</b> — phones
-        abandon a wifi that has no internet. Then reload <code>http://172.24.1.60:8890</code>.
-        If the network is not in the list at all, the board is not powered.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 3 — Board frozen on an old score</td>
-    <td>The link dropped and came back.</td>
-    <td>Press any + then − in the app. That forces a full repaint of the board.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 4 — Board stuck on the waiting screen</td>
-    <td>The Pi has not taken control of it yet.</td>
-    <td>Wait 60 seconds from powering the Pi. If still stuck, unplug the Pi, wait 10 seconds,
-        plug it back in.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 5 — Team name too long / cut off</td>
-    <td>Known limitation. The name field on the board fits only short names.</td>
-    <td><b>Use a short name</b> — <code>WIE</code>, <code>VOL</code>, <code>GEN</code>. Three or four
-        letters always fit. This is the reliable fix today.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 6 — Page is blank / buttons missing</td>
-    <td>Stale page in the phone's browser.</td>
-    <td>Pull down to refresh, or close the tab and reopen the address.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 7 — Nothing works at all</td>
-    <td>Start from zero.</td>
-    <td>Unplug BOTH the board and the Pi. Count to ten. Plug in the board first, wait for it to
-        light. Then plug in the Pi and wait 60 seconds. Reopen the page.</td>
-  </tr>
-
-  <tr>
-    <td>Trouble 8 — Someone must check deeper</td>
-    <td>For whoever has a laptop.</td>
-    <td><code>ssh openvolley</code> then <code>systemctl status ledbox-bridge</code> to see if it
-        is running, and <code>journalctl -u ledbox-bridge -n 50</code> to read what went wrong.
-        <code>sudo systemctl restart ledbox-bridge</code> restarts it.</td>
-  </tr>
+  <tr><th style="width:24%">Problem</th><th style="width:30%">What it means</th><th>What to do</th></tr>
+  <tr><td>Trouble 1 — Red dot 🔴</td><td>The Pi is running but hasn't reached the board.</td>
+    <td>Usually the Pi was powered before the board. Unplug the Pi, wait 10s, plug it back in (board already on), wait 60s. It retries on its own too — give it a moment first.</td></tr>
+  <tr><td>Trouble 2 — Page won't open</td><td>Phone isn't on the board's wifi, or slipped to mobile data.</td>
+    <td>Check the wifi says <code>ledbox_C0270</code>. Turn <b>mobile data OFF</b>. Reload <code>172.24.1.60:8890</code>. Not listed at all → the board isn't powered.</td></tr>
+  <tr><td>Trouble 3 — Board stuck on an old score</td><td>The link dropped and came back.</td>
+    <td>Tap any + then − — that forces a full repaint.</td></tr>
+  <tr><td>Trouble 4 — Board frozen / blank after restarting the Pi</td><td>The board's control link wedged when the Pi dropped.</td>
+    <td><b>Power-cycle the board</b> (not just the Pi). Wait ~45s for it to come back, and the Pi reconnects on its own.</td></tr>
+  <tr><td>Trouble 5 — Name cut off</td><td>Known limit — long names overflow.</td>
+    <td>Use a short name: <code>WIE</code>, <code>VOL</code>, <code>GEN</code>. Three or four letters always fit.</td></tr>
+  <tr><td>Trouble 6 — Blank page / missing buttons</td><td>Stale page in the phone browser.</td>
+    <td>Pull to refresh, or close the tab and scan SCAN 2 again.</td></tr>
+  <tr><td>Trouble 7 — Nothing works</td><td>Start from zero.</td>
+    <td>Unplug BOTH. Count to ten. Board first, wait for its lights. Then the Pi, wait 60s. Reopen the page.</td></tr>
+  <tr><td>Trouble 8 — Dig deeper</td><td>For whoever has a laptop.</td>
+    <td><code>ssh openvolley</code> → <code>systemctl status ledbox-bridge</code>, <code>journalctl -u ledbox-bridge -n 50</code>. Restart: <code>sudo systemctl restart ledbox-bridge</code>. Board wifi dead → plug ethernet Pi↔board; it finds the board either way.</td></tr>
 </table>
 
 <h2>6 · Numbers, if you need them</h2>
 <ul class="facts">
   <li><b>Control page</b><span>http://172.24.1.60:8890</span></li>
-  <li><b>Virtual board (test view)</b><span>…:8890/mockledbox</span></li>
-  <li><b>Scoreboard on the cable</b><span>192.168.5.1</span></li>
-  <li><b>Pi on the cable</b><span>192.168.5.50</span></li>
-  <li><b>Board's own wifi</b><span>ledbox_C0270</span></li>
-  <li><b>Service name on the Pi</b><span>ledbox-bridge</span></li>
+  <li><b>Board's wifi</b><span>ledbox_C0270 / 47561052</span></li>
+  <li><b>Scoreboard itself</b><span>172.24.1.1</span></li>
+  <li><b>Backup: board on the cable</b><span>192.168.5.1</span></li>
+  <li><b>Board admin (rarely needed)</b><span>http://192.168.5.1 · admin/admin</span></li>
+  <li><b>Service on the Pi</b><span>ledbox-bridge</span></li>
 </ul>
 
-<p class="foot">The Pi starts the scoreboard software by itself every time it is powered on — there
-  is nothing to launch by hand. Written for the Tech4Sport C0270 (firmware 0.551).</p>
+<p class="foot">The Pi starts the scoreboard software by itself every time it's powered on — nothing to launch by hand. Tech4Sport C0270, firmware 0.551.</p>
