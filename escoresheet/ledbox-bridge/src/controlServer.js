@@ -140,6 +140,9 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       if (sourceManager.status.mode !== 'manual') {
         sourceManager.setSource(manualSource, { mode: 'manual' })
       }
+      // Any live action (point, serve, …) means the match is on — drop the idle screen so
+      // the state push below actually paints the scoreboard.
+      if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') ledbox.showIdle(false)
       manualSource.apply(action)
       pulseForAction(ledbox, action, settings)
       return sendJson(res, 200, { ok: true, state: manualSource.getState(), event: manualSource.lastEvent })
@@ -180,6 +183,13 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       await readJson(req) // drain
       stopCountdown()
       return sendJson(res, 200, { ok: true })
+    }
+    // POST /api/idle { on } — show the names+VS pre-match screen (on=false returns to scoring)
+    if (pathname === '/api/idle' && req.method === 'POST') {
+      const body = await readJson(req)
+      const on = body ? body.on !== false : true
+      if (ledbox && typeof ledbox.showIdle === 'function') await ledbox.showIdle(on)
+      return sendJson(res, 200, { ok: true, idle: on })
     }
     // POST /api/blank
     if (pathname === '/api/blank' && req.method === 'POST') {

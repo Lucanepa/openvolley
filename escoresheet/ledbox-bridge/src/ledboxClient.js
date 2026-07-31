@@ -7,7 +7,7 @@
 import net from 'node:net'
 import { EventEmitter } from 'node:events'
 import { encode, StreamDecoder } from './ledboxProtocol.js'
-import { toSections, toCountdownSections } from './volleyballMapper.js'
+import { toSections, toCountdownSections, toIdleSections } from './volleyballMapper.js'
 
 const CONTROL_PORT = 8889
 const HOTSPOT_IP = '172.24.1.1'
@@ -44,6 +44,7 @@ export class LedboxClient extends EventEmitter {
     super()
     Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs })
     this._pulses = new Map()
+    this._idle = false
     this.currentLayout = null
     this.hosts = (hosts && hosts.length ? hosts : String(host).split(',').map((h) => h.trim()))
       .filter(Boolean)
@@ -151,7 +152,24 @@ export class LedboxClient extends EventEmitter {
     // A countdown layout has none of the match sections; writing them there is an error 6.
     // Hold the state instead — pushCountdown(null) repaints it when the countdown ends.
     if (this.currentLayout && this.currentLayout !== this.layout) return Promise.resolve(false)
+    // Idle overrides scoring: while the idle screen is up, a stray state push (e.g. a poll)
+    // must not repaint the scoreboard over it. showIdle(false) lifts this.
+    if (this._idle) return Promise.resolve(false)
     return this.send('SetSections', toSections(state))
+  }
+
+  // Pre-match / between-matches screen: team names + "VS", scores blanked, on the match
+  // layout (no image needed). showIdle(false) returns to live scoring.
+  async showIdle(on = true) {
+    if (!this.ready) return false
+    this._idle = !!on
+    this.clearPulses()
+    try {
+      await this.setLayoutIfNeeded(this.layout)
+      const sections = on ? toIdleSections(this._lastState) : toSections(this._lastState || {})
+      await this.send('SetSections', sections)
+      return true
+    } catch { return false }
   }
 
   // Show (or clear, when secondsLeft == null) a countdown on the board.
@@ -162,6 +180,7 @@ export class LedboxClient extends EventEmitter {
   // different label and number; we switch to it for the duration and switch back after.
   async pushCountdown(secondsLeft, label = '', { content = 'full' } = {}) {
     if (!this.ready) return false
+    this._idle = false // a countdown means the match is live; leave any idle screen
     try {
       if (secondsLeft == null) {
         await this.setLayoutIfNeeded(this.layout)

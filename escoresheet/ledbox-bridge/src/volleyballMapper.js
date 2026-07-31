@@ -103,6 +103,27 @@ export function toCountdownSections(state, { timerText, label, content = 'full' 
   return out
 }
 
+// Pre-match / between-matches screen on the ordinary match layout: the two team names with
+// "VS" between them, everything else blanked. No image upload needed — this is the version
+// that works today. A logo screen (full-panel image) is the eventual upgrade once the board
+// will accept a media upload; until then this replaces the bare "HOME 0 AWAY 0" idle look.
+export function toIdleSections(state, { off = '30,30,30' } = {}) {
+  const v = state ? toLeftRight(state) : null
+  const left = v?.leftName || 'HOME'
+  const right = v?.rightName || 'AWAY'
+  return [
+    ...text('team1', left, v?.leftColor),
+    ...text('team2', right, v?.rightColor),
+    ...text('score1', '', v?.leftColor),
+    ...text('score2', '', v?.rightColor),
+    ...text('set1', ''), ...text('set2', ''),
+    attr('vs', 'text', 'VS'),
+    ...text('timeout1', ''), ...text('timeout2', ''),
+    ...text('sub1', ''), ...text('sub2', ''),
+    ...rect('serve1', off), ...rect('serve2', off),
+  ]
+}
+
 // Returns the `value` array for a `SetSections` command. Each side is painted uniformly
 // in its team colour — name, score, set count and score-box border all match — so the
 // board never shows one team in three different reds.
