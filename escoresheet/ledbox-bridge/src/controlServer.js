@@ -281,7 +281,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
 // Only additions blink — correcting a mistake downward should be quiet.
 function pulseForAction(ledbox, action = {}, settings = null, state = null) {
   if (!ledbox || typeof ledbox.pulse !== 'function') return
-  if (Number(action.delta) <= 0) return
+  if (!(Number(action.delta) > 0)) return // only a real +1 blinks — not a typed correction
   const s = settings ? settings.values : {}
   const ms = s.blinkMs
   const n = action.side === 'right' ? '2' : '1'

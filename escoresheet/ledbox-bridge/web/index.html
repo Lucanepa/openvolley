@@ -207,6 +207,26 @@
     padding:10px 16px; border-radius:10px; font-size:14px; opacity:0;
     transition:opacity .2s; pointer-events:none; max-width:90%; z-index:60; text-align:center; }
   #toast.show { opacity:1; }
+
+  /* Direct-entry number editor */
+  #edit { position:fixed; inset:0; z-index:70; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.55); }
+  #edit[hidden] { display:none; }
+  .editbox { background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px; width:min(280px,90vw); box-shadow:0 12px 40px rgba(0,0,0,.5); }
+  .editlabel { font-size:13px; font-weight:800; letter-spacing:.04em; color:var(--muted);
+    text-transform:uppercase; margin-bottom:8px; text-align:center; }
+  #editInput { width:100%; padding:12px; font-size:32px; font-weight:800; text-align:center;
+    background:var(--panel2); color:var(--fg); border:1px solid var(--line); border-radius:10px;
+    font-variant-numeric:tabular-nums; }
+  .editbtns { display:flex; gap:8px; margin-top:12px; }
+  .editbtns button { flex:1; padding:12px; font-size:15px; font-weight:800; border-radius:10px;
+    border:1px solid var(--line); cursor:pointer; }
+  #editCancel { background:var(--btn); color:var(--fg); }
+  #editOk { background:var(--accent); border-color:var(--accent); color:#fff; }
+  /* Tappable numbers get a subtle dotted underline so it's clear they can be edited. */
+  .editable { cursor:pointer; }
+  .score .val.editable { text-decoration:underline dotted rgba(128,128,128,.5); text-underline-offset:6px; }
 </style>
 
 <div id="app">
@@ -369,6 +389,18 @@
     <div class="ic">📱</div>
     <div class="t">Rotate to landscape</div>
     <div class="s">The scoreboard controller is built for a landscape screen.</div>
+  </div>
+</div>
+
+<!-- Direct-entry editor for a score / set / T-O / sub number (tap the number to open). -->
+<div id="edit" hidden>
+  <div class="editbox">
+    <div class="editlabel" id="editLabel">Edit</div>
+    <input id="editInput" type="number" inputmode="numeric" min="0" step="1">
+    <div class="editbtns">
+      <button id="editCancel">Cancel</button>
+      <button id="editOk">Set</button>
+    </div>
   </div>
 </div>
 
@@ -733,6 +765,33 @@
     if (b.dataset.tab === "link" && !$("#matches").children.length) refreshMatches();
   }));
 
+  // Direct-entry editor: tap a number to type an exact value (a correction), confirmed before
+  // it's sent. An absolute value carries no delta, so it never blinks and never triggers set-win.
+  let editConfirm = null;
+  function openEdit(label, current, onConfirm) {
+    $("#editLabel").textContent = label;
+    const input = $("#editInput");
+    input.value = current;
+    editConfirm = onConfirm;
+    $("#edit").hidden = false;
+    input.focus(); input.select();
+  }
+  function closeEdit() { $("#edit").hidden = true; editConfirm = null; }
+  $("#editCancel").addEventListener("click", closeEdit);
+  $("#editOk").addEventListener("click", () => {
+    const v = Math.max(0, Math.floor(Number($("#editInput").value) || 0));
+    if (editConfirm) editConfirm(v);
+    closeEdit();
+  });
+  $("#editInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("#editOk").click();
+    else if (e.key === "Escape") closeEdit();
+  });
+  $("#edit").addEventListener("click", (e) => { if (e.target.id === "edit") closeEdit(); }); // backdrop = cancel
+
+  const VAL_TYPE = { points: "point", sets: "set", to: "timeout", sub: "sub" };
+  const VAL_NAME = { points: "score", sets: "sets", to: "timeouts", sub: "subs" };
+
   // per-side controls
   $$(".side").forEach((root) => {
     const side = root.dataset.side;
@@ -748,6 +807,15 @@
         }
       }
     }));
+    // Tap any number to edit it directly.
+    root.querySelectorAll("[data-val]").forEach((el) => {
+      const type = VAL_TYPE[el.dataset.val]; if (!type) return;
+      el.classList.add("editable");
+      el.addEventListener("click", () => openEdit(
+        (side === "left" ? "Left " : "Right ") + VAL_NAME[el.dataset.val],
+        Number(el.textContent) || 0,
+        (v) => sendAction({ type, side, value: v })));
+    });
     const shortEl = $(".short", root), colorEl = $(".color", root);
     shortEl.addEventListener("change",
       () => sendAction({ type: "team", side, short: shortEl.value }));
@@ -860,11 +928,13 @@
   async function setKeepAwake(on) {
     keepAwake = on;
     awakeBtn.classList.toggle("active", on); // .nav button.active = accent highlight
+    try { localStorage.setItem("keepAwake", on ? "1" : "0"); } catch {} // survive a reload mid-match
     if (on) { await acquireWakeLock(); if (!wakeLock && !("wakeLock" in navigator)) toast("This browser can't keep the screen awake"); }
     else if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
   }
   if (awakeBtn) awakeBtn.addEventListener("click", () => setKeepAwake(!keepAwake));
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") acquireWakeLock(); });
+  try { if (localStorage.getItem("keepAwake") === "1") setKeepAwake(true); } catch {}
 
   // boot
   let pollTimer = null;

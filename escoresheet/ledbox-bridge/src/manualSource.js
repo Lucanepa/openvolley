@@ -78,6 +78,9 @@ export class ManualSource extends EventEmitter {
         const side = action.side === 'right' ? 'right' : 'left'
         const other = side === 'left' ? 'right' : 'left'
         const before = m[side + 'Points']
+        // Absolute set (an operator correction typed in) just sets the number — no serve
+        // change, no set-win detection. Only a +delta drives the rally rules below.
+        if (action.value != null) { m[side + 'Points'] = clamp0(Number(action.value) || 0); break }
         const d = Number(action.delta) || 0
         m[side + 'Points'] = clamp0(before + d)
         if (d > 0) {
@@ -98,14 +101,22 @@ export class ManualSource extends EventEmitter {
         }
         break
       }
+      // For set/timeout/sub, action.value sets the number absolutely (a typed correction);
+      // otherwise action.delta adjusts it. Both clamp at 0.
       case 'set':
-        m[key('Sets', action.side)] = clamp0(m[key('Sets', action.side)] + (Number(action.delta) || 0))
+        m[key('Sets', action.side)] = action.value != null
+          ? clamp0(Number(action.value) || 0)
+          : clamp0(m[key('Sets', action.side)] + (Number(action.delta) || 0))
         break
       case 'timeout':
-        m[key('TO', action.side)] = clamp0(m[key('TO', action.side)] + (Number(action.delta) || 0))
+        m[key('TO', action.side)] = action.value != null
+          ? clamp0(Number(action.value) || 0)
+          : clamp0(m[key('TO', action.side)] + (Number(action.delta) || 0))
         break
       case 'sub':
-        m[key('Sub', action.side)] = clamp0(m[key('Sub', action.side)] + (Number(action.delta) || 0))
+        m[key('Sub', action.side)] = action.value != null
+          ? clamp0(Number(action.value) || 0)
+          : clamp0(m[key('Sub', action.side)] + (Number(action.delta) || 0))
         break
       case 'serve':
         m.serving = action.side === 'right' ? 'right' : 'left'
