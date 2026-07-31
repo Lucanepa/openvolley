@@ -218,6 +218,7 @@
       <button id="tabManualBtn" class="active" data-tab="manual">Game</button>
       <button id="tabLinkBtn" data-tab="link">Link</button>
       <button id="tabSettingsBtn" data-tab="settings" title="Settings">⚙</button>
+      <button id="awakeBtn" title="Keep the screen awake">☀</button>
       <button id="fsBtn" title="Full screen (locks landscape)">⛶</button>
     </nav>
   </header>
@@ -337,8 +338,12 @@
           <legend>Match format</legend>
           <label class="row"><span>Best of</span>
             <select data-set="bestOf"><option value="3">3 sets</option><option value="5">5 sets</option></select></label>
-          <p class="hint">Decides how many sets win the match, and which set is the short
-            15-point decider.</p>
+          <label class="row"><span>Total timeouts / set</span>
+            <input type="number" data-set="totalTimeouts" min="1" max="9"></label>
+          <label class="row"><span>Total subs / set</span>
+            <input type="number" data-set="totalSubs" min="1" max="15"></label>
+          <p class="hint">Best-of decides how many sets win the match. Timeouts go red at the
+            total; subs go amber one short and red at the total.</p>
         </fieldset>
         <fieldset>
           <legend>Club</legend>
@@ -442,6 +447,7 @@
     $("#cdStop").title = opts.action ? label : "Skip";
     $("#cd").classList.toggle("major", !!opts.major);
     $("#cd").hidden = false;
+    cdButton = () => finishCountdown(false); // the ✕ / "start next set" button: skip, no horn
     // content: what the BOARD shows beside the clock — 'full' (points+sets), 'sets', or 'none'.
     publishCountdown(seconds, label, opts.content || "full");
     const tick = () => {
@@ -451,7 +457,29 @@
     };
     tick(); cdTimer = setInterval(tick, 250);
   }
-  $("#cdStop").addEventListener("click", () => finishCountdown(false)); // manual skip -> no horn
+
+  // When a set ends we DON'T jump straight into the interval — the board holds the final
+  // score, and this prompt waits for the operator to press "Start interval". Only then does
+  // the interval countdown (and the board's countdown screen) begin.
+  function showSetEndPrompt(state) {
+    clearCountdown();
+    const sd = sides(state);
+    $("#cdLabel").textContent = "SET ENDED";
+    $("#cdTime").textContent = sd ? (sd.left.points + "–" + sd.right.points) : "";
+    $("#cdStop").textContent = "Start interval →";
+    $("#cdStop").title = "Start the set interval";
+    $("#cd").classList.add("major");
+    $("#cd").hidden = false;
+    // The board stays on the match layout showing the final score — no publishCountdown here.
+    cdButton = () => {
+      if (SETTINGS.countdownOnSetInterval === false) { clearCountdown(); sendAction({ type: "next-set" }); return; }
+      startCountdown(SETTINGS.setIntervalSeconds || 180, "INTERVAL",
+        () => sendAction({ type: "next-set" }), { major: true, action: "Start next set →", content: "sets" });
+    };
+  }
+
+  let cdButton = () => finishCountdown(false);
+  $("#cdStop").addEventListener("click", () => cdButton());
 
   // --- state -> physical left/right (honour side_a) -----------------------
   function sides(state) {
@@ -556,9 +584,10 @@
       paint($('[data-val="sets"]', root), d.sets, prev.sets, "bump");
       paint($('[data-val="to"]', root), d.to, prev.to, "bump");
       paint($('[data-val="sub"]', root), d.sub, prev.sub, "bump");
-      // 2 timeouts and 6 subs are the per-set maximums (FIVB); warn one short of each.
-      limitClass($('[data-val="to"]', root).closest(".stat"), d.to, 2, 2);
-      limitClass($('[data-val="sub"]', root).closest(".stat"), d.sub, 5, 6);
+      // Match the board: timeouts red at the total (no amber); subs amber one short, red at it.
+      const tt = SETTINGS.totalTimeouts || 2, ts = SETTINGS.totalSubs || 6;
+      limitClass($('[data-val="to"]', root).closest(".stat"), d.to, tt, tt);
+      limitClass($('[data-val="sub"]', root).closest(".stat"), d.sub, ts - 1, ts);
       shown[side] = d;
     }
     const serving = s ? s.serving : null;
@@ -625,13 +654,11 @@
   function handleEvent(event, s) {
     if (!event || !s) return;
     if (event === "set-end") {
-      // Flash the set-winning side; run the interval; advance (+switch ends) when done.
+      // Flash the set-winning side, then WAIT: the board holds the final score and the operator
+      // presses "Start interval" to begin the countdown. This keeps the winning point visible
+      // instead of the interval screen swallowing it the instant the set closes.
       flashSide(sideOf(s, num(s.points_a) > num(s.points_b)));
-      // The board keeps showing the final score through the interval (that is the point of
-      // it); the reset happens when the countdown ends or the operator says go.
-      if (SETTINGS.countdownOnSetInterval === false) { sendAction({ type: "next-set" }); return; }
-      startCountdown(SETTINGS.setIntervalSeconds || 180, "INTERVAL",
-        () => sendAction({ type: "next-set" }), { major: true, action: "Start next set →", content: "sets" });
+      showSetEndPrompt(s);
     } else if (event === "match-end") {
       const winSide = sideOf(s, num(s.sets_won_a) > num(s.sets_won_b));
       const name = (winSide === "left" ? sides(s).left.short : sides(s).right.short) || winSide.toUpperCase();
@@ -819,6 +846,25 @@
   const syncFsBtn = () => { if (fsBtn) fsBtn.textContent = inFS() ? "⤢" : "⛶"; };
   document.addEventListener("fullscreenchange", syncFsBtn);
   document.addEventListener("webkitfullscreenchange", syncFsBtn);
+
+  // Keep-awake: hold a Screen Wake Lock so the phone/tablet doesn't sleep mid-match. The lock
+  // is dropped whenever the page is hidden (locked/backgrounded), so re-acquire it when the
+  // page becomes visible again while the toggle is on.
+  const awakeBtn = $("#awakeBtn");
+  let wakeLock = null, keepAwake = false;
+  async function acquireWakeLock() {
+    if (!keepAwake || !("wakeLock" in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); }
+    catch { /* denied (e.g. not fullscreen / low battery) — the toggle stays on and retries on visibility */ }
+  }
+  async function setKeepAwake(on) {
+    keepAwake = on;
+    awakeBtn.classList.toggle("active", on); // .nav button.active = accent highlight
+    if (on) { await acquireWakeLock(); if (!wakeLock && !("wakeLock" in navigator)) toast("This browser can't keep the screen awake"); }
+    else if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
+  }
+  if (awakeBtn) awakeBtn.addEventListener("click", () => setKeepAwake(!keepAwake));
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") acquireWakeLock(); });
 
   // boot
   let pollTimer = null;

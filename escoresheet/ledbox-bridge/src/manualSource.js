@@ -121,10 +121,15 @@ export class ManualSource extends EventEmitter {
         break
       }
       case 'next-set':
-        // Start the next set: clear points, then switch ends — teams change sides after
-        // every set EXCEPT going into the deciding 5th (its sides are set by coin toss).
+        // Start the next set: clear points AND the per-set counters (timeouts and
+        // substitutions reset every set — FIVB), then switch ends. Teams change sides
+        // after every set EXCEPT going into the deciding 5th (its sides are the coin toss).
         m.leftPoints = 0
         m.rightPoints = 0
+        m.leftTO = 0
+        m.rightTO = 0
+        m.leftSub = 0
+        m.rightSub = 0
         if (m.leftSets + m.rightSets !== 4) this._swap()
         break
       case 'remove-set': {

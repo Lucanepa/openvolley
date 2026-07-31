@@ -25,6 +25,12 @@ export const DEFAULTS = {
   // Sound the board's horn when a countdown reaches zero (time's up). Not on a manual skip.
   hornOnCountdownEnd: true,
 
+  // Per-set allowances, and the counter-colour thresholds derived from them:
+  //   timeouts → dark red once the total is reached (no amber; there are only 2).
+  //   subs     → amber one short of the total, dark red at the total.
+  totalTimeouts: 2,
+  totalSubs: 6,
+
   // Match format: best of 3 or 5. Decides how many sets win the match and which set is
   // the short deciding one.
   bestOf: 5,
@@ -40,6 +46,8 @@ const NUMS = {
   timeoutSeconds: [5, 600],
   setIntervalSeconds: [10, 1800],
   warmupSeconds: [10, 3600],
+  totalTimeouts: [1, 9],
+  totalSubs: [1, 15],
 }
 
 // Coerce and clamp anything the UI sends. A bad value must not be able to wedge the board
