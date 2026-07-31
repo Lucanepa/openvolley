@@ -7,7 +7,7 @@
 import net from 'node:net'
 import { EventEmitter } from 'node:events'
 import { encode, StreamDecoder } from './ledboxProtocol.js'
-import { toSections, toCountdownSections, toIdleSections, toClubIdleSections } from './volleyballMapper.js'
+import { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections } from './volleyballMapper.js'
 
 const CONTROL_PORT = 8889
 const HOTSPOT_IP = '172.24.1.1'
@@ -29,6 +29,9 @@ export class LedboxClient extends EventEmitter {
     // (confirmed by GetSections on a C0270 fw 0.551). Timeouts, set intervals and the
     // warm-up clock all use it — we only change the label and the number.
     countdownLayout = 'volleyball_matchscore_timeout_02',
+    // Our own break screen. It uses the whole panel (boxes left/right, break in the middle)
+    // instead of the vendor layout's right third. Falls back to countdownLayout if absent.
+    breakLayout = 'kscw_break',
     // Club idle screen (crest + team names). Optional: if the layout isn't on the
     // device, showIdle falls back to the plain match-layout idle screen.
     idleLayout = 'kscw_idle',
@@ -66,7 +69,7 @@ export class LedboxClient extends EventEmitter {
     totalSubs = 6,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, idleLayout, idleFullNames, idleFontMax, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, idleFullNames, idleFontMax, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -258,7 +261,7 @@ export class LedboxClient extends EventEmitter {
   // real C0270 reports it holding `lbl` ("TIMEOUT"), `timer` ("30"), both scores and both set
   // counts. So a timeout, a set interval and the warm-up clock are all the same screen with a
   // different label and number; we switch to it for the duration and switch back after.
-  async pushCountdown(secondsLeft, label = '', { content = 'full' } = {}) {
+  async pushCountdown(secondsLeft, label = '', { content = 'full', team } = {}) {
     if (!this.ready) return false
     this._idle = false // a countdown means the match is live; leave any idle screen
     try {
@@ -271,18 +274,35 @@ export class LedboxClient extends EventEmitter {
       // of 200ms+ around every layout change. Without one, the first seconds of a countdown
       // are written into a screen that is not on yet and are simply lost — a 10s countdown
       // was observed starting from 5.
-      if (this.currentLayout !== this.countdownLayout) {
-        await this.setLayoutIfNeeded(this.countdownLayout)
+      // Prefer our own break screen; fall back to the vendor's if it isn't on the device.
+      let useBreak = !!this.breakLayout
+      const want = useBreak ? this.breakLayout : this.countdownLayout
+      if (this.currentLayout !== want) {
+        try {
+          await this.setLayoutIfNeeded(want)
+        } catch (err) {
+          if (!useBreak) throw err
+          this.emit('error', new Error(`break layout unavailable (${err.message}); using vendor countdown`))
+          useBreak = false
+          await this.setLayoutIfNeeded(this.countdownLayout)
+        }
         await new Promise((r) => setTimeout(r, this.layoutSettleMs))
-        // The layout ships a Tech4Sport logo in `media` covering most of the panel.
-        // Blank it once on entry so the clock owns the screen.
-        await this.send('SetSections', [{ name: 'media', value: { attrib: 'src', value: '' } }]).catch(() => {})
+        if (!useBreak) {
+          // The vendor layout ships a Tech4Sport logo in `media` covering most of the panel.
+          // Blank it once on entry so the clock owns the screen.
+          await this.send('SetSections', [{ name: 'media', value: { attrib: 'src', value: '' } }]).catch(() => {})
+        }
+      } else {
+        useBreak = this.currentLayout === this.breakLayout
       }
       const s = Math.max(0, Math.round(secondsLeft))
       // The layout's own default is a bare "30", so stay bare under a minute and only use
       // M:SS once there are minutes to show (set interval, warm-up).
       const timerText = s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-      await this.send('SetSections', toCountdownSections(this._lastState, { timerText, label, content }))
+      const sections = useBreak
+        ? toBreakSections(this._lastState, { timerText, label, content, team })
+        : toCountdownSections(this._lastState, { timerText, label, content })
+      await this.send('SetSections', sections)
       return true
     } catch { return false }
   }
@@ -355,7 +375,7 @@ export class LedboxClient extends EventEmitter {
     if (!this.layoutGuardMs) return
     this._layoutGuard = setInterval(async () => {
       if (!this.ready || this._suppressPaint || this._idle) return
-      if (this.currentLayout && this.currentLayout !== this.layout) return // countdown is up
+      if (this.currentLayout && this.currentLayout !== this.layout) return // a break screen is up
       await this.setLayout(this.layout).catch(() => {}) // no-op on the board if already set
       this.currentLayout = this.layout
       if (this._lastState) await this.pushState(this._lastState).catch(() => {})

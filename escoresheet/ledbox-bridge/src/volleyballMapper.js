@@ -111,6 +111,62 @@ export function toCountdownSections(state, { timerText, label, content = 'full' 
   return out
 }
 
+
+// Sections for `kscw_break` — our own break screen, replacing the vendor's countdown
+// layout which crams everything into the right third and leaves the left half black.
+//
+// Shape: the two big bordered score boxes stay left and right (same geometry as the match
+// layout, so the eye doesn't have to re-find them), set score in the top corners, and the
+// centre column carries the break itself — label, who called it, and the clock.
+//
+// `content` picks what fills the boxes, as with the vendor screen:
+//   'full' (timeout)      big = points (play resumes here) · corners = set score · team shown
+//   'sets' (set interval) big = the SET score · corners blank · no team
+//   'none' (warm-up)      boxes hidden entirely, just the label and a big clock
+//
+// The clock's size is fitted to the gap BETWEEN the boxes (x 64..127). At a fixed size a
+// long clock ("10:00") runs into them, which is exactly what the vendor screen does.
+const BREAK_CLOCK_WIDTH = 58 // the 64px gap between the boxes, less a margin each side
+
+export function toBreakSections(state, { timerText, label, content = 'full', team } = {}) {
+  const v = state ? toLeftRight(state) : null
+  const out = []
+  const showTeam = content === 'full' && !!team
+  const boxes = content !== 'none'
+
+  if (label) out.push(attr('lbl', 'text', String(label).toUpperCase()))
+  out.push(attr('team', 'text', showTeam ? String(team).toUpperCase() : ''))
+
+  // Two clock sections rather than one: with a team name above it the clock sits lower and
+  // smaller, without one it moves up and grows. A single section can't be in both places.
+  const clock = timerText == null ? '' : String(timerText)
+  if (showTeam) {
+    out.push(attr('timer', 'text', clock), attr('timerbig', 'text', ''))
+    if (clock) out.push(attr('timer', 'fontsize', fitFontSize(clock, BREAK_CLOCK_WIDTH, { max: 26 })))
+  } else {
+    out.push(attr('timerbig', 'text', clock), attr('timer', 'text', ''))
+    if (clock) out.push(attr('timerbig', 'fontsize', fitFontSize(clock, BREAK_CLOCK_WIDTH, { max: 34 })))
+  }
+
+  let bigL = '', bigR = '', cornerL = '', cornerR = ''
+  if (v && content === 'full') {
+    bigL = v.leftPoints; bigR = v.rightPoints
+    cornerL = v.leftSets; cornerR = v.rightSets
+  } else if (v && content === 'sets') {
+    bigL = v.leftSets; bigR = v.rightSets
+  }
+  out.push(...text('score1', bigL, v?.leftColor))
+  out.push(...text('score2', bigR, v?.rightColor))
+  out.push(...text('set1', cornerL, v?.leftColor))
+  out.push(...text('set2', cornerR, v?.rightColor))
+  // Warm-up has no numbers, so the empty boxes would just be two floating rectangles —
+  // paint their borders black to hide them rather than leave the panel looking broken.
+  const OFF = '0,0,0'
+  out.push(...box('bg_score1', boxes && v ? v.leftColor : OFF))
+  out.push(...box('bg_score2', boxes && v ? v.rightColor : OFF))
+  return out
+}
+
 // Pre-match / between-matches screen on the ordinary match layout: the two team names with
 // "VS" between them, everything else blanked. No image upload needed — this is the version
 // that works today. A logo screen (full-panel image) is the eventual upgrade once the board

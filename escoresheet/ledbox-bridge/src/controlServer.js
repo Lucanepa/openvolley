@@ -62,15 +62,15 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     if (remainingMs <= 0) { stopCountdown(); return null }
     return { label: countdown.label, remainingMs }
   }
-  function startCountdown(seconds, label, content = 'full') {
-    countdown = { label: String(label || ''), content, endsAt: Date.now() + seconds * 1000 }
+  function startCountdown(seconds, label, content = 'full', team = '') {
+    countdown = { label: String(label || ''), content, team: String(team || ''), endsAt: Date.now() + seconds * 1000 }
     if (cdTicker) clearInterval(cdTicker)
     const tick = () => {
       const remainingMs = countdown ? countdown.endsAt - Date.now() : -1
       if (remainingMs <= 0) return stopCountdown({ expired: true })
       // Best-effort push to the physical board (no-op when not ready / no method).
       if (ledbox && typeof ledbox.pushCountdown === 'function') {
-        ledbox.pushCountdown(Math.ceil(remainingMs / 1000), countdown.label, { content: countdown.content }).catch(() => {})
+        ledbox.pushCountdown(Math.ceil(remainingMs / 1000), countdown.label, { content: countdown.content, team: countdown.team }).catch(() => {})
       }
     }
     tick()
@@ -204,7 +204,15 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
         ledbox._suppressPaint = false
         state = manualSource.getState()
       }
-      startCountdown(seconds, body && body.label, content)
+      // `side` names the team that called the timeout; the board shows its short code so
+      // the hall can see whose break it is. Resolved here rather than client-side so the
+      // name always matches the state the board is painted from.
+      let team = ''
+      if (body && (body.side === 'left' || body.side === 'right')) {
+        const v = toLeftRight(manualSource.getState())
+        team = body.side === 'left' ? v.leftName : v.rightName
+      }
+      startCountdown(seconds, body && body.label, content, team)
       return sendJson(res, 200, { ok: true, state })
     }
     // POST /api/countdown/stop { expired } — clear the display timer. The UI-driven clock
