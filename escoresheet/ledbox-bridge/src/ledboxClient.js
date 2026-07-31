@@ -7,7 +7,7 @@
 import net from 'node:net'
 import { EventEmitter } from 'node:events'
 import { encode, StreamDecoder } from './ledboxProtocol.js'
-import { toSections } from './volleyballMapper.js'
+import { toSections, toCountdownSections } from './volleyballMapper.js'
 
 const CONTROL_PORT = 8889
 const HOTSPOT_IP = '172.24.1.1'
@@ -36,9 +36,11 @@ export class LedboxClient extends EventEmitter {
     // sits until the kernel gives up (minutes). Without our own deadline the host list
     // never advances and failover silently never happens.
     connectTimeoutMs = 4000,
+    // Give the panel time to bring a new layout up before painting into it.
+    layoutSettleMs = 400,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs })
     this.currentLayout = null
     this.hosts = (hosts && hosts.length ? hosts : String(host).split(',').map((h) => h.trim()))
       .filter(Boolean)
@@ -163,14 +165,19 @@ export class LedboxClient extends EventEmitter {
         if (this._lastState) await this.pushState(this._lastState) // repaint the match
         return true
       }
-      await this.setLayoutIfNeeded(this.countdownLayout)
+      // Switching layout costs the device real time; the vendor app inserts settle delays
+      // of 200ms+ around every layout change. Without one, the first seconds of a countdown
+      // are written into a screen that is not on yet and are simply lost — a 10s countdown
+      // was observed starting from 5.
+      if (this.currentLayout !== this.countdownLayout) {
+        await this.setLayoutIfNeeded(this.countdownLayout)
+        await new Promise((r) => setTimeout(r, this.layoutSettleMs))
+      }
       const s = Math.max(0, Math.round(secondsLeft))
       // The layout's own default is a bare "30", so stay bare under a minute and only use
       // M:SS once there are minutes to show (set interval, warm-up).
-      const text = s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-      const sections = [{ name: this.timerSection, value: { attrib: 'text', value: text } }]
-      if (label) sections.push({ name: this.labelSection, value: { attrib: 'text', value: String(label).toUpperCase() } })
-      await this.send('SetSections', sections)
+      const timerText = s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      await this.send('SetSections', toCountdownSections(this._lastState, { timerText, label }))
       return true
     } catch { return false }
   }
