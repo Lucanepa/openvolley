@@ -7,7 +7,7 @@
 import net from 'node:net'
 import { EventEmitter } from 'node:events'
 import { encode, StreamDecoder } from './ledboxProtocol.js'
-import { toSections, toCountdownSections, toIdleSections } from './volleyballMapper.js'
+import { toSections, toCountdownSections, toIdleSections, toClubIdleSections } from './volleyballMapper.js'
 
 const CONTROL_PORT = 8889
 const HOTSPOT_IP = '172.24.1.1'
@@ -29,6 +29,9 @@ export class LedboxClient extends EventEmitter {
     // (confirmed by GetSections on a C0270 fw 0.551). Timeouts, set intervals and the
     // warm-up clock all use it — we only change the label and the number.
     countdownLayout = 'volleyball_matchscore_timeout_02',
+    // Club idle screen (crest + team names). Optional: if the layout isn't on the
+    // device, showIdle falls back to the plain match-layout idle screen.
+    idleLayout = 'kscw_idle',
     timerSection = 'timer',
     labelSection = 'lbl',
     reconnectMs = 3000,
@@ -52,7 +55,7 @@ export class LedboxClient extends EventEmitter {
     totalSubs = 6,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, idleLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -197,6 +200,17 @@ export class LedboxClient extends EventEmitter {
     this._idle = !!on
     this.clearPulses()
     try {
+      if (on && this.idleLayout) {
+        // Preferred: the club screen. If the device doesn't have that layout (error 5),
+        // don't lose the idle screen entirely — fall through to the match-layout version.
+        try {
+          await this.setLayoutIfNeeded(this.idleLayout)
+          await this.send('SetSections', toClubIdleSections(this._lastState))
+          return true
+        } catch (err) {
+          this.emit('error', new Error(`club idle layout unavailable (${err.message}); using match layout`))
+        }
+      }
       await this.setLayoutIfNeeded(this.layout)
       const sections = on ? toIdleSections(this._lastState) : toSections(this._lastState || {})
       await this.send('SetSections', sections)
