@@ -138,6 +138,9 @@ export function toSections(state, { off = '30,30,30' } = {}) {
     ...box('bg_score2', v.rightColor),
     ...text('set1', v.leftSets, v.leftColor),
     ...text('set2', v.rightSets, v.rightColor),
+    // `vs` is the tiny "-" separator between the two set counts. Always reassert it, so the
+    // idle screen (which borrows it for "VS") can never leave a stray label on the scoreboard.
+    attr('vs', 'text', '-'),
     ...text('timeout1', v.leftTimeouts, limitColor(v.leftTimeouts, TIMEOUT_MAX, TIMEOUT_MAX)),
     ...text('timeout2', v.rightTimeouts, limitColor(v.rightTimeouts, TIMEOUT_MAX, TIMEOUT_MAX)),
     ...text('sub1', v.leftSubs, limitColor(v.leftSubs, SUB_WARN, SUB_MAX)),
