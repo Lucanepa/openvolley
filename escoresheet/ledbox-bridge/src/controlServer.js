@@ -48,7 +48,8 @@ class IdleSource extends EventEmitter {
   stop() {}
 }
 
-export function createControlServer({ sourceManager, manualSource, ledbox, relayHttpUrl, relayUrl, webDir, reconnectMs }) {
+export function createControlServer({ sourceManager, manualSource, ledbox, relayHttpUrl, relayUrl, webDir, reconnectMs, settings }) {
+  const opt = (k) => (settings ? settings.values[k] : undefined)
   // Ephemeral display countdown (timeout 30s / set interval / side switch). Owned here
   // so it reaches every surface from ONE source: the control UI banner, the
   // /mockledbox mirror (via /api/board), AND the physical LedBox (pushed once a second
@@ -140,8 +141,18 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
         sourceManager.setSource(manualSource, { mode: 'manual' })
       }
       manualSource.apply(action)
-      pulseForAction(ledbox, action)
+      pulseForAction(ledbox, action, settings)
       return sendJson(res, 200, { ok: true, state: manualSource.getState(), event: manualSource.lastEvent })
+    }
+    // GET /api/settings — operator preferences (persisted on the Pi)
+    if (pathname === '/api/settings' && req.method === 'GET') {
+      return sendJson(res, 200, settings ? settings.values : {})
+    }
+    // POST /api/settings — partial update; unknown keys are dropped and numbers clamped
+    if (pathname === '/api/settings' && req.method === 'POST') {
+      const body = await readJson(req)
+      if (!settings) return sendJson(res, 501, { error: 'settings unavailable' })
+      return sendJson(res, 200, settings.update(body || {}))
     }
     // POST /api/link { source, matchId }
     if (pathname === '/api/link' && req.method === 'POST') {
@@ -242,12 +253,14 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
 // the substitution just used up) blinks for a couple of seconds. The mapper always paints
 // physical left -> section 1, so the action's side maps straight onto the section number.
 // Only additions blink — correcting a mistake downward should be quiet.
-function pulseForAction(ledbox, action = {}) {
+function pulseForAction(ledbox, action = {}, settings = null) {
   if (!ledbox || typeof ledbox.pulse !== 'function') return
   if (Number(action.delta) <= 0) return
+  const s = settings ? settings.values : {}
+  const ms = s.blinkMs
   const n = action.side === 'right' ? '2' : '1'
-  if (action.type === 'point') ledbox.pulse(`score${n}`)
-  else if (action.type === 'sub') ledbox.pulse(`sub${n}`)
+  if (action.type === 'point' && s.blinkPoint !== false) ledbox.pulse(`score${n}`, ms)
+  else if (action.type === 'sub' && s.blinkSub !== false) ledbox.pulse(`sub${n}`, ms)
 }
 
 // --- helpers ---

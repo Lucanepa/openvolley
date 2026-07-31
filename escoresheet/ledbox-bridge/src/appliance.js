@@ -14,6 +14,7 @@ import { MockLedbox } from './mockLedbox.js'
 import { ManualSource } from './manualSource.js'
 import { SourceManager } from './sourceManager.js'
 import { createControlServer } from './controlServer.js'
+import { Settings } from './settings.js'
 
 const ts = () => new Date().toISOString()
 
@@ -57,6 +58,9 @@ export async function startAppliance(config = loadConfig()) {
   sourceManager.on('error', (e) => log('[source] error:', e.message))
 
   const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web')
+  // Operator preferences live next to the code so they survive restarts and reboots.
+  const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
+  log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
   const server = createControlServer({
     sourceManager,
     manualSource,
@@ -64,6 +68,7 @@ export async function startAppliance(config = loadConfig()) {
     relayHttpUrl: config.relayHttpUrl,
     relayUrl: config.relayUrl,
     reconnectMs: config.reconnectMs,
+    settings,
     webDir,
   })
 

@@ -174,11 +174,21 @@
   .note { color:var(--muted); font-size:13px; padding:8px 2px; }
   .err { color:var(--bad); font-size:13px; padding:6px 2px; }
 
-  /* ---- SETTINGS (Phase 2 placeholder) ---- */
-  .settings { padding:24px; align-items:center; justify-content:center; text-align:center;
-    color:var(--muted); gap:10px; }
-  .settings h2 { color:var(--fg); font-size:18px; margin:0; }
-  .settings ul { text-align:left; font-size:13px; line-height:1.7; margin:0; padding-left:18px; }
+  /* ---- SETTINGS ---- */
+  .settings { padding:10px 12px; overflow-y:auto; gap:8px; }
+  .setgrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:10px; }
+  .settings fieldset { border:1px solid var(--line); border-radius:10px; padding:8px 12px 10px;
+    margin:0; background:var(--panel); min-width:0; }
+  .settings legend { font-size:11px; font-weight:800; letter-spacing:.06em; color:var(--muted);
+    text-transform:uppercase; padding:0 4px; }
+  .settings .row { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:13px; }
+  .settings .row span { flex:1; min-width:0; }
+  .settings .row em { font-style:normal; color:var(--muted); font-size:11px; width:16px; }
+  .settings input[type=number], .settings select { width:82px; padding:5px 7px; font-size:13px;
+    background:var(--panel2); color:var(--fg); border:1px solid var(--line); border-radius:7px; }
+  .settings input[type=checkbox] { width:20px; height:20px; accent-color:var(--accent); }
+  .settings .hint { font-size:11px; color:var(--muted); margin:4px 0 0; }
+  #setStatus.saved { color:var(--ok); }
 
   /* Rotate-to-landscape nudge (portrait phones only) */
   #rotate { display:none; }
@@ -297,16 +307,38 @@
 
     <!-- SETTINGS (Phase 2 placeholder) -->
     <section id="tab-settings" class="tab settings">
-      <h2>⚙ Settings</h2>
-      <p>Coming next — pre-match configuration:</p>
-      <ul>
-        <li>Team A / B name &amp; colour</li>
-        <li>Best-of 3 / 5</li>
-        <li>Set-interval length</li>
-        <li>Timeout countdown on / off</li>
-        <li>Set-interval countdown on / off</li>
-        <li>Substitution animation on / off</li>
-      </ul>
+      <div class="setgrid">
+        <fieldset>
+          <legend>Board feedback</legend>
+          <label class="row"><span>Blink the point on the board</span>
+            <input type="checkbox" data-set="blinkPoint"></label>
+          <label class="row"><span>Blink substitutions</span>
+            <input type="checkbox" data-set="blinkSub"></label>
+          <label class="row"><span>Blink length</span>
+            <input type="number" data-set="blinkMs" min="200" max="10000" step="100"><em>ms</em></label>
+        </fieldset>
+        <fieldset>
+          <legend>Countdowns</legend>
+          <label class="row"><span>Show on timeout</span>
+            <input type="checkbox" data-set="countdownOnTimeout"></label>
+          <label class="row"><span>Timeout length</span>
+            <input type="number" data-set="timeoutSeconds" min="5" max="600"><em>s</em></label>
+          <label class="row"><span>Show on set interval</span>
+            <input type="checkbox" data-set="countdownOnSetInterval"></label>
+          <label class="row"><span>Set interval</span>
+            <input type="number" data-set="setIntervalSeconds" min="10" max="1800"><em>s</em></label>
+          <label class="row"><span>Warm-up</span>
+            <input type="number" data-set="warmupSeconds" min="10" max="3600"><em>s</em></label>
+        </fieldset>
+        <fieldset>
+          <legend>Match format</legend>
+          <label class="row"><span>Best of</span>
+            <select data-set="bestOf"><option value="3">3 sets</option><option value="5">5 sets</option></select></label>
+          <p class="hint">Decides how many sets win the match, and which set is the short
+            15-point decider.</p>
+        </fieldset>
+      </div>
+      <p class="hint" id="setStatus">Saved on the Pi — these survive a restart.</p>
     </section>
 
     <!-- Countdown overlay: TIME + label (e.g. "TO WIEDIKON") -->
@@ -365,6 +397,7 @@
   });
 
   let lastLedbox = {};   // remembered so optimistic renders keep the status dot right
+  let SETTINGS = {};     // operator preferences, loaded from the Pi
 
   // --- countdown ----------------------------------------------------------
   // On finish OR ✕ it disappears (back to normal scoring); an optional onFinish
@@ -584,7 +617,8 @@
       flashSide(sideOf(s, num(s.points_a) > num(s.points_b)));
       // The board keeps showing the final score through the interval (that is the point of
       // it); the reset happens when the countdown ends or the operator says go.
-      startCountdown(180, "Set interval", () => sendAction({ type: "next-set" }),
+      if (SETTINGS.countdownOnSetInterval === false) { sendAction({ type: "next-set" }); return; }
+      startCountdown(SETTINGS.setIntervalSeconds || 180, "Set interval", () => sendAction({ type: "next-set" }),
         { major: true, action: "Start next set →" });
     } else if (event === "match-end") {
       const winSide = sideOf(s, num(s.sets_won_a) > num(s.sets_won_b));
@@ -670,7 +704,9 @@
       sendAction({ type: stat, side, delta: d });
       if (stat === "timeout" && d > 0) {
         const nm = ($(".short", root).value || side).toUpperCase();
-        startCountdown(30, "TO " + nm);
+        if (SETTINGS.countdownOnTimeout !== false) {
+          startCountdown(SETTINGS.timeoutSeconds || 30, "TO " + nm);
+        }
       }
     }));
     const shortEl = $(".short", root), colorEl = $(".color", root);
@@ -687,7 +723,7 @@
   // global actions
   // Pre-match warm-up: a plain 10-minute clock, no side effects when it ends.
   $("#warmupBtn").addEventListener("click", () =>
-    startCountdown(600, "Warm-up", null, { major: true, action: "End warm-up" }));
+    startCountdown(SETTINGS.warmupSeconds || 600, "Warm-up", null, { major: true, action: "End warm-up" }));
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
   $("#resetBtn").addEventListener("click", () => {
     if (confirm("Reset the board to neutral?")) { clearCountdown(); sendAction({ type: "reset" }); }
@@ -696,6 +732,41 @@
     if (confirm("Blank the LedBox display?")) { clearCountdown(); blank(); }
   });
   $("#refreshBtn").addEventListener("click", refreshMatches);
+
+  // --- settings -----------------------------------------------------------
+  // Persisted on the Pi, so they follow the board rather than the phone that set them.
+  const setEls = () => $$("[data-set]");
+  async function loadSettings() {
+    try {
+      const s = await api("/api/settings");
+      for (const el of setEls()) {
+        const v = s[el.dataset.set];
+        if (v === undefined) continue;
+        if (el.type === "checkbox") el.checked = !!v; else el.value = v;
+      }
+      SETTINGS = s;
+    } catch { /* leave the form at its defaults */ }
+  }
+  async function saveSettings() {
+    const patch = {};
+    for (const el of setEls()) {
+      patch[el.dataset.set] = el.type === "checkbox" ? el.checked : Number(el.value);
+    }
+    try {
+      SETTINGS = await postJSON("/api/settings", patch);
+      const st = $("#setStatus");
+      st.textContent = "Saved.";
+      st.classList.add("saved");
+      // The server clamps out-of-range values, so reflect what it actually stored.
+      for (const el of setEls()) {
+        const v = SETTINGS[el.dataset.set];
+        if (v === undefined) continue;
+        if (el.type === "checkbox") el.checked = !!v; else el.value = v;
+      }
+      setTimeout(() => { st.textContent = "Saved on the Pi — these survive a restart."; st.classList.remove("saved"); }, 1800);
+    } catch (e) { toast(e.message); }
+  }
+  setEls().forEach((el) => el.addEventListener("change", saveSettings));
 
   // fullscreen (also locks landscape where the platform allows it)
   const fsBtn = $("#fsBtn");
@@ -732,6 +803,7 @@
   // boot
   let pollTimer = null;
   const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+  loadSettings();
   refreshStatus();
   pollTimer = setInterval(refreshStatus, 1500);
 })();
