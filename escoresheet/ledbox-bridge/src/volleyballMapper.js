@@ -86,13 +86,14 @@ export function toCountdownSections(state, { timerText, label, content = 'full' 
   // CSS boxes), so callers should keep this short.
   if (label) out.push(attr('lbl', 'text', String(label).toUpperCase()))
 
-  // big = the two large score boxes; small = the little set line above them.
+  // big = the two large score boxes; small = the little line above them.
   let bigL = '', bigR = '', smallL = '', smallR = '', sep = ''
   if (v && content === 'full') {
-    bigL = v.leftPoints; bigR = v.rightPoints
+    bigL = v.leftPoints; bigR = v.rightPoints    // timeout: points big, set score small
     smallL = v.leftSets; smallR = v.rightSets; sep = '-'
   } else if (v && content === 'sets') {
-    bigL = v.leftSets; bigR = v.rightSets // set score, shown large — the small line stays hidden
+    bigL = v.leftSets; bigR = v.rightSets        // interval: set score big …
+    smallL = v.leftName; smallR = v.rightName    // … with the team names above (identity)
   }
   // Blank by writing an empty string: the section keeps its box, it just stops showing a number.
   out.push(...text('score1', bigL, v?.leftColor))
