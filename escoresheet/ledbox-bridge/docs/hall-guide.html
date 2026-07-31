@@ -142,20 +142,23 @@
   <tr><th style="width:30%">Do this</th><th>On the board you should see</th></tr>
   <tr><td>Tap + on a team</td><td>The point appears and <b>blinks in that team's colour</b>; the serve indicator moves to that side.</td></tr>
   <tr><td>Tap − (a correction)</td><td>The point drops. It does <b>not</b> blink — only real points blink.</td></tr>
+  <tr><td>Tap a number (score, sets, T/O, sub)</td><td>A little editor opens — type the exact value, press <b>Set</b> (or Cancel). For fixing a miscount fast. Typed values don't blink.</td></tr>
   <tr><td>T/O + for a team</td><td>Board switches to a <b>timeout screen</b>: "TO &lt;team&gt;", the score, and a 30s clock. At zero, the <b>horn sounds</b>. Press ✕ to end early — no horn.</td></tr>
-  <tr><td>T/O + again (2nd)</td><td>That timeout counter turns <b>dark red</b> — none left.</td></tr>
-  <tr><td>Sub +</td><td>The sub counter <b>blinks</b>. At 5 it goes amber, at 6 dark red.</td></tr>
-  <tr><td>Reach 25 (2-point lead)</td><td>The set closes and is recorded; board shows the <b>INTERVAL</b> screen (sets only). Press "Start next set →" to skip the wait; the score resets and ends swap.</td></tr>
-  <tr><td>⏱ Warm-up</td><td>Full-screen <b>WARM UP</b> clock (10 min). Horn at zero.</td></tr>
+  <tr><td>T/O + again (to the limit)</td><td>That timeout counter turns <b>dark red</b> — none left.</td></tr>
+  <tr><td>Sub +</td><td>The sub counter <b>blinks</b>. One short of the limit it goes amber, at the limit dark red.</td></tr>
+  <tr><td>Reach 25 (2-point lead)</td><td>The winning point blinks, board <b>holds the final score</b>, and the phone shows <b>"SET ENDED · Start interval →"</b>. Tap it → the board shows the <b>INTERVAL</b> countdown (sets only). Tap <b>Start next set →</b> to advance; score resets, ends swap, timeouts &amp; subs reset.</td></tr>
+  <tr><td>⏱ Warm-up</td><td>Full-screen <b>WARM UP</b> clock. Horn at zero.</td></tr>
   <tr><td>🏐 VS screen</td><td>The two names with VS — a pre-match screen.</td></tr>
   <tr><td>⇄ Swap</td><td>Teams change ends — names, colours, scores swap together.</td></tr>
-  <tr><td>⚙ Settings</td><td>Blink on/off, countdown lengths, horn on/off, best-of, club name. Saved on the Pi.</td></tr>
+  <tr><td>☀ Keep awake</td><td>Top bar — highlights when on; stops the phone/tablet sleeping. Stays on across a reload.</td></tr>
+  <tr><td>⚙ Settings</td><td>Blink on/off, countdown lengths, horn on/off, best-of, total timeouts/subs, club name. Saved on the Pi.</td></tr>
 </table>
 
 <h3>Keep in mind</h3>
-<p>Keep the phone on the <code>ledbox_C0270</code> wifi. Wander out of range and the page stops
-   responding — walk back and it reconnects. <b>The score is safe:</b> it lives on the Pi, not the
-   phone, so you can lock the phone, swap phones, or hand over — nothing is lost.</p>
+<p>Turn on <b>☀ Keep awake</b> at the start so the phone doesn't sleep mid-match. Keep it on the
+   <code>ledbox_C0270</code> wifi — wander out of range and the page stops responding; walk back and
+   it reconnects. <b>The score is safe:</b> it lives on the Pi, not the phone, so you can lock the
+   phone, swap phones, or hand over — nothing is lost.</p>
 
 <h2>4 · Packing up</h2>
 <ol class="steps">
