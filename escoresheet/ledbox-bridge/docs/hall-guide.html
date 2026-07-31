@@ -13,7 +13,8 @@
   p { margin: 0 0 2mm; }
   .page-break { page-break-before: always; }
 
-  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0;
+             page-break-inside: avoid; }
   ol.steps > li { counter-increment: s; position: relative; padding: 0 0 3.5mm 12mm;
                   page-break-inside: avoid; }
   ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: -.5mm;
@@ -135,8 +136,6 @@
   </li>
 </ol>
 
-<div class="page-break"></div>
-
 <h2>3 · Running the match — and your live test</h2>
 <p>Do these in order the first time; it doubles as a full check that everything works.</p>
 <table>
@@ -168,8 +167,6 @@
   </li>
   <li><div class="what">Put the phone back on its normal wifi / mobile data. Coil the cables. Count them.</div></li>
 </ol>
-
-<div class="page-break"></div>
 
 <h2>5 · Troubleshooting</h2>
 <p>Work down the list. Nine times out of ten it's the first row.</p>
