@@ -237,6 +237,24 @@
   /* Tappable numbers get a subtle dotted underline so it's clear they can be edited. */
   .editable { cursor:pointer; }
   .score .val.editable { text-decoration:underline dotted rgba(128,128,128,.5); text-underline-offset:6px; }
+
+  /* Board-offline banner. The status dot alone is too easy to miss on a phone
+     (and its tooltip never shows on touch), so when the board drops we say so
+     in words -- otherwise the operator taps buttons and nothing happens on the
+     panel, with no clue why. */
+  #offline {
+    display:none; align-items:center; gap:10px;
+    padding:10px 14px; margin:0 0 8px;
+    background:#7f1d1d; color:#fff; border-radius:10px;
+    font-weight:600; line-height:1.3;
+  }
+  #offline.show { display:flex; }
+  #offline .big { font-size:1.05rem; }
+  #offline .sub { font-weight:400; opacity:.9; font-size:.82rem; }
+  @media (prefers-reduced-motion: no-preference) {
+    #offline.show { animation: offlinePulse 2s ease-in-out infinite; }
+    @keyframes offlinePulse { 0%,100% { background:#7f1d1d; } 50% { background:#991b1b; } }
+  }
 </style>
 
 <div id="app">
@@ -252,6 +270,14 @@
       <button id="fsBtn" title="Full screen (locks landscape)">⛶</button>
     </nav>
   </header>
+
+  <div id="offline" role="status" aria-live="polite">
+    <span aria-hidden="true">⚠️</span>
+    <span>
+      <span class="big">Board not connected</span><br>
+      <span class="sub" id="offlineHint">Scores are still being recorded — the panel is not updating.</span>
+    </span>
+  </div>
 
   <main>
     <!-- GAME -->
@@ -574,6 +600,18 @@
     $("#dot").title = connected
       ? `LedBox connected (${st.ledbox.host}:${st.ledbox.port})`
       : "LedBox not connected";
+    // Say it in words too — the dot is easy to miss and has no tooltip on touch.
+    const off = $("#offline");
+    if (off) {
+      off.classList.toggle("show", !connected);
+      if (!connected) {
+        const hint = $("#offlineHint");
+        // The bridge retries on its own, so this is information, not a to-do list.
+        if (hint) hint.textContent = st.ledbox && st.ledbox.host
+          ? `Scores are still being recorded. Retrying ${st.ledbox.host}… check the board is on and the cable is in.`
+          : "Scores are still being recorded — the panel is not updating.";
+      }
+    }
     $("#modeName").textContent = MODE_LABELS[st.mode]
       || (st.mode ? st.mode[0].toUpperCase() + st.mode.slice(1) : "Idle");
     $("#setNo").textContent = setLabel(st.state);
