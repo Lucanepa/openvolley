@@ -121,3 +121,15 @@ actually produces, not the font metrics: at fontsize 24 capital ink runs `y+9 ..
 and an umlaut's dots start ~4px above the capitals. `firmware/render-mock.py` renders a
 candidate at true 192x64 with the board's own ARIAL.TTF, which is far quicker than
 restarting the app to look at each attempt.
+
+## OPEN: re-enable the watchdog
+
+`ledbox-watchdog` was disabled on 2026-07-31 just before a clean shutdown and the board
+powered off before it could be re-enabled, so it will not start on the next boot. The board
+boots and runs without it — what is missing is crash recovery. Next time it is on:
+
+    sudo systemctl enable --now ledbox-watchdog
+    systemctl is-enabled ledbox-watchdog   # expect: enabled
+
+There is no need to disable it before a shutdown: systemd stops it as part of the shutdown
+anyway, and `disable` persists across reboots.
