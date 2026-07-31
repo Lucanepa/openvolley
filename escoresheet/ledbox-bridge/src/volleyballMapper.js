@@ -48,10 +48,13 @@ const attr = (name, attrib, value) => ({ name, value: { attrib, value: String(va
 const text = (name, value, color) =>
   color ? [attr(name, 'text', value), attr(name, 'color', color)] : [attr(name, 'text', value)]
 const rect = (name, color) => [attr(name, 'color', color)]
-// The score box: keep the fill black (so the big number reads) and match the border to
-// the team colour. `bordercolor` is honoured by the device when supported and a harmless
-// no-op otherwise (an unknown attrib returns ok). Setting the fill also heals any stray
-// colour left on the private bg_score section.
+// The score box: black fill so the big number reads, border in the team colour.
+//
+// `bordercolor` appears NOWHERE in the vendor app — an exhaustive scan of ledbox.dll found
+// no such attribute, and the device returns ok for any name, so it looked like a no-op we
+// were fooling ourselves with. It is not: removing it visibly reverted the away box to the
+// layout's default red on the hardware. The firmware supports more than the vendor app
+// bothers to use, so absence from the APK is not evidence of absence in the device.
 const box = (name, color) => [attr(name, 'color', '0,0,0'), attr(name, 'bordercolor', color)]
 
 // Limit colouring for the timeout and substitution counters, so the referee's table can
@@ -65,6 +68,28 @@ export const SUB_WARN = 5
 export const SUB_MAX = 6
 const limitColor = (n, warnAt, maxAt) =>
   (n >= maxAt ? MAXED_COUNTER : n >= warnAt ? WARN_COUNTER : NEUTRAL_COUNTER)
+
+// Sections for `volleyball_matchscore_timeout_02` — the device's countdown screen.
+// It carries its own score1/score2/set1/set2, which are NOT the ones we paint on the match
+// layout, so without this the board shows 0-0 during a timeout while the real score sits
+// two points away on a screen nobody can see.
+export function toCountdownSections(state, { timerText, label } = {}) {
+  const v = state ? toLeftRight(state) : null
+  const out = []
+  if (timerText != null) out.push(attr('timer', 'text', timerText))
+  // `lbl` is a narrow box — long labels get clipped rather than shrunk (sections are fixed
+  // CSS boxes), so callers should keep this short.
+  if (label) out.push(attr('lbl', 'text', String(label).toUpperCase()))
+  if (v) {
+    out.push(...text('score1', v.leftPoints, v.leftColor))
+    out.push(...text('score2', v.rightPoints, v.rightColor))
+    out.push(...text('set1', v.leftSets, v.leftColor))
+    out.push(...text('set2', v.rightSets, v.rightColor))
+    out.push(...box('bg_score1', v.leftColor))
+    out.push(...box('bg_score2', v.rightColor))
+  }
+  return out
+}
 
 // Returns the `value` array for a `SetSections` command. Each side is painted uniformly
 // in its team colour — name, score, set count and score-box border all match — so the
