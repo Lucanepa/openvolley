@@ -462,7 +462,8 @@
   let cdTimer = null, cdEnd = 0, cdOnFinish = null;
   const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
   // Mirror the countdown onto the server so the /mockledbox board shows the same timer.
-  const publishCountdown = (seconds, label, content) => postJSON("/api/countdown", { seconds, label, content }).catch(() => {});
+  const publishCountdown = (seconds, label, content, swapFirst) =>
+    postJSON("/api/countdown", { seconds, label, content, swapFirst }).catch(() => null);
   const stopServerCountdown = (expired) => postJSON("/api/countdown/stop", { expired: !!expired }).catch(() => {});
   function clearCountdown() {
     if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
@@ -491,7 +492,13 @@
     $("#cd").hidden = false;
     cdButton = () => finishCountdown(false); // the ✕ / "start next set" button: skip, no horn
     // content: what the BOARD shows beside the clock — 'full' (points+sets), 'sets', or 'none'.
-    publishCountdown(seconds, label, opts.content || "full");
+    // swapFirst (set interval): the server swaps ends + resets points atomically, then returns
+    // the new state so the phone reflects the switched sides immediately.
+    publishCountdown(seconds, label, opts.content || "full", opts.swapFirst).then((r) => {
+      if (opts.swapFirst && r && r.state) {
+        renderStatus({ mode: "manual", matchId: null, ledbox: lastLedbox, state: r.state });
+      }
+    });
     const tick = () => {
       const left = (cdEnd - Date.now()) / 1000;
       $("#cdTime").textContent = fmt(left);
@@ -513,16 +520,16 @@
     $("#cd").classList.add("major");
     $("#cd").hidden = false;
     // The board stays on the match layout showing the final score — no publishCountdown here.
-    cdButton = async () => {
-      // Swap ends + reset points NOW (before the countdown), so the interval already shows the
-      // set score in the teams' NEW positions — that's where they'll be when play resumes.
-      // (next-set skips the swap going into the deciding 5th set, which is correct.)
-      await sendAction({ type: "next-set" });
-      if (SETTINGS.countdownOnSetInterval === false) { clearCountdown(); return; }
-      // onFinish is null: the next set is already set up (0–0, swapped), so ending the interval
-      // just returns to the match view — which paints POINTS in the big boxes again.
+    cdButton = () => {
+      // No countdown wanted → just swap + advance.
+      if (SETTINGS.countdownOnSetInterval === false) { clearCountdown(); sendAction({ type: "next-set" }); return; }
+      // swapFirst does the end-swap + point-reset ATOMICALLY on the server (paint suppressed),
+      // so the board jumps straight from the final score to the interval screen showing the set
+      // score in the NEW positions — no intermediate 0-0 flash, no race with the layout switch.
+      // onFinish is null: the next set is already set up, so ending the interval returns to the
+      // match view, which paints POINTS in the big boxes again.
       startCountdown(SETTINGS.setIntervalSeconds || 180, "INTERVAL", null,
-        { major: true, action: "Start next set →", content: "sets" });
+        { major: true, action: "Start next set →", content: "sets", swapFirst: true });
     };
   }
 

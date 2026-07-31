@@ -181,7 +181,10 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       sourceManager.setSource(lan, { mode: 'lan', matchId: String(body.matchId) })
       return sendJson(res, 200, status())
     }
-    // POST /api/countdown { seconds, label } — start/replace the shared display timer
+    // POST /api/countdown { seconds, label, content, swapFirst } — start the shared timer.
+    // swapFirst (the set interval) applies next-set FIRST — swap ends + reset points — with the
+    // board paint suppressed, so we go straight from the final score to the interval screen with
+    // the swapped sets. One atomic sequence, no match-layout repaint to race the layout switch.
     if (pathname === '/api/countdown' && req.method === 'POST') {
       const body = await readJson(req)
       const seconds = Number(body && body.seconds)
@@ -189,8 +192,15 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
         return sendJson(res, 400, { error: 'seconds must be a positive number' })
       }
       const content = ['full', 'sets', 'none'].includes(body && body.content) ? body.content : 'full'
+      let state
+      if (body && body.swapFirst) {
+        ledbox._suppressPaint = true // update the state (+ _lastState) without painting the match
+        manualSource.apply({ type: 'next-set' })
+        ledbox._suppressPaint = false
+        state = manualSource.getState()
+      }
       startCountdown(seconds, body && body.label, content)
-      return sendJson(res, 200, { ok: true })
+      return sendJson(res, 200, { ok: true, state })
     }
     // POST /api/countdown/stop { expired } — clear the display timer. The UI-driven clock
     // reaches zero before the server tick does, so the client tells us WHY it stopped:
