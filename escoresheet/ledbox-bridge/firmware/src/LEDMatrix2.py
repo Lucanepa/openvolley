@@ -65,11 +65,8 @@ def printText(section, img):
             if section.maxlength > 0:
                 if len(section.text) > section.maxlength:
                     text_to_draw = copy.copy(section.text[0:section.maxlength])
-            try:
-                text_to_draw = text_to_draw.decode('utf8').encode('latin1')
-            except Exception as e:
-                pass
-
+            # (py2 transcoded utf8->latin1 here; under py3 section.text is already str,
+            # which is what Pillow wants -- and it keeps umlauts working: Zurich, Kussnacht.)
             size = calculateLenghtText(text_to_draw, int(section.fontsize))
             color = section.color
             if section.animation == 'scroller_x':
@@ -135,7 +132,7 @@ def printCounter(section, img):
             else:
                 section.enable = False
     if section.parameter['format'] == '%TM':
-        total_minute = section.parameter['last_time'] / 60
+        total_minute = section.parameter['last_time'] // 60
         total_second = section.parameter['last_time'] % 60
         timestr = str(total_minute).zfill(2) + ':' + str(total_second).zfill(2)
         section.text = timestr
@@ -232,7 +229,7 @@ def printRectangle(section, img):
         if bordercolor == None:
             bordercolor = section.bordercolor
         d = ImageDraw.Draw(img)
-        d.rectangle([(offset_x + section.getx(), offset_y + section.gety()), (offset_x + section.getx() + offset_y + section.width, section.gety() + section.height)], fill=color, outline=bordercolor)
+        d.rectangle([(offset_x + section.getx(), offset_y + section.gety()), (offset_x + section.getx() + section.width, offset_y + section.gety() + section.height)], fill=color, outline=bordercolor)
         return img
         return
 

@@ -50,8 +50,8 @@ class ledboxAPI:
                     result['plugins'].append(plugin.getInfo())
 
                 config = None
-                if 'config' in result:
-                    config = result['config']
+                if 'config' in data:
+                    config = data['config']
                 app.editClient(self._clientid, data['alias'], data['sport'], result['role'], typedevice, config)
                 result['noresend'] = True
                 return result
@@ -343,8 +343,8 @@ class ledboxAPI:
             cmd = getattr(plugin, 'getList', None)
             if cmd != None:
                 result = {}
-                result.name = plugin.name
-                result.value = cmd()
+                result['name'] = plugin.name
+                result['value'] = cmd()
                 listMedia.append(result)
 
         return listMedia

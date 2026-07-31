@@ -117,6 +117,7 @@ class socketFileUploadServer(threading.Thread):
     def run(self):
         buffersize = 1024
         connection_name = 'TCP/IP'
+        s = None  # USB uploads read from self.serial and never bind a socket
         if self.type == 'tcpip':
             s = self.getSocketTCPIP()
             buffersize = 1024
@@ -127,7 +128,7 @@ class socketFileUploadServer(threading.Thread):
             connection_name = 'Bluetooth'
         if self.type == 'usb':
             connection_name = 'USB'
-        if s == None:
+        if s == None and self.type != 'usb':
             app.Debug('ERROR: Upload Server ' + self.name + ' not run')
             print('Socket ' + self.name + ' not run')
             return
@@ -218,22 +219,22 @@ class socketFileUploadServer(threading.Thread):
                             if cc.typedevice == 'ledbox':
                                 cc.closeUploadServer()
 
-                    result = True
-                    if client.typeToUpload == 'interface':
-                        result = self.afterUploadInterface(client)
-                    else:
-                        result = self.afterUpload(client)
-                    if result:
-                        message = app.createMessage('Uploaded', client.requestToUpload)
-                        print('Done Receiving ' + client.filepathToUpload)
-                    else:
-                        message = app.createErrorMessage('Uploaded', 99)
-                        print('Error Receiving')
-                    if client != None:
-                        app.Debug('SEND to ' + str(client.id) + ' (' + client.socket.name + ') ' + client.address + '=' + message)
-                        client.socket.sendToClient(message, client.client)
-                    if connection_name == 'USB':
-                        return
+                result = True
+                if client.typeToUpload == 'interface':
+                    result = self.afterUploadInterface(client)
+                else:
+                    result = self.afterUpload(client)
+                if result:
+                    message = app.createMessage('Uploaded', client.requestToUpload)
+                    print('Done Receiving ' + client.filepathToUpload)
+                else:
+                    message = app.createErrorMessage('Uploaded', 99)
+                    print('Error Receiving')
+                if client != None:
+                    app.Debug('SEND to ' + str(client.id) + ' (' + client.socket.name + ') ' + client.address + '=' + message)
+                    client.socket.sendToClient(message, client.client)
+                if connection_name == 'USB':
+                    return
 
             return
             return
