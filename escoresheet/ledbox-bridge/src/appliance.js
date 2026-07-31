@@ -67,6 +67,7 @@ export async function startAppliance(config = loadConfig()) {
     totalSubs: settings.values.totalSubs,
     idleFullNames: settings.values.idleFullNames,
     idleFontMax: settings.values.idleFontMax,
+    clubName: settings.values.clubName,
   })
   const server = createControlServer({
     sourceManager,

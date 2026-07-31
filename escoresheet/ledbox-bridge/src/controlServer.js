@@ -171,6 +171,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
           totalSubs: updated.totalSubs,
           idleFullNames: updated.idleFullNames,
           idleFontMax: updated.idleFontMax,
+          clubName: updated.clubName,
         })
       }
       return sendJson(res, 200, updated)

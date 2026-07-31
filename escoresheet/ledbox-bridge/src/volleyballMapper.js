@@ -215,7 +215,22 @@ export function fitFontSize(str, maxWidth, { max = 24, min = 9 } = {}) {
 // names, nothing else. That layout deliberately has no score/set/timeout sections, so this
 // must NOT send them — SetSections aborts on the first unknown section name (error 6) and
 // the whole paint would be lost, leaving the previous screen up.
-export function toClubIdleSections(state, { fullNames = true, maxFontSize = 24 } = {}) {
+// KSC Wiedikon gold (#FFC832). The crest is blue and gold, so the club's own name picks
+// up the gold; the opponent keeps its real colour.
+export const CLUB_GOLD = '255,200,50'
+
+// Is this name the club whose crest is on the panel? Matched on the name rather than on a
+// side, because the club is not always the home/left team — an away fixture would otherwise
+// paint the OPPONENT in club colours. Compared loosely so "KSCW", "KSC Wiedikon" and
+// "KSC Wiedikon H3" all match a club name of "KSC WIEDIKON".
+function isClub(name, clubName) {
+  const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const a = norm(name), b = norm(clubName)
+  if (!a || !b) return false
+  return a.includes(b) || b.includes(a)
+}
+
+export function toClubIdleSections(state, { fullNames = true, maxFontSize = 24, clubName = '' } = {}) {
   const v = state ? toLeftRight(state) : null
   // The crest occupies x 3..56, so the name column starts at 67 and runs to the edge.
   const COLUMN = 192 - 67
@@ -223,10 +238,13 @@ export function toClubIdleSections(state, { fullNames = true, maxFontSize = 24 }
   const right = (fullNames ? v?.rightFull : v?.rightName) || 'GAST'
   // Sized per side, not once for both: "KSC Wiedikon" vs "Zug" want very different sizes,
   // and forcing them to match would shrink the short one for no reason.
+  // Match on both the displayed name and the short code, so it works either way round.
+  const leftIsClub = isClub(left, clubName) || isClub(v?.leftName, clubName)
+  const rightIsClub = isClub(right, clubName) || isClub(v?.rightName, clubName)
   return [
-    ...text('team1', left, v?.leftColor),
+    ...text('team1', left, leftIsClub ? CLUB_GOLD : v?.leftColor),
     attr('team1', 'fontsize', fitFontSize(left, COLUMN, { max: maxFontSize })),
-    ...text('team2', right, v?.rightColor),
+    ...text('team2', right, rightIsClub ? CLUB_GOLD : v?.rightColor),
     attr('team2', 'fontsize', fitFontSize(right, COLUMN, { max: maxFontSize })),
   ]
 }
