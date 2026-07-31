@@ -291,6 +291,12 @@ export class LedboxClient extends EventEmitter {
       if (!/timed out/.test(err.message)) throw err // silence here just means "already there"
     })
     this.currentLayout = name
+    // The board acks SetLayout before the new layout's sections actually exist, so a
+    // section write sent right after can land on the *old* layout and be rejected
+    // ("section team1 not found"). That is what ate the first repaint after every
+    // reconnect. Every caller paints immediately after switching, so settle here
+    // rather than repeating the delay at each call site.
+    if (this.layoutSettleMs) await new Promise((r) => setTimeout(r, this.layoutSettleMs))
   }
 
   disconnect() {
