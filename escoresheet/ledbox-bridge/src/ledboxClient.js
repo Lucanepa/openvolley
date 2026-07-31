@@ -38,9 +38,12 @@ export class LedboxClient extends EventEmitter {
     connectTimeoutMs = 4000,
     // Give the panel time to bring a new layout up before painting into it.
     layoutSettleMs = 400,
+    // How long a point/substitution blinks on the board before settling.
+    pulseMs = 2000,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs })
+    this._pulses = new Map()
     this.currentLayout = null
     this.hosts = (hosts && hosts.length ? hosts : String(host).split(',').map((h) => h.trim()))
       .filter(Boolean)
@@ -157,7 +160,7 @@ export class LedboxClient extends EventEmitter {
   // real C0270 reports it holding `lbl` ("TIMEOUT"), `timer` ("30"), both scores and both set
   // counts. So a timeout, a set interval and the warm-up clock are all the same screen with a
   // different label and number; we switch to it for the duration and switch back after.
-  async pushCountdown(secondsLeft, label = '') {
+  async pushCountdown(secondsLeft, label = '', { content = 'full' } = {}) {
     if (!this.ready) return false
     try {
       if (secondsLeft == null) {
@@ -172,20 +175,50 @@ export class LedboxClient extends EventEmitter {
       if (this.currentLayout !== this.countdownLayout) {
         await this.setLayoutIfNeeded(this.countdownLayout)
         await new Promise((r) => setTimeout(r, this.layoutSettleMs))
+        // The layout ships a Tech4Sport logo in `media` covering most of the panel.
+        // Blank it once on entry so the clock owns the screen.
+        await this.send('SetSections', [{ name: 'media', value: { attrib: 'src', value: '' } }]).catch(() => {})
       }
       const s = Math.max(0, Math.round(secondsLeft))
       // The layout's own default is a bare "30", so stay bare under a minute and only use
       // M:SS once there are minutes to show (set interval, warm-up).
       const timerText = s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-      await this.send('SetSections', toCountdownSections(this._lastState, { timerText, label }))
+      await this.send('SetSections', toCountdownSections(this._lastState, { timerText, label, content }))
       return true
     } catch { return false }
+  }
+
+  // Blink a section for a moment, then stop — the board's acknowledgement that a point or a
+  // substitution registered. `animation` is a per-section LAYOUT attribute (it appears in the
+  // layout XML alongside fontsize/color/align) and the firmware accepts it live over
+  // SetSections; verified blinking on the real panel. That beats faking it by alternating
+  // `color` from here, which would have meant writing far faster than the vendor ever does.
+  async pulse(section, ms = this.pulseMs) {
+    if (!this.ready || !section) return false
+    const stop = this._pulses.get(section)
+    if (stop) clearTimeout(stop) // re-scoring quickly just extends the blink, never doubles it
+    try {
+      await this.send('SetSections', [{ name: section, value: { attrib: 'animation', value: 'blinking' } }])
+    } catch { return false }
+    this._pulses.set(section, setTimeout(() => {
+      this._pulses.delete(section)
+      this.send('SetSections', [{ name: section, value: { attrib: 'animation', value: '' } }]).catch(() => {})
+    }, ms))
+    return true
+  }
+
+  // Stop every running blink — used before a layout switch, since the sections do not exist
+  // on the other layout and their stop-timers would fire into it as an error 6.
+  clearPulses() {
+    for (const [, t] of this._pulses) clearTimeout(t)
+    this._pulses.clear()
   }
 
   // Switch layouts only when it actually changes. Re-asking for the current layout gets no
   // reply at all (the device advertises noresend), which would stall for the full timeout.
   async setLayoutIfNeeded(name) {
     if (!name || this.currentLayout === name) return
+    this.clearPulses()
     await this.setLayout(name).catch((err) => {
       if (!/timed out/.test(err.message)) throw err // silence here just means "already there"
     })
