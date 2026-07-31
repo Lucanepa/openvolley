@@ -40,9 +40,12 @@ export class LedboxClient extends EventEmitter {
     layoutSettleMs = 400,
     // How long a point/substitution blinks on the board before settling.
     pulseMs = 2000,
+    // Per-set allowances — drive the counter colours (set live from operator settings).
+    totalTimeouts = 2,
+    totalSubs = 6,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
     this.currentLayout = null
@@ -162,7 +165,17 @@ export class LedboxClient extends EventEmitter {
     // Idle overrides scoring: while the idle screen is up, a stray state push (e.g. a poll)
     // must not repaint the scoreboard over it. showIdle(false) lifts this.
     if (this._idle) return Promise.resolve(false)
-    return this.send('SetSections', toSections(state))
+    return this.send('SetSections', toSections(state, { totalTimeouts: this.totalTimeouts, totalSubs: this.totalSubs }))
+  }
+
+  // Update the per-set allowances that drive the counter colours (from operator settings),
+  // and repaint so the change shows immediately.
+  setLimits({ totalTimeouts, totalSubs } = {}) {
+    if (Number.isFinite(totalTimeouts)) this.totalTimeouts = totalTimeouts
+    if (Number.isFinite(totalSubs)) this.totalSubs = totalSubs
+    if (this.ready && this._lastState && !this._idle && this.currentLayout === this.layout) {
+      this.pushState(this._lastState).catch(() => {})
+    }
   }
 
   // Pre-match / between-matches screen: team names + "VS", scores blanked, on the match
@@ -219,12 +232,17 @@ export class LedboxClient extends EventEmitter {
   // layout XML alongside fontsize/color/align) and the firmware accepts it live over
   // SetSections; verified blinking on the real panel. That beats faking it by alternating
   // `color` from here, which would have meant writing far faster than the vendor ever does.
-  async pulse(section, ms = this.pulseMs) {
+  async pulse(section, ms = this.pulseMs, color = null) {
     if (!this.ready || !section) return false
     const stop = this._pulses.get(section)
     if (stop) clearTimeout(stop) // re-scoring quickly just extends the blink, never doubles it
     try {
-      await this.send('SetSections', [{ name: section, value: { attrib: 'animation', value: 'blinking' } }])
+      // Assert the colour in the SAME frame as the animation: the board otherwise blinks the
+      // section in its LAYOUT-default colour (blue/red), ignoring the team colour we set on the
+      // static value. Emitting the colour here makes the blink match the team.
+      const on = [{ name: section, value: { attrib: 'animation', value: 'blinking' } }]
+      if (color) on.unshift({ name: section, value: { attrib: 'color', value: color } })
+      await this.send('SetSections', on)
     } catch { return false }
     this._pulses.set(section, setTimeout(() => {
       this._pulses.delete(section)
@@ -233,11 +251,17 @@ export class LedboxClient extends EventEmitter {
     return true
   }
 
-  // Stop every running blink — used before a layout switch, since the sections do not exist
-  // on the other layout and their stop-timers would fire into it as an error 6.
+  // Stop every running blink NOW — cancel the timers AND tell the board to stop animating,
+  // while the sections still exist (this runs just before a layout switch). Without the
+  // board-side stop, a blink left running would carry over — e.g. after a set the score box
+  // keeps blinking, in the newly-swapped team's colour, "for no reason".
   clearPulses() {
+    const sections = [...this._pulses.keys()]
     for (const [, t] of this._pulses) clearTimeout(t)
     this._pulses.clear()
+    if (sections.length && this.ready) {
+      this.send('SetSections', sections.map((name) => ({ name, value: { attrib: 'animation', value: '' } }))).catch(() => {})
+    }
   }
 
   // Switch layouts only when it actually changes. Re-asking for the current layout gets no

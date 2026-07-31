@@ -127,8 +127,12 @@ export function toIdleSections(state, { off = '30,30,30' } = {}) {
 // Returns the `value` array for a `SetSections` command. Each side is painted uniformly
 // in its team colour — name, score, set count and score-box border all match — so the
 // board never shows one team in three different reds.
-export function toSections(state, { off = '30,30,30' } = {}) {
+export function toSections(state, { off = '30,30,30', totalTimeouts = TIMEOUT_MAX, totalSubs = SUB_MAX } = {}) {
   const v = toLeftRight(state)
+  // Timeouts: red at the total, no amber (there are only a couple). Subs: amber one short,
+  // red at the total.
+  const toColor = (n) => limitColor(n, totalTimeouts, totalTimeouts)
+  const subColor = (n) => limitColor(n, totalSubs - 1, totalSubs)
   return [
     ...text('team1', v.leftName, v.leftColor),
     ...text('team2', v.rightName, v.rightColor),
@@ -141,10 +145,10 @@ export function toSections(state, { off = '30,30,30' } = {}) {
     // `vs` is the tiny "-" separator between the two set counts. Always reassert it, so the
     // idle screen (which borrows it for "VS") can never leave a stray label on the scoreboard.
     attr('vs', 'text', '-'),
-    ...text('timeout1', v.leftTimeouts, limitColor(v.leftTimeouts, TIMEOUT_MAX, TIMEOUT_MAX)),
-    ...text('timeout2', v.rightTimeouts, limitColor(v.rightTimeouts, TIMEOUT_MAX, TIMEOUT_MAX)),
-    ...text('sub1', v.leftSubs, limitColor(v.leftSubs, SUB_WARN, SUB_MAX)),
-    ...text('sub2', v.rightSubs, limitColor(v.rightSubs, SUB_WARN, SUB_MAX)),
+    ...text('timeout1', v.leftTimeouts, toColor(v.leftTimeouts)),
+    ...text('timeout2', v.rightTimeouts, toColor(v.rightTimeouts)),
+    ...text('sub1', v.leftSubs, subColor(v.leftSubs)),
+    ...text('sub2', v.rightSubs, subColor(v.rightSubs)),
     // Serve indicators: light the serving side's rectangle in its team colour.
     ...rect('serve1', v.serving === 'left' ? v.leftColor : off),
     ...rect('serve2', v.serving === 'right' ? v.rightColor : off),

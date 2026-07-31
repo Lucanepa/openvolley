@@ -61,6 +61,8 @@ export async function startAppliance(config = loadConfig()) {
   // Operator preferences live next to the code so they survive restarts and reboots.
   const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
   log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
+  // Seed the counter-colour thresholds from saved settings before the first paint.
+  ledbox.setLimits({ totalTimeouts: settings.values.totalTimeouts, totalSubs: settings.values.totalSubs })
   const server = createControlServer({
     sourceManager,
     manualSource,

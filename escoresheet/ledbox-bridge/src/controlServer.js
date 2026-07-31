@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import { LanSource } from './lanSource.js'
-import { toSections } from './volleyballMapper.js'
+import { toSections, toLeftRight } from './volleyballMapper.js'
 
 // Board shown when the operator picks "Blank" (all short names + serve cleared).
 const BLANK = {
@@ -151,7 +151,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       // the state push below actually paints the scoreboard.
       if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') ledbox.showIdle(false)
       manualSource.apply(action)
-      pulseForAction(ledbox, action, settings)
+      pulseForAction(ledbox, action, settings, manualSource.getState())
       return sendJson(res, 200, { ok: true, state: manualSource.getState(), event: manualSource.lastEvent })
     }
     // GET /api/settings — operator preferences (persisted on the Pi)
@@ -162,7 +162,13 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     if (pathname === '/api/settings' && req.method === 'POST') {
       const body = await readJson(req)
       if (!settings) return sendJson(res, 501, { error: 'settings unavailable' })
-      return sendJson(res, 200, settings.update(body || {}))
+      const updated = settings.update(body || {})
+      // The counter-colour thresholds live on the client; push the new totals so the board
+      // recolours immediately.
+      if (ledbox && typeof ledbox.setLimits === 'function') {
+        ledbox.setLimits({ totalTimeouts: updated.totalTimeouts, totalSubs: updated.totalSubs })
+      }
+      return sendJson(res, 200, updated)
     }
     // POST /api/link { source, matchId }
     if (pathname === '/api/link' && req.method === 'POST') {
@@ -273,14 +279,17 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
 // the substitution just used up) blinks for a couple of seconds. The mapper always paints
 // physical left -> section 1, so the action's side maps straight onto the section number.
 // Only additions blink — correcting a mistake downward should be quiet.
-function pulseForAction(ledbox, action = {}, settings = null) {
+function pulseForAction(ledbox, action = {}, settings = null, state = null) {
   if (!ledbox || typeof ledbox.pulse !== 'function') return
   if (Number(action.delta) <= 0) return
   const s = settings ? settings.values : {}
   const ms = s.blinkMs
   const n = action.side === 'right' ? '2' : '1'
-  if (action.type === 'point' && s.blinkPoint !== false) ledbox.pulse(`score${n}`, ms)
-  else if (action.type === 'sub' && s.blinkSub !== false) ledbox.pulse(`sub${n}`, ms)
+  // Blink in the team's own colour (the board would otherwise use the layout default).
+  const v = state ? toLeftRight(state) : null
+  const color = v ? (action.side === 'right' ? v.rightColor : v.leftColor) : null
+  if (action.type === 'point' && s.blinkPoint !== false) ledbox.pulse(`score${n}`, ms, color)
+  else if (action.type === 'sub' && s.blinkSub !== false) ledbox.pulse(`sub${n}`, ms, color)
 }
 
 // --- helpers ---
