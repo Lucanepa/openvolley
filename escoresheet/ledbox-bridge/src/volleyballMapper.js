@@ -25,6 +25,9 @@ export function toLeftRight(state) {
   const pick = (a, b) => (isALeft ? a : b)
   return {
     leftName: pick(state.team_a_short || state.team_a_name, state.team_b_short || state.team_b_name) || 'TEAM A',
+    // Full names, for screens with room for them (the crest idle screen auto-fits).
+    leftFull: pick(state.team_a_name || state.team_a_short, state.team_b_name || state.team_b_short) || 'TEAM A',
+    rightFull: pick(state.team_b_name || state.team_b_short, state.team_a_name || state.team_a_short) || 'TEAM B',
     rightName: pick(state.team_b_short || state.team_b_name, state.team_a_short || state.team_a_name) || 'TEAM B',
     leftColor: hexToRgb(pick(state.team_a_color, state.team_b_color)),
     rightColor: hexToRgb(pick(state.team_b_color, state.team_a_color)),
@@ -129,15 +132,46 @@ export function toIdleSections(state, { off = '30,30,30' } = {}) {
   ]
 }
 
+const ARIAL_CHARS = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00e9\u00e8\u00e0\u00e7\u00f1\u00c9\u00c8\u00c0"
+const ARIAL_W = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,500,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,556,556,556,667,778,722,556,556,556,500,556,667,667,667]
+// The panel's font is fonts/ARIAL.TTF; these are its advance widths per 1000 units, so we
+// can size text to fit without guessing. A crude average either overflows (VBC Kuesnacht)
+// or wastes half the panel (Volley Zuerich) -- the spread between names is that wide.
+function textWidth(str, size) {
+  let w = 0
+  for (const ch of String(str)) {
+    const i = ARIAL_CHARS.indexOf(ch)
+    w += i >= 0 ? ARIAL_W[i] : 556 // unknown glyph: assume an average-width one
+  }
+  return (w * size) / 1000
+}
+
+// Largest size at which `str` fits `maxWidth`, clamped. 2px of slack because the advance
+// width and the inked width differ slightly, and a clipped club name looks broken.
+export function fitFontSize(str, maxWidth, { max = 24, min = 9 } = {}) {
+  for (let size = max; size > min; size--) {
+    if (textWidth(str, size) <= maxWidth - 2) return size
+  }
+  return min
+}
+
 // Idle screen for the club layout (`kscw_idle`): the KSC Wiedikon crest plus the two team
 // names, nothing else. That layout deliberately has no score/set/timeout sections, so this
 // must NOT send them — SetSections aborts on the first unknown section name (error 6) and
 // the whole paint would be lost, leaving the previous screen up.
-export function toClubIdleSections(state) {
+export function toClubIdleSections(state, { fullNames = true, maxFontSize = 24 } = {}) {
   const v = state ? toLeftRight(state) : null
+  // The crest occupies x 3..56, so the name column starts at 67 and runs to the edge.
+  const COLUMN = 192 - 67
+  const left = (fullNames ? v?.leftFull : v?.leftName) || 'KSCW'
+  const right = (fullNames ? v?.rightFull : v?.rightName) || 'GAST'
+  // Sized per side, not once for both: "KSC Wiedikon" vs "Zug" want very different sizes,
+  // and forcing them to match would shrink the short one for no reason.
   return [
-    ...text('team1', v?.leftName || 'KSCW', v?.leftColor),
-    ...text('team2', v?.rightName || 'GAST', v?.rightColor),
+    ...text('team1', left, v?.leftColor),
+    attr('team1', 'fontsize', fitFontSize(left, COLUMN, { max: maxFontSize })),
+    ...text('team2', right, v?.rightColor),
+    attr('team2', 'fontsize', fitFontSize(right, COLUMN, { max: maxFontSize })),
   ]
 }
 

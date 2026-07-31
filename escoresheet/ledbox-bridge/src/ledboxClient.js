@@ -32,6 +32,10 @@ export class LedboxClient extends EventEmitter {
     // Club idle screen (crest + team names). Optional: if the layout isn't on the
     // device, showIdle falls back to the plain match-layout idle screen.
     idleLayout = 'kscw_idle',
+    // Idle-screen name style. Full club names are auto-shrunk to fit the panel, so
+    // idleFontMax is a ceiling (what a short name gets), not a fixed size.
+    idleFullNames = true,
+    idleFontMax = 24,
     timerSection = 'timer',
     labelSection = 'lbl',
     reconnectMs = 3000,
@@ -62,7 +66,7 @@ export class LedboxClient extends EventEmitter {
     totalSubs = 6,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, idleLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, idleLayout, idleFullNames, idleFontMax, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -210,9 +214,14 @@ export class LedboxClient extends EventEmitter {
 
   // Update the per-set allowances that drive the counter colours (from operator settings),
   // and repaint so the change shows immediately.
-  setLimits({ totalTimeouts, totalSubs } = {}) {
+  setLimits({ totalTimeouts, totalSubs, idleFullNames, idleFontMax } = {}) {
     if (Number.isFinite(totalTimeouts)) this.totalTimeouts = totalTimeouts
     if (Number.isFinite(totalSubs)) this.totalSubs = totalSubs
+    if (typeof idleFullNames === 'boolean') this.idleFullNames = idleFullNames
+    if (Number.isFinite(idleFontMax)) this.idleFontMax = idleFontMax
+    // If the crest screen is what's currently up, repaint it so a name-style change shows
+    // immediately instead of waiting for the next time someone toggles idle.
+    if (this.ready && this._idle) this.showIdle(true).catch(() => {})
     if (this.ready && this._lastState && !this._idle && this.currentLayout === this.layout) {
       this.pushState(this._lastState).catch(() => {})
     }
@@ -230,7 +239,7 @@ export class LedboxClient extends EventEmitter {
         // don't lose the idle screen entirely — fall through to the match-layout version.
         try {
           await this.setLayoutIfNeeded(this.idleLayout)
-          await this.send('SetSections', toClubIdleSections(this._lastState))
+          await this.send('SetSections', toClubIdleSections(this._lastState, { fullNames: this.idleFullNames, maxFontSize: this.idleFontMax }))
           return true
         } catch (err) {
           this.emit('error', new Error(`club idle layout unavailable (${err.message}); using match layout`))

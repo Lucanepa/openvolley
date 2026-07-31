@@ -166,7 +166,12 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       // The counter-colour thresholds live on the client; push the new totals so the board
       // recolours immediately.
       if (ledbox && typeof ledbox.setLimits === 'function') {
-        ledbox.setLimits({ totalTimeouts: updated.totalTimeouts, totalSubs: updated.totalSubs })
+        ledbox.setLimits({
+          totalTimeouts: updated.totalTimeouts,
+          totalSubs: updated.totalSubs,
+          idleFullNames: updated.idleFullNames,
+          idleFontMax: updated.idleFontMax,
+        })
       }
       return sendJson(res, 200, updated)
     }

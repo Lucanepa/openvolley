@@ -402,6 +402,16 @@
             total; subs go amber one short and red at the total.</p>
         </fieldset>
         <fieldset>
+          <legend>Crest screen</legend>
+          <label class="row"><span>Show full club names</span>
+            <input type="checkbox" data-set="idleFullNames"></label>
+          <label class="row"><span>Largest name size</span>
+            <input type="number" data-set="idleFontMax" min="10" max="30"><em>px</em></label>
+          <p class="hint">The pre-match screen beside the crest. Long names are shrunk
+            automatically to fit the panel, so this size is the ceiling — what a short
+            name like KSCW gets. Turn the switch off to show short codes instead.</p>
+        </fieldset>
+        <fieldset>
           <legend>Club</legend>
           <label class="row"><span>Club name</span>
             <input type="text" data-set="clubName" maxlength="20" style="width:130px"></label>

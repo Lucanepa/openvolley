@@ -62,7 +62,12 @@ export async function startAppliance(config = loadConfig()) {
   const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
   log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
   // Seed the counter-colour thresholds from saved settings before the first paint.
-  ledbox.setLimits({ totalTimeouts: settings.values.totalTimeouts, totalSubs: settings.values.totalSubs })
+  ledbox.setLimits({
+    totalTimeouts: settings.values.totalTimeouts,
+    totalSubs: settings.values.totalSubs,
+    idleFullNames: settings.values.idleFullNames,
+    idleFontMax: settings.values.idleFontMax,
+  })
   const server = createControlServer({
     sourceManager,
     manualSource,

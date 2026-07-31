@@ -25,6 +25,12 @@ export const DEFAULTS = {
   // Sound the board's horn when a countdown reaches zero (time's up). Not on a manual skip.
   hornOnCountdownEnd: true,
 
+  // Idle (crest) screen: show the full club name rather than the short code, and the
+  // largest font it may use. The name is auto-shrunk to fit the panel, so this is a
+  // ceiling for short names, not a fixed size.
+  idleFullNames: true,
+  idleFontMax: 24,
+
   // Per-set allowances, and the counter-colour thresholds derived from them:
   //   timeouts → dark red once the total is reached (no amber; there are only 2).
   //   subs     → amber one short of the total, dark red at the total.
@@ -40,8 +46,9 @@ export const DEFAULTS = {
   clubName: 'KSC WIEDIKON',
 }
 
-const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval', 'hornOnCountdownEnd']
+const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval', 'hornOnCountdownEnd', 'idleFullNames']
 const NUMS = {
+  idleFontMax: [10, 30],
   blinkMs: [200, 10000],
   timeoutSeconds: [5, 600],
   setIntervalSeconds: [10, 1800],
