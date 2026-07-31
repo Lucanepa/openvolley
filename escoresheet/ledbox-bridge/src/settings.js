@@ -22,6 +22,9 @@ export const DEFAULTS = {
   countdownOnTimeout: true,
   countdownOnSetInterval: true,
 
+  // Sound the board's horn when a countdown reaches zero (time's up). Not on a manual skip.
+  hornOnCountdownEnd: true,
+
   // Match format: best of 3 or 5. Decides how many sets win the match and which set is
   // the short deciding one.
   bestOf: 5,
@@ -31,7 +34,7 @@ export const DEFAULTS = {
   clubName: 'KSC WIEDIKON',
 }
 
-const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval']
+const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval', 'hornOnCountdownEnd']
 const NUMS = {
   blinkMs: [200, 10000],
   timeoutSeconds: [5, 600],

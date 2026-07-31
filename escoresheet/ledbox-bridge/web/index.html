@@ -330,6 +330,8 @@
             <input type="number" data-set="setIntervalSeconds" min="10" max="1800"><em>s</em></label>
           <label class="row"><span>Warm-up</span>
             <input type="number" data-set="warmupSeconds" min="10" max="3600"><em>s</em></label>
+          <label class="row"><span>Horn when a countdown ends</span>
+            <input type="checkbox" data-set="hornOnCountdownEnd"></label>
         </fieldset>
         <fieldset>
           <legend>Match format</legend>
@@ -342,8 +344,8 @@
           <legend>Club</legend>
           <label class="row"><span>Club name</span>
             <input type="text" data-set="clubName" maxlength="20" style="width:130px"></label>
-          <p class="hint">Shown on the set-interval and warm-up countdowns. A timeout shows the
-            requesting team instead. Kept short — the board's label box is narrow.</p>
+          <p class="hint">For the club logo / idle screen — available once the board accepts an
+            image upload. Countdowns now use fixed labels (TO ·, INTERVAL, WARM UP).</p>
         </fieldset>
       </div>
       <p class="hint" id="setStatus">Saved on the Pi — these survive a restart.</p>
@@ -413,18 +415,19 @@
   let cdTimer = null, cdEnd = 0, cdOnFinish = null;
   const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
   // Mirror the countdown onto the server so the /mockledbox board shows the same timer.
-  const publishCountdown = (seconds, label) => postJSON("/api/countdown", { seconds, label }).catch(() => {});
-  const stopServerCountdown = () => postJSON("/api/countdown/stop").catch(() => {});
+  const publishCountdown = (seconds, label, content) => postJSON("/api/countdown", { seconds, label, content }).catch(() => {});
+  const stopServerCountdown = (expired) => postJSON("/api/countdown/stop", { expired: !!expired }).catch(() => {});
   function clearCountdown() {
     if (cdTimer) { clearInterval(cdTimer); cdTimer = null; }
     cdOnFinish = null;
     $("#cd").hidden = true;
     $("#cd").classList.remove("major");
   }
-  function finishCountdown() {
+  // expired=true when the clock ran out (fires the board horn); false on a manual skip.
+  function finishCountdown(expired) {
     const cb = cdOnFinish;
     clearCountdown();
-    stopServerCountdown();
+    stopServerCountdown(expired);
     if (cb) cb();
   }
   // opts.major = take over the screen (set interval / warm-up, where play has stopped).
@@ -439,15 +442,16 @@
     $("#cdStop").title = opts.action ? label : "Skip";
     $("#cd").classList.toggle("major", !!opts.major);
     $("#cd").hidden = false;
-    publishCountdown(seconds, label);
+    // content: what the BOARD shows beside the clock — 'full' (points+sets), 'sets', or 'none'.
+    publishCountdown(seconds, label, opts.content || "full");
     const tick = () => {
       const left = (cdEnd - Date.now()) / 1000;
       $("#cdTime").textContent = fmt(left);
-      if (left <= 0) finishCountdown();
+      if (left <= 0) finishCountdown(true); // ran out -> horn
     };
     tick(); cdTimer = setInterval(tick, 250);
   }
-  $("#cdStop").addEventListener("click", finishCountdown);
+  $("#cdStop").addEventListener("click", () => finishCountdown(false)); // manual skip -> no horn
 
   // --- state -> physical left/right (honour side_a) -----------------------
   function sides(state) {
@@ -626,8 +630,8 @@
       // The board keeps showing the final score through the interval (that is the point of
       // it); the reset happens when the countdown ends or the operator says go.
       if (SETTINGS.countdownOnSetInterval === false) { sendAction({ type: "next-set" }); return; }
-      startCountdown(SETTINGS.setIntervalSeconds || 180, SETTINGS.clubName || "Set interval",
-        () => sendAction({ type: "next-set" }), { major: true, action: "Start next set →" });
+      startCountdown(SETTINGS.setIntervalSeconds || 180, "INTERVAL",
+        () => sendAction({ type: "next-set" }), { major: true, action: "Start next set →", content: "sets" });
     } else if (event === "match-end") {
       const winSide = sideOf(s, num(s.sets_won_a) > num(s.sets_won_b));
       const name = (winSide === "left" ? sides(s).left.short : sides(s).right.short) || winSide.toUpperCase();
@@ -713,7 +717,7 @@
       if (stat === "timeout" && d > 0) {
         const nm = ($(".short", root).value || side).toUpperCase();
         if (SETTINGS.countdownOnTimeout !== false) {
-          startCountdown(SETTINGS.timeoutSeconds || 30, "TO " + nm);
+          startCountdown(SETTINGS.timeoutSeconds || 30, "TO " + nm, null, { content: "full" });
         }
       }
     }));
@@ -736,7 +740,7 @@
   });
   // Pre-match warm-up: a plain 10-minute clock, no side effects when it ends.
   $("#warmupBtn").addEventListener("click", () =>
-    startCountdown(SETTINGS.warmupSeconds || 600, SETTINGS.clubName || "Warm-up", null, { major: true, action: "End warm-up" }));
+    startCountdown(SETTINGS.warmupSeconds || 600, "WARM UP", null, { major: true, action: "End warm-up", content: "none" }));
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
   $("#resetBtn").addEventListener("click", () => {
     if (confirm("Reset the board to neutral?")) { clearCountdown(); sendAction({ type: "reset" }); }

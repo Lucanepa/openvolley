@@ -145,6 +145,13 @@ export class LedboxClient extends EventEmitter {
   setLayout(name) { return this.send('SetLayout', name) }
   info() { return this.send('Info', '') }
 
+  // Sound the board's buzzer. Payload confirmed from the vendor app + verified audible:
+  // `times` = number of beeps, `sleep` = gap between them in seconds. Best-effort.
+  horn(times = 2, sleep = 0.3) {
+    if (!this.ready) return Promise.resolve(false)
+    return this.send('Horn', { times, sleep }).catch(() => false)
+  }
+
   // The one call the app drives on every score change.
   pushState(state) {
     this._lastState = state

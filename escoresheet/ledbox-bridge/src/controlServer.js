@@ -62,15 +62,15 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     if (remainingMs <= 0) { stopCountdown(); return null }
     return { label: countdown.label, remainingMs }
   }
-  function startCountdown(seconds, label) {
-    countdown = { label: String(label || ''), endsAt: Date.now() + seconds * 1000 }
+  function startCountdown(seconds, label, content = 'full') {
+    countdown = { label: String(label || ''), content, endsAt: Date.now() + seconds * 1000 }
     if (cdTicker) clearInterval(cdTicker)
     const tick = () => {
       const remainingMs = countdown ? countdown.endsAt - Date.now() : -1
-      if (remainingMs <= 0) return stopCountdown()
+      if (remainingMs <= 0) return stopCountdown({ expired: true })
       // Best-effort push to the physical board (no-op when not ready / no method).
       if (ledbox && typeof ledbox.pushCountdown === 'function') {
-        ledbox.pushCountdown(Math.ceil(remainingMs / 1000), countdown.label).catch(() => {})
+        ledbox.pushCountdown(Math.ceil(remainingMs / 1000), countdown.label, { content: countdown.content }).catch(() => {})
       }
     }
     tick()
@@ -78,10 +78,17 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     // Don't let this daemon-side timer keep the process (or a test) alive.
     if (cdTicker.unref) cdTicker.unref()
   }
-  function stopCountdown() {
+  // expired=true means the clock reached zero (time's up); false is a manual skip. Guarded so
+  // that whichever of {server tick, client /stop} fires first wins — the other is a no-op, so
+  // the horn sounds exactly once.
+  function stopCountdown({ expired = false } = {}) {
+    if (!countdown) return
     countdown = null
     if (cdTicker) { clearInterval(cdTicker); cdTicker = null }
     if (ledbox && typeof ledbox.pushCountdown === 'function') ledbox.pushCountdown(null).catch(() => {})
+    if (expired && opt('hornOnCountdownEnd') && ledbox && typeof ledbox.horn === 'function') {
+      ledbox.horn().catch(() => {})
+    }
   }
 
   const server = http.createServer(async (req, res) => {
@@ -175,13 +182,16 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       if (!Number.isFinite(seconds) || seconds <= 0) {
         return sendJson(res, 400, { error: 'seconds must be a positive number' })
       }
-      startCountdown(seconds, body && body.label)
+      const content = ['full', 'sets', 'none'].includes(body && body.content) ? body.content : 'full'
+      startCountdown(seconds, body && body.label, content)
       return sendJson(res, 200, { ok: true })
     }
-    // POST /api/countdown/stop — clear the display timer (skip / finished / reset)
+    // POST /api/countdown/stop { expired } — clear the display timer. The UI-driven clock
+    // reaches zero before the server tick does, so the client tells us WHY it stopped:
+    // expired=true fires the end horn, a manual skip does not.
     if (pathname === '/api/countdown/stop' && req.method === 'POST') {
-      await readJson(req) // drain
-      stopCountdown()
+      const body = await readJson(req)
+      stopCountdown({ expired: !!(body && body.expired) })
       return sendJson(res, 200, { ok: true })
     }
     // POST /api/idle { on } — show the names+VS pre-match screen (on=false returns to scoring)
