@@ -129,6 +129,18 @@ export function toIdleSections(state, { off = '30,30,30' } = {}) {
   ]
 }
 
+// Idle screen for the club layout (`kscw_idle`): the KSC Wiedikon crest plus the two team
+// names, nothing else. That layout deliberately has no score/set/timeout sections, so this
+// must NOT send them — SetSections aborts on the first unknown section name (error 6) and
+// the whole paint would be lost, leaving the previous screen up.
+export function toClubIdleSections(state) {
+  const v = state ? toLeftRight(state) : null
+  return [
+    ...text('team1', v?.leftName || 'KSCW', v?.leftColor),
+    ...text('team2', v?.rightName || 'GAST', v?.rightColor),
+  ]
+}
+
 // Returns the `value` array for a `SetSections` command. Each side is painted uniformly
 // in its team colour — name, score, set count and score-box border all match — so the
 // board never shows one team in three different reds.
