@@ -55,6 +55,7 @@ export class LedboxClient extends EventEmitter {
     Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
     this._pulses = new Map()
     this._idle = false
+    this._suppressPaint = false
     this.currentLayout = null
     this.hosts = (hosts && hosts.length ? hosts : String(host).split(',').map((h) => h.trim()))
       .filter(Boolean)
@@ -165,6 +166,10 @@ export class LedboxClient extends EventEmitter {
   // The one call the app drives on every score change.
   pushState(state) {
     this._lastState = state
+    // Suppress the paint but keep the state: used when a swap is applied immediately before a
+    // countdown, so the match layout is never repainted in between (no 0-0 flash, no race with
+    // the layout switch). pushCountdown then reads this fresh _lastState.
+    if (this._suppressPaint) return Promise.resolve(false)
     if (!this.ready) return Promise.resolve(false)
     // A countdown layout has none of the match sections; writing them there is an error 6.
     // Hold the state instead — pushCountdown(null) repaints it when the countdown ends.
