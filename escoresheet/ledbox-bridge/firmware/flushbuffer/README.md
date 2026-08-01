@@ -82,21 +82,33 @@ cd /home/pi/ledbox/bin && sudo ./startled      # restarts the vendor flushBuffer
 Nothing here modifies the vendor `flushBuffer`, `startled`, or the watchdog, so rollback
 is just "run the old driver again."
 
-## Integrate (only after the panel test passes)
+## Status: ✅ ACTIVE (integrated + panel-verified 2026-08-01)
 
-Point the boot path at `flushBuffer2`. It needs **no** `LD_LIBRARY_PATH` and **no**
-`--led-*`/`--screen-dimension` args (geometry + tuning are compiled in), though any
-`--led-*` flag still overrides:
+`flushBuffer2` is the **live** driver on the board — verified on the physical panel
+(rendered the same image as the vendor driver, no garble). The vendor `flushBuffer` is
+kept in place as an instant fallback but is no longer run, and the `/home/pi/ledbox/lib`
+legacy staging is no longer needed by the active path.
+
+The boot scripts as deployed are captured next to this file:
+
+- [`startled`](startled) — launches `flushBuffer2` (no `LD_LIBRARY_PATH`; `--led-*` tuning
+  still read from `setting.ini` so brightness/pwm/mux stay editable; geometry + scan_mode
+  are compiled in, so no `--led-rows/cols/chain/scan-mode`/`--screen-dimension`)
+- [`stopled`](stopled) — `killall -q flushBuffer2 flushBuffer`
+- the watchdog ([`../ledbox-watchdog.sh`](../ledbox-watchdog.sh)) now monitors `flushBuffer2`
+
+On the board these live at `/home/pi/ledbox/bin/{startled,stopled,watchdog}`; the pre-swap
+versions are backed up at `/home/pi/ledbox-config-backup/*.pre-fb2`.
+Binary: `/home/pi/ledbox/bin/flushBuffer2`, sha256
+`c015440506aed1abac9634029a6302e22bde5ce2b5083234009e8b278bec2c59`.
+
+### Roll back to the vendor driver
 
 ```bash
-# in bin/startled, the flushBuffer line becomes simply:
-sudo /home/pi/ledbox/bin/flushBuffer2 ../www/buffer.png
+cd /home/pi/ledbox/bin
+sudo cp /home/pi/ledbox-config-backup/startled.pre-fb2 startled
+sudo cp /home/pi/ledbox-config-backup/stopled.pre-fb2  stopled
+sudo cp /home/pi/ledbox-config-backup/watchdog.pre-fb2 watchdog
+sudo systemctl restart ledbox-watchdog
+sudo ./stopled && sudo ./restartled            # back on the vendor flushBuffer + LD_LIBRARY_PATH
 ```
-
-Then update the watchdog's process check from `flushBuffer` to `flushBuffer2`. Keep the
-vendor binary in place as an instant fallback.
-
-## Staged
-
-Built and staged on the board at `/home/pi/ledbox/bin/flushBuffer2` (not yet activated —
-the vendor driver is still live). sha256 recorded in the deploy notes.
