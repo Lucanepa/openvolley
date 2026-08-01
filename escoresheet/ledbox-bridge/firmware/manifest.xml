@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<application>
+    <name>LEDBox</name>
+    <!--
+      0.552 = KSC Wiedikon build.
+      Fully-Python-3 firmware: decompiled from vendor 0.550, ported to Python 3,
+      then reconciled against the genuine 0.551 source (see CHANGELOG-0.552.md).
+      Fixes every py3 defect present in vendor 0.551 that crashes/misbehaves on
+      Raspberry Pi OS bookworm (Python 3.11).
+      Deploy this file to /home/pi/ledbox/manifest.xml so the board stops
+      reporting the stale "0.550".
+    -->
+    <version>0.552</version>
+</application>

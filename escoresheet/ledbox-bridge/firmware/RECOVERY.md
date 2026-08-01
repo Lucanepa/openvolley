@@ -18,7 +18,12 @@ bookworm), so the update was a *downgrade* that overwrote the working 0.551 file
   `volleyball_matchscore_02` family the bridge drives
 
 Re-running the update cannot fix it: the vendor server only serves 0.550.
-The 0.551 build is gone (Emilio's programmer is no longer available).
+
+**Update:** Emilio later supplied the genuine **0.551** source. Our port was reconciled against
+it function-by-function and found **equal-or-better**: 0.551 is a *half-finished* py2→py3 migration
+that still crashes on the board's Python 3.11 in several places (score push, umlauts, a py2 `print`
+that won't import). It must **not** be deployed as-is. See `CHANGELOG-0.552.md` for the full diff and
+the 0.552 build that fixes everything.
 
 ## The fix
 
