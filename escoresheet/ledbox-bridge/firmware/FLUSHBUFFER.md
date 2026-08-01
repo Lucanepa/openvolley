@@ -7,6 +7,12 @@ this binary pushes those pixels out the GPIO pins.
 It is **not** a black box any more. It ships with **debug info and is not stripped**, so
 everything needed to rebuild an equivalent is recoverable.
 
+> **✅ Rebuilt.** The open replacement now exists in [`flushbuffer/`](flushbuffer/) —
+> `flushBuffer2`, built from the open-source hzeller lib + the `applicon` mapping, linking
+> **only stock Debian-12 libraries** (no more `/home/pi/ledbox/lib` staging). Built and
+> staged on the board; awaiting an eyes-on-panel test before activation. This document
+> records how it was reverse-engineered; `flushbuffer/README.md` is the build + swap guide.
+
 ## What it is
 
 Stock **hzeller `rpi-rgb-led-matrix`** — the build path is still embedded in the binary:
