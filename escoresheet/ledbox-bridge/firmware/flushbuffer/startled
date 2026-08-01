@@ -1,0 +1,40 @@
+#!/bin/bash
+# KSCW: drives the panel with flushBuffer2 (open rebuild). No LD_LIBRARY_PATH —
+# flushBuffer2 links only stock libs. Geometry + scan_mode are compiled into
+# flushBuffer2, so they are NOT passed here; the --led-* tuning below still comes
+# from setting.ini so brightness/pwm/mux remain editable without a rebuild.
+cd /home/pi/ledbox/bin
+source bash-ini-parser
+
+cfg_parser ../setting.ini
+
+cfg_section_DISPLAY
+PWM_BITS=$pwm_bits
+HARDWARE_MAPPING=$hardware_mapping
+SLOWDOWN_GPIO=$slowdown_gpio
+PWM_LSB_NANOSECONDS=$pwm_lsb_nanoseconds
+MULTIPLEXING=$multiplexing
+BRIGHTNESS=$brightness
+DITHER=$pwm_dither
+NO_HARDWARE_PULSING=$no_hardware_pulsing
+SCREEN_WIDTH=$screen_width
+SCREEN_HEIGHT=$screen_height
+
+NO_HARDWARE_PULSE=
+
+if [ "$HARDWARE_PULSING" = "1" ]
+then
+    NO_HARDWARE_PULSE=--led-no-hardware-pulse
+fi;
+
+if [ -z $1  ]
+then
+    echo ""
+else
+    PWM_BITS=1
+    PWM_LSB_NANOSECONDS=2000
+fi;
+
+
+cp starting.png ../www/buffer.png
+sudo /home/pi/ledbox/bin/flushBuffer2 ../www/buffer.png $NO_HARDWARE_PULSE --led-pwm-bits=$PWM_BITS --led-gpio-mapping=$HARDWARE_MAPPING --led-slowdown-gpio=$SLOWDOWN_GPIO --led-pwm-lsb-nanoseconds=$PWM_LSB_NANOSECONDS --led-multiplexing=$multiplexing --led-brightness=$brightness --led-pwm-dither-bits=$DITHER

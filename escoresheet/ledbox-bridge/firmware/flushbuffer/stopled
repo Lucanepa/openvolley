@@ -1,0 +1,3 @@
+#!/bin/bash
+# Stop whichever panel driver is running (flushBuffer2 = rebuild, flushBuffer = vendor fallback).
+sudo killall -q flushBuffer2 flushBuffer

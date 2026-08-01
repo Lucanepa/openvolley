@@ -7,7 +7,7 @@
 #
 # This keeps three things true, checking every 30s:
 #   1. the scoreboard app is running
-#   2. the LED panel driver (flushBuffer) is running
+#   2. the LED panel driver (flushBuffer2) is running
 #   3. the app is still PAINTING -- www/buffer.png is rewritten every frame
 #      (~5 fps), so a stale file means the render thread died even though the
 #      process is alive and still answering on port 8889. That failure is
@@ -24,7 +24,7 @@ CHECK_EVERY=30
 log() { logger -t ledbox-watchdog "$1"; echo "$(date '+%F %T') $1"; }
 
 app_running()   { pgrep -f "python3 -u ledbox.py" >/dev/null 2>&1; }
-panel_running() { pgrep -f "bin/flushBuffer" >/dev/null 2>&1; }
+panel_running() { pgrep -f "bin/flushBuffer2" >/dev/null 2>&1; }
 
 start_app() { ( cd /home/pi/ledbox/bin && ./startledbox >/dev/null 2>&1 & ) ; }
 start_panel() { ( cd /home/pi/ledbox/bin && ./startled >/dev/null 2>&1 & ) ; }
