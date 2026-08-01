@@ -7,7 +7,7 @@
 import net from 'node:net'
 import { EventEmitter } from 'node:events'
 import { encode, StreamDecoder } from './ledboxProtocol.js'
-import { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections } from './volleyballMapper.js'
+import { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections, toLeftRight } from './volleyballMapper.js'
 
 const CONTROL_PORT = 8889
 const HOTSPOT_IP = '172.24.1.1'
@@ -35,6 +35,9 @@ export class LedboxClient extends EventEmitter {
     // Club idle screen (crest + team names). Optional: if the layout isn't on the
     // device, showIdle falls back to the plain match-layout idle screen.
     idleLayout = 'kscw_idle',
+    // "Complete" idle — no teams known yet (e.g. the boot default): just the crest, centered,
+    // no Home/Away. Falls back to idleLayout if this layout isn't on the device.
+    crestLayout = 'kscw_crest',
     // Idle-screen name style. Full club names are auto-shrunk to fit the panel, so
     // idleFontMax is a ceiling (what a short name gets), not a fixed size.
     idleFullNames = true,
@@ -74,7 +77,7 @@ export class LedboxClient extends EventEmitter {
     defaultIdle = false,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, crestLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle })
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -269,6 +272,13 @@ export class LedboxClient extends EventEmitter {
     }
   }
 
+  // True when we have real team names to show (vs a blank/boot "complete" idle).
+  _hasTeams() {
+    if (!this._lastState) return false
+    const v = toLeftRight(this._lastState)
+    return !!(String(v.leftName || '').trim() || String(v.rightName || '').trim())
+  }
+
   // Pre-match / between-matches screen: team names + "VS", scores blanked, on the match
   // layout (no image needed). showIdle(false) returns to live scoring.
   async showIdle(on = true) {
@@ -277,8 +287,19 @@ export class LedboxClient extends EventEmitter {
     this.clearPulses()
     try {
       if (on && this.idleLayout) {
-        // Preferred: the club screen. If the device doesn't have that layout (error 5),
-        // don't lose the idle screen entirely — fall through to the match-layout version.
+        // A "complete" idle — no teams known yet (the boot default) — is just the crest,
+        // centered, on its own layout (no Home/Away). The crest image is baked into that
+        // layout, so there are no sections to push.
+        if (!this._hasTeams() && this.crestLayout) {
+          try {
+            await this.setLayoutIfNeeded(this.crestLayout)
+            return true
+          } catch (err) {
+            this.emit('error', new Error(`crest layout unavailable (${err.message}); using named idle`))
+          }
+        }
+        // Teams known: the club screen (crest + names). If the device doesn't have that
+        // layout (error 5), fall through to the match-layout version.
         try {
           await this.setLayoutIfNeeded(this.idleLayout)
           await this.send('SetSections', toClubIdleSections(this._lastState, { fullNames: this.idleFullNames, maxFontSize: this.idleFontMax, clubName: this.clubName }))
