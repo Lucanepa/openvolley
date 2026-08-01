@@ -43,6 +43,10 @@ export async function startAppliance(config = loadConfig()) {
     layout: config.ledboxLayout,
     apiVersion: config.ledboxApiVersion,
     reconnectMs: config.reconnectMs,
+    // A fresh boot with no match settles on the KSC Wiedikon crest idle screen (rather than a
+    // blank scoreboard). Asserted inside connect() after the handshake so it survives the
+    // board's own boot-default layout and reconnects.
+    defaultIdle: true,
   })
   ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, layout ${config.ledboxLayout})`))
   ledbox.on('close', () => log('[ledbox] disconnected'))
@@ -80,12 +84,10 @@ export async function startAppliance(config = loadConfig()) {
     webDir,
   })
 
-  // Once the board is up, default to MANUAL so it shows a neutral scoreboard immediately.
-  ledbox.on('ready', () => {
-    if (!sourceManager.getState() && sourceManager.status.mode === 'idle') {
-      sourceManager.setSource(manualSource, { mode: 'manual' })
-    }
-  })
+  // The default screen on a fresh boot (the KSC Wiedikon crest) is asserted by the client
+  // itself after the handshake (see `defaultIdle` above), so it survives the board's own
+  // boot-default layout and every reconnect. /api/action, /api/manual and /api/link lift
+  // idle when a match starts so the scoreboard paints.
   ledbox.connect()
 
   await new Promise((resolve) => server.listen(config.controlPort, '0.0.0.0', resolve))
@@ -104,6 +106,11 @@ export async function startAppliance(config = loadConfig()) {
 
 // Run directly (node src/appliance.js)
 if (import.meta.url === `file://${process.argv[1]}`) {
+  // An appliance must stay up through a match: a stray unhandled rejection (most often a
+  // board write that timed out) or a non-fatal exception should be logged, not terminate
+  // the process. Node's default is to crash on an unhandled rejection.
+  process.on('unhandledRejection', (reason) => console.error(ts(), '[appliance] unhandledRejection:', reason))
+  process.on('uncaughtException', (err) => console.error(ts(), '[appliance] uncaughtException:', err))
   startAppliance().then(({ close }) => {
     const shutdown = async () => { await close(); process.exit(0) }
     process.on('SIGINT', shutdown)

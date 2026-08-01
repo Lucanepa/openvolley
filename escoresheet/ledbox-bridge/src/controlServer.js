@@ -134,6 +134,8 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     // POST /api/manual
     if (pathname === '/api/manual' && req.method === 'POST') {
       await readJson(req) // drain
+      // Leave the crest/idle screen so the manual scoreboard paints.
+      if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') await ledbox.showIdle(false)
       sourceManager.setSource(manualSource, { mode: 'manual' })
       return sendJson(res, 200, status())
     }
@@ -183,6 +185,8 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       if (source === 'cloud') return sendJson(res, 501, { error: 'cloud not implemented' })
       if (source !== 'lan') return sendJson(res, 400, { error: 'unknown source' })
       if (body.matchId == null) return sendJson(res, 400, { error: 'matchId required' })
+      // Linking a live match leaves the crest/idle screen so the scoreboard paints.
+      if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') await ledbox.showIdle(false)
       const lan = new LanSource({ relayUrl, matchId: String(body.matchId), reconnectMs })
       sourceManager.setSource(lan, { mode: 'lan', matchId: String(body.matchId) })
       return sendJson(res, 200, status())
