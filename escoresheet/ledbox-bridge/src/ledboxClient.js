@@ -69,9 +69,12 @@ export class LedboxClient extends EventEmitter {
     // Per-set allowances — drive the counter colours (set live from operator settings).
     totalTimeouts = 2,
     totalSubs = 6,
+    // When true, a fresh boot (nothing scored yet) settles on the idle/crest screen after
+    // the handshake instead of a blank match layout. Set by the appliance.
+    defaultIdle = false,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle })
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -86,10 +89,16 @@ export class LedboxClient extends EventEmitter {
     this._pending = new Map() // sender -> resolver, for request/response
     this._closing = false
     this._lastState = null
+    // Outbound commands are serialized — exactly one in flight at a time (see send()).
+    this._sendChain = Promise.resolve()
+    // Held so a pending reconnect can be cancelled on disconnect() (else a queued connect
+    // can resurrect the client after it was told to close).
+    this._reconnectTimer = null
   }
 
   connect() {
     this._closing = false
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null }
     this.host = this.hosts[this._hostIdx % this.hosts.length]
     let reachedReady = false
     const socket = net.connect({ host: this.host, port: this.port }, async () => {
@@ -108,8 +117,18 @@ export class LedboxClient extends EventEmitter {
         // The board advertises `noresend` and stays silent when asked for the layout it
         // already has, so this legitimately times out on every reconnect. Swallow that
         // one case; a real refusal (e.g. error 5, layout not on the device) still surfaces.
-        await this.setLayoutIfNeeded(this.layout)
-        if (this._lastState) await this.pushState(this._lastState) // repaint after reconnect
+        //
+        // Default screen after the handshake: if an idle/crest screen is deliberately up
+        // (already toggled, or the configured default on a fresh boot with nothing scored
+        // yet) settle on it — otherwise the board's own boot sequence forces its default
+        // layout and would clobber the crest a beat after we set it. Else re-assert the
+        // scoreboard and repaint the last state.
+        if (this._idle || (this.defaultIdle && !this._lastState)) {
+          await this.showIdle(true)
+        } else {
+          await this.setLayoutIfNeeded(this.layout)
+          if (this._lastState) await this.pushState(this._lastState) // repaint after reconnect
+        }
       } catch (err) {
         this.emit('error', err)
       }
@@ -127,6 +146,7 @@ export class LedboxClient extends EventEmitter {
       this.ready = false
       this.socket = null
       clearInterval(this._layoutGuard)
+      this.clearPulses() // stop blink timers; they must not fire against a dead/next socket
       // Forget which layout we thought the board had. `currentLayout` is a client-side
       // cache used to skip redundant SetLayout calls, but a board that restarted comes
       // back on its default (`waiting`) — so a stale cache makes setLayoutIfNeeded a
@@ -138,7 +158,7 @@ export class LedboxClient extends EventEmitter {
       if (!reachedReady && this.hosts.length > 1) this._hostIdx++
       this.emit('close')
       if (!this._closing && this.reconnectMs) {
-        setTimeout(() => this.connect(), this.reconnectMs)
+        this._reconnectTimer = setTimeout(() => this.connect(), this.reconnectMs)
       }
     })
     this.socket = socket
@@ -163,7 +183,23 @@ export class LedboxClient extends EventEmitter {
   }
 
   // Sends {cmd, ...extra, value} and resolves with the matching response's value.
-  send(cmd, value, extra = {}, { timeoutMs = 5000 } = {}) {
+  //
+  // Serialized — exactly one command in flight at a time. The board echoes `sender = cmd`,
+  // so replies can only be matched by command name; two same-cmd requests in flight (a
+  // point's SetSections paint and its blink pulse, fired in the same tick) would collide on
+  // the _pending key — the second overwrites the first, the board's first ack resolves the
+  // WRONG promise, and the orphaned real paint only settles ~5 s later via its timeout
+  // (logged as "push failed") while also defeating the error-6 self-heal. The wire can't
+  // disambiguate by id, so the fix is to never have two outstanding: chain each send behind
+  // the previous. Acks are fast on the LAN, so this doesn't slow the ~1 Hz paint rate.
+  send(cmd, value, extra = {}, opts = {}) {
+    const run = () => this._sendNow(cmd, value, extra, opts)
+    const result = this._sendChain.then(run, run) // run regardless of the previous outcome
+    this._sendChain = result.then(() => {}, () => {}) // the chain itself must never reject
+    return result
+  }
+
+  _sendNow(cmd, value, extra = {}, { timeoutMs = 5000 } = {}) {
     if (!this.socket) return Promise.reject(new Error('not connected'))
     const frame = { cmd, ...extra }
     if (value !== undefined) frame.value = value
@@ -324,7 +360,9 @@ export class LedboxClient extends EventEmitter {
     const OFF = '0,0,0'
     const prev = this._pulses.get(section)
     if (prev) { clearInterval(prev.timer); clearTimeout(prev.stop) } // re-scoring restarts, never stacks
-    const paint = (c) => this.send('SetSections', [{ name: section, value: { attrib: 'color', value: c } }]).catch(() => {})
+    // Short timeout: a blink toggle is cosmetic and must never hold the serialized send queue
+    // (and thus a real score paint queued behind it) for the full 5 s default.
+    const paint = (c) => this.send('SetSections', [{ name: section, value: { attrib: 'color', value: c } }], {}, { timeoutMs: 1500 }).catch(() => {})
     let dark = true
     paint(OFF)
     const timer = setInterval(() => { dark = !dark; paint(dark ? OFF : team) }, this.pulseIntervalMs)
@@ -388,6 +426,7 @@ export class LedboxClient extends EventEmitter {
   disconnect() {
     this._closing = true
     clearInterval(this._layoutGuard)
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null }
     this.clearPulses() // stop any blink timers so they can't fire after we close
     if (this.socket) {
       try { this.socket.write(encode({ cmd: 'Disconnect', value: '' })) } catch { /* ignore */ }

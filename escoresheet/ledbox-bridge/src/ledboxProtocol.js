@@ -14,7 +14,9 @@
 import zlib from 'node:zlib'
 
 export function encode(obj) {
-  return zlib.gzipSync(Buffer.from(JSON.stringify(obj), 'utf-8'))
+  // The board ignores the compressed size, so use level 1 (fastest) rather than zlib's
+  // default 6 — markedly less CPU per frame on the event loop with no downside on the wire.
+  return zlib.gzipSync(Buffer.from(JSON.stringify(obj), 'utf-8'), { level: 1 })
 }
 
 export function decode(buf) {
