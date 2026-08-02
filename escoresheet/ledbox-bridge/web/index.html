@@ -5,7 +5,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='22' y='72' width='56' height='22' rx='11' fill='%231e3a8a'/%3E%3Crect x='44' y='46' width='12' height='32' rx='6' fill='%232563eb'/%3E%3Ccircle cx='50' cy='34' r='24' fill='%23f8fafc' stroke='%230f172a' stroke-width='4'/%3E%3Cg fill='none' stroke='%230f172a' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M50 11 Q41 34 50 57'/%3E%3Cpath d='M31 18 Q50 32 43 55'/%3E%3Cpath d='M69 18 Q50 32 57 55'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root{
-    --bg:#e6e9f0; --card:#eaedf4; --fg:#2a2e3a; --muted:#828aa0;
+    --bg:#e6e9f0; --card:#eaedf4; --fg:#2a2e3a; --muted:#5f6880;
     --sh-lo:#c4c9d8; --sh-hi:#ffffff;
     --blue:#3b6fe0; --red:#e0453d; --gold:#e3a400;
     --ok:#25b567; --warn:#d99320; --bad:#e0453d;
@@ -16,6 +16,8 @@
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
     font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   button,input{font-family:inherit}
+  :focus-visible{outline:2.5px solid var(--blue);outline-offset:2px}
+  .licon{width:1.15em;height:1.15em;flex:0 0 auto;vertical-align:-.17em}
   /* neumorphic primitives */
   .raise{background:var(--card);box-shadow:6px 6px 14px var(--sh-lo),-6px -6px 14px var(--sh-hi)}
   .press,button:active{box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
@@ -246,20 +248,20 @@
 
 <div id="app">
   <header class="topbar">
-    <span class="brand">🏐 LedBox</span>
-    <span id="dot" title="LedBox connection">🔴</span>
+    <span class="brand"><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg> LedBox</span>
+    <span id="dot" title="LedBox connection"><svg class="licon l-wifi-off" viewBox="0 0 24 24" fill="none" stroke="#e0453d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /> <path d="M5 12.859a10 10 0 0 1 5.17-2.69" /> <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /> <path d="M2 8.82a15 15 0 0 1 4.177-2.643" /> <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /> <path d="m2 2 20 20" /></svg></span>
     <div id="mode">Mode <b id="modeName">…</b><span id="setNo"></span><span id="matchTag"></span></div>
     <nav class="nav">
       <button id="tabManualBtn" class="active" data-tab="manual">Game</button>
       <button id="tabLinkBtn" data-tab="link">Link</button>
       <button id="tabHistoryBtn" data-tab="history">History</button>
-      <button id="lockBtn" hidden title="Scorer lock">🔒</button>
-      <button id="tabSettingsBtn" data-tab="settings" title="Settings">⚙</button>
+      <button id="lockBtn" hidden title="Scorer lock" aria-label="Scorer lock"><svg class="licon l-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></button>
+      <button id="tabSettingsBtn" data-tab="settings" title="Settings" aria-label="Settings"><svg class="licon l-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></svg></button>
                 </nav>
   </header>
 
   <div id="offline" role="status" aria-live="polite">
-    <span aria-hidden="true">⚠️</span>
+    <span aria-hidden="true"><svg class="licon l-triangle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></svg></span>
     <span>
       <span class="big">Board not connected</span><br>
       <span class="sub" id="offlineHint">Scores are still being recorded — the panel is not updating.</span>
@@ -295,12 +297,12 @@
     <div class="centercol">
       <div class="servebox">
         <span class="lbl">SERVE</span>
-        <button class="servebtn" data-serve="left" aria-label="Serve left">◀</button>
-        <span class="serveind" id="serveInd" aria-hidden="true">🏐</span>
-        <button class="servebtn" data-serve="right" aria-label="Serve right">▶</button>
+        <button class="servebtn" data-serve="left" aria-label="Serve left"><svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></button>
+        <span class="serveind" id="serveInd" aria-hidden="true"><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg></span>
+        <button class="servebtn" data-serve="right" aria-label="Serve right"><svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></button>
       </div>
-      <button id="awakeBtn" class="iconbtn" title="Keep the screen awake">☀</button>
-      <button id="fsBtn" class="iconbtn" title="Full screen">⛶</button>
+      <button id="awakeBtn" class="iconbtn" title="Keep the screen awake" aria-label="Keep screen awake"><svg class="licon l-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></svg></button>
+      <button id="fsBtn" class="iconbtn" title="Full screen" aria-label="Full screen"><svg class="licon l-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /> <path d="M21 8V5a2 2 0 0 0-2-2h-3" /> <path d="M3 16v3a2 2 0 0 0 2 2h3" /> <path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg></button>
     </div>
     <div class="side right" data-side="right">
       <div class="teamcard">
@@ -332,9 +334,9 @@
   <div class="gfooter">
     <div id="setStrip" class="setstrip" hidden></div>
     <div class="actions">
-      <button id="idleBtn" title="Show team names + VS on the board">🏐 VS</button>
-      <button id="warmupBtn" title="Pre-match warm-up countdown">⏱ Warm-up</button>
-      <button id="swapBtn" class="switch" title="Teams change ends">⇄ Switch sides</button>
+      <button id="idleBtn" title="Show team names + VS on the board"><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg> VS</button>
+      <button id="warmupBtn" title="Pre-match warm-up countdown"><svg class="licon l-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" x2="14" y1="2" y2="2" /> <line x1="12" x2="15" y1="14" y2="11" /> <circle cx="12" cy="14" r="8" /></svg> Warm-up</button>
+      <button id="swapBtn" class="switch" title="Teams change ends"><svg class="licon l-arrow-left-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4" /> <path d="M4 7h16" /> <path d="m16 21 4-4-4-4" /> <path d="M20 17H4" /></svg> Switch sides</button>
       <button id="resetBtn" class="danger" title="Clear the board to 0–0">Reset</button>
       <button id="blankBtn" class="danger" title="Blank the display">Blank</button>
     </div>
@@ -355,7 +357,7 @@
     <section id="tab-settings" class="tab settings">
       <div class="setgrid">
         <fieldset>
-          <legend>💡 Board feedback</legend>
+          <legend><svg class="licon l-lightbulb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /> <path d="M9 18h6" /> <path d="M10 22h4" /></svg> Board feedback</legend>
           <label class="row"><span>Blink the point on the board</span>
             <input type="checkbox" data-set="blinkPoint"></label>
           <label class="row"><span>Blink substitutions</span>
@@ -364,7 +366,7 @@
             <input type="number" data-set="blinkMs" min="200" max="10000" step="100"><em>ms</em></label>
         </fieldset>
         <fieldset>
-          <legend>⏱ Countdowns</legend>
+          <legend><svg class="licon l-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" x2="14" y1="2" y2="2" /> <line x1="12" x2="15" y1="14" y2="11" /> <circle cx="12" cy="14" r="8" /></svg> Countdowns</legend>
           <label class="row"><span>Show on timeout</span>
             <input type="checkbox" data-set="countdownOnTimeout"></label>
           <label class="row"><span>Timeout length</span>
@@ -379,7 +381,7 @@
             <input type="checkbox" data-set="hornOnCountdownEnd"></label>
         </fieldset>
         <fieldset>
-          <legend>🏐 Match format</legend>
+          <legend><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg> Match format</legend>
           <label class="row"><span>Best of</span>
             <select data-set="bestOf"><option value="3">3 sets</option><option value="5">5 sets</option></select></label>
           <label class="row"><span>Total timeouts / set</span>
@@ -390,7 +392,7 @@
             total; subs go amber one short and red at the total.</p>
         </fieldset>
         <fieldset>
-          <legend>🛡 Crest screen</legend>
+          <legend><svg class="licon l-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /></svg> Crest screen</legend>
           <label class="row"><span>Show full club names</span>
             <input type="checkbox" data-set="idleFullNames"></label>
           <label class="row"><span>Largest name size</span>
@@ -400,22 +402,22 @@
             name like KSCW gets. Turn the switch off to show short codes instead.</p>
         </fieldset>
         <fieldset>
-          <legend>🏛 Club</legend>
+          <legend><svg class="licon l-landmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 18v-7" /> <path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z" /> <path d="M14 18v-7" /> <path d="M18 18v-7" /> <path d="M3 22h18" /> <path d="M6 18v-7" /></svg> Club</legend>
           <label class="row"><span>Club name</span>
             <input type="text" data-set="clubName" maxlength="20" style="width:130px"></label>
           <p class="hint">For the club logo / idle screen — available once the board accepts an
             image upload. Countdowns now use fixed labels (TO ·, INTERVAL, WARM UP).</p>
         </fieldset>
         <fieldset>
-          <legend>🔒 Access</legend>
+          <legend><svg class="licon l-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Access</legend>
           <label class="row"><span>Scorer PIN</span>
             <input type="password" inputmode="numeric" data-set="scorerPin" maxlength="8" autocomplete="off" placeholder="unchanged" style="width:110px"></label>
           <p class="hint">Set a digits-only PIN so only your scorer can change the score — anyone who scans the board can still watch, not touch. Leave blank to keep the current PIN.</p>
         </fieldset>
         <fieldset>
-          <legend>⏻ Power</legend>
+          <legend><svg class="licon l-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10" /> <path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg> Power</legend>
           <p class="hint">Halt the scoreboard cleanly before switching the power off — protects the memory card.</p>
-          <button id="shutdownBtn" class="dangerbtn">⏻ Shut down</button>
+          <button id="shutdownBtn" class="dangerbtn"><svg class="licon l-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10" /> <path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg> Shut down</button>
         </fieldset>
       </div>
       <p class="hint" id="setStatus">Saved on the board — these survive a restart.</p>
@@ -424,8 +426,8 @@
     <!-- HISTORY -->
     <section id="tab-history" class="tab history">
       <div class="histbar">
-        <button id="expCsvBtn">⭳ CSV</button>
-        <button id="expJsonBtn">⭳ JSON</button>
+        <button id="expCsvBtn"><svg class="licon l-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></svg> CSV</button>
+        <button id="expJsonBtn"><svg class="licon l-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></svg> JSON</button>
         <button id="clearHistBtn" class="danger">Clear history</button>
       </div>
       <ul id="histList"></ul>
@@ -481,7 +483,7 @@
   </div>
 </div>
 <div id="shutdown" role="alertdialog" aria-live="assertive">
-  <div class="ic">⏻</div>
+  <div class="ic"><svg class="licon l-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10" /> <path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg></div>
   <div class="t">Shutting down…</div>
   <div class="s">The panel will go dark in a few seconds.</div>
   <div class="press">Now press the power button to switch it off</div>
@@ -490,6 +492,11 @@
 <script>
 (() => {
   "use strict";
+  const IC = {
+    wifiOn:'<svg class="licon l-wifi" viewBox="0 0 24 24" fill="none" stroke="#25b567" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /> <path d="M2 8.82a15 15 0 0 1 20 0" /> <path d="M5 12.859a10 10 0 0 1 14 0" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /></svg>', wifiOff:'<svg class="licon l-wifi-off" viewBox="0 0 24 24" fill="none" stroke="#e0453d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /> <path d="M5 12.859a10 10 0 0 1 5.17-2.69" /> <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /> <path d="M2 8.82a15 15 0 0 1 4.177-2.643" /> <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /> <path d="m2 2 20 20" /></svg>',
+    ball:'<svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg>', chevL:'<svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>', chevR:'<svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>',
+    lock:'<svg class="licon l-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>', lockOpen:'<svg class="licon l-lock-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 9.9-1" /></svg>', min:'<svg class="licon l-minimize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /> <path d="M21 8h-3a2 2 0 0 1-2-2V3" /> <path d="M3 16h3a2 2 0 0 1 2 2v3" /> <path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>', max:'<svg class="licon l-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /> <path d="M21 8V5a2 2 0 0 0-2-2h-3" /> <path d="M3 16v3a2 2 0 0 0 2 2h3" /> <path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>' };
+  IC.del = '<svg class="licon l-delete" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5a2 2 0 0 0-1.344.519l-6.328 5.74a1 1 0 0 0 0 1.481l6.328 5.741A2 2 0 0 0 10 19h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /> <path d="m12 9 6 6" /> <path d="m18 9-6 6" /></svg>';
 
   // --- tiny helpers -------------------------------------------------------
   const $ = (s, r = document) => r.querySelector(s);
@@ -655,7 +662,7 @@
   function renderStatus(st) {
     lastLedbox = st.ledbox || lastLedbox;
     const connected = !!(st.ledbox && st.ledbox.connected);
-    $("#dot").textContent = connected ? "🟢" : "🔴";
+    $("#dot").innerHTML = connected ? IC.wifiOn : IC.wifiOff;
     $("#dot").title = connected
       ? `LedBox connected (${st.ledbox.host}:${st.ledbox.port})`
       : "LedBox not connected";
@@ -716,7 +723,7 @@
       strip.appendChild(pill);
     });
     const undo = document.createElement("button");
-    undo.className = "setundo"; undo.title = "Remove last set"; undo.textContent = "⌫";
+    undo.className = "setundo"; undo.title = "Remove last set"; undo.innerHTML = IC.del;
     undo.addEventListener("click", () => { if (confirm("Remove the last set result?")) sendAction({ type: "remove-set" }); });
     strip.appendChild(undo);
   }
@@ -863,7 +870,7 @@
       b.classList.toggle("on", serving === b.dataset.serve));
     const ind = $("#serveInd");
     if (ind) {
-      ind.textContent = serving === "left" ? "◀ 🏐" : serving === "right" ? "🏐 ▶" : "🏐";
+      ind.innerHTML = serving === "left" ? IC.chevL+IC.ball : serving === "right" ? IC.ball+IC.chevR : IC.ball;
       ind.style.opacity = serving ? "1" : ".35";
     }
     renderPreview(s, serving);
@@ -905,7 +912,7 @@
     try { renderStatus(await api("/api/status")); }
     catch (e) {
       const dot = $("#dot");
-      if (dot) dot.textContent = "🔴"; // keep quiet on poll errors
+      if (dot) dot.innerHTML = IC.wifiOff; // keep quiet on poll errors
     }
   }
 
@@ -1160,7 +1167,7 @@
     const b = $("#lockBtn"); if (!b) return;
     b.hidden = !pinRequired;
     const open = !SCORER_PIN;
-    b.textContent = open ? "🔒" : "🔓";
+    b.innerHTML = open ? IC.lock : IC.lockOpen;
     b.classList.toggle("on", pinRequired && open);
     b.title = open ? "Scoring locked — tap to enter PIN" : "Scoring unlocked (tap to change PIN)";
     document.body.classList.toggle("locked", pinRequired && open);
@@ -1217,7 +1224,7 @@
     }
   }
   if (fsBtn) fsBtn.addEventListener("click", toggleFS);
-  const syncFsBtn = () => { if (fsBtn) fsBtn.textContent = inFS() ? "⤢" : "⛶"; };
+  const syncFsBtn = () => { if (fsBtn) fsBtn.innerHTML = inFS() ? IC.min : IC.max; };
   document.addEventListener("fullscreenchange", syncFsBtn);
   document.addEventListener("webkitfullscreenchange", syncFsBtn);
 
