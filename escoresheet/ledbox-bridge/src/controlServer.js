@@ -9,6 +9,8 @@ import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import { LanSource } from './lanSource.js'
 import { toSections, toLeftRight } from './volleyballMapper.js'
+import { execFile } from 'node:child_process'
+import { HistoryStore } from './historyStore.js'
 
 // Board shown when the operator picks "Blank" (all short names + serve cleared).
 const BLANK = {
@@ -50,6 +52,15 @@ class IdleSource extends EventEmitter {
 
 export function createControlServer({ sourceManager, manualSource, ledbox, relayHttpUrl, relayUrl, webDir, reconnectMs, settings }) {
   const opt = (k) => (settings ? settings.values[k] : undefined)
+  // Completed-match log (History tab + CSV/JSON export). Persisted beside the bridge.
+  const history = new HistoryStore({ file: path.resolve(webDir, '..', 'data', 'history.json') })
+  // Scorer lock: with a PIN set, mutating requests must carry it (X-Scorer-Pin header) — a
+  // spectator who scanned the QR can watch but not score. GET reads stay open.
+  const pinOk = (req) => {
+    const need = settings ? settings.values.scorerPin : ''
+    return !need || String(req.headers['x-scorer-pin'] || '') === String(need)
+  }
+  const denyPin = (res) => sendJson(res, 403, { error: 'scorer PIN required' })
   // Ephemeral display countdown (timeout 30s / set interval / side switch). Owned here
   // so it reaches every surface from ONE source: the control UI banner, the
   // /mockledbox mirror (via /api/board), AND the physical LedBox (pushed once a second
@@ -133,6 +144,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     }
     // POST /api/manual
     if (pathname === '/api/manual' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       await readJson(req) // drain
       // Leave the crest/idle screen so the manual scoreboard paints.
       if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') await ledbox.showIdle(false)
@@ -141,6 +153,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     }
     // POST /api/action { action }
     if (pathname === '/api/action' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       const body = await readJson(req)
       const action = body && body.action
       if (!action || !ACTION_TYPES.has(action.type)) {
@@ -153,18 +166,27 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       // the state push below actually paints the scoreboard.
       if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') ledbox.showIdle(false)
       manualSource.apply(action)
-      pulseForAction(ledbox, action, settings, manualSource.getState())
-      return sendJson(res, 200, { ok: true, state: manualSource.getState(), event: manualSource.lastEvent })
+      const newState = manualSource.getState()
+      pulseForAction(ledbox, action, settings, newState)
+      // Log to the match history — wrapped so a fault here can never break scoring.
+      try { history.record(action, newState, manualSource.lastEvent, nowStamp()) } catch (e) { console.error('[history]', e && e.message) }
+      return sendJson(res, 200, { ok: true, state: newState, event: manualSource.lastEvent })
     }
     // GET /api/settings — operator preferences (persisted on the Pi)
     if (pathname === '/api/settings' && req.method === 'GET') {
-      return sendJson(res, 200, settings ? settings.values : {})
+      if (!settings) return sendJson(res, 200, {})
+      // Never hand the PIN to a client — expose only whether one is set.
+      return sendJson(res, 200, { ...settings.values, scorerPin: '', pinSet: !!settings.values.scorerPin })
     }
     // POST /api/settings — partial update; unknown keys are dropped and numbers clamped
     if (pathname === '/api/settings' && req.method === 'POST') {
       const body = await readJson(req)
       if (!settings) return sendJson(res, 501, { error: 'settings unavailable' })
-      const updated = settings.update(body || {})
+      if (!pinOk(req)) return denyPin(res)
+      const patch = { ...(body || {}) }
+      // Empty PIN field = leave the current PIN unchanged (else a normal save wipes the lock).
+      if (!patch.scorerPin) delete patch.scorerPin
+      const updated = settings.update(patch)
       // The counter-colour thresholds live on the client; push the new totals so the board
       // recolours immediately.
       if (ledbox && typeof ledbox.setLimits === 'function') {
@@ -176,10 +198,11 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
           clubName: updated.clubName,
         })
       }
-      return sendJson(res, 200, updated)
+      return sendJson(res, 200, { ...updated, scorerPin: '', pinSet: !!updated.scorerPin })
     }
     // POST /api/link { source, matchId }
     if (pathname === '/api/link' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       const body = await readJson(req)
       const source = body && body.source
       if (source === 'cloud') return sendJson(res, 501, { error: 'cloud not implemented' })
@@ -196,6 +219,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     // board paint suppressed, so we go straight from the final score to the interval screen with
     // the swapped sets. One atomic sequence, no match-layout repaint to race the layout switch.
     if (pathname === '/api/countdown' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       const body = await readJson(req)
       const seconds = Number(body && body.seconds)
       if (!Number.isFinite(seconds) || seconds <= 0) {
@@ -224,12 +248,14 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     // reaches zero before the server tick does, so the client tells us WHY it stopped:
     // expired=true fires the end horn, a manual skip does not.
     if (pathname === '/api/countdown/stop' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       const body = await readJson(req)
       stopCountdown({ expired: !!(body && body.expired) })
       return sendJson(res, 200, { ok: true })
     }
     // POST /api/idle { on } — show the names+VS pre-match screen (on=false returns to scoring)
     if (pathname === '/api/idle' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       const body = await readJson(req)
       const on = body ? body.on !== false : true
       if (ledbox && typeof ledbox.showIdle === 'function') await ledbox.showIdle(on)
@@ -237,12 +263,39 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     }
     // POST /api/blank
     if (pathname === '/api/blank' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
       await readJson(req) // drain
       // Seed the idle source with BLANK so SourceManager caches it and pushes it to the
       // board — /api/status.state then matches the physical (blanked) board.
       sourceManager.setSource(new IdleSource(BLANK), { mode: 'idle', matchId: null })
       await ledbox.pushState(BLANK)
       return sendJson(res, 200, status())
+    }
+    // POST /api/unlock { pin } — verify a scorer PIN without performing an action.
+    if (pathname === '/api/unlock' && req.method === 'POST') {
+      const body = await readJson(req)
+      const need = settings ? settings.values.scorerPin : ''
+      return sendJson(res, 200, { ok: !need || String(body && body.pin) === String(need) })
+    }
+    // GET /api/history — completed matches (newest first) for the History tab + export
+    if (pathname === '/api/history' && req.method === 'GET') {
+      return sendJson(res, 200, history.list())
+    }
+    // POST /api/history/clear — wipe the log
+    if (pathname === '/api/history/clear' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
+      await readJson(req) // drain
+      history.clear()
+      return sendJson(res, 200, { ok: true })
+    }
+    // POST /api/shutdown — halt the board cleanly (protects the SD card). Fires after the
+    // response flushes; the bridge runs as pi with passwordless sudo for systemctl.
+    if (pathname === '/api/shutdown' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
+      await readJson(req) // drain
+      sendJson(res, 200, { ok: true })
+      setTimeout(() => { execFile('sudo', ['systemctl', 'poweroff'], () => {}) }, 700)
+      return
     }
     return sendJson(res, 404, { error: 'not found' })
   }
@@ -251,6 +304,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     const { mode, matchId } = sourceManager.status
     return {
       mode, matchId,
+      pinRequired: !!(settings && settings.values.scorerPin),
       ledbox: { connected: ledbox.ready === true, host: ledbox.host, port: ledbox.port, layout: ledbox.currentLayout },
       state: sourceManager.getState(),
     }
@@ -321,6 +375,14 @@ function pulseForAction(ledbox, action = {}, settings = null, state = null) {
 }
 
 // --- helpers ---
+
+// Local wall-clock stamp "YYYY-MM-DD HH:MM" for history entries. (The board clock may be
+// off until it gets NTP on the venue LAN; the timeline stays internally consistent.)
+function nowStamp() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // Fold a SetSections `value` array into { sectionName: { text, color } } — mirrors
 // MockLedbox._applySections so the web view shows exactly what the device holds.
