@@ -381,6 +381,14 @@
             <input type="checkbox" data-set="hornOnCountdownEnd"></label>
         </fieldset>
         <fieldset>
+          <legend><svg class="licon l-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg> Display</legend>
+          <label class="row"><span>Panel brightness</span>
+            <input type="number" data-set="brightness" min="0" max="100" step="5"><em>%</em></label>
+          <p class="hint">How bright the LED panel drives. <strong>0 turns the panel off</strong> to save power —
+            the controller stays reachable, so set any value above 0 to switch it back on. 5–100 is on; the panel
+            blinks for about a second while it restarts at the new level.</p>
+        </fieldset>
+        <fieldset>
           <legend><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg> Match format</legend>
           <label class="row"><span>Best of</span>
             <select data-set="bestOf"><option value="3">3 sets</option><option value="5">5 sets</option></select></label>

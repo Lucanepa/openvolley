@@ -75,9 +75,14 @@ export class LedboxClient extends EventEmitter {
     // When true, a fresh boot (nothing scored yet) settles on the idle/crest screen after
     // the handshake instead of a blank match layout. Set by the appliance.
     defaultIdle = false,
+    // Injected state→sections mapper set (per-sport; see src/sports.js). Defaults to the
+    // volleyball mapper so the client still works standalone and in tests. Only toSections
+    // differs between sports; idle / crest / countdown / break are shared.
+    mapper = null,
   } = {}) {
     super()
     Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, crestLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle })
+    this.mapper = mapper || { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections, toLeftRight }
     this._pulses = new Map()
     this._idle = false
     this._suppressPaint = false
@@ -243,7 +248,7 @@ export class LedboxClient extends EventEmitter {
     // Idle overrides scoring: while the idle screen is up, a stray state push (e.g. a poll)
     // must not repaint the scoreboard over it. showIdle(false) lifts this.
     if (this._idle) return Promise.resolve(false)
-    const paint = () => this.send('SetSections', toSections(state, { totalTimeouts: this.totalTimeouts, totalSubs: this.totalSubs }))
+    const paint = () => this.send('SetSections', this.mapper.toSections(state, { totalTimeouts: this.totalTimeouts, totalSubs: this.totalSubs }))
     return paint().catch(async (err) => {
       // "section not found (6)" means the board is on a different layout than we think.
       // It happens whenever something changes the layout behind our back — most reliably
@@ -275,7 +280,7 @@ export class LedboxClient extends EventEmitter {
   // True when we have real team names to show (vs a blank/boot "complete" idle).
   _hasTeams() {
     if (!this._lastState) return false
-    const v = toLeftRight(this._lastState)
+    const v = this.mapper.toLeftRight(this._lastState)
     return !!(String(v.leftName || '').trim() || String(v.rightName || '').trim())
   }
 
@@ -302,14 +307,14 @@ export class LedboxClient extends EventEmitter {
         // layout (error 5), fall through to the match-layout version.
         try {
           await this.setLayoutIfNeeded(this.idleLayout)
-          await this.send('SetSections', toClubIdleSections(this._lastState, { fullNames: this.idleFullNames, maxFontSize: this.idleFontMax, clubName: this.clubName }))
+          await this.send('SetSections', this.mapper.toClubIdleSections(this._lastState, { fullNames: this.idleFullNames, maxFontSize: this.idleFontMax, clubName: this.clubName }))
           return true
         } catch (err) {
           this.emit('error', new Error(`club idle layout unavailable (${err.message}); using match layout`))
         }
       }
       await this.setLayoutIfNeeded(this.layout)
-      const sections = on ? toIdleSections(this._lastState) : toSections(this._lastState || {})
+      const sections = on ? this.mapper.toIdleSections(this._lastState) : this.mapper.toSections(this._lastState || {})
       await this.send('SetSections', sections)
       return true
     } catch { return false }
@@ -360,8 +365,8 @@ export class LedboxClient extends EventEmitter {
       // M:SS once there are minutes to show (set interval, warm-up).
       const timerText = s < 60 ? String(s) : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
       const sections = useBreak
-        ? toBreakSections(this._lastState, { timerText, label, content, team })
-        : toCountdownSections(this._lastState, { timerText, label, content })
+        ? this.mapper.toBreakSections(this._lastState, { timerText, label, content, team })
+        : this.mapper.toCountdownSections(this._lastState, { timerText, label, content })
       await this.send('SetSections', sections)
       return true
     } catch { return false }
