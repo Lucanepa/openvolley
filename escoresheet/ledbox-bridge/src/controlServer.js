@@ -8,9 +8,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import { LanSource } from './lanSource.js'
-import { toSections, toLeftRight } from './volleyballMapper.js'
+import { toLeftRight } from './volleyballMapper.js'
 import { execFile } from 'node:child_process'
 import { HistoryStore } from './historyStore.js'
+import { SPORT_LIST } from './sports.js'
 
 // Board shown when the operator picks "Blank" (all short names + serve cleared).
 const BLANK = {
@@ -48,6 +49,57 @@ class IdleSource extends EventEmitter {
   getState() { return this._state }
   start() {}
   stop() {}
+}
+
+// Push a new LED brightness to the panel. `startled` reads [DISPLAY] brightness from setting.ini
+// and passes it to flushBuffer2 at launch, so we rewrite that key and bounce the driver. The
+// bridge runs as pi (passwordless sudo); setting.ini is world-writable. Best-effort — any failure
+// is logged, never thrown, and off the board (dev, no setting.ini) it simply no-ops.
+const SETTING_INI = '/home/pi/ledbox/setting.ini'
+// Brightness 0 = panel off. This flag file (checked by the board watchdog) is what keeps the
+// panel dark: without it the watchdog would relight the driver within 30s. Removing it lets the
+// watchdog keep the panel alive again.
+const PANEL_OFF_FLAG = '/home/pi/ledbox/PANEL_OFF'
+// Restart the panel driver at the current setting.ini brightness: SIGTERM the running driver,
+// then — under a lock the watchdog shares — WAIT for it to actually exit before starting exactly
+// one. Both halves matter: flushBuffer2 can take up to ~1s to release the GPIO on SIGTERM, so
+// starting on a fixed timer would either be skipped (guard still sees the dying process) or spawn
+// a second driver that fights it — which shows as vertical flicker on the panel. The shared lock
+// stops the watchdog racing this start. Process match is `-x flushBuffer2` (exact comm) so the
+// transient `sudo` wrapper never counts as a live driver.
+const PANEL_RESTART =
+  'sudo pkill -x flushBuffer2; ' +
+  "flock /home/pi/ledbox/panel.lock -c 'for i in $(seq 25); do pgrep -x flushBuffer2 >/dev/null 2>&1 || break; sleep 0.2; done; " +
+  "pgrep -x flushBuffer2 >/dev/null 2>&1 || ( cd /home/pi/ledbox/bin && ./startled >/dev/null 2>&1 & )'"
+
+function applyBrightness(value) {
+  if (value <= 0) {
+    // Off: raise the flag first (so the watchdog leaves it dark), then stop the driver. The
+    // scoreboard app keeps running, so the controller UI stays reachable to switch it back on.
+    try { fs.writeFileSync(PANEL_OFF_FLAG, '') } catch (err) { console.error('[brightness] off-flag write failed:', err.message) }
+    execFile('sudo', ['pkill', '-x', 'flushBuffer2'], () => {})
+    return
+  }
+  // On (or level change): clear the off-flag so the watchdog keeps the panel alive.
+  try { fs.rmSync(PANEL_OFF_FLAG, { force: true }) } catch { /* not off, nothing to clear */ }
+  try {
+    let ini = fs.readFileSync(SETTING_INI, 'utf8')
+    ini = /^brightness=.*$/m.test(ini)
+      ? ini.replace(/^brightness=.*$/m, `brightness=${value}`)
+      : ini.replace(/^\[DISPLAY\][^\n]*$/m, (m) => `${m}\nbrightness=${value}`)
+    try {
+      const tmp = `${SETTING_INI}.tmp`
+      fs.writeFileSync(tmp, ini)
+      fs.renameSync(tmp, SETTING_INI)
+    } catch {
+      fs.writeFileSync(SETTING_INI, ini) // world-writable file; write in place if staging a tmp fails
+    }
+  } catch (err) {
+    console.error('[brightness] setting.ini update skipped:', err.message)
+    return
+  }
+  // setting.ini now holds the new level, so whichever starter wins the lock launches at it.
+  execFile('bash', ['-c', PANEL_RESTART], () => {})
 }
 
 export function createControlServer({ sourceManager, manualSource, ledbox, relayHttpUrl, relayUrl, webDir, reconnectMs, settings }) {
@@ -186,7 +238,11 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       const patch = { ...(body || {}) }
       // Empty PIN field = leave the current PIN unchanged (else a normal save wipes the lock).
       if (!patch.scorerPin) delete patch.scorerPin
+      const prevBrightness = settings.values.brightness
       const updated = settings.update(patch)
+      // Brightness change → rewrite setting.ini + bounce the panel driver. Only when it actually
+      // changed, so an unrelated settings save never blinks the panel.
+      if ('brightness' in patch && updated.brightness !== prevBrightness) applyBrightness(updated.brightness)
       // The counter-colour thresholds live on the client; push the new totals so the board
       // recolours immediately.
       if (ledbox && typeof ledbox.setLimits === 'function') {
@@ -199,6 +255,28 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
         })
       }
       return sendJson(res, 200, { ...updated, scorerPin: '', pinSet: !!updated.scorerPin })
+    }
+    // GET /api/sport — the active sport + the pickable list (drives the UI's sport selector).
+    if (pathname === '/api/sport' && req.method === 'GET') {
+      return sendJson(res, 200, { sport: settings ? settings.values.sport : 'volleyball', sports: SPORT_LIST })
+    }
+    // POST /api/sport { sport } — switch sport. Persists the choice and restarts the appliance so
+    // the new scoring rules, match layout and mapper are built cleanly at boot. Sport changes are
+    // rare (once per event), so a ~6s restart beats the edge cases of a live hot-swap.
+    if (pathname === '/api/sport' && req.method === 'POST') {
+      const body = await readJson(req)
+      if (!settings) return sendJson(res, 501, { error: 'settings unavailable' })
+      if (!pinOk(req)) return denyPin(res)
+      const wanted = String((body && body.sport) || '')
+      if (!SPORT_LIST.some((s) => s.key === wanted)) return sendJson(res, 400, { error: 'unknown sport' })
+      const prev = settings.values.sport
+      const updated = settings.update({ sport: wanted })
+      const changed = updated.sport !== prev
+      sendJson(res, 200, { ok: true, sport: updated.sport, changed, restarting: changed })
+      // Restart after the response flushes. On dev (no systemd unit) execFile just errors into the
+      // ignored callback; the choice is persisted either way and applied on the next boot.
+      if (changed) setTimeout(() => { execFile('sudo', ['systemctl', 'restart', 'ledbox-bridge'], () => {}) }, 700)
+      return
     }
     // POST /api/link { source, matchId }
     if (pathname === '/api/link' && req.method === 'POST') {
@@ -304,6 +382,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     const { mode, matchId } = sourceManager.status
     return {
       mode, matchId,
+      sport: settings ? settings.values.sport : 'volleyball',
       pinRequired: !!(settings && settings.values.scorerPin),
       ledbox: { connected: ledbox.ready === true, host: ledbox.host, port: ledbox.port, layout: ledbox.currentLayout },
       state: sourceManager.getState(),
@@ -321,7 +400,7 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       connected: ledbox.ready === true,
       mode: sourceManager.status.mode,
       countdown: countdownView(),
-      screen: sectionsToScreen(toSections(state)),
+      screen: sectionsToScreen(ledbox.mapper.toSections(state)),
     }
   }
 

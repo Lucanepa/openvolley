@@ -1,0 +1,24 @@
+<?xml version='1.0'?>
+<layout name="beach_matchscore" modifier="">
+  <!-- Beach volleyball scoreboard for the 192x64 HUB75 panel. Modelled on
+       volleyball_matchscore_02 but beach-specific: pair short names, best-of-3 set line,
+       ONE team-timeout column (no substitutions in beach), a court-switch cue in the
+       centre, and the serve bars. Section names are shared with the volleyball layout
+       where the geometry matches, so the web board-mirror and the mapper stay familiar;
+       the beach differences are the `switch` cue and the dropped sub row. -->
+  <section name="team1" type="text" x="0" y="-4" visible="true" private="false" enable="true" fontsize="18" color="37, 99, 235" align="left" animation="" animation_params="">A/A</section>
+  <section name="bg_score1" type="rectangle" x="0" y="17" visible="true" private="true" enable="true" color="0, 0, 0" bordercolor="37, 99, 235" width="64" height="46" animation="" animation_params="">bg1</section>
+  <section name="score1" type="text" x="32" y="2" visible="true" private="false" enable="true" fontsize="55" color="37, 99, 235" align="center" animation="" animation_params="">0</section>
+  <section name="set1" type="text" x="89" y="-6" visible="true" private="false" enable="true" fontsize="20" color="37, 99, 235" align="right" animation="" animation_params="">0</section>
+  <section name="vs" type="text" x="97" y="-3" visible="true" private="false" enable="true" fontsize="15" color="255, 255, 255" align="center" animation="" animation_params="">-</section>
+  <section name="set2" type="text" x="105" y="-6" visible="true" private="false" enable="true" fontsize="20" color="255, 69, 0" align="left" animation="" animation_params="">0</section>
+  <section name="switch" type="text" x="96" y="19" visible="true" private="false" enable="true" fontsize="11" color="60, 60, 60" align="center" animation="" animation_params=""></section>
+  <section name="timeout1" type="text" x="82" y="33" visible="true" private="false" enable="true" fontsize="15" color="255, 255, 255" align="center" animation="" animation_params="">0</section>
+  <section name="lbl_to" type="text" x="96" y="35" visible="true" private="true" enable="true" fontsize="11" color="170, 184, 216" align="center" animation="" animation_params="">T</section>
+  <section name="timeout2" type="text" x="111" y="33" visible="true" private="false" enable="true" fontsize="15" color="255, 255, 255" align="center" animation="" animation_params="">0</section>
+  <section name="serve1" type="rectangle" x="70" y="60" visible="true" private="false" enable="true" color="255, 255, 255" bordercolor="0, 0, 0" width="16" height="5" animation="" animation_params="">s1</section>
+  <section name="serve2" type="rectangle" x="107" y="60" visible="true" private="false" enable="true" color="0, 0, 0" bordercolor="0, 0, 0" width="16" height="5" animation="" animation_params="">s2</section>
+  <section name="team2" type="text" x="192" y="-4" visible="true" private="false" enable="true" fontsize="18" color="255, 69, 0" align="right" animation="" animation_params="">B/B</section>
+  <section name="bg_score2" type="rectangle" x="127" y="17" visible="true" private="true" enable="true" color="0, 0, 0" bordercolor="255, 69, 0" width="64" height="46" animation="" animation_params="">bg2</section>
+  <section name="score2" type="text" x="160" y="2" visible="true" private="false" enable="true" fontsize="55" color="255, 69, 0" align="center" animation="" animation_params="">0</section>
+</layout>

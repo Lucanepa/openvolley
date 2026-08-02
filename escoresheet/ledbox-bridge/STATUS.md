@@ -97,6 +97,6 @@ settable **live** over `SetSections`; `x`/`y` are only honoured from the layout 
 |---|---|
 | Control UI | `http://172.24.1.60:8890` (on board Wi-Fi) · `http://openvolley:8890` (Tailscale) |
 | Board web admin | `http://192.168.5.1` (from Pi) — `admin` / `admin` |
-| Board Wi-Fi | `ledbox_C0270` / `47561052` |
+| Board Wi-Fi | `ledbox_C0270` / passphrase in Vaultwarden (rotated 2026-08-02) |
 | Board on cable | `192.168.5.1` · Pi on cable `192.168.5.50` |
 | Service | `ledbox-bridge` on the Pi |

@@ -11,7 +11,7 @@ import path from 'node:path'
 import { loadConfig } from './config.js'
 import { LedboxClient } from './ledboxClient.js'
 import { MockLedbox } from './mockLedbox.js'
-import { ManualSource } from './manualSource.js'
+import { getSport, DEFAULT_SPORT } from './sports.js'
 import { SourceManager } from './sourceManager.js'
 import { createControlServer } from './controlServer.js'
 import { Settings } from './settings.js'
@@ -20,6 +20,14 @@ const ts = () => new Date().toISOString()
 
 export async function startAppliance(config = loadConfig()) {
   const log = (...a) => console.log(ts(), ...a)
+
+  // Load settings first: the active sport selects the Source, the match layout and the
+  // state→sections mapper built below (see src/sports.js). Preferences live beside the code so
+  // they survive restarts and reboots.
+  const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web')
+  const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
+  const sport = getSport(settings.values.sport || DEFAULT_SPORT)
+  log(`[appliance] sport: ${sport.key} (${sport.label})`)
 
   // Target: the real LedBox, or an in-process mock on an ephemeral port for testing.
   // Accept either the config's host list or a single (possibly comma-separated) host,
@@ -40,7 +48,9 @@ export async function startAppliance(config = loadConfig()) {
     hosts: ledboxHosts,
     port: ledboxPort,
     alias: config.ledboxAlias,
-    layout: config.ledboxLayout,
+    sport: sport.key,
+    ...sport.layouts,        // match + idle + crest layout names for this sport
+    mapper: sport.mapper,    // per-sport state→sections (only the match screen differs)
     apiVersion: config.ledboxApiVersion,
     reconnectMs: config.reconnectMs,
     // A fresh boot with no match settles on the KSC Wiedikon crest idle screen (rather than a
@@ -48,11 +58,11 @@ export async function startAppliance(config = loadConfig()) {
     // board's own boot-default layout and reconnects.
     defaultIdle: true,
   })
-  ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, layout ${config.ledboxLayout})`))
+  ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, ${sport.key}, layout ${sport.layouts.layout})`))
   ledbox.on('close', () => log('[ledbox] disconnected'))
   ledbox.on('error', (e) => log('[ledbox] error:', e.message))
 
-  const manualSource = new ManualSource()
+  const manualSource = new sport.Source()
   const sourceManager = new SourceManager()
   // Whatever the active source emits gets painted onto the board. Fire-and-forget:
   // swallow push rejections (e.g. a timeout while the board is down) so they don't
@@ -61,9 +71,6 @@ export async function startAppliance(config = loadConfig()) {
   // A source failing (e.g. the LAN relay is unreachable) must not crash the appliance.
   sourceManager.on('error', (e) => log('[source] error:', e.message))
 
-  const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web')
-  // Operator preferences live next to the code so they survive restarts and reboots.
-  const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
   log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
   // Seed the counter-colour thresholds from saved settings before the first paint.
   ledbox.setLimits({

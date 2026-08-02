@@ -17,7 +17,7 @@ Both idle layouts carry the QRs so the crest+QR screen shows whether the firmwar
 across power cycles. Kept here for versioning / restore.
 
 QR contents:
-- `wifi_qr.png` = `WIFI:T:WPA;S:ledbox_C0270;P:47561052;;`
+- `wifi_qr.png` = `WIFI:T:WPA;S:ledbox_C0270;P:<AP passphrase>;;` (current value: Vaultwarden / hall card)
 - `ui_qr.png` = `http://172.24.1.1:8890`
 
 Regenerate the QR PNGs (pure-python, no PIL needed) — see the encoder used in the session

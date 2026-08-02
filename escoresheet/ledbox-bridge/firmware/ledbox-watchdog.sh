@@ -20,14 +20,22 @@
 BUFFER=/home/pi/ledbox/www/buffer.png
 STALE_AFTER=60      # seconds without a repaint before we call the renderer dead
 CHECK_EVERY=30
+PANEL_OFF=/home/pi/ledbox/PANEL_OFF   # present = operator set brightness 0; keep the panel dark
+LOCK=/home/pi/ledbox/panel.lock       # serialises panel starts so we never spawn two drivers
 
 log() { logger -t ledbox-watchdog "$1"; echo "$(date '+%F %T') $1"; }
 
 app_running()   { pgrep -f "python3 -u ledbox.py" >/dev/null 2>&1; }
-panel_running() { pgrep -f "bin/flushBuffer2" >/dev/null 2>&1; }
+# Match the driver by exact process name, not cmdline: the transient `sudo` wrapper around it
+# also carries "bin/flushBuffer2" in its args, and counting that as "running" during a restart
+# is what let a second driver spawn (vertical flicker). Kills below use the same `-x`.
+panel_running() { pgrep -x flushBuffer2 >/dev/null 2>&1; }
 
 start_app() { ( cd /home/pi/ledbox/bin && ./startledbox >/dev/null 2>&1 & ) ; }
-start_panel() { ( cd /home/pi/ledbox/bin && ./startled >/dev/null 2>&1 & ) ; }
+# Start exactly one driver, under a lock the bridge shares: the pgrep recheck inside flock means
+# a watchdog start racing a brightness-change restart can't leave two drivers fighting the GPIO
+# (that duplicate is what shows as vertical flicker on the panel).
+start_panel() { flock "$LOCK" -c 'pgrep -x flushBuffer2 >/dev/null 2>&1 || ( cd /home/pi/ledbox/bin && ./startled >/dev/null 2>&1 & )' ; }
 
 # Let the normal boot sequence finish before policing it.
 sleep 90
@@ -51,7 +59,14 @@ while true; do
 
     # Checked after the app: startledbox also brings the panel up, so this
     # avoids racing it during a restart.
-    if ! panel_running; then
+    if [ -f "$PANEL_OFF" ]; then
+        # Operator set brightness 0 to save power. Keep the panel dark, and stop it if
+        # anything (a boot, an app restart) brought it back up.
+        if panel_running; then
+            log "panel off requested (brightness 0) -> stopping driver"
+            pkill -x flushBuffer2
+        fi
+    elif ! panel_running; then
         log "panel driver not running -> starting"
         start_panel
         sleep 10
