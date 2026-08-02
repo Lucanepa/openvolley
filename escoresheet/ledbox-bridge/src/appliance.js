@@ -12,6 +12,7 @@ import { loadConfig } from './config.js'
 import { LedboxClient } from './ledboxClient.js'
 import { MockLedbox } from './mockLedbox.js'
 import { getSport, DEFAULT_SPORT } from './sports.js'
+import { livePushFromEnv } from './livePush.js'
 import { SourceManager } from './sourceManager.js'
 import { createControlServer } from './controlServer.js'
 import { Settings } from './settings.js'
@@ -71,6 +72,15 @@ export async function startAppliance(config = loadConfig()) {
   // A source failing (e.g. the LAN relay is unreachable) must not crash the appliance.
   sourceManager.on('error', (e) => log('[source] error:', e.message))
 
+  // Mirror the board to wiedisync so members can follow the match at /live.
+  // Attached to the SourceManager, not to the scoring source, so a LINKED LAN
+  // match publishes too. A no-op stub unless DIRECTUS_URL + LIVE_PUBLISH_TOKEN
+  // are set, and every failure inside it is swallowed — it can never reach the
+  // board. The sport is fixed at boot (switching it restarts the appliance).
+  const livePush = livePushFromEnv(process.env, sport.key)
+  livePush.attach(sourceManager)
+  log(`[livePush] ${livePush.enabled ? `publishing ${sport.key} to ${process.env.DIRECTUS_URL}` : 'disabled (no DIRECTUS_URL / LIVE_PUBLISH_TOKEN)'}`)
+
   log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
   // Seed the counter-colour thresholds from saved settings before the first paint.
   ledbox.setLimits({
@@ -102,13 +112,14 @@ export async function startAppliance(config = loadConfig()) {
   log(`[appliance] control UI on http://0.0.0.0:${port}  (Tailscale: http://openvolley:${port})`)
 
   const close = async () => {
+    livePush.detach()
     sourceManager.stop()
     await new Promise((r) => server.close(r))
     ledbox.disconnect()
     if (mock) await mock.close()
   }
 
-  return { server, sourceManager, manualSource, ledbox, close }
+  return { server, sourceManager, manualSource, ledbox, livePush, close }
 }
 
 // Run directly (node src/appliance.js)
