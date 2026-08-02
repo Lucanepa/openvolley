@@ -250,10 +250,14 @@ def load_layouts(layout_dir) -> dict:
 # the PNG and drives the panel; we never touch GPIO here.
 # --------------------------------------------------------------------------------------
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Bundled Liberation Sans (metric-compatible with the vendor board's Arial) makes rendering
+# faithful AND self-contained; system fonts are only a fallback for a bare checkout.
 _FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    os.path.join(_HERE, "fonts", "LiberationSans-Regular.ttf"),
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 
 
