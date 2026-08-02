@@ -32,7 +32,7 @@
 import { BEACH } from './beachSource.js'
 import { BASKETBALL } from './basketballSource.js'
 
-const DEFAULTS = { channel: 'kscw', collection: 'live_scores', sport: 'volleyball', timeoutMs: 2000, debounceMs: 150, debug: false }
+const DEFAULTS = { channel: 'kscw', collection: 'live_scores', historyCollection: 'live_history', sport: 'volleyball', timeoutMs: 2000, debounceMs: 150, debug: false }
 
 const num = (v) => (Array.isArray(v) ? v.length : Number(v) || 0)
 
@@ -123,6 +123,7 @@ export function createLivePush(opts = {}) {
   let timer = null
   let attached = null // { source, handler } when attach() is active
   let inFlight = false // a flush is running — never overlap writes to one row
+  let lastStatus = null // previous published status, to catch the → 'final' edge
 
   function log(...a) { if (cfg.debug) console.log('[livePush]', ...a) }
 
@@ -168,6 +169,16 @@ export function createLivePush(opts = {}) {
       }
       if (!res.ok) log('directus responded', res.status)
       else log('published', sport, row.status, `${row.points_a}-${row.points_b}`, 'event', row.event)
+
+      // Archive the result the FIRST time a match reads as finished, so /live can
+      // show recent matches once this row is overwritten by the next game. Fires on
+      // the transition only — 'final' is published on every subsequent point-fiddle
+      // too, and history is append-only (the board has create and nothing else, so
+      // it cannot clean up after itself).
+      // ⚠ The transition is tracked in memory: restarting the appliance while a
+      // finished match is still on the board can archive it a second time.
+      if (row.status === 'final' && lastStatus !== 'final') await archive(row)
+      lastStatus = row.status
     } catch (err) {
       log('publish failed:', err && err.message) // swallow — scoring must not care
     } finally {
@@ -175,6 +186,40 @@ export function createLivePush(opts = {}) {
       inFlight = false
       // A change that landed mid-flight still needs sending.
       if (pending && !timer) timer = arm()
+    }
+  }
+
+  /**
+   * Append one finished match to `live_history`. Best-effort like everything else:
+   * a failure here loses a history row, never a point on the board. Separate from
+   * the live row on purpose — `live_scores` is one mutable row per board, this is
+   * the append-only log behind /live's "recent matches".
+   */
+  async function archive(row) {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
+    try {
+      const res = await fetch(`${base}/items/${encodeURIComponent(cfg.historyCollection)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
+        body: JSON.stringify({
+          channel: cfg.channel,
+          sport: row.sport,
+          team_a_name: row.team_a_name, team_a_short: row.team_a_short, team_a_color: row.team_a_color,
+          team_b_name: row.team_b_name, team_b_short: row.team_b_short, team_b_color: row.team_b_color,
+          points_a: row.points_a, points_b: row.points_b,
+          sets_won_a: row.sets_won_a, sets_won_b: row.sets_won_b,
+          period: row.period,
+          set_results: row.set_results,
+          ts: row.ts,
+        }),
+        signal: ctrl.signal,
+      })
+      log(res.ok ? 'archived finished match' : `archive responded ${res.status}`)
+    } catch (err) {
+      log('archive failed:', err && err.message) // swallow
+    } finally {
+      clearTimeout(t)
     }
   }
 
@@ -221,6 +266,7 @@ export function livePushFromEnv(env = process.env, sport = DEFAULTS.sport) {
     token: env.LIVE_PUBLISH_TOKEN,
     channel: env.LIVE_CHANNEL || DEFAULTS.channel,
     collection: env.LIVE_COLLECTION || DEFAULTS.collection,
+    historyCollection: env.LIVE_HISTORY_COLLECTION || DEFAULTS.historyCollection,
     sport,
     debug: /^(1|true|yes|on)$/i.test(String(env.DEBUG || '')),
   })

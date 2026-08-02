@@ -110,6 +110,38 @@ console.log('\nself-heal')
   assert(calls[1].body.channel === 'kscw', 'and includes the channel primary key')
 }
 
+// ── 5b. A finished match is archived ONCE, on the transition ────────────────
+console.log('\nhistory archive')
+{
+  stubFetch()
+  const lp = createLivePush(CFG)
+  const src = new ManualSource()
+  src.apply({ type: 'team', side: 'left', short: 'KSCW' })
+  src.apply({ type: 'point', side: 'left', delta: 1 })
+  lp.push(src.getState())
+  await wait(30)
+  const beforeFinal = calls.length
+  assert(!calls.some((c) => c.url.includes('live_history')), 'a live match is not archived')
+
+  // Win the match (3 sets) → one archive.
+  src.apply({ type: 'set', side: 'left', value: 3 })
+  lp.push(src.getState())
+  await wait(40)
+  const archives = calls.filter((c) => c.url.includes('live_history'))
+  assert(calls.length > beforeFinal, 'the final state was published')
+  assert(archives.length === 1, `finishing archives once (got ${archives.length})`)
+  assert(archives[0].method === 'POST', 'history is appended with POST')
+  assert(archives[0].body.channel === 'kscw' && archives[0].body.sets_won_a === 3,
+    'the archived row carries the channel and the result')
+
+  // Fiddling with a finished board must NOT archive again.
+  src.apply({ type: 'point', side: 'left', delta: 1 })
+  lp.push(src.getState())
+  await wait(40)
+  assert(calls.filter((c) => c.url.includes('live_history')).length === 1,
+    'further pushes on a finished board do not append duplicates')
+}
+
 // ── 6. A broken Directus must never reach the scoring path ───────────────────
 console.log('\nisolation')
 {
