@@ -52,6 +52,14 @@ export const DEFAULTS = {
   // appliance so the new sport is built cleanly. Volleyball is the default.
   sport: 'volleyball',
 
+  // Idle-screen branding — which club identity shows on the crest/idle screen. 'kscw' = the KSC
+  // Wiedikon crest (default); 'plain' = no club logo, neutral. Registry-extensible.
+  branding: 'kscw',
+
+  // Live-scoring publish target. 'off' (default) = don't publish; 'kscw' = push match state to the
+  // KSCW Directus→wiedisync /live page (see livePush). Registry-extensible.
+  liveScoring: 'off',
+
   // Shown on the set-interval and warm-up countdowns (a timeout shows the requesting team
   // instead). Kept short because it lands in the layout's narrow label box.
   clubName: 'KSC WIEDIKON',
@@ -63,6 +71,8 @@ export const DEFAULTS = {
 }
 
 const SPORTS = ['volleyball', 'beach', 'basketball'] // keys of the src/sports.js registry
+const BRANDINGS = ['kscw', 'plain']                  // idle-screen crest identities
+const LIVE_SYSTEMS = ['off', 'kscw']                 // live-scoring publish targets
 const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval', 'hornOnCountdownEnd', 'idleFullNames']
 const NUMS = {
   idleFontMax: [10, 30],
@@ -88,6 +98,8 @@ export function sanitize(patch = {}, base = DEFAULTS) {
   if ('bestOf' in patch) out.bestOf = Number(patch.bestOf) === 3 ? 3 : 5
   // Unknown sport keys keep the current value, so a typo can never leave the board sport-less.
   if ('sport' in patch) out.sport = SPORTS.includes(String(patch.sport)) ? String(patch.sport) : out.sport
+  if ('branding' in patch) out.branding = BRANDINGS.includes(String(patch.branding)) ? String(patch.branding) : out.branding
+  if ('liveScoring' in patch) out.liveScoring = LIVE_SYSTEMS.includes(String(patch.liveScoring)) ? String(patch.liveScoring) : out.liveScoring
   // Keep the club label short and printable; the layout box clips long strings.
   if ('clubName' in patch) out.clubName = String(patch.clubName || '').replace(/[^\x20-\x7E]/g, '').slice(0, 20)
   // Digits only, max 8 — a short unlock code, not a password.
