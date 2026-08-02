@@ -44,6 +44,11 @@ export const DEFAULTS = {
   // Shown on the set-interval and warm-up countdowns (a timeout shows the requesting team
   // instead). Kept short because it lands in the layout's narrow label box.
   clubName: 'KSC WIEDIKON',
+
+  // Scorer PIN. When set (a short digit string) the board rejects scoring/control actions
+  // unless the phone unlocked with it — a spectator who scanned the QR can watch, not touch.
+  // Empty = open (no lock). Never returned to clients in the clear.
+  scorerPin: '',
 }
 
 const BOOLS = ['blinkPoint', 'blinkSub', 'countdownOnTimeout', 'countdownOnSetInterval', 'hornOnCountdownEnd', 'idleFullNames']
@@ -70,6 +75,8 @@ export function sanitize(patch = {}, base = DEFAULTS) {
   if ('bestOf' in patch) out.bestOf = Number(patch.bestOf) === 3 ? 3 : 5
   // Keep the club label short and printable; the layout box clips long strings.
   if ('clubName' in patch) out.clubName = String(patch.clubName || '').replace(/[^\x20-\x7E]/g, '').slice(0, 20)
+  // Digits only, max 8 — a short unlock code, not a password.
+  if ('scorerPin' in patch) out.scorerPin = String(patch.scorerPin || '').replace(/\D/g, '').slice(0, 8)
   return out
 }
 

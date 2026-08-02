@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<layout extended="true" name="volleyball_matchscore_set_02">
+	
+	<section type="image" src="" name="media" x="96" y="32" width="192" height="64" align="center" valign="center"></section>
+	
+</layout>
