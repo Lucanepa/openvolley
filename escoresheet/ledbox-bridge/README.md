@@ -22,6 +22,30 @@ points · team short names (in team colour) · sets won · timeouts (**T**) · s
 ## Configure
 Copy `.env.example` → `.env`. Key vars: `RELAY_URL`, `MATCH_ID`, `LEDBOX_HOST`.
 
+### Publishing the board to wiedisync (`/live`)
+Optional. Set **both** of these and the appliance mirrors every score change to the
+club's Directus, so members can follow the match at `wiedisync.kscw.ch/live`:
+
+| Var | Value |
+|---|---|
+| `DIRECTUS_URL` | `https://directus.kscw.ch` (dev: `https://directus-dev.kscw.ch`) |
+| `LIVE_PUBLISH_TOKEN` | static token of `ledbox-board@kscw.ch` — its policy can touch `live_scores` and nothing else |
+| `LIVE_CHANNEL` | which row to write; default `kscw` (one board, one row) |
+
+Leave either blank and the publisher is a **no-op** — the board behaves exactly as
+it does without it. Every failure inside it (outage, bad token, slow network) is
+swallowed, so it can never affect scoring. These are deliberately distinct from
+`RELAY_URL`, which is the LAN relay the board *subscribes* to.
+
+⚠️ Prod and dev have **different** tokens, and the dev one is replaced by the
+nightly prod clone. Collection, permissions and setup:
+`wiedisync/src/modules/live/DIRECTUS-SETUP.md`.
+
+The publisher sends the active sport, so the app renders the right board — the
+sport is fixed at boot (switching it restarts the appliance). Note that
+`BasketballSource` carries team fouls in `subs_a`/`subs_b`; `livePush` translates
+that to explicit `fouls_a`/`fouls_b` on the wire.
+
 ## Test / run
 ```bash
 # unit test: mapper → client → mock LedBox (no deps, no hardware) — the on-Pi smoke test
