@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/bridge.js",
     "appliance": "node src/appliance.js",
-    "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs && node test/livepush-selftest.mjs",
+    "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs && node test/livepush-selftest.mjs && node test/settings-migration-selftest.mjs",
     "test:appliance": "node test/appliance-selftest.mjs",
     "test:mapper": "node test/mapper-selftest.mjs",
     "test:relay": "node test/relay-selftest.mjs",

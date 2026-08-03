@@ -412,10 +412,13 @@
         </fieldset>
         <fieldset>
           <legend><svg class="licon l-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" x2="14" y1="2" y2="2" /> <line x1="12" x2="15" y1="14" y2="11" /> <circle cx="12" cy="14" r="8" /></svg> Countdowns</legend>
+          <p class="hint" id="perSportNote">Timing, allowances, blink and match format are set per sport.</p>
           <label class="row"><span>Show on timeout</span>
             <input type="checkbox" data-set="countdownOnTimeout"></label>
           <label class="row"><span>Timeout length</span>
             <input type="number" data-set="timeoutSeconds" min="5" max="600"><em>s</em></label>
+          <label class="row"><span>Technical time-out</span>
+            <input type="number" data-set="ttoSeconds" min="0" max="600"><em>s</em></label>
           <label class="row"><span>Show on set interval</span>
             <input type="checkbox" data-set="countdownOnSetInterval"></label>
           <label class="row"><span>Set interval</span>
@@ -1207,7 +1210,7 @@
     } else if (event === "tech-timeout") {
       // Beach: automatic 1-minute technical timeout when the points sum reaches 21 (sets 1-2 only).
       // Ending it — by the clock OR the operator's "End time-out" — flips the court (send `swap`).
-      startCountdown(60, "Technical Time-Out", () => sendAction({ type: "swap" }),
+      startCountdown(SETTINGS.ttoSeconds || 60, "Technical Time-Out", () => sendAction({ type: "swap" }),
         { major: true, content: "full", action: "End time-out →" });
     } else if (event === "bonus") {
       // Basketball: a side reached its 5th team foul — opponent now shoots free throws.
@@ -1507,6 +1510,10 @@
         if (el.type === "checkbox") el.checked = !!v; else el.value = v;
       }
       SETTINGS = s;
+      const note = $("#perSportNote");
+      if (note && s.sport) note.textContent =
+        "Timing, allowances, blink and match format apply to " + sportLabel(s.sport) +
+        ". Brightness, club name, PIN, branding and live-scoring are shared across all sports.";
     } catch { /* leave the form at its defaults */ }
   }
   async function saveSettings() {
