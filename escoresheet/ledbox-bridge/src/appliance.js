@@ -77,9 +77,13 @@ export async function startAppliance(config = loadConfig()) {
   // match publishes too. A no-op stub unless DIRECTUS_URL + LIVE_PUBLISH_TOKEN
   // are set, and every failure inside it is swallowed — it can never reach the
   // board. The sport is fixed at boot (switching it restarts the appliance).
-  const livePush = livePushFromEnv(process.env, sport.key)
+  // env sets the CAPABILITY (DIRECTUS_URL + token); the "Connect to live scoring" setting is the
+  // runtime on/off — so a configured board still publishes NOTHING until the operator flips it.
+  const livePush = livePushFromEnv(process.env, sport.key, () => settings.values.liveScoring === 'kscw')
   livePush.attach(sourceManager)
-  log(`[livePush] ${livePush.enabled ? `publishing ${sport.key} to ${process.env.DIRECTUS_URL}` : 'disabled (no DIRECTUS_URL / LIVE_PUBLISH_TOKEN)'}`)
+  log(`[livePush] ${livePush.enabled
+    ? `configured → ${process.env.DIRECTUS_URL} (${sport.key}); publishing ${livePush.isLive() ? 'ON' : "OFF — flip Settings ▸ Connect to live scoring"}`
+    : 'disabled (no DIRECTUS_URL / LIVE_PUBLISH_TOKEN)'}`)
 
   log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
   // Seed the counter-colour thresholds from saved settings before the first paint.

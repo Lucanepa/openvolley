@@ -125,6 +125,10 @@
   #cd.major{top:50%;transform:translate(-50%,-50%);flex-direction:column;gap:10px;padding:26px 42px}
   #cd.major .cd-time{font-size:66px} #cd.major .cd-label{font-size:16px}
   #cd.major .cd-stop{height:44px;font-size:16px;padding:0 20px;color:var(--blue)}
+  /* COURT SWITCH: flash the banner (and the board mirror below) for the ~3 s change of ends. */
+  #cd.blink .cd-label,#cd.blink .cd-time{animation:cdblink .7s steps(1,end) infinite}
+  #cd.blink .cd-label{color:var(--blue)}
+  @keyframes cdblink{50%{opacity:.15}}
 
   /* ---- LINK ---- */
   .link{padding:14px;overflow-y:auto}
@@ -229,6 +233,7 @@
   .bvnames .bvsep{height:.6cqh;background:#39415f;margin:2.5cqh 0;border-radius:1cqh}
   .bvcd{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:1.5cqh;font-family:Arial,Helvetica,sans-serif}
   #bvPanel[data-mode="countdown"] .bvcd{display:flex}
+  #bvPanel[data-mode="countdown"] .bvcd.blink{animation:cdblink .7s steps(1,end) infinite}
   .bvcd .bvcdlabel{font-weight:700;font-size:12cqh;letter-spacing:.06em;color:#aeb8d8;text-transform:uppercase;white-space:nowrap}
   .bvcd .bvcdtime{font-weight:700;font-size:42cqh;line-height:.85;color:#ffcf47;font-variant-numeric:tabular-nums}
   .bvcd .bvcdsub{font-weight:700;font-size:15cqh;color:#e7ecff;font-variant-numeric:tabular-nums;white-space:nowrap;display:flex;gap:1.5cqw;align-items:baseline}
@@ -566,9 +571,10 @@
     ball:'<svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg>', chevL:'<svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>', chevR:'<svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>',
     lock:'<svg class="licon l-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>', lockOpen:'<svg class="licon l-lock-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 9.9-1" /></svg>', min:'<svg class="licon l-minimize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /> <path d="M21 8h-3a2 2 0 0 1-2-2V3" /> <path d="M3 16h3a2 2 0 0 1 2 2v3" /> <path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>', max:'<svg class="licon l-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /> <path d="M21 8V5a2 2 0 0 0-2-2h-3" /> <path d="M3 16v3a2 2 0 0 0 2 2h3" /> <path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>' };
   IC.del = '<svg class="licon l-delete" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5a2 2 0 0 0-1.344.519l-6.328 5.74a1 1 0 0 0 0 1.481l6.328 5.741A2 2 0 0 0 10 19h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /> <path d="m12 9 6 6" /> <path d="m18 9-6 6" /></svg>';
-  // Sport glyphs for the picker + header badge (Lucide-style: umbrella = beach, seamed circle = basketball).
-  IC.beach = '<svg class="licon l-umbrella" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12a10.06 10.06 0 0 0-20 0Z" /> <path d="M12 12v8a2 2 0 0 0 4 0" /> <path d="M12 2v1" /></svg>';
-  IC.basketball = '<svg class="licon l-basketball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /> <path d="M2 12h20" /> <path d="M12 2a12 12 0 0 0 0 20" /> <path d="M12 2a12 12 0 0 1 0 20" /></svg>';
+  // Sport glyphs for the picker + header badge: Lucide volleyball, Lucide sun for beach, and
+  // Tabler ball-basketball for basketball (Lucide has no basketball icon — same 24px stroke style).
+  IC.beach = '<svg class="licon l-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></svg>';
+  IC.basketball = '<svg class="licon l-basketball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /> <path d="M5.65 5.65l12.7 12.7" /> <path d="M5.65 18.35l12.7 -12.7" /> <path d="M12 3a9 9 0 0 0 9 9" /> <path d="M3 12a9 9 0 0 1 9 9" /></svg>';
 
   // --- tiny helpers -------------------------------------------------------
   const $ = (s, r = document) => r.querySelector(s);
@@ -595,10 +601,13 @@
     const total = (d.left.points || 0) + (d.right.points || 0);
     return total > 0 && total % cadence === 0;
   };
+  // `teams` = the short-name input placeholders (and any A/B label) per sport. Beach plays by
+  // court POSITION (fixed board, pairs change ends), so it reads "Team L" / "Team R"; the indoor
+  // sports keep the A/B identities.
   const SPORT_UI = {
-    volleyball: { serveLabel: "SERVE", stat: { to: "T/O", set: "Sets", sub: "Subs" }, show: { set: true, sub: true } },
-    beach: { serveLabel: "SERVE", stat: { to: "T/O", set: "Sets", sub: "Subs" }, show: { set: true, sub: false } },
-    basketball: { serveLabel: "POSS.", stat: { to: "T/O", set: "Period", sub: "Fouls" }, show: { set: true, sub: true } },
+    volleyball: { serveLabel: "SERVE", stat: { to: "T/O", set: "Sets", sub: "Subs" }, show: { set: true, sub: true }, teams: { left: "TEAM A", right: "TEAM B" } },
+    beach: { serveLabel: "SERVE", stat: { to: "T/O", set: "Sets", sub: "Subs" }, show: { set: true, sub: false }, teams: { left: "TEAM L", right: "TEAM R" } },
+    basketball: { serveLabel: "POSS.", stat: { to: "T/O", set: "Period", sub: "Fouls" }, show: { set: true, sub: true }, teams: { left: "TEAM A", right: "TEAM B" } },
   };
   const sportLabel = (k) => (SPORTS_LIST.find((s) => s.key === k) || {}).label || (k ? k[0].toUpperCase() + k.slice(1) : "");
   const sportIcon = (k) => k === "basketball" ? IC.basketball : k === "beach" ? IC.beach : IC.ball;
@@ -655,6 +664,7 @@
     cdOnFinish = null;
     $("#cd").hidden = true;
     $("#cd").classList.remove("major");
+    $("#cd").classList.remove("blink");
     if (board.mode === "countdown") { board.mode = "match"; paintBoardMode(); }
   }
   // expired=true when the clock ran out (fires the board horn); false on a manual skip.
@@ -675,9 +685,10 @@
     $("#cdStop").textContent = opts.action || "✕";
     $("#cdStop").title = opts.action ? label : "Skip";
     $("#cd").classList.toggle("major", !!opts.major);
+    $("#cd").classList.toggle("blink", !!opts.blink);
     $("#cd").hidden = false;
     board.mode = "countdown";
-    board.cd = { label: (opts.label || label || "").toUpperCase(), content: opts.content || "full", side: opts.side || null, end: cdEnd };
+    board.cd = { label: (opts.label || label || "").toUpperCase(), content: opts.content || "full", side: opts.side || null, end: cdEnd, blink: !!opts.blink };
     paintBoardMode();
     cdButton = () => finishCountdown(false); // the ✕ / "start next set" button: skip, no horn
     // content: what the BOARD shows beside the clock — 'full' (points+sets), 'sets', or 'none'.
@@ -1000,6 +1011,8 @@
     buildBoard();
     p.dataset.mode = board.mode;
     p.dataset.branding = SETTINGS.branding || "kscw"; // 'plain' hides the crest via CSS
+    const cdEl = p.querySelector(".bvcd");
+    if (cdEl) cdEl.classList.toggle("blink", board.mode === "countdown" && !!(board.cd && board.cd.blink));
     const s = bvLast.s;
     const set = (n, v, c) => { const e = p.querySelector('[data-n="' + n + '"]'); if (e) { e.textContent = v; if (c) e.style.color = c; } };
     if (board.mode === "idle") {
@@ -1079,6 +1092,9 @@
       const side = root.dataset.side;
       const scoreEl = $(".score", root);
       if (scoreEl) { scoreEl.classList.toggle("bball", SPORT === "basketball"); scoreEl.innerHTML = scoreInner(SPORT, side); }
+      // Team-name placeholder per sport (beach = "Team L" / "Team R"; A/B otherwise).
+      const shortEl = root.querySelector(".short");
+      if (shortEl && cfg.teams && cfg.teams[side]) shortEl.placeholder = cfg.teams[side];
       const statOf = (t) => root.querySelector('[data-stat="' + t + '"]').closest(".stat");
       const toB = statOf("timeout"), setB = statOf("set"), subB = statOf("sub");
       toB.querySelector(".name").textContent = cfg.stat.to;
@@ -1184,15 +1200,15 @@
       flashSide(sideOf(s, num(s.points_a) > num(s.points_b)));
       flashName(winSide);
       toast("🏆 " + name + " wins the match");
-    } else if (event === "switch-8") {
-      // Deciding set: first to 8 -> show "Side switch" for 5s, then swap sides.
-      startCountdown(5, "Side switch", () => sendAction({ type: "swap" }));
-    } else if (event === "court-switch") {
-      // Beach: the sum crossed a change-of-ends boundary — brief cue, then swap (mirrors switch-8).
-      startCountdown(5, "Change ends", () => sendAction({ type: "swap" }));
+    } else if (event === "switch-due") {
+      // A change of ends is DUE (beach: every 7 pts, 5 in the decider; indoor decider: first to 8).
+      // NOT automatic — ask the operator, then blink COURT SWITCH and swap. See requestCourtSwitch.
+      requestCourtSwitch();
     } else if (event === "tech-timeout") {
-      // Beach: automatic 30s technical timeout when the points sum reaches 21 (sets 1-2).
-      startCountdown(SETTINGS.timeoutSeconds || 30, "Technical timeout", null, { content: "full" });
+      // Beach: automatic 1-minute technical timeout when the points sum reaches 21 (sets 1-2 only).
+      // Ending it — by the clock OR the operator's "End time-out" — flips the court (send `swap`).
+      startCountdown(60, "Technical Time-Out", () => sendAction({ type: "swap" }),
+        { major: true, content: "full", action: "End time-out →" });
     } else if (event === "bonus") {
       // Basketball: a side reached its 5th team foul — opponent now shoots free throws.
       toast("Bonus — the opponent shoots free throws");
@@ -1207,6 +1223,17 @@
       flashName(winSide);
       toast("🏆 " + name + " wins");
     }
+  }
+
+  // Operator-confirmed court switch. When the boundary point is scored the backend flags
+  // 'switch-due'; we ASK first ("Switch sides?"). YES -> blink "COURT SWITCH" full-panel for
+  // ~3 s on the break screen (content 'none' = no scores, just the label + a 3·2·1 clock), then
+  // send `swap` — which returns to the match layout and repaints the swapped score. NO -> nothing:
+  // the point stands and the manual "Switch sides" button is always available.
+  async function requestCourtSwitch() {
+    if (!(await askConfirm("Switch sides?"))) return;
+    startCountdown(3, "COURT SWITCH", () => sendAction({ type: "swap" }),
+      { major: true, content: "none", blink: true });
   }
 
   async function blank() {
