@@ -93,6 +93,13 @@
   .servebtn{width:44px;height:38px;font-size:16px;border:0;background:var(--card);color:var(--muted);border-radius:12px;cursor:pointer;
     box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
   .servebtn.on{color:var(--ok)}
+  /* beach serve-player control (centre column, beach only) */
+  #beachServe{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
+  #beachServe[hidden]{display:none}
+  .plrbtn{display:flex;flex-direction:column;align-items:center;gap:2px;width:64px;padding:7px 0;border:0;border-radius:14px;background:var(--card);color:var(--fg);cursor:pointer;box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
+  .plrbtn .plrlbl{font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--muted)}
+  .plrbtn .plrnum{font-size:24px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+  .ordbtn{font-size:11px;font-weight:800;letter-spacing:.03em;color:var(--blue);background:var(--card);border:0;border-radius:11px;padding:8px 10px;cursor:pointer;box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
   .iconbtn{width:48px;height:44px;font-size:18px;border:0;background:var(--card);color:var(--muted);border-radius:14px;cursor:pointer;
     box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
   .iconbtn.active{color:var(--gold)}
@@ -203,6 +210,18 @@
   #confirm[hidden]{display:none}
   #confirm .editlabel{font-size:16px;text-transform:none;letter-spacing:0;color:var(--fg);margin-bottom:14px}
   #confirmYes{color:var(--blue)}
+  /* beach serve-order modal */
+  #serveOrder{position:fixed;inset:0;z-index:76;display:flex;align-items:center;justify-content:center;background:rgba(120,128,150,.35);padding:20px}
+  #serveOrder[hidden]{display:none}
+  #serveOrder .editbox{width:min(340px,92vw)}
+  #serveOrder h3{margin:0 0 4px;font-size:18px;font-weight:800}
+  #serveOrder .sub{margin:0 0 15px;font-size:12px;color:var(--muted)}
+  .ordgrp{margin-bottom:13px}
+  .ordq{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:7px}
+  .segbtns{display:flex;gap:9px}
+  .segbtns button{flex:1;padding:12px;font-size:15px;font-weight:800;border:0;border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer;box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
+  .segbtns button.on{color:var(--blue);box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
+  #ordOk{color:var(--blue)}
   /* scorer PIN lock */
   #pinModal{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(120,128,150,.35)}
   #pinModal[hidden]{display:none}
@@ -344,6 +363,10 @@
         <button class="servebtn" data-serve="left" aria-label="Serve left"><svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></button>
         <span class="serveind" id="serveInd" aria-hidden="true"><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg></span>
         <button class="servebtn" data-serve="right" aria-label="Serve right"><svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></button>
+      </div>
+      <div id="beachServe" hidden>
+        <button class="plrbtn" id="servePlrBtn" title="Serving player — tap to switch" aria-label="Switch the serving player"><span class="plrlbl">PLAYER</span><span class="plrnum" id="servePlrNum">–</span></button>
+        <button class="ordbtn" id="serveOrderBtn" title="Set the beach serve order">Serve order</button>
       </div>
       <button id="awakeBtn" class="iconbtn" title="Keep the screen awake" aria-label="Keep screen awake"><svg class="licon l-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></svg></button>
       <button id="fsBtn" class="iconbtn" title="Full screen" aria-label="Full screen"><svg class="licon l-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /> <path d="M21 8V5a2 2 0 0 0-2-2h-3" /> <path d="M3 16v3a2 2 0 0 0 2 2h3" /> <path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg></button>
@@ -535,6 +558,37 @@
     <div class="editbtns">
       <button id="confirmNo">Cancel</button>
       <button id="confirmYes">Confirm</button>
+    </div>
+  </div>
+</div>
+<div id="serveOrder" hidden role="dialog" aria-label="Beach serve order">
+  <div class="editbox">
+    <h3>Beach serve order</h3>
+    <p class="sub">Who serves first, and each pair's first server. The board tracks it automatically after that — override any time.</p>
+    <div class="ordgrp">
+      <span class="ordq">Serves first</span>
+      <div class="segbtns" id="ordFirst">
+        <button type="button" data-first="left" class="on">Team L</button>
+        <button type="button" data-first="right">Team R</button>
+      </div>
+    </div>
+    <div class="ordgrp">
+      <span class="ordq" id="ordLlbl">Team L — first server</span>
+      <div class="segbtns" id="ordLeft">
+        <button type="button" data-p="1" class="on">Player 1</button>
+        <button type="button" data-p="2">Player 2</button>
+      </div>
+    </div>
+    <div class="ordgrp">
+      <span class="ordq" id="ordRlbl">Team R — first server</span>
+      <div class="segbtns" id="ordRight">
+        <button type="button" data-p="1" class="on">Player 1</button>
+        <button type="button" data-p="2">Player 2</button>
+      </div>
+    </div>
+    <div class="editbtns">
+      <button id="ordCancel">Cancel</button>
+      <button id="ordOk">Set order</button>
     </div>
   </div>
 </div>
@@ -759,6 +813,8 @@
       left: aIsLeft ? a : b,
       right: aIsLeft ? b : a,
       serving: state.serving_team || null,
+      // Beach carries the serving player number (1|2); 0/unused for the other sports.
+      servePlayer: Number(state.serve_player) || 0,
       // Basketball carries these shared scalars (harmless/unused for the volleyball sports).
       period: Number(state.period) || 1, over: !!state.over,
     };
@@ -772,6 +828,7 @@
 
   // --- render -------------------------------------------------------------
   let linkedMatchId = null;
+  let lastState = null; // last raw a/b state seen — prefills the beach serve-order modal
   const MODE_LABELS = { manual: "Manual", lan: "Live (LAN)", cloud: "Cloud", idle: "Idle" };
 
   function renderStatus(st) {
@@ -800,9 +857,11 @@
     $("#setNo").textContent = setLabel(st.state);
     linkedMatchId = st.matchId != null ? String(st.matchId) : null;
     $("#matchTag").textContent = st.matchId ? " · match " + st.matchId : "";
+    lastState = st.state || lastState;
     renderBoard(sides(st.state));
     renderSetStrip(st.state);
     markLinked();
+    maybePromptServeOrder(st.state);
     pinRequired = !!st.pinRequired;
     updateLock();
   }
@@ -884,7 +943,8 @@
       { n:"bg_score2", t:"box", x:127, y:17, w:64, h:46 },
       { n:"score2", t:"text", x:160, y:40, fs:50, a:"center", vc:true },
     ],
-    // beach_matchscore.xml — set line (fs20), centre SWITCH cue, single T row, no subs.
+    // beach_matchscore.xml — set line (fs20), centre SWITCH cue, single T row (nudged up),
+    // the serve-player digit below it, no subs.
     beach: [
       { n:"team1", t:"text", x:0,   y:-4, fs:18, a:"left"   },
       { n:"bg_score1", t:"box", x:0, y:17, w:64, h:46 },
@@ -892,10 +952,11 @@
       { n:"set1", t:"text", x:89,  y:-6, fs:20, a:"right"  },
       { n:"vs",   t:"text", x:97,  y:-3, fs:15, a:"center", fixed:"-", col:"#dfe6ff" },
       { n:"set2", t:"text", x:105, y:-6, fs:20, a:"left"   },
-      { n:"switch", t:"text", x:96, y:19, fs:11, a:"center" },
-      { n:"timeout1", t:"text", x:82, y:33, fs:15, a:"center" },
-      { n:"lbl_to", t:"text", x:96, y:35, fs:11, a:"center", fixed:"T", col:"#aeb8d8" },
-      { n:"timeout2", t:"text", x:111, y:33, fs:15, a:"center" },
+      { n:"switch", t:"text", x:96, y:18, fs:11, a:"center" },
+      { n:"timeout1", t:"text", x:82, y:26, fs:15, a:"center" },
+      { n:"lbl_to", t:"text", x:96, y:29, fs:11, a:"center", fixed:"T", col:"#aeb8d8" },
+      { n:"timeout2", t:"text", x:111, y:26, fs:15, a:"center" },
+      { n:"serveplr", t:"text", x:96, y:42, fs:18, a:"center" },
       { n:"serve1", t:"bar", x:70, y:60, w:16, h:5 },
       { n:"serve2", t:"bar", x:107, y:60, w:16, h:5 },
       { n:"team2", t:"text", x:192, y:-4, fs:18, a:"right"  },
@@ -993,6 +1054,9 @@
       put("set1", d.left.sets, d.left.color);          put("set2", d.right.sets, d.right.color);
       put("switch", due ? "SWITCH" : "", due ? "#ffbf3f" : "#3c3c3c");
       put("timeout1", d.left.to, toCol(d.left.to));    put("timeout2", d.right.to, toCol(d.right.to));
+      // Serve-player digit: the serving pair's number, in that pair's colour (blank when none).
+      const spCol = d.serving === "left" ? d.left.color : d.serving === "right" ? d.right.color : "#3c3c3c";
+      put("serveplr", d.servePlayer ? String(d.servePlayer) : "", d.servePlayer ? spCol : "#3c3c3c");
     } else {
       const tt = (SETTINGS.totalTimeouts || 2), ts = (SETTINGS.totalSubs || 6);
       const toCol = (n) => n >= tt ? "#ff5b52" : "#e7ecff";
@@ -1083,6 +1147,15 @@
       ind.innerHTML = serving === "left" ? IC.chevL + pip : serving === "right" ? pip + IC.chevR : pip;
       ind.style.opacity = serving ? "1" : ".35";
     }
+    // Beach serve-player readout: the serving pair's number (1|2) in that pair's colour.
+    if (SPORT === "beach") {
+      const spn = $("#servePlrNum");
+      if (spn) {
+        const n = s ? s.servePlayer : 0;
+        spn.textContent = n ? String(n) : "–";
+        spn.style.color = !s ? "" : serving === "left" ? s.left.color : serving === "right" ? s.right.color : "";
+      }
+    }
     renderPreview(s, serving);
   }
 
@@ -1107,6 +1180,7 @@
       subB.hidden = !cfg.show.sub;   // beach hides subs
     });
     const sl = $(".servebox .lbl"); if (sl) sl.textContent = cfg.serveLabel;
+    const bs = $("#beachServe"); if (bs) bs.hidden = SPORT !== "beach"; // serve-player control: beach only
     const nq = $("#nextPeriodBtn"); if (nq) nq.hidden = SPORT !== "basketball";
     const bi = $("#sportBadge .sbico"), bt = $("#sportBadge .sbtxt");
     if (bi) bi.innerHTML = sportIcon(SPORT); if (bt) bt.textContent = sportLabel(SPORT);
@@ -1338,6 +1412,55 @@
   $("#confirmNo").addEventListener("click", () => closeConfirm(false));
   $("#confirm").addEventListener("click", (e) => { if (e.target.id === "confirm") closeConfirm(false); });
 
+  // --- beach serve order + serve-player override ---------------------------
+  let ordSel = { first: "left", left: 1, right: 1 };
+  const segPick = (groupId, match) => $$("#" + groupId + " button").forEach((b) => b.classList.toggle("on", match(b)));
+  function openServeOrder() {
+    const s = bvLast.s, raw = lastState || {};
+    // Prefill from the live state: who's serving now + each pair's current server.
+    ordSel.first = raw.serving_team === "right" ? "right" : "left";
+    ordSel.left = Number(raw.server_a) === 2 ? 2 : 1;
+    ordSel.right = Number(raw.server_b) === 2 ? 2 : 1;
+    const lname = s && s.left.short ? s.left.short.toUpperCase() : "TEAM L";
+    const rname = s && s.right.short ? s.right.short.toUpperCase() : "TEAM R";
+    $("#ordLlbl").textContent = lname + " — first server";
+    $("#ordRlbl").textContent = rname + " — first server";
+    const fb = $$("#ordFirst button"); fb[0].textContent = lname; fb[1].textContent = rname;
+    segPick("ordFirst", (b) => b.dataset.first === ordSel.first);
+    segPick("ordLeft", (b) => Number(b.dataset.p) === ordSel.left);
+    segPick("ordRight", (b) => Number(b.dataset.p) === ordSel.right);
+    $("#serveOrder").hidden = false;
+  }
+  const closeServeOrder = () => { $("#serveOrder").hidden = true; };
+  $("#ordFirst").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { ordSel.first = b.dataset.first; segPick("ordFirst", (x) => x === b); } });
+  $("#ordLeft").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { ordSel.left = Number(b.dataset.p); segPick("ordLeft", (x) => x === b); } });
+  $("#ordRight").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { ordSel.right = Number(b.dataset.p); segPick("ordRight", (x) => x === b); } });
+  $("#ordCancel").addEventListener("click", closeServeOrder);
+  $("#serveOrder").addEventListener("click", (e) => { if (e.target.id === "serveOrder") closeServeOrder(); });
+  $("#ordOk").addEventListener("click", () => {
+    sendAction({ type: "serve-order", first: ordSel.first, leftServer: ordSel.left, rightServer: ordSel.right });
+    closeServeOrder();
+  });
+  const serveOrderBtn = $("#serveOrderBtn");
+  if (serveOrderBtn) serveOrderBtn.addEventListener("click", openServeOrder);
+  const servePlrBtn = $("#servePlrBtn");
+  if (servePlrBtn) servePlrBtn.addEventListener("click", () => sendAction({ type: "serve-player" })); // bare = flip the serving pair
+
+  // Auto-prompt the serve order at the start of each beach set — once, and only after a real rally
+  // has been played (so an idle refresh never pops it). Match start is handled by chooseSport.
+  let beachSeenPoints = false, beachAskedSets = -1;
+  function maybePromptServeOrder(state) {
+    if (SPORT !== "beach" || !state || !$("#serveOrder").hidden) return;
+    if (!$("#cd").hidden) return; // wait out any countdown / set-interval / set-end overlay first
+    const pts = num(state.points_a) + num(state.points_b);
+    const sets = num(state.sets_won_a) + num(state.sets_won_b);
+    const over = num(state.sets_won_a) >= 2 || num(state.sets_won_b) >= 2;
+    if (pts > 0) { beachSeenPoints = true; return; }
+    if (beachSeenPoints && !over && beachAskedSets !== sets) {
+      beachAskedSets = sets; beachSeenPoints = false; openServeOrder();
+    }
+  }
+
   const VAL_TYPE = { points: "point", sets: "set", to: "timeout", sub: "sub" };
   const VAL_NAME = { points: "score", sets: "sets", to: "timeouts", sub: "subs" };
 
@@ -1448,7 +1571,11 @@
       const r = await postJSON("/api/sport", { sport: key });
       if (r && r.changed === false) { const now = await api("/api/status"); renderStatus(now); closeSportPicker(); return; }
       const done = await waitForSwitch(key);
-      if (done) { renderStatus(done); closeSportPicker(); toast(sportLabel(key) + " ready"); }
+      if (done) {
+        renderStatus(done); closeSportPicker(); toast(sportLabel(key) + " ready");
+        // Fresh beach match → ask the serve order straight away ("the beginning").
+        if (key === "beach") { beachSeenPoints = false; beachAskedSets = -1; openServeOrder(); }
+      }
       else if (st) { st.classList.add("err"); st.textContent = "The board is taking a while to restart — it'll switch on its own once it's back."; spBusy(false); }
     } catch (e) {
       // A 403 already opened the PIN modal (above the picker); tell the operator why here.

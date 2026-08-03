@@ -36,6 +36,10 @@ export const BEACH = {
 }
 
 // Neutral starting board (a beach pair carries a two-surname name / short code).
+// server_a/server_b = which player (1|2) of each pair is up to serve; served_a/served_b =
+// has that pair begun a service turn yet this set (governs the first-serve-no-flip rule below).
+// Left (a) serves first with player 1 by default, so it starts "served"; the operator re-declares
+// the real order via a `serve-order` action.
 const NEUTRAL = {
   side_a: 'left',
   team_a_name: '', team_a_short: 'A/A', team_a_color: '#2563eb',
@@ -43,10 +47,12 @@ const NEUTRAL = {
   points_a: 0, points_b: 0, sets_won_a: 0, sets_won_b: 0,
   timeouts_a: 0, timeouts_b: 0, subs_a: 0, subs_b: 0, // subs unused in beach; kept for shape parity
   serving_team: 'left',
+  server_a: 1, server_b: 1, served_a: true, served_b: false,
 }
 
 const clamp0 = (n) => (n < 0 ? 0 : n)
 const num = (v) => (Array.isArray(v) ? v.length : Number(v) || 0)
+const player = (v) => (Number(v) === 2 ? 2 : 1) // coerce a serve-player field to 1|2 (default 1)
 
 export class BeachSource extends EventEmitter {
   constructor() {
@@ -86,7 +92,15 @@ export class BeachSource extends EventEmitter {
       leftTO: num(pick(s.timeouts_a, s.timeouts_b)),
       rightTO: num(pick(s.timeouts_b, s.timeouts_a)),
       serving: s.serving_team ?? null, // already 'left' | 'right' | null
+      // Serve player (1|2) per pair, honouring side_a like every other field.
+      leftServer: player(pick(s.server_a, s.server_b)),
+      rightServer: player(pick(s.server_b, s.server_a)),
     }
+    // "Has this pair served yet" flags. Use them if the state carried them; otherwise seed from
+    // the serving side (so a bare set-state still tracks flips correctly from that point on).
+    const servedGiven = s.served_a != null || s.served_b != null
+    this.m.leftServed = servedGiven ? !!pick(s.served_a, s.served_b) : this.m.serving === 'left'
+    this.m.rightServed = servedGiven ? !!pick(s.served_b, s.served_a) : this.m.serving === 'right'
     // Completed-set final scores, stored per physical side (swapped on _swap()).
     this.results = (Array.isArray(s.set_results) ? s.set_results : []).map((r) => ({
       left: num(pick(r.a, r.b)), right: num(pick(r.b, r.a)),
@@ -107,6 +121,12 @@ export class BeachSource extends EventEmitter {
       timeouts_a: m.leftTO, timeouts_b: m.rightTO,
       subs_a: 0, subs_b: 0,
       serving_team: m.serving,
+      // Beach-only serve-player fields (other sports never set these; the beach mapper + UI are
+      // the only readers). server_a/b = each pair's current server; serve_player = the serving
+      // pair's number (0 when nobody is serving) — the single digit the board paints.
+      server_a: m.leftServer, server_b: m.rightServer,
+      served_a: m.leftServed, served_b: m.rightServed,
+      serve_player: m.serving === 'left' ? m.leftServer : m.serving === 'right' ? m.rightServer : 0,
       set_results: this.results.map((r) => ({ a: r.left, b: r.right })),
     }
   }
@@ -124,8 +144,19 @@ export class BeachSource extends EventEmitter {
         // change, no set/switch/tech detection. Only a +delta drives the rally rules below.
         if (action.value != null) { m[side + 'Points'] = clamp0(Number(action.value) || 0); break }
         const d = Number(action.delta) || 0
+        const wasServing = m.serving // who served this rally — needed to detect a side-out
         m[side + 'Points'] = clamp0(before + d)
         if (d > 0) {
+          // Serve-player tracking (beach): a pair keeps the same server while it holds serve, and
+          // ALTERNATES its server each time it wins the serve BACK. So on a side-out (the receiver
+          // won the rally), the newly-serving pair flips its server — unless this is its very first
+          // service turn of the set, which uses the declared first server (served flag still false).
+          if (wasServing && wasServing !== side) {
+            if (m[side + 'Served']) m[side + 'Server'] = m[side + 'Server'] === 1 ? 2 : 1
+            else m[side + 'Served'] = true
+          } else {
+            m[side + 'Served'] = true // held serve (or first point of a fresh board): mark served
+          }
           // Rally scoring: the side that wins the point serves next.
           m.serving = side
           const target = this._target()
@@ -170,6 +201,30 @@ export class BeachSource extends EventEmitter {
       case 'serve':
         m.serving = action.side === 'right' ? 'right' : 'left'
         break
+      case 'serve-order': {
+        // Declare the serving order at the start of a set: which side serves first and each pair's
+        // first server (1|2). The first-serving pair is mid its opening turn (served=true); the
+        // other has yet to serve (served=false), so its opening serve keeps its declared number.
+        const first = action.first === 'right' ? 'right' : 'left'
+        const other = first === 'left' ? 'right' : 'left'
+        m.serving = first
+        if (action.leftServer != null) m.leftServer = player(action.leftServer)
+        if (action.rightServer != null) m.rightServer = player(action.rightServer)
+        m[first + 'Served'] = true
+        m[other + 'Served'] = false
+        break
+      }
+      case 'serve-player': {
+        // Manual override of a pair's current server. Defaults to the serving side. With a value
+        // (1|2) it sets that player; without one it flips the current server. Marks the pair served
+        // so automatic tracking picks up cleanly from the operator's correction.
+        const side = action.side === 'left' || action.side === 'right' ? action.side : m.serving
+        if (side !== 'left' && side !== 'right') break
+        const cur = m[side + 'Server'] === 2 ? 2 : 1
+        m[side + 'Server'] = action.value != null ? player(action.value) : (cur === 1 ? 2 : 1)
+        m[side + 'Served'] = true
+        break
+      }
       case 'swap':
         this._swap()
         break
@@ -189,6 +244,10 @@ export class BeachSource extends EventEmitter {
         m.leftTO = 0
         m.rightTO = 0
         if (m.leftSets + m.rightSets !== BEACH.setsToWin) this._swap()
+        // Fresh set: the pair now on serve (carried over / swapped) is mid its opening turn; the
+        // other has yet to serve. The operator can re-declare the whole order via `serve-order`.
+        m.leftServed = m.serving === 'left'
+        m.rightServed = m.serving === 'right'
         break
       case 'remove-set': {
         // Undo the last recorded set: drop its result and its set point.
@@ -216,7 +275,9 @@ export class BeachSource extends EventEmitter {
   // side (the sum is unchanged, so a switch never re-triggers itself).
   _swap() {
     const m = this.m
-    const pairs = ['Name', 'Short', 'Color', 'Points', 'Sets', 'TO']
+    // Server + Served travel with the pair to its new side, so the serve player follows the pair
+    // across a change of ends (like the score does) and serve_player recomputes from serving.
+    const pairs = ['Name', 'Short', 'Color', 'Points', 'Sets', 'TO', 'Server', 'Served']
     for (const p of pairs) {
       const tmp = m['left' + p]
       m['left' + p] = m['right' + p]
@@ -321,6 +382,51 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     s.apply({ type: 'set', side: 'left', delta: 1 }) // now 1-1 (deciding next)
     s.apply({ type: 'next-set' })
     ok(s.getState().team_a_short === 'BBB', 'ends do NOT auto-swap going into the deciding set')
+  }
+
+  // Serve-player tracking: a pair keeps its server while holding serve and alternates on regain.
+  // Declared order L1 / R2, left serving first -> the serving digit walks L1, R2, L2, R1, L1…
+  {
+    const s = mk()
+    const sp = () => s.getState().serve_player
+    s.apply({ type: 'serve-order', first: 'left', leftServer: 1, rightServer: 2 })
+    ok(sp() === 1, 'left serves first with player 1 (declared)')
+    ok(pt(s, 'left') === null && sp() === 1, 'held serve -> same server (L1)')
+    pt(s, 'right') // side-out to right, right's first turn -> its declared player 2
+    ok(s.getState().serving_team === 'right' && sp() === 2, 'side-out to right -> R2 (first turn, no flip)')
+    pt(s, 'right') // right holds
+    ok(sp() === 2, 'right holds serve -> still R2')
+    pt(s, 'left') // side-out back to left, left's 2nd turn -> flip to player 2
+    ok(sp() === 2, 'left regains -> flips to L2')
+    pt(s, 'right') // side-out to right, right's 2nd turn -> flip to player 1
+    ok(sp() === 1, 'right regains -> flips to R1')
+    pt(s, 'left') // left's 3rd turn -> flip back to 1
+    ok(sp() === 1, 'left regains again -> back to L1')
+  }
+
+  // Manual override: set the serving pair's player, and flip with a bare serve-player.
+  {
+    const s = mk()
+    const sp = () => s.getState().serve_player
+    s.apply({ type: 'serve-order', first: 'left', leftServer: 1, rightServer: 1 })
+    s.apply({ type: 'serve-player', value: 2 })
+    ok(sp() === 2 && s.getState().server_a === 2, 'override sets the left serving pair to player 2')
+    s.apply({ type: 'serve-player' }) // no value -> flip
+    ok(sp() === 1, 'bare serve-player flips 2 -> 1')
+    s.apply({ type: 'serve-player', side: 'right', value: 2 }) // override the non-serving pair
+    ok(s.getState().server_b === 2 && sp() === 1, 'override targets a named side without touching the server digit')
+  }
+
+  // The serve player follows its pair across a change of ends, and survives a state round-trip.
+  {
+    const s = mk()
+    s.apply({ type: 'serve-order', first: 'left', leftServer: 2, rightServer: 1 })
+    s.apply({ type: 'swap' })
+    ok(s.getState().server_b === 2, 'swap moves the left pair (server 2) to the right')
+    ok(s.getState().serving_team === 'right' && s.getState().serve_player === 2, 'serving digit follows the pair after a swap')
+    const s2 = mk()
+    s2.apply({ type: 'set-state', state: s.getState() })
+    ok(s2.getState().server_b === 2 && s2.getState().served_b === true, 'server + served survive a set-state round-trip')
   }
 
   console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'} — ${pass} passed, ${fail} failed`)
