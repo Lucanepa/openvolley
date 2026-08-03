@@ -5,3 +5,5 @@ settings.json
 # vendor firmware zip (18MB) — see firmware/RECOVERY.md for the URL
 firmware/*.zip
 .agents/
+data/
+.claude/
