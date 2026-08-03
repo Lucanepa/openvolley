@@ -795,7 +795,7 @@
     // the new state so the phone reflects the switched sides immediately.
     publishCountdown(seconds, opts.label || label, opts.content || "full", opts.swapFirst, opts.side).then((r) => {
       if (opts.swapFirst && r && r.state) {
-        renderStatus({ mode: "manual", matchId: null, ledbox: lastLedbox, state: r.state });
+        renderStatus({ ledbox: lastLedbox, state: r.state }); // merged — keeps sport/pin/matchId
       }
     });
     const tick = () => {
@@ -873,7 +873,13 @@
   let lastState = null; // last raw a/b state seen — prefills the beach serve-order modal
   const MODE_LABELS = { manual: "Manual", lan: "Live (LAN)", cloud: "Cloud", idle: "Idle" };
 
+  // Last FULL status seen. Optimistic post-action renders carry only the fields they know
+  // (state + ledbox); merging them over this keeps sport / pinRequired / matchId / mode intact.
+  // Without it every click rendered `pinRequired: undefined` -> the lock dropped and the header
+  // cleared, then the next poll put them back — the top bar visibly flickering on each action.
+  let LAST_STATUS = {};
   function renderStatus(st) {
+    st = LAST_STATUS = { ...LAST_STATUS, ...st };
     // A sport change (fresh boot, or after a switch completes) reshapes the Game tab + mirror once.
     if (st.sport && st.sport !== SPORT) { SPORT = st.sport; applySportUI(); }
     lastLedbox = st.ledbox || lastLedbox;
@@ -1155,6 +1161,14 @@
     return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#111318" : "#ffffff";
   };
   function renderBoard(s) {
+    // The serve toggle paints from --left/--right, which are stock blue/red constants. Track the
+    // TEAM colours onto them so the serve indicator matches the panel and the shirts instead of
+    // always reading blue-left / red-right whatever the teams are wearing.
+    if (s) {
+      const docRoot = document.documentElement;
+      if (s.left && s.left.color) docRoot.style.setProperty("--left", s.left.color);
+      if (s.right && s.right.color) docRoot.style.setProperty("--right", s.right.color);
+    }
     for (const side of ["left", "right"]) {
       const root = $(`.side.${side}`);
       const d = s ? s[side] : { short: "", color: "#888", points: 0, sets: 0, to: 0, sub: 0 };
@@ -1304,7 +1318,7 @@
       const r = await postJSON("/api/action", { action });
       const s = r && r.state;
       if (s && (board.mode === "idle" || board.mode === "blank")) board.mode = "match";
-      if (s) renderStatus({ mode: "manual", matchId: null, ledbox: lastLedbox, state: s });
+      if (s) renderStatus({ ledbox: lastLedbox, state: s }); // merged over LAST_STATUS — no field is reset
       handleEvent(r && r.event, s);
       refreshStatus();
     } catch (e) { toast(e.message); }
@@ -1620,6 +1634,11 @@
       if (r && r.changed === false) { const now = await api("/api/status"); renderStatus(now); closeSportPicker(); return; }
       const done = await waitForSwitch(key);
       if (done) {
+        // The new sport carries its OWN timing/allowances, and this page is what supplies the
+        // countdown durations (SETTINGS.timeoutSeconds etc). Without this reload the form and the
+        // cache keep the OUTGOING sport's numbers — beach's 60s TO/interval would drive a
+        // volleyball match — and the next Settings save would persist them onto the new sport.
+        await loadSettings();
         renderStatus(done); closeSportPicker(); toast(sportLabel(key) + " ready");
         // Fresh beach match → ask the serve order straight away ("the beginning").
         if (key === "beach") { beachSeenPoints = false; beachAskedSets = -1; openServeOrder(); }

@@ -68,6 +68,21 @@ ok(s.forSport('beach').brightness === 55 && s.forSport('volleyball').brightness 
 const s2 = new Settings(file)
 ok(s2.values.timeoutSeconds === 45 && s2.values.brightness === 55 && s2.values.scorerPin === '2026', 'reload of migrated file is stable')
 
+// A patch that changes the sport AND carries per-sport values must NOT write those values into
+// the INCOMING sport. A settings form is always rendered under the sport that was active when it
+// loaded, so its numbers belong to THAT sport. Routing them by the post-patch sport let beach's
+// 60s timeout/interval overwrite volleyball's 30/180 on disk — permanently, and invisibly.
+console.log('\nsport change + per-sport values in one patch:')
+s.update({ sport: 'beach' })
+ok(s.values.sport === 'beach', 'switched active sport to beach')
+const volleyBefore = s.forSport('volleyball').timeoutSeconds
+s.update({ sport: 'volleyball', timeoutSeconds: 60, setIntervalSeconds: 60 })
+ok(s.values.sport === 'volleyball', 'switched active sport back to volleyball')
+ok(s.forSport('volleyball').timeoutSeconds === volleyBefore,
+  `volleyball timeout NOT clobbered by the outgoing sport (${volleyBefore}s kept)`)
+ok(s.forSport('volleyball').setIntervalSeconds === 180, 'volleyball set interval still 180s')
+ok(s.forSport('beach').timeoutSeconds === 60, 'the values landed on beach, the sport the form was rendered under')
+
 fs.rmSync(dir, { recursive: true, force: true })
 console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)

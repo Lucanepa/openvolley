@@ -331,6 +331,20 @@ export class LedboxClient extends EventEmitter {
     this._idle = false // a countdown means the match is live; leave any idle screen
     try {
       if (secondsLeft == null) {
+        // The board keeps each layout's section values, so the break screen still holds THIS
+        // countdown's label and clock after we leave it. Re-entering (TO -> score -> interval)
+        // switches the layout back and the old text is on the panel for the whole settle window
+        // before the new values land — the operator sees the previous countdown flash up.
+        // Blank it on the way out, while its sections still exist.
+        // Only the two countdown screens carry these sections — writing them on the idle/crest
+        // layout would just earn a "section not found" from the board.
+        const onBreak = this.currentLayout === this.breakLayout || this.currentLayout === this.countdownLayout
+        if (onBreak) {
+          await this.send('SetSections', [
+            { name: this.labelSection, value: { attrib: 'text', value: '' } },
+            { name: this.timerSection, value: { attrib: 'text', value: '' } },
+          ]).catch(() => {}) // cosmetic: never block the return to the match screen
+        }
         await this.setLayoutIfNeeded(this.layout)
         if (this._lastState) await this.pushState(this._lastState) // repaint the match
         return true
