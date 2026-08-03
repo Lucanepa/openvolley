@@ -148,8 +148,12 @@ export class Settings {
   // Route a flat patch: global keys → top level, per-sport keys → the ACTIVE sport. Returns the
   // fresh flat view.
   update(patch = {}) {
-    sanitizeInto(this.raw, GLOBAL_KEYS, patch)
+    // Resolve the target sport BEFORE the patch can change it. A form is always rendered under
+    // the sport that was active when it loaded, so its per-sport values belong to THAT sport.
+    // Reading raw.sport after applying the patch would route the outgoing sport's numbers into
+    // the incoming one and silently overwrite its defaults on disk.
     const active = SPORTS.includes(this.raw.sport) ? this.raw.sport : 'volleyball'
+    sanitizeInto(this.raw, GLOBAL_KEYS, patch)
     sanitizeInto(this.raw.perSport[active], PER_SPORT_KEYS, patch)
     this.save()
     this.values = flatten(this.raw, this.raw.sport)
