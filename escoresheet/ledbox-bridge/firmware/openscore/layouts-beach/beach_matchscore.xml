@@ -12,16 +12,16 @@
   <section name="set1" type="text" x="89" y="-6" visible="true" private="false" enable="true" fontsize="20" color="37, 99, 235" align="right" animation="" animation_params="">0</section>
   <section name="vs" type="text" x="97" y="-3" visible="true" private="false" enable="true" fontsize="15" color="255, 255, 255" align="center" animation="" animation_params="">-</section>
   <section name="set2" type="text" x="105" y="-6" visible="true" private="false" enable="true" fontsize="20" color="255, 69, 0" align="left" animation="" animation_params="">0</section>
-  <section name="switch" type="text" x="96" y="18" visible="true" private="false" enable="true" fontsize="10" color="60, 60, 60" align="center" animation="" animation_params=""></section>
-  <!-- T row nudged up (y33->y28) to free the lower centre for the serve-player digit. -->
-  <section name="timeout1" type="text" x="82" y="28" visible="true" private="false" enable="true" fontsize="14" color="255, 255, 255" align="center" animation="" animation_params="">0</section>
-  <section name="lbl_to" type="text" x="96" y="30" visible="true" private="true" enable="true" fontsize="10" color="170, 184, 216" align="center" animation="" animation_params="">T</section>
-  <section name="timeout2" type="text" x="111" y="28" visible="true" private="false" enable="true" fontsize="14" color="255, 255, 255" align="center" animation="" animation_params="">0</section>
-  <!-- Serve-player digit (1|2): which player of the serving pair is up. Painted by the mapper in
-       the serving pair's colour; blank when nobody serves. Dead-centre, above the serve bars. -->
-  <section name="serveplr" type="text" x="96" y="44" visible="true" private="false" enable="true" fontsize="17" color="60, 60, 60" align="center" animation="" animation_params=""></section>
-  <section name="serve1" type="rectangle" x="70" y="60" visible="true" private="false" enable="true" color="255, 255, 255" bordercolor="0, 0, 0" width="16" height="5" animation="" animation_params="">s1</section>
-  <section name="serve2" type="rectangle" x="107" y="60" visible="true" private="false" enable="true" color="0, 0, 0" bordercolor="0, 0, 0" width="16" height="5" animation="" animation_params="">s2</section>
+  <!-- TO (timeout) row back in the centre, between the set score and the serve digit: counts flank the T. -->
+  <section name="timeout1" type="text" x="82" y="15" visible="true" private="false" enable="true" fontsize="13" color="255, 255, 255" align="center" animation="" animation_params="">0</section>
+  <section name="lbl_to" type="text" x="98" y="15" visible="true" private="true" enable="true" fontsize="13" color="170, 184, 216" align="center" animation="" animation_params="">T</section>
+  <section name="timeout2" type="text" x="111" y="15" visible="true" private="false" enable="true" fontsize="13" color="255, 255, 255" align="center" animation="" animation_params="">0</section>
+  <!-- Serve-player digit (1|2): big, in the serving side's half, below the TO row. Painted by the
+       mapper in that pair's colour; blanks while a court switch is due (the centre `switch` takes over). -->
+  <section name="serveplr1" type="text" x="80" y="23" visible="true" private="false" enable="true" fontsize="38" color="60, 60, 60" align="center" animation="" animation_params=""></section>
+  <section name="serveplr2" type="text" x="111" y="23" visible="true" private="false" enable="true" fontsize="38" color="60, 60, 60" align="center" animation="" animation_params=""></section>
+  <!-- Court-switch cue: centre, mutually exclusive with the serve digit. -->
+  <section name="switch" type="text" x="96" y="30" visible="true" private="false" enable="true" fontsize="11" color="60, 60, 60" align="center" animation="" animation_params=""></section>
   <section name="team2" type="text" x="192" y="-4" visible="true" private="false" enable="true" fontsize="18" color="255, 69, 0" align="right" animation="" animation_params="">B/B</section>
   <section name="bg_score2" type="rectangle" x="127" y="17" visible="true" private="true" enable="true" color="0, 0, 0" bordercolor="255, 69, 0" width="64" height="46" animation="" animation_params="">bg2</section>
   <section name="score2" type="text" x="160" y="2" visible="true" private="false" enable="true" fontsize="55" color="255, 69, 0" align="center" animation="" animation_params="">0</section>

@@ -41,7 +41,8 @@ await sleep(250) // connect + layout settle
 
 // Apply an action to the source, push the resulting state to the (mock) board, let it land.
 const paint = async (a) => { src.apply(a); await ledbox.pushState(src.getState()); await sleep(70) }
-const digit = () => mock.text('serveplr')
+// The serving side's digit is lit; the other is blank. Read whichever side is showing.
+const digit = () => mock.text('serveplr1') || mock.text('serveplr2') || ''
 
 try {
   await paint({ type: 'team', side: 'left', short: 'MOL/SOR', color: '#2563eb' })
@@ -50,7 +51,7 @@ try {
   // Declared order: left serves first with player 1, right's first server is 2.
   await paint({ type: 'serve-order', first: 'left', leftServer: 1, rightServer: 2 })
   eq(digit(), '1', 'board shows L1 at the opening serve')
-  const c1 = mock.color('serveplr')
+  const c1 = mock.color('serveplr1') // left serving -> the left-side digit is lit
   ok(c1 && c1 !== '30,30,30', `serve digit lit in the serving pair colour (${JSON.stringify(c1)})`)
 
   // Side-out to the right pair: its first turn -> declared player 2, no flip.

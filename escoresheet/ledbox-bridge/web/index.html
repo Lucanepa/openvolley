@@ -5,11 +5,12 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='22' y='72' width='56' height='22' rx='11' fill='%231e3a8a'/%3E%3Crect x='44' y='46' width='12' height='32' rx='6' fill='%232563eb'/%3E%3Ccircle cx='50' cy='34' r='24' fill='%23f8fafc' stroke='%230f172a' stroke-width='4'/%3E%3Cg fill='none' stroke='%230f172a' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M50 11 Q41 34 50 57'/%3E%3Cpath d='M31 18 Q50 32 43 55'/%3E%3Cpath d='M69 18 Q50 32 57 55'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root{
-    --bg:#e6e9f0; --card:#eaedf4; --fg:#2a2e3a; --muted:#5f6880;
-    --sh-lo:#c4c9d8; --sh-hi:#ffffff;
-    --blue:#3b6fe0; --red:#e0453d; --gold:#e3a400;
-    --ok:#25b567; --warn:#d99320; --bad:#e0453d;
-    --left:#3b6fe0; --right:#e0453d; --r:20px;
+    --bg:#ffffff; --card:#ffffff; --fill:#fafafc; --fg:#0A0B0D; --muted:#5a606b;
+    --line:#111318; --line-soft:#e3e5ea;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    --blue:#0A34D6; --gold:#B45309;
+    --ok:#12813f; --warn:#B45309; --bad:#E0301A;
+    --left:#0A34D6; --right:#E0301A; --r:3px;
   }
   @media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -18,21 +19,19 @@
   button,input{font-family:inherit}
   :focus-visible{outline:2.5px solid var(--blue);outline-offset:2px}
   .licon{width:1.15em;height:1.15em;flex:0 0 auto;vertical-align:-.17em}
-  /* neumorphic primitives */
-  .raise{background:var(--card);box-shadow:6px 6px 14px var(--sh-lo),-6px -6px 14px var(--sh-hi)}
-  .press,button:active{box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
+  /* flat primitive (Console) */
+  .press,button:active{background:var(--fill)}
   #app{display:flex;flex-direction:column;height:100dvh;overflow:hidden;padding:0 env(safe-area-inset-right) 0 env(safe-area-inset-left)}
 
   .topbar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 14px}
   .brand{font-weight:800;font-size:15px;white-space:nowrap;color:var(--fg)}
   #dot{font-size:12px}
   #mode{flex:1;min-width:0;font-size:12px;color:var(--muted);display:flex;gap:7px;align-items:center;white-space:nowrap;overflow:hidden}
-  #mode b{color:var(--fg)} #setNo{padding:2px 10px;border-radius:20px;font-weight:800;color:var(--fg);background:var(--card);box-shadow:inset 2px 2px 5px var(--sh-lo),inset -2px -2px 5px var(--sh-hi)}
+  #mode b{color:var(--fg)} #setNo{padding:2px 10px;border-radius:4px;font-weight:800;font-family:var(--mono);color:var(--fg);background:var(--card);border:1.5px solid var(--line)}
   .nav{display:flex;gap:8px;flex:0 0 auto}
   .nav button{min-height:40px;min-width:40px;padding:0 15px;font-size:13px;font-weight:700;line-height:1;
-    border:0;background:var(--card);color:var(--muted);border-radius:12px;cursor:pointer;
-    box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
-  .nav button.active{color:var(--blue)}
+    border:1.5px solid var(--line);background:var(--card);color:var(--muted);border-radius:var(--r);cursor:pointer}
+  .nav button.active{color:var(--blue);border-color:var(--fg)}
   #fsBtn,#awakeBtn,#tabSettingsBtn{font-size:16px;padding:0 12px}
   #awakeBtn.active{color:var(--gold)}
 
@@ -46,89 +45,106 @@
   .side.left{--edge:var(--left)} .side.right{--edge:var(--right)}
   .teamcard{flex:0 1 auto;max-height:100%;min-height:0;display:flex;flex-direction:column;gap:14px;
     background:var(--card);border-radius:var(--r);padding:12px 14px;
-    box-shadow:7px 7px 16px var(--sh-lo),-7px -7px 16px var(--sh-hi)}
+    border:1.5px solid var(--line)}
   .sidehdr{flex:0 0 auto;display:flex;align-items:center;gap:8px}
   .side.right .sidehdr{flex-direction:row-reverse}
   input.short{flex:1;min-width:0;padding:9px 12px;font-size:16px;font-weight:800;text-transform:uppercase;
-    letter-spacing:.03em;background:var(--card);color:var(--fg);border:0;border-radius:12px;
-    box-shadow:inset 3px 3px 7px var(--sh-lo),inset -3px -3px 7px var(--sh-hi)}
+    letter-spacing:.03em;background:var(--card);color:var(--fg);border:1.5px solid var(--line);border-radius:var(--r)}
   .side.right input.short{text-align:right}
   input.short.flashname{animation:nameflash 1s ease 3}
   @keyframes nameflash{50%{color:var(--ok)}}
-  input.color{width:38px;height:38px;padding:0;border:0;border-radius:12px;background:var(--card);cursor:pointer;flex:0 0 auto;
-    box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
+  input.color{width:38px;height:38px;padding:0;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);cursor:pointer;flex:0 0 auto}
 
   .score{flex:0 0 auto;max-height:30vh;min-height:0;display:flex;flex-direction:row-reverse;align-items:center;justify-content:space-between;gap:8px}
   .score .val{flex:1;min-width:0;text-align:center;font-weight:800;line-height:.9;color:var(--edge);
-    font-variant-numeric:tabular-nums;font-size:clamp(48px,16vh,88px);
-    text-shadow:0 0 22px color-mix(in srgb,var(--edge) 45%,transparent)}
+    font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:clamp(48px,16vh,88px)}
   .score .val.flash{animation:ptflash .8s ease}
   @keyframes ptflash{25%{transform:scale(1.3);color:var(--ok);text-shadow:0 0 26px var(--ok)}100%{transform:scale(1)}}
   .bigbtn{flex:0 0 auto;width:clamp(54px,9vw,74px);height:clamp(54px,9vw,74px);
-    font-size:34px;font-weight:700;line-height:1;border:0;background:var(--card);color:var(--fg);border-radius:50%;cursor:pointer;
-    box-shadow:6px 6px 13px var(--sh-lo),-6px -6px 13px var(--sh-hi)}
+    font-size:34px;font-weight:700;line-height:1;border:1.5px solid var(--line);background:var(--card);color:var(--fg);border-radius:var(--r);cursor:pointer}
 
   /* stat blocks: label + number on top, -/+ UNDERNEATH */
   .statrow{flex:0 0 auto;display:flex;gap:8px}
   .stat{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
-    background:var(--card);border-radius:14px;padding:7px 4px 8px;
-    box-shadow:inset 3px 3px 7px var(--sh-lo),inset -3px -3px 7px var(--sh-hi)}
-  .stat .name{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
-  .stat .num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--fg);line-height:1}
+    background:var(--card);border-radius:var(--r);padding:7px 4px 8px;
+    border:1.5px solid var(--line)}
+  .stat .name{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+  .stat .num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--mono);color:var(--fg);line-height:1}
   .stat .num.bump{animation:numbump .5s ease}
   @keyframes numbump{40%{transform:scale(1.5);color:var(--ok)}}
   .stat .pm{display:flex;gap:6px;margin-top:2px}
-  .smbtn{width:34px;height:30px;font-size:17px;font-weight:700;line-height:1;border:0;background:var(--card);color:var(--fg);
-    border-radius:10px;cursor:pointer;box-shadow:3px 3px 7px var(--sh-lo),-3px -3px 7px var(--sh-hi)}
+  .smbtn{width:34px;height:30px;font-size:17px;font-weight:700;line-height:1;border:1.5px solid var(--line);background:var(--card);color:var(--fg);
+    border-radius:var(--r);cursor:pointer}
   .stat.warn{color:var(--warn)} .stat.warn .num,.stat.warn .name{color:var(--warn)}
   .stat.maxed .num,.stat.maxed .name{color:var(--bad)}
 
+  /* ===== Arena team blocks: each side is a solid colour panel (blue L / red R) with white mono
+     numerals, framed by the Console black hairline. Controls become translucent-white on the block. */
+  /* --on-edge = readable ink for the panel colour (JS sets it per side by luminance; #fff default
+     for the dark blue/red fallback). Text uses it directly; surfaces color-mix off it so they flip
+     to translucent-black on a light team colour and translucent-white on a dark one. */
+  .side{--on-edge:#fff}
+  .side .teamcard{background:var(--edge)}
+  .side .score .val{color:var(--on-edge)}
+  .side input.short{background:color-mix(in srgb,var(--on-edge) 16%,transparent);color:var(--on-edge);border-color:color-mix(in srgb,var(--on-edge) 42%,transparent)}
+  .side input.short::placeholder{color:color-mix(in srgb,var(--on-edge) 60%,transparent)}
+  .side input.color{border-color:color-mix(in srgb,var(--on-edge) 50%,transparent)}
+  .side .bigbtn,.side .smbtn,.side .score .ptbtn{background:color-mix(in srgb,var(--on-edge) 16%,transparent);border-color:color-mix(in srgb,var(--on-edge) 34%,transparent);color:var(--on-edge)}
+  .side .bigbtn:active,.side .smbtn:active,.side .score .ptbtn:active{background:color-mix(in srgb,var(--on-edge) 30%,transparent)}
+  .side .score .bigbtn.minus{background:color-mix(in srgb,var(--on-edge) 12%,transparent)}
+  .side .stat{background:color-mix(in srgb,var(--on-edge) 15%,transparent);border-color:color-mix(in srgb,var(--on-edge) 26%,transparent)}
+  .side .stat .name{color:color-mix(in srgb,var(--on-edge) 85%,transparent)}
+  .side .stat .num{color:var(--on-edge)}
+  .side .stat.warn .num,.side .stat.warn .name{color:#ffe08a}
+  .side .stat.maxed{background:color-mix(in srgb,var(--on-edge) 30%,transparent);border-color:var(--on-edge)}
+  .side .stat.maxed .num,.side .stat.maxed .name{color:var(--on-edge)}
+  .side .taphint{color:color-mix(in srgb,var(--on-edge) 72%,transparent)}
+
   /* centre column: serve + quick controls */
   .centercol{flex:0 0 auto;align-self:center;display:flex;flex-direction:column;align-items:center;gap:12px;
-    background:var(--card);border-radius:26px;padding:14px 10px;
-    box-shadow:7px 7px 16px var(--sh-lo),-7px -7px 16px var(--sh-hi)}
+    background:var(--card);border-radius:var(--r);padding:14px 10px;
+    border:1.5px solid var(--line)}
   .servebox{display:flex;flex-direction:column;align-items:center;gap:8px}
-  .servebox .lbl{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--muted)}
-  .serveind{font-size:20px;transition:opacity .15s}
-  .servebtn{width:44px;height:38px;font-size:16px;border:0;background:var(--card);color:var(--muted);border-radius:12px;cursor:pointer;
-    box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
-  .servebtn.on{color:var(--ok)}
+  .servebox .lbl{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  /* one consolidated SERVE pill: two arrows + label; the serving side fills its team colour */
+  .servetoggle{display:flex;align-items:center;gap:4px;background:var(--card);border:1.5px solid var(--line);border-radius:var(--r);padding:4px}
+  .sv-arrow{display:flex;align-items:center;justify-content:center;width:42px;height:38px;border:0;background:transparent;color:var(--muted);border-radius:2px;cursor:pointer;transition:background .14s,color .14s}
+  .sv-arrow:hover{color:var(--fg)}
+  .sv-arrow[data-serve="left"].on{background:var(--left);color:#fff}
+  .sv-arrow[data-serve="right"].on{background:var(--right);color:#fff}
+  .sv-lbl{padding:0 3px}
   /* beach serve-player control (centre column, beach only) */
   #beachServe{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
   #beachServe[hidden]{display:none}
-  .plrbtn{display:flex;flex-direction:column;align-items:center;gap:2px;width:64px;padding:7px 0;border:0;border-radius:14px;background:var(--card);color:var(--fg);cursor:pointer;box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
-  .plrbtn .plrlbl{font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--muted)}
-  .plrbtn .plrnum{font-size:24px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-  .ordbtn{font-size:11px;font-weight:800;letter-spacing:.03em;color:var(--blue);background:var(--card);border:0;border-radius:11px;padding:8px 10px;cursor:pointer;box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
-  .iconbtn{width:48px;height:44px;font-size:18px;border:0;background:var(--card);color:var(--muted);border-radius:14px;cursor:pointer;
-    box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
+  .plrbtn{display:flex;flex-direction:column;align-items:center;gap:2px;width:64px;padding:7px 0;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);cursor:pointer}
+  .plrbtn .plrlbl{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .plrbtn .plrnum{font-size:24px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  .ordbtn{font-size:11px;font-weight:800;letter-spacing:.03em;color:var(--blue);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r);padding:8px 10px;cursor:pointer}
+  .iconbtn{width:48px;height:44px;font-size:18px;border:1.5px solid var(--line);background:var(--card);color:var(--muted);border-radius:var(--r);cursor:pointer}
   .iconbtn.active{color:var(--gold)}
 
   .gfooter{flex:0 0 auto;display:flex;flex-direction:column;gap:8px}
   .setstrip{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;overflow-x:auto}
   .setstrip[hidden]{display:none}
-  .setpill{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;padding:5px 11px;border-radius:20px;
-    background:var(--card);font-size:12px;font-variant-numeric:tabular-nums;
-    box-shadow:inset 2px 2px 5px var(--sh-lo),inset -2px -2px 5px var(--sh-hi)}
+  .setpill{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;padding:5px 11px;border-radius:4px;
+    background:var(--card);font-size:12px;font-variant-numeric:tabular-nums;font-family:var(--mono);
+    border:1.5px solid var(--line)}
   .setpill .sn{font-size:10px;font-weight:700;color:var(--muted);margin-right:3px}
   .setpill b{font-weight:600;color:var(--muted)} .setpill b.w{color:var(--fg);font-weight:800} .setpill em{color:var(--muted)}
-  .setundo{width:30px;height:26px;border-radius:9px;font-size:12px;border:0;background:var(--card);color:var(--muted);cursor:pointer;
-    box-shadow:3px 3px 7px var(--sh-lo),-3px -3px 7px var(--sh-hi)}
+  .setundo{width:30px;height:26px;border-radius:var(--r);font-size:12px;border:1.5px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer}
   .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .actions button{min-height:44px;padding:0 16px;font-size:13px;font-weight:800;white-space:nowrap;border:0;
-    background:var(--card);color:var(--fg);border-radius:13px;cursor:pointer;
-    box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .actions button{min-height:44px;padding:0 16px;font-size:13px;font-weight:800;white-space:nowrap;border:1.5px solid var(--line);
+    background:var(--card);color:var(--fg);border-radius:var(--r);cursor:pointer}
   .actions .switch{color:var(--blue)}
   .actions .danger{color:var(--bad)} .actions .danger:first-of-type{margin-left:auto}
 
   /* countdown overlay */
   #cd{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:15;display:flex;align-items:center;gap:14px;
-    padding:10px 18px;border-radius:16px;background:var(--card);box-shadow:8px 8px 20px var(--sh-lo),-8px -8px 20px var(--sh-hi)}
+    padding:10px 18px;border-radius:var(--r);background:var(--card);border:1.5px solid var(--line);box-shadow:0 24px 50px -24px rgba(10,11,13,.45)}
   #cd[hidden]{display:none}
-  #cd .cd-time{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--warn)}
+  #cd .cd-time{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--mono);color:var(--warn)}
   #cd .cd-label{font-size:14px;font-weight:800;letter-spacing:.03em;color:var(--fg);text-transform:uppercase}
-  #cd .cd-stop{min-width:36px;height:36px;padding:0 12px;border-radius:11px;font-size:15px;font-weight:800;border:0;background:var(--card);color:var(--fg);cursor:pointer;
-    box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
+  #cd .cd-stop{min-width:36px;height:36px;padding:0 12px;border-radius:var(--r);font-size:15px;font-weight:800;border:1.5px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
   #cd.major{top:50%;transform:translate(-50%,-50%);flex-direction:column;gap:10px;padding:26px 42px}
   #cd.major .cd-time{font-size:66px} #cd.major .cd-label{font-size:16px}
   #cd.major .cd-stop{height:44px;font-size:16px;padding:0 20px;color:var(--blue)}
@@ -140,29 +156,34 @@
   /* ---- LINK ---- */
   .link{padding:14px;overflow-y:auto}
   .linkbar{display:flex;gap:8px;margin-bottom:12px}
-  .linkbar button,#matches .linkbtn{padding:11px 18px;font-size:14px;font-weight:700;border:0;background:var(--card);color:var(--blue);border-radius:13px;cursor:pointer;box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .linkbar button,#matches .linkbtn{padding:11px 18px;font-size:14px;font-weight:700;border:1.5px solid var(--line);background:var(--card);color:var(--blue);border-radius:var(--r);cursor:pointer}
   #matches{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
-  #matches li{display:flex;align-items:center;gap:12px;padding:13px;border-radius:14px;background:var(--card);box-shadow:5px 5px 12px var(--sh-lo),-5px -5px 12px var(--sh-hi)}
+  #matches li{display:flex;align-items:center;gap:12px;padding:13px;border-radius:var(--r);background:var(--card);border:1.5px solid var(--line)}
   #matches .info{flex:1;min-width:0} #matches .label{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #matches .sub{font-size:12px;color:var(--muted)}
   .live{font-size:11px;font-weight:800;letter-spacing:.05em;color:#fff;background:var(--ok);padding:3px 8px;border-radius:20px}
-  #matches li.linked .linkbtn{color:#fff;background:var(--blue)}
+  #matches li.linked .linkbtn{color:#fff;background:var(--blue);border-color:var(--blue)}
   .note{color:var(--muted);font-size:13px;padding:8px 2px} .err{color:var(--bad);font-size:13px;padding:6px 2px}
 
   /* ---- SETTINGS ---- */
   .settings{padding:14px;overflow-y:auto}
   .setgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
-  .settings fieldset{border:0;border-radius:16px;padding:12px 16px 14px;margin:0;background:var(--card);min-width:0;box-shadow:6px 6px 14px var(--sh-lo),-6px -6px 14px var(--sh-hi)}
+  .settings fieldset{border:1.5px solid var(--line);border-radius:var(--r);padding:12px 16px 14px;margin:0;background:var(--card);min-width:0}
   .settings legend{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--blue);text-transform:uppercase;padding:0 4px 2px;display:flex;align-items:center;gap:6px}
   .settings .row{display:flex;align-items:center;gap:8px;padding:9px 0;font-size:13px}
-  .settings .row + .row{border-top:1px solid rgba(150,160,190,.16)}
+  .settings .row + .row{border-top:1px solid var(--line-soft)}
   .settings .row span{flex:1;min-width:0} .settings .row em{font-style:normal;color:var(--muted);font-size:11px;width:16px}
-  .settings input[type=number],.settings input[type=text],.settings select{padding:7px 10px;font-size:13px;border:0;border-radius:10px;background:var(--card);color:var(--fg);box-shadow:inset 3px 3px 6px var(--sh-lo),inset -3px -3px 6px var(--sh-hi)}
-  .settings input[type=number]{width:84px} .settings input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:0 0 auto;width:46px;height:26px;border-radius:13px;position:relative;cursor:pointer;background:var(--card);box-shadow:inset 3px 3px 6px var(--sh-lo),inset -3px -3px 6px var(--sh-hi);transition:background .2s}
-  .settings input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--card);box-shadow:3px 3px 6px var(--sh-lo),-2px -2px 5px var(--sh-hi);transition:transform .2s}
-  .settings input[type=checkbox]:checked{background:var(--blue);box-shadow:inset 2px 2px 5px rgba(40,60,120,.5)}
-  .settings input[type=checkbox]:checked::after{transform:translateX(20px);background:#fff;box-shadow:2px 2px 5px rgba(0,0,0,.25)}
+  .settings input[type=number],.settings input[type=text],.settings select{padding:7px 10px;font-size:13px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg)}
+  .settings input[type=number]{width:84px} .settings input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:0 0 auto;width:46px;height:26px;border-radius:3px;position:relative;cursor:pointer;background:var(--card);border:1.5px solid var(--line);transition:background .2s}
+  .settings input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:2px;background:var(--muted);transition:transform .2s}
+  .settings input[type=checkbox]:checked{background:var(--blue);border-color:var(--blue)}
+  .settings input[type=checkbox]:checked::after{transform:translateX(20px);background:#fff}
   .settings .hint{font-size:11px;color:var(--muted);margin:4px 0 0} #setStatus.saved{color:var(--ok)}
+  /* explicit per-section Save: muted "Saved" when clean, filled blue "Save" when there are unsaved edits */
+  .setsaverow{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line-soft)}
+  .setsavebtn{min-height:38px;padding:0 20px;font-size:13px;font-weight:800;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--muted);cursor:pointer}
+  .setsavebtn.dirty{background:var(--blue);border-color:var(--blue);color:#fff}
+  .setsavebtn.ok{border-color:var(--ok);color:var(--ok)}
 
   #rotate{display:none}
   @media (orientation:portrait) and (max-width:600px){
@@ -170,48 +191,48 @@
     #rotate .ic{font-size:56px;animation:rothint 2.4s ease-in-out infinite} #rotate .t{font-size:17px;font-weight:800} #rotate .s{font-size:13px;color:var(--muted);max-width:280px}
     @keyframes rothint{0%,55%{transform:rotate(0)}78%,100%{transform:rotate(-90deg)}}
   }
-  #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--card);color:var(--fg);padding:12px 18px;border-radius:13px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;z-index:60;text-align:center;box-shadow:6px 6px 16px var(--sh-lo),-6px -6px 16px var(--sh-hi)}
+  #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--card);color:var(--fg);padding:12px 18px;border-radius:var(--r);font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;z-index:60;text-align:center;border:1.5px solid var(--line);box-shadow:0 24px 50px -24px rgba(10,11,13,.45)}
   #toast.show{opacity:1}
-  #edit{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(120,128,150,.35)}
+  #edit{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(15,17,22,.32)}
   #edit[hidden]{display:none}
-  .editbox{background:var(--card);border-radius:20px;padding:18px;width:min(300px,90vw);box-shadow:10px 10px 30px var(--sh-lo),-10px -10px 30px var(--sh-hi)}
-  .editlabel{font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;margin-bottom:10px;text-align:center}
-  #editInput{width:100%;padding:14px;font-size:32px;font-weight:800;text-align:center;border:0;border-radius:12px;background:var(--card);color:var(--fg);font-variant-numeric:tabular-nums;box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
+  .editbox{background:var(--card);border-radius:var(--r);padding:18px;width:min(300px,90vw);border:1.5px solid var(--line);box-shadow:0 24px 50px -24px rgba(10,11,13,.45)}
+  .editlabel{font-size:13px;font-weight:800;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:10px;text-align:center}
+  #editInput{width:100%;padding:14px;font-size:32px;font-weight:800;text-align:center;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);font-variant-numeric:tabular-nums;font-family:var(--mono)}
   .editbtns{display:flex;gap:10px;margin-top:14px}
-  .editbtns button{flex:1;padding:13px;font-size:15px;font-weight:800;border-radius:12px;border:0;background:var(--card);color:var(--fg);cursor:pointer;box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .editbtns button{flex:1;padding:13px;font-size:15px;font-weight:800;border-radius:var(--r);border:1.5px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
   #editOk{color:var(--blue)}
-  #offline{display:none;align-items:center;gap:10px;padding:11px 15px;margin:0 10px;border-radius:13px;background:var(--card);color:var(--bad);font-weight:700;box-shadow:inset 3px 3px 7px var(--sh-lo),inset -3px -3px 7px var(--sh-hi)}
+  #offline{display:none;align-items:center;gap:10px;padding:11px 15px;margin:0 10px;border-radius:var(--r);background:var(--card);color:var(--bad);font-weight:700;border:1.5px solid var(--bad)}
   #offline.show{display:flex} #offline .sub{font-weight:400;color:var(--muted);font-size:.82rem}
   .editable{cursor:pointer}
   /* Power / shutdown */
-  .dangerbtn{width:100%;margin-top:6px;padding:14px;font-size:15px;font-weight:800;border:0;border-radius:13px;background:var(--card);color:var(--bad);cursor:pointer;box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .dangerbtn{width:100%;margin-top:6px;padding:14px;font-size:15px;font-weight:800;border:1.5px solid var(--bad);border-radius:var(--r);background:var(--card);color:var(--bad);cursor:pointer}
   #shutdown{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);color:var(--fg);text-align:center;padding:32px}
   #shutdown.show{display:flex}
   #shutdown .ic{font-size:66px;color:var(--muted)}
   #shutdown .t{font-size:23px;font-weight:800}
   #shutdown .s{font-size:14px;color:var(--muted);max-width:340px}
-  #shutdown .press{font-size:19px;font-weight:800;color:var(--blue);background:var(--card);padding:16px 26px;border-radius:16px;box-shadow:inset 3px 3px 8px var(--sh-lo),inset -3px -3px 8px var(--sh-hi)}
+  #shutdown .press{font-size:19px;font-weight:800;color:var(--blue);background:var(--card);padding:16px 26px;border-radius:var(--r);border:1.5px solid var(--line)}
   @media (prefers-reduced-motion: no-preference){#shutdown .press{animation:pulsePress 1.6s ease-in-out infinite}@keyframes pulsePress{50%{transform:scale(1.04)}}}
   /* ---- HISTORY ---- */
   .history{padding:14px;overflow-y:auto}
   .histbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-  .histbar button{padding:11px 16px;font-size:14px;font-weight:700;border:0;background:var(--card);color:var(--blue);border-radius:13px;cursor:pointer;box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .histbar button{padding:11px 16px;font-size:14px;font-weight:700;border:1.5px solid var(--line);background:var(--card);color:var(--blue);border-radius:var(--r);cursor:pointer}
   .histbar button.danger{color:var(--bad)}
   #histList{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
-  .histcard{padding:13px 16px;border-radius:14px;background:var(--card);box-shadow:5px 5px 12px var(--sh-lo),-5px -5px 12px var(--sh-hi)}
+  .histcard{padding:13px 16px;border-radius:var(--r);background:var(--card);border:1.5px solid var(--line)}
   .histcard .top{display:flex;align-items:center;gap:10px}
   .histcard .teams{flex:1;min-width:0;font-weight:800;font-size:15px}
-  .histcard .final{font-variant-numeric:tabular-nums;font-weight:800;font-size:18px}
+  .histcard .final{font-variant-numeric:tabular-nums;font-family:var(--mono);font-weight:800;font-size:18px}
   .histcard .final .win{color:var(--ok)}
   .histcard .meta{font-size:12px;color:var(--muted);margin-top:5px;display:flex;gap:14px;flex-wrap:wrap}
-  .histcard .sets{font-variant-numeric:tabular-nums}
+  .histcard .sets{font-variant-numeric:tabular-nums;font-family:var(--mono)}
   /* confirm modal (T/O + subs) */
-  #confirm{position:fixed;inset:0;z-index:75;display:flex;align-items:center;justify-content:center;background:rgba(120,128,150,.35)}
+  #confirm{position:fixed;inset:0;z-index:75;display:flex;align-items:center;justify-content:center;background:rgba(15,17,22,.32)}
   #confirm[hidden]{display:none}
   #confirm .editlabel{font-size:16px;text-transform:none;letter-spacing:0;color:var(--fg);margin-bottom:14px}
   #confirmYes{color:var(--blue)}
   /* beach serve-order modal */
-  #serveOrder{position:fixed;inset:0;z-index:76;display:flex;align-items:center;justify-content:center;background:rgba(120,128,150,.35);padding:20px}
+  #serveOrder{position:fixed;inset:0;z-index:76;display:flex;align-items:center;justify-content:center;background:rgba(15,17,22,.32);padding:20px}
   #serveOrder[hidden]{display:none}
   #serveOrder .editbox{width:min(340px,92vw)}
   #serveOrder h3{margin:0 0 4px;font-size:18px;font-weight:800}
@@ -219,23 +240,33 @@
   .ordgrp{margin-bottom:13px}
   .ordq{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:7px}
   .segbtns{display:flex;gap:9px}
-  .segbtns button{flex:1;padding:12px;font-size:15px;font-weight:800;border:0;border-radius:12px;background:var(--card);color:var(--fg);cursor:pointer;box-shadow:4px 4px 9px var(--sh-lo),-4px -4px 9px var(--sh-hi)}
-  .segbtns button.on{color:var(--blue);box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
+  .segbtns button{flex:1;padding:12px;font-size:15px;font-weight:800;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);cursor:pointer}
+  .segbtns button.on{color:var(--blue);background:var(--fill);border-color:var(--blue)}
   #ordOk{color:var(--blue)}
   /* scorer PIN lock */
-  #pinModal{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(120,128,150,.35)}
+  #pinModal{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(15,17,22,.32)}
   #pinModal[hidden]{display:none}
-  #pinInput{width:100%;padding:14px;font-size:30px;font-weight:800;text-align:center;letter-spacing:.4em;border:0;border-radius:12px;background:var(--card);color:var(--fg);font-variant-numeric:tabular-nums;box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
+  #pinInput{width:100%;padding:14px;font-size:30px;font-weight:800;text-align:center;letter-spacing:.4em;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);font-variant-numeric:tabular-nums;font-family:var(--mono)}
   #pinOk{color:var(--blue)}
   #lockBtn{font-size:16px;padding:0 12px}
   #lockBtn.on{color:var(--bad)}
   body.locked #tab-manual .board,body.locked #tab-manual .gfooter{filter:opacity(.72)}
+  /* whole-UI entry lock — a PIN screen over everything until the scorer unlocks */
+  #lockGate{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px}
+  #lockGate[hidden]{display:none}
+  .lg-box{width:min(360px,92vw);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r);padding:32px 26px;text-align:center;box-shadow:0 24px 50px -24px rgba(10,11,13,.45)}
+  .lg-ic .licon{width:40px;height:40px;color:var(--fg)}
+  .lg-title{font-size:20px;font-weight:800;margin:12px 0 4px}
+  .lg-sub{font-size:13px;color:var(--muted);margin-bottom:20px}
+  #lgPin{width:100%;padding:14px;font-size:30px;font-weight:800;text-align:center;letter-spacing:.4em;font-family:var(--mono);font-variant-numeric:tabular-nums;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg)}
+  #lgUnlock{width:100%;margin-top:14px;min-height:48px;font-size:15px;font-weight:800;border:1.5px solid var(--blue);background:var(--blue);color:#fff;border-radius:var(--r);cursor:pointer}
+  .lg-err{min-height:18px;margin-top:12px;font-size:13px;font-weight:700;color:var(--bad)}
   /* live LED-board mirror */
   .boardview{flex:1 1 auto;min-height:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:4px}
   .bvlabel{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
   .bvpanel{height:100%;width:auto;max-width:100%;aspect-ratio:192/64;container-type:size;position:relative;
     background:#080a12;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;
-    box-shadow:inset 4px 4px 12px #04060c,inset -3px -3px 9px #141d38,6px 6px 16px var(--sh-lo),-6px -6px 16px var(--sh-hi)}
+    border:1.5px solid var(--line);box-shadow:inset 4px 4px 12px #04060c,inset -3px -3px 9px #141d38}
   .bvinner{position:absolute;inset:0;transform:scale(.85);transform-origin:center}
   .bvsec{position:absolute;white-space:nowrap;line-height:1;font-weight:400;letter-spacing:-.03em}
   .bvrect{position:absolute;border-radius:.5cqh}
@@ -270,9 +301,8 @@
   .taphint{font-size:10px;color:var(--muted);text-align:center;opacity:.75;margin-top:-4px}
 
   /* ---- multi-sport: header badge, per-sport score cluster, sport picker ---- */
-  .sportbadge{display:inline-flex;align-items:center;gap:6px;min-height:40px;min-width:40px;padding:0 12px;border:0;border-radius:12px;
-    background:var(--card);color:var(--blue);font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;flex:0 0 auto;
-    box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .sportbadge{display:inline-flex;align-items:center;gap:6px;min-height:40px;min-width:40px;padding:0 12px;border:1.5px solid var(--line);border-radius:var(--r);
+    background:var(--card);color:var(--blue);font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;flex:0 0 auto}
   .sportbadge .sbico{display:inline-flex;align-items:center} .sportbadge .sbico .licon{width:1.15em;height:1.15em}
   @media (max-width:560px){ .sportbadge .sbtxt{display:none} }
   /* Tapping a number opens the direct-entry editor — show it's tappable on every sport. */
@@ -281,9 +311,9 @@
   .score.bball{flex-direction:column;max-height:none;gap:8px;justify-content:center}
   .score.bball .val{font-size:clamp(40px,13vh,72px)}
   .score.bball .ptrow{display:flex;gap:8px;width:100%}
-  .score .ptbtn{flex:1 1 0;min-width:0;min-height:46px;height:clamp(46px,7vh,58px);font-size:20px;font-weight:800;line-height:1;border:0;
-    background:var(--card);color:var(--fg);border-radius:14px;cursor:pointer;box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
-  .score .bigbtn.minus{width:auto;height:40px;min-height:40px;border-radius:12px;font-size:18px;padding:0 20px;align-self:center}
+  .score .ptbtn{flex:1 1 0;min-width:0;min-height:46px;height:clamp(46px,7vh,58px);font-size:20px;font-weight:800;line-height:1;border:1.5px solid var(--line);
+    background:var(--card);color:var(--fg);border-radius:var(--r);cursor:pointer}
+  .score .bigbtn.minus{width:auto;height:40px;min-height:40px;border-radius:var(--r);font-size:18px;padding:0 20px;align-self:center}
   /* Author display rules beat the [hidden] attribute, so restate it for the toggled bits. */
   .stat[hidden]{display:none} .actions button[hidden]{display:none}
   /* Plain branding: drop the crest on the board-mirror idle screen (names only). */
@@ -291,20 +321,19 @@
   /* Full-screen sport selector (landing + re-open from the header badge). */
   #sportPicker{position:fixed;inset:0;z-index:78;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg)}
   #sportPicker[hidden]{display:none}
-  .spbox{width:min(560px,94vw);max-height:92vh;overflow-y:auto;background:var(--card);border-radius:24px;padding:26px 24px;
-    box-shadow:10px 10px 30px var(--sh-lo),-10px -10px 30px var(--sh-hi)}
+  .spbox{width:min(560px,94vw);max-height:92vh;overflow-y:auto;background:var(--card);border-radius:var(--r);padding:26px 24px;
+    border:1.5px solid var(--line);box-shadow:0 24px 50px -24px rgba(10,11,13,.45)}
   .sptitle{font-size:20px;font-weight:800;text-align:center;color:var(--fg)}
   .spsub{font-size:13px;color:var(--muted);text-align:center;margin:6px 0 18px}
   .splist{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px}
-  .spopt{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;padding:18px 12px;border:0;border-radius:18px;
-    background:var(--card);color:var(--fg);font-size:15px;font-weight:800;cursor:pointer;position:relative;
-    box-shadow:6px 6px 14px var(--sh-lo),-6px -6px 14px var(--sh-hi)}
+  .spopt{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;padding:18px 12px;border:1.5px solid var(--line);border-radius:var(--r);
+    background:var(--card);color:var(--fg);font-size:15px;font-weight:800;cursor:pointer;position:relative}
   .spopt:disabled{opacity:.5;cursor:default} .spopt .spico .licon{width:34px;height:34px}
-  .spopt.on{color:var(--blue);box-shadow:inset 4px 4px 9px var(--sh-lo),inset -4px -4px 9px var(--sh-hi)}
+  .spopt.on{color:var(--blue);background:var(--fill);border-color:var(--blue)}
   .spopt .spcur{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)}
   .spstatus{font-size:13px;text-align:center;color:var(--muted);margin:16px 0 0} .spstatus.err{color:var(--bad)}
-  .spcancel{display:block;margin:18px auto 0;min-height:44px;padding:0 22px;border:0;border-radius:13px;background:var(--card);color:var(--fg);
-    font-size:14px;font-weight:800;cursor:pointer;box-shadow:5px 5px 11px var(--sh-lo),-5px -5px 11px var(--sh-hi)}
+  .spcancel{display:block;margin:18px auto 0;min-height:44px;padding:0 22px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);
+    font-size:14px;font-weight:800;cursor:pointer}
   .spcancel:disabled{opacity:.5;cursor:default}
 </style>
 
@@ -359,10 +388,11 @@
     </div>
     <div class="centercol">
       <div class="servebox">
-        <span class="lbl">SERVE</span>
-        <button class="servebtn" data-serve="left" aria-label="Serve left"><svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></button>
-        <span class="serveind" id="serveInd" aria-hidden="true"><svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg></span>
-        <button class="servebtn" data-serve="right" aria-label="Serve right"><svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></button>
+        <div class="servetoggle" role="group" aria-label="Serve">
+          <button class="sv-arrow" data-serve="left" aria-label="Serve left"><svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></button>
+          <span class="lbl sv-lbl">SERVE</span>
+          <button class="sv-arrow" data-serve="right" aria-label="Serve right"><svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></button>
+        </div>
       </div>
       <div id="beachServe" hidden>
         <button class="plrbtn" id="servePlrBtn" title="Serving player — tap to switch" aria-label="Switch the serving player"><span class="plrlbl">PLAYER</span><span class="plrnum" id="servePlrNum">–</span></button>
@@ -620,12 +650,25 @@
   </div>
 </div>
 
+<!-- Whole-UI entry lock: a PIN screen over everything on load until the scorer unlocks. Starts
+     visible; boot dismisses it for a no-PIN board or a remembered valid PIN. -->
+<div id="lockGate" role="dialog" aria-modal="true" aria-label="Enter scorer PIN">
+  <div class="lg-box">
+    <div class="lg-ic"><svg class="licon l-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></div>
+    <div class="lg-title">Scoreboard locked</div>
+    <div class="lg-sub">Enter the scorer PIN to open the controller.</div>
+    <input id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="••••">
+    <button id="lgUnlock" type="button">Unlock</button>
+    <div class="lg-err" id="lgErr" role="alert"></div>
+  </div>
+</div>
+
 <script>
 (() => {
   "use strict";
   const IC = {
     wifiOn:'<svg class="licon l-wifi" viewBox="0 0 24 24" fill="none" stroke="#25b567" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /> <path d="M2 8.82a15 15 0 0 1 20 0" /> <path d="M5 12.859a10 10 0 0 1 14 0" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /></svg>', wifiOff:'<svg class="licon l-wifi-off" viewBox="0 0 24 24" fill="none" stroke="#e0453d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01" /> <path d="M8.5 16.429a5 5 0 0 1 7 0" /> <path d="M5 12.859a10 10 0 0 1 5.17-2.69" /> <path d="M19 12.859a10 10 0 0 0-2.007-1.523" /> <path d="M2 8.82a15 15 0 0 1 4.177-2.643" /> <path d="M22 8.82a15 15 0 0 0-11.288-3.764" /> <path d="m2 2 20 20" /></svg>',
-    ball:'<svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg>', chevL:'<svg class="licon l-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>', chevR:'<svg class="licon l-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>',
+    ball:'<svg class="licon l-volleyball" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 7a16 16 20 0 1 10.98 4.362" /> <path d="M12 12a13 13 0 0 1-8.66 5" /> <path d="M16.83 13.634a16 16 0 0 1-9.267 7.328" /> <path d="M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10" /> <path d="M8.17 15.366a16 16 0 0 1-1.713-11.69" /> <circle cx="12" cy="12" r="10" /></svg>',
     lock:'<svg class="licon l-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>', lockOpen:'<svg class="licon l-lock-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 9.9-1" /></svg>', min:'<svg class="licon l-minimize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /> <path d="M21 8h-3a2 2 0 0 1-2-2V3" /> <path d="M3 16h3a2 2 0 0 1 2 2v3" /> <path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>', max:'<svg class="licon l-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /> <path d="M21 8V5a2 2 0 0 0-2-2h-3" /> <path d="M3 16v3a2 2 0 0 0 2 2h3" /> <path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>' };
   IC.del = '<svg class="licon l-delete" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5a2 2 0 0 0-1.344.519l-6.328 5.74a1 1 0 0 0 0 1.481l6.328 5.741A2 2 0 0 0 10 19h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /> <path d="m12 9 6 6" /> <path d="m18 9-6 6" /></svg>';
   // Sport glyphs for the picker + header badge: Lucide volleyball, Lucide sun for beach, and
@@ -668,7 +711,6 @@
   };
   const sportLabel = (k) => (SPORTS_LIST.find((s) => s.key === k) || {}).label || (k ? k[0].toUpperCase() + k.slice(1) : "");
   const sportIcon = (k) => k === "basketball" ? IC.basketball : k === "beach" ? IC.beach : IC.ball;
-  const servePip = () => SPORT === "basketball" ? IC.basketball : IC.ball;
 
   // Preset team colours — tap-friendly on mobile (the native picker is fiddly).
   const PRESETS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#22c55e", "#14b8a6",
@@ -836,8 +878,10 @@
     if (st.sport && st.sport !== SPORT) { SPORT = st.sport; applySportUI(); }
     lastLedbox = st.ledbox || lastLedbox;
     const connected = !!(st.ledbox && st.ledbox.connected);
-    $("#dot").innerHTML = connected ? IC.wifiOn : IC.wifiOff;
-    $("#dot").title = connected
+    // Only rewrite the icon SVG when the state flips — re-setting innerHTML every poll makes it flash.
+    const dotEl = $("#dot");
+    if (dotEl._conn !== connected) { dotEl.innerHTML = connected ? IC.wifiOn : IC.wifiOff; dotEl._conn = connected; }
+    dotEl.title = connected
       ? `LedBox connected (${st.ledbox.host}:${st.ledbox.port})`
       : "LedBox not connected";
     // Say it in words too — the dot is easy to miss and has no tooltip on touch.
@@ -952,13 +996,12 @@
       { n:"set1", t:"text", x:89,  y:-6, fs:20, a:"right"  },
       { n:"vs",   t:"text", x:97,  y:-3, fs:15, a:"center", fixed:"-", col:"#dfe6ff" },
       { n:"set2", t:"text", x:105, y:-6, fs:20, a:"left"   },
-      { n:"switch", t:"text", x:96, y:18, fs:11, a:"center" },
-      { n:"timeout1", t:"text", x:82, y:26, fs:15, a:"center" },
-      { n:"lbl_to", t:"text", x:96, y:29, fs:11, a:"center", fixed:"T", col:"#aeb8d8" },
-      { n:"timeout2", t:"text", x:111, y:26, fs:15, a:"center" },
-      { n:"serveplr", t:"text", x:96, y:42, fs:18, a:"center" },
-      { n:"serve1", t:"bar", x:70, y:60, w:16, h:5 },
-      { n:"serve2", t:"bar", x:107, y:60, w:16, h:5 },
+      { n:"timeout1", t:"text", x:82, y:15, fs:14, a:"center" },
+      { n:"lbl_to", t:"text", x:98, y:15, fs:13, a:"center", fixed:"T", col:"#aeb8d8" },
+      { n:"timeout2", t:"text", x:111, y:15, fs:14, a:"center" },
+      { n:"serveplr1", t:"text", x:80, y:23, fs:40, a:"center" },
+      { n:"serveplr2", t:"text", x:111, y:23, fs:40, a:"center" },
+      { n:"switch", t:"text", x:96, y:30, fs:11, a:"center" },
       { n:"team2", t:"text", x:192, y:-4, fs:18, a:"right"  },
       { n:"bg_score2", t:"box", x:127, y:17, w:64, h:46 },
       { n:"score2", t:"text", x:160, y:40, fs:50, a:"center", vc:true },
@@ -1054,9 +1097,11 @@
       put("set1", d.left.sets, d.left.color);          put("set2", d.right.sets, d.right.color);
       put("switch", due ? "SWITCH" : "", due ? "#ffbf3f" : "#3c3c3c");
       put("timeout1", d.left.to, toCol(d.left.to));    put("timeout2", d.right.to, toCol(d.right.to));
-      // Serve-player digit: the serving pair's number, in that pair's colour (blank when none).
+      // Serve-player digit sits over the SERVING side's bar (left or right), in that pair's colour;
+      // both blank while a court switch is due (the centre SWITCH cue shows instead).
       const spCol = d.serving === "left" ? d.left.color : d.serving === "right" ? d.right.color : "#3c3c3c";
-      put("serveplr", d.servePlayer ? String(d.servePlayer) : "", d.servePlayer ? spCol : "#3c3c3c");
+      put("serveplr1", (!due && d.serving === "left" && d.servePlayer) ? String(d.servePlayer) : "", spCol);
+      put("serveplr2", (!due && d.serving === "right" && d.servePlayer) ? String(d.servePlayer) : "", spCol);
     } else {
       const tt = (SETTINGS.totalTimeouts || 2), ts = (SETTINGS.totalSubs || 6);
       const toCol = (n) => n >= tt ? "#ff5b52" : "#e7ecff";
@@ -1102,6 +1147,13 @@
     }
   }
 
+  // Readable text colour for a coloured team panel: dark ink on a light team colour, white on a dark one.
+  const inkOn = (hex) => {
+    const h = String(hex || "").trim().replace("#", "");
+    if (h.length !== 6) return "#fff"; // no colour -> panel uses the dark blue/red fallback -> white text
+    const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#111318" : "#ffffff";
+  };
   function renderBoard(s) {
     for (const side of ["left", "right"]) {
       const root = $(`.side.${side}`);
@@ -1109,6 +1161,7 @@
       setIfIdle(root, ".short", d.short);
       setColorIfIdle(root, ".color", d.color);
       root.style.setProperty("--edge", d.color || "var(--" + side + ")");
+      root.style.setProperty("--on-edge", inkOn(d.color)); // readable ink for the Arena colour block
       const prev = shown[side];
       // The point just assigned pulses green — confirmation that the tap registered.
       paint($('[data-val="points"]', root), d.points, prev.points, "flash");
@@ -1139,14 +1192,9 @@
       shown[side] = d;
     }
     const serving = s ? s.serving : null;
+    // Highlight the serving side on the consolidated SERVE pill (fills that side's team colour).
     $$('[data-serve]').forEach((b) =>
       b.classList.toggle("on", serving === b.dataset.serve));
-    const ind = $("#serveInd");
-    if (ind) {
-      const pip = servePip();
-      ind.innerHTML = serving === "left" ? IC.chevL + pip : serving === "right" ? pip + IC.chevR : pip;
-      ind.style.opacity = serving ? "1" : ".35";
-    }
     // Beach serve-player readout: the serving pair's number (1|2) in that pair's colour.
     if (SPORT === "beach") {
       const spn = $("#servePlrNum");
@@ -1247,7 +1295,7 @@
     try { renderStatus(await api("/api/status")); }
     catch (e) {
       const dot = $("#dot");
-      if (dot) dot.innerHTML = IC.wifiOff; // keep quiet on poll errors
+      if (dot && dot._conn !== false) { dot.innerHTML = IC.wifiOff; dot._conn = false; } // keep quiet on poll errors
     }
   }
 
@@ -1643,7 +1691,7 @@
         ". Brightness, club name, PIN, branding and live-scoring are shared across all sports.";
     } catch { /* leave the form at its defaults */ }
   }
-  async function saveSettings() {
+  async function saveSettings(clickedBtn) {
     const patch = {};
     for (const el of setEls()) {
       patch[el.dataset.set] =
@@ -1665,18 +1713,34 @@
         if (v === undefined) continue;
         if (el.type === "checkbox") el.checked = !!v; else el.value = v;
       }
+      // One save persists EVERY field, so every section is now clean.
+      $$(".setsavebtn").forEach((b) => { b.classList.remove("dirty", "ok"); b.textContent = "Saved"; });
+      if (clickedBtn) { clickedBtn.classList.add("ok"); clickedBtn.textContent = "Saved ✓"; setTimeout(() => { clickedBtn.classList.remove("ok"); clickedBtn.textContent = "Saved"; }, 1600); }
       renderPreview(bvLast.s, bvLast.serving); // reflect branding / counter-threshold changes on the mirror now
       setTimeout(() => { st.textContent = "Saved on the board — these survive a restart."; st.classList.remove("saved"); }, 1800);
     } catch (e) { toast(e.message); }
   }
-  setEls().forEach((el) => el.addEventListener("change", saveSettings));
+  // Explicit save: a Save button per settings section (no silent auto-save). Editing a field marks
+  // its section as unsaved; clicking any Save persists ALL fields, so every section goes clean.
+  $$("#tab-settings fieldset").forEach((fs) => {
+    if (!fs.querySelector("[data-set]")) return; // skip sections with nothing to save (e.g. Power)
+    const row = document.createElement("div"); row.className = "setsaverow";
+    const btn = document.createElement("button"); btn.type = "button"; btn.className = "setsavebtn"; btn.textContent = "Saved";
+    btn.addEventListener("click", () => saveSettings(btn));
+    row.appendChild(btn); fs.appendChild(row);
+  });
+  const markSettingDirty = (el) => {
+    const fs = el.closest("fieldset"); const b = fs && fs.querySelector(".setsavebtn");
+    if (b) { b.classList.remove("ok"); b.classList.add("dirty"); b.textContent = "Save changes"; }
+  };
+  setEls().forEach((el) => { el.addEventListener("input", () => markSettingDirty(el)); el.addEventListener("change", () => markSettingDirty(el)); });
 
   // --- scorer lock ---------------------------------------------------------
   function updateLock() {
     const b = $("#lockBtn"); if (!b) return;
     b.hidden = !pinRequired;
     const open = !SCORER_PIN;
-    b.innerHTML = open ? IC.lock : IC.lockOpen;
+    if (b._open !== open) { b.innerHTML = open ? IC.lock : IC.lockOpen; b._open = open; } // avoid per-poll SVG flash
     b.classList.toggle("on", pinRequired && open);
     b.title = open ? "Scoring locked — tap to enter PIN" : "Scoring unlocked (tap to change PIN)";
     document.body.classList.toggle("locked", pinRequired && open);
@@ -1804,9 +1868,40 @@
     HISTORY = []; refreshHistory(); toast("History cleared");
   });
 
+  // --- whole-UI entry lock -------------------------------------------------
+  // A PIN screen (#lockGate) sits over everything on load. It dismisses itself if the board has no
+  // PIN, or if the PIN we remember from last time still checks out; otherwise the scorer types it.
+  const lockGate = $("#lockGate");
+  const hideGate = () => { if (lockGate) lockGate.hidden = true; };
+  const showGate = () => { if (lockGate) { lockGate.hidden = false; const i = $("#lgPin"); if (i) { i.value = ""; setTimeout(() => i.focus(), 50); } } };
+  async function bootLock() {
+    let pinSet = false;
+    try { const s = await api("/api/settings"); pinSet = !!s.pinSet; } catch { hideGate(); return; } // board down → don't trap the operator (writes stay server-gated anyway)
+    if (!pinSet) { hideGate(); return; }                 // no PIN configured → open access
+    if (SCORER_PIN) {                                     // remember a prior unlock if the PIN still checks out
+      try { const r = await postJSON("/api/unlock", { pin: SCORER_PIN }); if (r && r.ok) { pinRequired = true; updateLock(); hideGate(); return; } } catch {}
+    }
+    showGate();
+  }
+  async function gateUnlock() {
+    const el = $("#lgPin"); const pin = (el.value || "").trim();
+    if (!pin) return;
+    try {
+      const r = await postJSON("/api/unlock", { pin });
+      if (r && r.ok) {
+        SCORER_PIN = pin; try { localStorage.setItem("kscwScorerPin", pin); } catch {}
+        pinRequired = true; updateLock();
+        $("#lgErr").textContent = ""; hideGate();
+      } else { $("#lgErr").textContent = "Wrong PIN — try again."; el.value = ""; el.focus(); }
+    } catch { $("#lgErr").textContent = "Couldn't reach the board — try again."; }
+  }
+  { const u = $("#lgUnlock"); if (u) u.addEventListener("click", gateUnlock);
+    const p = $("#lgPin"); if (p) p.addEventListener("keydown", (e) => { if (e.key === "Enter") gateUnlock(); }); }
+
   // boot
   let pollTimer = null;
   const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+  bootLock();
   loadSettings();
   // Present the sport picker first (landing), with the current sport pre-highlighted.
   loadSportList().then(openSportPicker);

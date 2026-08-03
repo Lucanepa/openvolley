@@ -21,7 +21,6 @@ import { toLeftRight, fitFontSize } from './volleyballMapper.js'
 const attr = (name, attrib, value) => ({ name, value: { attrib, value: String(value) } })
 const text = (name, value, color) =>
   color ? [attr(name, 'text', value), attr(name, 'color', color)] : [attr(name, 'text', value)]
-const rect = (name, color) => [attr(name, 'color', color)]
 const box = (name, color) => [attr(name, 'color', '0,0,0'), attr(name, 'bordercolor', color)]
 
 // Beach counter/cue colours.
@@ -66,16 +65,14 @@ export function toBeachSections(state, { off = SERVE_OFF, totalTimeouts = BEACH_
     ...text('set1', v.leftSets, v.leftColor),
     ...text('set2', v.rightSets, v.rightColor),
     attr('vs', 'text', '-'),
-    // Court-change cue: amber "SWITCH" on a boundary, blank (dim) otherwise.
+    // Court-change cue sits centre; the BIG serve-player digit sits in the serving side's half of
+    // the centre, in that pair's colour. Both blank while a court switch is due (SWITCH takes over).
     ...text('switch', due ? 'SWITCH' : '', due ? SWITCH_CUE : SWITCH_DIM),
-    // Serving player number (1|2), in the serving pair's colour; blank/dim when nobody serves.
-    ...text('serveplr', sp ? String(sp) : '', sp ? spColor : off),
+    ...text('serveplr1', (!due && v.serving === 'left' && sp) ? String(sp) : '', (!due && v.serving === 'left' && sp) ? spColor : off),
+    ...text('serveplr2', (!due && v.serving === 'right' && sp) ? String(sp) : '', (!due && v.serving === 'right' && sp) ? spColor : off),
     // One team timeout per set — red once used. No sub row on the beach layout.
     ...text('timeout1', v.leftTimeouts, toColor(v.leftTimeouts)),
     ...text('timeout2', v.rightTimeouts, toColor(v.rightTimeouts)),
-    // Serve indicators: light the serving side's bar in its pair colour.
-    ...rect('serve1', v.serving === 'left' ? v.leftColor : off),
-    ...rect('serve2', v.serving === 'right' ? v.rightColor : off),
   ]
 }
 
@@ -122,17 +119,25 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     ok(secOf(secs, 'score1', 'color').value.value === secOf(secs, 'team1', 'color').value.value,
       'left pair painted one colour (score matches name)')
   }
-  // Serve-player digit: lit in the serving pair's colour; blank when nobody is serving.
+  // Serve-player digit: sits on the SERVING side, in that pair's colour; the other side blanks.
   {
     const secs = toBeachSections({ ...base, serving_team: 'left', serve_player: 2 })
-    ok(secOf(secs, 'serveplr', 'text').value.value === '2', 'serve-player digit shows the serving number')
-    ok(secOf(secs, 'serveplr', 'color').value.value === secOf(secs, 'team1', 'color').value.value,
-      'serve-player digit takes the serving (left) pair colour')
+    ok(secOf(secs, 'serveplr1', 'text').value.value === '2', 'left serving -> LEFT digit shows the number')
+    ok(secOf(secs, 'serveplr2', 'text').value.value === '', 'left serving -> right digit blank')
+    ok(secOf(secs, 'serveplr1', 'color').value.value === secOf(secs, 'team1', 'color').value.value,
+      'left digit takes the left pair colour')
     const secsR = toBeachSections({ ...base, serving_team: 'right', serve_player: 1 })
-    ok(secOf(secsR, 'serveplr', 'color').value.value === secOf(secsR, 'team2', 'color').value.value,
-      'serve-player digit takes the right pair colour when right serves')
+    ok(secOf(secsR, 'serveplr2', 'text').value.value === '1', 'right serving -> RIGHT digit shows the number')
+    ok(secOf(secsR, 'serveplr1', 'text').value.value === '', 'right serving -> left digit blank')
+    ok(secOf(secsR, 'serveplr2', 'color').value.value === secOf(secsR, 'team2', 'color').value.value,
+      'right digit takes the right pair colour')
     const none = toBeachSections({ ...base, serving_team: null, serve_player: 0 })
-    ok(secOf(none, 'serveplr', 'text').value.value === '', 'serve-player digit blank when nobody serves')
+    ok(secOf(none, 'serveplr1', 'text').value.value === '' && secOf(none, 'serveplr2', 'text').value.value === '',
+      'both digits blank when nobody serves')
+    // On a court-change boundary (sum 7) the centre SWITCH shows and BOTH side digits blank.
+    const bound = toBeachSections({ ...base, points_a: 4, points_b: 3, serving_team: 'left', serve_player: 2 })
+    ok(secOf(bound, 'switch', 'text').value.value === 'SWITCH', 'boundary: centre SWITCH shown')
+    ok(secOf(bound, 'serveplr1', 'text').value.value === '', 'boundary: serving-side digit blanked')
   }
 
   console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'} — ${pass} passed, ${fail} failed`)
