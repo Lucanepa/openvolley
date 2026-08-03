@@ -12,6 +12,7 @@ import { toLeftRight } from './volleyballMapper.js'
 import { execFile } from 'node:child_process'
 import { HistoryStore } from './historyStore.js'
 import { SPORT_LIST } from './sports.js'
+import { PER_SPORT_KEYS } from './settings.js'
 
 // Board shown when the operator picks "Blank" (all short names + serve cleared).
 const BLANK = {
@@ -228,7 +229,9 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
     if (pathname === '/api/settings' && req.method === 'GET') {
       if (!settings) return sendJson(res, 200, {})
       // Never hand the PIN to a client — expose only whether one is set.
-      return sendJson(res, 200, { ...settings.values, scorerPin: '', pinSet: !!settings.values.scorerPin })
+      // perSportKeys tells the UI which fields belong to the active sport (settings.values already
+      // carries the active sport's values, since it's a flat merged view).
+      return sendJson(res, 200, { ...settings.values, scorerPin: '', pinSet: !!settings.values.scorerPin, perSportKeys: PER_SPORT_KEYS })
     }
     // POST /api/settings — partial update; unknown keys are dropped and numbers clamped
     if (pathname === '/api/settings' && req.method === 'POST') {
