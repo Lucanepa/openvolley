@@ -16,6 +16,10 @@ const KNOWN_SECTIONS = new Set([
   'vs', 'lbl_to', 'lbl_sub', 'bg_score1', 'bg_score2', 'mode', 'banner',
   // volleyball_matchscore_timeout_02, read off the real device with GetSections:
   'timer', 'lbl', 'sep', 'media',
+  // beach_matchscore.xml: centre court-change cue + serve-player digit (no sub row).
+  'switch', 'serveplr',
+  // basketball_matchscore.xml: centre period, per-side fouls + bonus dot.
+  'period', 'foul1', 'foul2', 'bonus1', 'bonus2', 'lbl_foul',
 ])
 const KNOWN_LAYOUTS = new Set([
   'waiting', 'volleyball_matchscore_02',

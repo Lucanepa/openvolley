@@ -50,6 +50,10 @@ export function toBeachSections(state, { off = SERVE_OFF, totalTimeouts = BEACH_
   const v = toLeftRight(state)
   const toColor = (n) => (n >= totalTimeouts ? MAXED_COUNTER : NEUTRAL_COUNTER)
   const due = switchDue(v)
+  // Serve-player digit: which player (1|2) of the serving pair is up, painted in that pair's
+  // colour dead-centre above the score bars. serve_player is 0 when nobody is serving (blank).
+  const sp = Number(state.serve_player) || 0
+  const spColor = v.serving === 'left' ? v.leftColor : v.serving === 'right' ? v.rightColor : off
   return [
     ...text('team1', v.leftName, v.leftColor),
     attr('team1', 'fontsize', fitFontSize(v.leftName, TEAM_NAME_WIDTH, { max: 18 })),
@@ -64,6 +68,8 @@ export function toBeachSections(state, { off = SERVE_OFF, totalTimeouts = BEACH_
     attr('vs', 'text', '-'),
     // Court-change cue: amber "SWITCH" on a boundary, blank (dim) otherwise.
     ...text('switch', due ? 'SWITCH' : '', due ? SWITCH_CUE : SWITCH_DIM),
+    // Serving player number (1|2), in the serving pair's colour; blank/dim when nobody serves.
+    ...text('serveplr', sp ? String(sp) : '', sp ? spColor : off),
     // One team timeout per set — red once used. No sub row on the beach layout.
     ...text('timeout1', v.leftTimeouts, toColor(v.leftTimeouts)),
     ...text('timeout2', v.rightTimeouts, toColor(v.rightTimeouts)),
@@ -115,6 +121,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     ok(secOf(secs, 'timeout1', 'color').value.value === NEUTRAL_COUNTER, 'available team timeout neutral')
     ok(secOf(secs, 'score1', 'color').value.value === secOf(secs, 'team1', 'color').value.value,
       'left pair painted one colour (score matches name)')
+  }
+  // Serve-player digit: lit in the serving pair's colour; blank when nobody is serving.
+  {
+    const secs = toBeachSections({ ...base, serving_team: 'left', serve_player: 2 })
+    ok(secOf(secs, 'serveplr', 'text').value.value === '2', 'serve-player digit shows the serving number')
+    ok(secOf(secs, 'serveplr', 'color').value.value === secOf(secs, 'team1', 'color').value.value,
+      'serve-player digit takes the serving (left) pair colour')
+    const secsR = toBeachSections({ ...base, serving_team: 'right', serve_player: 1 })
+    ok(secOf(secsR, 'serveplr', 'color').value.value === secOf(secsR, 'team2', 'color').value.value,
+      'serve-player digit takes the right pair colour when right serves')
+    const none = toBeachSections({ ...base, serving_team: null, serve_player: 0 })
+    ok(secOf(none, 'serveplr', 'text').value.value === '', 'serve-player digit blank when nobody serves')
   }
 
   console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'} — ${pass} passed, ${fail} failed`)
