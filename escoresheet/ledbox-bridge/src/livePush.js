@@ -113,6 +113,10 @@ export function createLivePush(opts = {}) {
   const cfg = { ...DEFAULTS, ...opts }
   const base = String(cfg.url || '').replace(/\/$/, '')
   const enabled = !!(base && cfg.token)
+  // Runtime on/off, distinct from `enabled` (the env capability): the operator's
+  // "Connect to live scoring" toggle. env present = the board CAN publish; isLive() = it MAY
+  // right now. Defaults to always-on so createLivePush stays drop-in (e.g. for the selftest).
+  const isLive = typeof opts.isLive === 'function' ? opts.isLive : () => true
   // The sport is fixed at boot (changing it restarts the appliance), so it is a
   // constructor option rather than something read per push. An unknown key falls
   // back to the default, mirroring sports.js getSport().
@@ -130,7 +134,7 @@ export function createLivePush(opts = {}) {
   // Coalesce a burst of rapid changes (typed corrections, next-set, a swap) into
   // ONE write carrying the LATEST state — the app only ever wants "now".
   function push(state, event = null) {
-    if (!enabled || !state) return
+    if (!enabled || !isLive() || !state) return
     pending = { state, event }
     if (timer || inFlight) return
     timer = arm()
@@ -252,7 +256,7 @@ export function createLivePush(opts = {}) {
     pending = null
   }
 
-  return { enabled, sport, push, attach, detach }
+  return { enabled, sport, push, attach, detach, isLive }
 }
 
 /**
@@ -260,7 +264,7 @@ export function createLivePush(opts = {}) {
  * DIRECTUS_URL or LIVE_PUBLISH_TOKEN is unset, so wiring it in is always safe —
  * a board with no cloud config behaves exactly as it does today.
  */
-export function livePushFromEnv(env = process.env, sport = DEFAULTS.sport) {
+export function livePushFromEnv(env = process.env, sport = DEFAULTS.sport, isLive) {
   return createLivePush({
     url: env.DIRECTUS_URL,
     token: env.LIVE_PUBLISH_TOKEN,
@@ -268,6 +272,7 @@ export function livePushFromEnv(env = process.env, sport = DEFAULTS.sport) {
     collection: env.LIVE_COLLECTION || DEFAULTS.collection,
     historyCollection: env.LIVE_HISTORY_COLLECTION || DEFAULTS.historyCollection,
     sport,
+    isLive,
     debug: /^(1|true|yes|on)$/i.test(String(env.DEBUG || '')),
   })
 }

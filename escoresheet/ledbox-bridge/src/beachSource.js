@@ -9,10 +9,12 @@
 //   * Best-of-3. Sets 1-2 to 21, deciding set 3 to 15 — both win-by-2, NO upper cap.
 //   * Teams are PAIRS (2 players). No rotation, no libero, NO substitutions — so there is
 //     no `sub` action and subs stay 0 in the projected state (kept only for shape parity).
-//   * Court switch every 7 total points in sets 1-2, every 5 in the deciding set — emitted
-//     as a 'court-switch' event the UI cues (a short "Change ends" prompt, then a swap).
-//   * One automatic 30 s technical timeout per set in sets 1-2, when the points sum reaches
-//     21 — emitted as 'tech-timeout' (there is none in the deciding set).
+//   * Court switch every 7 total points in sets 1-2, every 5 in the deciding set — emitted as a
+//     'switch-due' event. It does NOT auto-swap: the UI asks the operator "Switch sides?", then
+//     blinks "COURT SWITCH" full-panel and sends the `swap` action only on confirmation.
+//   * One automatic technical timeout in sets 1-2, when the points sum reaches 21 — emitted as
+//     'tech-timeout' (there is none in the deciding set). The UI runs a 1-minute countdown and
+//     flips the court (`swap`) when it ends.
 //   * One team timeout per team per set (the club default; see settings note in the design).
 //
 // Internally the model is LEFT/RIGHT (physical board sides); getState() projects it back to
@@ -49,7 +51,7 @@ const num = (v) => (Array.isArray(v) ? v.length : Number(v) || 0)
 export class BeachSource extends EventEmitter {
   constructor() {
     super()
-    this.lastEvent = null // transient: notable event from the last apply() (set-end / match-end / court-switch / tech-timeout)
+    this.lastEvent = null // transient: notable event from the last apply() (set-end / match-end / switch-due / tech-timeout)
     this._fromLiveState(NEUTRAL)
   }
 
@@ -135,9 +137,11 @@ export class BeachSource extends EventEmitter {
             this.results.push({ left: m.leftPoints, right: m.rightPoints })
             this.lastEvent = m[side + 'Sets'] >= BEACH.setsToWin ? 'match-end' : 'set-end'
           } else {
-            // No set won: check for a technical timeout (sets 1-2, sum hits 21) or a court
-            // switch (sum crosses the cadence). The tech timeout wins the tie at sum 21 —
-            // it inherently includes the court change — so it is checked first.
+            // No set won: flag a technical timeout (sets 1-2, sum hits 21) or that a change of
+            // ends is DUE (sum crosses the cadence). NEITHER swaps here — the source only flags;
+            // the UI gates the swap (a confirm for a switch, a countdown for the TTO). The tech
+            // timeout wins the tie at sum 21 (it inherently includes the change of ends), so it
+            // is checked first.
             const total = m.leftPoints + m.rightPoints
             const beforeTotal = total - d
             const deciding = this._deciding
@@ -145,7 +149,7 @@ export class BeachSource extends EventEmitter {
             if (!deciding && beforeTotal < BEACH.techTimeoutAt && total >= BEACH.techTimeoutAt) {
               this.lastEvent = 'tech-timeout'
             } else if (crossed(this._cadence())) {
-              this.lastEvent = 'court-switch'
+              this.lastEvent = 'switch-due'
             }
           }
         }
@@ -230,7 +234,8 @@ export class BeachSource extends EventEmitter {
 // --------------------------------------------------------------------------------------
 // Tiny self-check (mirrors test/*.mjs). Runs only when executed directly:
 //     node src/beachSource.proposal.js
-// Proves set-end / match-end / court-switch / technical-timeout fire on the right scores.
+// Proves set-end / match-end / switch-due / technical-timeout fire on the right scores, and
+// that a switch-due point does NOT auto-swap the sides (the UI does, on operator confirm).
 // --------------------------------------------------------------------------------------
 if (import.meta.url === `file://${process.argv[1]}`) {
   let pass = 0, fail = 0
@@ -240,13 +245,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Drive a sequence of single points ("L"/"R"); return the LAST point's event.
   const run = (s, seq) => { let e = null; for (const c of seq) e = pt(s, c === 'L' ? 'left' : 'right'); return e }
 
-  // Court switch: sets 1-2 change ends every 7 points. 3-3 (sum 6) then a point -> sum 7.
+  // Court switch DUE: sets 1-2 change ends every 7 points. 3-3 (sum 6) then a point -> sum 7.
+  // The source only FLAGS it (switch-due); it must NOT auto-swap the sides.
   {
     const s = mk()
+    s.apply({ type: 'team', side: 'left', short: 'LLL' })
+    s.apply({ type: 'team', side: 'right', short: 'RRR' })
     const e = run(s, 'LLLRRR'.split('')) // 3-3, sum 6, no switch on the 6th
-    ok(e !== 'court-switch', 'no court switch at sum 6 (3-3)')
-    ok(pt(s, 'left') === 'court-switch', 'court switch fires at sum 7 (4-3), sets 1-2')
-    ok(pt(s, 'right') !== 'court-switch', 'no switch at sum 8')
+    ok(e !== 'switch-due', 'no switch-due at sum 6 (3-3)')
+    ok(pt(s, 'left') === 'switch-due', 'switch-due fires at sum 7 (4-3), sets 1-2')
+    ok(s.getState().team_a_short === 'LLL', 'switch-due does NOT auto-swap (left pair unchanged)')
+    ok(pt(s, 'right') !== 'switch-due', 'no switch-due at sum 8')
   }
 
   // Technical timeout: sets 1-2, automatic when the points sum reaches 21. 11-9 (sum 20) -> 11-10.
@@ -284,7 +293,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     s.apply({ type: 'set-state', state: { ...NEUTRAL, sets_won_a: 1, sets_won_b: 1 } })
     ok(s._deciding === true, 'sets 1-1 is the deciding set')
     const e = run(s, 'LLLRR'.split('')) // 3-2, sum 5
-    ok(e === 'court-switch', 'deciding set switches at sum 5 (3-2)')
+    ok(e === 'switch-due', 'deciding set flags switch-due at sum 5 (3-2)')
     let last = null
     for (let i = 0; i < 12; i++) last = pt(s, 'left') // 15-2 -> set + match won
     ok(last === 'match-end', 'match ends when the 2nd set is won (deciding to 15)')

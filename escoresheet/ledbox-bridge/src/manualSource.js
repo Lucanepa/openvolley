@@ -19,11 +19,24 @@ const NEUTRAL = {
 const clamp0 = (n) => (n < 0 ? 0 : n)
 const num = (v) => (Array.isArray(v) ? v.length : Number(v) || 0)
 
+// Indoor volleyball is best-of-5: 3 sets take the match, and the 5th is the deciding set.
+// Named so the deciding-set rules below read as "deciding", not a hardcoded "== 2". (Wiring a
+// best-of-3 alternative is part of the deferred per-sport settings refactor, not this slice.)
+const SETS_TO_WIN = 3
+// Deciding set only: the first team to reach this many points prompts a change of ends.
+const DECIDER_SWITCH_AT = 8
+
 export class ManualSource extends EventEmitter {
   constructor() {
     super()
-    this.lastEvent = null // transient: the notable event from the last apply() (e.g. 'set-end')
+    this.lastEvent = null // transient: the notable event from the last apply() (set-end / match-end / switch-due)
     this._fromLiveState(NEUTRAL)
+  }
+
+  // The deciding set — both teams one set short of the match (2-2 in best-of-5). Court switches
+  // in the deciding set hinge on this rather than on a hardcoded set number.
+  get _deciding() {
+    return this.m.leftSets === SETS_TO_WIN - 1 && this.m.rightSets === SETS_TO_WIN - 1
   }
 
   // Load the internal left/right model from an a/b liveState, honouring side_a.
@@ -86,17 +99,18 @@ export class ManualSource extends EventEmitter {
         if (d > 0) {
           // Rally scoring: the side that wins the point serves next.
           m.serving = side
-          const deciding = m.leftSets === 2 && m.rightSets === 2 // the 5th (deciding) set
+          const deciding = this._deciding // the deciding set (5th in best-of-5)
           const target = deciding ? 15 : 25
           const won = (p) => p >= target && p - m[other + 'Points'] >= 2
           if (won(m[side + 'Points']) && !won(before)) {
-            // Set win: first to 25 (15 in the 5th) by >=2, uncapped. Fires once, on the transition.
+            // Set win: first to 25 (15 in the deciding set) by >=2, uncapped. Fires once, on the transition.
             m[side + 'Sets'] = clamp0(m[side + 'Sets'] + 1)
             this.results.push({ left: m.leftPoints, right: m.rightPoints })
-            this.lastEvent = m[side + 'Sets'] >= 3 ? 'match-end' : 'set-end'
-          } else if (deciding && before < 8 && m[other + 'Points'] < 8 && m[side + 'Points'] >= 8) {
-            // Deciding set: the first team to reach 8 triggers a side switch.
-            this.lastEvent = 'switch-8'
+            this.lastEvent = m[side + 'Sets'] >= SETS_TO_WIN ? 'match-end' : 'set-end'
+          } else if (deciding && before < DECIDER_SWITCH_AT && m[other + 'Points'] < DECIDER_SWITCH_AT && m[side + 'Points'] >= DECIDER_SWITCH_AT) {
+            // Deciding set: the first team to reach 8 flags that a change of ends is DUE. The source
+            // does NOT swap — the UI confirms ("Switch sides?"), blinks COURT SWITCH, then sends `swap`.
+            this.lastEvent = 'switch-due'
           }
         }
         break
@@ -141,7 +155,7 @@ export class ManualSource extends EventEmitter {
         m.rightTO = 0
         m.leftSub = 0
         m.rightSub = 0
-        if (m.leftSets + m.rightSets !== 4) this._swap()
+        if (m.leftSets + m.rightSets !== (SETS_TO_WIN - 1) * 2) this._swap()
         break
       case 'remove-set': {
         // Undo the last recorded set: drop its result and its set point.
@@ -180,4 +194,83 @@ export class ManualSource extends EventEmitter {
 
   start() {} // no-op; present for the uniform Source interface
   stop() {}
+}
+
+// --------------------------------------------------------------------------------------
+// Tiny self-check (mirrors test/*.mjs and the beach/basketball sources). Runs only when
+// executed directly:   node src/manualSource.js
+// Proves set-end / match-end fire at the right scores, that the deciding set flags a court
+// switch DUE at first-to-8 WITHOUT auto-swapping, and that the between-set change of ends
+// swaps (except going into the deciding set).
+// --------------------------------------------------------------------------------------
+if (import.meta.url === `file://${process.argv[1]}`) {
+  let pass = 0, fail = 0
+  const ok = (cond, label) => { if (cond) { pass++; console.log(`  ✅ ${label}`) } else { fail++; console.log(`  ❌ ${label}`) } }
+  const mk = () => new ManualSource()
+  const pt = (s, side) => { s.apply({ type: 'point', side, delta: 1 }); return s.lastEvent }
+  const decider = (over = {}) => {
+    const s = mk()
+    s.apply({ type: 'set-state', state: { side_a: 'left', team_a_short: 'LLL', team_b_short: 'RRR', sets_won_a: 2, sets_won_b: 2, ...over } })
+    return s
+  }
+
+  // Set win: first to 25 by >=2 counts a set (not yet the match).
+  {
+    const s = mk()
+    for (let i = 0; i < 24; i++) pt(s, 'left') // 24-0
+    ok(pt(s, 'left') === 'set-end', 'set ends at 25-0 (win by >=2)')
+    ok(s.getState().sets_won_a === 1, 'the set is counted to the left team')
+  }
+
+  // Win-by-2, uncapped: no set at 25-24 or 25-25.
+  {
+    const s = mk()
+    for (let i = 0; i < 24; i++) { pt(s, 'left'); pt(s, 'right') } // 24-24
+    ok(pt(s, 'left') !== 'set-end', 'no set win at 25-24 (needs a 2-point margin)')
+    ok(pt(s, 'right') !== 'set-end', 'no set win at 25-25')
+    pt(s, 'left') // 26-25
+    ok(pt(s, 'left') === 'set-end', 'set ends at 27-25 (uncapped, win by 2)')
+  }
+
+  // Deciding set (2-2): target 15, and the first team to reach 8 flags switch-due — no auto-swap.
+  {
+    const s = decider()
+    ok(s._deciding === true, 'sets 2-2 is the deciding set')
+    for (let i = 0; i < 7; i++) pt(s, 'left') // 7-0
+    ok(s.lastEvent !== 'switch-due', 'no switch-due before 8 in the deciding set')
+    ok(pt(s, 'left') === 'switch-due', 'switch-due fires when the first team reaches 8 (deciding set)')
+    ok(s.getState().team_a_short === 'LLL', 'switch-due does NOT auto-swap (left team unchanged)')
+  }
+
+  // Outside the deciding set, reaching 8 flags nothing.
+  {
+    const s = mk()
+    for (let i = 0; i < 8; i++) pt(s, 'left') // 8-0 in set 1
+    ok(s.lastEvent !== 'switch-due', 'no switch-due at 8 outside the deciding set')
+  }
+
+  // Deciding set win at 15, and match-end at the 3rd set.
+  {
+    const s = decider()
+    let last = null
+    for (let i = 0; i < 15; i++) last = pt(s, 'left') // 15-0
+    ok(last === 'match-end', 'winning the deciding set (to 15) ends the match')
+    ok(s.getState().sets_won_a === 3, 'the winner has 3 sets')
+  }
+
+  // Change of ends between sets, but NOT going into the deciding 5th set.
+  {
+    const s = mk()
+    s.apply({ type: 'team', side: 'left', short: 'AAA' })
+    s.apply({ type: 'team', side: 'right', short: 'BBB' })
+    s.apply({ type: 'set', side: 'left', delta: 1 }) // sets 1-0
+    s.apply({ type: 'next-set' })
+    ok(s.getState().team_a_short === 'BBB', 'ends change after a normal set (next-set swaps)')
+    const d = decider({ team_a_short: 'AAA', team_b_short: 'BBB' }) // 2-2, deciding next
+    d.apply({ type: 'next-set' })
+    ok(d.getState().team_a_short === 'AAA', 'ends do NOT auto-swap going into the deciding set')
+  }
+
+  console.log(`\n${fail === 0 ? '✅ PASS' : '❌ FAIL'} — ${pass} passed, ${fail} failed`)
+  process.exit(fail === 0 ? 0 : 1)
 }
