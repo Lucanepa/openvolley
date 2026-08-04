@@ -30,7 +30,7 @@ const volleyMapper = {
 
 // Idle + crest are sport-neutral (crest + team names), so every sport uses the hardware-proven
 // volleyball idle screens. Only the match layout is sport-specific.
-const IDLE_LAYOUTS = { idleLayout: 'kscw_idle', crestLayout: 'kscw_crest' }
+const IDLE_LAYOUTS = { idleLayout: 'kscw_idle', crestLayout: 'kscw_crest', clockLayout: 'kscw_clock' }
 
 export const SPORTS = {
   volleyball: {
