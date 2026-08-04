@@ -1,113 +1,38 @@
-# @openvolley/ledbox-bridge
+# ledbox-bridge has moved
 
-Mirrors an OpenVolley live match onto a **Tech4Sport LedBox** LED scoreboard.
+The LedBox bridge now lives in its own repository and is developed there:
 
-```
- eScoresheet (Scoreboard)                 LedBox bridge (this service)            Tech4Sport LedBox
-        │  computes liveState                       │                                    │
-        └── live-state-update (WS) ─▶  LAN relay ──▶  RelaySubscriber                     │
-                                                     │  data.liveState                    │
-                                                     ▼                                    │
-                                            volleyballMapper ── SetSections ──▶ LedboxClient ──gzip/TCP:8889──▶ 📟
-```
+**https://github.com/Lucanepa/point-hub**
 
-Small Node service, **no production dependencies** (uses Node 22's built-in global
-`WebSocket` for the relay client and `node:net` for the LedBox). It subscribes to the
-LAN relay, maps the live match state onto the LedBox `volleyball_matchscore` layout,
-and pushes it over TCP with the documented gzip/JSON protocol.
+## Why
 
-## Fields shown
-points · team short names (in team colour) · sets won · timeouts (**T**) · substitutions (**S**) · serve indicator
+This directory used to be the source, with point-hub as a curated export of it. That made
+point-hub *downstream*, and on 2026-08-04 a feature (structured logging + the `/logs` viewer)
+was authored in the export instead of here. It was based on an older snapshot, so deploying it
+would have silently reverted a day's work that existed only upstream — and the next
+`deploy-board.sh` run would have overwritten it on the board regardless.
 
-## Configure
-Copy `.env.example` → `.env`. Key vars: `RELAY_URL`, `MATCH_ID`, `LEDBOX_HOST`.
+One copy, one direction. point-hub is the source of truth.
 
-### Publishing the board to wiedisync (`/live`)
-Optional. Set **both** of these and the appliance mirrors every score change to the
-club's Directus, so members can follow the match at `wiedisync.kscw.ch/live`:
-
-| Var | Value |
-|---|---|
-| `DIRECTUS_URL` | `https://directus.kscw.ch` (dev: `https://directus-dev.kscw.ch`) |
-| `LIVE_PUBLISH_TOKEN` | static token of `ledbox-board@kscw.ch` — its policy can touch `live_scores` and nothing else |
-| `LIVE_CHANNEL` | which row to write; default `kscw` (one board, one row) |
-
-Leave either blank and the publisher is a **no-op** — the board behaves exactly as
-it does without it. Every failure inside it (outage, bad token, slow network) is
-swallowed, so it can never affect scoring. These are deliberately distinct from
-`RELAY_URL`, which is the LAN relay the board *subscribes* to.
-
-⚠️ Prod and dev have **different** tokens, and the dev one is replaced by the
-nightly prod clone. Collection, permissions and setup:
-`wiedisync/src/modules/live/DIRECTUS-SETUP.md`.
-
-The publisher sends the active sport, so the app renders the right board — the
-sport is fixed at boot (switching it restarts the appliance). Note that
-`BasketballSource` carries team fouls in `subs_a`/`subs_b`; `livePush` translates
-that to explicit `fouls_a`/`fouls_b` on the wire.
-
-## Test / run
-```bash
-# unit test: mapper → client → mock LedBox (no deps, no hardware) — the on-Pi smoke test
-npm run test:mapper
-
-# integration test: mock relay → bridge → mock LedBox (needs devDeps)
-npm install && npm run test:relay
-
-# run for real against the built-in mock (no hardware):
-MOCK=1 MATCH_ID=123 RELAY_URL=ws://127.0.0.1:8080 node src/bridge.js
-
-# run against a real LedBox:
-MATCH_ID=123 LEDBOX_HOST=172.24.1.1 node src/bridge.js
-```
-
-## Appliance — web control UI (manual + link)
-Instead of the headless bridge, run the **appliance**: a phone-friendly control page
-served by the Pi (`CONTROL_PORT`, default 8890) with two modes — **Manual** (drive the
-board by hand: names, ±points, sets, timeouts, subs, serve, swap) and **Link** (list LAN
-matches from the relay and mirror one live). Cloud/Supabase source is a stub.
-```bash
-npm run appliance                 # open http://<pi-ip>:8890  (or http://openvolley:8890 over Tailscale)
-MOCK=1 npm run appliance          # in-process mock LedBox, no hardware
-npm run test:appliance            # API → source → mapper → mock LedBox integration test
-```
-Architecture and the remaining phases (cloud source, auth, persistence) are in
-[`DESIGN-appliance.md`](./DESIGN-appliance.md).
-
-## Logs — `/logs`
-Everything the appliance does is recorded to one structured log: board writes and layout
-switches, every scored action, source and relay lifecycle, settings changes, live-scoring
-publishes, and the browser's own errors. Open **`http://<board-ip>:8890/logs`** (linked from
-Settings ▸ Diagnostics) for a live tail with level/scope filters, search, download and a
-runtime verbosity switch.
+## Deploying the board
 
 ```bash
-LOG_LEVEL=debug npm run appliance   # boot verbose (DEBUG=1 still works); also switchable at /logs
-curl http://<board-ip>:8890/api/logs/export > board.jsonl  # the whole trail, for a bug report
-journalctl -u ledbox-bridge -f                             # unchanged — everything still mirrors to stdout
+ssh lenovoserver
+cd ~/repos/point-hub && git pull && bash deploy-board.sh
 ```
 
-Persisted to `data/logs/*.jsonl`, rotated at 5 MB × 3 files (**15 MB ceiling**, SD-card
-friendly). The scorer PIN and the Directus token are redacted before anything is written.
-Design notes: [`docs/logging-DESIGN.md`](./docs/logging-DESIGN.md).
+Nothing else in this monorepo imported the bridge, so removing it changes no other component.
 
-## Deploy on the Pi (systemd)
-```bash
-# on the Pi (reachable as `ssh openvolley`):
-cd ~/ledbox-bridge
-cp .env.example .env && nano .env        # set MATCH_ID, LEDBOX_HOST
-sudo cp systemd/ledbox-bridge.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now ledbox-bridge
-journalctl -u ledbox-bridge -f
-```
+## What deliberately did NOT move
 
-## Status / open items
-- **Validated:** mapper + protocol + TCP client + relay subscriber, on the Pi 5 against
-  mocks (`npm test`).
-- **Wired (app side):** the Scoreboard now also pushes its computed live-state over the
-  LAN relay as a `live-state-update` message (`Scoreboard.jsx`); `server.js` merges it
-  into the match store and fans it out to subscribers, and the bridge consumes it.
-  Verified with mocks — still needs a live end-to-end run with a real scoreboard + relay.
-- **Pending (hardware):** confirm the real LedBox's `volleyball_matchscore` section
-  names — especially `sub1`/`sub2` and the team-name fields — and upload a custom
-  layout via TCP :12345 if they differ.
+Kept out of any public repo (both this one and point-hub are public):
+
+- `firmware/src`, `firmware/plugin`, `firmware/libs`, `firmware/manifest.xml` — Tech4Sport's own
+  firmware: decompiled sources, their plugins and their shipped `.so` binaries.
+- `firmware/nota-emilio-*.md` — private correspondence with their maintainer.
+- `firmware/**/wifi_qr.png` — the image encodes the board's AP passphrase, so committing it
+  publishes the credential. It is derived: rebuild with `gen_qr.py` from the vault entry
+  *LedBox - ledbox_C0270 WiFi (Tech4Sport)*.
+
+Those are archived at `~/projects/ledbox-vendor-firmware/` and belong on the private Gitea,
+not on GitHub.
