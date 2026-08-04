@@ -275,6 +275,14 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       const prev = settings.values.sport
       const updated = settings.update({ sport: wanted })
       const changed = updated.sport !== prev
+      // Leave a one-shot marker for the next boot to announce the new sport on the panel. The
+      // idle screens are sport-neutral, so without it the switch is invisible on the board.
+      // Best-effort: a failed write must never block the switch itself.
+      if (changed && settings.file) {
+        try {
+          fs.writeFileSync(path.join(path.dirname(settings.file), '.sport-switch'), updated.sport)
+        } catch (err) { console.error('[sport] could not mark switch:', err.message) }
+      }
       sendJson(res, 200, { ok: true, sport: updated.sport, changed, restarting: changed })
       // Restart after the response flushes. On dev (no systemd unit) execFile just errors into the
       // ignored callback; the choice is persisted either way and applied on the next boot.
