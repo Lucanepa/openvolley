@@ -4,6 +4,19 @@ settings.json
 
 # vendor firmware zip (18MB) — see firmware/RECOVERY.md for the URL
 firmware/*.zip
+
+# SECRET. wifi_qr.png encodes `WIFI:T:WPA;S:ledbox_C0270;P:<passphrase>;;` — committing it
+# publishes the board's AP passphrase to anyone who points a phone at the file on GitHub.
+# It is DERIVED, not source: regenerate with
+#   python3 firmware/idle-crest-qr/gen_qr.py --wifi-pass "$(rbw get 'LedBox - ledbox_C0270 WiFi (Tech4Sport)')"
+firmware/**/wifi_qr.png
+
+# Tech4Sport's own firmware — decompiled sources, their plugins and their shipped .so binaries.
+# Not ours to publish, and this repo is PUBLIC. Keep a copy on the private Gitea instead.
+firmware/src/
+firmware/plugin/
+firmware/libs/
+firmware/manifest.xml
 .agents/
 data/
 .claude/
