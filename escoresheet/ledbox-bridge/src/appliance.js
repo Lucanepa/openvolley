@@ -17,19 +17,37 @@ import { livePushFromEnv } from './livePush.js'
 import { SourceManager } from './sourceManager.js'
 import { createControlServer } from './controlServer.js'
 import { Settings } from './settings.js'
-
-const ts = () => new Date().toISOString()
+import { log as logStore, installProcessLogging } from './logStore.js'
 
 export async function startAppliance(config = loadConfig()) {
-  const log = (...a) => console.log(ts(), ...a)
+  const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web')
+
+  // Logging is configured FIRST, so everything from here on — including a failure to load
+  // settings or reach the board — lands in data/logs and on the /logs page. DEBUG=1 opens the
+  // firehose (every board write, every HTTP request); the level is also switchable at runtime
+  // from /logs, so a match can be turned verbose without a restart.
+  logStore.configure({
+    file: path.resolve(webDir, '..', 'data', 'logs', 'appliance.jsonl'),
+    level: config.logLevel || (config.debug ? 'debug' : 'info'),
+  })
+  const log = logStore.child('appliance')
+  const boardLog = logStore.child('ledbox')
+  log.info('starting', {
+    node: process.version,
+    pid: process.pid,
+    controlPort: config.controlPort,
+    relayUrl: config.relayUrl,
+    ledboxHosts: config.ledboxHosts,
+    mock: config.mock,
+    logLevel: logStore.level,
+  })
 
   // Load settings first: the active sport selects the Source, the match layout and the
   // state→sections mapper built below (see src/sports.js). Preferences live beside the code so
   // they survive restarts and reboots.
-  const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web')
   const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
   const sport = getSport(settings.values.sport || DEFAULT_SPORT)
-  log(`[appliance] sport: ${sport.key} (${sport.label})`)
+  log.info(`sport: ${sport.key} (${sport.label})`, { sport: sport.key, layouts: sport.layouts })
 
   // Was this boot caused by a sport switch? /api/sport drops a marker just before restarting us.
   // Consume it (delete first, so a crash mid-announcement can't replay it every boot) and hold
@@ -44,8 +62,8 @@ export async function startAppliance(config = loadConfig()) {
       // Only announce a switch that matches the sport we actually booted into.
       if (marked === sport.key) bootMessage = sport.label
     }
-  } catch (err) { log('[appliance] sport marker unreadable:', err.message) }
-  if (bootMessage) log(`[appliance] announcing sport switch on the panel: ${bootMessage}`)
+  } catch (err) { log.warn(`sport marker unreadable: ${err.message}`, { file: switchMark, error: err.message }) }
+  if (bootMessage) log.info(`announcing sport switch on the panel: ${bootMessage}`, { sport: sport.key })
 
   // Target: the real LedBox, or an in-process mock on an ephemeral port for testing.
   // Accept either the config's host list or a single (possibly comma-separated) host,
@@ -59,7 +77,7 @@ export async function startAppliance(config = loadConfig()) {
     const addr = await mock.listen(0, '127.0.0.1')
     ledboxHosts = ['127.0.0.1']
     ledboxPort = addr.port
-    log(`[appliance] MOCK LedBox on ${ledboxHosts[0]}:${ledboxPort}`)
+    log.info(`MOCK LedBox on ${ledboxHosts[0]}:${ledboxPort}`, { host: ledboxHosts[0], port: ledboxPort })
   }
 
   const ledbox = new LedboxClient({
@@ -77,18 +95,26 @@ export async function startAppliance(config = loadConfig()) {
     defaultIdle: true,
     bootMessage, // set only when this boot follows a sport switch
   })
-  ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, ${sport.key}, layout ${sport.layouts.layout})`))
-  ledbox.on('close', () => log('[ledbox] disconnected'))
-  ledbox.on('error', (e) => log('[ledbox] error:', e.message))
+  // The board's socket lifecycle is the single most useful thing in the log when a venue
+  // reports "the panel froze" — every transition is recorded with the address in use, since
+  // the client walks a host list (hotspot vs ethernet) and failover is otherwise invisible.
+  ledbox.on('connect', () => boardLog.info('tcp connected', { host: ledbox.host, port: ledboxPort }))
+  ledbox.on('ready', (info) => boardLog.info(`ready (${ledbox.host}:${ledboxPort}, ${sport.key}, layout ${sport.layouts.layout})`, {
+    host: ledbox.host, port: ledboxPort, sport: sport.key, layout: sport.layouts.layout, device: info,
+  }))
+  ledbox.on('close', () => boardLog.warn('disconnected', { host: ledbox.host, reconnectMs: ledbox.reconnectMs }))
+  ledbox.on('error', (e) => boardLog.error(`error: ${e.message}`, e))
 
   const manualSource = new sport.Source()
   const sourceManager = new SourceManager()
   // Whatever the active source emits gets painted onto the board. Fire-and-forget:
   // swallow push rejections (e.g. a timeout while the board is down) so they don't
   // surface as unhandled rejections and crash the process.
-  sourceManager.on('state', (s) => { ledbox.pushState(s).catch((e) => log('[ledbox] push failed:', e.message)) })
+  sourceManager.on('state', (s) => {
+    ledbox.pushState(s).catch((e) => boardLog.error(`push failed: ${e.message}`, { error: e.message, host: ledbox.host, layout: ledbox.currentLayout }))
+  })
   // A source failing (e.g. the LAN relay is unreachable) must not crash the appliance.
-  sourceManager.on('error', (e) => log('[source] error:', e.message))
+  sourceManager.on('error', (e) => logStore.error('source', `error: ${e.message}`, e))
 
   // Mirror the board to wiedisync so members can follow the match at /live.
   // Attached to the SourceManager, not to the scoring source, so a LINKED LAN
@@ -99,11 +125,15 @@ export async function startAppliance(config = loadConfig()) {
   // runtime on/off — so a configured board still publishes NOTHING until the operator flips it.
   const livePush = livePushFromEnv(process.env, sport.key, () => settings.values.liveScoring === 'kscw')
   livePush.attach(sourceManager)
-  log(`[livePush] ${livePush.enabled
-    ? `configured → ${process.env.DIRECTUS_URL} (${sport.key}); publishing ${livePush.isLive() ? 'ON' : "OFF — flip Settings ▸ Connect to live scoring"}`
-    : 'disabled (no DIRECTUS_URL / LIVE_PUBLISH_TOKEN)'}`)
+  logStore.info('livePush', livePush.enabled
+    ? `configured → ${process.env.DIRECTUS_URL} (${sport.key}); publishing ${livePush.isLive() ? 'ON' : 'OFF — flip Settings ▸ Connect to live scoring'}`
+    : 'disabled (no DIRECTUS_URL / LIVE_PUBLISH_TOKEN)',
+  { enabled: livePush.enabled, publishing: livePush.isLive(), url: process.env.DIRECTUS_URL || null, sport: sport.key })
 
-  log(`[appliance] settings: ${JSON.stringify(settings.values)}`)
+  // The full preference set at boot: nearly every "why did the board do that?" question
+  // (blink off, wrong allowance, horn silent) is answered by this one line. The PIN is
+  // redacted by the log store, so this is safe to hand to anyone.
+  log.info('settings loaded', settings.values)
   // Seed the counter-colour thresholds from saved settings before the first paint.
   ledbox.setLimits({
     totalTimeouts: settings.values.totalTimeouts,
@@ -131,9 +161,11 @@ export async function startAppliance(config = loadConfig()) {
 
   await new Promise((resolve) => server.listen(config.controlPort, '0.0.0.0', resolve))
   const port = server.address().port
-  log(`[appliance] control UI on http://0.0.0.0:${port}  (Tailscale: http://openvolley:${port})`)
+  log.info(`control UI on http://0.0.0.0:${port}  (Tailscale: http://openvolley:${port})`, { port, logs: `http://openvolley:${port}/logs` })
 
   const close = async () => {
+    log.info('shutting down')
+    logStore.flush()
     livePush.detach()
     sourceManager.stop()
     await new Promise((r) => server.close(r))
@@ -148,15 +180,16 @@ export async function startAppliance(config = loadConfig()) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   // An appliance must stay up through a match: a stray unhandled rejection (most often a
   // board write that timed out) or a non-fatal exception should be logged, not terminate
-  // the process. Node's default is to crash on an unhandled rejection.
-  process.on('unhandledRejection', (reason) => console.error(ts(), '[appliance] unhandledRejection:', reason))
-  process.on('uncaughtException', (err) => console.error(ts(), '[appliance] uncaughtException:', err))
+  // the process. Node's default is to crash on an unhandled rejection. These land in the
+  // log store (and so on /logs and on disk), not just in whatever terminal is attached.
+  installProcessLogging()
   startAppliance().then(({ close }) => {
     const shutdown = async () => { await close(); process.exit(0) }
     process.on('SIGINT', shutdown)
     process.on('SIGTERM', shutdown)
   }).catch((err) => {
-    console.error('[appliance] fatal:', err)
+    logStore.error('appliance', 'fatal — could not start', err)
+    logStore.flush()
     process.exit(1)
   })
 }

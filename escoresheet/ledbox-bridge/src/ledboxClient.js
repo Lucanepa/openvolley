@@ -8,9 +8,16 @@ import net from 'node:net'
 import { EventEmitter } from 'node:events'
 import { encode, StreamDecoder } from './ledboxProtocol.js'
 import { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections, toLeftRight } from './volleyballMapper.js'
+import { log } from './logStore.js'
 
 const CONTROL_PORT = 8889
 const HOTSPOT_IP = '172.24.1.1'
+
+// Board traffic is logged here rather than in the appliance because most of it has no event
+// to listen to: the silent early-returns in pushState, the layout cache, the error-6 self-heal.
+// Per-write detail sits at `debug` (it fires ~1 Hz during a rally); anything that changes what
+// the panel is showing, or that had to recover, is `info`/`warn`.
+const blog = log.child('ledbox')
 
 export class LedboxClient extends EventEmitter {
   constructor({
@@ -138,6 +145,7 @@ export class LedboxClient extends EventEmitter {
     this._closing = false
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null }
     this.host = this.hosts[this._hostIdx % this.hosts.length]
+    blog.debug('connecting', { host: this.host, port: this.port, candidates: this.hosts })
     let reachedReady = false
     const socket = net.connect({ host: this.host, port: this.port }, async () => {
       this.emit('connect')
@@ -205,7 +213,12 @@ export class LedboxClient extends EventEmitter {
       this.currentLayout = null
       // Never got a handshake on this address — try the next one. Once an address has
       // worked we stay on it, so a transient drop doesn't send us wandering.
-      if (!reachedReady && this.hosts.length > 1) this._hostIdx++
+      if (!reachedReady && this.hosts.length > 1) {
+        this._hostIdx++
+        blog.warn('no handshake — trying the next address', {
+          failed: this.host, next: this.hosts[this._hostIdx % this.hosts.length],
+        })
+      }
       this.emit('close')
       if (!this._closing && this.reconnectMs) {
         this._reconnectTimer = setTimeout(() => this.connect(), this.reconnectMs)
@@ -258,14 +271,27 @@ export class LedboxClient extends EventEmitter {
     if (!this.socket) return Promise.reject(new Error('not connected'))
     const frame = { cmd, ...extra }
     if (value !== undefined) frame.value = value
+    const started = Date.now()
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pending.delete(cmd)
+        // A write the board never acked. At debug this is expected noise (SetLayout to the
+        // layout it already has never answers — see setLayoutIfNeeded); anywhere else it is
+        // the first symptom of a wedged panel, so record the wait.
+        blog.debug(`${cmd} timed out`, { cmd, timeoutMs, host: this.host })
         reject(new Error(`${cmd} timed out`))
       }, timeoutMs)
       this._pending.set(cmd, {
-        resolve: (v) => { clearTimeout(timer); resolve(v) },
-        reject: (e) => { clearTimeout(timer); reject(e) },
+        resolve: (v) => {
+          clearTimeout(timer)
+          blog.debug(`${cmd} ok`, { cmd, ms: Date.now() - started })
+          resolve(v)
+        },
+        reject: (e) => {
+          clearTimeout(timer)
+          blog.debug(`${cmd} refused`, { cmd, ms: Date.now() - started, error: e.message })
+          reject(e)
+        },
       })
       this.socket.write(encode(frame))
     })
@@ -277,40 +303,70 @@ export class LedboxClient extends EventEmitter {
   // Sound the board's buzzer. Payload confirmed from the vendor app + verified audible:
   // `times` = number of beeps, `sleep` = gap between them in seconds. Best-effort.
   horn(times = 2, sleep = 0.3) {
-    if (!this.ready) return Promise.resolve(false)
-    return this.send('Horn', { times, sleep }).catch(() => false)
+    if (!this.ready) {
+      blog.debug('horn skipped — board not ready')
+      return Promise.resolve(false)
+    }
+    blog.info('horn', { times, sleep })
+    return this.send('Horn', { times, sleep }).catch((err) => {
+      blog.warn(`horn failed: ${err.message}`, { error: err.message })
+      return false
+    })
   }
 
   // The one call the app drives on every score change.
   pushState(state) {
     this._lastState = state
+    // Each early return below means "the score changed but the panel deliberately did not".
+    // They were silent, which made a held paint indistinguishable from a broken one; `skipped`
+    // at debug level is how you tell those apart after the fact.
     // Suppress the paint but keep the state: used when a swap is applied immediately before a
     // countdown, so the match layout is never repainted in between (no 0-0 flash, no race with
     // the layout switch). pushCountdown then reads this fresh _lastState.
-    if (this._suppressPaint) return Promise.resolve(false)
-    if (!this.ready) return Promise.resolve(false)
+    if (this._suppressPaint) return this._skipPaint('paint suppressed (pre-countdown swap)')
+    if (!this.ready) return this._skipPaint('board not ready')
     // A countdown layout has none of the match sections; writing them there is an error 6.
     // Hold the state instead — pushCountdown(null) repaints it when the countdown ends.
-    if (this.currentLayout && this.currentLayout !== this.layout) return Promise.resolve(false)
+    if (this.currentLayout && this.currentLayout !== this.layout) {
+      return this._skipPaint('another layout is up', { currentLayout: this.currentLayout, matchLayout: this.layout })
+    }
     // Idle overrides scoring: while the idle screen is up, a stray state push (e.g. a poll)
     // must not repaint the scoreboard over it. showIdle(false) lifts this.
-    if (this._idle) return Promise.resolve(false)
+    if (this._idle) return this._skipPaint('idle screen is up')
     const paint = () => this.send('SetSections', this.mapper.toSections(state, { totalTimeouts: this.totalTimeouts, totalSubs: this.totalSubs }))
+    // Wrapped: reading the state for a log line must never be what breaks a paint.
+    try {
+      const v = this.mapper.toLeftRight(state)
+      blog.debug('paint', {
+        score: `${v.leftPoints}-${v.rightPoints}`, sets: `${v.leftSets}-${v.rightSets}`,
+        teams: `${v.leftName}/${v.rightName}`, serve: v.serving, layout: this.currentLayout,
+      })
+    } catch { /* unreadable state — the paint below is what matters */ }
     return paint().catch(async (err) => {
       // "section not found (6)" means the board is on a different layout than we think.
       // It happens whenever something changes the layout behind our back — most reliably
       // the board's own boot sequence, which paints its info screen AFTER we've set ours.
       // Re-assert the layout once and repaint, rather than silently dropping the score.
       if (!/not found \(6\)/.test(err.message)) throw err
+      blog.warn('section not found — re-asserting the layout and repainting', {
+        assumedLayout: this.currentLayout, layout: this.layout, error: err.message,
+      })
       this.currentLayout = null
       await this.setLayoutIfNeeded(this.layout)
       return paint()
     })
   }
 
+  // A paint that was deliberately withheld. Returns pushState's usual "didn't paint" value.
+  _skipPaint(reason, data) {
+    blog.debug(`skipped paint — ${reason}`, data)
+    return Promise.resolve(false)
+  }
+
   // Update the per-set allowances that drive the counter colours (from operator settings),
   // and repaint so the change shows immediately.
   setLimits({ totalTimeouts, totalSubs, idleFullNames, idleFontMax, clubName } = {}) {
+    blog.debug('limits updated', { totalTimeouts, totalSubs, idleFullNames, idleFontMax, clubName })
     if (Number.isFinite(totalTimeouts)) this.totalTimeouts = totalTimeouts
     if (Number.isFinite(totalSubs)) this.totalSubs = totalSubs
     if (typeof idleFullNames === 'boolean') this.idleFullNames = idleFullNames
@@ -334,15 +390,24 @@ export class LedboxClient extends EventEmitter {
   // Pre-match / between-matches screen: team names + "VS", scores blanked, on the match
   // layout (no image needed). showIdle(false) returns to live scoring.
   async showIdle(on = true) {
-    if (!this.ready) return false
+    if (!this.ready) {
+      blog.debug('showIdle ignored — board not ready', { on })
+      return false
+    }
     this._idle = !!on
+    blog.info(on ? 'idle screen on' : 'idle screen off — back to scoring', { idle: this._idle, hasTeams: this._hasTeams() })
     this.clearPulses()
     try {
       if (on && this.idleLayout) {
         // A "complete" idle — no teams known yet (the boot default) — is the crest on its own
         // layout (no Home/Away). The crest image is baked into the layout, so the QR variant has
         // nothing to push; the clock variant pushes only its two text sections.
-        if (!this._hasTeams() && this._layoutAvailable(this.crestLayout)) {
+        // Gate on EITHER screen being available, not just the crest. Nesting the clock attempt
+        // under the crest's availability meant a board with kscw_clock but no kscw_crest never
+        // tried the clock at all — while _idleTick went on wanting it, so showIdle was re-entered
+        // once a second forever. Silently, too: the layout it wanted was never asked for, so
+        // nothing failed and nothing was logged.
+        if (!this._hasTeams() && (this._layoutAvailable(this.crestLayout) || this._layoutAvailable(this.clockLayout))) {
           // Two flavours of "complete" idle. crestLayout gives two thirds of the panel to a
           // "Join WiFi" and an "Open UI" QR — instructions for getting connected. Once someone
           // IS connected those are dead space, so clockLayout spends it on the wall clock
@@ -358,12 +423,14 @@ export class LedboxClient extends EventEmitter {
               this.emit('error', new Error(`clock layout unavailable (${err.message}); using crest`))
             }
           }
-          try {
-            await this.setLayoutIfNeeded(this.crestLayout)
-            return true
-          } catch (err) {
-            this._noteLayoutMissing(this.crestLayout, err)
-            this.emit('error', new Error(`crest layout unavailable (${err.message}); using named idle`))
+          if (this._layoutAvailable(this.crestLayout)) {
+            try {
+              await this.setLayoutIfNeeded(this.crestLayout)
+              return true
+            } catch (err) {
+              this._noteLayoutMissing(this.crestLayout, err)
+              this.emit('error', new Error(`crest layout unavailable (${err.message}); using named idle`))
+            }
           }
         }
         // Teams known: the club screen (crest + names). If the device doesn't have that
@@ -497,6 +564,12 @@ export class LedboxClient extends EventEmitter {
   async pushCountdown(secondsLeft, label = '', { content = 'full', team } = {}) {
     if (!this.ready) return false
     this._idle = false // a countdown means the match is live; leave any idle screen
+    // The ticker calls this once a second, so only the edges are worth `info`: entering the
+    // break screen and leaving it. The seconds themselves are debug.
+    if (secondsLeft == null) blog.info('countdown cleared — repainting the match')
+    else if (this.currentLayout !== this.breakLayout && this.currentLayout !== this.countdownLayout) {
+      blog.info(`countdown started: ${label || '(no label)'} ${Math.round(secondsLeft)}s`, { seconds: Math.round(secondsLeft), label, content, team })
+    } else blog.debug('countdown tick', { seconds: Math.round(secondsLeft), label })
     try {
       if (secondsLeft == null) {
         // The board keeps each layout's section values, so the break screen still holds THIS
@@ -561,6 +634,7 @@ export class LedboxClient extends EventEmitter {
   // `color` from here, which would have meant writing far faster than the vendor ever does.
   pulse(section, ms = this.pulseMs, color = null) {
     if (!this.ready || !section) return false
+    blog.debug(`blink ${section}`, { section, ms, color })
     // Software blink: alternate the section's colour between the team colour and off. The
     // board's native `blinking` can't do team colours (it uses the layout default), so we
     // drive it ourselves. Ends settled on the team colour.
@@ -624,6 +698,9 @@ export class LedboxClient extends EventEmitter {
   async setLayoutIfNeeded(name) {
     if (!name || this.currentLayout === name) return
     this.clearPulses()
+    // What the panel is SHOWING is the single most useful thing to have on the record — a
+    // wrong screen is the most visible failure this appliance has.
+    blog.info(`layout → ${name}`, { from: this.currentLayout, to: name })
     await this.setLayout(name).catch((err) => {
       if (!/timed out/.test(err.message)) throw err // silence here just means "already there"
     })
@@ -645,6 +722,7 @@ export class LedboxClient extends EventEmitter {
     this._layoutGuard = setInterval(async () => {
       if (!this.ready || this._suppressPaint || this._idle) return
       if (this.currentLayout && this.currentLayout !== this.layout) return // a break screen is up
+      blog.debug('layout guard — re-asserting the scoreboard', { layout: this.layout })
       await this.setLayout(this.layout).catch(() => {}) // no-op on the board if already set
       this.currentLayout = this.layout
       if (this._lastState) await this.pushState(this._lastState).catch(() => {})
@@ -652,6 +730,7 @@ export class LedboxClient extends EventEmitter {
   }
 
   disconnect() {
+    blog.info('disconnecting', { host: this.host })
     this._closing = true
     clearInterval(this._layoutGuard)
     clearInterval(this._idleTicker)

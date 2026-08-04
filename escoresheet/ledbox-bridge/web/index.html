@@ -218,6 +218,9 @@
   .editable{cursor:pointer}
   /* Power / shutdown */
   .dangerbtn{width:100%;margin-top:6px;padding:14px;font-size:15px;font-weight:800;border:1.5px solid var(--bad);border-radius:var(--r);background:var(--card);color:var(--bad);cursor:pointer}
+  .setlink{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:6px;padding:13px;font-size:14px;font-weight:800;
+    border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);text-decoration:none}
+  .setlink:active{background:var(--fill)}
   #shutdown{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--bg);color:var(--fg);text-align:center;padding:32px}
   #shutdown.show{display:flex}
   #shutdown .ic{font-size:66px;color:var(--muted)}
@@ -566,6 +569,14 @@
           <p class="hint">Set a digits-only PIN so only your scorer can change the score — anyone who scans the board can still watch, not touch. Leave blank to keep the current PIN.</p>
         </fieldset>
         <fieldset>
+          <legend><svg class="licon l-scroll-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 12h-5" /> <path d="M15 8h-5" /> <path d="M19 17V5a2 2 0 0 0-2-2H4" /> <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /></svg> Diagnostics</legend>
+          <p class="hint">Everything the board does — board writes, relay traffic, every scoring
+            action, settings changes and errors — is recorded and live-viewable. Open this first
+            when something looks wrong; it is also what to send with a bug report.</p>
+          <a class="setlink" href="/logs" target="_blank" rel="noopener"><svg class="licon l-scroll-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 12h-5" /> <path d="M15 8h-5" /> <path d="M19 17V5a2 2 0 0 0-2-2H4" /> <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /></svg> Open the log viewer</a>
+          <a class="setlink" href="/mockledbox" target="_blank" rel="noopener"><svg class="licon l-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2" /> <path d="M8 21h8" /> <path d="M12 17v4" /></svg> Open the virtual board</a>
+        </fieldset>
+        <fieldset>
           <legend><svg class="licon l-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10" /> <path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg> Power</legend>
           <p class="hint">Halt the scoreboard cleanly before switching the power off — protects the memory card.</p>
           <button id="shutdownBtn" class="dangerbtn"><svg class="licon l-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10" /> <path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg> Shut down</button>
@@ -793,12 +804,42 @@
   let SCORER_PIN = ""; try { SCORER_PIN = localStorage.getItem("kscwScorerPin") || ""; } catch {}
   let pinRequired = false;
 
+  // Report a browser-side fault to the appliance log (visible at /logs). A phone that
+  // misbehaves in the hall otherwise leaves no trace at all — nobody is going to open a
+  // console on it. Fire-and-forget, throttled per message so a stuck loop can't flood the
+  // card, and never fired for the logging endpoint itself.
+  const uiReported = new Map();
+  function reportUi(msg, data, level = "error") {
+    const now = Date.now();
+    if (now - (uiReported.get(msg) || 0) < 5000) return;
+    uiReported.set(msg, now);
+    try {
+      fetch("/api/logs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ level, msg, data }),
+      }).catch(() => {});
+    } catch { /* nothing left to try */ }
+  }
+  window.addEventListener("error", (ev) =>
+    reportUi(`controller error: ${ev.message}`, { file: ev.filename, line: ev.lineno, col: ev.colno }));
+  window.addEventListener("unhandledrejection", (ev) =>
+    reportUi("controller promise rejection", { reason: String(ev.reason).slice(0, 300) }));
+
   async function api(path, opts) {
     const res = await fetch(path, opts);
     let body = null;
     try { body = await res.json(); } catch { /* non-JSON */ }
     if (res.status === 403) onPinRejected();
-    if (!res.ok) throw new Error((body && body.error) || (path + " → " + res.status));
+    if (!res.ok) {
+      // A refusal the operator may never see (most callers swallow it) — record what the
+      // phone actually got back. Network-level failures are skipped: if the appliance is
+      // unreachable, the report cannot land either, and the offline banner already says so.
+      if (!path.startsWith("/api/logs")) {
+        reportUi(`request rejected: ${path} → ${res.status}`, { path, status: res.status, error: body && body.error }, "warn");
+      }
+      throw new Error((body && body.error) || (path + " → " + res.status));
+    }
     return body;
   }
   const postJSON = (path, obj) => api(path, {

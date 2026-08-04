@@ -4,15 +4,24 @@
 //
 // Run: node src/bridge.js   (configure via environment; see .env.example)
 
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 import { loadConfig } from './config.js'
 import { LedboxClient } from './ledboxClient.js'
 import { RelaySubscriber } from './relaySubscriber.js'
 import { MockLedbox } from './mockLedbox.js'
-
-const ts = () => new Date().toISOString()
+import { log as logStore, installProcessLogging } from './logStore.js'
 
 export async function startBridge(config = loadConfig()) {
-  const log = (...a) => console.log(ts(), ...a)
+  // The headless bridge gets the same log store as the appliance, in its own file — it has no
+  // web UI, so this trail plus journalctl is all there is.
+  logStore.configure({
+    file: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'logs', 'bridge.jsonl'),
+    level: config.logLevel || (config.debug ? 'debug' : 'info'),
+  })
+  const log = logStore.child('bridge')
+  const boardLog = logStore.child('ledbox')
+  log.info('starting', { node: process.version, pid: process.pid, relayUrl: config.relayUrl, matchId: config.matchId, ledboxHosts: config.ledboxHosts, mock: config.mock })
 
   // Target: the real LedBox, or an in-process mock on an ephemeral port for testing.
   // Accept either the config's host list or a single (possibly comma-separated) host,
@@ -26,7 +35,7 @@ export async function startBridge(config = loadConfig()) {
     const addr = await mock.listen(0, '127.0.0.1')
     ledboxHosts = ['127.0.0.1']
     ledboxPort = addr.port
-    log(`[bridge] MOCK LedBox on ${ledboxHosts[0]}:${ledboxPort}`)
+    log.info(`MOCK LedBox on ${ledboxHosts[0]}:${ledboxPort}`, { host: ledboxHosts[0], port: ledboxPort })
   }
 
   const ledbox = new LedboxClient({
@@ -37,9 +46,10 @@ export async function startBridge(config = loadConfig()) {
     apiVersion: config.ledboxApiVersion,
     reconnectMs: config.reconnectMs,
   })
-  ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, layout ${config.ledboxLayout})`))
-  ledbox.on('close', () => log('[ledbox] disconnected'))
-  ledbox.on('error', (e) => log('[ledbox] error:', e.message))
+  ledbox.on('connect', () => boardLog.info('tcp connected', { host: ledbox.host, port: ledboxPort }))
+  ledbox.on('ready', (info) => boardLog.info(`ready (${ledbox.host}:${ledboxPort}, layout ${config.ledboxLayout})`, { host: ledbox.host, port: ledboxPort, layout: config.ledboxLayout, device: info }))
+  ledbox.on('close', () => boardLog.warn('disconnected', { host: ledbox.host }))
+  ledbox.on('error', (e) => boardLog.error(`error: ${e.message}`, e))
   ledbox.connect()
 
   const relay = new RelaySubscriber({
@@ -47,22 +57,22 @@ export async function startBridge(config = loadConfig()) {
     matchId: config.matchId,
     reconnectMs: config.reconnectMs,
   })
-  relay.on('open', () => log(`[relay] connected ${config.relayUrl}; following match ${config.matchId ?? '(NONE SET)'}`))
-  relay.on('close', () => log('[relay] disconnected'))
-  relay.on('error', (e) => log('[relay] error:', e.message))
-  relay.on('nostate', () => { if (config.debug) log('[relay] raw match sync without liveState (ignored)') })
-  relay.on('match-gone', () => log('[relay] match ended/deleted'))
+  // The relay's own socket lifecycle (connect/close/retry/bad message) is logged inside
+  // RelaySubscriber, so only the match-level facts are added here.
+  relay.on('match-gone', () => log.warn('the followed match ended or was deleted', { matchId: config.matchId }))
   relay.on('state', (liveState) => {
-    if (config.debug) {
-      log('[state]', `${liveState.points_a}-${liveState.points_b}`,
-        `sets ${liveState.sets_won_a}-${liveState.sets_won_b}`, `serve ${liveState.serving_team}`)
-    }
-    ledbox.pushState(liveState)
+    logStore.debug('state', `${liveState.points_a}-${liveState.points_b}`, {
+      score: `${liveState.points_a}-${liveState.points_b}`,
+      sets: `${liveState.sets_won_a}-${liveState.sets_won_b}`,
+      serve: liveState.serving_team ?? null,
+    })
+    ledbox.pushState(liveState).catch((e) => boardLog.error(`push failed: ${e.message}`, { error: e.message }))
   })
   relay.start()
 
   const shutdown = () => {
-    log('[bridge] shutting down')
+    log.info('shutting down')
+    logStore.flush()
     relay.stop()
     ledbox.disconnect()
     if (mock) mock.close()
@@ -81,8 +91,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.error('MATCH_ID is required (or set MOCK=1). See .env.example.')
     process.exit(2)
   }
+  installProcessLogging()
   startBridge(cfg).catch((err) => {
-    console.error('[bridge] fatal:', err)
+    logStore.error('bridge', 'fatal — could not start', err)
+    logStore.flush()
     process.exit(1)
   })
 }
