@@ -1436,7 +1436,23 @@
       "active", t.id === "tab-" + b.dataset.tab));
     if (b.dataset.tab === "link" && !$("#matches").children.length) refreshMatches();
     if (b.dataset.tab === "history") refreshHistory();
+    // Opening the scoring page means "I am running a match now" — so take the panel off the
+    // crest and show the scoreboard. Until this, the ONLY thing that lifted the idle screen was
+    // scoring an actual point, so the operator set everything up and the board still sat on the
+    // crest looking like nothing had happened.
+    if (b.dataset.tab === "manual") showBoardLive();
   }));
+
+  // Leave the crest/idle screen so the scoreboard paints. Deliberately /api/idle {on:false} and
+  // NOT /api/manual: this must not switch the source, or opening the Game tab during a linked
+  // LAN match would silently drop the link and strand the match on manual.
+  async function showBoardLive() {
+    try {
+      await postJSON("/api/idle", { on: false });
+      board.mode = "match";
+      paintBoardMode();
+    } catch { /* locked, or the board is down — the PIN gate / offline banner already says so */ }
+  }
 
   // Direct-entry editor: tap a number to type an exact value (a correction), confirmed before
   // it's sent. An absolute value carries no delta, so it never blinks and never triggers set-win.
@@ -1625,7 +1641,11 @@
   }
   async function chooseSport(key) {
     if (!key) return;
-    if (key === curSport()) { closeSportPicker(); return; } // current sport = just continue
+    // Same sport = "yes, this one, get on with it". The picker opens on load, so this is the
+    // operator's FIRST interaction of the evening and it used to do literally nothing — the
+    // board stayed on the crest and there was no way to tell the choice had registered. Confirm
+    // it by putting the scoreboard up.
+    if (key === curSport()) { closeSportPicker(); showBoardLive(); return; }
     const st = $("#spStatus");
     if (st) { st.hidden = false; st.classList.remove("err"); st.textContent = "Switching to " + sportLabel(key) + "… the board restarts (about 8 seconds)."; }
     spBusy(true);
@@ -1834,7 +1854,18 @@
     keepAwake = on;
     awakeBtn.classList.toggle("active", on); // .nav button.active = accent highlight
     try { localStorage.setItem("keepAwake", on ? "1" : "0"); } catch {} // survive a reload mid-match
-    if (on) { await acquireWakeLock(); if (!wakeLock && !("wakeLock" in navigator)) toast("This browser can't keep the screen awake"); }
+    if (on) {
+      await acquireWakeLock();
+      // The Wake Lock API is restricted to SECURE contexts. The board is served over plain HTTP
+      // on the venue LAN (http://192.168.5.1:8890), so `wakeLock` simply isn't there — on any
+      // browser, however modern. Saying "this browser can't" sends the operator hunting for a
+      // browser fault that doesn't exist; the actionable fix is the tablet's own display timeout.
+      if (!wakeLock && !("wakeLock" in navigator)) {
+        toast(window.isSecureContext
+          ? "This browser can't keep the screen awake"
+          : "Keep-awake needs HTTPS — set the tablet's display timeout to Never instead");
+      }
+    }
     else if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
   }
   if (awakeBtn) awakeBtn.addEventListener("click", () => setKeepAwake(!keepAwake));
