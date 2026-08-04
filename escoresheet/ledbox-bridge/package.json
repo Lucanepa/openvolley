@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node src/bridge.js",
     "appliance": "node src/appliance.js",
-    "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs && node test/livepush-selftest.mjs && node test/settings-migration-selftest.mjs && node test/beach-serve-selftest.mjs",
+    "test": "node test/mapper-selftest.mjs && node test/relay-selftest.mjs && node test/livepush-selftest.mjs && node test/settings-migration-selftest.mjs && node test/beach-serve-selftest.mjs && node test/pulse-cadence-selftest.mjs && node test/sport-confirm-selftest.mjs",
+    "test:pulse": "node test/pulse-cadence-selftest.mjs",
+    "test:sport": "node test/sport-confirm-selftest.mjs",
     "test:appliance": "node test/appliance-selftest.mjs",
     "test:mapper": "node test/mapper-selftest.mjs",
     "test:relay": "node test/relay-selftest.mjs",

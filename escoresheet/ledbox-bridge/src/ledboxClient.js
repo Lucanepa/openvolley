@@ -75,13 +75,16 @@ export class LedboxClient extends EventEmitter {
     // When true, a fresh boot (nothing scored yet) settles on the idle/crest screen after
     // the handshake instead of a blank match layout. Set by the appliance.
     defaultIdle = false,
+    // One-shot text held on the panel right after the first handshake, then cleared back to
+    // idle. Set by the appliance when this boot is the result of a sport switch.
+    bootMessage = null,
     // Injected state→sections mapper set (per-sport; see src/sports.js). Defaults to the
     // volleyball mapper so the client still works standalone and in tests. Only toSections
     // differs between sports; idle / crest / countdown / break are shared.
     mapper = null,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, crestLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, crestLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle, bootMessage })
     this.mapper = mapper || { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections, toLeftRight }
     this._pulses = new Map()
     this._idle = false
@@ -136,6 +139,14 @@ export class LedboxClient extends EventEmitter {
         } else {
           await this.setLayoutIfNeeded(this.layout)
           if (this._lastState) await this.pushState(this._lastState) // repaint after reconnect
+        }
+        // AFTER the default screen is settled, not before — otherwise the idle assertion above
+        // would paint straight over the confirmation. One-shot: cleared here so a later
+        // reconnect (cable knock, board reboot) never replays a stale sport announcement.
+        if (this.bootMessage) {
+          const msg = this.bootMessage
+          this.bootMessage = null
+          await this.showSportConfirm(msg)
         }
       } catch (err) {
         this.emit('error', err)
@@ -320,6 +331,27 @@ export class LedboxClient extends EventEmitter {
     } catch { return false }
   }
 
+  // Hold a short message on the break screen, then settle back to idle.
+  //
+  // Used to confirm a sport switch ON THE PANEL. The idle screens are deliberately sport-neutral
+  // (every sport shares kscw_idle/kscw_crest) and a switch restarts into idle, so without this
+  // the board looks byte-identical before and after and the operator cannot tell the switch took
+  // — the new match layout only appears once someone scores.
+  async showSportConfirm(text, ms = 3000) {
+    if (!this.ready || !this.breakLayout || !text) return false
+    try {
+      await this.setLayoutIfNeeded(this.breakLayout)
+      // content 'none' blanks the score boxes, so the panel is just the sport name.
+      await this.send('SetSections', this.mapper.toBreakSections(null, { timerText: null, label: text, content: 'none' }))
+      await new Promise((r) => setTimeout(r, ms))
+      // Blank on the way out for the same reason pushCountdown does: the board keeps each
+      // layout's section values, so the next countdown would otherwise flash this text.
+      await this.send('SetSections', [{ name: this.labelSection, value: { attrib: 'text', value: '' } }]).catch(() => {})
+      await this.showIdle(true)
+      return true
+    } catch { return false }
+  }
+
   // Show (or clear, when secondsLeft == null) a countdown on the board.
   //
   // The device ships `volleyball_matchscore_timeout_02` for exactly this — GetSections on a
@@ -399,21 +431,42 @@ export class LedboxClient extends EventEmitter {
     const team = color || '255,255,255'
     const OFF = '0,0,0'
     const prev = this._pulses.get(section)
-    if (prev) { clearInterval(prev.timer); clearTimeout(prev.stop) } // re-scoring restarts, never stacks
+    if (prev) prev.cancel() // re-scoring restarts, never stacks
     // Short timeout: a blink toggle is cosmetic and must never hold the serialized send queue
     // (and thus a real score paint queued behind it) for the full 5 s default.
     const paint = (c) => this.send('SetSections', [{ name: section, value: { attrib: 'color', value: c } }], {}, { timeoutMs: 1500 }).catch(() => {})
-    let dark = true
-    paint(OFF)
-    const timer = setInterval(() => { dark = !dark; paint(dark ? OFF : team) }, this.pulseIntervalMs)
-    const stop = setTimeout(() => {
-      clearInterval(timer)
-      this._pulses.delete(section)
-      paint(team) // settle on the team colour
-    }, ms)
-    if (timer.unref) timer.unref()
-    if (stop.unref) stop.unref()
-    this._pulses.set(section, { timer, stop, color: team })
+
+    // SELF-CLOCKED, not setInterval. `send` allows exactly one command in flight and waits for
+    // the board's ack, so a fixed-rate interval enqueues toggles faster than they can drain
+    // whenever an ack is slower than pulseIntervalMs. They pile up behind each other AND behind
+    // the point's own score repaint, and the panel shows one long smear instead of a blink —
+    // which is why the same blinkMs produced two blinks on one side and a single slow one on the
+    // other, depending on what was already queued. Chaining each toggle behind its own ack makes
+    // the cadence max(pulseIntervalMs, ackLatency): even, backlog-free and identical per side.
+    const deadline = Date.now() + ms
+    let dark = false
+    let timer = null
+    let stopped = false
+    const entry = {
+      color: team,
+      cancel: () => { stopped = true; if (timer) clearTimeout(timer) },
+    }
+    const step = async () => {
+      if (stopped) return
+      dark = !dark
+      await paint(dark ? OFF : team)
+      if (stopped) return
+      if (Date.now() >= deadline) {
+        stopped = true
+        this._pulses.delete(section)
+        await paint(team) // settle on the team colour
+        return
+      }
+      timer = setTimeout(step, this.pulseIntervalMs)
+      if (timer.unref) timer.unref()
+    }
+    this._pulses.set(section, entry)
+    step()
     return true
   }
 
@@ -423,8 +476,7 @@ export class LedboxClient extends EventEmitter {
   clearPulses() {
     const restore = []
     for (const [section, p] of this._pulses) {
-      clearInterval(p.timer)
-      clearTimeout(p.stop)
+      p.cancel()
       if (p.color) restore.push({ name: section, value: { attrib: 'color', value: p.color } })
     }
     this._pulses.clear()

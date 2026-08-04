@@ -8,6 +8,7 @@
 
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'node:fs'
 import { loadConfig } from './config.js'
 import { LedboxClient } from './ledboxClient.js'
 import { MockLedbox } from './mockLedbox.js'
@@ -29,6 +30,22 @@ export async function startAppliance(config = loadConfig()) {
   const settings = new Settings(path.resolve(webDir, '..', 'settings.json'))
   const sport = getSport(settings.values.sport || DEFAULT_SPORT)
   log(`[appliance] sport: ${sport.key} (${sport.label})`)
+
+  // Was this boot caused by a sport switch? /api/sport drops a marker just before restarting us.
+  // Consume it (delete first, so a crash mid-announcement can't replay it every boot) and hold
+  // the sport name on the panel once, so the operator sees the switch land — the idle screens
+  // are shared by every sport and would otherwise look identical before and after.
+  let bootMessage = null
+  const switchMark = path.resolve(webDir, '..', '.sport-switch')
+  try {
+    if (fs.existsSync(switchMark)) {
+      const marked = fs.readFileSync(switchMark, 'utf8').trim()
+      fs.unlinkSync(switchMark)
+      // Only announce a switch that matches the sport we actually booted into.
+      if (marked === sport.key) bootMessage = sport.label
+    }
+  } catch (err) { log('[appliance] sport marker unreadable:', err.message) }
+  if (bootMessage) log(`[appliance] announcing sport switch on the panel: ${bootMessage}`)
 
   // Target: the real LedBox, or an in-process mock on an ephemeral port for testing.
   // Accept either the config's host list or a single (possibly comma-separated) host,
@@ -58,6 +75,7 @@ export async function startAppliance(config = loadConfig()) {
     // blank scoreboard). Asserted inside connect() after the handshake so it survives the
     // board's own boot-default layout and reconnects.
     defaultIdle: true,
+    bootMessage, // set only when this boot follows a sport switch
   })
   ledbox.on('ready', () => log(`[ledbox] ready (${ledbox.host}:${ledboxPort}, ${sport.key}, layout ${sport.layouts.layout})`))
   ledbox.on('close', () => log('[ledbox] disconnected'))
