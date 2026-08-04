@@ -50,8 +50,16 @@ Both idle layouts carry the QRs so the crest+QR screen shows whether the firmwar
 across power cycles. Kept here for versioning / restore.
 
 QR contents:
-- `wifi_qr.png` = `WIFI:T:WPA;S:ledbox_C0270;P:<AP passphrase>;;` (current value: Vaultwarden / hall card)
-- `ui_qr.png` = `http://172.24.1.1:8890`
+- `wifi_qr.png` = `WIFI:T:WPA;S:ledbox_C0270;P:<AP passphrase>;;` — **NOT in git, and must never be.**
+  The image *is* the passphrase: anyone who points a phone at it has the credential, so committing
+  it to this public repo published the board's AP. (It was, until 2026-08-04; the passphrase has
+  since been rotated and the file gitignored.) It is derived, not source — regenerate it:
+  ```bash
+  python3 gen_qr.py --wifi-pass "$(rbw get 'LedBox - ledbox_C0270 WiFi (Tech4Sport)')"
+  ```
+  The passphrase itself lives in Vaultwarden and in `/etc/hostapd/hostapd.conf` on the board;
+  those two must match or the QR joins nothing.
+- `ui_qr.png` = `http://172.24.1.1:8890` (no secret — safe to commit)
 
 Regenerate the QR PNGs (pure-python, no PIL needed) — see the encoder used in the session
 (`qrcode.get_matrix()` + a hand-rolled PNG writer), both forced to QR version 3 so they render
@@ -60,6 +68,8 @@ at the same 48×48 px. Labels are `<section type="text">` above each image in th
 ## Restore after a firmware reflash
 ```bash
 J="-J openvolley -o StrictHostKeyChecking=accept-new"
+# wifi_qr.png is gitignored, so a fresh clone has to rebuild it first (see "QR contents" above).
+python3 gen_qr.py --wifi-pass "$(rbw get 'LedBox - ledbox_C0270 WiFi (Tech4Sport)')"
 scp $J media/wifi_qr.png media/ui_qr.png pi@192.168.5.1:/home/pi/ledbox/media/
 scp $J waiting.xml       pi@192.168.5.1:/home/pi/w.xml
 scp $J 32_kscw_crest.xml pi@192.168.5.1:/home/pi/c.xml
