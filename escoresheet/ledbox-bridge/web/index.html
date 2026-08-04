@@ -227,7 +227,9 @@
   .histcard .meta{font-size:12px;color:var(--muted);margin-top:5px;display:flex;gap:14px;flex-wrap:wrap}
   .histcard .sets{font-variant-numeric:tabular-nums;font-family:var(--mono)}
   /* confirm modal (T/O + subs) */
-  #confirm{position:fixed;inset:0;z-index:75;display:flex;align-items:center;justify-content:center;background:rgba(15,17,22,.32)}
+  /* Above serveOrder (76) and sportPicker (78): this is the shared yes/no primitive, so it must
+     be able to open ON TOP of any other dialog. Below shutdown (90), which is terminal. */
+  #confirm{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(15,17,22,.32)}
   #confirm[hidden]{display:none}
   #confirm .editlabel{font-size:16px;text-transform:none;letter-spacing:0;color:var(--fg);margin-bottom:14px}
   #confirmYes{color:var(--blue)}
@@ -954,7 +956,7 @@
     });
     const undo = document.createElement("button");
     undo.className = "setundo"; undo.title = "Remove last set"; undo.innerHTML = IC.del;
-    undo.addEventListener("click", () => { if (confirm("Remove the last set result?")) sendAction({ type: "remove-set" }); });
+    undo.addEventListener("click", async () => { if (await askConfirm("Remove the last set result?")) sendAction({ type: "remove-set" }); });
     strip.appendChild(undo);
   }
 
@@ -1599,11 +1601,11 @@
   $("#warmupBtn").addEventListener("click", () =>
     startCountdown(SETTINGS.warmupSeconds || 600, "WARM UP", null, { major: true, action: "End warm-up", content: "none" }));
   $("#swapBtn").addEventListener("click", () => sendAction({ type: "swap" }));
-  $("#resetBtn").addEventListener("click", () => {
-    if (confirm("Reset the board to neutral?")) { clearCountdown(); board.mode = "match"; sendAction({ type: "reset" }); }
+  $("#resetBtn").addEventListener("click", async () => {
+    if (await askConfirm("Reset the board to neutral?")) { clearCountdown(); board.mode = "match"; sendAction({ type: "reset" }); }
   });
-  $("#blankBtn").addEventListener("click", () => {
-    if (confirm("Blank the LedBox display?")) { clearCountdown(); board.mode = "blank"; paintBoardMode(); blank(); }
+  $("#blankBtn").addEventListener("click", async () => {
+    if (await askConfirm("Blank the LedBox display?")) { clearCountdown(); board.mode = "blank"; paintBoardMode(); blank(); }
   });
   $("#refreshBtn").addEventListener("click", refreshMatches);
 
@@ -1698,13 +1700,13 @@
   const sportPickerEl = $("#sportPicker");
   if (sportPickerEl) sportPickerEl.addEventListener("click", (e) => { if (e.target.id === "sportPicker") closeSportPicker(); });
   const nextPeriodBtn = $("#nextPeriodBtn");
-  if (nextPeriodBtn) nextPeriodBtn.addEventListener("click", () => {
-    if (SPORT === "basketball" && confirm("End this period?")) sendAction({ type: "next-set" });
+  if (nextPeriodBtn) nextPeriodBtn.addEventListener("click", async () => {
+    if (SPORT === "basketball" && await askConfirm("End this period?")) sendAction({ type: "next-set" });
   });
   // Power: halt the board cleanly, then tell the operator it's safe to cut the power.
   const shutdownBtn = $("#shutdownBtn");
   if (shutdownBtn) shutdownBtn.addEventListener("click", async () => {
-    if (!confirm("Shut down the scoreboard?")) return;
+    if (!await askConfirm("Shut down the scoreboard?")) return;
     try {
       await postJSON("/api/shutdown");
       stopPolling();
@@ -1913,7 +1915,7 @@
   $("#expCsvBtn").addEventListener("click", exportCSV);
   $("#expJsonBtn").addEventListener("click", exportJSON);
   $("#clearHistBtn").addEventListener("click", async () => {
-    if (!confirm("Clear all recorded matches? This can't be undone.")) return;
+    if (!await askConfirm("Clear all recorded matches? This can't be undone.")) return;
     try { await postJSON("/api/history/clear"); } catch {}
     HISTORY = []; refreshHistory(); toast("History cleared");
   });
