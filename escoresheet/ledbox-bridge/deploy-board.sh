@@ -4,10 +4,10 @@
 # From cold the board's ethernet only links ~50s after power-on and it answers ~2 min in, so a
 # run started straight after switching it on can fail step 1 — wait rather than assume a fault.
 #
-# Ships the WHOLE of src/ plus web/index.html. It used to name individual files, which meant
+# Ships the WHOLE of src/ and the WHOLE of web/. It used to name individual files, which meant
 # every change had to remember to add itself to the list — and one that didn't (a fix living in
-# ledboxClient.js) would deploy "successfully" while the actual fix never reached the board.
-# Syncing the directory removes that failure mode.
+# ledboxClient.js) would deploy "successfully" while the actual fix never reached the board. The
+# same trap caught web/ when logs.html arrived, so both are now synced wholesale.
 #
 # NOT shipped: the firmware's crest+QR idle screen (lives on the board's own disk and survives
 # power cycles — see firmware/idle-crest-qr/), settings.json (the board's operator preferences)
@@ -30,7 +30,7 @@ echo "== 2) back up what is on the board now =="
 ssh "${J[@]}" "$BOARD" "B=$DEST/.deploy-backups/$STAMP
   mkdir -p \"\$B\"
   cp -a $DEST/src \"\$B/src\" 2>/dev/null || true
-  cp -a $DEST/web/index.html \"\$B/index.html\" 2>/dev/null || true
+  cp -a $DEST/web \"\$B/web\" 2>/dev/null || true
   echo \"  backed up to \$B\"
   cd $DEST/.deploy-backups 2>/dev/null && ls -1d 20* 2>/dev/null | sort -r | tail -n +$((KEEP + 1)) | while read -r old; do
     rm -rf -- \"\$old\" && echo \"  pruned old backup \$old\"
@@ -39,7 +39,7 @@ ssh "${J[@]}" "$BOARD" "B=$DEST/.deploy-backups/$STAMP
 
 echo "== 3) copy bridge sources + control UI =="
 scp "${J[@]}" "$REPO"/src/*.js "$BOARD:$DEST/src/"
-scp "${J[@]}" "$REPO/web/index.html" "$BOARD:$DEST/web/index.html"
+scp "${J[@]}" "$REPO"/web/*.html "$BOARD:$DEST/web/"
 
 echo "== 4) restart bridge =="
 ssh "${J[@]}" "$BOARD" 'sudo systemctl restart ledbox-bridge'
@@ -54,8 +54,10 @@ ssh "${J[@]}" "$BOARD" "
   grep -q SELF-CLOCKED     $DEST/src/ledboxClient.js && echo '  ✓ self-clocked blink'      || echo '  ✗ blink fix MISSING'
   grep -q showSportConfirm $DEST/src/ledboxClient.js && echo '  ✓ sport confirmation'      || echo '  ✗ sport confirm MISSING'
   grep -q sport-switch     $DEST/src/appliance.js    && echo '  ✓ sport-switch marker'     || echo '  ✗ marker MISSING'
-  grep -q LAST_STATUS      $DEST/web/index.html      && echo '  ✓ UI status-merge'         || echo '  ✗ UI fix MISSING'"
+  grep -q LAST_STATUS      $DEST/web/index.html      && echo '  ✓ UI status-merge'         || echo '  ✗ UI fix MISSING'
+  test -f $DEST/web/logs.html                        && echo '  ✓ /logs viewer'            || echo '  ✗ logs.html MISSING'
+  grep -q logStore         $DEST/src/appliance.js    && echo '  ✓ structured logging'      || echo '  ✗ logging MISSING'"
 
 echo
 echo "DONE. Roll back with:"
-echo "  ssh -J openvolley $BOARD 'cp -a $DEST/.deploy-backups/$STAMP/src/. $DEST/src/ && cp -a $DEST/.deploy-backups/$STAMP/index.html $DEST/web/index.html && sudo systemctl restart ledbox-bridge'"
+echo "  ssh -J openvolley $BOARD 'cp -a $DEST/.deploy-backups/$STAMP/src/. $DEST/src/ && cp -a $DEST/.deploy-backups/$STAMP/web/. $DEST/web/ && sudo systemctl restart ledbox-bridge'"
