@@ -11,6 +11,7 @@ import { LanSource } from './lanSource.js'
 import { toLeftRight } from './volleyballMapper.js'
 import { execFile } from 'node:child_process'
 import { HistoryStore } from './historyStore.js'
+import { ResumeStore } from './resumeStore.js'
 import { SPORT_LIST } from './sports.js'
 import { PER_SPORT_KEYS } from './settings.js'
 
@@ -107,6 +108,9 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
   const opt = (k) => (settings ? settings.values[k] : undefined)
   // Completed-match log (History tab + CSV/JSON export). Persisted beside the bridge.
   const history = new HistoryStore({ file: path.resolve(webDir, '..', 'data', 'history.json') })
+  // The per-sport "last game" slot behind the New / Continue / Delete menu (see resumeStore.js).
+  const resume = new ResumeStore({ file: path.resolve(webDir, '..', 'data', 'resume.json') })
+  const activeSport = () => (settings ? settings.values.sport : 'volleyball')
   // Scorer lock: with a PIN set, mutating requests must carry it (X-Scorer-Pin header) — a
   // spectator who scanned the QR can watch but not score. GET reads stay open.
   const pinOk = (req) => {
@@ -183,6 +187,9 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
   })
 
   async function handleApi(req, res, pathname) {
+    // Any API traffic means an operator has the control UI open (it polls /api/status every
+    // 1.5s). The board uses this to drop the "how do I connect" QR codes for a wall clock.
+    if (ledbox && typeof ledbox.noteViewer === 'function') ledbox.noteViewer()
     // GET /api/status
     if (pathname === '/api/status' && req.method === 'GET') {
       return sendJson(res, 200, status())
@@ -223,6 +230,15 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       pulseForAction(ledbox, action, settings, newState)
       // Log to the match history — wrapped so a fault here can never break scoring.
       try { history.record(action, newState, manualSource.lastEvent, nowStamp()) } catch (e) { console.error('[history]', e && e.message) }
+      // Keep the resume slot in step with the board, so a power cut mid-set loses nothing.
+      // A decided match is dropped instead: it is already archived in the history above, and
+      // offering to "continue" a match that is over is worse than offering nothing. Same
+      // try/catch reasoning as history — persistence must never break scoring.
+      try {
+        const ev = manualSource.lastEvent
+        if (ev === 'match-end' || ev === 'game-end') resume.clear(activeSport())
+        else resume.save(activeSport(), newState, nowStamp())
+      } catch (e) { console.error('[resume]', e && e.message) }
       return sendJson(res, 200, { ok: true, state: newState, event: manualSource.lastEvent })
     }
     // GET /api/settings — operator preferences (persisted on the Pi)
@@ -365,6 +381,42 @@ export function createControlServer({ sourceManager, manualSource, ledbox, relay
       const body = await readJson(req)
       const need = settings ? settings.values.scorerPin : ''
       return sendJson(res, 200, { ok: !need || String(body && body.pin) === String(need) })
+    }
+    // GET /api/game — what the New / Continue / Delete / Clock menu needs for the active sport.
+    if (pathname === '/api/game' && req.method === 'GET') {
+      return sendJson(res, 200, { sport: activeSport(), saved: resume.summary(activeSport()) })
+    }
+    // POST /api/game { choice: 'new' | 'continue' | 'delete' | 'clock' }
+    if (pathname === '/api/game' && req.method === 'POST') {
+      if (!pinOk(req)) return denyPin(res)
+      const body = await readJson(req)
+      const choice = body && body.choice
+      const sport = activeSport()
+
+      // Housekeeping only — the board keeps showing whatever it was showing.
+      if (choice === 'delete') {
+        resume.clear(sport)
+        return sendJson(res, 200, { ok: true, saved: null, ...status() })
+      }
+      // "Just show the clock": park the panel on the idle screen without touching the score.
+      if (choice === 'clock') {
+        if (ledbox && typeof ledbox.showIdle === 'function') await ledbox.showIdle(true)
+        return sendJson(res, 200, { ok: true, saved: resume.summary(sport), ...status() })
+      }
+      if (choice === 'new' || choice === 'continue') {
+        const saved = choice === 'continue' ? resume.get(sport) : null
+        if (choice === 'continue' && !saved) return sendJson(res, 404, { error: 'no saved game for this sport' })
+        // Lift idle FIRST: pushState is deliberately suppressed while an idle screen is up, so
+        // restoring the state before this would leave the crest on the panel and the scoreboard
+        // unpainted until the next point.
+        if (ledbox && ledbox._idle && typeof ledbox.showIdle === 'function') await ledbox.showIdle(false)
+        sourceManager.setSource(manualSource, { mode: 'manual' })
+        manualSource.apply(saved ? { type: 'set-state', state: saved } : { type: 'reset' })
+        // Starting fresh discards the old slot; it refills from the first point of the new match.
+        if (choice === 'new') resume.clear(sport)
+        return sendJson(res, 200, { ok: true, saved: resume.summary(sport), ...status() })
+      }
+      return sendJson(res, 400, { error: 'choice must be new, continue, delete or clock' })
     }
     // GET /api/history — completed matches (newest first) for the History tab + export
     if (pathname === '/api/history' && req.method === 'GET') {

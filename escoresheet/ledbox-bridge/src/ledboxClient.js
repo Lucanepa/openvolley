@@ -38,6 +38,21 @@ export class LedboxClient extends EventEmitter {
     // "Complete" idle — no teams known yet (e.g. the boot default): just the crest, centered,
     // no Home/Away. Falls back to idleLayout if this layout isn't on the device.
     crestLayout = 'kscw_crest',
+    // Same "complete" idle, but for when an operator is already looking at the control UI.
+    // crestLayout spends two thirds of the panel on a "Join WiFi" and an "Open UI" QR code,
+    // which exist purely to GET someone connected — once they are, that space is dead and
+    // carries the wall clock instead. Falls back to crestLayout if absent from the device.
+    clockLayout = 'kscw_clock',
+    // How long after the last control-UI request a viewer still counts as present. The UI polls
+    // /api/status every 1.5s, so this is ~13 missed polls: long enough that a brief wifi stall
+    // or a tablet blanking its screen doesn't flap the panel back to the QR codes, short enough
+    // that the QRs return promptly for the next person once a device really is gone.
+    viewerTimeoutMs = 20000,
+    // How often the idle screen re-checks "is anyone watching?" and rolls the clock over. 1s
+    // because the clock shows seconds. The presence check is a timestamp compare, and _paintClock
+    // only writes when the string actually changed, so an idle board with nobody connected sends
+    // nothing at all — the cost is one SetSections per second only while someone is watching.
+    idleTickMs = 1000,
     // Idle-screen name style. Full club names are auto-shrunk to fit the panel, so
     // idleFontMax is a ceiling (what a short name gets), not a fixed size.
     idleFullNames = true,
@@ -46,6 +61,9 @@ export class LedboxClient extends EventEmitter {
     clubName = '',
     timerSection = 'timer',
     labelSection = 'lbl',
+    // Text sections on clockLayout.
+    clockTimeSection = 'time',
+    clockDateSection = 'date',
     reconnectMs = 3000,
     // A TCP connect to an address that isn't routable from here does NOT fail fast — it
     // sits until the kernel gives up (minutes). Without our own deadline the host list
@@ -84,10 +102,19 @@ export class LedboxClient extends EventEmitter {
     mapper = null,
   } = {}) {
     super()
-    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, crestLayout, idleFullNames, idleFontMax, clubName, timerSection, labelSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle, bootMessage })
+    Object.assign(this, { port, alias, sport, apiVersion, layout, countdownLayout, breakLayout, idleLayout, crestLayout, clockLayout, viewerTimeoutMs, idleTickMs, idleFullNames, idleFontMax, clubName, timerSection, labelSection, clockTimeSection, clockDateSection, reconnectMs, connectTimeoutMs, layoutSettleMs, layoutGuardMs, pulseMs, pulseIntervalMs, totalTimeouts, totalSubs, defaultIdle, bootMessage })
     this.mapper = mapper || { toSections, toCountdownSections, toIdleSections, toClubIdleSections, toBreakSections, toLeftRight }
     this._pulses = new Map()
     this._idle = false
+    // Last time the control UI was seen (epoch ms). 0 = never; the board boots showing the QRs.
+    this._viewerAt = 0
+    // Last clock text actually pushed, so the ticker only writes when it actually changed.
+    this._clockText = null
+    // Optional layouts this device has told us it does not have (SetLayout code 5). The idle
+    // ticker runs every second, so without remembering a refusal it would re-ask — and re-log —
+    // forever on a board that never had the KSCW layouts installed. Cleared on each connect, so
+    // a board that gets them later picks them up without a bridge restart.
+    this._missingLayouts = new Set()
     this._suppressPaint = false
     this.currentLayout = null
     this.hosts = (hosts && hosts.length ? hosts : String(host).split(',').map((h) => h.trim()))
@@ -124,7 +151,11 @@ export class LedboxClient extends EventEmitter {
         reachedReady = true
         socket.setTimeout(0) // connect deadline met; don't let it fire as an idle timeout
         this.emit('ready', info)
+        // Re-ask once per connect: a board can gain the layouts between sessions (a reflash and
+        // restore, or a firmware layout drop), and it should not need a bridge restart to notice.
+        this._missingLayouts.clear()
         this._startLayoutGuard()
+        this._startIdleTicker()
         // The board advertises `noresend` and stays silent when asked for the layout it
         // already has, so this legitimately times out on every reconnect. Swallow that
         // one case; a real refusal (e.g. error 5, layout not on the device) still surfaces.
@@ -194,7 +225,12 @@ export class LedboxClient extends EventEmitter {
         // sends ("code 6 - section not found", "key 'attrib' not defined"), leaving a
         // bare "error (9)" — which is what made the write-shape bug so hard to find.
         const detail = msg.error_message || msg.message || 'error'
-        waiter.reject(new Error(`${msg.sender}: ${detail} (${msg.error_code})`))
+        const err = new Error(`${msg.sender}: ${detail} (${msg.error_code})`)
+        // Carry the code as a property too. Callers need to tell a PERMANENT refusal (code 5,
+        // "layout not present on this device") from a transient one, and digging it back out of
+        // the message text with a regex is exactly the kind of thing that rots.
+        err.code = Number(msg.error_code)
+        waiter.reject(err)
       } else {
         waiter.resolve(msg.value)
       }
@@ -303,25 +339,44 @@ export class LedboxClient extends EventEmitter {
     this.clearPulses()
     try {
       if (on && this.idleLayout) {
-        // A "complete" idle — no teams known yet (the boot default) — is just the crest,
-        // centered, on its own layout (no Home/Away). The crest image is baked into that
-        // layout, so there are no sections to push.
-        if (!this._hasTeams() && this.crestLayout) {
+        // A "complete" idle — no teams known yet (the boot default) — is the crest on its own
+        // layout (no Home/Away). The crest image is baked into the layout, so the QR variant has
+        // nothing to push; the clock variant pushes only its two text sections.
+        if (!this._hasTeams() && this._layoutAvailable(this.crestLayout)) {
+          // Two flavours of "complete" idle. crestLayout gives two thirds of the panel to a
+          // "Join WiFi" and an "Open UI" QR — instructions for getting connected. Once someone
+          // IS connected those are dead space, so clockLayout spends it on the wall clock
+          // instead. Anything unexpected falls back to the QR screen, because that is the one
+          // that helps an operator who is stranded.
+          if (this._layoutAvailable(this.clockLayout) && this.viewerPresent()) {
+            try {
+              await this.setLayoutIfNeeded(this.clockLayout)
+              await this._paintClock(true)
+              return true
+            } catch (err) {
+              this._noteLayoutMissing(this.clockLayout, err)
+              this.emit('error', new Error(`clock layout unavailable (${err.message}); using crest`))
+            }
+          }
           try {
             await this.setLayoutIfNeeded(this.crestLayout)
             return true
           } catch (err) {
+            this._noteLayoutMissing(this.crestLayout, err)
             this.emit('error', new Error(`crest layout unavailable (${err.message}); using named idle`))
           }
         }
         // Teams known: the club screen (crest + names). If the device doesn't have that
         // layout (error 5), fall through to the match-layout version.
-        try {
-          await this.setLayoutIfNeeded(this.idleLayout)
-          await this.send('SetSections', this.mapper.toClubIdleSections(this._lastState, { fullNames: this.idleFullNames, maxFontSize: this.idleFontMax, clubName: this.clubName }))
-          return true
-        } catch (err) {
-          this.emit('error', new Error(`club idle layout unavailable (${err.message}); using match layout`))
+        if (this._layoutAvailable(this.idleLayout)) {
+          try {
+            await this.setLayoutIfNeeded(this.idleLayout)
+            await this.send('SetSections', this.mapper.toClubIdleSections(this._lastState, { fullNames: this.idleFullNames, maxFontSize: this.idleFontMax, clubName: this.clubName }))
+            return true
+          } catch (err) {
+            this._noteLayoutMissing(this.idleLayout, err)
+            this.emit('error', new Error(`club idle layout unavailable (${err.message}); using match layout`))
+          }
         }
       }
       await this.setLayoutIfNeeded(this.layout)
@@ -329,6 +384,87 @@ export class LedboxClient extends EventEmitter {
       await this.send('SetSections', sections)
       return true
     } catch { return false }
+  }
+
+  // --- Idle wall clock -------------------------------------------------------------------
+  //
+  // Shown INSTEAD of the connect-me QR codes once an operator is on the control UI. Deliberately
+  // limited to the "no teams known yet" idle screen: once teams are set, kscw_idle already spends
+  // that side of the panel on their names.
+
+  // Code 5 is the board saying "I do not have that layout" — a fact about the device, not a
+  // transient failure, so it is worth remembering. Any other failure (a timeout, a busy panel)
+  // stays retryable.
+  _noteLayoutMissing(layout, err) {
+    if (layout && err && Number(err.code) === 5) this._missingLayouts.add(layout)
+  }
+
+  _layoutAvailable(layout) {
+    return !!layout && !this._missingLayouts.has(layout)
+  }
+
+  // True when the control UI has been in touch inside viewerTimeoutMs. Fed by noteViewer() from
+  // the HTTP layer, so this class never has to know that HTTP exists.
+  viewerPresent() {
+    return !!this._viewerAt && (Date.now() - this._viewerAt) < this.viewerTimeoutMs
+  }
+
+  // Called by the control server on every API request.
+  noteViewer() {
+    const was = this.viewerPresent()
+    this._viewerAt = Date.now()
+    // An operator ARRIVING is worth reacting to at once — they are staring at a QR code telling
+    // them to do the thing they have just done. Them leaving can wait for the next tick.
+    if (!was) this._idleTick().catch(() => {})
+  }
+
+  // HH:MM:SS plus a dated line. Sizes are pinned to the layout: 28pt time and 14pt date, both
+  // measured against the board's own ARIAL — "23:59:59" is 109px and the date 95px, inside the
+  // 128px column. Writes only happen while someone is actually connected (the QR screen never
+  // paints), so a ticking second hand costs nothing when the hall is empty.
+  formatClock(now = new Date()) {
+    const p = (n) => String(n).padStart(2, '0')
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    return {
+      time: `${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`,
+      date: `${days[now.getDay()]} ${p(now.getDate())}.${p(now.getMonth() + 1)}.${now.getFullYear()}`,
+    }
+  }
+
+  async _paintClock(force = false) {
+    const { time, date } = this.formatClock()
+    const stamp = `${time}|${date}`
+    if (!force && stamp === this._clockText) return false
+    await this.send('SetSections', [
+      { name: this.clockTimeSection, value: { attrib: 'text', value: time } },
+      { name: this.clockDateSection, value: { attrib: 'text', value: date } },
+    ])
+    this._clockText = stamp
+    return true
+  }
+
+  // One timer covering both idle-screen jobs: noticing that a viewer arrived or left (QR crest
+  // <-> clock) and rolling the clock over. Both only apply to the same screen and both are cheap.
+  _startIdleTicker() {
+    clearInterval(this._idleTicker)
+    if (!this.idleTickMs) return
+    this._idleTicker = setInterval(() => { this._idleTick().catch(() => {}) }, this.idleTickMs)
+    if (this._idleTicker.unref) this._idleTicker.unref()
+  }
+
+  async _idleTick() {
+    if (!this.ready || !this._idle || this._suppressPaint) return
+    if (this._hasTeams()) return // the named idle screen is up; no room for a clock there
+    const want = (this._layoutAvailable(this.clockLayout) && this.viewerPresent())
+      ? this.clockLayout
+      : (this._layoutAvailable(this.crestLayout) ? this.crestLayout : null)
+    // Neither screen exists on this device: showIdle already settled on the match-layout
+    // fallback. Bailing here is what stops a board without the KSCW layouts from being asked
+    // once a second, forever, for a layout it has already refused.
+    if (!want) return
+    // Presence flipped: rebuild the whole screen through showIdle so the fallbacks still apply.
+    if (this.currentLayout !== want) { await this.showIdle(true); return }
+    if (want === this.clockLayout) await this._paintClock()
   }
 
   // Hold a short message on the break screen, then settle back to idle.
@@ -518,6 +654,7 @@ export class LedboxClient extends EventEmitter {
   disconnect() {
     this._closing = true
     clearInterval(this._layoutGuard)
+    clearInterval(this._idleTicker)
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null }
     this.clearPulses() // stop any blink timers so they can't fire after we close
     if (this.socket) {
