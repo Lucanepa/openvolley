@@ -179,6 +179,18 @@
   .settings input[type=checkbox]:checked{background:var(--blue);border-color:var(--blue)}
   .settings input[type=checkbox]:checked::after{transform:translateX(20px);background:#fff}
   .settings .hint{font-size:11px;color:var(--muted);margin:4px 0 0} #setStatus.saved{color:var(--ok)}
+  /* Numeric settings get real −/+ buttons. Mobile Chrome and Safari render NO spinner at all for
+     input[type=number], so on the venue tablet these had no tap affordance whatsoever — the only
+     way to change one was to focus the field and type on the numeric keyboard, mid-match. The
+     native spinner is suppressed on desktop too, so both look and behave the same. */
+  .settings .stepper{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .settings .stepper input[type=number]{width:56px;text-align:center;font-family:var(--mono);font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+  .settings .stepper input[type=number]::-webkit-outer-spin-button,
+  .settings .stepper input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .stbtn{width:38px;height:38px;flex:0 0 auto;font-size:19px;font-weight:700;line-height:1;border:1.5px solid var(--line);
+    border-radius:var(--r);background:var(--card);color:var(--fg);cursor:pointer}
+  .stbtn:active{background:var(--fill)}
+  .stbtn:disabled{opacity:.35;cursor:default}
   /* explicit per-section Save: muted "Saved" when clean, filled blue "Save" when there are unsaved edits */
   .setsaverow{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line-soft)}
   .setsavebtn{min-height:38px;padding:0 20px;font-size:13px;font-weight:800;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--muted);cursor:pointer}
@@ -657,6 +669,10 @@
   <div class="t">Shutting down…</div>
   <div class="s">The panel will go dark in a few seconds.</div>
   <div class="press">Now press the power button to switch it off</div>
+  <!-- Only revealed if the board is still answering well after the request — i.e. the shutdown
+       did not take. Without it this screen is a dead end: nothing removes .show and polling has
+       already stopped, so a failed or reconsidered shutdown strands the UI until a reload. -->
+  <button id="shutdownBack" class="spcancel" hidden>Back to the scoreboard</button>
 </div>
 
 <!-- Sport selector: shown on load (current sport pre-highlighted) and re-openable from the header badge. -->
@@ -1842,13 +1858,97 @@
     try {
       await postJSON("/api/shutdown");
       stopPolling();
+      $("#shutdownBack").hidden = true;
       $("#shutdown").classList.add("show");
+      watchShutdown();
     } catch (e) { toast(e.message || "Shutdown failed"); }
+  });
+  // The overlay is terminal ON PURPOSE — but only if the board actually goes away. Keep one quiet
+  // poll running behind it: if the board is still answering well after the request, the shutdown
+  // did not take (a failed halt, or the operator changed their mind), and stranding them on a
+  // screen with no way out is a bug even though the action itself is irreversible.
+  let shutdownWatch = null;
+  const SHUTDOWN_GRACE_MS = 20000; // a real halt takes the HTTP server down well inside this
+  function watchShutdown() {
+    clearInterval(shutdownWatch);
+    const since = Date.now();
+    shutdownWatch = setInterval(async () => {
+      try {
+        await api("/api/status");
+        // Still up. Only offer the way back once a genuine halt would have finished.
+        if (Date.now() - since > SHUTDOWN_GRACE_MS) $("#shutdownBack").hidden = false;
+      } catch {
+        // Unreachable — the expected path. Stay on the overlay and hide any offer we had made.
+        $("#shutdownBack").hidden = true;
+      }
+    }, 3000);
+  }
+  const shutdownBackBtn = $("#shutdownBack");
+  if (shutdownBackBtn) shutdownBackBtn.addEventListener("click", () => {
+    clearInterval(shutdownWatch); shutdownWatch = null;
+    shutdownBackBtn.hidden = true;
+    $("#shutdown").classList.remove("show");
+    startPolling();
   });
 
   // --- settings -----------------------------------------------------------
   // Persisted on the board, so they follow the scoreboard rather than the phone that set them.
   const setEls = () => $$("[data-set]");
+  // Give every numeric setting a real −/+ stepper. input[type=number] shows no spinner on mobile
+  // Chrome or Safari, so on the tablet these were type-only: the operator had to focus the field
+  // and use the numeric keyboard to nudge a font size or a timeout by one. Built here rather than
+  // written into the markup nine times, so they stay consistent and a new setting gets one free.
+  function numLimits(input) {
+    return {
+      min: input.min === "" ? -Infinity : Number(input.min),
+      max: input.max === "" ? Infinity : Number(input.max),
+      by: Number(input.step) || 1,
+    };
+  }
+  // Grey out the end stops rather than letting a tap do nothing — a dead button reads as broken.
+  function syncStepper(wrap) {
+    if (!wrap) return;
+    const input = wrap.querySelector("input[type=number]");
+    if (!input) return;
+    const { min, max } = numLimits(input);
+    const cur = Number(input.value);
+    const btns = wrap.querySelectorAll(".stbtn");
+    if (btns[0]) btns[0].disabled = Number.isFinite(cur) && cur <= min;
+    if (btns[1]) btns[1].disabled = Number.isFinite(cur) && cur >= max;
+  }
+  function stepNumber(input, dir) {
+    const { min, max, by } = numLimits(input);
+    const cur = Number(input.value);
+    const from = Number.isFinite(cur) ? cur : (Number.isFinite(min) ? min : 0);
+    const next = Math.min(max, Math.max(min, from + dir * by));
+    if (next === cur) return;
+    input.value = String(next);
+    // The per-section Save button watches for edits; fire the same events typing would.
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    syncStepper(input.closest(".stepper"));
+  }
+  function buildSteppers() {
+    $$(".settings input[type=number][data-set]").forEach((input) => {
+      if (input.closest(".stepper")) return; // already wrapped
+      const label = input.parentElement && input.parentElement.querySelector("span");
+      const what = label ? label.textContent.trim().toLowerCase() : "value";
+      const wrap = document.createElement("span");
+      wrap.className = "stepper";
+      const mk = (dir, verb, glyph) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "stbtn"; b.textContent = glyph;
+        b.setAttribute("aria-label", verb + " " + what);
+        b.addEventListener("click", () => stepNumber(input, dir));
+        return b;
+      };
+      input.replaceWith(wrap);
+      wrap.append(mk(-1, "decrease", "−"), input, mk(1, "increase", "+"));
+      input.addEventListener("input", () => syncStepper(wrap));
+      syncStepper(wrap);
+    });
+  }
+
   async function loadSettings() {
     try {
       const s = await api("/api/settings");
@@ -1857,6 +1957,8 @@
         if (v === undefined) continue;
         if (el.type === "checkbox") el.checked = !!v; else el.value = v;
       }
+      // Values just changed under the steppers — re-evaluate which end stops are disabled.
+      $$(".stepper").forEach(syncStepper);
       SETTINGS = s;
       const note = $("#perSportNote");
       if (note && s.sport) note.textContent =
@@ -1974,37 +2076,91 @@
   document.addEventListener("fullscreenchange", syncFsBtn);
   document.addEventListener("webkitfullscreenchange", syncFsBtn);
 
-  // Keep-awake: hold a Screen Wake Lock so the phone/tablet doesn't sleep mid-match. The lock
-  // is dropped whenever the page is hidden (locked/backgrounded), so re-acquire it when the
-  // page becomes visible again while the toggle is on.
+  // Keep-awake. Two mechanisms, because the good one is unavailable here.
+  //
+  // The Screen Wake Lock API is restricted to SECURE contexts. The board is served over plain
+  // HTTP on the venue LAN (http://192.168.5.1:8890), so navigator.wakeLock simply does not exist
+  // — on any browser, however modern. That is not a browser fault and no amount of updating fixes
+  // it. So when it is missing we fall back to the trick NoSleep.js uses: a tiny silent looping
+  // video. Browsers keep the screen lit while a video is playing, which is exactly what we want
+  // and is the only thing that works without HTTPS.
+  //
+  // The video is 64x64, black, silent, 2s, and embedded as a data URI (~3KB) because the board
+  // has no internet and the page must stay self-contained. muted + playsinline are BOTH required:
+  // without muted, autoplay is refused; without playsinline, iOS takes it fullscreen.
+  const NOSLEEP_MP4 = "data:video/mp4;base64,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";
+  const NOSLEEP_WEBM = "data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAALGEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEjTbuMU6uEHFO7a1OsggKw7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrXsYMPQkBNgIxMYXZmNjIuMy4xMDBXQYxMYXZmNjIuMy4xMDBEiYhAn0AAAAAAABZUrmvIrgEAAAAAAAA/14EBc8WI532DrcyfCT+cgQAitZyDdW5kiIEAhoVWX1ZQOIOBASPjg4QL68IA4JCwgUC6gUCagQJVsIRVuYEBElTDZ/tzc59jwIBnyJlFo4dFTkNPREVSRIeMTGF2ZjYyLjMuMTAwc3PWY8CLY8WI532DrcyfCT9nyKFFo4dFTkNPREVSRIeUTGF2YzYyLjExLjEwMCBsaWJ2cHhnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAyLjAwMDAwMDAwMAAfQ7Z1QQfngQCjqoEAAIDwAgCdASpAAEAAAEcIhYWIhYSIAgIABnA8QmAKsiD3MAD+/6tQgKOWgQDIANEBAAEQEAAYABhYL/QACI6AAKOWgQGQANEBAAEQEAAYABhYL/QACI6AAKOWgQJYANEBAAEQEAAYABhYL/QACI6AAKOWgQMgANEBAAEQEAAYABhYL/QACI6AAKOWgQPoANEBAAEQEAAYABhYL/QACI6AAKOWgQSwANEBAAEQEAAYABhYL/QACI6AAKOWgQV4ANEBAAEQEBRgAGFgv9AAIjoAAKOWgQZAANEBAAEQEAAYABhYL/QACI6AAKOWgQcIANEBAAEQEAAYABhYL/QACI6AABxTu2uRu4+zgQC3iveBAfGCAaPwgQM=";
   const awakeBtn = $("#awakeBtn");
-  let wakeLock = null, keepAwake = false;
-  async function acquireWakeLock() {
-    if (!keepAwake || !("wakeLock" in navigator)) return;
-    try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); }
-    catch { /* denied (e.g. not fullscreen / low battery) — the toggle stays on and retries on visibility */ }
+  let wakeLock = null, keepAwake = false, noSleepVideo = null;
+
+  function noSleepEl() {
+    if (noSleepVideo) return noSleepVideo;
+    const v = document.createElement("video");
+    v.setAttribute("playsinline", "");
+    v.setAttribute("muted", "");
+    v.setAttribute("title", "keeping the screen awake");
+    v.muted = true; v.loop = true; v.disableRemotePlayback = true;
+    // Off-screen but NOT display:none or visibility:hidden — a hidden video is treated as not
+    // playing and the screen dims anyway, which is the classic way to get this subtly wrong.
+    v.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;bottom:0;left:0";
+    for (const [src, type] of [[NOSLEEP_WEBM, "video/webm"], [NOSLEEP_MP4, "video/mp4"]]) {
+      const s = document.createElement("source");
+      s.src = src; s.type = type; v.appendChild(s);
+    }
+    document.body.appendChild(v);
+    noSleepVideo = v;
+    return v;
   }
+
+  async function acquireWakeLock() {
+    if (!keepAwake) return;
+    if ("wakeLock" in navigator) {
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+        return;
+      } catch { /* denied (low battery, not visible) — fall through to the video */ }
+    }
+    // Called from the toggle's click handler, so we still have the user gesture autoplay needs.
+    try { await noSleepEl().play(); } catch { /* reported by the caller */ }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch {} wakeLock = null; }
+    if (noSleepVideo) { try { noSleepVideo.pause(); } catch {} }
+  }
+
   async function setKeepAwake(on) {
     keepAwake = on;
     awakeBtn.classList.toggle("active", on); // .nav button.active = accent highlight
     try { localStorage.setItem("keepAwake", on ? "1" : "0"); } catch {} // survive a reload mid-match
-    if (on) {
-      await acquireWakeLock();
-      // The Wake Lock API is restricted to SECURE contexts. The board is served over plain HTTP
-      // on the venue LAN (http://192.168.5.1:8890), so `wakeLock` simply isn't there — on any
-      // browser, however modern. Saying "this browser can't" sends the operator hunting for a
-      // browser fault that doesn't exist; the actionable fix is the tablet's own display timeout.
-      if (!wakeLock && !("wakeLock" in navigator)) {
-        toast(window.isSecureContext
-          ? "This browser can't keep the screen awake"
-          : "Keep-awake needs HTTPS — set the tablet's display timeout to Never instead");
-      }
-    }
-    else if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
+    if (!on) { releaseWakeLock(); return; }
+    await acquireWakeLock();
+    const playing = noSleepVideo && !noSleepVideo.paused;
+    if (wakeLock) toast("Screen will stay awake");
+    else if (playing) toast("Screen will stay awake");
+    // Both routes failed: say what the operator can actually do about it, rather than blaming
+    // their browser for a restriction the page's own http:// origin imposes.
+    else toast("Couldn't hold the screen on — set the tablet's display timeout to Never");
   }
+
   if (awakeBtn) awakeBtn.addEventListener("click", () => setKeepAwake(!keepAwake));
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") acquireWakeLock(); });
-  try { if (localStorage.getItem("keepAwake") === "1") setKeepAwake(true); } catch {}
+  // A wake lock is dropped whenever the page is hidden (locked/backgrounded), and the video is
+  // paused by some browsers too — re-acquire both when the page comes back while the toggle is on.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && keepAwake) acquireWakeLock();
+  });
+  // Restore the toggle across a reload. The video needs a user gesture, so this can only light the
+  // button and take the wakeLock path; the first tap anywhere on the page starts the video.
+  try {
+    if (localStorage.getItem("keepAwake") === "1") {
+      setKeepAwake(true);
+      document.addEventListener("pointerdown", function once() {
+        document.removeEventListener("pointerdown", once);
+        if (keepAwake && !wakeLock) acquireWakeLock();
+      }, { once: true });
+    }
+  } catch {}
 
   // --- HISTORY ------------------------------------------------------------
   let HISTORY = [];
@@ -2085,7 +2241,9 @@
   // boot
   let pollTimer = null;
   const stopPolling = () => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } };
+  const startPolling = () => { if (!pollTimer) { refreshStatus(); pollTimer = setInterval(refreshStatus, 1500); } };
   bootLock();
+  buildSteppers();
   loadSettings();
   // Present the sport picker first (landing), with the current sport pre-highlighted.
   loadSportList().then(openSportPicker);
