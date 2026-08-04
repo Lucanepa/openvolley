@@ -337,6 +337,24 @@
   .spcancel{display:block;margin:18px auto 0;min-height:44px;padding:0 22px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);
     font-size:14px;font-weight:800;cursor:pointer}
   .spcancel:disabled{opacity:.5;cursor:default}
+  /* Game menu — shown once the sport is settled. Sits ABOVE the sport picker (78) and BELOW the
+     shared confirm modal (80), which Delete and an overwriting New both call into. */
+  #gamePicker{position:fixed;inset:0;z-index:79;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg)}
+  #gamePicker[hidden]{display:none}
+  .gplist{display:grid;gap:12px}
+  /* Full-width rows, not a grid of tiles: these are four different decisions, not four of a kind,
+     and one of them throws work away. Reading them in a column makes that hard to mis-tap. */
+  .gpopt{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-height:60px;padding:14px 16px;text-align:left;
+    border:1.5px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--fg);cursor:pointer;width:100%}
+  .gpopt:disabled{opacity:.5;cursor:default}
+  .gpopt .gplabel{font-size:16px;font-weight:800}
+  .gpopt .gphint{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  /* The one that resumes real work reads as the primary action. */
+  .gpopt.primary{border-color:var(--blue);color:var(--blue);background:var(--fill)}
+  .gpopt.primary .gphint{color:var(--blue)}
+  /* Destructive, so it is styled apart from the three constructive ones and placed last. */
+  .gpopt.danger{border-color:var(--bad);color:var(--bad)}
+  .gpopt.danger .gphint{color:var(--bad)}
 </style>
 
 <div id="app">
@@ -649,6 +667,34 @@
     <div class="splist" id="spList"></div>
     <p class="spstatus" id="spStatus" hidden role="status" aria-live="polite"></p>
     <button class="spcancel" id="spCancel">Keep current sport</button>
+  </div>
+</div>
+
+<!-- Game menu: what to do with THIS sport, once the sport itself is settled. Continue and Delete
+     only exist when the board actually has a saved game for the active sport. -->
+<div id="gamePicker" hidden role="dialog" aria-label="Start or continue a game">
+  <div class="spbox">
+    <div class="sptitle" id="gpTitle">Game</div>
+    <p class="spsub" id="gpSub">What would you like to do?</p>
+    <div class="gplist">
+      <button class="gpopt" id="gpContinue" hidden>
+        <span class="gplabel">Continue game</span>
+        <span class="gphint" id="gpContinueHint"></span>
+      </button>
+      <button class="gpopt" id="gpNew">
+        <span class="gplabel">New game</span>
+        <span class="gphint">Start from 0–0</span>
+      </button>
+      <button class="gpopt" id="gpClock">
+        <span class="gplabel">Show clock</span>
+        <span class="gphint">Leave the board on the crest and clock</span>
+      </button>
+      <button class="gpopt danger" id="gpDelete" hidden>
+        <span class="gplabel">Delete saved game</span>
+        <span class="gphint">Forget the match in progress</span>
+      </button>
+    </div>
+    <p class="spstatus" id="gpStatus" hidden role="status" aria-live="polite"></p>
   </div>
 </div>
 
@@ -1645,15 +1691,15 @@
     if (!key) return;
     // Same sport = "yes, this one, get on with it". The picker opens on load, so this is the
     // operator's FIRST interaction of the evening and it used to do literally nothing — the
-    // board stayed on the crest and there was no way to tell the choice had registered. Confirm
-    // it by putting the scoreboard up.
-    if (key === curSport()) { closeSportPicker(); showBoardLive(); return; }
+    // board stayed on the crest and there was no way to tell the choice had registered. Now it
+    // moves on to the game menu, which is where the choice actually gets made.
+    if (key === curSport()) { closeSportPicker(); openGamePicker(); return; }
     const st = $("#spStatus");
     if (st) { st.hidden = false; st.classList.remove("err"); st.textContent = "Switching to " + sportLabel(key) + "… the board restarts (about 8 seconds)."; }
     spBusy(true);
     try {
       const r = await postJSON("/api/sport", { sport: key });
-      if (r && r.changed === false) { const now = await api("/api/status"); renderStatus(now); closeSportPicker(); return; }
+      if (r && r.changed === false) { const now = await api("/api/status"); renderStatus(now); closeSportPicker(); openGamePicker(); return; }
       const done = await waitForSwitch(key);
       if (done) {
         // The new sport carries its OWN timing/allowances, and this page is what supplies the
@@ -1662,8 +1708,10 @@
         // volleyball match — and the next Settings save would persist them onto the new sport.
         await loadSettings();
         renderStatus(done); closeSportPicker(); toast(sportLabel(key) + " ready");
-        // Fresh beach match → ask the serve order straight away ("the beginning").
-        if (key === "beach") { beachSeenPoints = false; beachAskedSets = -1; openServeOrder(); }
+        // On to the game menu. The beach serve-order prompt used to fire here; it now waits for
+        // "New game", so continuing an interrupted beach match doesn't re-ask a serve order that
+        // was settled several points ago.
+        openGamePicker();
       }
       else if (st) { st.classList.add("err"); st.textContent = "The board is taking a while to restart — it'll switch on its own once it's back."; spBusy(false); }
     } catch (e) {
@@ -1686,6 +1734,90 @@
     }
     try { return await api("/api/status"); } catch { return null; }
   }
+  // ---- Game menu ---------------------------------------------------------------------------
+  // Shown once the sport is settled. "Continue" is the point of it: the board keeps ONE
+  // in-progress match PER SPORT, so an evening interrupted by a power cut, a bridge restart or a
+  // switch to the other court can be picked up instead of retyped. A finished match is archived
+  // to History and its slot dropped by the server, so this never offers a match that is over.
+  let savedGame = null;
+  function gpBusy(on) { $$("#gamePicker .gpopt").forEach((b) => { b.disabled = on; }); }
+  function gpStatus(msg, err) {
+    const el = $("#gpStatus"); if (!el) return;
+    el.hidden = !msg; el.textContent = msg || ""; el.classList.toggle("err", !!err);
+  }
+  // One line an operator can recognise the match by, without loading the whole state.
+  function describeSaved(s) {
+    if (!s) return "";
+    const sets = (s.sets.a || s.sets.b) ? "  ·  sets " + s.sets.a + "–" + s.sets.b : "";
+    const when = s.updatedAt ? "  ·  " + s.updatedAt : "";
+    return s.teams.a + " " + s.points.a + "–" + s.points.b + " " + s.teams.b + sets + when;
+  }
+  function goToTab(name) {
+    const b = $$('.nav button[data-tab="' + name + '"]')[0];
+    if (b) b.click();
+  }
+  async function openGamePicker() {
+    closeSportPicker();
+    $("#gpTitle").textContent = sportLabel(curSport());
+    gpStatus(""); gpBusy(false);
+    $("#gamePicker").hidden = false;
+    try { const r = await api("/api/game"); savedGame = (r && r.saved) || null; }
+    catch { savedGame = null; }
+    const has = !!savedGame;
+    $("#gpContinue").hidden = !has;
+    $("#gpDelete").hidden = !has;
+    // Whichever option resumes real work is the primary one.
+    $("#gpContinue").classList.toggle("primary", has);
+    $("#gpNew").classList.toggle("primary", !has);
+    if (has) $("#gpContinueHint").textContent = describeSaved(savedGame);
+    $("#gpSub").textContent = has
+      ? "There's a match in progress on this board."
+      : "Nothing saved for this sport yet.";
+  }
+  function closeGamePicker() { $("#gamePicker").hidden = true; }
+  async function gameChoice(choice) {
+    gpBusy(true); gpStatus("");
+    try {
+      const r = await postJSON("/api/game", { choice });
+      if (r) renderStatus(r);
+      return r;
+    } catch (e) {
+      gpStatus(/pin/i.test(e.message || "")
+        ? "Scoring is locked — enter the scorer PIN, then choose again."
+        : "Couldn't do that: " + (e.message || e), true);
+      return null;
+    } finally { gpBusy(false); }
+  }
+  const gpContinueBtn = $("#gpContinue");
+  if (gpContinueBtn) gpContinueBtn.addEventListener("click", async () => {
+    if (!await gameChoice("continue")) return;
+    closeGamePicker(); goToTab("manual");
+  });
+  const gpNewBtn = $("#gpNew");
+  if (gpNewBtn) gpNewBtn.addEventListener("click", async () => {
+    // Starting over discards a real match, so make it deliberate — but only when there is one
+    // to lose. On an empty board this must stay a single tap.
+    if (savedGame && !await askConfirm("Start a new game? The saved match (" + describeSaved(savedGame) + ") will be deleted.")) return;
+    if (!await gameChoice("new")) return;
+    closeGamePicker(); goToTab("manual");
+    // Beach opens with a serve order. Asked HERE rather than on the sport switch, so continuing
+    // an existing beach match doesn't re-ask something already decided mid-match.
+    if (curSport() === "beach") { beachSeenPoints = false; beachAskedSets = -1; openServeOrder(); }
+  });
+  const gpDeleteBtn = $("#gpDelete");
+  if (gpDeleteBtn) gpDeleteBtn.addEventListener("click", async () => {
+    if (!await askConfirm("Delete the saved game? " + describeSaved(savedGame))) return;
+    if (!await gameChoice("delete")) return;
+    savedGame = null;
+    await openGamePicker(); // stay in the menu, now without Continue/Delete
+    toast("Saved game deleted");
+  });
+  const gpClockBtn = $("#gpClock");
+  if (gpClockBtn) gpClockBtn.addEventListener("click", async () => {
+    if (!await gameChoice("clock")) return;
+    closeGamePicker();
+  });
+
   async function loadSportList() {
     try {
       const r = await api("/api/sport");
