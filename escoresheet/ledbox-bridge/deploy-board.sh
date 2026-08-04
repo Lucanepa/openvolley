@@ -18,16 +18,24 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 BOARD=pi@192.168.5.1
 DEST=/home/pi/ledbox-bridge
 STAMP="$(date +%Y%m%d-%H%M%S)"
+KEEP=5 # how many previous deploys to keep under .deploy-backups (see step 2)
 
 echo "== 1) board reachable? =="
 ssh "${J[@]}" "$BOARD" hostname || { echo "!! board not reachable — is it powered on and the Pi up? (needs ~2 min from cold)"; exit 1; }
 
 echo "== 2) back up what is on the board now =="
+# KEEP is a cap, not a suggestion: the board is a 6.8G SD card and this used to add a backup per
+# deploy with nothing ever removing one. Timestamped names sort chronologically, so "all but the
+# newest KEEP" is just a tail of the sorted list.
 ssh "${J[@]}" "$BOARD" "B=$DEST/.deploy-backups/$STAMP
   mkdir -p \"\$B\"
   cp -a $DEST/src \"\$B/src\" 2>/dev/null || true
   cp -a $DEST/web/index.html \"\$B/index.html\" 2>/dev/null || true
-  echo \"  backed up to \$B\""
+  echo \"  backed up to \$B\"
+  cd $DEST/.deploy-backups 2>/dev/null && ls -1d 20* 2>/dev/null | sort -r | tail -n +$((KEEP + 1)) | while read -r old; do
+    rm -rf -- \"\$old\" && echo \"  pruned old backup \$old\"
+  done
+  true"
 
 echo "== 3) copy bridge sources + control UI =="
 scp "${J[@]}" "$REPO"/src/*.js "$BOARD:$DEST/src/"
