@@ -4,6 +4,9 @@
 // source 'state' upward for the appliance to push to the LedBox.
 
 import { EventEmitter } from 'node:events'
+import { log } from './logStore.js'
+
+const slog = log.child('source')
 
 export class SourceManager extends EventEmitter {
   constructor() {
@@ -16,6 +19,12 @@ export class SourceManager extends EventEmitter {
   }
 
   setSource(source, meta = {}) {
+    // Who is driving the board, and since when. Every mode change (manual ⇄ linked LAN match
+    // ⇄ blanked) passes through here, so this is the authoritative record of it.
+    slog.info(`source → ${meta.mode ?? 'idle'}`, {
+      from: this._meta.mode, to: meta.mode ?? 'idle',
+      matchId: meta.matchId ?? null, kind: source?.constructor?.name || 'unknown',
+    })
     // Tear down the previous source (stop + drop our listeners).
     if (this.active) {
       try { this.active.stop() } catch { /* ignore */ }

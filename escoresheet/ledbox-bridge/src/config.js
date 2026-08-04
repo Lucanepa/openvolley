@@ -26,6 +26,12 @@ export function loadConfig(env = process.env) {
     mock: bool(env.MOCK),
     // Verbose per-update logging.
     debug: bool(env.DEBUG),
+    // Log level the appliance RECORDS at: debug | info | warn | error. DEBUG=1 is the historical
+    // shorthand for debug. Also switchable at runtime from the /logs page, so this is only the
+    // level it boots with.
+    logLevel: ['debug', 'info', 'warn', 'error'].includes(String(env.LOG_LEVEL || '').toLowerCase())
+      ? String(env.LOG_LEVEL).toLowerCase()
+      : (bool(env.DEBUG) ? 'debug' : 'info'),
     // Appliance web control server (manual + LAN link UI) listen port.
     controlPort: Number(env.CONTROL_PORT || 8890),
     // OpenVolley relay HTTP base (for /api/match/list). Derived from relayUrl if unset:

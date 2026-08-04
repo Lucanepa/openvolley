@@ -5,6 +5,9 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { log } from './logStore.js'
+
+const hlog = log.child('history')
 
 const MAX_MATCHES = 100 // keep the last N completed matches
 const MAX_EVENTS = 4000 // per-match event cap (a long 5-setter is ~250 rallies)
@@ -24,6 +27,7 @@ export class HistoryStore {
     try {
       const data = JSON.parse(fs.readFileSync(this.file, 'utf8'))
       if (Array.isArray(data.matches)) this.matches = data.matches
+      hlog.debug('loaded', { file: this.file, matches: this.matches.length })
     } catch { /* no file yet / unreadable -> start empty */ }
   }
 
@@ -32,7 +36,10 @@ export class HistoryStore {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true })
       fs.writeFileSync(this.file, JSON.stringify({ matches: this.matches }))
-    } catch { /* best-effort persistence */ }
+    } catch (err) {
+      // Best-effort persistence, but a full card losing the match log should be findable.
+      hlog.warn(`could not save: ${err.message}`, { file: this.file, error: err.message })
+    }
   }
 
   _teams(state) {
@@ -53,6 +60,7 @@ export class HistoryStore {
     if (!this.current && scoring) {
       const nm = this._teams(state)
       this.current = { date: now, team_a: nm.a, team_b: nm.b, events: [] }
+      hlog.info(`match started: ${nm.a} vs ${nm.b}`, { team_a: nm.a, team_b: nm.b, at: now })
     }
     if (!this.current) return
     // Keep names fresh — the operator often types them after the first point.
@@ -79,6 +87,11 @@ export class HistoryStore {
 
   _finish(state, now) {
     const sets = (state.set_results || []).map((r) => ({ a: num(r.a), b: num(r.b) }))
+    hlog.info(`match finished: ${this.current.team_a} ${num(state.sets_won_a)}-${num(state.sets_won_b)} ${this.current.team_b}`, {
+      team_a: this.current.team_a, team_b: this.current.team_b,
+      sets_a: num(state.sets_won_a), sets_b: num(state.sets_won_b),
+      sets, events: this.current.events.length,
+    })
     this.matches.push({
       date: this.current.date || now,
       team_a: this.current.team_a, team_b: this.current.team_b,

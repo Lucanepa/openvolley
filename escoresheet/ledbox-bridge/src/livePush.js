@@ -31,6 +31,12 @@
 
 import { BEACH } from './beachSource.js'
 import { BASKETBALL } from './basketballSource.js'
+import { log as logStore } from './logStore.js'
+
+// Publishing used to be visible only under DEBUG=1, on stdout. It now always goes to the log
+// store, which owns the level — so "is /live stale?" is answerable from the /logs page instead
+// of from a restart with a different env var. The token is redacted there by key name.
+const plog = logStore.child('livePush')
 
 const DEFAULTS = { channel: 'kscw', collection: 'live_scores', historyCollection: 'live_history', sport: 'volleyball', timeoutMs: 2000, debounceMs: 150, debug: false }
 
@@ -129,12 +135,18 @@ export function createLivePush(opts = {}) {
   let inFlight = false // a flush is running — never overlap writes to one row
   let lastStatus = null // previous published status, to catch the → 'final' edge
 
-  function log(...a) { if (cfg.debug) console.log('[livePush]', ...a) }
+  // Kept for the incidental call sites; the interesting ones log structured data directly.
+  function log(...a) { plog.debug(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')) }
 
   // Coalesce a burst of rapid changes (typed corrections, next-set, a swap) into
   // ONE write carrying the LATEST state — the app only ever wants "now".
   function push(state, event = null) {
-    if (!enabled || !isLive() || !state) return
+    if (!enabled || !isLive() || !state) {
+      // Silently doing nothing is the correct behaviour AND the most confusing one ("why is
+      // /live not updating?"), so say which of the two switches is off.
+      plog.debug('push skipped', { configured: enabled, publishing: enabled && isLive(), hasState: !!state })
+      return
+    }
     pending = { state, event }
     if (timer || inFlight) return
     timer = arm()
@@ -166,13 +178,19 @@ export function createLivePush(opts = {}) {
         method: 'PATCH', headers, body: JSON.stringify(row), signal: ctrl.signal,
       })
       if (res.status === 404) {
-        log('row missing — creating channel', cfg.channel)
+        plog.info('row missing — creating the channel', { channel: cfg.channel, collection: cfg.collection })
         res = await fetch(`${base}/items/${coll}`, {
           method: 'POST', headers, body: JSON.stringify({ channel: cfg.channel, ...row }), signal: ctrl.signal,
         })
       }
-      if (!res.ok) log('directus responded', res.status)
-      else log('published', sport, row.status, `${row.points_a}-${row.points_b}`, 'event', row.event)
+      if (!res.ok) {
+        plog.warn(`directus responded ${res.status}`, { status: res.status, channel: cfg.channel, collection: cfg.collection })
+      } else {
+        plog.debug(`published ${row.points_a}-${row.points_b}`, {
+          sport, status: row.status, score: `${row.points_a}-${row.points_b}`,
+          sets: `${row.sets_won_a}-${row.sets_won_b}`, event: row.event,
+        })
+      }
 
       // Archive the result the FIRST time a match reads as finished, so /live can
       // show recent matches once this row is overwritten by the next game. Fires on
@@ -184,7 +202,8 @@ export function createLivePush(opts = {}) {
       if (row.status === 'final' && lastStatus !== 'final') await archive(row)
       lastStatus = row.status
     } catch (err) {
-      log('publish failed:', err && err.message) // swallow — scoring must not care
+      // Swallowed — scoring must not care — but no longer invisible.
+      plog.warn(`publish failed: ${err && err.message}`, { error: err && err.message, channel: cfg.channel })
     } finally {
       clearTimeout(t)
       inFlight = false
@@ -219,9 +238,10 @@ export function createLivePush(opts = {}) {
         }),
         signal: ctrl.signal,
       })
-      log(res.ok ? 'archived finished match' : `archive responded ${res.status}`)
+      if (res.ok) plog.info('archived finished match', { channel: cfg.channel, score: `${row.sets_won_a}-${row.sets_won_b}`, teams: `${row.team_a_short}/${row.team_b_short}` })
+      else plog.warn(`archive responded ${res.status}`, { status: res.status, collection: cfg.historyCollection })
     } catch (err) {
-      log('archive failed:', err && err.message) // swallow
+      plog.warn(`archive failed: ${err && err.message}`, { error: err && err.message }) // swallow
     } finally {
       clearTimeout(t)
     }
@@ -247,7 +267,9 @@ export function createLivePush(opts = {}) {
       const s = source.getState()
       if (s) push(s, readEvent(source))
     }
-    log('attached —', `${base}/items/${cfg.collection}/${cfg.channel}`, `(${sport})`)
+    plog.info(`attached — ${base}/items/${cfg.collection}/${cfg.channel} (${sport})`, {
+      target: `${base}/items/${cfg.collection}/${cfg.channel}`, sport, publishing: isLive(),
+    })
   }
 
   function detach() {

@@ -16,6 +16,9 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { log } from './logStore.js'
+
+const setlog = log.child('settings')
 
 const SPORTS = ['volleyball', 'beach', 'basketball']
 const BRANDINGS = ['kscw', 'plain']
@@ -137,11 +140,22 @@ export class Settings {
       const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'))
       migrated = !(parsed && parsed.perSport) // an old flat file gets rewritten in the new shape once
       this.raw = normalize(parsed)
-    } catch {
+      setlog.debug('loaded from disk', { file: this.file, migrated })
+    } catch (err) {
+      // Falling back to defaults is deliberate (never crash at boot) but it silently discards
+      // a venue's preferences — worth a warning, and worth knowing WHICH of the two it was.
+      const missing = err && err.code === 'ENOENT'
+      setlog[missing ? 'info' : 'warn'](
+        missing ? 'no settings file yet — using defaults' : `settings file unreadable (${err && err.message}) — using defaults`,
+        { file: this.file, error: missing ? undefined : String(err && err.message) },
+      )
       this.raw = normalize(null) // missing or corrupt: defaults, never a crash at boot (and no write)
     }
     this.values = flatten(this.raw, this.raw.sport)
-    if (migrated) this.save() // persist the migrated shape a single time
+    if (migrated) {
+      setlog.info('migrated the old flat settings file into the per-sport shape', { file: this.file })
+      this.save() // persist the migrated shape a single time
+    }
     return this.values
   }
 
@@ -174,7 +188,8 @@ export class Settings {
       fs.writeFileSync(tmp, JSON.stringify(this.raw, null, 2))
       fs.renameSync(tmp, this.file)
     } catch (err) {
-      console.error('[settings] could not save:', err.message)
+      // The operator saw "saved" in the UI; if the write failed they must be able to find out.
+      setlog.error(`could not save: ${err.message}`, { file: this.file, error: err.message })
     }
   }
 }

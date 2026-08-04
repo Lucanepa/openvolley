@@ -115,6 +115,30 @@ for (let i = 0; i < 5; i++) await g2._idleTick()
 ok(setLayoutCalls === afterFirst, `five further ticks ask the board nothing (${setLayoutCalls} calls, was ${afterFirst})`)
 ok(g2._missingLayouts.has('kscw_clock') && g2._missingLayouts.has('kscw_crest'), 'the refusals are remembered')
 
+// Board that has the clock layout but NOT the QR crest. The clock attempt used to be nested
+// inside the crest's availability check, so the clock was never tried — while _idleTick went on
+// wanting it, re-entering showIdle once a second forever. Silently: the layout it wanted was
+// never asked for, so nothing errored and nothing was logged.
+console.log('\nclock present, crest missing — must not spin:')
+const g3 = client()
+g3.noteViewer()
+let showIdleLayouts = []
+g3._sendNow = async (cmd, value) => {
+  if (cmd === 'SetLayout') {
+    showIdleLayouts.push(value)
+    if (value === 'kscw_crest' || value === 'kscw_idle') {
+      const err = new Error('SetLayout: layout not present in device (5)'); err.code = 5; throw err
+    }
+  }
+  return 'ok'
+}
+g3.on('error', () => {})
+await g3.showIdle(true)
+ok(g3.currentLayout === 'kscw_clock', `uses the clock even though the crest is gone (${g3.currentLayout})`)
+const callsAfterFirst = showIdleLayouts.length
+for (let i = 0; i < 5; i++) await g3._idleTick()
+ok(showIdleLayouts.length === callsAfterFirst, `settled — five ticks issue no new SetLayout (${showIdleLayouts.length} vs ${callsAfterFirst})`)
+
 console.log('\na transient failure stays retryable:')
 const h = client()
 ok(h._layoutAvailable('kscw_clock') === true, 'available before any failure')

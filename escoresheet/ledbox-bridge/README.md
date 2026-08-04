@@ -74,6 +74,23 @@ npm run test:appliance            # API → source → mapper → mock LedBox in
 Architecture and the remaining phases (cloud source, auth, persistence) are in
 [`DESIGN-appliance.md`](./DESIGN-appliance.md).
 
+## Logs — `/logs`
+Everything the appliance does is recorded to one structured log: board writes and layout
+switches, every scored action, source and relay lifecycle, settings changes, live-scoring
+publishes, and the browser's own errors. Open **`http://<board-ip>:8890/logs`** (linked from
+Settings ▸ Diagnostics) for a live tail with level/scope filters, search, download and a
+runtime verbosity switch.
+
+```bash
+LOG_LEVEL=debug npm run appliance   # boot verbose (DEBUG=1 still works); also switchable at /logs
+curl http://<board-ip>:8890/api/logs/export > board.jsonl  # the whole trail, for a bug report
+journalctl -u ledbox-bridge -f                             # unchanged — everything still mirrors to stdout
+```
+
+Persisted to `data/logs/*.jsonl`, rotated at 5 MB × 3 files (**15 MB ceiling**, SD-card
+friendly). The scorer PIN and the Directus token are redacted before anything is written.
+Design notes: [`docs/logging-DESIGN.md`](./docs/logging-DESIGN.md).
+
 ## Deploy on the Pi (systemd)
 ```bash
 # on the Pi (reachable as `ssh openvolley`):
