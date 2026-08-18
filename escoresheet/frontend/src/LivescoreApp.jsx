@@ -7,6 +7,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
 import mikasaVolleyball from './mikasa_v200w.png'
+import { PhoneIcon } from './components/icons'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
@@ -214,7 +215,7 @@ export default function LivescoreApp() {
             padding: '24px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+            <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
             <h2 style={{
               fontSize: '24px',
               fontWeight: 700,
@@ -442,7 +443,7 @@ export default function LivescoreApp() {
           padding: '24px',
           textAlign: 'center'
         }}>
-          <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+          <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
           <h2 style={{
             fontSize: '24px',
             fontWeight: 700,

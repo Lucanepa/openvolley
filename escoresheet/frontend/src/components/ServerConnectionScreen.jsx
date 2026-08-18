@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride } from '../utils/backendConfig'
+import { GlobeIcon, SatelliteDishIcon } from './icons'
 
 const LAST_SERVER_KEY = 'openvolley_last_server'
 
@@ -216,7 +217,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
             gap: 16
           }}
         >
-          <span style={{ fontSize: 28 }}>🌐</span>
+          <GlobeIcon size={28} />
           <div>
             <div style={{ fontWeight: 600, fontSize: 16 }}>
               {t('connection.onlineAutomatic', 'Online (automatic)')}
@@ -236,7 +237,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
           marginBottom: 12
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-            <span style={{ fontSize: 28 }}>📡</span>
+            <SatelliteDishIcon size={28} />
             <div>
               <div style={{ fontWeight: 600, fontSize: 16 }}>
                 {t('connection.localServer', 'Local server')}

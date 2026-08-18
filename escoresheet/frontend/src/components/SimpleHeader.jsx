@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
+import { ClipboardIcon, TrashIcon } from './icons'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -464,7 +465,7 @@ export default function SimpleHeader({
                       textAlign: 'left'
                     }}
                   >
-                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>📋</span>
+                    <span style={{ width: '20px', display: 'flex', justifyContent: 'center' }}><ClipboardIcon size={13} /></span>
                     <span style={{ flex: 1 }}>Version {currentVersion}</span>
                   </button>
 
@@ -494,7 +495,7 @@ export default function SimpleHeader({
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                     >
-                      <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>🗑️</span>
+                      <span style={{ width: '20px', display: 'flex', justifyContent: 'center' }}><TrashIcon size={13} /></span>
                       <span style={{ flex: 1 }}>{t('options.clearCache', 'Clear Cache')}</span>
                     </button>
                   ) : (

@@ -13,6 +13,7 @@ import mikasaVolleyball from './mikasa_v200w.png'
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
+import { PhoneIcon, RefreshIcon } from './components/icons'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -875,7 +876,7 @@ export default function BenchApp() {
           padding: '24px',
           textAlign: 'center'
         }}>
-          <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+          <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
           <h2 style={{
             fontSize: '24px',
             fontWeight: 700,
@@ -1008,7 +1009,7 @@ export default function BenchApp() {
                 opacity: loadingMatches ? 0.5 : 1
               }}
             >
-              {loadingMatches ? t('common.loading', 'Loading...') : `🔄 ${t('benchDashboard.loadGames', 'Load Games')}`}
+              {loadingMatches ? t('common.loading', 'Loading...') : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><RefreshIcon size={14} />{t('benchDashboard.loadGames', 'Load Games')}</span>}
             </button>
           </div>
         ) : (
@@ -1037,7 +1038,7 @@ export default function BenchApp() {
                 opacity: loadingMatches ? 0.5 : 1
               }}
             >
-              {loadingMatches ? '...' : '🔄'}
+              {loadingMatches ? '...' : <RefreshIcon size={14} />}
             </button>
           </div>
           <div style={{

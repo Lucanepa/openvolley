@@ -10,6 +10,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { sanitizeSimple } from '../src/utils/stringUtils';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData } from './utils/extractLiberoData';
+import { PhoneIcon } from '../src/components/icons';
 
 interface AppScoresheetProps {
   matchData: {
@@ -2530,11 +2531,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           textAlign: 'center'
         }}>
           <div style={{
-            fontSize: '64px',
             marginBottom: '24px',
+            color: '#ffffff',
             animation: 'rotate90 1.5s ease-in-out infinite'
           }}>
-            📱
+            <PhoneIcon size={64} />
           </div>
           <style>{`
             @keyframes rotate90 {

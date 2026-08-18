@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
+import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, MonitorIcon, ClipboardIcon, TrashIcon } from './icons'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -122,7 +123,7 @@ export default function DashboardHeader({
   // Load games button
   if (onLoadGames) {
     menuItems.push({
-      icon: '🔄',
+      icon: <RefreshIcon size={13} />,
       label: loadingMatches ? t('common.loading', 'Loading...') : t('refereeDashboard.loadGames', 'Load Games'),
       onClick: onLoadGames,
       disabled: loadingMatches,
@@ -136,7 +137,7 @@ export default function DashboardHeader({
   // Wake lock toggle
   if (showWakeLock && onToggleWakeLock) {
     menuItems.push({
-      icon: wakeLockActive ? '☀️' : '🌙',
+      icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
       label: t('refereeDashboard.keepScreenOn', 'Keep Screen On'),
       onClick: onToggleWakeLock,
       toggle: wakeLockActive,
@@ -149,20 +150,20 @@ export default function DashboardHeader({
     if (menuItems.length > 0) menuItems.push({ divider: true })
     menuItems.push({ header: t('refereeDashboard.connection.title', 'Connection') })
     menuItems.push({
-      icon: '🔄',
+      icon: <RefreshIcon size={13} />,
       label: t('refereeDashboard.connection.auto', 'Auto'),
       onClick: () => onConnectionModeChange('auto'),
       active: connectionMode === 'auto'
     })
     menuItems.push({
-      icon: '🗄️',
+      icon: <DatabaseIcon size={13} />,
       label: t('refereeDashboard.connection.dbOnly', 'Database Only'),
       onClick: () => onConnectionModeChange('supabase'),
       active: connectionMode === 'supabase',
       color: '#22c55e'
     })
     menuItems.push({
-      icon: '📡',
+      icon: <SatelliteDishIcon size={13} />,
       label: t('refereeDashboard.connection.directOnly', 'Direct Only'),
       onClick: () => onConnectionModeChange('websocket'),
       active: connectionMode === 'websocket',
@@ -176,15 +177,15 @@ export default function DashboardHeader({
     menuItems.push({ header: t('refereeDashboard.status', 'Status') })
 
     const statusLabels = {
-      server: '🖥️ Server',
-      websocket: '📡 WebSocket',
-      supabase: '🗄️ Database'
+      server: <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><MonitorIcon size={13} /> Server</span>,
+      websocket: <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><SatelliteDishIcon size={13} /> WebSocket</span>,
+      supabase: <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><DatabaseIcon size={13} /> Database</span>
     }
 
     Object.entries(connectionStatuses).forEach(([key, status]) => {
       if (statusLabels[key]) {
         menuItems.push({
-          icon: status === 'connected' ? '✅' : status === 'connecting' ? '🔄' : '❌',
+          icon: status === 'connected' ? '✅' : status === 'connecting' ? <RefreshIcon size={13} /> : '❌',
           label: statusLabels[key],
           disabled: true,
           color: status === 'connected' ? '#22c55e' : status === 'connecting' ? '#fbbf24' : '#ef4444'
@@ -391,7 +392,7 @@ export default function DashboardHeader({
                           transition: 'background 0.15s'
                         }}
                       >
-                        {item.icon && <span style={{ fontSize: '15px', width: '20px', textAlign: 'center' }}>{item.icon}</span>}
+                        {item.icon && <span style={{ fontSize: '15px', width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{item.icon}</span>}
                         <span style={{ flex: 1 }}>{item.label}</span>
 
                         {/* Badge */}
@@ -538,7 +539,7 @@ export default function DashboardHeader({
                       textAlign: 'left'
                     }}
                   >
-                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>📋</span>
+                    <span style={{ width: '20px', display: 'flex', justifyContent: 'center' }}><ClipboardIcon size={13} /></span>
                     <span style={{ flex: 1 }}>Version {currentVersion}</span>
                   </button>
 
@@ -568,7 +569,7 @@ export default function DashboardHeader({
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                     >
-                      <span style={{ fontSize: '13px', width: '20px', textAlign: 'center' }}>🗑️</span>
+                      <span style={{ width: '20px', display: 'flex', justifyContent: 'center' }}><TrashIcon size={13} /></span>
                       <span style={{ flex: 1 }}>{t('options.clearCache', 'Clear Cache')}</span>
                     </button>
                   ) : (

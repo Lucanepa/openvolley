@@ -16,6 +16,7 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
+import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 
 // Generate a placeholder signature image (wavy line) for test matches
 function generatePlaceholderSignature() {
@@ -1644,7 +1645,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: Math.round(8 * vhScale), flexShrink: 0 }}>
         <MenuList
-          buttonLabel={isCompact ? "📄" : `📄 ${t('header.scoresheet')}`}
+          buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={isCompact ? 12 : 14} />{!isCompact && t('header.scoresheet')}</span>}
           buttonClassName="secondary"
           buttonStyle={{
             background: '#22c55e',
@@ -1658,7 +1659,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           items={[
             {
               key: 'scoresheet-preview',
-              label: `🔍 ${t('header.preview')}`,
+              icon: <SearchIcon />,
+              label: t('header.preview'),
               onClick: async () => {
                 try {
                   if (!match) {
@@ -1959,7 +1961,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               onClick={() => setDeletePlayerModal({ team: rosterModal, index: originalIdx })}
                               style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                              🗑️
+                              <TrashIcon size={12} />
                             </button>
                           </td>
                         </tr>
@@ -2054,7 +2056,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               onClick={() => setBench(bench.filter((_, i) => i !== originalIdx))}
                               style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                              🗑️
+                              <TrashIcon size={12} />
                             </button>
                           </td>
                         </tr>

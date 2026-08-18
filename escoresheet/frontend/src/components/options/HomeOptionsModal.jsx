@@ -5,6 +5,7 @@ import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
+import { SatelliteDishIcon } from '../icons'
 
 const currentVersion = __APP_VERSION__
 
@@ -981,7 +982,7 @@ export default function HomeOptionsModal({
                 e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
               }}
             >
-              <span style={{ fontSize: '20px' }}>📡</span>
+              <SatelliteDishIcon size={20} />
               <span>{t('options.setupConnections')}</span>
             </button>
           </div>

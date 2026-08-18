@@ -14,6 +14,7 @@ import {
   buildCloudUrls
 } from '../../utils/networkInfo'
 import { db } from '../../db/db'
+import { SignalIcon, GlobeIcon } from '../icons'
 
 export default function ConnectionSetupModal({
   open,
@@ -140,7 +141,7 @@ export default function ConnectionSetupModal({
             textAlign: 'center'
           }}
         >
-          <div style={{ fontSize: 32, marginBottom: 8 }}>📶</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}><SignalIcon size={32} /></div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>{t('connectionSetup.lan', 'LAN')}</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>{t('connection.sameWifi')}</div>
         </button>
@@ -161,7 +162,7 @@ export default function ConnectionSetupModal({
           }}
           disabled={!cloudBackendUrl}
         >
-          <div style={{ fontSize: 32, marginBottom: 8 }}>🌐</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}><GlobeIcon size={32} /></div>
           <div style={{ fontWeight: 600, fontSize: 16 }}>{t('connectionSetup.internet', 'Internet')}</div>
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
             {cloudBackendUrl ? t('connection.cloudRelay') : t('connection.notConfigured')}

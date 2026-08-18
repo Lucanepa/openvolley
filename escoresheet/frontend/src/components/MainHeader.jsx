@@ -5,6 +5,7 @@ import ConnectionStatus from './ConnectionStatus'
 import UserButton from './auth/UserButton'
 import TabletStatusIndicator from './TabletStatusIndicator'
 import { useScaledLayout } from '../hooks/useScaledLayout'
+import { BellIcon, SatelliteDishIcon, ClipboardIcon, ZoomInIcon, HomeIcon } from './icons'
 
 
 const FlagBox = ({ children }) => (
@@ -614,7 +615,7 @@ export default function MainHeader({
                 e.currentTarget.style.background = '#ef4444'
               }}
             >
-              <span>🔔</span>
+              <BellIcon size={14} />
             </button>
           )}
 
@@ -652,7 +653,7 @@ export default function MainHeader({
                     : 'rgba(59, 130, 246, 0.15)'
                 }}
               >
-                <span style={{ fontSize: '12px' }}>📡</span>
+                <SatelliteDishIcon size={12} />
                 {dashboardServer.dashboardCount > 0 ? (
                   <span>{dashboardServer.dashboardCount}</span>
                 ) : (
@@ -1026,7 +1027,7 @@ export default function MainHeader({
                         }
                       }}
                     >
-                      <span>📋</span>
+                      <ClipboardIcon size={14} />
                       <span>v{currentVersion}</span>
                     </button>
 
@@ -1147,7 +1148,7 @@ export default function MainHeader({
                         }
                       }}
                     >
-                      <span>🔍</span>
+                      <ZoomInIcon size={14} />
                       <span>{t('header.scale', 'Scale')}</span>
                       <span style={{
                         marginLeft: 'auto',
@@ -1459,7 +1460,7 @@ export default function MainHeader({
                           e.currentTarget.style.background = 'transparent'
                         }}
                       >
-                        <span>🏠</span>
+                        <HomeIcon size={14} />
                         <span>{t('common.home')}</span>
                       </button>
                     )}
@@ -1596,7 +1597,7 @@ export default function MainHeader({
                         }
                       }}
                     >
-                      <span>🔍</span>
+                      <ZoomInIcon size={14} />
                       <span style={{ flex: 1 }}>{t('header.scale', 'Scale')}</span>
                       <span style={{
                         padding: '2px 6px',
@@ -1694,7 +1695,7 @@ export default function MainHeader({
                         }
                       }}
                     >
-                      <span>📋</span>
+                      <ClipboardIcon size={14} />
                       <span style={{ flex: 1 }}>v{currentVersion}</span>
                     </button>
 

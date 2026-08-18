@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { apiFrom } from '../../lib/apiClient'
+import { ClipboardIcon } from '../icons'
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
@@ -179,7 +180,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
             </div>
           ) : matches.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 40 }}>
-              <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>📋</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, opacity: 0.5 }}><ClipboardIcon size={48} /></div>
               <p>{t('matchHistory.noMatches', 'No matches yet')}</p>
               <p style={{ fontSize: 13, marginTop: 8 }}>
                 {t('matchHistory.noMatchesHint', 'Matches you score will appear here')}
