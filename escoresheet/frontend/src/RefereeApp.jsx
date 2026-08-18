@@ -10,6 +10,7 @@ import { isServedFromLocalServer } from './utils/backendConfig'
 import { setBackendOverride } from './utils/backendConfig'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
+import { RefreshIcon } from './components/icons'
 
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
@@ -638,7 +639,7 @@ export default function RefereeApp() {
                   opacity: loadingMatches ? 0.5 : 1
                 }}
               >
-                {loadingMatches ? t('common.loading', 'Loading...') : `🔄 ${t('refereeDashboard.loadGames', 'Load Games')}`}
+                {loadingMatches ? t('common.loading', 'Loading...') : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><RefreshIcon size={14} />{t('refereeDashboard.loadGames', 'Load Games')}</span>}
               </button>
             </div>
           ) : (
@@ -675,7 +676,7 @@ export default function RefereeApp() {
                       opacity: loadingMatches ? 0.5 : 1
                     }}
                   >
-                    {loadingMatches ? '...' : '🔄'}
+                    {loadingMatches ? '...' : <RefreshIcon size={14} />}
                   </button>
                 </div>
                 <button

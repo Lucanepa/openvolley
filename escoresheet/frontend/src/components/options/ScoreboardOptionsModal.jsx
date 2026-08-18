@@ -5,6 +5,7 @@ import Modal from '../Modal'
 import { listCloudBackups, loadCloudBackup } from '../../utils/logger'
 import { restoreMatchInPlace } from '../../utils/backupManager'
 import BackupTable from '../BackupTable'
+import { SatelliteDishIcon } from '../icons'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -921,7 +922,7 @@ export default function ScoreboardOptionsModal({
               e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
             }}
           >
-            <span style={{ fontSize: '20px' }}>📡</span>
+            <SatelliteDishIcon size={20} />
             <span>{t('options.setupConnections')}</span>
           </button>
 

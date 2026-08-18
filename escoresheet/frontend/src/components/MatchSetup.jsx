@@ -22,6 +22,7 @@ import { generateMatchSeedKey } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
+import { FileTextIcon, ClipboardIcon } from './icons'
 
 // Date formatting helpers (outside component to avoid recreation)
 function formatDateToDDMMYYYY(dateStr) {
@@ -7087,9 +7088,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <button
             className="secondary"
             onClick={openScoresheet}
-            style={{ padding: `${s(6)}px ${s(12)}px`, fontSize: s(13), background: '#22c55e', color: '#000' }}
+            style={{ padding: `${s(6)}px ${s(12)}px`, fontSize: s(13), background: '#22c55e', color: '#000', display: 'inline-flex', alignItems: 'center', gap: s(6) }}
           >
-            📄 {t('matchSetup.scoresheet')}
+            <FileTextIcon size={s(13)} />{t('matchSetup.scoresheet')}
           </button>
         </div>
 
@@ -7445,7 +7446,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 >
                   {typeof window !== 'undefined' && window.electronAPI?.server
                     ? (serverLoading ? 'Starting...' : 'Start Server')
-                    : '📋 Copy Start Command'
+                    : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><ClipboardIcon size={14} />Copy Start Command</span>
                   }
                 </button>
               )}

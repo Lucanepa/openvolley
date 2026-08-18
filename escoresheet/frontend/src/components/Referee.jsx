@@ -20,6 +20,7 @@ import DonutCountdown from './DonutCountdown'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
+import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, PhoneIcon, VolleyballIcon, BellIcon } from './icons'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -1934,7 +1935,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               }}
               title={wakeLockActive ? t('refereeDashboard.screenWillStayOn') : t('refereeDashboard.screenMayTurnOff')}
             >
-              {wakeLockActive ? `☀️` : `🌙`}
+              {wakeLockActive ? <SunIcon size={14} /> : <MoonIcon size={14} />}
             </button>
 
             <ConnectionStatus
@@ -1976,7 +1977,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               }}
               title={t('refereeDashboard.refresh')}
             >
-              🔄 {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
+              <RefreshIcon size={14} /> {window.innerWidth >= 500 && t('refereeDashboard.refresh')}
             </button>
           </div>
 
@@ -2617,7 +2618,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           padding: '24px',
           textAlign: 'center'
         }}>
-          <div style={{ fontSize: '64px', marginBottom: '24px' }}>📱</div>
+          <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
           <h2 style={{
             fontSize: '24px',
             fontWeight: 700,
@@ -2714,7 +2715,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               color: '#8b5cf6',
               marginBottom: '8px'
             }}>
-              🏐 Select Setter
+              <VolleyballIcon size={18} /> Select Setter
             </div>
             <div style={{
               fontSize: '14px',
@@ -2826,7 +2827,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           // Screen options
           { header: t('refereeDashboard.screenOptions') },
           {
-            icon: wakeLockActive ? '☀️' : '🌙',
+            icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
             label: t('refereeDashboard.keepScreenOn'),
             onClick: toggleWakeLock,
             toggle: wakeLockActive,
@@ -2837,20 +2838,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           ...(!isMasterMode ? [
             { header: t('refereeDashboard.connection.title') },
             {
-              icon: '🔄',
+              icon: <RefreshIcon size={13} />,
               label: t('refereeDashboard.connection.auto'),
               onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
               active: connectionType === CONNECTION_TYPES.AUTO
             },
             {
-              icon: '🗄️',
+              icon: <DatabaseIcon size={13} />,
               label: t('refereeDashboard.connection.dbOnly'),
               onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
               active: connectionType === CONNECTION_TYPES.SUPABASE,
               color: '#22c55e'
             },
             {
-              icon: '📡',
+              icon: <SatelliteDishIcon size={13} />,
               label: t('refereeDashboard.connection.directOnly'),
               onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
               active: connectionType === CONNECTION_TYPES.WEBSOCKET,
@@ -2861,7 +2862,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           // Test mode indicator
           ...(isMasterMode ? [
             {
-              icon: '⚠️',
+              icon: <WarningIcon size={13} />,
               label: t('refereeDashboard.testMode'),
               disabled: true,
               color: '#fbbf24'
@@ -2870,7 +2871,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           ] : []),
           // Refresh (always visible)
           {
-            icon: '🔄',
+            icon: <RefreshIcon size={13} />,
             label: t('refereeDashboard.refresh'),
             onClick: fetchFreshData,
             color: '#3b82f6'
@@ -3144,7 +3145,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <span>#{setterNumber.left}</span>
                     </>
                   ) : (
-                    '⚙️ Advanced'
+                    <><SettingsIcon size={11} />Advanced</>
                   )}
                 </button>
               )}
@@ -3174,7 +3175,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                       <span>#{setterNumber.right}</span>
                     </>
                   ) : (
-                    '⚙️ Advanced'
+                    <><SettingsIcon size={11} />Advanced</>
                   )}
                 </button>
               )}
@@ -3271,7 +3272,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     }}
                     title={receptionMode.left === 'reception' ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')}
                   >
-                    🔄
+                    <RefreshIcon size={16} />
                   </button>
                 )}
 
@@ -3435,7 +3436,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     }}
                     title={receptionMode.right === 'reception' ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')}
                   >
-                    🔄
+                    <RefreshIcon size={16} />
                   </button>
                 )}
 
@@ -4141,7 +4142,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             hideCloseButton={true}
           >
             <div style={{ padding: '24px', textAlign: 'center' }}>
-              <div style={{ marginBottom: '16px', fontSize: '48px' }}>🔔</div>
+              <div style={{ marginBottom: '16px', color: '#ef4444' }}><BellIcon size={48} /></div>
               <p style={{ marginBottom: '20px', fontSize: vmin(3), fontWeight: 700, color: '#ef4444' }}>
                 Scorer Needs Attention!
               </p>

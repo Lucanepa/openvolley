@@ -34,6 +34,7 @@ import { rotateLineup as rotateLineupPure } from '../domain/rotation'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
+import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon, CardIcon } from './icons'
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -12199,10 +12200,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         padding: '20px',
         textAlign: 'center'
       }}>
-        <div style={{
-          fontSize: '48px',
-          marginBottom: '20px'
-        }}>⚠️</div>
+        <div style={{ marginBottom: '20px', color: '#f59e0b' }}><WarningIcon size={48} /></div>
         <h1 style={{
           fontSize: '24px',
           fontWeight: 600,
@@ -12256,11 +12254,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           textAlign: 'center'
         }}>
           <div style={{
-            fontSize: '64px',
             marginBottom: '24px',
+            color: '#ffffff',
             animation: 'rotate90 1.5s ease-in-out infinite'
           }}>
-            📱
+            <PhoneIcon size={64} />
           </div>
           <style>{`
             @keyframes rotate90 {
@@ -12589,7 +12587,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.85cqw' }}>
           {/* Scoresheet dropdown menu */}
           <MenuList
-            buttonLabel="📄"
+            buttonLabel={<FileTextIcon size="1em" />}
             buttonTitle={t('header.scoresheet')}
             menuTitle={t('header.scoresheet')}
             buttonClassName="secondary"
@@ -12605,7 +12603,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             items={[
               {
                 key: 'scoresheet-preview',
-                label: `🔍 ${t('header.preview')}`,
+                icon: <SearchIcon />,
+                label: t('header.preview'),
                 onClick: async () => {
                   try {
                     const match = data?.match
@@ -12652,7 +12651,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               },
               {
                 key: 'scoresheet-print',
-                label: `🖨️ ${t('header.print')}`,
+                icon: <PrinterIcon />,
+                label: t('header.print'),
                 onClick: async () => {
                   try {
                     const match = data?.match
@@ -12699,7 +12699,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               },
               {
                 key: 'scoresheet-save',
-                label: `💾 ${t('header.savePdf')}`,
+                icon: <SaveIcon />,
+                label: t('header.savePdf'),
                 onClick: async () => {
                   try {
                     const match = data?.match
@@ -12834,7 +12835,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               { separator: true },
               {
                 key: 'export',
-                label: '📥 Download Game Data (JSON)',
+                icon: <DownloadIcon />,
+                label: 'Download Game Data (JSON)',
                 onClick: async () => {
                   try {
                     // Export all database data
@@ -12877,7 +12879,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               },
               {
                 key: 'options',
-                label: '⚙️ Options',
+                icon: <SettingsIcon />,
+                label: 'Options',
                 onClick: () => {
                   setShowOptionsInMenu(true)
                 }
@@ -13346,8 +13349,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           zIndex: 1000,
           boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
         }}>
-          <span style={{ fontSize: '20px' }}>
-            {displayModeSuggestion === 'tablet' ? '📱' : '📲'}
+          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+            {displayModeSuggestion === 'tablet' ? <TabletIcon size={20} /> : <PhoneIcon size={20} />}
           </span>
           <span style={{ fontWeight: 600 }}>
             Small screen detected! Enable {displayModeSuggestion} mode for a better experience?
@@ -14733,7 +14736,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '1.25cqw',
                   color: '#fde047'
                 }}>
-                  {t('scoreboard.sanctions.sanctionedFormalWarning')} 🟨
+                  {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
                 </div>
               )}
             </div>
@@ -15312,7 +15315,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               gap: '1.25cqw'
                             }}
                           >
-                            <span>🔄</span> Redesignate Libero
+                            <RefreshIcon size="1em" /> Redesignate Libero
                           </button>
                         )
                       })()}
@@ -18116,7 +18119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '1.25cqw',
                   color: '#fde047'
                 }}>
-                  {t('scoreboard.sanctions.sanctionedFormalWarning')} 🟨
+                  {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
                 </div>
               )}
             </div>
@@ -18680,7 +18683,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               gap: '1.25cqw'
                             }}
                           >
-                            <span>🔄</span> Redesignate Libero
+                            <RefreshIcon size="1em" /> Redesignate Libero
                           </button>
                         )
                       })()}
@@ -19116,7 +19119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     showAlert(t('scoreboard.errors.exportFailed'), 'error')
                   }
                 }}>
-                📥 {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
+                <DownloadIcon size={16} /> {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
               </div>
               <div style={{
                 background: 'var(--panel-2)',
@@ -19139,7 +19142,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={() => {
                   setShowOptionsInMenu(true)
                 }}>
-                ⚙️ {t('scoreboard.menu.options', 'Options')}
+                <SettingsIcon size={16} /> {t('scoreboard.menu.options', 'Options')}
               </div>
             </div>
           </div>
@@ -20093,7 +20096,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               borderRadius: '8px',
                               color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
                             }}>
-                              {leftIsServing && <span style={{ fontSize: '20px' }}>🏐</span>}
+                              {leftIsServing && <VolleyballIcon size={20} />}
                               <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontWeight: 700, fontSize: '14px' }}>{leftTeamName}</div>
                                 <div style={{ fontSize: '10px', opacity: 0.8 }}>{leftIsHome ? t('common.home').toUpperCase() : t('common.away').toUpperCase()}</div>
@@ -20124,7 +20127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <div style={{ fontWeight: 700, fontSize: '14px' }}>{rightTeamName}</div>
                                 <div style={{ fontSize: '10px', opacity: 0.8 }}>{rightIsHome ? t('common.home').toUpperCase() : t('common.away').toUpperCase()}</div>
                               </div>
-                              {rightIsServing && <span style={{ fontSize: '20px' }}>🏐</span>}
+                              {rightIsServing && <VolleyballIcon size={20} />}
                             </div>
                           </div>
 
@@ -20219,7 +20222,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontWeight: 600
                               }}
                             >
-                              ↔️ Switch Sides
+                              <SwitchIcon size={14} /> Switch Sides
                             </button>
                             <button
                               className="secondary"
@@ -20279,7 +20282,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontWeight: 600
                               }}
                             >
-                              🏐 Switch Serve
+                              <VolleyballIcon size={14} /> Switch Serve
                             </button>
                           </div>
                         </div>
@@ -20473,7 +20476,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>📊</span>
+                  <ChartIcon size={18} />
                   Score &amp; Sets
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.scores ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
@@ -20678,7 +20681,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>⚙️</span>
+                  <SettingsIcon size={18} />
                   Match Settings
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.matchSettings ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
@@ -20805,7 +20808,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>📝</span>
+                  <NotebookIcon size={18} />
                   Event History
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.events ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
@@ -22030,7 +22033,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>🔧</span>
+                  <WrenchIcon size={18} />
                   Advanced
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.advanced ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
@@ -22388,7 +22391,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>📋</span>
+                  <ClipboardIcon size={18} />
                   Manual Changes Summary
                   {manualChangesLog.length > 0 && (
                     <span style={{
@@ -22510,7 +22513,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             width: '100%'
                           }}
                         >
-                          📋 Copy Log
+                          <ClipboardIcon size={12} /> Copy Log
                         </button>
                       </div>
                     </div>
@@ -23925,7 +23928,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                             >
                               <span>Declared unable</span>
-                              <span style={{ fontSize: '14px' }}>🗣️</span>
+                              <SpeechIcon size={14} />
                             </button>
                             <button
                               onClick={() => {
@@ -25688,7 +25691,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <div style={{ marginBottom: '16px', fontSize: '48px' }}>⚠️</div>
+            <div style={{ marginBottom: '16px', color: '#f59e0b' }}><WarningIcon size={48} /></div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
               {t('scoreboard.confirm.rallyStartedQuickly')}
             </p>
@@ -25741,7 +25744,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <div style={{ marginBottom: '16px', fontSize: '48px' }}>⚠️</div>
+            <div style={{ marginBottom: '16px', color: '#f59e0b' }}><WarningIcon size={48} /></div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
               {t('scoreboard.confirm.pointAwardedQuickly')}
             </p>
@@ -25794,7 +25797,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <div style={{ marginBottom: '16px', fontSize: '48px' }}>⏱️</div>
+            <div style={{ marginBottom: '16px', color: 'var(--muted)' }}><TimerIcon size={48} /></div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
               {t('scoreboard.confirm.timeoutAlreadyTaken', 'Timeout already taken')}
             </p>
@@ -26887,7 +26890,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         }}
                       >
                         <span>Declared unable</span>
-                        <span style={{ fontSize: '14px' }}>🗣️</span>
+                        <SpeechIcon size={14} />
                       </button>
                       <button
                         onClick={() => {
@@ -27130,7 +27133,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           Declares libero unable to continue
                         </div>
                       </div>
-                      <span style={{ fontSize: '18px' }}>🗣️</span>
+                      <SpeechIcon size={18} />
                     </button>
                     <button
                       onClick={() => setLiberoUnableModal({ ...liberoUnableModal, reason: 'injury' })}
@@ -28578,7 +28581,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '55px', textAlign: 'right' }}>Serve:</span>
-                    <span style={{ fontSize: '16px' }}>🏐</span>
+                    <VolleyballIcon size={16} />
                     <span style={{ background: (selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor, color: isBrightColor((selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
                       {(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeLabel : awayLabel}
                     </span>

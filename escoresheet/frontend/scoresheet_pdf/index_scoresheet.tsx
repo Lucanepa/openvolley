@@ -7,6 +7,7 @@ import App from './App_Scoresheet';
 
 // Initialize Dexie database (same as main app)
 import { db } from '../src/db/db';
+import { ClipboardIcon } from '../src/components/icons';
 
 // Helper function to send errors to parent window
 const sendErrorToParent = (error: Error | string, details?: string) => {
@@ -525,7 +526,7 @@ const ScoresheetList: React.FC = () => {
             borderRadius: '12px',
             border: '1px solid #e2e8f0'
           }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+            <div style={{ marginBottom: '16px', color: '#94a3b8' }}><ClipboardIcon size={48} /></div>
             <div style={{ fontSize: '18px', color: '#64748b' }}>
               No scoresheets uploaded yet
             </div>

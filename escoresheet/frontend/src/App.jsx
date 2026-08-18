@@ -48,6 +48,7 @@ import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin 
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import { isMatchFinished as isMatchFinishedUtil } from './utils/matchFormat'
+import { PhoneIcon } from './components/icons'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -2937,11 +2938,8 @@ export default function App() {
           color: 'var(--text)',
           gap: '20px'
         }}>
-          <div style={{
-            fontSize: '48px',
-            marginBottom: '10px'
-          }}>
-            📱
+          <div style={{ marginBottom: '10px' }}>
+            <PhoneIcon size={48} />
           </div>
           <div style={{
             fontSize: '18px',

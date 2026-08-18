@@ -19,6 +19,7 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
+import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
 
 // Helper to format duration as hh:mm
 const formatDurationHHMM = (durationStr) => {
@@ -1424,17 +1425,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             </button>
             <div data-help-id="matchend-export-pdf">
               <MenuList
-                buttonLabel={`📄 ${t('matchEnd.scoresheet')}`}
+                buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={15} />{t('matchEnd.scoresheet')}</span>}
                 buttonClassName="secondary"
                 buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
                 showArrow={true}
                 position="right"
                 vertical="top"
                 items={[
-                  { key: 'preview', label: `🔍 ${t('matchEnd.preview', 'Preview')}`, onClick: () => handleShowScoresheet('preview') },
-                  { key: 'print', label: `🖨️ ${t('matchEnd.print', 'Print')}`, onClick: () => handleShowScoresheet('print') },
-                  { key: 'save', label: `💾 ${t('matchEnd.savePdf', 'Save PDF')}`, onClick: () => handleShowScoresheet('save') },
-                  { key: 'logs', label: `📊 ${t('matchEnd.downloadLogs', 'Download Logs')}`, onClick: handleDownloadLogs }
+                  { key: 'preview', icon: <SearchIcon />, label: t('matchEnd.preview', 'Preview'), onClick: () => handleShowScoresheet('preview') },
+                  { key: 'print', icon: <PrinterIcon />, label: t('matchEnd.print', 'Print'), onClick: () => handleShowScoresheet('print') },
+                  { key: 'save', icon: <SaveIcon />, label: t('matchEnd.savePdf', 'Save PDF'), onClick: () => handleShowScoresheet('save') },
+                  { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download Logs'), onClick: handleDownloadLogs }
                 ]}
               />
             </div>

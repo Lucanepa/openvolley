@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
 import App from '../scoresheet_pdf/App_Scoresheet'
+import { ClipboardIcon } from './components/icons'
 
 // Fetch scoresheet data from Supabase storage (only _final files)
 const fetchFromStorage = async (date, game) => {
@@ -375,7 +376,7 @@ const ScoresheetList = () => {
 
         {matches.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-            <div className="text-5xl mb-4">📋</div>
+            <div className="mb-4 flex justify-center text-gray-400"><ClipboardIcon size={48} /></div>
             <div className="text-lg text-gray-500">No scoresheets uploaded yet</div>
           </div>
         ) : (
