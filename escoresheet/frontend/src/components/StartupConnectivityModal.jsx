@@ -49,7 +49,9 @@ export default function StartupConnectivityModal({
   )
   const hasErrors = coreChecked && !primaryOk
   // Scoring needs only the local database: once the checks are done it can go
-  // on, synced or not (the queue keeps retrying, the header shows 'Offline')
+  // on, synced or not (the queue keeps retrying, the header shows 'Offline').
+  // Only a synced start closes by itself; online with both sync paths down the
+  // scorer chooses (Dismiss or Go Offline), as before.
   const canContinue = primaryOk || (hasErrors && dbOk)
 
   // Reloaded without network: nothing to wait for, resume silently. The header's
@@ -73,9 +75,9 @@ export default function StartupConnectivityModal({
     }
   }, [open, browserOffline, onDismiss])
 
-  // Countdown + auto-dismiss once scoring can go on
+  // Countdown + auto-dismiss once the sync works
   useEffect(() => {
-    if (!open || !canContinue || hasAutoDismissed.current) return
+    if (!open || !primaryOk || hasAutoDismissed.current) return
 
     setCountdown(AUTO_DISMISS_SECONDS)
 
@@ -94,7 +96,7 @@ export default function StartupConnectivityModal({
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [open, canContinue, onDismiss])
+  }, [open, primaryOk, onDismiss])
 
   if (!open || browserOffline) return null
 
@@ -266,7 +268,7 @@ export default function StartupConnectivityModal({
           alignItems: 'center'
         }}>
           {canContinue && (
-            /* Dismiss button with countdown: synced, or checks done and scoring works locally */
+            /* Dismiss: synced (with countdown), or checks done and scoring works locally (no countdown) */
             <button
               onClick={onDismiss}
               style={{
@@ -284,9 +286,11 @@ export default function StartupConnectivityModal({
               }}
             >
               {t('startupConnectivity.dismiss', 'Dismiss')}
-              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, opacity: 0.7 }}>
-                ({countdown}s)
-              </span>
+              {primaryOk && (
+                <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, opacity: 0.7 }}>
+                  ({countdown}s)
+                </span>
+              )}
             </button>
           )}
           {!primaryOk && (
