@@ -6,6 +6,7 @@ import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
+import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { PhoneIcon } from './components/icons'
 
@@ -62,12 +63,6 @@ export default function LivescoreApp() {
 
   // Fetch all live games from match_live_state
   const fetchLiveGames = useCallback(async () => {
-    if (!supabase) {
-      setError('Supabase not configured')
-      setLoading(false)
-      return
-    }
-
     try {
       const { data, error: fetchError } = await apiFrom('match_live_state')
         .select('*, matches!match_live_state_match_id_fkey_cascade(set_results)')
@@ -78,7 +73,7 @@ export default function LivescoreApp() {
         console.error('[Livescore] Error fetching games:', fetchError)
         setError(fetchError.message)
       } else {
-        setLiveGames(data || [])
+        setLiveGames(visibleGames(data))
         setError(null)
       }
     } catch (err) {
@@ -95,7 +90,7 @@ export default function LivescoreApp() {
 
     if (!supabase) return
 
-    // Subscribe to ALL match_live_state changes (no filter = all games)
+    // Subscribe to every indoor match_live_state change (relay realtime shim)
     const channel = supabase
       .channel('livescore-all-games')
       .on(
@@ -107,23 +102,21 @@ export default function LivescoreApp() {
           filter: 'sport_type=eq.indoor'
         },
         (payload) => {
-          console.log('[Livescore] Realtime update:', payload.eventType)
-
-          if (payload.eventType === 'INSERT') {
-            setLiveGames(prev => [payload.new, ...prev])
-          } else if (payload.eventType === 'UPDATE') {
-            setLiveGames(prev => prev.map(g =>
-              g.match_id === payload.new.match_id ? payload.new : g
-            ))
-          } else if (payload.eventType === 'DELETE') {
-            setLiveGames(prev => prev.filter(g => g.match_id !== payload.old.match_id))
+          // INSERT/UPDATE upsert by match_id and merge into the loaded row (keeps
+          // the joined set_results); an UPDATE for an unknown game is an insert;
+          // probe rows are ignored. See utils/livescoreChanges.js.
+          setLiveGames(prev => applyLiveChange(prev, payload))
+          if (payload.eventType === 'DELETE') {
             // If the deleted game was selected, clear selection to go back to list
-            setSelectedGame(prev => prev === payload.old.match_id ? null : prev)
+            setSelectedGame(prev => prev === payload.old?.match_id ? null : prev)
           }
         }
       )
       .subscribe((status) => {
         console.log('[Livescore] Subscription status:', status)
+        // SUBSCRIBED repeats after every reconnect: refetch to catch up on
+        // whatever changed while the socket was down.
+        if (status === 'SUBSCRIBED') fetchLiveGames()
       })
 
     channelRef.current = channel

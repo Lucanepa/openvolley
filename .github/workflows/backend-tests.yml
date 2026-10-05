@@ -1,0 +1,53 @@
+name: Backend tests
+
+# Runs the backend node:test suites, including the Postgres suites
+# (pgQuery, matchRestore, least-privilege role) against a throwaway Postgres.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'escoresheet/backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    paths:
+      - 'escoresheet/backend/**'
+      - '.github/workflows/backend-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_TEST_URL: postgres://postgres:test@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: escoresheet/backend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: escoresheet/backend
+        run: npm test

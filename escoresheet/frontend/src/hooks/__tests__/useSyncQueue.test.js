@@ -37,7 +37,8 @@ function fakeTable(rows = []) {
 const fakeDb = vi.hoisted(() => ({ sync_queue: { hook: () => {} } }))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
 
-// Every apiFrom call is recorded; `respond` decides the result
+// Every apiFrom call is recorded; `respond` decides the result.
+// apiMatchRestore (POST /api/match/restore) is recorded as a call on table '__restore'.
 const api = vi.hoisted(() => ({ calls: [], respond: null }))
 vi.mock('../../lib/apiClient', () => {
   function builder(table) {
@@ -66,7 +67,14 @@ vi.mock('../../lib/apiClient', () => {
     }
     return b
   }
-  return { apiFrom: (table) => builder(table) }
+  return {
+    apiFrom: (table) => builder(table),
+    apiMatchRestore: async (payload) => {
+      const call = { table: '__restore', action: 'restore', data: payload, filters: [] }
+      api.calls.push(call)
+      return api.respond(call)
+    }
+  }
 })
 
 vi.mock('../../utils/backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}` }))
@@ -256,27 +264,57 @@ describe('runQueuePass', () => {
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
   })
 
-  it('restore fails (and is retried) when a set cannot be written', async () => {
-    fakeDb.sync_queue.reset([
-      {
-        id: 1,
-        resource: 'match',
-        action: 'restore',
-        status: 'queued',
-        payload: {
-          match: { external_id: 'match_100_aaa', status: 'live' },
-          sets: [{ external_id: 'match_100_aaa:s:1', index: 1 }],
-          events: [],
-          liveState: null
-        }
-      }
-    ])
-    api.respond = (call) => (call.table === 'sets' && call.action === 'upsert'
-      ? { data: null, error: { message: 'Database operation failed', status: 400 } }
+  const restoreJob = () => ({
+    id: 1,
+    resource: 'match',
+    action: 'restore',
+    status: 'queued',
+    payload: {
+      match: { external_id: 'match_100_aaa', status: 'live', not_a_column: 1 },
+      sets: [{ external_id: 'match_100_aaa:s:1', index: 1 }],
+      events: [{ external_id: 'match_100_aaa:e:1', seq: 1 }],
+      liveState: { match_status: 'live' }
+    }
+  })
+
+  it('restore is ONE /api/match/restore call (no client-side delete/upsert steps)', async () => {
+    fakeDb.sync_queue.reset([restoreJob()])
+    api.respond = (call) => (call.table === '__restore'
+      ? ok({ id: MATCH_UUID, counts: { sets: 1, events: 1, liveState: 1 } })
+      : defaultRespond(call))
+
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(api.calls.map(c => c.table)).toEqual(['__restore'])
+    const sent = api.calls[0].data
+    expect(sent.match.external_id).toBe('match_100_aaa')
+    expect(sent.match.not_a_column).toBeUndefined()
+    expect(sent.sets).toHaveLength(1)
+    expect(sent.events).toHaveLength(1)
+    expect(sent.liveState).toEqual({ match_status: 'live' })
+  })
+
+  it('restore fails (and is retried) when the server rolls it back', async () => {
+    fakeDb.sync_queue.reset([restoreJob()])
+    api.respond = (call) => (call.table === '__restore'
+      ? { data: null, error: { message: 'Database operation failed', code: 'OV_UNSCOPED_EXTERNAL_ID', status: 400 } }
       : defaultRespond(call))
 
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('error')
+  })
+
+  it('restore stays queued on 426 (old bundle) and 5xx', async () => {
+    for (const status of [426, 503]) {
+      fakeDb.sync_queue.reset([restoreJob()])
+      api.respond = (call) => (call.table === '__restore'
+        ? { data: null, error: { message: 'x', status } }
+        : defaultRespond(call))
+      await runQueuePass()
+      const job = fakeDb.sync_queue.map.get(1)
+      expect(job.status, String(status)).toBe('queued')
+      expect(job.retry_count, String(status)).toBe(1)
+    }
   })
 })
 
