@@ -84,6 +84,10 @@ export async function resolveJobExternalId(job, { sets, matches, events }) {
 
   const coinTossSeed = job.resource === 'event' ? legacyCoinTossSeed(p.external_id) : null
   if (coinTossSeed) {
+    // Without the events table the local coin toss event cannot be looked up:
+    // leave the job for a caller that can (the fallback id would not match
+    // the one a re-confirmed coin toss sends)
+    if (!events?.where) return null
     const seed = typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id) ? p.match_id : coinTossSeed
     return { external_id: await resolveLegacyCoinToss(seed, { matches, events }) }
   }
