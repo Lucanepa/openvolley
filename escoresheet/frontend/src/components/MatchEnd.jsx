@@ -1284,8 +1284,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>
             {winner}
           </div>
-          {/* Score and Set Results */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', flex: 1 }}>
+          {/* Score and Set Results (.match-end-score: frozen readout type, RESTYLE-SPEC R1) */}
+          <div className="match-end-score" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', flex: 1 }}>
             {/* Main Score */}
             <div style={{ fontSize: vmin(8), fontWeight: 800, color: 'var(--accent)' }}>
               {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
@@ -1319,7 +1319,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           onClick={() => setZoomedSection('results')}
         >
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.results', 'Results')}</h3>
-          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
+          <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <ResultsTable
               teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
               teamBName={homeLabel === 'B' ? (homeTeam?.name || 'Team B') : (awayTeam?.name || 'Team B')}
@@ -1338,7 +1338,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           onClick={() => setZoomedSection('sanctions')}
         >
           <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3>
-          <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
+          <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <SanctionsTable
               items={sanctionsInBox}
               improperRequests={improperRequests}
@@ -1642,6 +1642,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           onClick={() => setZoomedSection(null)}
         >
           <div
+            className="ov-legacy-results"
             style={{
               background: '#fff',
               borderRadius: '12px',

@@ -203,9 +203,9 @@
    scoresheet_pdf `Results` table, whose set rows use Tailwind `text-xs`. Before
    styles.css was layered, the legacy `.text-xs` (13px x --scale-factor) won
    there; keep that size inside this one block so the official layout does not
-   move. Selector = the Results root (FooterSection.tsx `Results`). Remove when
-   P3b wraps the block in its own scope. */
-.border-r-0.border-black.mr-1.h-full .text-xs {
+   move. .ov-legacy-results is the wrapper MatchEntry/MatchEnd put around the
+   block (the scoresheet_pdf files themselves stay untouched). */
+.ov-legacy-results .text-xs {
   font-size: calc(13px * var(--scale-factor));
 }
 
@@ -326,4 +326,79 @@
   width: 0;
   height: 0;
   z-index: 100001;
+}
+
+/* ---------------------------------------------------------------------------
+   RESTYLE-SPEC R1 guard: the frozen scoring readouts keep today's type.
+   The body is Inter Variable at opsz 32 (Display cut) with true 500/600/800
+   weights. Before P0 these readouts used the static Inter 4 Text files, which
+   had only 400 and 700, so fontWeight 500 drew 400 and 600/800/900 drew 700.
+   At opsz 32 the 9-11px bench labels and official names came out cramped and
+   lighter, and MatchEnd's big 800-weight "3:0" grew until the colon touched
+   both digits.
+   'OV Readout Inter' is the same bundled variable file (no extra download)
+   declared with exactly two faces, 400 and 700. Font matching then picks
+   400 for 100-500 and 700 for 600-900, and the wght axis is clamped to the
+   face, which reproduces the old static pair. opsz 14 is the Text cut the
+   static files were, and the default glyph set (no cv02-cv11) is theirs too.
+   Score fonts picked in Options set their own family inline and are untouched.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource-variable/inter/files/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource-variable/inter/files/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@layer components {
+  /* .court + .team-controls (the side columns: TO/SUB, bench, liberos, bench
+     officials) + .to-sub-counter + .set-score-display, as R1 lists them, plus
+     .court-wrapper (the big rally score above the court, serve box, referee
+     names, rally controls), the toolbar set-score boxes (selected by their
+     existing data-help-id, so Scoreboard.jsx is not touched),
+     the set-end modal's "A 25 : 3 B" line and winner chip (.set-end-readout),
+     MatchEnd's winner score readout and the paper-sheet Results/Sanctions
+     blocks (.ov-legacy-results, R5; MatchEnd and MatchEntry). Redefining
+     --font-sans here also reaches the legacy rules that set
+     font-family: var(--font-sans) on a descendant. */
+  :where(.court, .court-wrapper, .team-controls, .to-sub-counter, .set-score-display,
+         [data-help-id="scoreboard-set-display"], .set-end-readout, .match-end-score,
+         .ov-legacy-results) {
+    --font-sans: 'OV Readout Inter', 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-sans);
+    font-variation-settings: "opsz" 14;
+    font-feature-settings: normal;
+  }
+
+  /* No brand-red focus outline on the scoring controls (R4): the legacy
+     :focus-visible rule reads var(--ring), which is red-500 elsewhere. */
+  :where(.court, .team-controls, .rally-controls, .set-score-display) {
+    --ring: var(--ov-selected);
+  }
 }
