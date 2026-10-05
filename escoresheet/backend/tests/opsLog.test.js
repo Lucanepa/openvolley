@@ -46,15 +46,48 @@ describe('formatDbRejection', () => {
 })
 
 describe('createLogLimiter', () => {
-  it('passes max lines per window, then reports how many were suppressed', () => {
+  it('passes max lines per key and window, then reports the suppressed count per key', () => {
     let t = 0
     const out = []
     const log = createLogLimiter({ max: 2, windowMs: 1000, write: (l) => out.push(l), now: () => t })
-    log('a'); log('b'); log('c'); log('d')
+    log('a', 'X'); log('b', 'X'); log('c', 'X'); log('d', 'X')
     assert.deepEqual(out, ['a', 'b'])
     t = 1500
-    log('e')
-    assert.deepEqual(out, ['a', 'b', '[log] 2 similar line(s) suppressed in the last 2s', 'e'])
+    log('e', 'X')
+    assert.deepEqual(out, ['a', 'b', '[log] suppressed in the last 2s: X=2', 'e'])
+  })
+
+  it('a flood of one code does not suppress another code', () => {
+    let t = 0
+    const out = []
+    const log = createLogLimiter({ max: 2, windowMs: 60_000, write: (l) => out.push(l), now: () => t })
+    for (let i = 0; i < 100; i++) log(`401 #${i}`, 'missing_token')
+    log('scope', 'OV_UNSCOPED_EXTERNAL_ID')
+    log('old', 'OV_CLIENT_TOO_OLD')
+    assert.deepEqual(out, ['401 #0', '401 #1', 'scope', 'old'])
+    t = 60_000
+    assert.equal(log.flush(), '[log] suppressed in the last 60s: missing_token=98')
+  })
+
+  it('flush() reports a burst followed by quiet, once, and only after the window', () => {
+    let t = 0
+    const out = []
+    const log = createLogLimiter({ max: 1, windowMs: 1000, write: (l) => out.push(l), now: () => t })
+    log('a', 'A'); log('b', 'A'); log('c', 'B'); log('d', 'B'); log('e', 'B')
+    t = 500
+    assert.equal(log.flush(), null)
+    t = 1000
+    assert.equal(log.flush(), '[log] suppressed in the last 1s: A=1, B=2')
+    t = 5000
+    assert.equal(log.flush(), null)
+    assert.deepEqual(out, ['a', 'c', '[log] suppressed in the last 1s: A=1, B=2'])
+  })
+
+  it('caps the number of keys; extra keys share "other"', () => {
+    const out = []
+    const log = createLogLimiter({ max: 1, maxKeys: 2, windowMs: 1000, write: (l) => out.push(l), now: () => 0 })
+    log('1', 'k1'); log('2', 'k2'); log('3', 'k3'); log('4', 'k4')
+    assert.deepEqual(out, ['1', '2', '3'])
   })
 
   it('prints no suppression note when nothing was dropped', () => {
@@ -63,6 +96,8 @@ describe('createLogLimiter', () => {
     const log = createLogLimiter({ max: 5, windowMs: 1000, write: (l) => out.push(l), now: () => t })
     log('a'); t = 5000; log('b')
     assert.deepEqual(out, ['a', 'b'])
+    t = 10_000
+    assert.equal(log.flush(), null)
   })
 })
 
