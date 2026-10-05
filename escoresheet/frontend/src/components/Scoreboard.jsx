@@ -34,7 +34,7 @@ import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../doma
 import { planSubstitutionDeletion } from '../domain/substitutions'
 import { validateReopenedRoster, referencedPlayerNumbers } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
-import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures } from '../domain/matchEnd'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
@@ -824,8 +824,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return {
       matchId: data.match?.id,
       setIndex: data.set?.index,
-      homeScore: data.set?.homeScore,
-      awayScore: data.set?.awayScore,
+      homeScore: data.set?.homePoints,
+      awayScore: data.set?.awayPoints,
       currentServe: data.set?.currentServe,
       homeRotation: data.set?.homeRotation,
       awayRotation: data.set?.awayRotation,
@@ -838,8 +838,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       homeTimeouts: data.set?.homeTimeouts,
       awayTimeouts: data.set?.awayTimeouts,
       rallyInProgress: data.set?.rallyInProgress,
-      homeSetsWon: data.sets?.filter(s => s.winner === 'home').length,
-      awaySetsWon: data.sets?.filter(s => s.winner === 'away').length,
+      homeSetsWon: countSetsWon(data.sets).home,
+      awaySetsWon: countSetsWon(data.sets).away,
       totalEvents: data.events?.length
     }
   }, [data])
@@ -20880,6 +20880,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           >
                             <option value="setup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.setup')}</option>
                             <option value="live" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.live')}</option>
+                            {/* The lifecycle the app writes: live -> ended (scoreboard) -> approved -> final (MatchEnd) */}
+                            <option value="ended" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.ended', 'Ended')}</option>
+                            <option value="approved" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.approved', 'Approved')}</option>
                             <option value="final" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.final')}</option>
                             <option value="paused" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.paused')}</option>
                           </select>
@@ -21698,7 +21701,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const liberoEvents = data.events.filter(e =>
                       e.type === 'libero_entry' ||
                       e.type === 'libero_exit' ||
-                      e.type === 'libero_substitution' ||
+                      e.type === 'libero_exchange' ||
                       e.type === 'libero_unable' ||
                       e.type === 'libero_redesignation'
                     ).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
@@ -21758,7 +21761,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}>
                                 <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <span style={{ fontSize: '9px', fontWeight: 600, minWidth: '70px' }}>
-                                  {eventType === 'libero_entry' ? 'Libero Entry' : eventType === 'libero_exit' ? 'Libero Exit' : 'Libero Unable'}
+                                  {eventType === 'libero_entry' ? 'Libero Entry'
+                                    : eventType === 'libero_exit' ? 'Libero Exit'
+                                      : eventType === 'libero_exchange' ? 'Libero Exchange'
+                                        : eventType === 'libero_redesignation' ? 'Libero Re-designation'
+                                          : 'Libero Unable'}
                                 </span>
                                 <select
                                   value={team || 'home'}
@@ -22276,7 +22283,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <option value="lineup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Lineup</option>
                           <option value="libero_entry" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Entry</option>
                           <option value="libero_exit" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Exit</option>
-                          <option value="libero_substitution" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Substitution</option>
+                          <option value="libero_exchange" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Exchange</option>
                           <option value="libero_unable" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Unable</option>
                           <option value="replay" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Replay</option>
                           <option value="rally_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Rally Start</option>
@@ -22426,7 +22433,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     eventType === 'sanction' ? `Sanction ${teamLabel}` :
                                       eventType === 'libero_entry' ? `Libero Entry ${teamLabel}` :
                                         eventType === 'libero_exit' ? `Libero Exit ${teamLabel}` :
-                                          eventType === 'libero_substitution' ? `Libero Sub ${teamLabel}` :
+                                          eventType === 'libero_exchange' ? `Libero Exchange ${teamLabel}` :
                                             eventType === 'libero_unable' ? `Libero Unable ${teamLabel}` :
                                               eventType
 
