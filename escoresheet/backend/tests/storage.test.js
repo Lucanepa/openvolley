@@ -14,6 +14,7 @@ import {
   isRateLimitExempt,
   objectId,
   storageOptionsFromEnv,
+  maxBodyBytesFor,
   StorageError,
   SENTINEL_NAME,
   TMP_DIR_NAME
@@ -91,14 +92,39 @@ describe('parseStoragePath', () => {
   })
 
   it('rejects control chars, NUL, bidi and zero-width characters', () => {
-    for (const p of ['a\u0000b', 'a\nb', 'a‮b.json', 'a​b', '﻿a', 'a\u007f']) {
+    // Literals use \u escapes only: no invisible characters in the source.
+    const bad = [
+      'a\u0000b', 'a\nb', 'a\u007f', 'a\u0080b', 'a\u0085b', 'a\u009fb', // C0, DEL, C1 (NEL)
+      'a\u00adb', 'a\u061cb', 'a\u180eb',                                // soft hyphen, ALM, MVS
+      'a\u200bb', 'a\u200fb', '\ufeffa',                                 // zero-width, RLM, BOM
+      'a\u2028b', 'a\u2029b',                                            // line / paragraph separator
+      'a\u202eb.json', 'a\u2066b', 'a\ufff9b'                            // bidi override, isolate, annotation
+    ]
+    for (const p of bad) assert.equal(parseStoragePath(p), null, JSON.stringify(p))
+  })
+
+  it('rejects unicode look-alikes that normalise to dots or slashes', () => {
+    for (const p of ['\uff0e\uff0e/x', '\u2025/x', 'a\uff0fb', '\uff0ehidden', 'a/\u2024x', 'a\uff3cb']) {
       assert.equal(parseStoragePath(p), null, JSON.stringify(p))
     }
   })
 
-  it('rejects unicode look-alikes that normalise to dots or slashes', () => {
-    for (const p of ['．．/x', '‥/x', 'a／b', '．hidden', 'a/․x', 'a＼b']) {
+  it('rejects slash look-alikes NFKC leaves alone, without leaning on a .. prefix', () => {
+    for (const p of ['a\u2215b', 'a\u2044b', 'a\u2216b', 'a\u29f8b', 'a\ufe68b', 'x/a\u2215b.json']) {
       assert.equal(parseStoragePath(p), null, JSON.stringify(p))
+    }
+  })
+
+  it('rejects Windows-hostile names (ADS colon, reserved devices, trailing dot/space)', () => {
+    const bad = [
+      'a:b.json', 'x/a:stream', 'C:', 'a<b', 'a>b', 'a"b', 'a|b', 'a?b', 'a*b',
+      'CON', 'con.json', 'x/NUL', 'nul.txt', 'Aux', 'prn.pdf', 'COM1', 'com9.json', 'LPT1.txt', 'com\u00b9',
+      'a.', 'a ', 'x/b./c.json', 'x/b /c.json'
+    ]
+    for (const p of bad) assert.equal(parseStoragePath(p), null, JSON.stringify(p))
+    // close-but-fine names stay accepted
+    for (const p of ['console.json', 'nully/x.json', 'com10.json', 'lpt.txt', 'game 1/logs.txt', 'a.b.json']) {
+      assert.ok(parseStoragePath(p), JSON.stringify(p))
     }
   })
 
@@ -112,8 +138,8 @@ describe('parseStoragePath', () => {
   })
 
   it('normalises to NFC', () => {
-    const nfd = 'café.json'
-    assert.deepEqual(parseStoragePath(nfd), ['café.json'])
+    const nfd = 'cafe\u0301.json'
+    assert.deepEqual(parseStoragePath(nfd), ['caf\u00e9.json'])
   })
 
   it('allowEmpty for list: root and one trailing slash', () => {
@@ -133,10 +159,16 @@ describe('helpers', () => {
     assert.equal(normalizeContentType(undefined, 'a.exe'), 'application/octet-stream')
   })
 
-  it('isRateLimitExempt covers scoresheets *_final.json only', () => {
+  it('isRateLimitExempt covers scoresheets {date}/game{n}_final.json only', () => {
     assert.equal(isRateLimitExempt({ bucket: 'scoresheets', path: '2026-10-05/game1_final.json' }), true)
+    assert.equal(isRateLimitExempt({ bucket: 'scoresheets', path: '2026-10-05/gameunknown_final.json' }), true)
     assert.equal(isRateLimitExempt({ bucket: 'scoresheets', path: '2026-10-05/game1.pdf' }), false)
-    assert.equal(isRateLimitExempt({ bucket: 'backup', path: 'x_final.json' }), false)
+    assert.equal(isRateLimitExempt({ bucket: 'scoresheets', path: '2026-10-05/game1.json' }), false)
+    assert.equal(isRateLimitExempt({ bucket: 'backup', path: '2026-10-05/game1_final.json' }), false)
+    // arbitrary names ending in _final.json are no longer exempt
+    for (const p of ['junk/f1_final.json', 'x_final.json', '2026-10-05/a/game1_final.json', '2026-10-05/f_final.json', 'a/2026-10-05/game1_final.json']) {
+      assert.equal(isRateLimitExempt({ bucket: 'scoresheets', path: p }), false, p)
+    }
   })
 
   it('objectId is stable and uuid-shaped', () => {
@@ -148,9 +180,27 @@ describe('helpers', () => {
 
   it('storageOptionsFromEnv', () => {
     assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage' })
-    const o = storageOptionsFromEnv({ STORAGE_DIR: '/x', STORAGE_BACKUP_MIN_FREE_MB: '100', STORAGE_MAX_FILE_MB: '2', STORAGE_OWNER_SCOPE: 'Prefix' })
-    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix' })
-    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'bogus' }).ownerScope, undefined)
+    const o = storageOptionsFromEnv({ STORAGE_DIR: '/x', STORAGE_BACKUP_MIN_FREE_MB: '100', STORAGE_SCORESHEETS_MIN_FREE_MB: '0', STORAGE_MAX_FILE_MB: '2', STORAGE_OWNER_SCOPE: 'Prefix' })
+    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix' })
+    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'off' }).ownerScope, undefined)
+    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: ' ' }).ownerScope, undefined)
+  })
+
+  it('storageOptionsFromEnv throws on values it does not understand', () => {
+    for (const v of ['on', 'true', 'bogus', '1']) {
+      assert.throws(() => storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: v }), /STORAGE_OWNER_SCOPE/, v)
+    }
+    assert.throws(() => storageOptionsFromEnv({ STORAGE_MAX_FILE_MB: '0' }), /STORAGE_MAX_FILE_MB/)
+    assert.throws(() => storageOptionsFromEnv({ STORAGE_MAX_FILE_MB: 'lots' }), /STORAGE_MAX_FILE_MB/)
+    assert.throws(() => storageOptionsFromEnv({ STORAGE_BACKUP_MIN_FREE_MB: '-1' }), /STORAGE_BACKUP_MIN_FREE_MB/)
+  })
+
+  it('maxBodyBytes leaves room for base64 of a maxFileBytes upload', () => {
+    assert.equal(maxBodyBytesFor(3), 4 + 64 * 1024)
+    const s = createStorage({ root: '/tmp', maxFileBytes: 6 * 1024 * 1024 })
+    assert.equal(s.maxFileBytes, 6 * 1024 * 1024)
+    assert.ok(s.maxBodyBytes >= Buffer.alloc(s.maxFileBytes).toString('base64').length + 1024)
+    assert.deepEqual(s.bodyTooLarge(), { status: 413, body: { data: null, error: { message: 'File too large', code: 'OV_STORAGE_TOO_LARGE' } } })
   })
 
   it('createStorage rejects an unknown ownerScope', () => {
@@ -217,8 +267,8 @@ describe('storage operations', () => {
 
   it('NFD and NFC spellings address the same object', async () => {
     const s = make()
-    await s.upload({ bucket: 'backup', path: 'café/x.json', fileBase64: b64('{"v":1}'), contentType: 'application/json' })
-    const buf = await s.download({ bucket: 'backup', path: 'café/x.json' })
+    await s.upload({ bucket: 'backup', path: 'caf\u00e9/x.json', fileBase64: b64('{"v":1}'), contentType: 'application/json' })
+    const buf = await s.download({ bucket: 'backup', path: 'cafe\u0301/x.json' })
     assert.equal(buf.toString(), '{"v":1}')
   })
 
@@ -267,9 +317,11 @@ describe('confinement', () => {
     'a/../../outside/secret.json',
     '/etc/passwd',
     `${'..'}\\outside\\secret.json`,
-    '．．/outside/secret.json',
-    '‥/outside/secret.json',
-    '..∕outside',
+    '\uff0e\uff0e/outside/secret.json',
+    '\u2025/outside/secret.json',
+    '..\u2215outside',
+    'x\u2215..\u2215outside',
+    'a:b.json',
     `${SENTINEL_NAME}`,
     `${TMP_DIR_NAME}/x.json`,
     'a\u0000/../../x.json'
@@ -313,7 +365,7 @@ describe('confinement', () => {
     await rejectsWith(s.list({ bucket: 'backup' }), 403)
   })
 
-  it('a dangling symlinked temp dir cannot redirect writes', async () => {
+  it('a temp dir that is a symlink to elsewhere cannot redirect writes', async () => {
     const s = make()
     await fs.symlink(outside, path.join(root, TMP_DIR_NAME))
     await rejectsWith(s.upload({ bucket: 'backup', path: 'x.json', fileBase64: b64('{}'), contentType: 'application/json' }), 403)
@@ -328,7 +380,7 @@ describe('confinement', () => {
 
   it('every file written lives under {root}/{bucket}', async () => {
     const s = make()
-    const paths = ['a.json', 'x/y/z.json', 'café/ü.json', 'game 1/logs.txt']
+    const paths = ['a.json', 'x/y/z.json', 'caf\u00e9/\u00fc.json', 'game 1/logs.txt']
     for (const p of paths) await s.upload({ bucket: 'backup', path: p, fileBase64: b64('{}') })
     const files = await walkFiles(base)
     for (const f of files) {
@@ -402,6 +454,17 @@ describe('sentinel and free-space guards', () => {
     const s2 = make({ statfs: async () => ({ bavail: 10, bsize: 1 }), minFreeBytes: { backup: 0 } })
     await rejectsWith(s2.upload({ bucket: 'backup', path: 'x.json', data: Buffer.alloc(11), contentType: 'application/json' }), 507)
     await s2.upload({ bucket: 'backup', path: 'x.json', data: Buffer.alloc(10), contentType: 'application/json' })
+  })
+
+  it('scoresheets/ has its own smaller floor so the volume never reaches ENOSPC', async () => {
+    await makeRoot()
+    const MiB = 1024 * 1024
+    const s = make({ statfs: async () => ({ bavail: 200 * MiB, bsize: 1 }) })
+    await rejectsWith(s.upload({ bucket: 'scoresheets', path: '2026-10-05/game1_final.json', fileBase64: b64('{}') }), 507, 'OV_STORAGE_LOW_SPACE')
+    const s2 = make({ statfs: async () => ({ bavail: 300 * MiB, bsize: 1 }) })
+    await s2.upload({ bucket: 'scoresheets', path: '2026-10-05/game1_final.json', fileBase64: b64('{}') })
+    const s3 = make({ statfs: async () => ({ bavail: 200 * MiB, bsize: 1 }), minFreeBytes: { scoresheets: 0 } })
+    await s3.upload({ bucket: 'scoresheets', path: '2026-10-05/game2_final.json', fileBase64: b64('{}') })
   })
 
   it('statfs failure refuses writes with 503', async () => {
@@ -497,12 +560,27 @@ describe('list', () => {
     assert.deepEqual(bogus.map((e) => e.name), ['a.json', 'b.json', 'c.json', 'sub'])
   })
 
-  it('search filters names case-insensitively', async () => {
+  it('search is a case-insensitive prefix match (supabase ILIKE search%)', async () => {
     const s = make()
-    for (const n of ['backup_g1_set1.json', 'backup_g1_set2.json', 'other.json']) {
+    for (const n of ['backup_g1_set1.json', 'backup_g1_set2.json', 'other_set1.json']) {
       await s.upload({ bucket: 'backup', path: `x/${n}`, fileBase64: b64('{}') })
     }
-    assert.deepEqual((await s.list({ bucket: 'backup', path: 'x', options: { search: 'SET' } })).map((e) => e.name), ['backup_g1_set1.json', 'backup_g1_set2.json'])
+    assert.deepEqual((await s.list({ bucket: 'backup', path: 'x', options: { search: 'BACKUP_G1' } })).map((e) => e.name), ['backup_g1_set1.json', 'backup_g1_set2.json'])
+    assert.deepEqual(await s.list({ bucket: 'backup', path: 'x', options: { search: 'set1' } }), [])
+  })
+
+  it('name-sorted paging with folders and files mixed, both orders', async () => {
+    const s = make()
+    const dir = path.join(root, 'backup/m')
+    await fs.mkdir(dir, { recursive: true })
+    for (const n of ['b', 'd']) await fs.mkdir(path.join(dir, n))
+    for (const n of ['a.json', 'c.json', 'e.json']) await fs.writeFile(path.join(dir, n), '{}')
+    await fs.symlink(outside, path.join(dir, 'f-link'))
+    const page = (order, offset, limit) => s.list({ bucket: 'backup', path: 'm', options: { sortBy: { column: 'name', order }, offset, limit } })
+    assert.deepEqual((await page('asc', 1, 3)).map((e) => [e.name, e.id === null]), [['b', true], ['c.json', false], ['d', true]])
+    assert.deepEqual((await page('desc', 0, 2)).map((e) => e.name), ['e.json', 'd'])
+    const [c] = await page('asc', 2, 1)
+    assert.equal(c.metadata.size, 2)
   })
 
   it('missing folder, file path and empty bucket give []', async () => {
@@ -536,21 +614,47 @@ describe('quota and owner scoping hooks', () => {
     await rejectsWith(s2.upload({ bucket: 'backup', path: 'a.json', fileBase64: b64('{}') }), 429, 'OV_STORAGE_QUOTA')
   })
 
-  it('createWriteQuota: per-user window by count and bytes; _final.json exempt', async () => {
+  it('createWriteQuota: per-user window by count and bytes; final scoresheets skip the count only', async () => {
     let t = 0
     const q = createWriteQuota({ windowMs: 1000, maxWrites: 2, maxBytes: 100, now: () => t })
     const w = (userId, size = 1, p = 'x.json', bucket = 'backup') => q({ userId, bucket, path: p, size })
     assert.equal(w('a'), true)
     assert.equal(w('a'), true)
     assert.equal(w('a').ok, false)
-    assert.equal(w('b'), true)                                       // separate user
-    assert.equal(w('a', 1, 'd/game1_final.json', 'scoresheets'), true) // exempt
+    assert.equal(w('b'), true)                                                // separate user
+    assert.equal(w('a', 1, '2026-10-05/game1_final.json', 'scoresheets'), true) // exempt from the count
     t = 1000
-    assert.equal(w('a'), true)                                       // new window
-    assert.equal(w('c', 101).ok, false)                              // bytes
+    assert.equal(w('a'), true)                                                // new window
+    assert.equal(w('c', 101).ok, false)                                       // bytes
+  })
+
+  it('createWriteQuota: exempt uploads still hit the byte budget (no fill-the-disk bypass)', async () => {
+    const q = createWriteQuota({ maxWrites: 2, maxBytes: 10, now: () => 0 })
+    const final = (i, size) => q({ userId: 'u', bucket: 'scoresheets', path: `2026-10-05/game${i}_final.json`, size })
+    assert.equal(final(1, 6), true)
+    assert.equal(final(2, 4), true)
+    assert.equal(final(3, 1).ok, false)
+    // the reviewer's probe: names merely ending in _final.json are ordinary writes
+    let ok = 0
+    for (let i = 0; i < 20; i++) if (q({ userId: 'v', bucket: 'scoresheets', path: `junk/f${i}_final.json`, size: 100 }) === true) ok++
+    assert.equal(ok, 0)
+    // separate budgets: backups cannot starve the final scoresheet
+    const q2 = createWriteQuota({ maxWrites: 100, maxBytes: 10, exemptMaxBytes: 50, now: () => 0 })
+    assert.equal(q2({ userId: 'u', bucket: 'backup', path: 'b.json', size: 10 }), true)
+    assert.equal(q2({ userId: 'u', bucket: 'backup', path: 'c.json', size: 1 }).ok, false)
+    assert.equal(q2({ userId: 'u', bucket: 'scoresheets', path: '2026-10-05/game1_final.json', size: 50 }), true)
+  })
+
+  it('createWriteQuota end to end; refused writes (409, 403) do not spend quota', async () => {
     const s = make({ checkQuota: createWriteQuota({ maxWrites: 1 }) })
     await s.upload({ bucket: 'backup', path: 'a.json', fileBase64: b64('{}'), userId: 'u' })
     await rejectsWith(s.upload({ bucket: 'backup', path: 'b.json', fileBase64: b64('{}'), userId: 'u' }), 429)
+
+    const s2 = make({ checkQuota: createWriteQuota({ maxWrites: 1 }) })
+    await s2.upload({ bucket: 'backup', path: 'taken.json', fileBase64: b64('{}'), userId: 'other' })
+    await rejectsWith(s2.upload({ bucket: 'backup', path: 'taken.json', fileBase64: b64('{}'), upsert: false, userId: 'u' }), 409)
+    await rejectsWith(s2.upload({ bucket: 'backup', path: 'taken.json/x.json', fileBase64: b64('{}'), userId: 'u' }), 409)
+    await s2.upload({ bucket: 'backup', path: 'mine.json', fileBase64: b64('{}'), userId: 'u' })
   })
 
   it("ownerScope 'require': first segment must be the caller's id", async () => {
@@ -595,6 +699,25 @@ describe('quota and owner scoping hooks', () => {
     await s.list({ bucket: 'backup', path: '', userId: 'u1' })
     assert.deepEqual([...new Set(seen)].sort(), ['list', 'read', 'write'])
   })
+
+  it('ownerScope predicate returning true allows the path unchanged (no object named "true")', async () => {
+    const s = make({ ownerScope: async () => true })
+    const r = await s.upload({ bucket: 'backup', path: 'a/b.json', fileBase64: b64('{"x":1}'), userId: 'u1' })
+    assert.equal(r.path, 'a/b.json')
+    assert.equal(await exists(path.join(root, 'backup/a/b.json')), true)
+    assert.equal(await exists(path.join(root, 'backup/true')), false)
+    assert.equal((await s.download({ bucket: 'backup', path: 'a/b.json', userId: 'u1' })).toString(), '{"x":1}')
+    assert.deepEqual((await s.list({ bucket: 'backup', path: 'a', userId: 'u1' })).map((e) => e.name), ['b.json'])
+  })
+
+  it('ownerScope returning a non-string, non-true value is forbidden', async () => {
+    for (const out of [{}, { path: 'a.json' }, 1, 0, '', [], ['a.json'], Symbol('x'), 1n]) {
+      const s = make({ ownerScope: () => out })
+      await rejectsWith(s.upload({ bucket: 'backup', path: 'a.json', fileBase64: b64('{}'), userId: 'u1' }), 403, 'OV_STORAGE_FORBIDDEN')
+      await rejectsWith(s.download({ bucket: 'backup', path: 'a.json', userId: 'u1' }), 403)
+    }
+    assert.deepEqual(await fs.readdir(root), [SENTINEL_NAME])
+  })
 })
 
 describe('sweep', () => {
@@ -616,6 +739,8 @@ describe('sweep', () => {
     await fs.symlink(outside, path.join(root, 'backup/backups/link'))
     await fs.writeFile(path.join(root, TMP_DIR_NAME, 'stale.part'), 'x')
     await fs.utimes(path.join(root, TMP_DIR_NAME, 'stale.part'), old, old)
+    // folders last touched long ago are eligible for removal once emptied
+    for (const d of ['backups/backup_g1', 'backups/backup_g2']) await fs.utimes(path.join(root, 'backup', d), old, old)
 
     const r = await s.sweep()
     assert.deepEqual(r, { deletedFiles: 2, deletedBytes: 4, removedDirs: 1, tmpRemoved: 1 })
@@ -624,6 +749,39 @@ describe('sweep', () => {
     assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), true)
     assert.equal(await exists(path.join(outside, 'secret.json')), true)
     assert.equal(await exists(path.join(root, 'backup/backups')), true)
+  })
+
+  it('keeps a freshly created empty folder (an upload may be about to rename into it)', async () => {
+    const s = make() // real clock
+    await fs.mkdir(path.join(root, 'backup/backups/backup_g7'), { recursive: true })
+    const r = await s.sweep()
+    assert.equal(r.removedDirs, 0)
+    assert.equal(await exists(path.join(root, 'backup/backups/backup_g7')), true)
+    // once it is older than the grace period it goes
+    const old = new Date(Date.now() - 10 * 60 * 1000)
+    await fs.utimes(path.join(root, 'backup/backups/backup_g7'), old, old)
+    assert.equal((await s.sweep()).removedDirs, 1)
+  })
+
+  it('an upload whose folder is removed before the rename recreates it and succeeds', async () => {
+    let removed = false
+    const s = make({
+      // runs after resolve() created backup/backups/backup_g5 and before the rename
+      checkQuota: async () => {
+        await fs.rmdir(path.join(root, 'backup/backups/backup_g5'))
+        removed = true
+        return true
+      }
+    })
+    for (const upsert of [true, false]) {
+      removed = false
+      const p = `backups/backup_g5/x_${upsert}.json`
+      await s.upload({ bucket: 'backup', path: p, fileBase64: b64('{"ok":1}'), upsert })
+      assert.equal(removed, true)
+      assert.equal((await s.download({ bucket: 'backup', path: p })).toString(), '{"ok":1}')
+      await fs.rm(path.join(root, 'backup/backups/backup_g5', `x_${upsert}.json`))
+    }
+    assert.deepEqual(await fs.readdir(path.join(root, TMP_DIR_NAME)), [])
   })
 
   it('missing prefix is a no-op', async () => {

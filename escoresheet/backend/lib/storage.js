@@ -15,9 +15,11 @@
  *   signed-url                                                -> 404 (removed, no caller)
  * Errors come back as {data:null, error:{message, code}} with an HTTP status.
  *
- * Usage (see README "Storage" section for the server.js wiring):
+ * Usage (see README "Self-hosted storage" section for the server.js wiring):
  *   import { createStorage, storageOptionsFromEnv } from './lib/storage.js'
  *   const storage = createStorage(storageOptionsFromEnv(process.env))
+ *   // read the JSON body with a cap of storage.maxBodyBytes (not MAX_MATCH_BODY_SIZE);
+ *   // when it is exceeded answer with storage.bodyTooLarge() (413 OV_STORAGE_TOO_LARGE)
  *   const { status, body } = await storage.handle('upload', parsedJsonBody, { userId })
  *
  * No dependencies beyond node: built-ins. Node >= 22 (fs.statfs, String#isWellFormed).
@@ -39,17 +41,28 @@ const GiB = 1024 * MiB
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export const DEFAULTS = Object.freeze({
-  maxFileBytes: 5 * MiB,          // server.js caps the JSON body at 5 MB anyway (~3.7 MB of file)
+  maxFileBytes: 5 * MiB,          // server.js must read bodies up to storage.maxBodyBytes for this to hold
   maxDownloadBytes: 64 * MiB,     // guard for migrated/foreign files
-  minFreeBytes: { backup: 2 * GiB },
+  // Free-space floor per bucket. backup/ stops first, so the last 2 GiB stay
+  // for scoresheets; scoresheets/ keeps a small floor so the volume never hits ENOSPC.
+  minFreeBytes: Object.freeze({ scoresheets: 256 * MiB, backup: 2 * GiB }),
   listDefaultLimit: 100,          // supabase-js default
   listMaxLimit: 1000,
   maxPathLength: 1024,
   maxSegments: 32,
   maxSegmentBytes: 255,
   tmpMaxAgeMs: 60 * 60 * 1000,
-  sweepMaxAgeMs: 30 * DAY_MS
+  sweepMaxAgeMs: 30 * DAY_MS,
+  sweepDirGraceMs: 5 * 60 * 1000  // sweep never removes a folder touched this recently
 })
+
+/** Base64 + JSON envelope overhead allowance for the HTTP body cap. */
+const BODY_OVERHEAD_BYTES = 64 * 1024
+
+/** JSON body size server.js must accept so an upload of maxFileBytes is not cut off. */
+export function maxBodyBytesFor(maxFileBytes) {
+  return Math.ceil((maxFileBytes * 4) / 3) + BODY_OVERHEAD_BYTES
+}
 
 const EXT_CONTENT_TYPES = {
   '.json': 'application/json',
@@ -60,8 +73,20 @@ const EXT_CONTENT_TYPES = {
 
 const SORT_COLUMNS = new Set(['name', 'created_at', 'updated_at', 'last_accessed_at'])
 const USER_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
-// Control characters, backslash, and invisible / bidi-override code points.
-const FORBIDDEN_CHARS_RE = /[\u0000-\u001f\u007f\\​-‏‪-‮⁠-⁯﻿￹-￻]/
+// Written with \u escapes only, so no invisible character sits in the source.
+//   \u0000-\u001f \u007f-\u009f  C0, DEL, C1 controls (incl. U+0085 NEL)
+//   \u00ad \u061c \u180e         soft hyphen, Arabic letter mark, Mongolian vowel separator
+//   \u200b-\u200f                zero-width space/joiners, LRM/RLM
+//   \u2028-\u202e                line/paragraph separators, bidi embeddings/overrides
+//   \u2060-\u206f                word joiner, invisible operators, bidi isolates
+//   \ufeff \ufff9-\ufffb         BOM / ZWNBSP, interlinear annotation
+//   \u2044 \u2215 \u2216 \u29f8 \u29f9 \ufe68 \uff0f \uff3c
+//                                slash / backslash look-alikes that NFKC keeps as-is
+//   \\ : < > " | ? *             backslash, and characters Windows (NTFS) refuses or
+//                                reads specially (':' opens an alternate data stream)
+const FORBIDDEN_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\u2044\u2215\u2216\u29f8\u29f9\ufe68\uff0f\uff3c\\:<>"|?*]/
+// Windows device names, with or without an extension (CON, nul.json, COM1.txt, ...).
+const WINDOWS_RESERVED_RE = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(\..*)?$/i
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/
 
 // ==================== Errors ====================
@@ -116,10 +141,12 @@ export function parseStoragePath(input, { allowEmpty = false, maxPathLength = DE
   for (const seg of segs) {
     if (!seg) return null                       // leading, trailing or double slash
     if (seg.startsWith('.')) return null        // '.', '..', hidden names, our own .tmp/.ovdata
+    if (seg.endsWith('.') || seg.endsWith(' ')) return null // Windows strips these: 'a.' and 'a' collide
     if (Buffer.byteLength(seg, 'utf8') > maxSegmentBytes) return null
     // Compatibility forms must not smuggle in dots or separators (e.g. U+FF0E, U+2025, U+FF0F).
     const k = seg.normalize('NFKC')
-    if (k.startsWith('.') || k.includes('/') || k.includes('\\') || FORBIDDEN_CHARS_RE.test(k)) return null
+    if (k.startsWith('.') || k.includes('/') || FORBIDDEN_CHARS_RE.test(k)) return null
+    if (WINDOWS_RESERVED_RE.test(k)) return null
   }
   return segs
 }
@@ -133,9 +160,14 @@ export function normalizeContentType(contentType, fileName = '') {
   return EXT_CONTENT_TYPES[ext] || 'application/octet-stream'
 }
 
-/** server.js rate limiting: approved-match scoresheets must never be throttled. */
+/**
+ * Approved-match scoresheets ({YYYY-MM-DD}/game{n}_final.json, exactly the
+ * shape scoresheetUploader writes) are exempt from the write *count*; their
+ * bytes are still counted (see createWriteQuota).
+ */
+const FINAL_SCORESHEET_RE = /^\d{4}-\d{2}-\d{2}\/game[^/]+_final\.json$/
 export function isRateLimitExempt({ bucket, path: p } = {}) {
-  return bucket === 'scoresheets' && typeof p === 'string' && p.endsWith('_final.json')
+  return bucket === 'scoresheets' && typeof p === 'string' && FINAL_SCORESHEET_RE.test(p)
 }
 
 /** Stable UUID-shaped id for an object key (supabase returned a uuid). */
@@ -163,14 +195,17 @@ function isCode(e, ...codes) {
 
 /**
  * Ready-made per-user write quota for the checkQuota hook: a fixed window of
- * maxWrites uploads and maxBytes per user. Exempt paths (default: scoresheets
- * *_final.json) always pass and are not counted.
+ * maxWrites uploads and maxBytes per user. Exempt paths (default: approved
+ * scoresheets, see isRateLimitExempt) skip the write count but are charged to
+ * their own byte budget (exemptMaxBytes, default = maxBytes), so ordinary
+ * writes cannot starve them and they cannot be used to bypass the byte cap.
  */
-export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes = 200 * MiB, exempt = isRateLimitExempt, now = Date.now } = {}) {
+export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes = 200 * MiB, exemptMaxBytes = maxBytes, exempt = isRateLimitExempt, now = Date.now } = {}) {
   const usage = new Map()
   let lastPrune = now()
+  const refuse = { ok: false, message: 'Storage write quota exceeded, try again later' }
   return function checkQuota({ userId, bucket, path: p, size }) {
-    if (exempt && exempt({ bucket, path: p })) return true
+    const isExempt = Boolean(exempt && exempt({ bucket, path: p }))
     const t = now()
     if (t - lastPrune > windowMs) {
       for (const [k, v] of usage) if (t - v.start >= windowMs) usage.delete(k)
@@ -179,12 +214,15 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
     const key = userId || 'anonymous'
     let u = usage.get(key)
     if (!u || t - u.start >= windowMs) {
-      u = { start: t, writes: 0, bytes: 0 }
+      u = { start: t, writes: 0, bytes: 0, exemptBytes: 0 }
       usage.set(key, u)
     }
-    if (u.writes + 1 > maxWrites || u.bytes + size > maxBytes) {
-      return { ok: false, message: 'Storage write quota exceeded, try again later' }
+    if (isExempt) {
+      if (u.exemptBytes + size > exemptMaxBytes) return refuse
+      u.exemptBytes += size
+      return true
     }
+    if (u.writes + 1 > maxWrites || u.bytes + size > maxBytes) return refuse
     u.writes += 1
     u.bytes += size
     return true
@@ -193,23 +231,38 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
 
 /**
  * Options from environment variables:
- *   STORAGE_DIR                 root (default /data/storage)
- *   STORAGE_BACKUP_MIN_FREE_MB  free-space floor for backup/ writes (default 2048)
- *   STORAGE_MAX_FILE_MB         per-object size cap (default 5)
- *   STORAGE_OWNER_SCOPE         off | require | prefix (default off; Phase 7 security release)
+ *   STORAGE_DIR                      root (default /data/storage)
+ *   STORAGE_BACKUP_MIN_FREE_MB       free-space floor for backup/ writes (default 2048)
+ *   STORAGE_SCORESHEETS_MIN_FREE_MB  free-space floor for scoresheets/ writes (default 256)
+ *   STORAGE_MAX_FILE_MB              per-object size cap (default 5)
+ *   STORAGE_OWNER_SCOPE              off | require | prefix (default off; Phase 7 security release)
+ * Throws on a value it does not understand, so a typo fails at startup
+ * instead of silently running with the default.
  */
 export function storageOptionsFromEnv(env = process.env) {
   const opts = { root: env.STORAGE_DIR || DEFAULT_ROOT }
-  if (env.STORAGE_BACKUP_MIN_FREE_MB !== undefined && env.STORAGE_BACKUP_MIN_FREE_MB !== '') {
-    const mb = Number(env.STORAGE_BACKUP_MIN_FREE_MB)
-    if (Number.isFinite(mb) && mb >= 0) opts.minFreeBytes = { backup: Math.round(mb * MiB) }
+  const megabytes = (name, { allowZero }) => {
+    const raw = env[name]
+    if (raw === undefined || String(raw).trim() === '') return undefined
+    const mb = Number(raw)
+    if (!Number.isFinite(mb) || mb < 0 || (!allowZero && mb === 0)) {
+      throw new TypeError(`storage: invalid ${name}=${JSON.stringify(raw)}`)
+    }
+    return Math.round(mb * MiB)
   }
-  if (env.STORAGE_MAX_FILE_MB) {
-    const mb = Number(env.STORAGE_MAX_FILE_MB)
-    if (Number.isFinite(mb) && mb > 0) opts.maxFileBytes = Math.round(mb * MiB)
-  }
+  const floors = {}
+  const backupFloor = megabytes('STORAGE_BACKUP_MIN_FREE_MB', { allowZero: true })
+  const sheetsFloor = megabytes('STORAGE_SCORESHEETS_MIN_FREE_MB', { allowZero: true })
+  if (backupFloor !== undefined) floors.backup = backupFloor
+  if (sheetsFloor !== undefined) floors.scoresheets = sheetsFloor
+  if (Object.keys(floors).length) opts.minFreeBytes = floors
+  const maxFile = megabytes('STORAGE_MAX_FILE_MB', { allowZero: false })
+  if (maxFile !== undefined) opts.maxFileBytes = maxFile
   const scope = (env.STORAGE_OWNER_SCOPE || '').trim().toLowerCase()
   if (scope === 'require' || scope === 'prefix') opts.ownerScope = scope
+  else if (scope !== '' && scope !== 'off') {
+    throw new TypeError(`storage: STORAGE_OWNER_SCOPE must be off, require or prefix (got ${JSON.stringify(env.STORAGE_OWNER_SCOPE)})`)
+  }
   return opts
 }
 
@@ -222,13 +275,18 @@ export function storageOptionsFromEnv(env = process.env) {
  * @param {number}   [options.maxFileBytes=5 MiB]
  * @param {number}   [options.maxDownloadBytes=64 MiB]
  * @param {string[]} [options.allowedContentTypes] media types accepted on upload
- * @param {Object<string,number>} [options.minFreeBytes={backup: 2 GiB}] per-bucket free-space floor
+ * @param {Object<string,number>} [options.minFreeBytes={scoresheets: 256 MiB, backup: 2 GiB}] per-bucket free-space floor
  * @param {(ctx:{userId,bucket,path,size,contentType}) => (boolean|{ok:boolean,message?:string}|Promise)} [options.checkQuota]
- *        per-user write quota hook; false / {ok:false} refuses with 429
+ *        per-user write quota hook, called once the write is otherwise known to
+ *        succeed (after the path, existence and free-space checks);
+ *        false / {ok:false} refuses with 429
  * @param {false|'require'|'prefix'|Function} [options.ownerScope=false]
  *        'require': the first path segment must be the caller's user id;
  *        'prefix': the user id is prepended transparently;
- *        function({op,userId,bucket,path}) -> path string to use, or null/false to refuse (403)
+ *        function({op,userId,bucket,path}) returning (or resolving to):
+ *          true          allow, path unchanged (predicate style)
+ *          string        allow, use this path instead (re-validated)
+ *          anything else (false, null, undefined, objects, numbers) -> 403
  * @param {string[]} [options.ownerScopeBuckets] buckets the owner scope applies to (default: all)
  * @param {Function} [options.statfs] injectable fs.statfs (tests)
  * @param {Function} [options.now] injectable clock (ms)
@@ -243,6 +301,8 @@ export function createStorage(options = {}) {
   const minFreeBytes = { ...DEFAULTS.minFreeBytes, ...(options.minFreeBytes || {}) }
   const listDefaultLimit = options.listDefaultLimit ?? DEFAULTS.listDefaultLimit
   const listMaxLimit = options.listMaxLimit ?? DEFAULTS.listMaxLimit
+  const maxBodyBytes = maxBodyBytesFor(maxFileBytes)
+  const sweepDirGraceMs = options.sweepDirGraceMs ?? DEFAULTS.sweepDirGraceMs
   const checkQuota = options.checkQuota || null
   const ownerScope = options.ownerScope || false
   const ownerScopeBuckets = new Set(options.ownerScopeBuckets || buckets)
@@ -282,8 +342,9 @@ export function createStorage(options = {}) {
       return segs
     }
     const out = await ownerScope({ op, userId, bucket, path: segs.join('/') })
-    if (out === null || out === undefined || out === false) throw err.forbidden()
-    const scoped = parseStoragePath(String(out), { allowEmpty: op === 'list', ...pathLimits })
+    if (out === true) return segs
+    if (typeof out !== 'string') throw err.forbidden()
+    const scoped = parseStoragePath(out, { allowEmpty: op === 'list', ...pathLimits })
     if (!scoped) throw err.forbidden()
     return scoped
   }
@@ -427,9 +488,8 @@ export function createStorage(options = {}) {
 
     const rr = await assertWritable()
     await assertFreeSpace(rr, bucket, buf.length)
-    await runQuota({ userId: userId ?? null, bucket, path: segs.join('/'), size: buf.length, contentType: ct })
 
-    const { dir, target } = await resolve(bucket, diskSegs, { create: true })
+    let { dir, target } = await resolve(bucket, diskSegs, { create: true })
     const doUpsert = upsert !== false
 
     // Existing entry checks (a symlink or folder at the target is never replaced).
@@ -442,6 +502,9 @@ export function createStorage(options = {}) {
       if (!isCode(e, 'ENOENT')) throw e
     }
 
+    // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).
+    await runQuota({ userId: userId ?? null, bucket, path: segs.join('/'), size: buf.length, contentType: ct })
+
     const tmpDir = path.join(rr, TMP_DIR_NAME)
     await ensureDir(tmpDir, true)
     const tmp = path.join(tmpDir, `${crypto.randomUUID()}.part`)
@@ -453,24 +516,14 @@ export function createStorage(options = {}) {
       } finally {
         await fh.close()
       }
-      if (doUpsert) {
-        await fsp.rename(tmp, target)
-      } else {
-        // link() fails atomically with EEXIST if someone else won the race.
-        try {
-          await fsp.link(tmp, target)
-        } catch (e) {
-          if (isCode(e, 'EEXIST')) throw err.exists()
-          if (!isCode(e, 'EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV')) throw e
-          // Filesystem without hard links: best-effort non-atomic fallback.
-          try {
-            await fsp.lstat(target)
-            throw err.exists()
-          } catch (e2) {
-            if (!isCode(e2, 'ENOENT')) throw e2
-          }
-          await fsp.rename(tmp, target)
-        }
+      try {
+        await commit(tmp, target, doUpsert)
+      } catch (e) {
+        if (!isCode(e, 'ENOENT')) throw e
+        // The target folder vanished between resolve() and the rename (sweep()
+        // removing a folder it had just emptied): recreate it and retry once.
+        ;({ dir, target } = await resolve(bucket, diskSegs, { create: true }))
+        await commit(tmp, target, doUpsert)
       }
     } finally {
       await fsp.rm(tmp, { force: true }).catch(() => {})
@@ -480,6 +533,29 @@ export function createStorage(options = {}) {
     const key = diskSegs.join('/')
     const clientPath = segs.join('/')
     return { path: clientPath, id: objectId(bucket, key), fullPath: `${bucket}/${clientPath}` }
+  }
+
+  /** Move the finished temp file into place (rename for upsert, link() otherwise). */
+  async function commit(tmp, target, doUpsert) {
+    if (doUpsert) {
+      await fsp.rename(tmp, target)
+      return
+    }
+    // link() fails atomically with EEXIST if someone else won the race.
+    try {
+      await fsp.link(tmp, target)
+    } catch (e) {
+      if (isCode(e, 'EEXIST')) throw err.exists()
+      if (!isCode(e, 'EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV')) throw e
+      // Filesystem without hard links: best-effort non-atomic fallback.
+      try {
+        await fsp.lstat(target)
+        throw err.exists()
+      } catch (e2) {
+        if (!isCode(e2, 'ENOENT')) throw e2
+      }
+      await fsp.rename(tmp, target)
+    }
   }
 
   async function syncDir(dir) {
@@ -551,7 +627,8 @@ export function createStorage(options = {}) {
    * List the immediate children of a folder, supabase-style. Folders appear as
    * {name, id:null, ...null}. Options: limit (default 100, max 1000), offset,
    * sortBy {column: name|created_at|updated_at|last_accessed_at, order: asc|desc},
-   * search (case-insensitive substring of the name). A missing folder gives [].
+   * search (case-insensitive prefix of the name, like supabase's ILIKE search || '%').
+   * A missing folder gives [].
    */
   async function list({ bucket, path: p, options, userId } = {}) {
     assertBucket(bucket)
@@ -574,39 +651,48 @@ export function createStorage(options = {}) {
       throw e
     }
     const keyPrefix = diskSegs.length ? diskSegs.join('/') + '/' : ''
-    const entries = []
-    await Promise.all(dirents.map(async (d) => {
-      const name = d.name
-      if (name.startsWith('.')) return
-      if (search && !name.toLowerCase().includes(search)) return
-      if (d.isDirectory()) {
-        entries.push(folderEntry(name))
-      } else if (d.isFile()) {
-        try {
-          const st = await fsp.lstat(path.join(r.dir, name))
-          if (st.isFile()) entries.push(fileEntry(bucket, keyPrefix + name, name, st))
-        } catch {
-          // raced with a delete: skip
-        }
-      }
-      // symlinks, sockets, devices: never listed
-    }))
-
-    entries.sort((a, b) => {
-      if (column !== 'name') {
-        const av = a[column]
-        const bv = b[column]
-        if (av !== bv) {
-          // Postgres semantics: NULLS LAST for ASC, NULLS FIRST for DESC.
-          if (av === null) return desc ? -1 : 1
-          if (bv === null) return desc ? 1 : -1
-          const c = av < bv ? -1 : 1
-          return desc ? -c : c
-        }
-        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-      }
+    // Filter on the dirent alone first; symlinks, sockets and devices are never listed.
+    const candidates = dirents.filter((d) => {
+      if (d.name.startsWith('.')) return false
+      if (search && !d.name.toLowerCase().startsWith(search)) return false
+      return d.isDirectory() || d.isFile()
+    })
+    const byName = (a, b) => {
       const c = a.name < b.name ? -1 : a.name > b.name ? 1 : 0
       return desc ? -c : c
+    }
+    const toEntries = async (ds) => {
+      const out = await Promise.all(ds.map(async (d) => {
+        if (d.isDirectory()) return folderEntry(d.name)
+        try {
+          const st = await fsp.lstat(path.join(r.dir, d.name))
+          return st.isFile() ? fileEntry(bucket, keyPrefix + d.name, d.name, st) : null
+        } catch {
+          return null // raced with a delete: skip
+        }
+      }))
+      return out.filter(Boolean)
+    }
+
+    if (column === 'name') {
+      // Every caller sorts by name: page on the names, stat only that page
+      // (backup/backups/backup_g1 can hold tens of thousands of snapshots).
+      candidates.sort(byName)
+      return toEntries(candidates.slice(offset, offset + limit))
+    }
+
+    const entries = await toEntries(candidates)
+    entries.sort((a, b) => {
+      const av = a[column]
+      const bv = b[column]
+      if (av !== bv) {
+        // Postgres semantics: NULLS LAST for ASC, NULLS FIRST for DESC.
+        if (av === null) return desc ? -1 : 1
+        if (bv === null) return desc ? 1 : -1
+        const c = av < bv ? -1 : 1
+        return desc ? -c : c
+      }
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
     })
     return entries.slice(offset, offset + limit)
   }
@@ -638,7 +724,17 @@ export function createStorage(options = {}) {
       for (const d of dirents) {
         const full = path.join(dir, d.name)
         if (d.isDirectory()) {
+          // mtime taken before our own deletions touch it: a folder created or
+          // written to in the last few minutes may be an upload in flight
+          // (resolve() made it, the rename has not landed yet), so keep it.
+          let recent = true
+          try {
+            recent = (await fsp.lstat(full)).mtimeMs > now() - sweepDirGraceMs
+          } catch {
+            // raced: leave it alone
+          }
           await walk(full)
+          if (recent) continue
           try {
             await fsp.rmdir(full)
             result.removedDirs++
@@ -751,22 +847,34 @@ export function createStorage(options = {}) {
       }
       return { status: 404, body: { data: null, error: { message: 'Not found', code: 'OV_STORAGE_UNKNOWN_ACTION' } } }
     } catch (e) {
-      if (e instanceof StorageError) {
-        return { status: e.status, body: { data: null, error: { message: e.message, code: e.code } } }
-      }
-      logger.error?.(`[Storage] ${action} failed:`, e?.code || '', e?.message)
-      return { status: 500, body: { data: null, error: { message: 'Storage operation failed', code: 'OV_STORAGE_INTERNAL' } } }
+      return errorResult(e, action)
     }
+  }
+
+  /** The {status, body} for a request body larger than maxBodyBytes (server.js: 413, never a generic 400). */
+  function bodyTooLarge() {
+    return errorResult(err.tooLarge())
+  }
+
+  function errorResult(e, action = '') {
+    if (e instanceof StorageError) {
+      return { status: e.status, body: { data: null, error: { message: e.message, code: e.code } } }
+    }
+    logger.error?.(`[Storage] ${action} failed:`, e?.code || '', e?.message)
+    return { status: 500, body: { data: null, error: { message: 'Storage operation failed', code: 'OV_STORAGE_INTERNAL' } } }
   }
 
   return {
     root,
     buckets: [...buckets],
+    maxFileBytes,
+    maxBodyBytes,
     upload,
     download,
     list,
     sweep,
     health,
-    handle
+    handle,
+    bodyTooLarge
   }
 }
