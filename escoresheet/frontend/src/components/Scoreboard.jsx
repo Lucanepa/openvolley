@@ -31,6 +31,7 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../util
 import { getSetResult, getFirstServeForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure } from '../domain/rotation'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner } from '../domain/matchEnd'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -9254,101 +9255,94 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   }, [data?.set, data?.events, data?.homePlayers, data?.awayPlayers, isLiberoUnable, getAvailablePlayersForRedesignation])
 
-  // Handle forfait - award all remaining points and sets to opponent
+  // Handle forfait - the team loses the match (FIVB 6.4): the opponent gets the
+  // points needed to win the current set and the sets needed to win the match,
+  // then the match ends. Used by the manual "Stop the match" forfeit and by the
+  // automatic forfait (injury / expulsion / disqualification with no substitute).
   const handleForfait = useCallback(async (teamKey, reason) => {
     cLogger.logHandler('handleForfait', { teamKey, reason })
     if (!data?.set || !data?.match) return
 
     const opponentKey = teamKey === 'home' ? 'away' : 'home'
-    const allSets = await db.sets.where({ matchId }).sortBy('index')
     const currentSetIndex = data.set.index
-    const is5thSet = currentSetIndex === 5
-    const pointsToWin = is5thSet ? 15 : 25
 
-    // Award current set to opponent
-    const currentSet = allSets.find(s => s.index === currentSetIndex)
-    if (currentSet && !currentSet.finished) {
-      const teamPoints = currentSet[teamKey === 'home' ? 'homePoints' : 'awayPoints'] || 0
-      const currentOpponentPoints = currentSet[opponentKey === 'home' ? 'homePoints' : 'awayPoints'] || 0
+    // Hold the set-creation lock and the transition overlay: while sets are being
+    // finished, ensureActiveSet and the "match already finished" effect must not
+    // create a set or navigate on their own.
+    setCreationInProgressRef.current = true
+    setSetTransitionLoading({ step: 'Forfait...' })
+    try {
+      const matchRecord = await db.matches.get(matchId)
+      const isTest = matchRecord?.test === true
+      const allSets = await db.sets.where({ matchId }).sortBy('index')
+      const plan = planForfeit({ sets: allSets, forfeitingTeam: teamKey, currentSetIndex, bestOf: matchRecord?.bestOf })
 
-      // Calculate target points - must have 2-point lead if in deuce
-      // If forfeiting team has >= pointsToWin - 1, we need forfeiting team's score + 2
-      let opponentPoints = pointsToWin
-      if (teamPoints >= pointsToWin - 1) {
-        // Deuce scenario: winner needs forfeiting team's score + 2 to ensure 2-point lead
-        opponentPoints = teamPoints + 2
-      }
+      // Mark the match over FIRST so no recovery path spawns a new set
+      await db.matches.update(matchId, { status: 'ended', forfeitTeam: teamKey, forfeitReason: reason })
 
-      // Award points until opponent wins
-      const pointsNeeded = opponentPoints - currentOpponentPoints
-      if (pointsNeeded > 0) {
-        for (let i = 0; i < pointsNeeded; i++) {
-          await logEvent('point', {
-            team: opponentKey
+      const nowIso = roundToMinute(new Date().toISOString())
+      for (const planned of plan.sets) {
+        const { index, homePoints, awayPoints } = planned
+        if (planned.isCurrent) {
+          // Award points until opponent wins (point events keep the running score)
+          for (let i = 0; i < planned.awardedPoints; i++) {
+            await logEvent('point', { team: opponentKey }, { setIndexOverride: index })
+          }
+        }
+
+        let setId = planned.id
+        if (setId != null) {
+          await db.sets.update(setId, { finished: true, homePoints, awayPoints, endTime: nowIso })
+        } else {
+          setId = await db.sets.add({ matchId, index, homePoints, awayPoints, finished: true, startTime: nowIso, endTime: nowIso })
+        }
+
+        if (!isTest && matchRecord?.seed_key) {
+          await db.sync_queue.add({
+            resource: 'set',
+            action: planned.id != null ? 'update' : 'insert',
+            payload: planned.id != null
+              ? { external_id: String(setId), home_points: homePoints, away_points: awayPoints, finished: true, end_time: nowIso }
+              : { external_id: String(setId), match_id: matchRecord.seed_key, index, home_points: homePoints, away_points: awayPoints, finished: true, test: false, start_time: nowIso, end_time: nowIso },
+            ts: new Date().toISOString(),
+            status: 'queued'
           })
         }
+
+        await logEvent('set_end', {
+          team: opponentKey,
+          setIndex: index,
+          homePoints,
+          awayPoints,
+          reason: 'forfait'
+        }, { setIndexOverride: index })
       }
 
-      // End the set
-      await db.sets.update(currentSet.id, {
-        finished: true,
-        [opponentKey === 'home' ? 'homePoints' : 'awayPoints']: opponentPoints,
-        [teamKey === 'home' ? 'homePoints' : 'awayPoints']: teamPoints
-      })
+      // Log forfait event
+      await logEvent('forfait', {
+        team: teamKey,
+        reason: reason,
+        setIndex: currentSetIndex
+      }, { setIndexOverride: currentSetIndex })
 
-      // Log set end
-      await logEvent('set_end', {
-        team: opponentKey,
-        setIndex: currentSetIndex,
-        homePoints: opponentKey === 'home' ? opponentPoints : teamPoints,
-        awayPoints: opponentKey === 'away' ? opponentPoints : teamPoints,
-        reason: 'forfait'
-      })
+      syncToReferee()
+      onTriggerEventBackup?.('match_end')
+
+      // Navigate to match end (App.finishSet syncs the match result)
+      const lastSet = await db.sets.where({ matchId }).sortBy('index').then(s => s[s.length - 1])
+      if (onFinishSet) onFinishSet(lastSet || data.set)
+    } finally {
+      setCreationInProgressRef.current = false
+      setSetTransitionLoading(null)
     }
-
-    // Award all remaining sets to opponent
-    const remainingSets = allSets.filter(s => s.index > currentSetIndex && !s.finished)
-    for (const set of remainingSets) {
-      const setPointsToWin = set.index === 5 ? 15 : 25
-      await db.sets.update(set.id, {
-        finished: true,
-        [opponentKey === 'home' ? 'homePoints' : 'awayPoints']: setPointsToWin,
-        [teamKey === 'home' ? 'homePoints' : 'awayPoints']: 0
-      })
-
-      await logEvent('set_end', {
-        team: opponentKey,
-        setIndex: set.index,
-        homePoints: opponentKey === 'home' ? setPointsToWin : 0,
-        awayPoints: opponentKey === 'away' ? setPointsToWin : 0,
-        reason: 'forfait'
-      })
-    }
-
-    // Log forfait event
-    await logEvent('forfait', {
-      team: teamKey,
-      reason: reason,
-      setIndex: currentSetIndex
-    })
-  }, [data?.set, data?.match, matchId, logEvent])
+  }, [data?.set, data?.match, matchId, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet])
 
   // Handle manual forfeit from "Stop the match" menu
   const handleManualForfeit = useCallback(async (teamKey) => {
     if (!data?.set || !data?.match) return
-
-    // Use existing handleForfait logic
+    // handleForfait awards the sets, ends the match and navigates to Match End
     await handleForfait(teamKey, 'forfeit')
-
-    // Update match status to 'ended'
-    await db.matches.update(matchId, { status: 'ended' })
-
-    // Trigger backup
-    onTriggerEventBackup?.('match_end')
-
-    // Navigate to match end
-    if (onFinishSet) onFinishSet(data.set)
-  }, [data?.set, data?.match, matchId, handleForfait, onTriggerEventBackup, onFinishSet])
+  }, [data?.set, data?.match, handleForfait])
 
   // Handle "Impossibility to resume" - end match as-is without a winner
   const handleImpossibilityToResume = useCallback(async () => {
@@ -9367,6 +9361,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       status: 'ended',
       stoppedReason: 'impossibility_to_resume'
     })
+    syncToReferee()
 
     // Trigger backup
     onTriggerEventBackup?.('match_end')
@@ -9407,9 +9402,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('Error exporting match data:', error)
     }
 
-    // Navigate to match end
+    // Navigate to match end (App.finishSet sees status 'ended' and creates no set)
     if (onFinishSet) onFinishSet(data.set)
-  }, [data?.set, data?.match, matchId, logEvent, onTriggerEventBackup, onFinishSet])
+  }, [data?.set, data?.match, matchId, logEvent, syncToReferee, onTriggerEventBackup, onFinishSet])
 
   // Complete the stop match flow after remarks are recorded
   const completeStopMatchFlow = useCallback(async () => {
