@@ -15,13 +15,14 @@ vi.mock('../utils/backendConfig', () => ({
   clearBackendOverride: vi.fn()
 }))
 
-// apiFrom('match_live_state').select().eq().order() -> next queued response
-const api = vi.hoisted(() => ({ responses: [], calls: 0 }))
+// apiFrom('match_live_state').select().eq().gte().order() -> next queued response
+const api = vi.hoisted(() => ({ responses: [], calls: 0, filters: [] }))
 vi.mock('../lib/apiClient', () => ({
   apiFrom: () => {
     const chain = {
       select: () => chain,
       eq: () => chain,
+      gte: (column, value) => { api.filters.push({ type: 'gte', column, value }); return chain },
       order: () => {
         api.calls++
         const r = api.responses.length > 1 ? api.responses.shift() : api.responses[0]
@@ -94,6 +95,7 @@ describe('LivescoreApp', () => {
     env.override = null
     api.responses = []
     api.calls = 0
+    api.filters = []
     rt.handler = null
     rt.handlers = {}
     window.innerWidth = 1024
@@ -214,6 +216,34 @@ describe('LivescoreApp', () => {
     expect(screen.getByText('unreachable')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Change server'))
     expect(screen.getByText('Connect to Server')).toBeInTheDocument()
+  })
+
+  it('a best-of-3 decider is set 3; FINAL counts the sets Team B won; FINAL games are not counted live', async () => {
+    const now = Date.now()
+    const decider = row('a', { best_of: 3, current_set: 5, sets_won_a: 1, sets_won_b: 1, points_a: 8, points_b: 5, last_event_type: 'point', updated_at: new Date(now).toISOString() })
+    // the live row of game 991303: B's sets never counted (old scoreboard)
+    const finished = row('b', {
+      best_of: 3, current_set: 5, match_status: 'ended', sets_won_a: 1, sets_won_b: 1, points_a: 10, points_b: 15,
+      last_event_type: 'match_end', updated_at: new Date(now).toISOString(),
+      matches: { set_results: [{ set: 1, home: 25, away: 2 }, { set: 2, home: 18, away: 25 }, { set: 5, home: 10, away: 15 }] }
+    })
+    // abandoned in January (stuck at 'Set 4', interval)
+    const stuck = row('c', { current_set: 4, match_status: 'interval', sets_won_a: 2, updated_at: '2026-01-29T19:00:00Z' })
+    api.responses = [[decider, finished, stuck]]
+    render(<LivescoreApp />)
+    await flush()
+    expect(api.filters.some((f) => f.column === 'updated_at')).toBe(true)
+    expect(screen.getByText('Set 3 • Sets: 1 - 1')).toBeInTheDocument()
+    expect(screen.queryByText('Home c')).toBeNull()
+    expect(screen.getByTestId('header').textContent).toContain('1 game live')
+    fireEvent.click(screen.getByText('Home b'))
+    expect(screen.getByText('FINAL')).toBeInTheDocument()
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('10-15')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('back'))
+    fireEvent.click(screen.getByText('Home a'))
+    expect(screen.getByText('SET').nextSibling.textContent).toBe('3')
   })
 
   it('a match already finished at load is not refetched in a loop', async () => {

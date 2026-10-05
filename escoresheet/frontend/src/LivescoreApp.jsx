@@ -7,7 +7,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
-import { listedGames, getSetResults, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, isEndedStatus, shouldAutoConnect } from './utils/livescoreModel'
+import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, isEndedStatus, shouldAutoConnect, liveSetsWon, liveSetResults, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS } from './utils/livescoreModel'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { PhoneIcon } from './components/icons'
 
@@ -54,6 +54,12 @@ export default function LivescoreApp() {
   const watchedRef = useRef(new Set())
   const finalRefetchAttemptsRef = useRef(new Map())
   const [finalRefetchTick, setFinalRefetchTick] = useState(0)
+  // Clock for dropping stale rows (finished hours ago, abandoned) from the list
+  const [listNow, setListNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setListNow(Date.now()), 60 * 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   // ?server= sets the backend for this and later visits (the initial state
   // already counts it as a known server)
@@ -94,6 +100,8 @@ export default function LivescoreApp() {
       const { data, error: fetchError } = await apiFrom('match_live_state')
         .select('*, matches!match_live_state_match_id_fkey_cascade(set_results)')
         .eq('sport_type', 'indoor')
+        // Rows of old (finished or abandoned) matches stay in the table
+        .gte('updated_at', new Date(Date.now() - LIVE_FETCH_WINDOW_MS).toISOString())
         .order('updated_at', { ascending: false })
 
       if (fetchError) {
@@ -177,7 +185,7 @@ export default function LivescoreApp() {
 
   // Only started (or finished) matches are listed: a match appears when it is
   // under way, not at the first lineup confirm. See utils/livescoreModel.js.
-  const shownGames = useMemo(() => listedGames(liveGames, shownStartedRef.current), [liveGames])
+  const shownGames = useMemo(() => listedGames(liveGames, shownStartedRef.current, listNow), [liveGames, listNow])
 
   // FINAL view set results: match_live_state UPDATEs carry no set_results,
   // so a match that ends while this page watches it keeps the (empty)
@@ -215,20 +223,20 @@ export default function LivescoreApp() {
     const isMatchEnded = isEndedStatus(game.match_status)
     const isInSetInterval = !isMatchEnded && game.set_interval_active
 
-    // When match is ended, show set score as main score
-    const leftSets = isALeft ? (game.sets_won_a || 0) : (game.sets_won_b || 0)
-    const rightSets = isALeft ? (game.sets_won_b || 0) : (game.sets_won_a || 0)
+    // When match is ended, show set score as main score (a finished match
+    // counts its set results, see liveSetsWon)
+    const setsWon = liveSetsWon(game)
+    const leftSets = isALeft ? setsWon.a : setsWon.b
+    const rightSets = isALeft ? setsWon.b : setsWon.a
     const leftPoints = isALeft ? (game.points_a || 0) : (game.points_b || 0)
     const rightPoints = isALeft ? (game.points_b || 0) : (game.points_a || 0)
 
-    // Set results (live-state row, else the joined matches row), to left/right
-    // Format from DB: [{set: 1, home: 25, away: 20}, ...]
-    // Team A is always home in our system
-    const rawSetResults = getSetResults(game)
-    const setResults = rawSetResults.map(s => ({
+    // Set results (live-state row, else the joined matches row), stored as
+    // {set, home, away}: as Team A / Team B (Team A is home or away), to left/right
+    const setResults = liveSetResults(game).map(s => ({
       set: s.set,
-      left: isALeft ? s.home : s.away,
-      right: isALeft ? s.away : s.home
+      left: isALeft ? s.a : s.b,
+      right: isALeft ? s.b : s.a
     }))
 
     return {
@@ -274,7 +282,7 @@ export default function LivescoreApp() {
   // Fullscreen view for selected game
   if (selectedGameData) {
     const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(selectedGameData)
-    const currentSet = selectedGameData.current_set || 1
+    const currentSet = liveSetNumber(selectedGameData)
     const gameN = selectedGameData.game_n || ''
     const league = selectedGameData.league || ''
     const gender = selectedGameData.gender || ''
@@ -591,7 +599,7 @@ export default function LivescoreApp() {
       {/* Header */}
       <DashboardHeader
         title={t('livescore.title', 'Live Scores')}
-        subtitle={`${shownGames.length} ${shownGames.length === 1 ? 'game' : 'games'} live`}
+        subtitle={`${countLiveGames(shownGames)} ${countLiveGames(shownGames) === 1 ? 'game' : 'games'} live`}
         onLoadGames={fetchLiveGames}
         loadingMatches={loading}
         matchCount={shownGames.length}
@@ -736,7 +744,7 @@ export default function LivescoreApp() {
                   }}>
                     {isMatchEnded
                       ? t('livescore.final', 'FINAL')
-                      : `Set ${game.current_set || 1} • Sets: ${leftSets} - ${rightSets}`
+                      : `Set ${liveSetNumber(game)} • Sets: ${leftSets} - ${rightSets}`
                     }
                   </div>
                 </button>
