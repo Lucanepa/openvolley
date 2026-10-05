@@ -113,6 +113,45 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 
 Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works on all cloud platforms) or SMTP credentials.
 
+## Self-hosted storage (`lib/storage.js`)
+
+Replaces Supabase Storage behind `POST /api/storage/upload`, `/download` and `/list` (buckets `scoresheets` and `backup`). Objects live at `{STORAGE_DIR}/{bucket}/{path}`. The request and response shapes are the ones `apiStorage` in `frontend/src/lib/apiClient.js` already uses; `signed-url` is gone (404, it had no caller).
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `STORAGE_DIR` | Storage root. Must contain the sentinel file `.ovdata`, or every write is refused with 503 (protects against an unmounted volume). | `/data/storage` |
+| `STORAGE_BACKUP_MIN_FREE_MB` | `backup/` writes are refused (507) when free space would drop below this, so the space above the scoresheets floor stays for scoresheets. | `2048` |
+| `STORAGE_SCORESHEETS_MIN_FREE_MB` | Smaller floor for `scoresheets/` writes, so the volume never reaches ENOSPC. | `256` |
+| `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). server.js must read the body with `storage.maxBodyBytes` (base64 + 64 KiB) for this to hold. | `5` |
+| `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently). For the Phase 7 security release; leave off until then. Any other value stops the server at startup. | `off` |
+
+Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
+
+Wiring in server.js (one block for the three actions; `userId` is the verified caller):
+
+```js
+const storage = createStorage({ ...storageOptionsFromEnv(process.env), checkQuota: createWriteQuota() })
+// ...
+let body
+try {
+  body = await readJsonBody(req, storage.maxBodyBytes) // not MAX_MATCH_BODY_SIZE
+} catch (e) {
+  const r = e.message === 'Body too large' ? storage.bodyTooLarge() : { status: 400, body: { data: null, error: { message: 'Invalid request' } } }
+  res.writeHead(r.status, { 'Content-Type': 'application/json' })
+  return res.end(JSON.stringify(r.body))
+}
+const { status, body: out } = await storage.handle(action, body, { userId })
+```
+
+Preparing a root by hand (dev, staging):
+
+```bash
+mkdir -p ~/ov-storage && touch ~/ov-storage/.ovdata
+STORAGE_DIR=~/ov-storage node server.js
+```
+
+Tests: `npm test` (or `node --test tests/storage.test.js`). They use a temp directory only, no Postgres and no Docker.
+
 ## API Endpoints
 
 ### `GET /health`
