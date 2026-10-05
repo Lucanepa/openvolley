@@ -64,6 +64,10 @@ import { FOCUS_RING } from '../ui/Button.jsx'
  *  to about 44px tall without moving the layout. */
 const SB_TOOLBAR_BTN = `relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] ${FOCUS_RING}`
 
+/** Side-column group heading (Bench, Liberos, Bench officials): the kit
+ *  SectionHeader face, a name on the dark 1.5px rule. Size stays in cqw. */
+const SB_SIDE_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800'
+
 /**
  * SYNC ARCHITECTURE NOTE:
  * -----------------------
@@ -15174,15 +15178,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div data-help-id="scoreboard-bench-left" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainBenchExpanded(!leftMainBenchExpanded)}
+                    className={SB_SIDE_HEAD}
                     style={{
-                      margin: '0 0 2.5cqw',
+                      // Same outer height as before (2.5cqw below the text):
+                      // the 1.5px rule is taken out of the margin.
+                      margin: '0 0 calc(1.9cqw - 1.5px)',
+                      paddingBottom: '0.6cqw',
                       fontSize: '5.6cqw',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      cursor: isCompactMode ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
+                      cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
                     <span>{t('scoreboard.roster.bench')}</span>
@@ -15521,15 +15524,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setLeftMainLiberosExpanded(!leftMainLiberosExpanded)}
+                    className={SB_SIDE_HEAD}
                     style={{
-                      margin: '0 0 2.5cqw',
+                      // Same outer height as before (2.5cqw below the text):
+                      // the 1.5px rule is taken out of the margin.
+                      margin: '0 0 calc(1.9cqw - 1.5px)',
+                      paddingBottom: '0.6cqw',
                       fontSize: '5.6cqw',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      cursor: isCompactMode ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
+                      cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
                     <span>{t('scoreboard.roster.liberos')}</span>
@@ -15754,15 +15756,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div>
                   <h4
                     onClick={() => isCompactMode && setLeftMainOfficialsExpanded(!leftMainOfficialsExpanded)}
+                    className={SB_SIDE_HEAD}
                     style={{
-                      margin: '0 0 2.5cqw',
+                      // Same outer height as before (2.5cqw below the text):
+                      // the 1.5px rule is taken out of the margin.
+                      margin: '0 0 calc(1.9cqw - 1.5px)',
+                      paddingBottom: '0.6cqw',
                       fontSize: '5.6cqw',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      cursor: isCompactMode ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
+                      cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
                     <span>{t('scoreboard.roster.benchOfficials')}</span>
@@ -18557,15 +18558,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div data-help-id="scoreboard-bench-right" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainBenchExpanded(!rightMainBenchExpanded)}
+                    className={SB_SIDE_HEAD}
                     style={{
-                      margin: '0 0 2.5cqw',
+                      // Same outer height as before (2.5cqw below the text):
+                      // the 1.5px rule is taken out of the margin.
+                      margin: '0 0 calc(1.9cqw - 1.5px)',
+                      paddingBottom: '0.6cqw',
                       fontSize: '5.6cqw',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      cursor: isCompactMode ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
+                      cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
                     <span>{t('scoreboard.roster.bench')}</span>
@@ -18904,15 +18904,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
                   <h4
                     onClick={() => isCompactMode && setRightMainLiberosExpanded(!rightMainLiberosExpanded)}
+                    className={SB_SIDE_HEAD}
                     style={{
-                      margin: '0 0 2.5cqw',
+                      // Same outer height as before (2.5cqw below the text):
+                      // the 1.5px rule is taken out of the margin.
+                      margin: '0 0 calc(1.9cqw - 1.5px)',
+                      paddingBottom: '0.6cqw',
                       fontSize: '5.6cqw',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      cursor: isCompactMode ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
+                      cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
                     <span>{t('scoreboard.roster.liberos')}</span>
@@ -19122,15 +19121,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div>
                   <h4
                     onClick={() => isCompactMode && setRightMainOfficialsExpanded(!rightMainOfficialsExpanded)}
+                    className={SB_SIDE_HEAD}
                     style={{
-                      margin: '0 0 2.5cqw',
+                      // Same outer height as before (2.5cqw below the text):
+                      // the 1.5px rule is taken out of the margin.
+                      margin: '0 0 calc(1.9cqw - 1.5px)',
+                      paddingBottom: '0.6cqw',
                       fontSize: '5.6cqw',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      cursor: isCompactMode ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
+                      cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
                     <span>{t('scoreboard.roster.benchOfficials')}</span>
@@ -29215,7 +29213,7 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
 function ScoreboardTeamColumn({ side, children }) {
   return (
     <aside
-      className="team-controls"
+      className="team-controls shadow-card"
       data-side={side}
     >
       {children}
@@ -29223,6 +29221,9 @@ function ScoreboardTeamColumn({ side, children }) {
   )
 }
 
+// The centre card is frozen as a whole (score, serve, court, rally controls).
+// No shadow-card here: in tablet mode the column sits in a scale(0.85) layer
+// and a shadow on it changed the court's anti-aliasing (pixel diff != 0).
 function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
