@@ -19,7 +19,8 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
-import { getMatchWinner, clearedPostMatchSignatures } from '../domain/matchEnd'
+import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
+import { syncJobsForEvents } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
 
 // Helper to format duration as hh:mm
@@ -1128,7 +1129,55 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         showAlert(t('matchEnd.noSetsReopen', 'No sets found to reopen'), 'error')
         return
       }
-      const lastSet = allSets.reduce((a, b) => (a.index > b.index ? a : b))
+      let lastSet = allSets.reduce((a, b) => (a.index > b.index ? a : b))
+
+      // A forfeit is REVERSED, not reopened as it stands: the last set is often
+      // one the forfeit created (0-25) and the forfeit set holds awarded points.
+      // Remove the created sets, the awarded points, the forfeit set_end and
+      // forfait events, and reopen the forfeit set at its pre-forfeit score
+      // (planForfeitReversal, tested).
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const forfaitIndexes = allEvents
+        .filter(e => e.type === 'forfait' && (match?.forfeitTeam ? e.payload?.scope !== 'set' : true))
+        .map(e => e.setIndex)
+      const fromSetIndex = forfaitIndexes.length && match?.forfeitTeam
+        ? Math.min(lastSet.index, ...forfaitIndexes)
+        : lastSet.index
+      const forfeitPlan = planForfeitReversal({ events: allEvents, sets: allSets, fromSetIndex })
+      if (forfeitPlan.hasForfeit) {
+        console.log('[MatchEnd] Reversing forfeit:', forfeitPlan)
+        const deleteIds = new Set(forfeitPlan.deleteEventIds)
+        await db.events.bulkDelete(forfeitPlan.deleteEventIds)
+        if (forfeitPlan.deleteSetIds.length > 0) await db.sets.bulkDelete(forfeitPlan.deleteSetIds)
+        for (const r of forfeitPlan.restoreSets) {
+          await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
+        }
+        // Never send the removed rows to the cloud
+        const deletedSetIds = new Set(forfeitPlan.deleteSetIds.map(String))
+        const queued = await db.sync_queue.where('status').equals('queued').toArray()
+        const staleJobs = [
+          ...syncJobsForEvents(queued, deleteIds),
+          ...queued.filter(j => j.resource === 'set' && deletedSetIds.has(String(j.payload?.external_id)))
+        ]
+        if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
+        if (!match?.test && match?.seed_key) {
+          for (const r of forfeitPlan.restoreSets) {
+            await db.sync_queue.add({
+              resource: 'set',
+              action: 'update',
+              payload: { external_id: String(r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
+              ts: new Date().toISOString(),
+              status: 'queued'
+            })
+          }
+        }
+        // The set to reopen is the forfeit set, or else the last remaining set
+        const remainingSets = allSets.filter(x => !deletedSetIds.has(String(x.id)))
+        const target = forfeitPlan.reopenSetIndex != null
+          ? remainingSets.find(x => x.index === forfeitPlan.reopenSetIndex)
+          : (remainingSets.length ? remainingSets.reduce((a, b) => (a.index > b.index ? a : b)) : null)
+        if (target) lastSet = target
+      }
 
       console.log('[MatchEnd] Reopening last set:', { id: lastSet.id, index: lastSet.index })
 
