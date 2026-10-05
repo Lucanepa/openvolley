@@ -102,7 +102,8 @@ async function initPocketBase() {
 if (POCKETBASE_URL) initPocketBase()
 
 // Allowed tables/buckets for proxy endpoints
-const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches', 'teams']
+// ('teams' was dropped: the table no longer exists, only a dead test loader read it)
+const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches']
 const ALLOWED_BUCKETS = ['scoresheets', 'backup']
 const ALLOWED_RPC = ['delete_user']
 const DB_RATE_LIMIT_MAX = 200
@@ -111,18 +112,20 @@ const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
 const STORAGE_RATE_LIMIT_MAX = 200
 
-// Per-table column whitelist for filter/order operations
+// Per-table column whitelist for filter/order operations.
+// Only real columns (checked against the live schema) that the indoor and beach
+// clients filter or order on. Secret columns are never filterable: an anonymous
+// eq/like filter on game_pin would let anyone probe match PINs.
 const ALLOWED_COLUMNS = {
-  matches: ['id', 'external_id', 'user_id', 'sport_type', 'game_n', 'game_pin', 'scheduled_at', 'status', 'created_at', 'match_id', 'last_name', 'first_name', 'match_info->>competition_name'],
-  sets: ['id', 'external_id', 'match_id', 'set_number', 'sport_type', 'user_id', 'created_at', 'last_name', 'first_name'],
-  events: ['id', 'external_id', 'match_id', 'game_n', 'game_pin', 'sport_type', 'status'],
-  match_live_state: ['id', 'external_id', 'match_id', 'sport_type', 'status', 'scheduled_at'],
+  matches: ['id', 'external_id', 'sport_type', 'game_n', 'scheduled_at', 'status', 'test', 'created_at', 'match_info->>competition_name'],
+  sets: ['id', 'external_id', 'match_id', 'index', 'sport_type'],
+  events: ['id', 'external_id', 'match_id', 'set_index', 'seq', 'ts', 'sport_type'],
+  match_live_state: ['id', 'match_id', 'sport_type', 'match_status', 'updated_at'],
   profiles: ['id', 'user_id'],
   referee_database: ['id', 'sport_type', 'last_name', 'first_name'],
-  user_matches: ['id', 'user_id', 'match_id', 'external_id'],
+  user_matches: ['id', 'user_id', 'match_external_id', 'role', 'sport_type', 'created_at'],
   svrz_games: ['id', 'gender', 'league', 'datetime'],
-  beach_competition_matches: ['id', 'external_id', 'scheduled_at', 'status', 'competition_id'],
-  teams: ['id']
+  beach_competition_matches: ['id', 'scheduled_at', 'status']
 }
 
 // Columns/JSONB keys that must NEVER be returned to a client. Match PINs are the
