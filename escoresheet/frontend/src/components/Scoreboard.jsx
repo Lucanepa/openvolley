@@ -48,7 +48,9 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon, CardIcon } from './icons'
 import { cn } from '../ui/cn.js'
-import { FOCUS_RING } from '../ui/Button.jsx'
+import { FOCUS_RING, Button } from '../ui/Button.jsx'
+import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
+import { SectionHeader } from '../ui/SectionHeader.jsx'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -67,6 +69,38 @@ const SB_TOOLBAR_BTN = `relative inline-flex items-center justify-center rounded
 /** Side-column group heading (Bench, Liberos, Bench officials): the kit
  *  SectionHeader face, a name on the dark 1.5px rule. Size stays in cqw. */
 const SB_SIDE_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 font-bold uppercase tracking-wider text-stone-800'
+
+/**
+ * A kit Button sized for courtside dialogs: h-11 (44px, RESTYLE-SPEC R12),
+ * in its own `.ov-kit` box (display: contents, so the parent's flex layout
+ * applies) so the legacy `button {}` rule, the scoring green, cannot reach it.
+ * Variants on the scoreboard (R4): 'secondary' cancel/close, 'dark' neutral
+ * commit, 'positive' confirm/save, 'danger-soft' destructive (no red fill).
+ */
+function SbButton({ variant = 'secondary', className, ...rest }) {
+  return (
+    <span className="ov-kit contents">
+      <Button variant={variant} size="lg" className={cn('h-11 min-w-[88px]', className)} {...rest} />
+    </span>
+  )
+}
+
+/** Footer of a non-courtside dialog (Edit PIN): cancel on the left, commit on
+ *  the right (volleyui). The courtside dialogs keep the base order, commit
+ *  first and centred, so the scorer's muscle memory holds; that deviation
+ *  waits for the owner's decision (P5 open issue). */
+const SB_FOOTER = 'flex flex-wrap items-center justify-end gap-2'
+/** Nested block inside a dialog (kit Block): hairline, sunken, no shadow. */
+const SB_BLOCK = 'rounded-xl border border-stone-200/70 bg-stone-50/60'
+/** Micro-label over a value (stone-500 for AA on white, R13). */
+const SB_LABEL = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500'
+/** Kit text field on the scoreboard: the ring is slate, not red (R4). */
+const SB_INPUT = 'w-full h-11 px-3 rounded-xl border border-stone-300 bg-white text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-900/40'
+/** Collapsible section header row inside Manual changes (a 52px target). */
+const SB_DISCLOSURE = `w-full min-h-12 flex items-center justify-between gap-3 px-4 py-3 rounded-xl border-0 bg-transparent text-left text-sm font-semibold tracking-normal text-stone-800 hover:bg-stone-100/70 transition-colors cursor-pointer ${FOCUS_RING}`
+/** Destructive row tool (Delete in Manual changes): outline, never a red fill (R4);
+ *  h-11, since Manual changes is used on the courtside tablet (R12). */
+const SB_ROW_DELETE = `inline-flex items-center justify-center h-11 min-w-[64px] px-3 rounded-lg border border-red-200 bg-white text-xs font-medium tracking-normal text-red-700 hover:bg-red-50 transition-colors cursor-pointer ${FOCUS_RING}`
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -19316,192 +19350,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </>
       )}
 
-      {/* Menu Modal - Keep for Options submenu */}
+      {/* Menu Modal - Keep for Options submenu (only the legacy phone layout opens it).
+          The kit action sheet: 48px rows, slate scrim. */}
       {menuModal && (
-        <Modal
-          title={t('scoreboard.menu.menu')}
-          open={true}
-          onClose={() => setMenuModal(false)}
-          width={400}
-        >
-          <div style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowLogs(true)
-                  setMenuModal(false)
-                }}>
-                {t('scoreboard.menu.showActionLog', 'Show Action Log')}
-              </div>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowSanctions(true)
-                  setMenuModal(false)
-                }}>
-                {t('scoreboard.menu.showSanctionsResults', 'Show Sanctions and Results')}
-              </div>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowManualPanel(true)
-                  setMenuModal(false)
-                }}>
-                {t('scoreboard.menu.manualChanges', 'Manual Changes')}
-              </div>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowRemarks(true)
-                  setMenuModal(false)
-                }}>
-                {t('scoreboard.menu.openRemarksRecording', 'Open Remarks Recording')}
-              </div>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowRosters(true)
-                  setMenuModal(false)
-                }}>
-                {t('scoreboard.showRosters')}
-              </div>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowPinsModal(true)
-                  setMenuModal(false)
-                }}>
-                {t('scoreboard.menu.showPins', 'Show PINs')}
-              </div>
-              {onOpenMatchSetup && (
-                <div style={{
-                  background: 'var(--panel-2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  padding: '12px 16px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--panel)'
-                    e.currentTarget.style.borderColor = 'var(--border)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--panel-2)'
-                    e.currentTarget.style.borderColor = 'var(--border)'
-                  }}
-                  onClick={() => {
-                    onOpenMatchSetup()
-                    setMenuModal(false)
-                  }}>
-                  {t('scoreboard.menu.showMatchSetup', 'Show Match Setup')}
-                </div>
-              )}
-
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                marginTop: '8px',
-                borderTop: '1px solid var(--border)'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={async () => {
+        <div className="ov-kit" style={{ position: 'relative', zIndex: 1000 }}>
+          <ActionSheet open={true} onClose={() => setMenuModal(false)} title={t('scoreboard.menu.menu')} closeLabel={t('common.close', 'Close')} railOffset={false}>
+            <ActionSheetItem onClick={() => { setShowLogs(true); setMenuModal(false) }}>
+              {t('scoreboard.menu.showActionLog', 'Show Action Log')}
+            </ActionSheetItem>
+            <ActionSheetItem onClick={() => { setShowSanctions(true); setMenuModal(false) }}>
+              {t('scoreboard.menu.showSanctionsResults', 'Show Sanctions and Results')}
+            </ActionSheetItem>
+            <ActionSheetItem onClick={() => { setShowManualPanel(true); setMenuModal(false) }}>
+              {t('scoreboard.menu.manualChanges', 'Manual Changes')}
+            </ActionSheetItem>
+            <ActionSheetItem onClick={() => { setShowRemarks(true); setMenuModal(false) }}>
+              {t('scoreboard.menu.openRemarksRecording', 'Open Remarks Recording')}
+            </ActionSheetItem>
+            <ActionSheetItem onClick={() => { setShowRosters(true); setMenuModal(false) }}>
+              {t('scoreboard.showRosters')}
+            </ActionSheetItem>
+            <ActionSheetItem onClick={() => { setShowPinsModal(true); setMenuModal(false) }}>
+              {t('scoreboard.menu.showPins', 'Show PINs')}
+            </ActionSheetItem>
+            {onOpenMatchSetup && (
+              <ActionSheetItem onClick={() => { onOpenMatchSetup(); setMenuModal(false) }}>
+                {t('scoreboard.menu.showMatchSetup', 'Show Match Setup')}
+              </ActionSheetItem>
+            )}
+            <div className="my-1 h-px bg-stone-100" role="separator" />
+            <ActionSheetItem icon={DownloadIcon} onClick={async () => {
                   try {
                     // Export all database data
                     const allMatches = await db.matches.toArray()
@@ -19542,34 +19420,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     showAlert(t('scoreboard.errors.exportFailed'), 'error')
                   }
                 }}>
-                <DownloadIcon size={16} /> {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
-              </div>
-              <div style={{
-                background: 'var(--panel-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                marginTop: '8px',
-                borderTop: '1px solid var(--border)'
-              }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel-2)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-                onClick={() => {
-                  setShowOptionsInMenu(true)
-                }}>
-                <SettingsIcon size={16} /> {t('scoreboard.menu.options', 'Options')}
-              </div>
-            </div>
-          </div>
-        </Modal>
+              {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
+            </ActionSheetItem>
+            <ActionSheetItem icon={SettingsIcon} onClick={() => { setShowOptionsInMenu(true) }}>
+              {t('scoreboard.menu.options', 'Options')}
+            </ActionSheetItem>
+          </ActionSheet>
+        </div>
       )}
 
       {/* Show PINs Modal */}
@@ -19580,29 +19437,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setShowPinsModal(false)}
           width={500}
         >
-          <div style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Empty state: a test or offline match has no PINs */}
+              {!(data?.match?.refereePin && data?.match?.refereeConnectionEnabled === true) &&
+                !data?.match?.gamePin &&
+                !(data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled === true) &&
+                !(data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled === true) && (
+                  <p className="m-0 text-sm text-stone-500">{t('scoreboard.pins.noneSet', 'No PINs are set for this match.')}</p>
+                )}
               {/* Referee PIN */}
               {data?.match?.refereePin && data?.match?.refereeConnectionEnabled === true && (
                 <div style={{
                   display: 'flex',
-                  gap: '16px',
+                  gap: '12px',
                   width: '100%'
                 }}>
-                  <div style={{
-                    background: 'var(--panel-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    minWidth: 0
-                  }}>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Referee PIN</div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                  <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
+                    <div className={SB_LABEL}>Referee PIN</div>
+                    <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                       {String(data.match.refereePin).padStart(6, '0')}
                     </div>
                   </div>
@@ -19613,23 +19466,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {data?.match?.gamePin && (
                 <div style={{
                   display: 'flex',
-                  gap: '16px',
+                  gap: '12px',
                   width: '100%'
                 }}>
-                  <div style={{
-                    background: 'var(--panel-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    minWidth: 0
-                  }}>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Game PIN</div>
-                    <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                  <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
+                    <div className={SB_LABEL}>Game PIN</div>
+                    <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                       {String(data.match.gamePin).padStart(6, '0')}
                     </div>
                   </div>
@@ -19641,48 +19483,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 (data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled === true)) && (
                   <div style={{
                     display: 'flex',
-                    gap: '16px',
+                    gap: '12px',
                     width: '100%'
                   }}>
                     {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled === true && (
-                      <div style={{
-                        background: 'var(--panel-2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        flex: 1,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        minWidth: 0
-                      }}>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
+                        <div className={SB_LABEL}>
                           {data?.homeTeam?.name || 'Home Team'} Bench PIN
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                           {String(data.match.homeTeamPin).padStart(6, '0')}
                         </div>
                       </div>
                     )}
 
                     {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled === true && (
-                      <div style={{
-                        background: 'var(--panel-2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        flex: 1,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        minWidth: 0
-                      }}>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
+                        <div className={SB_LABEL}>
                           {data?.awayTeam?.name || 'Away Team'} Bench PIN
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '2px', wordBreak: 'break-all' }}>
+                        <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                           {String(data.match.awayTeamPin).padStart(6, '0')}
                         </div>
                       </div>
@@ -19702,7 +19522,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={handleCancelCaptainOnCourt}
           width={360}
         >
-          <div style={{ padding: '16px' }}>
+          <div>
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
@@ -19742,22 +19562,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })()}
             </div>
 
-            <button
-              onClick={handleCancelCaptainOnCourt}
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '13px',
-                fontWeight: 600,
-                background: 'var(--panel)',
-                color: 'var(--muted)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
+            <SbButton block onClick={handleCancelCaptainOnCourt}>
               {t('common.cancel', 'Cancel')}
-            </button>
+            </SbButton>
           </div>
         </Modal>
       )}
@@ -19868,10 +19675,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }}
           width={800}
         >
-          <div style={{ padding: '24px' }}>
+          <div>
             {!selectedHelpTopic ? (
               <div>
-                <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--muted)' }}>
+                <p className="text-sm text-stone-600" style={{ marginBottom: '16px' }}>
                   Select a topic to view video guides and explanations:
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' }}>
@@ -19890,29 +19697,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <div
                       key={topic.id}
                       onClick={() => setSelectedHelpTopic(topic.id)}
-                      style={{
-                        background: 'var(--panel-2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--panel)'
-                        e.currentTarget.style.borderColor = 'var(--border)'
-                        e.currentTarget.style.transform = 'translateY(-2px)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--panel-2)'
-                        e.currentTarget.style.borderColor = 'var(--border)'
-                        e.currentTarget.style.transform = 'translateY(0)'
-                      }}
+                      className={cn(SB_BLOCK, 'p-4 cursor-pointer hover:bg-white hover:border-stone-300 transition-colors')}
                     >
-                      <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>
+                      <div className="text-sm font-semibold text-stone-900 mb-1">
                         {topic.title}
                       </div>
-                      <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
+                      <div className="text-xs text-stone-500">
                         {topic.description}
                       </div>
                     </div>
@@ -19921,21 +19711,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </div>
             ) : (
               <div>
-                <button
-                  onClick={() => setSelectedHelpTopic(null)}
-                  style={{
-                    marginBottom: '20px',
-                    padding: '8px 16px',
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  ← Back to Topics
-                </button>
+                <div className="mb-4">
+                  <SbButton onClick={() => setSelectedHelpTopic(null)}>
+                    ← Back to Topics
+                  </SbButton>
+                </div>
                 {getHelpContent(selectedHelpTopic)}
               </div>
             )}
@@ -19951,22 +19731,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setShowLogs(false)}
           width={1200}
         >
-          <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <div>
             <div style={{ marginBottom: '16px' }}>
               <input
                 type="text"
                 placeholder={t('scoreboard.menu.searchEvents')}
                 value={logSearchQuery}
                 onChange={(e) => setLogSearchQuery(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '6px',
-                  color: 'var(--text)',
-                  width: '100%'
-                }}
+                className={SB_INPUT}
               />
             </div>
             {(() => {
@@ -20300,7 +20072,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })
 
               return (
-                <div style={{ overflowX: 'auto' }}>
+                <div className="overflow-x-auto rounded-lg border border-stone-200">
                   <table style={{
                     width: '100%',
                     borderCollapse: 'collapse',
@@ -20308,18 +20080,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     userSelect: 'text'
                   }}>
                     <thead>
-                      <tr style={{
-                        borderBottom: '2px solid var(--border)',
-                        background: 'var(--panel-2)'
-                      }}>
-                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>ID</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Time</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Team</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Participant</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Set</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Score</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Type</th>
-                        <th style={{ padding: '10px 8px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Action</th>
+                      {/* Kit table head: stone-50, 11px caps, stone-500 */}
+                      <tr className="bg-stone-50 border-b border-stone-200 text-[11px] uppercase tracking-wide text-stone-500">
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 700, whiteSpace: 'nowrap' }}>ID</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 700, whiteSpace: 'nowrap' }}>Time</th>
+                        <th style={{ padding: '8px', textAlign: 'center', fontWeight: 700, whiteSpace: 'nowrap' }}>Team</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 700, whiteSpace: 'nowrap' }}>Participant</th>
+                        <th style={{ padding: '8px', textAlign: 'center', fontWeight: 700, whiteSpace: 'nowrap' }}>Set</th>
+                        <th style={{ padding: '8px', textAlign: 'center', fontWeight: 700, whiteSpace: 'nowrap' }}>Score</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 700, whiteSpace: 'nowrap' }}>Type</th>
+                        <th style={{ padding: '8px', textAlign: 'left', fontWeight: 700, whiteSpace: 'nowrap' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -20412,34 +20182,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }}
           width={650}
         >
-          <div style={{ padding: '16px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <div>
             {/* Collapsible Section: Current Set */}
-            <div style={{
-              marginBottom: '12px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              overflow: 'hidden'
-            }}>
+            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
               <button
                 onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, currentSet: !prev.currentSet }))}
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: 600
-                }}
+                className={SB_DISCLOSURE}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '18px' }}>⚡</span>
-                  Current Set
+                  Current set
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.currentSet ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
               </button>
@@ -20649,7 +20401,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontWeight: 600
                               }}
                             >
-                              <SwitchIcon size={14} /> Switch Sides
+                              <SwitchIcon size={14} /> Switch sides
                             </button>
                             <button
                               className="secondary"
@@ -20709,7 +20461,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 fontWeight: 600
                               }}
                             >
-                              <VolleyballIcon size={14} /> Switch Serve
+                              <VolleyballIcon size={14} /> Switch serve
                             </button>
                           </div>
                         </div>
@@ -20891,32 +20643,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
 
             {/* Collapsible Section: Score & Sets */}
-            <div style={{
-              marginBottom: '12px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              overflow: 'hidden'
-            }}>
+            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
               <button
                 onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, scores: !prev.scores }))}
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: 600
-                }}
+                className={SB_DISCLOSURE}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <ChartIcon size={18} />
-                  Score &amp; Sets
+                  Score &amp; sets
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.scores ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
               </button>
@@ -21117,32 +20851,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
 
             {/* Collapsible Section: Match Settings */}
-            <div style={{
-              marginBottom: '12px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              overflow: 'hidden'
-            }}>
+            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
               <button
                 onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, matchSettings: !prev.matchSettings }))}
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: 600
-                }}
+                className={SB_DISCLOSURE}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <SettingsIcon size={18} />
-                  Match Settings
+                  Match settings
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.matchSettings ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
               </button>
@@ -21247,32 +20963,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
 
             {/* Collapsible Section: Event History */}
-            <div style={{
-              marginBottom: '12px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              overflow: 'hidden'
-            }}>
+            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
               <button
                 onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, events: !prev.events }))}
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: 600
-                }}
+                className={SB_DISCLOSURE}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <NotebookIcon size={18} />
-                  Event History
+                  Event history
                 </span>
                 <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.events ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
               </button>
@@ -21364,7 +21062,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 </select>
                                 <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deletePointEvent'))) {
                                       const deletedTeam = team || '?'
@@ -21377,11 +21075,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       notifyScoresheetUpdate('delete_point_event')
                                     }
                                   }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
+                                  style={{ marginLeft: 'auto' }}
                                 >
                                   Delete
                                 </button>
@@ -21477,7 +21171,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteTimeoutEvent'))) {
                                       const deletedTeam = team || '?'
@@ -21488,11 +21182,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
+                                  style={{ marginLeft: 'auto' }}
                                 >
                                   Delete
                                 </button>
@@ -21741,7 +21431,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   Dsq
                                 </label>
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteSubstitutionEvent'))) {
                                       const subSetIndex = event.setIndex
@@ -21770,11 +21460,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         { setIndex: subSetIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
+                                  style={{ marginLeft: 'auto' }}
                                 >
                                   Delete
                                 </button>
@@ -21994,7 +21680,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   </select>
                                 )}
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteSanctionEvent'))) {
                                       // discardEvents re-derives the team-sanction flags
@@ -22005,11 +21691,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
+                                  style={{ marginLeft: 'auto' }}
                                 >
                                   Delete
                                 </button>
@@ -22312,7 +21994,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   </>
                                 )}
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
                                       await discardEvents([event])
@@ -22322,11 +22004,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         { setIndex, scoreStr: `${homeScore}-${awayScore}` })
                                     }
                                   }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
+                                  style={{ marginLeft: 'auto' }}
                                 >
                                   Delete
                                 </button>
@@ -22420,17 +22098,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   Edit
                                 </button>
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteLineupEvent'))) {
                                       await discardEvents([event])
                                     }
                                   }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px',
-                                    marginLeft: 'auto'
-                                  }}
+                                  style={{ marginLeft: 'auto' }}
                                 >
                                   Delete
                                 </button>
@@ -22446,28 +22120,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
 
             {/* Collapsible Section: Advanced */}
-            <div style={{
-              marginBottom: '12px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              overflow: 'hidden'
-            }}>
+            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
               <button
                 onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, advanced: !prev.advanced }))}
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: 600
-                }}
+                className={SB_DISCLOSURE}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <WrenchIcon size={18} />
@@ -22711,7 +22367,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           fontSize: '12px'
                         }}
                       >
-                        Add Event
+                        Add event
                       </button>
                     </div>
                   </div>
@@ -22776,7 +22432,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   {t('common.setIndex', { index: setIndex })} - {description}
                                 </span>
                                 <button
-                                  className="danger"
+                                  className={SB_ROW_DELETE}
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
                                       await discardEvents([event])
@@ -22786,10 +22442,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         `Quick deleted ${description} (Set ${setIndex})`,
                                         { setIndex })
                                     }
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px'
                                   }}
                                 >
                                   Delete
@@ -22805,32 +22457,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
 
             {/* Collapsible Section: Manual Changes Summary */}
-            <div style={{
-              marginBottom: '12px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              overflow: 'hidden'
-            }}>
+            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
               <button
                 onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, summary: !prev.summary }))}
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  fontWeight: 600
-                }}
+                className={SB_DISCLOSURE}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <ClipboardIcon size={18} />
-                  Manual Changes Summary
+                  Manual changes summary
                   {manualChangesLog.length > 0 && (
                     <span style={{
                       background: 'var(--primary)',
@@ -22975,12 +22609,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }}
           width={600}
         >
-          <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
-            <section className="panel">
-              <h3>{t('scoreboard.remarks.title')}</h3>
+          <div>
+            <section>
+              <h3 className="m-0 mb-2 text-sm font-semibold text-stone-700">{t('scoreboard.remarks.title')}</h3>
               <textarea
                 ref={remarksTextareaRef}
-                className="remarks-area"
                 placeholder={t('scoreboard.remarks.placeholder')}
                 value={remarksText}
                 onChange={e => {
@@ -23019,19 +22652,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
                   }
                 }}
-                style={{
-                  width: '95%',
-                  minHeight: '300px',
-                  fontSize: '14px',
-                  fontFamily: 'monospace',
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '6px',
-                  color: 'var(--text)',
-                  resize: 'vertical'
-                }}
+                className="w-full min-h-[300px] px-3 py-2 rounded-lg border border-stone-300 bg-white text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-900/40 resize-y"
               />
-              <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--muted)' }}>
+              <div className="mt-3 text-xs text-stone-500 space-y-0.5">
                 <div>• Existing remarks are shown above</div>
                 <div>• Add new remarks on a new line</div>
                 <div>• Changes are saved automatically when you click outside the text area</div>
@@ -28058,7 +27681,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 padding: '8px 0'
               }}>
                 <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                  Enable Dashboard
+                  Enable dashboard
                 </span>
                 <div style={{
                   position: 'relative',
@@ -28163,12 +27786,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }}
           width={400}
         >
-          <div style={{ padding: '24px' }}>
+          <div>
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+              <label htmlFor="sb-edit-pin" className="block mb-1.5 text-xs font-medium text-stone-500">
                 Enter new 6-digit PIN:
               </label>
               <input
+                id="sb-edit-pin"
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -28182,61 +27806,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
                 placeholder={t('matchSetup.placeholders.pinCode')}
                 maxLength={6}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  fontSize: '20px',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                  letterSpacing: '4px',
-                  fontFamily: 'monospace',
-                  background: 'var(--bg)',
-                  border: pinError ? '2px solid #ef4444' : '2px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--text)'
-                }}
+                aria-invalid={pinError ? true : undefined}
+                className={cn(SB_INPUT, 'h-12 text-center font-mono text-xl font-bold tracking-[0.3em]', pinError && 'border-red-400 bg-red-50')}
               />
               {pinError && (
-                <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '8px' }}>
+                <p className="mt-2 text-xs font-medium text-red-700">
                   {pinError}
                 </p>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div className={SB_FOOTER}>
+              <SbButton
                 onClick={() => {
                   setEditPinModal(false)
                   setPinError('')
                   setEditPinType(null)
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 Cancel
-              </button>
-              <button
-                onClick={handleSavePin}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
+              </SbButton>
+              <SbButton variant="positive" onClick={handleSavePin}>
                 Save PIN
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
