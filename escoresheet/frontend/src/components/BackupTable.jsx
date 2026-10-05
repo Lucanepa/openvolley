@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { loadCloudBackup } from '../utils/logger'
 import { formatBackupDateTime } from '../utils/dateFormatter'
+import { cn } from '../ui'
 
 /**
  * Format event type for display
@@ -120,26 +121,18 @@ export default function BackupTable({
     : `${sourceColWidth}60px 35px 70px 90px 1fr`
 
   return (
-    <>
-      {/* Table Header */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: gridColumns,
-        gap: '2px',
-        padding: '8px 10px',
-        fontSize: '11px',
-        fontWeight: 600,
-        color: 'var(--muted)',
-        borderBottom: '2px solid var(--border)',
-        marginBottom: '2px',
-        alignItems: 'center'
-      }}>
-        {(hasMixedSources || hasAnyPb) && <span style={{ textAlign: 'center' }}></span>}
-        <span style={{ textAlign: 'center' }}>{t('backupTable.gameN', 'Game N')}</span>
-        <span style={{ textAlign: 'center' }}>{t('backupTable.set', 'Set')}</span>
-        <span style={{ textAlign: 'center' }}>{t('backupTable.score', 'Score')}</span>
+    <div className="ov-kit divide-y divide-stone-100">
+      {/* Table Header (kit sticky table head) */}
+      <div
+        className="sticky top-0 z-10 grid items-center gap-0.5 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
+        style={{ gridTemplateColumns: gridColumns }}
+      >
+        {(hasMixedSources || hasAnyPb) && <span className="text-center"></span>}
+        <span className="text-center">{t('backupTable.gameN', 'Game N')}</span>
+        <span className="text-center">{t('backupTable.set', 'Set')}</span>
+        <span className="text-center">{t('backupTable.score', 'Score')}</span>
         <span >{t('backupTable.lastAction', 'Last Action')}</span>
-        <span style={{ textAlign: 'right' }}>{t('backupTable.createdAt', 'Created At')}</span>
+        <span className="text-right">{t('backupTable.createdAt', 'Created At')}</span>
         {showRestoreButton && <span></span>}
       </div>
 
@@ -183,16 +176,19 @@ export default function BackupTable({
 
         const isDisabled = loading || loadingBackupPath === backup.path
 
-        const rowStyle = {
-          display: 'grid',
-          gridTemplateColumns: gridColumns,
-          gap: '2px',
-          alignItems: 'center',
-          padding: '8px 10px',
-          background: index % 2 === 0 ? 'var(--panel-2)' : 'transparent',
-          cursor: isDisabled ? 'not-allowed' : 'pointer',
-          textAlign: 'left'
-        }
+        const rowStyle = { gridTemplateColumns: gridColumns }
+        const rowCls = cn(
+          'grid w-full min-h-11 items-center gap-0.5 px-2.5 py-2 text-left text-xs text-stone-800 tabular-nums transition-colors',
+          isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-stone-50'
+        )
+        const sourceDot = (
+          <span className="text-center">
+            <span
+              className={cn('inline-block h-2 w-2 rounded-full', isPb ? 'bg-green-500' : 'bg-violet-500')}
+              title={isPb ? 'PocketBase' : 'Cloud'}
+            />
+          </span>
+        )
 
         if (mode === 'button') {
           // App.jsx mode - entire row is a button
@@ -201,38 +197,22 @@ export default function BackupTable({
               key={backup.match_id || backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
               disabled={isDisabled}
-              style={{
-                ...rowStyle,
-                width: '100%',
-                color: 'var(--text)',
-                border: 'none',
-                borderBottom: index < backups.length - 1 ? '1px solid var(--border)' : 'none',
-                fontSize: '12px'
-              }}
+              type="button"
+              className={cn(rowCls, 'rounded-none bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-400/60')}
+              style={rowStyle}
             >
-              {(hasMixedSources || hasAnyPb) && (
-                <span style={{ textAlign: 'center' }}>
-                  <span style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: isPb ? '#22c55e' : '#8b5cf6',
-                    title: isPb ? 'PocketBase' : 'Cloud'
-                  }} />
-                </span>
-              )}
-              <span style={{ fontWeight: 600, textAlign: 'center' }}>{backup.gameN || 'N/A'}</span>
-              <span style={{ textAlign: 'center' }}>{backup.setIndex || 'N/A'}</span>
-              <span style={{ fontWeight: 600, color: '#22c55e', textAlign: 'center' }}>
+              {(hasMixedSources || hasAnyPb) && sourceDot}
+              <span className="text-center font-semibold">{backup.gameN || 'N/A'}</span>
+              <span className="text-center">{backup.setIndex || 'N/A'}</span>
+              <span className="text-center font-semibold text-stone-900">
                 {backup.leftScore !== undefined && backup.rightScore !== undefined
                   ? `${backup.leftScore}:${backup.rightScore}`
                   : 'N/A'}
               </span>
-              <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
+              <span className="text-[11px] text-stone-500">
                 {lastAction}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'right' }}>
+              <span className="text-right text-[11px] text-stone-500">
                 {formattedTime}
               </span>
               {showRestoreButton && <div></div>}
@@ -244,50 +224,25 @@ export default function BackupTable({
             <div
               key={backup.match_id || backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
-              style={{
-                ...rowStyle,
-                width: '100%',
-                borderRadius: '4px',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={(e) => !isDisabled && (e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)')}
-              onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'var(--panel-2)' : 'transparent'}
+              className={rowCls}
+              style={rowStyle}
             >
-              {(hasMixedSources || hasAnyPb) && (
-                <span style={{ textAlign: 'center' }}>
-                  <span style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: isPb ? '#22c55e' : '#8b5cf6',
-                    title: isPb ? 'PocketBase' : 'Cloud'
-                  }} />
-                </span>
-              )}
-              <span style={{ fontWeight: 600, fontSize: '12px', textAlign: 'center' }}>{backup.gameN || 'N/A'}</span>
-              <span style={{ fontSize: '12px', textAlign: 'center' }}>{backup.setIndex || 'N/A'}</span>
-              <span style={{ fontWeight: 600, fontSize: '12px', color: '#22c55e', textAlign: 'center' }}>
+              {(hasMixedSources || hasAnyPb) && sourceDot}
+              <span className="text-center font-semibold">{backup.gameN || 'N/A'}</span>
+              <span className="text-center">{backup.setIndex || 'N/A'}</span>
+              <span className="text-center font-semibold text-stone-900">
                 {backup.leftScore !== undefined && backup.rightScore !== undefined
                   ? `${backup.leftScore}:${backup.rightScore}`
                   : 'N/A'}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+              <span className="text-[11px] text-stone-500">
                 {lastAction}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'right' }}>
+              <span className="text-right text-[11px] text-stone-500">
                 {formattedTime}
               </span>
               {showRestoreButton && (
-                <div style={{
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  background: 'rgba(34, 197, 94, 0.2)',
-                  color: '#22c55e',
-                  borderRadius: '4px',
-                  textAlign: 'center'
-                }}>
+                <div className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-center text-[11px] font-medium text-stone-700">
                   {restoreButtonText}
                 </div>
               )}
@@ -295,7 +250,7 @@ export default function BackupTable({
           )
         }
       })}
-    </>
+    </div>
   )
 }
 
