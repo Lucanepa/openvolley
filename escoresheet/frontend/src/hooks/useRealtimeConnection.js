@@ -34,6 +34,15 @@ export const CONNECTION_STATUS = {
   OFFLINE: 'offline'       // Both WebSocket and Supabase failed, using offline mode
 }
 
+// Looking up a match that is not in the database yet (test match, LAN relay,
+// never synced): 5 s, 10 s, 30 s, then every 60 s for as long as the tablet is
+// open — not an /api/db request every 5 s.
+const DB_WATCH_RETRY_DELAYS_MS = [5000, 10000, 30000]
+export const DB_WATCH_RETRY_MAX_MS = 60000
+export function dbWatchRetryDelay(attempt) {
+  return DB_WATCH_RETRY_DELAYS_MS[attempt] ?? DB_WATCH_RETRY_MAX_MS
+}
+
 /**
  * Hook for managing realtime connection with WebSocket primary + Supabase Realtime fallback
  * @param {Object} options
@@ -280,7 +289,8 @@ export function useRealtimeConnection({
   // status/activeConnection (the relay stays the reported connection); only
   // refetches. Re-subscribes (after a reconnect) refetch too, so a tablet that
   // was offline catches up without waiting for the next rally.
-  const watchDbChangesAlongside = useCallback(async () => {
+  // `attempt` counts the uuid lookups that found nothing (see dbWatchRetryDelay).
+  const watchDbChangesAlongside = useCallback(async (attempt = 0) => {
     if (!supabase || !matchId) return
     let uuid = null
     try {
@@ -304,20 +314,32 @@ export function useRealtimeConnection({
       }
     }
     channel.on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `external_id=eq.${matchId}` }, onChange)
-    channel.subscribe((s) => {
+    let unsupported = false
+    channel.subscribe((s, err) => {
       if (!isMountedRef.current) return
       if (s === 'SUBSCRIBED') scheduleRefetch('db subscribed')
+      // This server has no live db stream (a LAN relay): stop looking
+      if (s === 'CHANNEL_ERROR' && err?.code === 'unsupported') {
+        unsupported = true
+        if (uuidRetryRef.current && secondaryChannelRef.current === channel) {
+          clearTimeout(uuidRetryRef.current)
+          uuidRetryRef.current = null
+        }
+      }
     })
     if (secondaryChannelRef.current) {
       try { supabase.removeChannel(secondaryChannelRef.current) } catch { /* ignore */ }
     }
     secondaryChannelRef.current = channel
-    // The match may reach the database only after the tablet connected
-    if (!uuid) {
+    // The match may reach the database only after the tablet connected: look
+    // again, backing off (and at the slowest pace while the relay room delivers)
+    if (!uuid && !unsupported) {
+      const relayLive = Date.now() - lastPushAtRef.current < DB_WATCH_RETRY_MAX_MS
+      if (uuidRetryRef.current) clearTimeout(uuidRetryRef.current)
       uuidRetryRef.current = setTimeout(() => {
         uuidRetryRef.current = null
-        if (isMountedRef.current && secondaryChannelRef.current === channel) watchDbChangesAlongside()
-      }, 5000)
+        if (isMountedRef.current && secondaryChannelRef.current === channel && !unsupported) watchDbChangesAlongside(attempt + 1)
+      }, relayLive ? DB_WATCH_RETRY_MAX_MS : dbWatchRetryDelay(attempt))
     }
   }, [matchId, scheduleRefetch])
 

@@ -145,6 +145,9 @@ Two independent sync paths:
 1. **Supabase cloud sync** (`useSyncQueue`): Asynchronous queue processing for data persistence. Works whenever internet is available.
 
 2. **WebSocket relay** (`useRealtimeConnection`): Optional backend server for instant updates between Scoreboard, Referee, and Bench devices. Works over local WiFi (no internet) or cloud relay.
+   - Every relay client resolves the relay through `getRelayWebSocketUrl()` (`utils/backendConfig.js`), so the scorer publishes where its tablets listen.
+   - Match rooms are keyed by the match's `seed_key` (the Dexie id only for a match without one). Subscribers, including the point-hub LedBox bridge, must use the seed key (`MATCH_ID=<seed key>`, or look it up via `/api/match/list` / `/api/match/by-game-number`). A request by Dexie id is not answered.
+   - The scorer sends its PINs with a socket's first sync and when one changes. A relay that lost the match answers a PIN-less sync with `pins-required`, and the scorer resends them. Protocol reference: `frontend/electron/lanRelayCore.cjs`.
 
 Both paths are optional. The app functions fully offline with local IndexedDB only.
 

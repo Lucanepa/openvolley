@@ -4,7 +4,7 @@ import { renderHook, act } from '@testing-library/react'
 const SEED = 'match_1791215210058_yxkc82'
 
 const h = vi.hoisted(() => {
-  const state = { relayCallback: null, channels: [], fetchResolvers: [] }
+  const state = { relayCallback: null, channels: [], fetchResolvers: [], uuid: 'uuid-1', lookups: 0 }
   const makeChannel = (name) => {
     const ch = {
       name,
@@ -28,7 +28,14 @@ const h = vi.hoisted(() => {
 vi.mock('../../lib/supabaseClient', () => ({ supabase: h.supabase }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: () => ({
-    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'uuid-1' }, error: null }) }) })
+    select: () => ({
+      eq: () => ({
+        maybeSingle: async () => {
+          h.state.lookups += 1
+          return { data: h.state.uuid ? { id: h.state.uuid } : null, error: null }
+        }
+      })
+    })
   })
 }))
 vi.mock('../../utils/serverDataSync', async (importOriginal) => {
@@ -50,6 +57,8 @@ beforeEach(() => {
   h.state.channels = []
   h.state.fetchResolvers = []
   h.state.relayCallback = null
+  h.state.uuid = 'uuid-1'
+  h.state.lookups = 0
   h.supabase.channel.mockClear()
   h.getMatchData.mockClear()
   h.subscribeToMatchData.mockClear()
@@ -101,6 +110,39 @@ describe('useRealtimeConnection AUTO mode', () => {
     await act(async () => { h.state.fetchResolvers.shift()({ success: true, match: { id: SEED, from: 'fetch' }, sets: [] }) })
     expect(onData).toHaveBeenCalledTimes(1)
     expect(onData.mock.calls[0][0].match.from).toBe('relay')
+  })
+
+  it('looks up a match missing from the database with backoff, and stops on a server without a db stream', async () => {
+    h.state.uuid = null
+    renderHook(() => useRealtimeConnection({ matchId: SEED, onData: vi.fn() }))
+    await act(flush)
+    expect(h.state.lookups).toBe(1)
+    // 5 s, 10 s, 30 s, then 60 s: not a lookup every 5 s
+    await act(async () => { vi.advanceTimersByTime(5000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(2)
+    await act(async () => { vi.advanceTimersByTime(9000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(2)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(3)
+    await act(async () => { vi.advanceTimersByTime(30000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(4)
+    await act(async () => { vi.advanceTimersByTime(59000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(4)
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(5)
+    // A LAN relay: the shim reports no live db support -> no more lookups
+    const ch = h.state.channels.at(-1)
+    const err = Object.assign(new Error('unsupported'), { code: 'unsupported' })
+    act(() => ch.statusCb('CHANNEL_ERROR', err))
+    await act(async () => { vi.advanceTimersByTime(600000) })
+    await act(flush)
+    expect(h.state.lookups).toBe(5)
   })
 
   it('the referee can opt out (it runs its own live_state channel)', async () => {
