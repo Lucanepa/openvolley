@@ -9,26 +9,29 @@ import { AlertProvider } from './contexts/AlertContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
+import ErrorBoundary from './components/ErrorBoundary'
+import { stripCacheBustParam } from './hooks/useServiceWorker'
 
-// Clean up cache_bust query parameter (added by cache clear / update flow)
-if (window.location.search.includes('cache_bust')) {
-  window.history.replaceState(null, '', window.location.pathname)
-}
+// Clean up cache_bust query parameter (added by cache clear / update flow).
+// Keep the rest of the query: ?match=&team= attach tablets to the live match.
+stripCacheBustParam()
 
 // Initialize logger to capture console output
 initLogger()
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ScaleProvider>
-      <AuthProvider>
-        <AlertProvider>
-          <LoggingProvider>
-            <App />
-          </LoggingProvider>
-        </AlertProvider>
-      </AuthProvider>
-    </ScaleProvider>
+    <ErrorBoundary name="scorer">
+      <ScaleProvider>
+        <AuthProvider>
+          <AlertProvider>
+            <LoggingProvider>
+              <App />
+            </LoggingProvider>
+          </AlertProvider>
+        </AuthProvider>
+      </ScaleProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 )
 

@@ -229,6 +229,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [connectionModalPosition, setConnectionModalPosition] = useState({ x: 0, y: 0 })
   const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
   const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
+  // Latest values for syncLiveStateToSupabase, which is memoised on [matchId] only:
+  // reading the state/prop directly froze them at mount (a stale null timeoutModal
+  // made any event logged during a timeout publish timeout_active:false).
+  const timeoutModalRef = useRef(null)
+  const scorerAttentionTriggerRef = useRef(scorerAttentionTrigger)
+  useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
+  useEffect(() => { scorerAttentionTriggerRef.current = scorerAttentionTrigger }, [scorerAttentionTrigger])
   const [duplicateTimeoutConfirm, setDuplicateTimeoutConfirm] = useState(null) // { team: 'home'|'away' } - confirmation for duplicate TO
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
@@ -1872,13 +1879,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Determine match status from event type and current state
       const isMatchEnd = eventType === 'match_end' || match?.status === 'ended'
-      const isSetInterval = !isMatchEnd && (eventType === 'set_end' || (match?.status === 'interval' && !isSetFinished))
-      const isTimeout = eventType === 'timeout' || (timeoutModal !== null)
+      const isSetInterval = !isMatchEnd && (eventType === 'set_end' || match?.status === 'interval')
+      const activeTimeout = timeoutModalRef.current
+      const isTimeout = eventType === 'timeout' || (eventType !== 'end_timeout' && !!activeTimeout?.started)
 
       // If it's a timeout, we need a stable start time
       const timeoutStartedAt = eventType === 'timeout'
         ? new Date().toISOString()
-        : (timeoutModal?.startedAt || new Date().toISOString())
+        : (activeTimeout?.startedAt || new Date().toISOString())
 
       // For intervals, we also need a stable start time
       const intervalStartedAt = eventType === 'set_end'
@@ -2041,11 +2049,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         last_event_data: eventData || null,
         last_event_ts: new Date().toISOString(),
         timeout_active: isTimeout,
-        timeout_started_at: isTimeout ? (timeoutModal?.startedAt || timeoutStartedAt) : null,
+        timeout_started_at: isTimeout ? (activeTimeout?.startedAt || timeoutStartedAt) : null,
         set_interval_active: isSetInterval,
         set_interval_started_at: isSetInterval ? (match?.intervalStartedAt || intervalStartedAt) : null,
         match_status: matchStatus,
-        scorer_attention_trigger: scorerAttentionTrigger,
+        scorer_attention_trigger: scorerAttentionTriggerRef.current,
         // Match metadata (from IndexedDB match record)
         game_n: match.gameN || match.game_n || null,
         league: match.league || null,
@@ -4500,8 +4508,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const finishedSets = allSets.filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+    // bestOf from IndexedDB: `data` is not a dep, so after a reload it is the
+    // first-render undefined and bestOf fell back to 5 ('Set 2 End' at 2-0 in a bo3)
+    const matchRecord = await db.matches.get(matchId)
     const { isMatchEnd } = getSetResult(homePoints, awayPoints, set.index, {
-      bestOf: data?.match?.bestOf, homeSetsWon, awaySetsWon
+      bestOf: matchRecord?.bestOf ?? data?.match?.bestOf, homeSetsWon, awaySetsWon
     })
 
     const defaultTime = new Date().toISOString()
@@ -8970,7 +8981,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isDisqualified: false
       })
     }
-  }, [draggedPlayer, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
+  }, [draggedPlayer, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed, getCurrentServe])
 
   // ========== Touch Drag Handlers (for mobile/tablet) ==========
 
@@ -10049,7 +10060,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee])
+  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
 
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
@@ -11334,7 +11345,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [liberoConfirm, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable])
+  }, [liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
 
   const cancelLibero = useCallback(() => {
     setLiberoDropdown(null)

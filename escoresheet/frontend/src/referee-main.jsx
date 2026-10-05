@@ -7,21 +7,24 @@ import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { ScaleProvider } from './contexts/ScaleContext'
+import ErrorBoundary from './components/ErrorBoundary'
+import { stripCacheBustParam } from './hooks/useServiceWorker'
 
-// Clean up cache_bust query parameter (added by cache clear / update flow)
-if (window.location.search.includes('cache_bust')) {
-  window.history.replaceState(null, '', window.location.pathname)
-}
+// Clean up cache_bust query parameter (added by cache clear / update flow).
+// Keep the rest of the query: ?match=&team= attach tablets to the live match.
+stripCacheBustParam()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ScaleProvider>
-      <AuthProvider>
-        <AlertProvider>
-          <RefereeApp />
-        </AlertProvider>
-      </AuthProvider>
-    </ScaleProvider>
+    <ErrorBoundary name="referee">
+      <ScaleProvider>
+        <AuthProvider>
+          <AlertProvider>
+            <RefereeApp />
+          </AlertProvider>
+        </AuthProvider>
+      </ScaleProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )
 
