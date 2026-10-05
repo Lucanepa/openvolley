@@ -30,7 +30,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction } from '../domain/sanctions'
-import { rotateLineup as rotateLineupPure } from '../domain/rotation'
+import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
@@ -6805,22 +6805,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // and apply rotation to new team if new team wasn't serving
         const lastEventSeq = lastEvent.seq || 0
 
-        // Find rotation events that happened after the point
-        const rotationEvents = data.events.filter(e =>
-          e.type === 'lineup' &&
-          e.setIndex === data.set.index &&
-          !e.payload?.isInitial &&
-          !e.payload?.fromSubstitution &&
-          !e.payload?.liberoSubstitution &&
-          (e.seq || 0) > lastEventSeq
-        ).sort((a, b) => (a.seq || 0) - (b.seq || 0))
-
-        // Delete any rotations that were for the old team (sideout that shouldn't have happened)
-        for (const rotEvent of rotationEvents) {
-          if (rotEvent.payload?.team === oldTeam) {
-            await db.events.delete(rotEvent.id)
-          }
+        // Delete what the point wrote for the old team as sub-events of the point
+        // (sideout rotation lineup, auto libero_exit). The rotation lineup carries a
+        // liberoSubstitution whenever the libero is on court, so it must not be
+        // filtered on that (domain/rotation, tested).
+        const oldTeamPointSubEvents = pointSubEventsForTeam(data.events, lastEvent, oldTeam)
+        for (const subEvent of oldTeamPointSubEvents) {
+          await db.events.delete(subEvent.id)
         }
+        const deletedSubEventIds = new Set(oldTeamPointSubEvents.map(e => e.id))
 
         // Determine who had serve BEFORE the original point was awarded
         // This is needed to know if the new team should rotate (if they were receiving)
@@ -6848,10 +6841,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // If the new team was receiving (didn't have serve), they need to rotate now
         const newTeamHadServe = serveBeforePoint === newTeam
         if (!newTeamHadServe) {
-          // Query the new team's current lineup
+          // Query the new team's current lineup (latest by seq, as the engine orders)
           const newTeamLineupEvents = data.events
-            .filter(e => e.type === 'lineup' && e.payload?.team === newTeam && e.setIndex === data.set.index)
-            .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+            .filter(e => e.type === 'lineup' && e.payload?.team === newTeam && e.setIndex === data.set.index && !deletedSubEventIds.has(e.id))
+            .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
           if (newTeamLineupEvents.length > 0) {
             const currentLineup = newTeamLineupEvents[0].payload?.lineup
@@ -6910,9 +6903,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     rotatedLineup[position] = String(originalPlayerNumber)
                     rotatedLiberoSubstitution = null // Clear libero substitution since libero is out
 
-                    // Log libero exit event
+                    // Log libero exit event (sub-event of the point, as handlePoint does)
                     const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(liberoNumber))
-                    const liberoExitSeq = await getNextSeq()
+                    const liberoExitSeq = await getNextSubSeq(lastEventSeq)
                     await db.events.add({
                       matchId,
                       setIndex: data.set.index,
@@ -6931,8 +6924,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   }
                 }
 
-                // Log the rotation lineup event for the new team
-                const rotationSeq = await getNextSeq()
+                // Log the rotation lineup event for the new team as a sub-event of the
+                // point (N.x): the serve indicator, undo and replay find it there
+                const rotationSeq = await getNextSubSeq(lastEventSeq)
                 await db.events.add({
                   matchId,
                   setIndex: data.set.index,
@@ -6974,7 +6968,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate])
+  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate])
 
 
 
