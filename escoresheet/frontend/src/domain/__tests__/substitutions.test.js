@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateManualSubstitution, getSetSubstitutions } from '../substitutions'
+import { validateManualSubstitution, getSetSubstitutions, validateManualTimeout } from '../substitutions'
 
 const sub = (team, setIndex, playerOut, playerIn, seq) => ({
   type: 'substitution', setIndex, seq, payload: { team, playerOut, playerIn },
@@ -51,5 +51,23 @@ describe('validateManualSubstitution (FIVB 15.5-15.6)', () => {
   it('getSetSubstitutions filters by team + set', () => {
     const evs = [sub('home', 1, 5, 12, 1), sub('away', 1, 3, 10, 2), sub('home', 2, 6, 16, 3)]
     expect(getSetSubstitutions(evs, 'home', 1)).toHaveLength(1)
+  })
+})
+
+describe('validateManualTimeout (FIVB 15.4.1)', () => {
+  const to = (team, setIndex) => ({ type: 'timeout', setIndex, payload: { team } })
+  it('allows the first and second timeout of a team in a set', () => {
+    expect(validateManualTimeout([], 'home', 1).legal).toBe(true)
+    expect(validateManualTimeout([to('home', 1)], 'home', 1).legal).toBe(true)
+  })
+  it('refuses a third timeout of the same team in the same set', () => {
+    const r = validateManualTimeout([to('home', 1), to('home', 1)], 'home', 1)
+    expect(r.legal).toBe(false)
+    expect(r.reason).toMatch(/limit/i)
+  })
+  it('counts per team and per set', () => {
+    const events = [to('home', 1), to('home', 1), to('away', 1), to('home', 2)]
+    expect(validateManualTimeout(events, 'away', 1).legal).toBe(true)
+    expect(validateManualTimeout(events, 'home', 2).legal).toBe(true)
   })
 })

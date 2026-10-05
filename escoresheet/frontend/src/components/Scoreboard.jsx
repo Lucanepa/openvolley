@@ -32,6 +32,7 @@ import { getSetResult, getFirstServeForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure } from '../domain/rotation'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner } from '../domain/matchEnd'
+import { swapTeamDesignation } from '../domain/coinToss'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -20171,20 +20172,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
                                 } else {
                                   // Sets 1-4: Swap coinTossTeamA (A ALWAYS on left in Set 1)
-                                  // Swapping which team is "A" effectively swaps the teams on court
+                                  // Swapping which team is "A" effectively swaps the teams on court.
+                                  // A and B must be swapped together (and the A/B serve flags with
+                                  // them) so they stay two different teams and the first server
+                                  // does not change.
+                                  const swapPatch = swapTeamDesignation(data.match)
                                   const currentTeamA = data.match.coinTossTeamA || 'home'
-                                  const newTeamA = currentTeamA === 'home' ? 'away' : 'home'
-                                  const newTeamB = newTeamA === 'home' ? 'away' : 'home'
+                                  const newTeamA = swapPatch.coinTossTeamA
+                                  const newTeamB = swapPatch.coinTossTeamB
                                   const oldLeft = leftIsHome ? 'Home' : 'Away'
                                   const newLeft = leftIsHome ? 'Away' : 'Home'
                                   console.log('[SwitchSides] Sets 1-4:', { currentTeamA, newTeamA, oldLeft, newLeft, setIdx })
 
                                   // Update local IndexedDB
-                                  await db.matches.update(matchId, { coinTossTeamA: newTeamA })
+                                  await db.matches.update(matchId, swapPatch)
 
                                   // Sync coin_toss JSONB to Supabase
                                   if (data.match?.seed_key) {
-                                    const currentServeA = data.match.coinTossServeA ?? true
+                                    const currentServeA = swapPatch.coinTossServeA
                                     const firstServeTeam = currentServeA ? newTeamA : newTeamB
                                     await db.sync_queue.add({
                                       resource: 'match',
@@ -20243,7 +20248,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   const coinTossTeamA = data.match.coinTossTeamA || 'home'
                                   const coinTossTeamB = coinTossTeamA === 'home' ? 'away' : 'home'
                                   const coinTossServeA = newServe === coinTossTeamA
-                                  await db.matches.update(matchId, { firstServe: newServe, coinTossServeA })
+                                  await db.matches.update(matchId, { firstServe: newServe, coinTossServeA, coinTossServeB: !coinTossServeA })
 
                                   // Sync coin_toss JSONB to Supabase
                                   if (data.match?.seed_key) {
