@@ -156,6 +156,62 @@ describe('runQueuePass', () => {
     expect(api.calls.some(c => c.table === 'sets' && c.action === 'update')).toBe(false)
   })
 
+  it('an errored set insert holds back newer jobs of that set in later passes (#58)', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'insert', status: 'error', attempts: 1, next_attempt_at: Date.now() + 30000, payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', index: 1 } },
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 25, finished: true } },
+      // another set of the same match is not held back
+      { id: 3, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', home_points: 3 } }
+    ])
+
+    const outcome = await runQueuePass()
+    expect(outcome.hasRetry).toBe(true)
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+    const updates = api.calls.filter(c => c.table === 'sets' && c.action === 'update')
+    expect(updates).toHaveLength(1)
+    expect(updates[0].data).toEqual({ home_points: 3, sport_type: 'indoor' })
+  })
+
+  it('an errored match insert holds back every newer job of that match', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'error', payload: { external_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_200_bbb:e:1', match_id: 'match_200_bbb' } }
+    ])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+  })
+
+  it('a job claimed as "sending" holds back newer jobs of the same set', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'sending', sending_since: Date.now(), payload: { external_id: 'match_100_aaa:s:5', finished: true } },
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 1 } }
+    ])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(api.calls.some(c => c.table === 'sets' && c.action === 'update')).toBe(false)
+  })
+
+  it('an errored update does not stall newer updates of the same row', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'error', payload: { external_id: 'match_100_aaa:s:5', home_points: 10 } },
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 11 } }
+    ])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  it('a queued job older than the errored one is not held back', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 1 } },
+      { id: 2, resource: 'set', action: 'insert', status: 'error', payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', index: 1 } }
+    ])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+
   it('namespaces a bare set id and scopes the set update to its match', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'set', action: 'update', status: 'queued', payload: { external_id: '5', finished: true } }
@@ -257,6 +313,23 @@ describe('retryErrorsInternal', () => {
 
     await retryErrorsInternal({ force: true })
     expect(fakeDb.sync_queue.map.get(2)).toMatchObject({ status: 'queued', payload: { id: 'match_100_aaa', status: 'live' } })
+  })
+
+  it('trims a stale errored set update against a newer sent one', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'set', action: 'update', status: 'error', payload: { external_id: 'match_100_aaa:s:5', home_points: 10, sport_type: 'indoor' } },
+      { id: 2, resource: 'set', action: 'update', status: 'sent', payload: { external_id: 'match_100_aaa:s:5', home_points: 12, sport_type: 'indoor' } },
+      { id: 3, resource: 'set', action: 'update', status: 'error', payload: { external_id: 'match_100_aaa:s:5', away_points: 4 } },
+      { id: 4, resource: 'set', action: 'update', status: 'sent', payload: { external_id: 'match_100_aaa:s:5', home_points: 13, finished: true } },
+      { id: 5, resource: 'set', action: 'update', status: 'error', payload: { external_id: 'match_100_aaa:s:6', home_points: 2, finished: false } },
+      { id: 6, resource: 'set', action: 'update', status: 'sent', payload: { external_id: 'match_100_aaa:s:6', home_points: 3 } }
+    ])
+
+    await retryErrorsInternal({ force: true })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('superseded')
+    expect(fakeDb.sync_queue.map.get(3)).toMatchObject({ status: 'queued', payload: { external_id: 'match_100_aaa:s:5', away_points: 4 } })
+    expect(fakeDb.sync_queue.map.get(5)).toMatchObject({ status: 'queued', payload: { external_id: 'match_100_aaa:s:6', finished: false } })
+    expect(fakeDb.sync_queue.map.get(5).payload.home_points).toBeUndefined()
   })
 
   it('respects each job\'s backoff unless forced', async () => {

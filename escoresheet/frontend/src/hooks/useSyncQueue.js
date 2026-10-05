@@ -192,30 +192,44 @@ export function remainingAfterNewer(older, newer) {
   return remaining
 }
 
+// The payload field that identifies the row an update job writes
+const UPDATE_IDENTITY = { match: 'id', set: 'external_id' }
+
+// remainingAfterNewer keeps `id`; also keep the identity of non-match rows
+function remainingFields(older, newer, idField) {
+  const remaining = remainingAfterNewer(older, newer)
+  if (idField in older) remaining[idField] = older[idField]
+  return remaining
+}
+
 /**
- * Errored match updates vs newer updates of the same match that were already
+ * Errored match/set updates vs newer updates of the same row that were already
  * sent: fields the newer ones wrote are removed from the stale job, and a job
  * left with nothing to write is marked 'superseded'.
  * @returns {Promise<Set<number>>} ids of the superseded jobs
  */
-export async function supersedeStaleMatchUpdates(errorJobs) {
+export async function supersedeStaleUpdates(errorJobs) {
   const superseded = new Set()
-  const stale = errorJobs.filter(j => j.resource === 'match' && j.action === 'update' && j.payload?.id)
-  if (stale.length === 0) return superseded
-  const sentUpdates = await db.sync_queue
-    .where('resource').equals('match')
-    .and(j => j.status === 'sent' && j.action === 'update')
-    .toArray()
-  for (const job of stale) {
-    const newer = sentUpdates.filter(s => s.id > job.id && s.payload?.id === job.payload.id)
-    if (newer.length === 0) continue
-    let remaining = job.payload
-    for (const s of newer) remaining = remainingAfterNewer(remaining, s.payload)
-    if (Object.keys(remaining).length <= 1) {
-      await db.sync_queue.update(job.id, { status: 'superseded' })
-      superseded.add(job.id)
-    } else if (!payloadCovers(remaining, job.payload)) {
-      await db.sync_queue.update(job.id, { payload: remaining, superseded_fields: true })
+  for (const [resource, idField] of Object.entries(UPDATE_IDENTITY)) {
+    const stale = errorJobs.filter(j => j.resource === resource && j.action === 'update' && j.payload?.[idField])
+    if (stale.length === 0) continue
+    const sentUpdates = await db.sync_queue
+      .where('resource').equals(resource)
+      .and(j => j.status === 'sent' && j.action === 'update')
+      .toArray()
+    // Fields that never carry data of their own
+    const meta = new Set([idField, 'id', 'match_id', 'sport_type'])
+    for (const job of stale) {
+      const newer = sentUpdates.filter(s => s.id > job.id && s.payload?.[idField] === job.payload[idField])
+      if (newer.length === 0) continue
+      let remaining = job.payload
+      for (const s of newer) remaining = remainingFields(remaining, s.payload, idField)
+      if (Object.keys(remaining).every(k => meta.has(k))) {
+        await db.sync_queue.update(job.id, { status: 'superseded' })
+        superseded.add(job.id)
+      } else if (!payloadCovers(remaining, job.payload)) {
+        await db.sync_queue.update(job.id, { payload: remaining, superseded_fields: true })
+      }
     }
   }
   return superseded
@@ -244,7 +258,7 @@ export async function retryErrorsInternal({ force = false } = {}) {
     const errorJobs = await db.sync_queue.where('status').equals('error').toArray()
     if (errorJobs.length === 0) return reclaimed > 0
 
-    const superseded = await supersedeStaleMatchUpdates(errorJobs)
+    const superseded = await supersedeStaleUpdates(errorJobs)
     const due = errorJobs.filter(job => !superseded.has(job.id) && (force || !job.next_attempt_at || job.next_attempt_at <= now))
     if (due.length === 0) return reclaimed > 0
 
@@ -692,6 +706,40 @@ function entityKey(job) {
   return `${job.resource}:${job.payload?.external_id}`
 }
 
+// Match creation/replacement jobs: nothing else of that match may overtake them.
+function blocksWholeMatch(job) {
+  return job.resource === 'match' && job.action !== 'update'
+}
+
+/**
+ * Per-entity FIFO across passes. Jobs parked as 'error' (waiting out their
+ * backoff) or claimed as 'sending' (useSequentialSync, in flight) are not in
+ * this pass, but newer queued jobs of the same entity must still wait for them:
+ * otherwise a set update runs before its failed insert (0 rows), and the insert
+ * retried later writes 0-0 over the real score.
+ *
+ * Errored *updates* only hold back newer jobs while 'sending'; once parked as
+ * 'error' they are trimmed against newer sent updates on retry
+ * (supersedeStaleUpdates), so a permanently failing update cannot stall the
+ * entity forever.
+ *
+ * @returns {Map<string, number>} entity key -> id of the oldest pending job;
+ *   queued jobs with a higher id are held back.
+ */
+export function pendingEntityBlocks(pendingJobs) {
+  const blocks = new Map()
+  const add = (key, id) => {
+    if (!blocks.has(key) || blocks.get(key) > id) blocks.set(key, id)
+  }
+  for (const job of pendingJobs) {
+    if (job.status === 'error' && job.action === 'update') continue
+    add(entityKey(job), job.id)
+    const matchKey = jobMatchKey(job)
+    if (matchKey && blocksWholeMatch(job)) add(`whole:${matchKey}`, job.id)
+  }
+  return blocks
+}
+
 /**
  * One pass over the queued jobs, in dependency order.
  * @returns {Promise<{ processed: number, hasError: boolean, hasRetry: boolean, stopped: boolean }>}
@@ -713,7 +761,17 @@ export async function runQueuePass() {
     jobsByResource[resource].push(job)
   }
 
+  // Failures in this pass block unconditionally; older jobs still waiting as
+  // 'error'/'sending' block only queued jobs newer than themselves.
   const blocked = new Set()
+  let pendingBlocks = new Map()
+  try {
+    const pending = await db.sync_queue.where('status').anyOf('error', 'sending').toArray()
+    pendingBlocks = pendingEntityBlocks(pending)
+  } catch (err) {
+    console.warn('[SyncQueue] Could not read pending jobs for ordering:', err?.message)
+  }
+  const isHeldBack = (key, jobId) => blocked.has(key) || (pendingBlocks.has(key) && pendingBlocks.get(key) < jobId)
 
   // Process in dependency order
   for (const resource of RESOURCE_ORDER) {
@@ -722,8 +780,8 @@ export async function runQueuePass() {
     for (const job of jobs) {
       const key = entityKey(job)
       const matchKey = jobMatchKey(job)
-      if (blocked.has(key) || (matchKey && blocked.has(`whole:${matchKey}`))) {
-        // An earlier job for this entity/match failed in this pass: keep order
+      if (isHeldBack(key, job.id) || (matchKey && isHeldBack(`whole:${matchKey}`, job.id))) {
+        // An earlier job for this entity/match failed or is still pending: keep order
         outcome.hasRetry = true
         continue
       }
@@ -744,7 +802,7 @@ export async function runQueuePass() {
       // set/event that must wait (match not in the cloud yet) holds back the
       // rest of its match too, instead of every job repeating the same lookup.
       blocked.add(key)
-      if (matchKey && ((job.resource === 'match' && job.action !== 'update') || (job.resource !== 'match' && result === null))) {
+      if (matchKey && (blocksWholeMatch(job) || (job.resource !== 'match' && result === null))) {
         blocked.add(`whole:${matchKey}`)
       }
 
@@ -866,6 +924,8 @@ export function useSyncQueue() {
       // Try a simple query to check connection - use matches table
       const { error } = await apiFrom('matches').select('id').limit(1)
       if (error) {
+        // Request never reached the backend (offline, timeout)
+        if (error.network) return probeFailed('offline')
         // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
         if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
           // Table doesn't exist - this is expected if tables aren't set up yet
