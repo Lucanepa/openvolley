@@ -23,8 +23,43 @@ CREATE TABLE IF NOT EXISTS auth.app_sessions (
 CREATE INDEX IF NOT EXISTS app_sessions_user_id_idx ON auth.app_sessions (user_id);
 CREATE INDEX IF NOT EXISTS app_sessions_expires_at_idx ON auth.app_sessions (expires_at);
 
--- Sign-in looks users up by lower(email). 000_prelude.sql creates this index
--- under the same name; repeated here so the lookup is indexed either way.
+-- Sign-in looks users up by lower(email), and sign-up relies on this index
+-- being UNIQUE to turn a concurrent duplicate into "user_already_exists".
+-- 000_prelude.sql creates it under the same name; repeated here so it exists
+-- either way. Fail loudly (instead of a bare unique-violation, or silently
+-- keeping a different index of the same name) when the restored data or an
+-- existing index does not fit.
+DO $$
+DECLARE
+  dupes   text;
+  idx_def text;
+  idx_uni boolean;
+BEGIN
+  SELECT string_agg(e, ', ' ORDER BY e) INTO dupes
+    FROM (SELECT lower(email) AS e FROM auth.users
+           WHERE email IS NOT NULL
+           GROUP BY 1 HAVING count(*) > 1
+           ORDER BY 1 LIMIT 20) d;
+  IF dupes IS NOT NULL THEN
+    RAISE EXCEPTION 'auth.users has emails that differ only in case: %', dupes
+      USING HINT = 'Merge or rename these accounts, then re-run 002_app_sessions.sql.';
+  END IF;
+
+  SELECT pg_get_indexdef(i.indexrelid), i.indisunique INTO idx_def, idx_uni
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'auth' AND c.relname = 'users_email_lower';
+  IF FOUND AND NOT (
+       idx_uni
+       AND idx_def ~ ' ON auth\.users '
+       AND idx_def ~ '\(lower\(\(?email\)?(::text)?\)\)'
+       AND idx_def !~ ' WHERE ') THEN
+    RAISE EXCEPTION 'auth.users_email_lower exists but is not UNIQUE on lower(email): %', idx_def
+      USING HINT = 'DROP INDEX auth.users_email_lower; then re-run 002_app_sessions.sql.';
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower ON auth.users (lower(email));
 
 -- The app role (created by roles.sql) needs DML here. roles.sql grants it too;

@@ -14,6 +14,9 @@
  * Options:
  *   --generate      generate a random 20-character password and print it once
  *   --revoke-only   do not change the password, only sign the user out everywhere
+ *   --confirm-email also mark the email address as confirmed (sign-in refuses
+ *                   users whose email_confirmed_at is NULL; only use this when
+ *                   you know the address belongs to this person)
  *   --help
  *
  * On hetzner:
@@ -25,20 +28,22 @@
 import { randomBytes } from 'node:crypto'
 import { createAuth } from '../lib/auth.js'
 
-const USAGE = 'Usage: node scripts/set-password.mjs <email|uuid> [--generate | --revoke-only]\n' +
+const USAGE = 'Usage: node scripts/set-password.mjs <email|uuid> [--generate | --revoke-only] [--confirm-email]\n' +
   'Reads the new password from a hidden prompt, or from stdin when piped. Needs DATABASE_URL.'
 
 function parseArgs(argv) {
-  const opts = { target: null, generate: false, revokeOnly: false, help: false }
+  const opts = { target: null, generate: false, revokeOnly: false, confirmEmail: false, help: false }
   for (const a of argv) {
     if (a === '--generate') opts.generate = true
     else if (a === '--revoke-only') opts.revokeOnly = true
+    else if (a === '--confirm-email') opts.confirmEmail = true
     else if (a === '--help' || a === '-h') opts.help = true
     else if (a.startsWith('-')) throw new Error(`Unknown option ${a}`)
     else if (!opts.target) opts.target = a
     else throw new Error('Only one user may be given')
   }
   if (opts.generate && opts.revokeOnly) throw new Error('--generate and --revoke-only exclude each other')
+  if (opts.confirmEmail && opts.revokeOnly) throw new Error('--confirm-email needs a new password, not --revoke-only')
   return opts
 }
 
@@ -122,9 +127,13 @@ async function main() {
       return 0
     }
     const password = opts.generate ? generatePassword() : await readNewPassword()
-    const r = await auth.setPassword(opts.target, password)
+    const r = await auth.setPassword(opts.target, password, { confirmEmail: opts.confirmEmail })
     console.log(`Password set for ${r.email} (${r.userId}); revoked ${r.revokedSessions} session(s).`)
     if (opts.generate) console.log(`Generated password: ${password}`)
+    if (!r.emailConfirmed) {
+      console.error(`Warning: ${r.email} never confirmed this email address, so sign-in stays refused. ` +
+        'Re-run with --confirm-email once you know the address belongs to this person.')
+    }
     return 0
   } catch (err) {
     console.error(`Error: ${err.message}`)
