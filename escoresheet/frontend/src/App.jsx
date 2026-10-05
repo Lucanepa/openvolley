@@ -51,9 +51,9 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
-import { getRelayWebSocketUrl } from './utils/backendConfig'
+import { getRelayWebSocketUrl, getLocalServerStatusUrl } from './utils/backendConfig'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
-import { createRelayPinTracker, isRelayErrorFor, relayReconnectDelay } from './utils/relayPublisher'
+import { isRelayErrorFor, scorerRelay } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -288,25 +288,15 @@ export default function App() {
 
   // Fetch server status periodically
   useEffect(() => {
-    // Skip server status checks in production static deployments
-    // Server is only available in development or Electron app
-    const isStaticDeployment = !import.meta.env.DEV && (
-      window.location.hostname.includes('github.io') ||
-      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
-    )
-
-    if (isStaticDeployment) {
-      // No server available in static deployment
-      return
-    }
+    // Only the dev server and a local server (Pi, desktop app) have one: a
+    // static deployment (*.openvolley.app, *.pages.dev) answers with its SPA
+    const statusUrl = getLocalServerStatusUrl()
+    if (!statusUrl) return
 
     const fetchServerStatus = async () => {
       try {
-        const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
-        const hostname = window.location.hostname
-        const port = window.location.port || (protocol === 'https' ? '443' : '5173')
-        const response = await fetch(`${protocol}://${hostname}:${port}/api/server/status`)
-        if (response.ok) {
+        const response = await fetch(statusUrl)
+        if (response.ok && (response.headers?.get?.('content-type') || '').includes('json')) {
           const status = await response.json()
           setServerStatus(status)
         }
@@ -619,7 +609,7 @@ export default function App() {
       } else {
         // State of the app's own relay socket. No throwaway probe socket: this
         // check runs every 30 s and on every match write.
-        const ws = typeof wsRef !== 'undefined' ? wsRef.current : null
+        const ws = scorerRelay.socket
         if (ws && ws.readyState === WebSocket.OPEN) {
           updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable (active connection)' })
         } else if (ws && ws.readyState === WebSocket.CONNECTING) {
@@ -942,208 +932,46 @@ export default function App() {
     }
   }, [currentMatch])
 
-  // Connect to WebSocket server and sync match data (works from any view)
-  // Use refs to prevent unnecessary reconnections
-  const wsRef = useRef(null)
+  // The match on the relay (referee / bench / livescore follow it there), from
+  // any view. One relay connection per scorer, shared with the Scoreboard
+  // (utils/relayPublisher scorerRelay): one socket owns the match, so the two
+  // no longer refuse each other. Refs keep the socket from being rebuilt.
   const syncIntervalRef = useRef(null)
-  const reconnectTimeoutRef = useRef(null)
   const currentMatchIdRef = useRef(null)
   const currentMatchRef = useRef(null)
-  const isIntentionallyClosedRef = useRef(false)
-  // PINs go to the relay with a socket's first sync and when one changed
-  const relayPinsRef = useRef(null)
-  if (relayPinsRef.current === null) relayPinsRef.current = createRelayPinTracker()
-  const reconnectAttemptRef = useRef(0)
+  // The relay key this device last published its current match under
+  const publishedRelayKeyRef = useRef(null)
+  // The effect's sync, to publish at once when the match gets its seed key
+  const relaySyncRef = useRef(null)
 
   // Update currentMatch ref whenever it changes
   useEffect(() => {
     currentMatchRef.current = currentMatch
   }, [currentMatch])
 
+  // A blank match is not published (no seed key, see relayMatchKey): publish
+  // it as soon as Create Match gives it one, not after the 30 s backup sync.
+  const currentRelayKey = relayMatchKey(currentMatch)
   useEffect(() => {
-    // Keep WebSocket connection alive even when on home screen (for dashboards)
+    if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
+  }, [currentRelayKey])
+
+  useEffect(() => {
+    // Keep the match on the relay even on the home screen (for dashboards).
     // Use matchId or fall back to currentMatch?.id for background sync
     const activeMatchId = matchId || currentMatch?.id
     if (!activeMatchId || !currentMatch) {
-      // Clean up if we had a connection for a different match
-      if (wsRef.current) {
-        isIntentionallyClosedRef.current = true
-        wsRef.current.close()
-        wsRef.current = null
-      }
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current)
-        syncIntervalRef.current = null
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-        reconnectTimeoutRef.current = null
-      }
       currentMatchIdRef.current = null
       return
     }
-
-    // Only reconnect if matchId actually changed
-    if (currentMatchIdRef.current === activeMatchId && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      return
-    }
-
-    // If matchId changed, close old connection and clear old match from server
-    if (currentMatchIdRef.current !== activeMatchId && currentMatchIdRef.current && wsRef.current) {
-      const oldMatchId = currentMatchIdRef.current
-
-      // Clear old match from server
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({
-            type: 'delete-match',
-            matchId: String(oldMatchId)
-          }))
-        } catch (err) {
-          console.error('[App WebSocket] Error deleting old match:', err)
-        }
-      }
-
-      isIntentionallyClosedRef.current = true
-      wsRef.current.close()
-      wsRef.current = null
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current)
-        syncIntervalRef.current = null
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-        reconnectTimeoutRef.current = null
-      }
-    }
-
-    // Don't clear matches when going to home - keep dashboards connected
-    // Only clear on explicit delete (handled in confirmDeleteMatch)
-
     currentMatchIdRef.current = activeMatchId
-    isIntentionallyClosedRef.current = false
 
-    const connectWebSocket = async () => {
-      // Don't reconnect if intentionally closed or matchId changed
-      if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) {
-        return
-      }
+    // The relay the Scoreboard and the tablets use (backendConfig)
+    const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+    if (!wsUrl) return // page opened from disk: no relay
 
-      // Close existing connection if any
-      if (wsRef.current) {
-        const oldWs = wsRef.current
-        const oldState = oldWs.readyState
-
-        // Remove all handlers first to prevent error logs
-        try {
-          oldWs.onerror = null
-          oldWs.onclose = null
-          oldWs.onopen = null
-          oldWs.onmessage = null
-        } catch (err) {
-          // Ignore if handlers can't be set
-        }
-
-        // Only try to close if not already closed/closing
-        if (oldState === WebSocket.OPEN) {
-          try {
-            oldWs.close(1000, 'Reconnecting')
-          } catch (err) {
-            // Ignore errors when closing
-          }
-        } else if (oldState === WebSocket.CONNECTING) {
-          // For connecting state, just null the ref - let it fail naturally
-          // Don't try to close as it causes browser errors
-        }
-        wsRef.current = null
-      }
-
-      // The relay the Scoreboard and the tablets use (backendConfig)
-      const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
-      if (!wsUrl) return // page opened from disk: no relay
-
-      // Back off while the relay is unreachable (5 s doubling to 60 s)
-      const scheduleReconnect = () => {
-        if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) return
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
-        reconnectTimeoutRef.current = setTimeout(connectWebSocket, relayReconnectDelay(reconnectAttemptRef.current))
-        reconnectAttemptRef.current += 1
-      }
-
-      try {
-        wsRef.current = new WebSocket(wsUrl)
-
-        // Set error handler first to catch any immediate errors
-        wsRef.current.onerror = () => {
-          // Suppress - browser will show native errors if needed
-        }
-
-        wsRef.current.onopen = () => {
-          // Verify we're still on the same match
-          if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) {
-            if (wsRef.current) {
-              wsRef.current.close()
-            }
-            return
-          }
-
-          reconnectAttemptRef.current = 0
-          // (No 'clear-all-matches' here: a fresh socket owns nothing, so the
-          // relay always refused it.)
-          syncMatchData()
-          // Periodic sync as backup only (every 30 seconds), without PINs
-          // unless one changed. Primary sync happens in the Scoreboard.
-          if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
-          syncIntervalRef.current = setInterval(syncMatchData, 30000)
-        }
-
-        wsRef.current.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data)
-
-            if (message.type === 'pin-validation-request') {
-              handlePinValidationRequest(message)
-            } else if (message.type === 'match-data-request') {
-              handleMatchDataRequest(message)
-            } else if (message.type === 'game-number-request') {
-              handleGameNumberRequest(message)
-            } else if (isRelayErrorFor(message, [activeMatchId, relayKeyOfCurrent()])) {
-              // The relay refused or lost this match: the next sync carries the PINs
-              relayPinsRef.current.reset()
-              if (message.code === 'pins-required') syncMatchData()
-            }
-            // Removed match-update-request handling - using sync-match-data instead
-          } catch (err) {
-            console.error('[App WebSocket] Error parsing message:', err)
-          }
-        }
-
-        wsRef.current.onclose = (event) => {
-          // Don't reconnect if intentionally closed or matchId changed
-          if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) {
-            return
-          }
-
-          // Don't reconnect on normal closure
-          if (event.code === 1000) {
-            return
-          }
-
-          if (syncIntervalRef.current) {
-            clearInterval(syncIntervalRef.current)
-            syncIntervalRef.current = null
-          }
-
-          scheduleReconnect()
-        }
-      } catch (err) {
-        console.error('[App WebSocket] Connection error:', err)
-        scheduleReconnect()
-      }
-    }
-
-    // Relay room key of the current match (its seed_key, else the Dexie id)
-    const relayKeyOfCurrent = () => relayMatchKey(currentMatchRef.current, currentMatchIdRef.current)
+    // Relay room key of the current match (its seed key; null before it has one)
+    const relayKeyOfCurrent = () => relayMatchKey(currentMatchRef.current)
 
     // The match for the relay: never game_pin / connection_pins
     const relayMatchOf = (match) => relayMatchPayload(match).match
@@ -1165,13 +993,17 @@ export default function App() {
 
     const syncMatchData = async () => {
       // Use current values from refs
-      const ws = wsRef.current
+      const ws = scorerRelay.socket
       const currentActiveMatchId = currentMatchIdRef.current
       const currentMatchData = currentMatchRef.current // Use ref to get latest value
 
       if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData || currentActiveMatchId !== activeMatchId) {
         return
       }
+      // No seed key yet (blank match before Create Match): nothing a tablet
+      // could join, and a Dexie id is no room key (see relayMatchKey)
+      const relayKey = relayMatchKey(currentMatchData)
+      if (!relayKey) return
 
       try {
         // Load full match data
@@ -1184,16 +1016,25 @@ export default function App() {
           currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
         ])
 
+        if (scorerRelay.socket !== ws || relayMatchKey(currentMatchRef.current) !== relayKey) return
+
+        // Another match than the one published before (the scorer switched
+        // matches): take that one off the relay, this socket owns it
+        const previousKey = publishedRelayKeyRef.current
+        if (previousKey && previousKey !== relayKey) {
+          scorerRelay.send({ type: 'delete-match', matchId: previousKey })
+        }
+
         // Full match object - scoreboard is source of truth, always overwrite.
-        // PINs only on this socket's first sync and when one changed; never
-        // game_pin / connection_pins (see relayMatchPayload).
-        const { match: fullMatch, commit: commitPins } = relayPinsRef.current.payloadFor(ws, currentMatchData)
+        // PINs only on this connection's first sync of the key and when one
+        // changed; never game_pin / connection_pins (see relayMatchPayload).
+        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, currentMatchData, relayKey)
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         // The relay keys the room by the seed_key (what the tablets know).
         const syncPayload = {
           type: 'sync-match-data',
-          matchId: relayMatchKey(currentMatchData, currentActiveMatchId),
+          matchId: relayKey,
           match: fullMatch,
           homeTeam,
           awayTeam,
@@ -1207,13 +1048,14 @@ export default function App() {
 
         ws.send(JSON.stringify(syncPayload))
         commitPins()
+        publishedRelayKeyRef.current = relayKey
       } catch (err) {
         console.error('[App WebSocket] Error syncing match data:', err)
       }
     }
 
     const handlePinValidationRequest = async (request) => {
-      const ws = wsRef.current
+      const ws = scorerRelay.socket
       const currentActiveMatchId = currentMatchIdRef.current
       const currentMatchData = currentMatchRef.current // Use ref to get latest value
 
@@ -1260,7 +1102,7 @@ export default function App() {
     }
 
     const handleMatchDataRequest = async (request) => {
-      const ws = wsRef.current
+      const ws = scorerRelay.socket
       const currentActiveMatchId = currentMatchIdRef.current
       const currentMatchData = currentMatchRef.current // Use ref to get latest value
 
@@ -1271,8 +1113,8 @@ export default function App() {
 
         // Only by the relay room key (seed_key): a Dexie id is not unique
         // across scorers, answering it would open a second, frozen room.
-        const relayKey = relayMatchKey(currentMatchData, currentActiveMatchId)
-        if (String(requestedMatchId) !== relayKey) {
+        const relayKey = relayMatchKey(currentMatchData)
+        if (!relayKey || String(requestedMatchId) !== relayKey) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
             requestId,
@@ -1313,8 +1155,7 @@ export default function App() {
     }
 
     const handleGameNumberRequest = async (request) => {
-      const ws = wsRef.current
-      const currentActiveMatchId = currentMatchIdRef.current
+      const ws = scorerRelay.socket
       const currentMatchData = currentMatchRef.current // Use ref to get latest value
 
       if (!ws || ws.readyState !== WebSocket.OPEN || !currentMatchData) return
@@ -1325,8 +1166,9 @@ export default function App() {
         const matchGameNumber = String(currentMatchData.gameNumber || '')
         const matchGameN = String(currentMatchData.game_n || '')
         const matchIdStr = String(currentMatchData.id || '')
+        const relayKey = relayMatchKey(currentMatchData)
 
-        if (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr) {
+        if (relayKey && (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr)) {
           // PIN-free summary: the relay hands this to an unauthenticated caller.
           // matchId is the room key the relay stores the match under.
           ws.send(JSON.stringify({
@@ -1334,7 +1176,7 @@ export default function App() {
             requestId,
             success: true,
             match: publicMatchSummary(currentMatchData),
-            matchId: relayMatchKey(currentMatchData, currentActiveMatchId)
+            matchId: relayKey
           }))
         } else {
           ws.send(JSON.stringify({
@@ -1351,56 +1193,43 @@ export default function App() {
 
     // Removed handleMatchUpdateRequest - using sync-match-data instead
 
-    connectWebSocket()
-
-    return () => {
-      isIntentionallyClosedRef.current = true
-
-      // Clear all matches from server when component unmounts (scoreboard is source of truth)
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(JSON.stringify({
-            type: 'clear-all-matches'
-          }))
-        } catch (err) {
-          // Ignore error on unmount
+    // (No 'clear-all-matches' on open or on cleanup: a fresh socket owns
+    // nothing, and the one socket also carries the Scoreboard's match.)
+    const detachRelay = scorerRelay.attach(wsUrl, {
+      onOpen: () => {
+        syncMatchData()
+        // Periodic sync as backup only (every 30 seconds), without PINs
+        // unless one changed. Primary sync happens in the Scoreboard: while it
+        // is open (attached too) it syncs every action itself.
+        if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = setInterval(() => {
+          if (scorerRelay.userCount === 1) syncMatchData()
+        }, 30000)
+      },
+      onMessage: (message) => {
+        if (message.type === 'pin-validation-request') {
+          handlePinValidationRequest(message)
+        } else if (message.type === 'match-data-request') {
+          handleMatchDataRequest(message)
+        } else if (message.type === 'game-number-request') {
+          handleGameNumberRequest(message)
+        } else if (isRelayErrorFor(message, [relayKeyOfCurrent()])) {
+          // The relay refused or lost this match: the next sync carries the PINs
+          scorerRelay.pins.reset()
+          // (an open Scoreboard resyncs itself)
+          if (message.code === 'pins-required' && scorerRelay.userCount === 1) syncMatchData()
         }
       }
+    })
+    relaySyncRef.current = syncMatchData
 
+    return () => {
+      relaySyncRef.current = null
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current)
         syncIntervalRef.current = null
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-        reconnectTimeoutRef.current = null
-      }
-      if (wsRef.current) {
-        const ws = wsRef.current
-        const readyState = ws.readyState
-
-        // Remove all handlers first to prevent error logs
-        try {
-          ws.onerror = null
-          ws.onclose = null
-          ws.onopen = null
-          ws.onmessage = null
-        } catch (err) {
-          // Ignore if handlers can't be set
-        }
-
-        // Only try to close if connection is OPEN
-        // Don't close if CONNECTING - let it fail naturally to avoid browser errors
-        if (readyState === WebSocket.OPEN) {
-          try {
-            ws.close(1000, 'Component unmounting')
-          } catch (err) {
-            // Ignore errors during cleanup
-          }
-        }
-        // For CONNECTING or CLOSING states, just null the ref
-        wsRef.current = null
-      }
+      detachRelay()
     }
   }, [matchId, currentMatch?.id, serverStatus?.wsPort]) // Only depend on matchId and wsPort, not the full objects
 
@@ -1466,18 +1295,9 @@ export default function App() {
         })
       }
 
-      // Notify server to delete match from matchDataStore (since it's now final)
-      const ws = wsRef.current
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify({
-            type: 'delete-match',
-            matchId: String(cur.matchId)
-          }))
-        } catch (err) {
-          // Ignore error
-        }
-      }
+      // The match stays on the relay: the referee and bench keep showing the
+      // result. (The 'delete-match' sent here named the Dexie id, which is no
+      // relay key: the relay refused it as not this socket's match.)
 
       // Show match end screen
       setShowMatchEnd(true)
@@ -2122,17 +1942,11 @@ export default function App() {
       console.log('[Delete Match] Match deleted successfully')
     })
 
-    // Notify server to delete match from matchDataStore
-    const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({
-          type: 'delete-match',
-          matchId: String(matchIdToDelete)
-        }))
-      } catch (err) {
-        // Ignore error
-      }
+    // Take the match off the relay, by its room key (the seed key)
+    const deletedRelayKey = relayMatchKey(matchToDelete)
+    if (deletedRelayKey) {
+      scorerRelay.send({ type: 'delete-match', matchId: deletedRelayKey })
+      if (publishedRelayKeyRef.current === deletedRelayKey) publishedRelayKeyRef.current = null
     }
 
     // Delete from Supabase if match hasn't ended (not 'final')

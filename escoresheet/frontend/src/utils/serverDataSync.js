@@ -113,7 +113,8 @@ export async function getMatchData(matchId) {
 
     if (response.ok) {
       const result = await response.json()
-      return result
+      // The relay's copy may lag behind the live state it stored with it
+      return result?.success ? applyNewerLiveState(result) : result
     }
   } catch (error) {
     console.debug('[getMatchData] HTTP fetch failed, trying API fallback:', error.message)
@@ -192,6 +193,54 @@ export function isNewerLiveState(row, lastTs, { allowEqual = false } = {}) {
   const last = Date.parse(lastTs)
   if (Number.isNaN(t) || Number.isNaN(last)) return true
   return allowEqual ? t >= last : t > last
+}
+
+const liveStateTime = (liveState) => Date.parse(liveState?.updated_at)
+
+/**
+ * Which live state to keep when `incoming` arrives after `current` (relay
+ * push, relay bundle, match_live_state row): `incoming` unless its updated_at
+ * is older. Either may be missing; unknown timestamps count as newer.
+ */
+export function newerLiveState(current, incoming) {
+  if (!incoming) return current || null
+  if (!current) return incoming
+  return liveStateTime(incoming) < liveStateTime(current) ? current : incoming
+}
+
+/**
+ * A relay bundle with a live state that is newer than it applied: the scorer
+ * pushes its live state after every action, but the bundle (sets, events) can
+ * arrive later, be refused, or be read back from the relay before the scorer's
+ * sync landed. Then the live state's points replace those of the set it names,
+ * so the referee and bench show the newest score whichever path brought it.
+ * "Newer" compares the live state's updated_at with the bundle's
+ * match._syncedAt, both on the scorer's clock. A bundle without _syncedAt
+ * (older scorer) or an older live state is returned as it is.
+ * @param {object} bundle - { match, sets, liveState?, ... }
+ * @param {object|null} [liveState] - defaults to the bundle's own
+ */
+export function applyNewerLiveState(bundle, liveState = bundle?.liveState) {
+  if (!bundle || !liveState || !Array.isArray(bundle.sets)) return bundle
+  const syncedAt = Number(bundle.match?._syncedAt)
+  const liveAt = liveStateTime(liveState)
+  if (!Number.isFinite(syncedAt) || Number.isNaN(liveAt) || liveAt <= syncedAt) return bundle
+  const out = { ...bundle, liveState }
+  const index = Number(liveState.current_set)
+  const pointsA = Number(liveState.points_a)
+  const pointsB = Number(liveState.points_b)
+  if (!Number.isFinite(index) || !Number.isFinite(pointsA) || !Number.isFinite(pointsB)) return out
+  const teamAIsHome = (bundle.match?.coinTossTeamA || 'home') === 'home'
+  const homePoints = teamAIsHome ? pointsA : pointsB
+  const awayPoints = teamAIsHome ? pointsB : pointsA
+  let changed = false
+  const sets = bundle.sets.map((s) => {
+    if (!s || Number(s.index) !== index || s.finished) return s
+    if (s.homePoints === homePoints && s.awayPoints === awayPoints) return s
+    changed = true
+    return { ...s, homePoints, awayPoints }
+  })
+  return changed ? { ...out, sets } : out
 }
 
 /**
@@ -817,23 +866,30 @@ export function subscribeToMatchData(matchId, onUpdate) {
           if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr) {
             // Match data (full snapshot on subscribe, then every scoreboard sync).
             // Pass through timestamp fields for latency tracking.
-            const payload = readRelayBundle(message)
-            if (payload) {
+            const bundle = readRelayBundle(message)
+            if (bundle) {
               // The relay decides whether the last live-state still applies: it
               // re-sends it with every bundle while the same scoreboard / game PIN
               // keeps the match, and drops it on a takeover. Re-applying an old
               // one here would show another match's sides, sets or 'ended' state.
+              // A live state newer than the bundle wins over its score.
+              const payload = applyNewerLiveState(bundle)
               connection.lastLiveState = payload.liveState
               connection.lastPayload = payload
               notify(payload)
             }
           } else if (message.type === 'live-state-update' && String(message.matchId) === matchIdStr) {
-            // Scoreboard's computed live-state (LAN relays): re-deliver the last
-            // bundle with it so consumers see one consistent object.
-            connection.lastLiveState = message.liveState
-            if (connection.lastPayload) {
-              connection.lastPayload = { ...connection.lastPayload, liveState: message.liveState }
-              notify(connection.lastPayload)
+            // Scoreboard's computed live-state: re-deliver the last bundle with
+            // it so consumers see one consistent object, its score included
+            // when the push is newer than the bundle. An older push (pushes and
+            // syncs race) is not applied over a newer one.
+            const liveState = newerLiveState(connection.lastLiveState, message.liveState)
+            if (liveState && liveState === message.liveState) {
+              connection.lastLiveState = liveState
+              if (connection.lastPayload) {
+                connection.lastPayload = applyNewerLiveState({ ...connection.lastPayload, liveState }, liveState)
+                notify(connection.lastPayload)
+              }
             }
           } else if (message.type === 'match-deleted' && String(message.matchId) === matchIdStr) {
             // Match removed from the relay (match end / scorer deleted it)
@@ -1455,21 +1511,31 @@ const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
 
 /**
  * The relay room key of a scorer's match: its seed_key (what the tablets know
- * from the PIN check and the QR code), else the local id.
+ * from the PIN check and the QR code); a test match's seedKey (the relays key
+ * by seed_key ?? seedKey too). Null while the match has none (a blank match
+ * before Create Match): it is not published then. A Dexie id is no key: every
+ * device's first match is id 1, so scorers met in room '1' and a tablet
+ * following it got another scorer's match.
+ * @param {object|null} match
+ * @returns {string|null}
  */
-export function relayMatchKey(match, localId) {
-  const seed = match?.seed_key
-  return typeof seed === 'string' && seed.trim() ? seed.trim() : String(localId ?? match?.id ?? '')
+export function relayMatchKey(match) {
+  for (const seed of [match?.seed_key, match?.seedKey]) {
+    if (typeof seed === 'string' && seed.trim()) return seed.trim()
+  }
+  return null
 }
 
 /**
  * The match object a scorer sends in sync-match-data. PINs go only with the
  * first sync on a socket and when one changes (the relay keeps the stored ones
  * meanwhile); pass the signature returned last time for this socket, or null.
+ * `_syncedAt` (the scorer's clock) lets the tablets tell whether a live-state
+ * push is newer than this copy (applyNewerLiveState).
  * @returns {{ match: object, pinSignature: string }}
  */
-export function relayMatchPayload(match, lastPinSignature = null) {
-  const out = { ...(match || {}) }
+export function relayMatchPayload(match, lastPinSignature = null, { now = Date.now() } = {}) {
+  const out = { ...(match || {}), _syncedAt: now }
   const pins = {}
   for (const f of RELAY_PIN_FIELDS) {
     const v = f === 'gamePin' ? (out.gamePin ?? out.game_pin) : out[f]

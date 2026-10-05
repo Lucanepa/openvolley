@@ -16,6 +16,15 @@ describe('cloudTabletBase', () => {
     expect(cloudTabletBase('referee', 'app.openvolley.app')).toBe('https://referee.openvolley.app')
   })
 
+  it('a Cloudflare Pages build links the same build of the tablet sites', () => {
+    expect(cloudTabletBase('referee', 'dev.openvolley-app.pages.dev')).toBe('https://dev.openvolley-referee.pages.dev')
+    expect(cloudTabletBase('bench_home', 'dev.openvolley-app.pages.dev')).toBe('https://dev.openvolley-bench.pages.dev')
+    expect(cloudTabletBase('bench_away', 'feat-x.openvolley-app.pages.dev')).toBe('https://feat-x.openvolley-bench.pages.dev')
+    expect(cloudTabletBase('livescore', 'openvolley-app.pages.dev')).toBe('https://openvolley-livescore.pages.dev')
+    // Another Pages project is not the scorer's
+    expect(cloudTabletBase('referee', 'dev.someone-else.pages.dev')).toBe('https://referee.openvolley.app')
+  })
+
   it('falls back to the production sites off openvolley.app', () => {
     expect(cloudTabletBase('bench_away', 'localhost')).toBe('https://bench.openvolley.app')
     expect(cloudTabletBase('referee', 'scorer.example.org')).toBe('https://referee.openvolley.app')
