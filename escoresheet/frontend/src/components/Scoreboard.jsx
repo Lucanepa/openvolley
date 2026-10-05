@@ -25,8 +25,7 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
-import { createLiveStateOrder, isRelayErrorFor, scorerRelay } from '../utils/relayPublisher'
-import { getRelayWebSocketUrl } from '../utils/backendConfig'
+import { isRelayErrorFor, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -378,9 +377,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const initialSyncRef = useRef(null)
   // Relay room key of this match (its seed_key; null while it has none)
   const relayKeyRef = useRef(null)
-  // Live-state pushes and match_live_state upserts: never older over newer
-  const liveStateOrderRef = useRef(null)
-  if (liveStateOrderRef.current === null) liveStateOrderRef.current = createLiveStateOrder()
+  // Live-state pushes and match_live_state upserts: never older over newer.
+  // The page's one order (shared with App's syncs, which mark it): its
+  // numbers keep rising across remounts, so the tablets can order by them.
+  const liveStateOrderRef = useRef(scorerLiveOrder)
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -1324,7 +1324,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // The relay the tablets use too (?server= / connection-screen override,
     // VITE_BACKEND_URL, cloud relay, LAN relay WS port): see backendConfig.
     // None (page opened from disk): nothing to publish to.
-    const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+    const wsUrl = scorerRelayUrl({ wsPort: serverStatus?.wsPort })
     if (!wsUrl) return
 
     // The scorer's one relay connection, shared with App (utils/relayPublisher
@@ -1386,6 +1386,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
 
       try {
+        // Before the reads: a live state numbered after this mark is newer
+        // than what this sync carries (applyNewerLiveState on the tablets)
+        const syncMark = liveStateOrderRef.current.mark()
         // Fetch ALL fresh data from IndexedDB (not from React state which may be stale due to closures)
         const freshMatch = await db.matches.get(matchId)
         if (!freshMatch) return
@@ -1409,7 +1412,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // The relay keys the room by the seed_key: the id the tablets know.
         // PINs only on this connection's first sync of the key and when one changed.
         relayKeyRef.current = relayKey
-        const { match: relayMatch, commit: commitPins } = scorerRelay.pins.payloadFor(currentWs, freshMatch, relayKey)
+        const { match: relayMatch, commit: commitPins } = scorerRelay.pins.payloadFor(currentWs, freshMatch, relayKey, syncMark)
         const sendTimestamp = Date.now()
         const syncPayload = {
           type: 'sync-match-data',
@@ -1537,6 +1540,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           return
         }
 
+        // Before the reads (see syncMatchData)
+        const syncMark = liveStateOrderRef.current.mark()
         // Fetch ALL fresh data from IndexedDB (not from React state which may be stale due to closures)
         const freshMatch = await db.matches.get(matchId)
         if (!freshMatch) {
@@ -1566,7 +1571,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           success: true,
           data: {
             // Never game_pin / connection_pins (the relay needs only its PIN fields)
-            match: relayMatchPayload(freshMatch).match,
+            match: relayMatchPayload(freshMatch, null, { mark: syncMark }).match,
             homeTeam: freshHomeTeam || null,
             awayTeam: freshAwayTeam || null,
             homePlayers: freshHomePlayers || [],
@@ -1725,10 +1730,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
+    // Only under the seed key: a Dexie id is no relay room (relayMatchKey)
+    if (!relayKeyRef.current) return
     const sendTimestamp = Date.now()
     sendRelayMessage({
       type: 'match-action',
-      matchId: relayKeyRef.current || matchId,
+      matchId: relayKeyRef.current,
       action: actionType,
       data: actionData,
       timestamp: sendTimestamp,
@@ -1977,8 +1984,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
       // Never an older state after a newer one: on a side-out the 'point' push
       // (snapshot from before the rotation) and the 'rotation' push race.
-      if (liveOrder.shouldPush(liveSeq)) {
-        sendRelayMessage({ type: 'live-state-update', matchId: relayKeyRef.current || matchId, liveState: { ...liveStateData } })
+      // Only under the seed key (a Dexie id is no relay room). The push
+      // carries the order (_seq, _session): the tablets compare it with the
+      // bundle's _syncedSeq instead of the wall clock. Not in the database row.
+      if (relayKeyRef.current && liveOrder.shouldPush(liveSeq)) {
+        sendRelayMessage({
+          type: 'live-state-update',
+          matchId: relayKeyRef.current,
+          liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session }
+        })
       }
 
       // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
@@ -5729,19 +5743,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
 
         // NOTE: Match update sync is now done in STEP 8 (sequential sync) above
-
-        // Notify server to delete match from matchDataStore (since it's now final)
-        const currentWs = wsRef.current
-        if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-          try {
-            currentWs.send(JSON.stringify({
-              type: 'delete-match',
-              matchId: String(matchId)
-            }))
-          } catch (err) {
-            // Silently ignore WebSocket errors
-          }
-        }
+        // The final result stays on the relay for the tablets (App.jsx); the
+        // 'delete-match' sent here named the Dexie id, which is no relay room.
 
         // Trigger event backup for Safari/Firefox (match end)
         onTriggerEventBackup?.('match_end')

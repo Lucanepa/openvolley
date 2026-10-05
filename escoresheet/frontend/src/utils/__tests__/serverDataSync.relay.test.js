@@ -6,6 +6,8 @@ import {
   isNewerLiveState,
   newerLiveState,
   applyNewerLiveState,
+  isLiveStateNewerThanBundle,
+  createLiveStateTracker,
   summarizeRelayTablets,
   applyRelayTablets,
   matchTeamNames,
@@ -30,6 +32,16 @@ describe('relay key and payload (scorer)', () => {
 
   it('stamps the sync with the scorer\'s clock (tablets compare live-state pushes with it)', () => {
     expect(relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 1234 }).match._syncedAt).toBe(1234)
+  })
+
+  it('stamps the sync with the live-state order marked before the reads', () => {
+    const { match } = relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 9999, mark: { seq: 7, session: 's1', at: 1234 } })
+    expect(match).toMatchObject({ _syncedSeq: 7, _syncSession: 's1', _syncedAt: 1234 })
+    // No mark: no order (a stale one in the stored match is not passed on)
+    const plain = relayMatchPayload({ id: 1, seed_key: SEED, _syncedSeq: 3, _syncSession: 'old' }, null, { now: 5 }).match
+    expect(plain._syncedSeq).toBeUndefined()
+    expect(plain._syncSession).toBeUndefined()
+    expect(plain._syncedAt).toBe(5)
   })
 
   it('sends the PINs with the first sync of a socket and when one changes, never otherwise', () => {
@@ -345,5 +357,65 @@ describe('newest live state wins over an older relay copy (referee / bench)', ()
     expect(applyNewerLiveState(b, { current_set: 1, points_a: 0, points_b: 0, updated_at: iso(500) }).sets[0]).toMatchObject({ homePoints: 25 })
     // The bundle's own live state by default
     expect(applyNewerLiveState(bundle({ liveState: { current_set: 2, points_a: 4, points_b: 4, updated_at: iso(1) } })).sets[1]).toMatchObject({ homePoints: 4, awayPoints: 4 })
+  })
+})
+
+describe('live-state order: sequence numbers, not the scorer\'s wall clock', () => {
+  const T0 = Date.UTC(2026, 9, 5, 18, 6, 0)
+  const iso = (ms) => new Date(T0 + ms).toISOString()
+  const live = (seq, ms, points, session = 'S') => ({ current_set: 1, points_a: points, points_b: 0, updated_at: iso(ms), _seq: seq, _session: session })
+  const bundle = (syncedSeq, syncedAtMs, points, extra = {}) => ({
+    success: true,
+    match: { id: 1, coinTossTeamA: 'home', _syncedSeq: syncedSeq, _syncSession: 'S', _syncedAt: T0 + syncedAtMs },
+    sets: [{ index: 1, homePoints: points, awayPoints: 0, finished: false }],
+    ...extra
+  })
+
+  it('orders one session by sequence even when the clock stepped back', () => {
+    const beforeStep = live(10, 60000, 10) // clock ahead
+    const afterStep = live(11, 1000, 11) // clock stepped back by NTP
+    expect(newerLiveState(beforeStep, afterStep)).toBe(afterStep)
+    expect(newerLiveState(afterStep, beforeStep)).toBe(afterStep)
+    // Another session (a reload): by updated_at
+    const other = live(1, 2000, 12, 'T')
+    expect(newerLiveState(beforeStep, other)).toBe(beforeStep)
+    // A database row (no order): by updated_at
+    expect(newerLiveState(beforeStep, { ...afterStep, _seq: undefined, _session: undefined })).toBe(beforeStep)
+  })
+
+  it('a bundle read after a live state outranks it, whatever the clocks say', () => {
+    // Live state 10 stamped before the step, bundle marked at seq 11 after it
+    expect(isLiveStateNewerThanBundle(live(10, 60000, 10), bundle(11, 2000, 12))).toBe(false)
+    expect(applyNewerLiveState(bundle(11, 2000, 12), live(10, 60000, 10)).sets[0].homePoints).toBe(12)
+    // Live state 12 computed after that bundle was read: its score wins
+    expect(isLiveStateNewerThanBundle(live(12, 2500, 13), bundle(11, 3000, 12))).toBe(true)
+    expect(applyNewerLiveState(bundle(11, 3000, 12), live(12, 2500, 13)).sets[0].homePoints).toBe(13)
+    // Equal: the live state was numbered before the reads began, the bundle has it
+    expect(isLiveStateNewerThanBundle(live(11, 9000, 13), bundle(11, 0, 12))).toBe(false)
+  })
+
+  it('the tablet drops a state kept from before a clock step once a later bundle arrives', () => {
+    const tracker = createLiveStateTracker()
+    // Before the step: push 10 at T+60 s
+    expect(tracker.bundle(bundle(9, 59000, 9, { liveState: live(10, 60000, 10) })).sets[0].homePoints).toBe(10)
+    // After the step: the scorer's next sync (mark 12) with points 12, its stored live state 11
+    const shown = tracker.bundle(bundle(12, 3000, 12, { liveState: live(11, 2000, 11) }))
+    expect(shown.sets[0].homePoints).toBe(12)
+    // Later bundles never get the old score written over them again
+    expect(tracker.bundle(bundle(13, 4000, 13)).sets[0].homePoints).toBe(13)
+    // Covered by that bundle: nothing kept that could roll a score back
+    expect(tracker.newest).toBeNull()
+  })
+
+  it('a database row newer than the relay copy is shown over it', () => {
+    const tracker = createLiveStateTracker()
+    tracker.bundle({ success: true, match: { id: 1, coinTossTeamA: 'home', _syncedAt: T0 }, sets: [{ index: 1, homePoints: 3, awayPoints: 0, finished: false }] })
+    expect(tracker.liveState({ current_set: 1, points_a: 4, points_b: 0, updated_at: iso(100) })).toBe(true)
+    expect(tracker.bundle(tracker.lastBundle).sets[0].homePoints).toBe(4)
+    // An older row changes nothing
+    expect(tracker.liveState({ current_set: 1, points_a: 2, points_b: 0, updated_at: iso(50) })).toBe(false)
+    // Results built from a live-state row pass through
+    const fromRow = { success: true, source: 'live_state', sets: [] }
+    expect(tracker.bundle(fromRow)).toBe(fromRow)
   })
 })

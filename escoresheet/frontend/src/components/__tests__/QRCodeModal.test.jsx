@@ -21,6 +21,8 @@ describe('cloudTabletBase', () => {
     expect(cloudTabletBase('bench_home', 'dev.openvolley-app.pages.dev')).toBe('https://dev.openvolley-bench.pages.dev')
     expect(cloudTabletBase('bench_away', 'feat-x.openvolley-app.pages.dev')).toBe('https://feat-x.openvolley-bench.pages.dev')
     expect(cloudTabletBase('livescore', 'openvolley-app.pages.dev')).toBe('https://openvolley-livescore.pages.dev')
+    // A per-deployment hash exists only in the scorer's project: the tablets' production build
+    expect(cloudTabletBase('referee', '3f2a1b9c.openvolley-app.pages.dev')).toBe('https://openvolley-referee.pages.dev')
     // Another Pages project is not the scorer's
     expect(cloudTabletBase('referee', 'dev.someone-else.pages.dev')).toBe('https://referee.openvolley.app')
   })

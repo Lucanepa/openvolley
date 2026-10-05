@@ -5,6 +5,29 @@
  * and how long to wait before reconnecting.
  */
 import { relayMatchPayload } from './serverDataSync'
+import { getRelayWebSocketUrl } from './backendConfig'
+
+let knownScorerWsPort = null
+
+/**
+ * The relay URL of the scorer page: App.jsx and Scoreboard.jsx both take it
+ * from here, so they attach the shared connection to the SAME url. The LAN
+ * relay's WS port, once either of them learnt it (Electron / server status),
+ * is remembered: a Scoreboard remount (it unmounts for every sub-view) starts
+ * without a status and would otherwise attach to the default-port URL, drop
+ * the socket, prove the match again, and switch back when its status arrives.
+ * @param {{ wsPort?: number|string|null }} [options]
+ * @returns {string|null}
+ */
+export function scorerRelayUrl({ wsPort = null } = {}) {
+  if (wsPort) knownScorerWsPort = wsPort
+  return getRelayWebSocketUrl({ wsPort: wsPort || knownScorerWsPort })
+}
+
+/** Tests only: forget the remembered WS port. */
+export function resetScorerRelayUrl() {
+  knownScorerWsPort = null
+}
 
 /**
  * PINs go to the relay with the first sync of a match key on a socket and when
@@ -19,11 +42,12 @@ export function createRelayPinTracker() {
   return {
     /**
      * The match object for a sync of `key` on `ws`. Call commit() once it was sent.
+     * `mark`: the live-state order's mark() taken before the sync read IndexedDB.
      * @returns {{ match: object, commit: () => void }}
      */
-    payloadFor(ws, match, key = null) {
+    payloadFor(ws, match, key = null, mark = null) {
       const same = sent.ws === ws && sent.key === key
-      const { match: out, pinSignature } = relayMatchPayload(match, same ? sent.signature : null)
+      const { match: out, pinSignature } = relayMatchPayload(match, same ? sent.signature : null, { mark })
       return { match: out, commit: () => { sent = { ws, key, signature: pinSignature } } }
     },
     reset() {
@@ -280,16 +304,29 @@ export function isRelayErrorFor(message, ids) {
  *   the 'rotation' one race);
  * - write(seq, fn): match_live_state upserts run one at a time, and one older
  *   than the last written is skipped (concurrent upserts are last-write-wins).
+ * - session: a random id of this order. The tablets compare sequence numbers
+ *   only within one session (a reload starts again at 1).
+ * - mark(): what a relay sync records BEFORE it reads IndexedDB ({ seq, session,
+ *   at }): the last sequence number issued and the time. A live state with a
+ *   higher number than a bundle's _syncedSeq was computed after the bundle was
+ *   read, so its score wins over the bundle's (serverDataSync.applyNewerLiveState).
  */
-export function createLiveStateOrder() {
+export function createLiveStateOrder({ session = newLiveSession(), now = () => Date.now() } = {}) {
   let seq = 0
   let lastPushed = 0
   let lastWritten = 0
   let chain = Promise.resolve()
   return {
+    session,
     next() {
       seq += 1
       return seq
+    },
+    current() {
+      return seq
+    },
+    mark() {
+      return { seq, session, at: now() }
     },
     shouldPush(n) {
       if (n < lastPushed) return false
@@ -323,5 +360,19 @@ export function relayReconnectDelay(attempt) {
   return Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
 }
 
+function newLiveSession() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  } catch { /* insecure context */ }
+  return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`
+}
+
 /** The scorer page's relay connection, shared by App.jsx and Scoreboard.jsx. */
 export const scorerRelay = createScorerRelay()
+
+/**
+ * The scorer page's live-state order, shared by App.jsx (its relay syncs mark
+ * it) and Scoreboard.jsx (every live state takes a number). One per page load,
+ * so the numbers keep rising across Scoreboard remounts.
+ */
+export const scorerLiveOrder = createLiveStateOrder()
