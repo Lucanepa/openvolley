@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
+import { Button } from '../ui/Button.jsx'
 
 export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false }) {
   const { t } = useTranslation()
@@ -186,13 +187,13 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
   return (
     <Modal title={title} open={open} onClose={onClose} width={600}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ 
-          border: '2px solid rgba(0,0,0,.3)', 
-          borderRadius: 8, 
-          background: '#ffffff',
-          position: 'relative',
-          touchAction: 'none'
-        }}>
+        {/* Drawing surface: white (the saved PNG is transparent and lands on
+            the white paper sheet), a stone-300 hairline, one radius step
+            inside the dialog. */}
+        <div
+          className="relative overflow-hidden rounded-xl border border-stone-300 bg-white"
+          style={{ touchAction: 'none' }}
+        >
           <canvas
             ref={canvasRef}
             style={{
@@ -208,14 +209,16 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
             onMouseLeave={readOnly ? undefined : stopDrawing}
           />
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        {/* Footer: Clear is a quiet tool on the left; Cancel then the commit
+            on the right (emerald = saving). h-11: signed courtside. */}
+        <div className="ov-kit flex flex-wrap items-center gap-2">
           {readOnly ? (
-            <button onClick={onClose}>{t('signature.close', 'Close')}</button>
+            <Button variant="dark" size="xl" className="ml-auto" onClick={onClose}>{t('signature.close', 'Close')}</Button>
           ) : (
             <>
-              <button className="secondary" onClick={clear}>{t('signature.clear', 'Clear')}</button>
-              <button className="secondary" onClick={handleCancel}>{t('signature.cancel', 'Cancel')}</button>
-              <button onClick={save} disabled={!hasSignature}>{t('signature.save', 'Save')}</button>
+              <Button variant="ghost" size="xl" className="font-medium" onClick={clear}>{t('signature.clear', 'Clear')}</Button>
+              <Button variant="secondary" size="xl" className="ml-auto font-medium" onClick={handleCancel}>{t('signature.cancel', 'Cancel')}</Button>
+              <Button variant="positive" size="xl" onClick={save} disabled={!hasSignature}>{t('signature.save', 'Save')}</Button>
             </>
           )}
         </div>
