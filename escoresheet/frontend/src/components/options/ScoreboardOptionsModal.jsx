@@ -7,54 +7,40 @@ import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup } from '../../u
 import BackupTable from '../BackupTable'
 import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
+import { ChevronDown, Info, X } from 'lucide-react'
+import { cn, IconButton, SegmentedControl, Switch } from '../../ui'
+
+// Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
+// Selection and "on" are slate-900, the non-destructive confirm emerald.
+const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-slate-400'
+const BTN_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
+const BTN_DANGER_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
+const BTN_DARK = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800 transition-colors disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
+const BTN_POSITIVE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
 
   return (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
-      <div
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        aria-expanded={showTooltip}
         onClick={(e) => {
           e.stopPropagation()
           setShowTooltip(!showTooltip)
         }}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '16px',
-          height: '16px',
-          borderRadius: '50%',
-          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'var(--border)',
-          color: 'var(--muted)',
-          fontSize: '11px',
-          fontWeight: 600,
-          cursor: 'pointer'
-        }}
+        className={cn(
+          'inline-flex h-5 w-5 items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/50',
+          showTooltip ? 'bg-sky-50 text-sky-700' : 'text-stone-400 hover:bg-sky-50 hover:text-sky-700'
+        )}
       >
-        i
-      </div>
+        <Info size={14} aria-hidden="true" />
+      </button>
       {showTooltip && (
         <div
           onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            marginTop: '8px',
-            padding: '8px 12px',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            fontSize: '12px',
-            color: 'var(--text)',
-            whiteSpace: 'normal',
-            width: 'max-content',
-            maxWidth: '250px',
-            zIndex: 10,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-          }}
+          className="absolute left-1/2 top-full z-10 mt-2 w-max max-w-[250px] -translate-x-1/2 whitespace-normal rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-normal leading-relaxed text-stone-700 shadow-xl"
         >
           {title}
         </div>
@@ -64,62 +50,34 @@ function InfoDot({ title }) {
 }
 
 function ToggleSwitch({ value, onToggle }) {
-  return (
-    <button
-      onClick={onToggle}
-      style={{
-        width: '52px',
-        height: '28px',
-        borderRadius: '14px',
-        border: 'none',
-        cursor: 'pointer',
-        background: value ? '#22c55e' : 'var(--border)',
-        position: 'relative',
-        transition: 'background 0.2s',
-        flexShrink: 0,
-        marginLeft: '16px'
-      }}
-    >
-      <div style={{
-        width: '20px',
-        height: '20px',
-        borderRadius: '10px',
-        background: '#fff',
-        position: 'absolute',
-        top: '4px',
-        left: value ? '28px' : '4px',
-        transition: 'left 0.2s'
-      }} />
-    </button>
-  )
+  // Kit Switch, lg; on = slate-900 here, not brand red (R4: over the scoreboard).
+  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className={cn('ml-4', value && 'bg-slate-900')} />
 }
 
 function Row({ children, style }) {
+  // svrz settings row: flat, min 48px, the Section list draws the hairlines.
+  // Spacing between rows comes from the dividers, so a passed marginBottom is dropped.
+  const { marginBottom, ...rest } = style || {}
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 16px',
-        background: 'var(--panel-2)',
-        borderRadius: '8px',
-        ...style
-      }}
-    >
+    <div className="flex min-h-12 shrink-0 items-center justify-between py-3" style={rest}>
       {children}
     </div>
   )
 }
 
-function Section({ title, children, borderBottom = true, paddingBottom = '24px' }) {
+function Section({ title, children }) {
+  // svrz section head (name on a dark 1.5px rule) over a flat divided list.
   return (
-    <div style={{ marginBottom: '24px', paddingBottom: borderBottom ? paddingBottom : 0, borderBottom: borderBottom ? '1px solid var(--border)' : 'none' }}>
+    <section className="mb-6">
       {title ? (
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>{title}</h3>
+        <div className="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5">
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-stone-800">{title}</h3>
+        </div>
       ) : null}
-      {children}
-    </div>
+      <div className="divide-y divide-stone-100">
+        {children}
+      </div>
+    </section>
   )
 }
 
@@ -136,24 +94,13 @@ function DurationInput({ value, onChange, label }) {
     const newVal = Math.max(60, Math.min(600, minutes * 60 + s))
     onChange(newVal)
   }
-  const inputStyle = {
-    width: '36px',
-    padding: '4px',
-    fontSize: '14px',
-    fontFamily: 'monospace',
-    fontWeight: 600,
-    textAlign: 'center',
-    background: 'var(--panel)',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    color: 'var(--text)'
-  }
+  const inputCls = cn(SMALL_FIELD, 'w-14 font-semibold')
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '16px' }}>
-      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} style={inputStyle} aria-label={`${label} minutes`} />
-      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>'</span>
-      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} style={inputStyle} aria-label={`${label} seconds`} />
-      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>''</span>
+    <div className="ml-4 flex items-center gap-1">
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={`${label} minutes`} />
+      <span className="text-sm font-semibold text-stone-500">'</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
+      <span className="text-sm font-semibold text-stone-500">''</span>
     </div>
   )
 }
@@ -308,141 +255,78 @@ export default function ScoreboardOptionsModal({
       width={900}
       hideCloseButton={true}
     >
+      <div className="ov-kit">
       {/* Sticky Header */}
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        background: 'var(--panel)',
-        borderBottom: '1px solid var(--border)',
-        padding: '12px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 10
-      }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('options.title')}</h2>
-        <button
-          onClick={onClose}
-          style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '6px',
-            border: 'none',
-            background: 'var(--panel)',
-            color: 'var(--text)',
-            fontSize: '18px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-          title={t('options.close')}
-        >
-          ×
-        </button>
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
+        <h2 className="text-lg font-bold text-stone-900">{t('options.title')}</h2>
+        <IconButton variant="close" icon={X} label={t('options.close')} onClick={onClose} />
       </div>
-      <div style={{ padding: '24px', maxHeight: 'calc(80vh - 60px)', overflowY: 'auto' }}>
+      <div className="max-h-[calc(80vh-60px)] overflow-y-auto px-2 pt-4 pb-2 text-stone-800 sm:px-4">
         {serverManagementAvailable && (
           <Section title={t('options.liveServer')} paddingBottom="24px">
             {serverRunning && serverStatus ? (
               <div>
-                <div style={{
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ color: '#10b981', fontWeight: 600 }}>●</span>
-                    <span style={{ fontWeight: 600 }}>{t('options.serverRunning')}</span>
+                <div className="my-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                    <span className="text-sm font-semibold text-green-800">{t('options.serverRunning')}</span>
                   </div>
-                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginLeft: '24px' }}>
-                    <div>{t('options.hostname')}: <span style={{ fontFamily: 'monospace' }}>{serverStatus.hostname || 'escoresheet.local'}</span></div>
-                    <div>{t('options.ipAddress')}: <span style={{ fontFamily: 'monospace' }}>{serverStatus.localIP}</span></div>
-                    <div>{t('options.protocol')}: <span style={{ textTransform: 'uppercase' }}>{serverStatus.protocol || 'https'}</span></div>
+                  <div className="ml-4 text-xs text-stone-600">
+                    <div>{t('options.hostname')}: <span className="font-mono">{serverStatus.hostname || 'escoresheet.local'}</span></div>
+                    <div>{t('options.ipAddress')}: <span className="font-mono">{serverStatus.localIP}</span></div>
+                    <div>{t('options.protocol')}: <span className="uppercase">{serverStatus.protocol || 'https'}</span></div>
                   </div>
                 </div>
 
-                <div style={{
-                  background: 'var(--panel-2)',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  marginBottom: '12px',
-                  fontSize: '12px'
-                }}>
-                  <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('options.connectionUrls')}:</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontFamily: 'monospace', fontSize: '11px' }}>
-                    <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'var(--muted)' }}>{t('options.main')}: </span>
+                <div className="mb-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-xs">
+                  <div className="mb-2 font-semibold text-stone-700">{t('options.connectionUrls')}:</div>
+                  <div className="flex flex-col gap-1 font-mono text-[11px] text-stone-700">
+                    <div className="break-all">
+                      <span className="text-stone-500">{t('options.main')}: </span>
                       {serverStatus.urls?.mainIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/`}
                     </div>
-                    <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'var(--muted)' }}>{t('header.referee')}: </span>
+                    <div className="break-all">
+                      <span className="text-stone-500">{t('header.referee')}: </span>
                       {serverStatus.urls?.refereeIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/referee`}
                     </div>
-                    <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'var(--muted)' }}>{t('header.bench')}: </span>
+                    <div className="break-all">
+                      <span className="text-stone-500">{t('header.bench')}: </span>
                       {serverStatus.urls?.benchIP || `${serverStatus.protocol}://${serverStatus.localIP}:${serverStatus.port}/bench`}
                     </div>
-                    <div style={{ wordBreak: 'break-all' }}>
-                      <span style={{ color: 'var(--muted)' }}>{t('options.websocket')}: </span>
+                    <div className="break-all">
+                      <span className="text-stone-500">{t('options.websocket')}: </span>
                       {serverStatus.urls?.websocketIP || `${serverStatus.wsProtocol}://${serverStatus.localIP}:${serverStatus.wsPort}`}
                     </div>
                   </div>
                 </div>
 
                 <button
+                  type="button"
                   onClick={onStopServer}
                   disabled={serverLoading}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: '#ef4444',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: serverLoading ? 'not-allowed' : 'pointer',
-                    opacity: serverLoading ? 0.6 : 1,
-                    width: '100%'
-                  }}
+                  aria-busy={serverLoading || undefined}
+                  className={cn(BTN_DARK, 'w-full')}
                 >
                   {serverLoading ? t('options.stopping') : t('options.stopServer')}
                 </button>
               </div>
             ) : (
               <div>
-                <div style={{
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#ef4444', fontWeight: 600 }}>●</span>
-                    <span style={{ fontWeight: 600 }}>{t('options.serverNotRunning')}</span>
+                <div className="my-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-red-500" />
+                    <span className="text-sm font-semibold text-red-700">{t('options.serverNotRunning')}</span>
                   </div>
                 </div>
-                <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '12px' }}>
+                <p className="mb-3 text-sm text-stone-600">
                   {t('options.startServerToConnect')}
                 </p>
                 <button
+                  type="button"
                   onClick={onStartServer}
                   disabled={serverLoading}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: '#22c55e',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: serverLoading ? 'not-allowed' : 'pointer',
-                    opacity: serverLoading ? 0.6 : 1,
-                    width: '100%'
-                  }}
+                  aria-busy={serverLoading || undefined}
+                  className={cn(BTN_POSITIVE, 'w-full')}
                 >
                   {serverLoading ? t('options.starting') : t('options.startServer')}
                 </button>
@@ -453,14 +337,14 @@ export default function ScoreboardOptionsModal({
 
         <Section title={t('options.matchOptions')}>
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.checkAccidentalRallyStart')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.checkAccidentalRallyStart')}</div>
                 <InfoDot title={t('options.checkAccidentalRallyStartInfo', { duration: accidentalRallyStartDuration })} />
               </div>
               {checkAccidentalRallyStart && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -472,18 +356,9 @@ export default function ScoreboardOptionsModal({
                       setAccidentalRallyStartDuration(val)
                       localStorage.setItem('accidentalRallyStartDuration', String(val))
                     }}
-                    style={{
-                      width: '50px',
-                      padding: '4px 8px',
-                      fontSize: '12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      textAlign: 'center'
-                    }}
+                    className={cn(SMALL_FIELD, 'w-16')}
                   />
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
+                  <span className="text-xs text-stone-500">{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -498,14 +373,14 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.checkAccidentalPointAward')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.checkAccidentalPointAward')}</div>
                 <InfoDot title={t('options.checkAccidentalPointAwardInfo', { duration: accidentalPointAwardDuration })} />
               </div>
               {checkAccidentalPointAward && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -517,18 +392,9 @@ export default function ScoreboardOptionsModal({
                       setAccidentalPointAwardDuration(val)
                       localStorage.setItem('accidentalPointAwardDuration', String(val))
                     }}
-                    style={{
-                      width: '50px',
-                      padding: '4px 8px',
-                      fontSize: '12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      textAlign: 'center'
-                    }}
+                    className={cn(SMALL_FIELD, 'w-16')}
                   />
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
+                  <span className="text-xs text-stone-500">{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -542,8 +408,8 @@ export default function ScoreboardOptionsModal({
             />
           </Row>
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.showNamesOnCourt')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.showNamesOnCourt')}</div>
               <InfoDot title={t('options.showNamesOnCourtInfo')} />
             </div>
             <ToggleSwitch
@@ -552,8 +418,8 @@ export default function ScoreboardOptionsModal({
             />
           </Row>
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.manageCaptainOnCourt')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.manageCaptainOnCourt')}</div>
               <InfoDot title={t('options.manageCaptainOnCourtInfo')} />
             </div>
             <ToggleSwitch
@@ -567,8 +433,8 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.liberoExitConfirmation')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.liberoExitConfirmation')}</div>
               <InfoDot title={t('options.liberoExitConfirmationInfo')} />
             </div>
             <ToggleSwitch
@@ -582,8 +448,8 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.liberoEntrySuggestion')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.liberoEntrySuggestion')}</div>
               <InfoDot title={t('options.liberoEntrySuggestionInfo')} />
             </div>
             <ToggleSwitch
@@ -597,8 +463,8 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.setIntervalDuration')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.setIntervalDuration')}</div>
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
             <DurationInput
@@ -625,28 +491,16 @@ export default function ScoreboardOptionsModal({
               return (
                 <>
                   <button
+                    type="button"
+                    aria-expanded={fontSelectorOpen}
                     onClick={() => setFontSelectorOpen(!fontSelectorOpen)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px 14px',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      background: 'transparent',
-                      color: 'var(--text)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      width: '100%'
-                    }}
+                    className="flex w-full min-h-11 items-center justify-between rounded-lg text-left transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.scoreFont')}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-sm font-semibold text-stone-900">{t('options.scoreFont')}</div>
                       <InfoDot title={t('options.scoreFontInfo')} />
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="flex items-center gap-3">
                       <span style={{
                         fontFamily: currentFont.fontFamily,
                         fontSize: '18px',
@@ -656,18 +510,11 @@ export default function ScoreboardOptionsModal({
                       }}>
                         {currentFont.preview}
                       </span>
-                      <span style={{
-                        fontSize: '12px',
-                        color: 'var(--muted)',
-                        transition: 'transform 0.2s',
-                        transform: fontSelectorOpen ? 'rotate(180deg)' : 'rotate(0deg)'
-                      }}>
-                        ▼
-                      </span>
+                      <ChevronDown size={16} aria-hidden="true" className={cn('text-stone-400 transition-transform', fontSelectorOpen && 'rotate-180')} />
                     </div>
                   </button>
                   {fontSelectorOpen && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', paddingLeft: '8px', paddingRight: '8px' }}>
+                    <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                       {fontOptions.map(option => (
                         <button
                           key={option.value}
@@ -676,28 +523,19 @@ export default function ScoreboardOptionsModal({
                             localStorage.setItem('scoreFont', option.value)
                             setFontSelectorOpen(false)
                           }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '10px 14px',
-                            fontSize: '14px',
-                            fontWeight: 500,
-                            background: scoreFont === option.value ? 'rgba(59, 130, 246, 0.2)' : 'var(--panel-2)',
-                            color: 'var(--text)',
-                            border: scoreFont === option.value ? '2px solid #3b82f6' : '1px solid var(--border)',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            textAlign: 'left'
-                          }}
+                          type="button"
+                          aria-pressed={scoreFont === option.value}
+                          className={cn(
+                            'flex min-h-12 items-center justify-between rounded-lg border px-3.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
+                            scoreFont === option.value ? 'border-slate-900 bg-white ring-1 ring-slate-900' : 'border-stone-200 bg-white hover:bg-stone-50'
+                          )}
                         >
-                          <span style={{ fontSize: '13px' }}>{option.label}</span>
+                          <span className="text-[13px] text-stone-700">{option.label}</span>
                           <span style={{
                             fontFamily: option.fontFamily,
                             fontSize: '20px',
                             fontWeight: 700,
-                            color: scoreFont === option.value ? '#3b82f6' : 'var(--accent)',
+                            color: scoreFont === option.value ? '#0f172a' : 'var(--accent)',
                             letterSpacing: '1px'
                           }}>
                             {option.preview}
@@ -712,24 +550,16 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: keybindingsEnabled && onOpenKeybindings ? '8px' : 0 }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.keyboardShortcuts')}</div>
+            <div className="min-w-0 flex-1">
+              <div className={cn('flex items-center gap-1.5', keybindingsEnabled && onOpenKeybindings && 'mb-2')}>
+                <div className="text-sm font-semibold text-stone-900">{t('options.keyboardShortcuts')}</div>
                 <InfoDot title={t('options.keyboardShortcutsInfo')} />
               </div>
               {keybindingsEnabled && onOpenKeybindings ? (
                 <button
+                  type="button"
                   onClick={onOpenKeybindings}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: 'rgba(59, 130, 246, 0.2)',
-                    color: '#3b82f6',
-                    border: '1px solid rgba(59, 130, 246, 0.4)',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
+                  className={BTN_OUTLINE}
                 >
                   {t('options.configureKeys')}
                 </button>
@@ -746,8 +576,8 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.autoDownloadAtSetEnd')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.autoDownloadAtSetEnd')}</div>
               <InfoDot title={t('options.autoDownloadAtSetEndInfo')} />
             </div>
             <ToggleSwitch
@@ -757,14 +587,14 @@ export default function ScoreboardOptionsModal({
           </Row>
 
           <Row style={{ alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableLfpTracking')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.enableLfpTracking')}</div>
                 <InfoDot title={t('options.lfpTrackingInfo')} />
               </div>
               {lfpTrackingEnabled && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.minimumLfpsOnCourt')}</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
                     aria-label={t('options.minimumLfpsOnCourt')}
@@ -773,19 +603,10 @@ export default function ScoreboardOptionsModal({
                       setLfpMinimumOnCourt(val)
                       localStorage.setItem('lfpMinimumOnCourt', String(val))
                     }}
-                    style={{
-                      padding: '4px 4px',
-                      fontSize: '12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      textAlign: 'center',
-                      width: '44px'
-                    }}
+                    className={cn(SMALL_FIELD, 'w-16')}
                   >
                     {[1, 2, 3, 4, 5, 6].map(n => (
-                      <option key={n} value={n} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{n}</option>
+                      <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
                 </div>
@@ -804,83 +625,40 @@ export default function ScoreboardOptionsModal({
 
         <Section title={t('options.displayMode')}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.screenMode')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.screenMode')}</div>
                 <InfoDot title={t('options.screenModeInfo')} />
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {['auto', 'desktop', 'tablet'].map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => {
-                      if (mode === 'tablet') {
-                        enterDisplayMode(mode)
-                        return
-                      }
-                      if (mode === 'desktop') {
-                        exitDisplayMode()
-                        return
-                      }
-                      setDisplayMode(mode)
-                      localStorage.setItem('displayMode', mode)
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      background: displayMode === mode ? '#3b82f6' : 'var(--panel)',
-                      color: displayMode === mode ? '#fff' : 'var(--text)',
-                      border: displayMode === mode ? '1px solid #3b82f6' : '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <span>{mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode}</span>
-                    {modeDescriptions[mode] ? (
-                      <span
-                        title={modeDescriptions[mode]}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'var(--border)',
-                          color: displayMode === mode ? '#fff' : 'var(--muted)',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          cursor: 'help'
-                        }}
-                      >
-                        i
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                ariaLabel={t('options.screenMode')}
+                value={displayMode}
+                className="max-w-md [&>button]:h-11 [&>button]:text-sm [&>button]:capitalize"
+                options={['auto', 'desktop', 'tablet'].map(mode => ({
+                  value: mode,
+                  label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
+                  title: modeDescriptions[mode]
+                }))}
+                onChange={(mode) => {
+                  if (mode === 'tablet') {
+                    enterDisplayMode(mode)
+                    return
+                  }
+                  if (mode === 'desktop') {
+                    exitDisplayMode()
+                    return
+                  }
+                  setDisplayMode(mode)
+                  localStorage.setItem('displayMode', mode)
+                }}
+              />
 
               {displayMode !== 'desktop' && displayMode !== 'auto' && (
-                <div style={{ marginTop: '12px' }}>
+                <div className="mt-3">
                   <button
+                    type="button"
                     onClick={exitDisplayMode}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: 'rgba(239, 68, 68, 0.2)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
+                    className={BTN_OUTLINE}
                   >
                     {t('options.exitMode', { mode: displayMode })}
                   </button>
@@ -890,33 +668,14 @@ export default function ScoreboardOptionsModal({
           </Row>
         </Section>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+        <div className="mb-6 flex flex-col gap-3">
           <button
+            type="button"
             onClick={() => {
               onClose?.()
               onOpenConnectionSetup?.()
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-              color: 'var(--text)',
-              border: '1px solid rgba(59, 130, 246, 0.4)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              width: '100%',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
-            }}
+            className={cn('flex w-full min-h-12 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-800 shadow-sm transition-colors hover:bg-stone-50', 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1')}
           >
             <SatelliteDishIcon size={20} />
             <span>{t('options.setupConnections')}</span>
@@ -926,31 +685,21 @@ export default function ScoreboardOptionsModal({
 
         <Section title={t('options.cloudBackup')}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.restoreFromCloud')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.restoreFromCloud')}</div>
               <InfoDot title={t('options.restoreFromCloudInfo')} />
             </div>
             <button
+              type="button"
               onClick={loadBackups}
               disabled={backupsLoading || !matchId}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%)',
-                color: '#22c55e',
-                border: '1px solid rgba(34, 197, 94, 0.4)',
-                borderRadius: '8px',
-                cursor: backupsLoading || !matchId ? 'not-allowed' : 'pointer',
-                opacity: backupsLoading || !matchId ? 0.6 : 1,
-                width: '100%',
-                transition: 'all 0.2s'
-              }}
+              aria-busy={backupsLoading || undefined}
+              className={cn(BTN_OUTLINE, 'w-full')}
             >
               {backupsLoading ? t('options.loading') : t('options.browseCloudBackups')}
             </button>
             {!matchId && (
-              <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)' }}>
+              <p className="text-xs text-stone-500">
                 {t('options.startMatchToAccessBackups')}
               </p>
             )}
@@ -959,52 +708,22 @@ export default function ScoreboardOptionsModal({
 
         <Section title={t('options.cacheManagement')} borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.clearApplicationCache')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.clearApplicationCache')}</div>
               <InfoDot title={t('options.clearApplicationCacheInfo')} />
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="flex flex-wrap gap-2">
               <button
+                type="button"
                 onClick={() => setClearCacheModal({ type: 'cache' })}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
-                }}
+                className={BTN_DANGER_OUTLINE}
               >
                 {t('options.clearCache')}
               </button>
               <button
+                type="button"
                 onClick={() => setClearCacheModal({ type: 'all' })}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: 'rgba(239, 68, 68, 0.4)',
-                  color: '#fff',
-                  border: '1px solid rgba(239, 68, 68, 0.6)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.5)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.4)'
-                }}
+                className={BTN_DANGER_OUTLINE}
               >
                 {t('options.clearAll')}
               </button>
@@ -1016,43 +735,25 @@ export default function ScoreboardOptionsModal({
         {showCloudBackups && (
           <div
             onClick={() => setShowCloudBackups(false)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(15, 23, 42, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10000
-            }}
+            className="fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
+            style={{ zIndex: 10000 }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: '12px',
-                padding: '24px',
-                maxWidth: '500px',
-                width: '90%',
-                maxHeight: '70vh',
-                display: 'flex',
-                flexDirection: 'column'
-              }}
+              role="dialog"
+              aria-modal="true"
+              className="flex max-h-[70vh] w-full max-w-lg flex-col rounded-2xl bg-white p-5 shadow-2xl sm:p-6"
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
+              <h3 className="mb-2 text-lg font-bold text-stone-900">
                 {t('options.cloudBackups')}
               </h3>
 
               {cloudBackups.length === 0 ? (
-                <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '24px 0' }}>
+                <p className="py-6 text-center text-sm font-medium text-stone-500">
                   {t('options.noCloudBackupsFound')}
                 </p>
               ) : (
-                <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px' }}>
+                <div className="mb-4 flex-1 overflow-y-auto rounded-lg border border-stone-200">
                   <BackupTable
                     backups={cloudBackups}
                     onBackupSelect={(backup) => setRestoreConfirm(backup)}
@@ -1063,19 +764,11 @@ export default function ScoreboardOptionsModal({
                 </div>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div className="flex justify-end">
                 <button
+                  type="button"
                   onClick={() => setShowCloudBackups(false)}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className={BTN_OUTLINE}
                 >
                   {t('options.close')}
                 </button>
@@ -1088,84 +781,48 @@ export default function ScoreboardOptionsModal({
         {restoreConfirm && (
           <div
             onClick={() => setRestoreConfirm(null)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(15, 23, 42, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10001
-            }}
+            className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+            style={{ zIndex: 10001 }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: '12px',
-                padding: '24px',
-                maxWidth: '400px',
-                width: '90%'
-              }}
+              role="alertdialog"
+              aria-modal="true"
+              className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
+              <h3 className="mb-2 text-lg font-bold text-stone-900">
                 {t('options.confirmRestore')}
               </h3>
-              <p style={{ margin: '0 0 8px 0', color: 'var(--text)', lineHeight: 1.5 }}>
+              <p className="mb-3 text-sm leading-relaxed text-stone-600">
                 {t('options.restoreMatchToThisState')}
               </p>
-              <div style={{
-                background: 'var(--panel-2)',
-                padding: '12px',
-                borderRadius: '8px',
-                marginBottom: '16px'
-              }}>
-                <div style={{ fontWeight: 600, fontSize: '16px' }}>
+              <div className="mb-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
+                <div className="text-base font-semibold tabular-nums text-stone-900">
                   {restoreConfirm.homePoints !== undefined ? (
                     t('options.backupSetScore', { setIndex: restoreConfirm.setIndex, homePoints: restoreConfirm.homePoints, awayPoints: restoreConfirm.awayPoints })
                   ) : (
                     restoreConfirm.name
                   )}
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
+                <div className="mt-1 text-xs tabular-nums text-stone-500">
                   {restoreConfirm.timestamp || restoreConfirm.created_at}
                 </div>
               </div>
-              <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
+              <p className="text-xs font-medium text-red-700">
                 {t('options.warningStateReplaced')}
               </p>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <div className="mt-6 flex justify-end gap-2">
                 <button
+                  type="button"
                   onClick={() => setRestoreConfirm(null)}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className={BTN_OUTLINE}
                 >
                   {t('options.cancel')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleRestore(restoreConfirm)}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: '#22c55e',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className={BTN_POSITIVE}
                 >
                   {t('options.restore')}
                 </button>
@@ -1178,72 +835,41 @@ export default function ScoreboardOptionsModal({
         {clearCacheModal && (
           <div
             onClick={() => setClearCacheModal(null)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(15, 23, 42, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10000
-            }}
+            className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+            style={{ zIndex: 10000 }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: '12px',
-                padding: '24px',
-                maxWidth: '400px',
-                width: '90%'
-              }}
+              role="alertdialog"
+              aria-modal="true"
+              className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
+              <h3 className="mb-2 text-lg font-bold text-stone-900">
                 {t('options.confirmClearCache')}
               </h3>
-              <p style={{ margin: '0 0 16px 0', color: 'var(--text)', lineHeight: 1.5 }}>
+              <p className="text-sm leading-relaxed text-stone-600">
                 {clearCacheModal.type === 'all'
                   ? t('options.clearAllWarning')
                   : t('options.clearCacheWarning')
                 }
               </p>
               {clearCacheModal.type === 'all' && (
-                <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
+                <p className="mt-2 text-xs font-medium text-red-700">
                   {t('options.resetPreferencesWarning')}
                 </p>
               )}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <div className="mt-6 flex justify-end gap-2">
                 <button
+                  type="button"
                   onClick={() => setClearCacheModal(null)}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className={BTN_OUTLINE}
                 >
                   {t('options.cancel')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => executeClearCache(clearCacheModal.type === 'all')}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: '#ef4444',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className={BTN_DARK}
                 >
                   {clearCacheModal.type === 'all' ? t('options.clearAll') : t('options.clearCache')}
                 </button>
@@ -1252,6 +878,7 @@ export default function ScoreboardOptionsModal({
           </div>
         )}
 
+      </div>
       </div>
     </Modal >
   )
