@@ -113,27 +113,28 @@ body.no-scroll {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ov-hairline-strong); /* stone-300 */
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--ov-text-faint); /* stone-400 */
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* standard scrollbar properties for Firefox */
+/* standard scrollbar properties (Firefox, and Chromium 121+ where they win
+   over the ::-webkit-scrollbar rules): thin stone-300 thumb, as the kit base */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+  scrollbar-color: var(--ov-hairline-strong) transparent;
 }
 
 /* Allow text selection in form elements */
@@ -1322,17 +1323,17 @@ button:disabled {
 }
 
 .team-controls::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-radius: calc(2px * var(--scale-factor));
 }
 
 .team-controls::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ov-hairline-strong);
   border-radius: calc(2px * var(--scale-factor));
 }
 
 .team-controls::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--ov-text-faint);
 }
 
 .team-header {
