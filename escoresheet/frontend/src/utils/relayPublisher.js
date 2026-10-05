@@ -4,7 +4,7 @@
  * match_live_state writes, and how long to wait before reconnecting.
  * Used by Scoreboard.jsx and App.jsx.
  */
-import { relayMatchPayload } from './serverDataSync'
+import { relayMatchPayload, getRelayServerStatus } from './serverDataSync'
 
 /**
  * PINs go to the relay with the first sync on a socket and when one changed;
@@ -89,4 +89,35 @@ export const RELAY_RECONNECT_MAX_MS = 60000
 export function relayReconnectDelay(attempt) {
   const n = Math.max(0, Math.min(Number(attempt) || 0, 16))
   return Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
+}
+
+const WS_CONNECTING = 0
+const WS_OPEN = 1
+
+/**
+ * The relay entry of the scorer's connection status. The scorer's own socket
+ * when it is open; otherwise GET /api/server/status (getRelayServerStatus, as
+ * the referee and bench apps do), never a throwaway probe socket.
+ * @param {{ wsUrl: string|null, ws?: { readyState: number }|null, getStatus?: () => Promise<{ running: boolean }> }} args
+ * @returns {Promise<{ status: string, message: string, details?: string }>}
+ */
+export async function relayConnectionStatus({ wsUrl, ws = null, getStatus = getRelayServerStatus }) {
+  if (!wsUrl) {
+    return { status: 'not_available', message: 'No WebSocket relay for this page (using local database only)' }
+  }
+  if (ws && ws.readyState === WS_OPEN) {
+    return { status: 'connected', message: 'WebSocket server is reachable (active connection)' }
+  }
+  const { running } = await getStatus()
+  if (running) {
+    return { status: 'connected', message: 'WebSocket server is reachable', details: `Relay: ${wsUrl}` }
+  }
+  if (ws && ws.readyState === WS_CONNECTING) {
+    return { status: 'connecting', message: 'Connecting to the WebSocket server...' }
+  }
+  return {
+    status: 'disconnected',
+    message: 'Not connected to the WebSocket server (retrying in the background)',
+    details: `Relay: ${wsUrl}`
+  }
 }
