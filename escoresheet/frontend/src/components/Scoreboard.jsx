@@ -47,6 +47,22 @@ import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon, CardIcon } from './icons'
+import { cn } from '../ui/cn.js'
+import { FOCUS_RING } from '../ui/Button.jsx'
+
+// ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
+// Only the chrome around the court takes these: the toolbar, the side-column
+// surfaces, menus, dialogs and the lineup panel. The court, score digits, serve
+// box, rally controls, TO/SUB counters, team colours and sanction cards keep
+// their own inline styles (RESTYLE-SPEC 4). R4: no brand-red fill anywhere on
+// the scoreboard; actions are white, dark (slate-900) or emerald.
+
+/** Toolbar trigger (Scoresheet, Menu): white, stone hairline. Size stays in the
+ *  inline cqw padding/font so the toolbar keeps its height and nothing below moves.
+ *  Not inside .ov-kit, so it sets every property the legacy `button` rule would.
+ *  The ::before pad (12px above and below, 4px each side) grows the hit area
+ *  to about 44px tall without moving the layout. */
+const SB_TOOLBAR_BTN = `relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] ${FOCUS_RING}`
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -12638,7 +12654,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   return (
     <div className="match-record">
       {relayRejection && now - relayRejection.at < 45000 && (
-        <div role="alert" style={{
+        <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
           top: 8,
           left: '50%',
@@ -12646,11 +12662,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           zIndex: 9999,
           maxWidth: 'min(560px, calc(100vw - 32px))',
           padding: '8px 14px',
-          borderRadius: 8,
-          background: '#7f1d1d',
-          color: '#fff',
-          fontSize: 13,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          fontSize: 13
         }}>
           {relayRejection.code === 'not-match-owner'
             ? t('scoreboard.relayRejected.notOwner', 'Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device\'s updates.')
@@ -12951,6 +12963,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {rallyStatusExpanded && (
                   <div
                     onClick={() => setRallyStatusExpanded(false)}
+                    className="rounded-lg bg-slate-900 text-white shadow-card-lg"
                     style={{
                       position: 'absolute',
                       top: '100%',
@@ -12958,14 +12971,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       transform: 'translateX(-50%)',
                       marginTop: '4px',
                       padding: '8px 12px',
-                      background: 'rgba(0, 0, 0, 0.95)',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
                       fontSize: '12px',
-                      color: '#fff',
                       whiteSpace: 'nowrap',
-                      zIndex: 1001,
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                      zIndex: 1001
                     }}
                   >
                     {fullDescription}
@@ -13013,11 +13021,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             buttonLabel={<FileTextIcon size="1em" />}
             buttonTitle={t('header.scoresheet')}
             menuTitle={t('header.scoresheet')}
-            buttonClassName="secondary"
+            buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
-              background: '#22c55e',
-              color: '#000',
-              fontWeight: 600,
               padding: '0.34cqw 0.6cqw',
               fontSize: '1.28cqw'
             }}
@@ -13174,11 +13179,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             buttonLabel="☰"
             buttonTitle={t('header.menu')}
             menuTitle={t('header.menu')}
-            buttonClassName="secondary"
+            buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
-              background: '#22c55e',
-              color: '#000',
-              fontWeight: 600,
               width: 'auto',
               padding: '0.43cqw 0.85cqw',
               fontSize: '1.28cqw',
@@ -13189,35 +13191,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             items={[
               {
                 key: 'action-log',
-                label: 'Show Action Log',
+                label: 'Show action log',
                 onClick: () => {
                   setShowLogs(true)
                 }
               },
               {
                 key: 'sanctions',
-                label: 'Show Sanctions and Results',
+                label: 'Show sanctions and results',
                 onClick: () => {
                   setShowSanctions(true)
                 }
               },
               {
                 key: 'manual',
-                label: 'Manual Changes',
+                label: 'Manual changes',
                 onClick: () => {
                   setShowManualPanel(true)
                 }
               },
               {
                 key: 'remarks',
-                label: 'Open Remarks Recording',
+                label: 'Open remarks recording',
                 onClick: () => {
                   setShowRemarks(true)
                 }
               },
               {
                 key: 'stop-match',
-                label: t('scoreboard.menu.stopMatch', 'Stop the Match'),
+                label: t('scoreboard.menu.stopMatch', 'Stop the match'),
                 icon: '⛔',
                 onClick: () => {
                   setStopMatchModal('select')
@@ -13226,19 +13228,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               },
               {
                 key: 'rosters',
-                label: 'Show Rosters',
+                label: 'Show rosters',
                 onClick: () => {
                   setShowRosters(true)
                 }
               },
               {
                 key: 'edit-roster-home',
-                label: t('scoreboard.reopenRoster.menuHome', 'Edit Home Roster'),
+                label: t('scoreboard.reopenRoster.menuHome', 'Edit home roster'),
                 onClick: () => setReopenRosterConfirm('home')
               },
               {
                 key: 'edit-roster-away',
-                label: t('scoreboard.reopenRoster.menuAway', 'Edit Away Roster'),
+                label: t('scoreboard.reopenRoster.menuAway', 'Edit away roster'),
                 onClick: () => setReopenRosterConfirm('away')
               },
               {
@@ -13250,7 +13252,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               },
               ...(onOpenMatchSetup ? [{
                 key: 'match-setup',
-                label: 'Show Match Setup',
+                label: 'Show match setup',
                 onClick: () => {
                   onOpenMatchSetup()
                 }
@@ -13259,7 +13261,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {
                 key: 'export',
                 icon: <DownloadIcon />,
-                label: 'Download Game Data (JSON)',
+                label: 'Download game data (JSON)',
                 onClick: async () => {
                   try {
                     // Export all database data
@@ -14890,7 +14892,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               borderBottom: '1px solid var(--border)',
               flexShrink: 0
             }}>
-              <span style={{ fontSize: '14px', color: 'var(--muted)', fontFamily: 'monospace' }}>
+              <span className="text-sm font-medium tabular-nums text-stone-500">
                 {formatDateTime(currentDateTime)}
               </span>
             </div>
@@ -29180,10 +29182,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 }
 
 function ScoreboardToolbar({ children, collapsed, onToggle }) {
+  const { t } = useTranslation()
   return (
     <div style={{ position: 'relative', zIndex: 101 }}>
+      {/* White bar with the stone hairline and the card shadow (svrz header). */}
       <div
-        className="match-toolbar"
+        className="match-toolbar shadow-card"
         style={{
           display: collapsed ? 'none' : 'grid',
           transition: 'all 0.2s ease'
@@ -29191,46 +29195,19 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
       >
         {children}
       </div>
-      {/* Thin collapse/expand bar at bottom center */}
-      {collapsed ? (
-        <div
-          onClick={onToggle}
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: '100%',
-            height: '16px',
-            cursor: 'pointer',
-            background: 'rgba(0, 0, 0, 0.3)',
-            borderBottom: '1px solid var(--border)',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'}
-        >
-          <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: 700 }}>▼</span>
-        </div>
-      ) : (
-        <div
-          onClick={onToggle}
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: '100%',
-            height: '16px',
-            cursor: 'pointer',
-            background: 'rgba(0, 0, 0, 0.3)',
-            borderBottom: '1px solid var(--border)',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.3)'}
-        >
-          <span style={{ fontSize: '10px', color: '#22c55e', fontWeight: 700 }}>▲</span>
-        </div>
-      )}
+      {/* Thin collapse/expand strip at bottom center: stone, not a grey slab.
+          Same 16px height, so nothing below moves. */}
+      <div
+        onClick={onToggle}
+        title={collapsed ? t('scoreboard.toolbar.show', 'Show toolbar') : t('scoreboard.toolbar.hide', 'Hide toolbar')}
+        className="flex w-full items-center justify-center bg-stone-100 text-stone-400 hover:bg-stone-200/70 hover:text-stone-600 transition-colors cursor-pointer"
+        style={{
+          height: '16px',
+          borderBottom: '1px solid var(--border)'
+        }}
+      >
+        <span style={{ fontSize: '10px', fontWeight: 700, lineHeight: 1 }}>{collapsed ? '▼' : '▲'}</span>
+      </div>
     </div>
   )
 }
