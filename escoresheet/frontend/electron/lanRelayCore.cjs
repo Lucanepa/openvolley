@@ -36,6 +36,15 @@
  *                     PINs: a socket that already proved the match may leave the PIN
  *                     fields (gamePin, refereePin, ...) out; the relay keeps the stored
  *                     ones. A field that is present (even null) replaces the stored value.
+ *                     A socket that sent PINs for a key before and now leaves them out
+ *                     while the relay no longer holds that match gets
+ *                     { code:'pins-required' }: it must resend them (a room recreated
+ *                     without PINs could be claimed by anyone).
+ *                     Rooms exist only under that key: a scoreboard asked for a match by
+ *                     another id (GET /api/match/<Dexie id>) is not answered, so a Dexie
+ *                     id never opens a second, frozen room. Subscribers (tablets, the
+ *                     point-hub LedBox bridge) must use the seed key: MATCH_ID=<seed key>,
+ *                     or resolve it via /api/match/list or /api/match/by-game-number.
  *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
@@ -172,6 +181,18 @@ const MAX_ALIASES = 16
 /** True when the match object carries a game PIN field at all (even empty). */
 function hasGamePinField(match) {
   return !!match && typeof match === 'object' && ('gamePin' in match || 'game_pin' in match)
+}
+
+/** True when the match object carries any PIN field at all (even empty). */
+function hasAnyPinField(match) {
+  return !!match && typeof match === 'object' && MATCH_SECRET_FIELDS.some((k) => k in match)
+}
+
+/** Remember a key in a bounded Set (oldest dropped first). */
+function rememberKey(set, key, max) {
+  set.delete(key)
+  if (set.size >= max) set.delete(set.values().next().value)
+  set.add(key)
 }
 
 /** Build the stored bundle from a sync-match-data (flat or { matchData }) message. */
@@ -422,6 +443,7 @@ function createLanRelay(options = {}) {
       owned: new Set(),
       subscribed: new Set(),
       aliases: new Map(), // id this socket synced under -> room key (seed_key)
+      pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
     }
     clients.set(ws, meta)
     send(ws, { type: 'connected', message: 'Connected to eScoresheet WebSocket server', timestamp: Date.now() })
@@ -560,6 +582,7 @@ function createLanRelay(options = {}) {
     'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
     'too-many-matches': 'This device already drives the maximum number of matches',
     'bad-request': 'Unknown connection',
+    'pins-required': 'The relay no longer holds this match: send it again with its PINs',
   }
 
   /**
@@ -631,7 +654,9 @@ function createLanRelay(options = {}) {
     if (msg.type === 'match-data-response') {
       const bundle = bundleFromMessage({ matchData: msg.data ?? msg.matchData })
       const id = normalizeMatchId(msg.matchId) ?? p.matchId
-      const claimed = msg.success && bundle && id === p.matchId ? claim(ws, id, bundle.match) : null
+      // Stored only under its room key, and only when that is the id asked for
+      const claimed = msg.success && bundle && id === p.matchId && relayKeyOf(id, bundle.match) === id
+        ? claim(ws, id, bundle.match) : null
       if (!claimed || !claimed.ok) {
         declineRequest(msg.requestId, ws)
         return
@@ -651,7 +676,7 @@ function createLanRelay(options = {}) {
       }
       const bundle = bundleFromMessage({ matchData: msg.data })
       const id = normalizeMatchId(msg.matchId) ?? p.matchId
-      const claimed = bundle && id === p.matchId ? claim(ws, id, bundle.match) : null
+      const claimed = bundle && id === p.matchId && relayKeyOf(id, bundle.match) === id ? claim(ws, id, bundle.match) : null
       if (claimed && claimed.ok) {
         const stored = storeBundle(id, bundle, claimed.kind)
         sendToSubscribers(id, matchDataMessage('match-data-update', id, stored), ws)
@@ -680,12 +705,21 @@ function createLanRelay(options = {}) {
       sendError(ws, 'bad-request', 'sync-match-data needs matchId and match')
       return
     }
+    const meta = clients.get(ws)
+    if (meta) {
+      if (hasAnyPinField(bundle.match)) {
+        rememberKey(meta.pinKeys, matchId, MAX_ALIASES)
+      } else if (!store.has(matchId) && meta.pinKeys.has(matchId)) {
+        // It left the PINs out because the relay held them: not any more
+        sendError(ws, 'pins-required', CLAIM_ERRORS['pins-required'], matchId)
+        return
+      }
+    }
     const claimed = claim(ws, matchId, bundle.match)
     if (!claimed.ok) {
       sendError(ws, claimed.code, CLAIM_ERRORS[claimed.code] || 'Refused', matchId)
       return
     }
-    const meta = clients.get(ws)
     if (meta && rawId && rawId !== matchId) {
       meta.aliases.delete(rawId)
       if (meta.aliases.size >= MAX_ALIASES) meta.aliases.delete(meta.aliases.keys().next().value)

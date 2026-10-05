@@ -325,6 +325,13 @@ function carryMatchSecrets(prevMatch, nextMatch) {
   return out
 }
 const hasGamePinField = (match) => !!match && typeof match === 'object' && ('gamePin' in match || 'game_pin' in match)
+const hasAnyPinField = (match) => !!match && typeof match === 'object' && MATCH_SECRET_FIELDS.some(k => k in match)
+// Remember a key in a bounded Set (oldest dropped first)
+function rememberKey(set, key, max) {
+  set.delete(key)
+  if (set.size >= max) set.delete(set.values().next().value)
+  set.add(key)
+}
 
 // subscribe-match { device, team }: a label for /api/server/connections (the
 // scorer's tablet status). Grants nothing; 'referee'/'bench' as `role` still
@@ -2817,6 +2824,9 @@ wss.on('connection', (ws, req) => {
     ownedMatches: new Set(),
     // Id this socket synced under (its Dexie id) -> room key (seed_key)
     aliases: new Map(),
+    // Room keys this socket sent PINs for: a later PIN-less sync of one the
+    // relay no longer holds is refused with 'pins-required'
+    pinKeys: new Set(),
     device: null, // subscribe-match label: 'referee' | 'bench' | 'livescore'
     deviceTeam: null,
     connectedAt: new Date().toISOString()
@@ -3287,7 +3297,9 @@ function claimMatch(clientInfo, matchId, incomingMatch) {
 const CLAIM_ERRORS = {
   'not-match-owner': 'Match is owned by another scoreboard (game PIN mismatch)',
   'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
-  'too-many-matches': 'This address already drives the maximum number of matches'
+  'too-many-matches': 'This address already drives the maximum number of matches',
+  'pins-required': 'The relay no longer holds this match: send it again with its PINs',
+  'room-limit': 'Server room limit reached'
 }
 
 // Handle sync-match-data from frontend scoreboard
@@ -3321,6 +3333,21 @@ function handleSyncMatchData(clientInfo, message) {
     return
   }
 
+  // A scoreboard leaves its PINs out once the relay holds them. If the relay
+  // lost the match meanwhile, a PIN-less sync would recreate it without PINs
+  // (claimable by anyone, LAN PIN check broken): ask for them instead.
+  if (hasAnyPinField(match)) {
+    rememberKey(clientInfo.pinKeys, matchId, MAX_ALIASES)
+  } else if (!activeMatches.get(matchId)?.match && clientInfo.pinKeys.has(matchId)) {
+    clientInfo.ws.send(JSON.stringify({
+      type: 'error',
+      code: 'pins-required',
+      message: CLAIM_ERRORS['pins-required'],
+      matchId
+    }))
+    return
+  }
+
   const claimed = claimMatch(clientInfo, matchId, match)
   if (!claimed.ok) {
     clientInfo.ws.send(JSON.stringify({
@@ -3334,7 +3361,7 @@ function handleSyncMatchData(clientInfo, message) {
 
   // Enforce room cap before storing anything
   if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
-    clientInfo.ws.send(JSON.stringify({ type: 'error', message: 'Server room limit reached' }))
+    clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'room-limit', message: CLAIM_ERRORS['room-limit'], matchId }))
     return
   }
 
