@@ -6,6 +6,7 @@ import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
 import { AuthProvider } from './contexts/AuthContext'
 import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
@@ -20,6 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <LivescoreApp />
         </AlertProvider>
       </AuthProvider>
+      <UiHost />
     </ErrorBoundary>
   </React.StrictMode>,
 )

@@ -9,6 +9,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')).render(
           </AlertProvider>
         </AuthProvider>
       </ScaleProvider>
+      <UiHost />
     </ErrorBoundary>
   </React.StrictMode>
 )
