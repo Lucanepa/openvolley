@@ -270,9 +270,11 @@ p {
 }
 
 /* Never a card in a card: inside the .setup page card (match setup, match end)
-   a .card is the kit Block, one radius step down, tinted, no shadow. */
+   a .card is the kit inner bordered box: white, stone-200 hairline, one radius
+   step down, no shadow. White (not the tinted Block) because MatchEnd's frozen
+   readouts (3:0, the paper-sheet Results) sit on these and keep their ground. */
 .setup .card {
-  background: rgb(250 250 249 / 0.6); /* stone-50/60 */
+  border-color: var(--ov-hairline);
   border-radius: var(--ov-radius-lg);
   box-shadow: none;
 }
