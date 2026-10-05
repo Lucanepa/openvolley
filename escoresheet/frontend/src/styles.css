@@ -30,10 +30,14 @@
    marks, the rally controls, the per-set tables), the compact score, the
    toolbar set-score boxes, the TO/SUB counters and the set-end / match-end
    readouts the old values are pinned instead, so they stay pixel-identical.
+   The side columns' own buttons (Improper Request / Delay Warning / Delay
+   Penalty chips, IR & Delays, TO/SUB, bench and libero buttons) are pinned
+   too; the side-column surfaces around them take the stone hairlines.
    This only sets custom properties (and re-resolves the inherited text
-   colour); the frozen rules themselves are not edited. */
+   colour, which the `button` rule overrides as before); the frozen rules
+   themselves are not edited. */
 :where(.court-wrapper, .court, .set-score-display, [data-help-id="scoreboard-set-display"],
-       .to-sub-counter, .set-end-readout, .match-end-score) {
+       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button) {
   --bg: #f1f5f9;
   --panel: #ffffff;
   --panel-2: #f8fafc;
