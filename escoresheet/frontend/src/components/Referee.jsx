@@ -548,6 +548,18 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }
   }, [updateMatchDataState])
 
+  // Latest values for handlers that are memoised / subscribed without them as
+  // deps (handleRealtimeAction has [], the Supabase channel effect omits the
+  // modal state): reading `data` / state there returned the mount-time value.
+  const bestOfRef = useRef(5)
+  const timeoutModalRef = useRef(null)
+  const betweenSetsCountdownRef = useRef(null)
+  useEffect(() => {
+    bestOfRef.current = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
+  }, [data?.match?.bestOf, data?.liveState?.best_of])
+  useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
+  useEffect(() => { betweenSetsCountdownRef.current = betweenSetsCountdown }, [betweenSetsCountdown])
+
   // Handle realtime actions (timeout, substitution, set_end)
   const handleRealtimeAction = useCallback((action, actionData) => {
     const receiveTimestamp = Date.now()
@@ -597,7 +609,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       })
 
       // Check if match is finished - don't show interval
-      const bestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
+      const bestOf = bestOfRef.current
       const isMatchFinishedNow = isMatchFinishedUtil(actionData.homeSetsWon, actionData.awaySetsWon, bestOf)
       if (isMatchFinishedNow) {
         console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
@@ -769,7 +781,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             const serverStartTs = state.timeout_started_at ? new Date(state.timeout_started_at).getTime() : Date.now()
 
             // Only update/start if not already tracking THIS timeout (compare start timestamps)
-            if (!timeoutModal || Math.abs(timeoutModal.startTimestamp - serverStartTs) > 2000) {
+            const currentTimeout = timeoutModalRef.current
+            if (!currentTimeout || Math.abs(currentTimeout.startTimestamp - serverStartTs) > 2000) {
               const team = getTeamFromSide(state.last_event_team)
               timeoutActiveRef.current = true
               setTimeoutModal({
@@ -846,8 +859,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             } else {
               const serverStartTs = state.set_interval_started_at ? new Date(state.set_interval_started_at).getTime() : Date.now()
 
-              // Only update if not already tracking this interval
-              if (!betweenSetsCountdown || Math.abs(betweenSetsCountdown.startTimestamp - serverStartTs) > 2000) {
+              // Only update if not already tracking this interval, and never revive
+              // one the scorer already ended (end_interval sets intervalDismissedRef)
+              const currentInterval = betweenSetsCountdownRef.current
+              if (!intervalDismissedRef.current &&
+                  (!currentInterval || Math.abs(currentInterval.startTimestamp - serverStartTs) > 2000)) {
                 setBetweenSetsCountdown({
                   countdown: 180,
                   startTimestamp: serverStartTs,
