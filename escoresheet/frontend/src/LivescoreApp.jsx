@@ -497,7 +497,7 @@ export default function LivescoreApp() {
           </Card>
         ) : (
           <Card pad="list" className="mx-auto max-w-3xl">
-            <RowList>
+            <RowList soft>
             {shownGames.map((game) => {
               const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(game)
               const gameN = game.game_n || ''
@@ -517,12 +517,16 @@ export default function LivescoreApp() {
                   key={game.match_id}
                   tone={tone}
                   onOpen={() => setSelectedGame(game.match_id)}
-                  label={gameN ? `Game ${gameN}` : `${leftName} – ${rightName}`}
+                  label={[
+                    `${leftName} ${leftScore} – ${rightScore} ${rightName}`,
+                    isMatchEnded ? t('livescore.final', 'FINAL') : `Set ${game.current_set || 1}`,
+                    gameN ? t('livescore.game', { number: gameN }) : '',
+                  ].filter(Boolean).join(', ')}
                   className="min-h-11"
                   leading={
                     <DateRail
                       tone={tone}
-                      weekday={gameN ? 'Game' : undefined}
+                      weekday={gameN ? t('benchDashboard.game', 'Game') : undefined}
                       date={gameN || '–'}
                       time={genderSymbol || undefined}
                       league={league || undefined}
@@ -534,17 +538,17 @@ export default function LivescoreApp() {
                         <span className="min-w-0">{leftName}</span>
                         {!isMatchEnded && servingTeam === 'left' && serveBall}
                       </p>
-                      <span className="text-right text-2xl font-bold leading-tight tabular-nums text-stone-900">{leftScore}</span>
+                      <span className="text-right text-[28px] font-bold leading-tight tabular-nums text-stone-900 sm:text-3xl">{leftScore}</span>
                       <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-snug break-words text-stone-900 sm:text-[15px]">
                         <span className="min-w-0">{rightName}</span>
                         {!isMatchEnded && servingTeam === 'right' && serveBall}
                       </p>
-                      <span className="text-right text-2xl font-bold leading-tight tabular-nums text-stone-900">{rightScore}</span>
+                      <span className="text-right text-[28px] font-bold leading-tight tabular-nums text-stone-900 sm:text-3xl">{rightScore}</span>
                     </div>
                   }
-                  meta={!isMatchEnded ? <span className="tabular-nums">{`Sets: ${leftSets} - ${rightSets}`}</span> : undefined}
+                  meta={!isMatchEnded ? <span className="tabular-nums">{`Sets: ${leftSets} – ${rightSets}`}</span> : undefined}
                   chips={isMatchEnded && setResults.length > 0
-                    ? setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}-{r.right}</span></Chip>)
+                    ? setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}–{r.right}</span></Chip>)
                     : undefined}
                   status={isMatchEnded
                     ? <StatusPill tone="done">{t('livescore.final', 'FINAL')}</StatusPill>
