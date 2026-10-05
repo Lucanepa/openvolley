@@ -1,20 +1,21 @@
 import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { AlertCircle, AlertTriangle, CircleCheck, Info } from 'lucide-react'
+import { cn } from '../ui/cn.js'
+import { modalPrimaryClass } from '../ui/Modal.jsx'
 
 const AlertContext = createContext(null)
 
-const TYPE_COLORS = {
-  error: '#ef4444',
-  success: '#22c55e',
-  warning: '#f59e0b',
-  info: '#3b82f6'
-}
-
-const TYPE_ICONS = {
-  error: '!',
-  success: '✓',
-  warning: '⚠',
-  info: 'i'
+// Kit decision dialog (ConfirmDialog recipe): stone-900/60 scrim with blur,
+// white rounded-xl panel, a tinted icon disc that names the kind beside the
+// word, body text-sm stone-600, and a neutral slate-900 OK (no brand-red fill:
+// alerts also open over the scoreboard, RESTYLE-SPEC R4). Behaviour unchanged:
+// the scrim swallows taps, only OK closes, alerts queue one at a time.
+const TYPE_TONES = {
+  error: { disc: 'bg-red-50 text-red-600', Icon: AlertCircle },
+  success: { disc: 'bg-emerald-50 text-emerald-600', Icon: CircleCheck },
+  warning: { disc: 'bg-amber-50 text-amber-600', Icon: AlertTriangle },
+  info: { disc: 'bg-sky-50 text-sky-600', Icon: Info }
 }
 
 function AlertModal({ alert, onClose }) {
@@ -22,87 +23,47 @@ function AlertModal({ alert, onClose }) {
 
   if (!alert) return null
 
-  const color = TYPE_COLORS[alert.type] || TYPE_COLORS.info
-  const icon = TYPE_ICONS[alert.type] || TYPE_ICONS.info
+  const tone = TYPE_TONES[alert.type] || TYPE_TONES.info
+  const { Icon } = tone
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.8)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100000
-      }}
+      className="no-print fixed inset-0 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm"
+      style={{ zIndex: 100000 }}
       onClick={(e) => {
         e.stopPropagation()
         e.preventDefault()
       }}
     >
       <div
-        style={{
-          width: 'min(90vw, 400px)',
-          background: '#111827',
-          border: `2px solid ${color}`,
-          borderRadius: 12,
-          padding: 0,
-          overflow: 'hidden'
-        }}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ov-alert-title"
+        aria-describedby="ov-alert-message"
+        className="ov-kit w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '12px 16px',
-            background: `${color}20`,
-            borderBottom: `1px solid ${color}40`
-          }}
-        >
-          <span
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              background: color,
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              fontSize: 16
-            }}
-          >
-            {icon}
+        <div className="mb-3 flex items-center gap-3">
+          <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', tone.disc)} aria-hidden="true">
+            <Icon size={18} />
           </span>
-          <span style={{ fontWeight: 600, color, textTransform: 'capitalize' }}>
+          <h3 id="ov-alert-title" className="text-lg font-bold capitalize text-stone-900">
             {t(`alert.${alert.type}`, alert.type)}
-          </span>
+          </h3>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '16px', color: '#e5e7eb', lineHeight: 1.5 }}>
+        <div id="ov-alert-message" className="mb-6 text-sm leading-relaxed text-stone-600">
           {alert.message}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex justify-end">
           <button
+            type="button"
             onClick={onClose}
-            style={{
-              padding: '8px 24px',
-              background: color,
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              fontWeight: 500,
-              cursor: 'pointer',
-              fontSize: 14
-            }}
+            className={cn(modalPrimaryClass, 'h-11 min-w-24')}
           >
             {t('common.ok', 'OK')}
           </button>
