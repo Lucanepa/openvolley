@@ -367,7 +367,7 @@ describe('match access after the PIN step', () => {
     globalThis.fetch = vi.fn(async () => json({ success: true, token: 'v1.tok.sig', match: { id: SEED, gameNumber: 12 } }))
     const r = await validatePinSupabase('314159', 'referee')
     expect(r).toMatchObject({ success: true, token: 'v1.tok.sig' })
-    expect(matchAccessFor(SEED)).toEqual({ pin: '314159', token: 'v1.tok.sig' })
+    expect(matchAccessFor(SEED)).toEqual({ pin: '314159', token: 'v1.tok.sig', type: 'referee' })
     expect(matchAccessHeaders(SEED)).toEqual({ 'X-OV-Match-Token': 'v1.tok.sig', 'X-OV-Match-Pin': '314159' })
     // A failed one remembers nothing
     forgetMatchAccess()
@@ -390,6 +390,36 @@ describe('match access after the PIN step', () => {
     const dbCall = calls.find((c) => c.url.endsWith('/api/db'))
     expect(dbCall).toBeTruthy()
     expect(dbCall.init.headers['X-OV-Match-Token']).toBe('v1.tok.sig')
+  })
+
+  it('the API fallback renews an expired match token with the remembered PIN (once a minute) and reads again', async () => {
+    rememberMatchAccess(SEED, { pin: '314159', token: 'v1.old.sig', type: 'bench_home' })
+    const calls = []
+    let dbReads = 0
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url)
+      calls.push({ url: u, init })
+      if (u.includes('/api/match/validate-connection-pin')) return json({ success: true, token: 'v1.new.sig', match: { id: SEED } })
+      if (u.includes('/api/match/')) return json({ success: false, error: 'Match not found' }, 404)
+      if (u.endsWith('/api/db')) {
+        const body = JSON.parse(init.body)
+        if (body.table !== 'matches') return json({ data: null, error: null })
+        dbReads++
+        const fresh = init.headers['X-OV-Match-Token'] === 'v1.new.sig'
+        return json({ data: { id: '11111111-2222-4333-8444-555555555555', external_id: SEED, status: 'live', ...(fresh ? { players_home: [{ number: 4 }] } : {}) }, error: null })
+      }
+      return json({ data: null, error: null })
+    })
+    await getMatchData(SEED)
+    const check = calls.find((c) => c.url.includes('validate-connection-pin'))
+    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home' })
+    expect(matchAccessFor(SEED).token).toBe('v1.new.sig')
+    expect(dbReads).toBe(2)
+    // Within the minute: no second PIN check
+    rememberMatchAccess(SEED, { token: 'v1.old2.sig' })
+    calls.length = 0
+    await getMatchData(SEED)
+    expect(calls.some((c) => c.url.includes('validate-connection-pin'))).toBe(false)
   })
 
   it('before the PIN step the summary is the answer (match link: game number only)', async () => {

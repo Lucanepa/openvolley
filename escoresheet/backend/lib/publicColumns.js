@@ -252,21 +252,45 @@ export const MATCH_ROSTER_COLUMNS = Object.freeze(['players_home', 'players_away
 
 /**
  * The anonymous /api/db answer: ANON_DB_COLUMNS, and for matches the roster
- * columns only on the row whose external_id is `grantedExternalId`.
+ * columns only on the row whose external_id is `grantedExternalId` (and, with
+ * `grantRow`, for which grantRow(projected row) is true as well).
  * @param {string} table
  * @param {object|object[]|null} rows
- * @param {{ grantedExternalId?: string|null }} [opts]
+ * @param {{ grantedExternalId?: string|null, grantRow?: (row: object) => boolean }} [opts]
  */
-export function projectAnonDbRows(table, rows, { grantedExternalId = null } = {}) {
+export function projectAnonDbRows(table, rows, { grantedExternalId = null, grantRow = null } = {}) {
   const projected = projectRows(ANON_DB_COLUMNS, table, rows)
   if (table !== 'matches') return projected
   const strip = (row) => {
     if (row == null || typeof row !== 'object') return row
-    if (grantedExternalId && row.external_id === grantedExternalId) return row
+    if (grantedExternalId && row.external_id === grantedExternalId && (!grantRow || grantRow(row))) return row
     for (const c of MATCH_ROSTER_COLUMNS) delete row[c]
     return row
   }
   return Array.isArray(projected) ? projected.map(strip) : strip(projected)
+}
+
+/** Column pgQuery adds to a select with opts.readOwner. */
+export const OWNED_FLAG = '__owned'
+
+/**
+ * A signed-in reader's /api/db answer for matches / events (pgQuery
+ * opts.readOwner): rows of a match the reader created or edits stay whole,
+ * every other row gets the anonymous projection (projectAnonDbRows). The
+ * __owned flag is removed from every row. An account alone is no reason to see
+ * other people's rosters, dates of birth, signatures or event payloads.
+ * @param {string} table
+ * @param {object|object[]|null} rows
+ * @param {{ grantedExternalId?: string|null, grantRow?: (row: object) => boolean }} [opts]
+ */
+export function projectNonOwnerRows(table, rows, opts = {}) {
+  const one = (row) => {
+    if (row == null || typeof row !== 'object' || Array.isArray(row)) return row
+    const owned = row[OWNED_FLAG] === true
+    const { [OWNED_FLAG]: _flag, ...clean } = row
+    return owned ? clean : projectAnonDbRows(table, clean, opts)
+  }
+  return Array.isArray(rows) ? rows.map(one) : one(rows)
 }
 
 /** projectRow for every row of an array (or one row). */

@@ -515,6 +515,13 @@ export function createPgQuery (options = {}) {
       selectParts.push(`CASE WHEN e.${quoteIdent(fcol.name)} IS NULL THEN NULL ELSE json_build_object(${pairs.join(', ')}) END AS ${quoteIdent(embed.as)}`)
     }
     const where = buildWhere(t, params, secrets, ctx, opts.scope)
+    // Read ownership (opts.readOwner): every row says whether the user owns
+    // its match (__owned), and with restrict only owned rows match at all.
+    const owned = readOwnedSql(cat, t, opts.readOwner, ctx)
+    if (owned) {
+      selectParts.push(`${owned} AS "__owned"`)
+      if (opts.readOwner.restrict) where.sql += `${where.sql ? ' AND' : ' WHERE'} ${owned}`
+    }
     const order = buildOrder(t, params, secrets, ctx)
     // A validated integer, inlined: an unused bind parameter (head:true) could not be typed.
     const limit = String(effectiveLimit(params, opts))
@@ -618,6 +625,28 @@ export function createPgQuery (options = {}) {
     if (fk) requireColumn(t, fk, 'match column')
     // admin: the creator is still recorded on insert, but nothing is checked
     return { userId: mo.userId, isParent, fk, parent, admin: mo.admin === true }
+  }
+
+  /**
+   * opts.readOwner = { userId, restrict? } on a select of the parent (matches)
+   * or a child table: the SQL boolean "the user owns this row's match", or
+   * null when the option does not apply. Without the ownership tables
+   * (005 not run) or a valid user id nothing is owned ('false'): a read never
+   * fails over it, it only sees less.
+   */
+  function readOwnedSql (cat, t, ro, ctx) {
+    const own = cfg.ownership
+    if (!ro || !own) return null
+    const isParent = t.name === own.parent
+    const fk = own.children?.[t.name] || null
+    if (!isParent && !fk) return null
+    const parent = cat.tables.get(own.parent)
+    const editors = cat.tables.get(own.editors.table)
+    const ready = parent && parent.columns.has(own.ownerColumn) && parent.columns.has(own.key) && editors &&
+      editors.columns.has(own.editors.matchColumn) && editors.columns.has(own.editors.userColumn) &&
+      (isParent || t.columns.has(fk))
+    if (!ready || typeof ro.userId !== 'string' || !UUID_RE.test(ro.userId)) return 'false'
+    return isParent ? ownedSql('t', ctx, ro.userId) : childOwnedSql('t', fk, ctx, ro.userId)
   }
 
   /** SQL: the match row `alias` is owned by the user (creator or editor). */
@@ -892,6 +921,8 @@ export function createPgQuery (options = {}) {
    *        nor edits get 403 OV_NOT_MATCH_OWNER. admin: true records the creator but checks nothing.
    *        Omit for trusted server code.
    * @param {boolean} [opts.collectChanges] return `changes` for realtime (default: changeTables)
+   * @param {{userId:string, restrict?:boolean}} [opts.readOwner] selects of matches and its children:
+   *        each row gets `__owned` (the user created or edits its match); restrict: only owned rows match
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
    * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
    * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)

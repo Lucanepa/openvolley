@@ -730,7 +730,7 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
     );
     h.insert(
         "Access-Control-Allow-Headers",
-        HeaderValue::from_static("Content-Type, X-Instance-ID, X-OV-Match-Pin"),
+        HeaderValue::from_static("Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token"),
     );
     res
 }

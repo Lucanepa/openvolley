@@ -103,9 +103,9 @@ export async function api(base, path, { body, token, proto = '2', method = 'POST
 }
 
 /** A WebSocket client that records every message. */
-export function openSocket(url) {
+export function openSocket(url, { headers } = {}) {
   return new Promise((resolveOpen, rejectOpen) => {
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(url, headers ? { headers } : undefined)
     const client = { ws, messages: [], raw: [] }
     client.send = (m) => ws.send(JSON.stringify(m))
     client.waitFor = (pred, timeoutMs = 5000, what = 'message') => new Promise((ok, fail) => {

@@ -830,11 +830,11 @@ export function matchKeyFromSyncedMatch(match) {
  * (`matchKeyFromSyncedMatch`): UUID externalId -> matches.id, else seed_key ->
  * matches.external_id.
  *
- * This is NOT authentication. The default check only requires that the
- * sender is the room's scoreboard AND the socket that last synced that match
- * (activeMatches entry updatedBy === client.id). Any anonymous socket can
- * still become a scoreboard for a match nobody owns; owner/PIN binding
- * (Phase 7) is the real fix.
+ * Owning the relay room is not enough: the synced match names the database
+ * row (externalId / seed_key, both public), so `verifyMatch(row, synced)`
+ * binds the two (server.js: the synced game PIN must be the row's). Without
+ * verifyMatch only the default isAuthorized check applies: the sender is the
+ * room's scoreboard AND the socket that last synced that match.
  *
  * @param {Object} opts
  * @param {ReturnType<typeof createRealtimeHub>} opts.hub
@@ -849,6 +849,8 @@ export function matchKeyFromSyncedMatch(match) {
  * @param {string} [opts.fkColumn='match_id']  set to the resolved `id`
  * @param {string[]} [opts.carryColumns=['sport_type']]  copied from the lookup result
  * @param {(table: string, column: string) => boolean} [opts.allowColumn]
+ * @param {(row: object, synced: object) => boolean} [opts.verifyMatch]  may this synced
+ *        relay entry speak for the looked-up row? false -> reason 'pin_mismatch', nothing published
  *        Optional catalog check; keys it rejects are dropped from the row.
  * @param {(client: object, message: object, synced: object) => boolean} [opts.isAuthorized]
  *        Default: client is the room's scoreboard and the current owner of the synced match.
@@ -866,6 +868,7 @@ export function createLiveStateRelay({
   fkColumn = 'match_id',
   carryColumns = ['sport_type'],
   allowColumn,
+  verifyMatch = null,
   isAuthorized = (client, message, synced) =>
     client?.role === 'scoreboard' &&
     client?.matchId != null &&
@@ -935,6 +938,7 @@ export function createLiveStateRelay({
       return { ok: false, reason: 'lookup_failed', error: err }
     }
     if (!match) return { ok: false, reason: 'unknown_match' }
+    if (verifyMatch && !verifyMatch(match, synced)) return { ok: false, reason: 'pin_mismatch' }
     // The scoreboard computed match_id itself; a mismatch means its view of
     // the match differs from the synced one, so publish nothing.
     if (liveState[fkColumn] != null && String(liveState[fkColumn]).toLowerCase() !== String(match.id).toLowerCase()) {

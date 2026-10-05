@@ -153,7 +153,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
 | `CONTACT_EMAIL` | Contact form recipient; also named in the "password reset unavailable" message | `volleyball@lucanepa.com` |
 | `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
-| `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | random |
+| `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
 | `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
 | `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
@@ -209,16 +209,41 @@ and `/api/match/restore` need one of:
 | **Admin** | `profiles.roles` contains `admin` or `super_admin`, read from the database (cached 30 s), never from the request. Writes any match (legacy ones included); a match an admin creates records it as creator. `roles` cannot be written through `/api/db` (denylist) or sign-up (dropped). |
 
 Everyone else gets **403 `OV_NOT_MATCH_OWNER`** and nothing is written (a batch
-with one foreign row is refused whole); no session is 401 as before. Reads are
-unchanged. `user_matches` ("My Matches") grants nothing: any account can write a
-link for any `external_id`, and the scorer writes it before the match row
-exists, so it proves nothing about who scored a match.
+with one foreign row is refused whole); no session is 401 as before.
+`user_matches` ("My Matches") grants nothing: any account can write a link for
+any `external_id`, and the scorer writes it before the match row exists, so it
+proves nothing about who scored a match.
+
+**Reads follow ownership too.** A signed-in caller reads full `matches` and
+`events` rows only of the matches it created or edits (admins: all); rows of
+other matches come back like an anonymous read (public columns, no rosters,
+dates of birth, signatures, officials, approvals, pending rosters, event
+payloads; the rosters of one match with its match token, see below), and a
+filter or order on a non-public column only matches the caller's own rows, so
+hidden values cannot be probed (`pgQuery` `opts.readOwner`). A referee or coach
+whose My Matches lists someone else's match therefore sees that match like the
+public scoresheet archive. Referee rows (`referee_database`) keep their full
+read for accounts.
 
 **Rows that existed before `005` have no owner** (`created_by` NULL): nobody
-can tell who scored them, so they are **read-only for everyone except admins**.
-A scorer who still needs to write one proves its game PIN (`claim`, done
-automatically by the app). A deleted account leaves its matches ownerless the
-same way (`ON DELETE SET NULL`).
+can tell who scored them, so they are **read-only for everyone except admins**
+until a scorer proves the game PIN. That happens without the app's help: a
+match insert/upsert through `/api/db` that is refused only for ownership and
+carries the stored match's own `game_pin` makes the account an editor and is
+retried at once (a counted PIN guess, like `claim`), so scorer apps that are
+already open (cached PWA) keep syncing the matches running on deploy day.
+Writes that carry no game PIN (sets, events, live state, plain updates) wait
+until that first match upsert, or until the app's own `claim` (the sync queue,
+and since this release the direct set-end / match-end syncs too, try it once a
+minute per match and requeue the match's parked jobs). A deleted account leaves
+its matches ownerless the same way (`ON DELETE SET NULL`).
+
+**Reference tables:** `svrz_games` (the official schedule, written by the
+server's vm-sync job) is read-only for every account but admins (403
+`OV_READ_ONLY_TABLE`). In `referee_database` an account may add referees and
+change `sport_type` of one row by id (Match Setup's referee history); any other
+update, an upsert or a delete is for admins. `beach_competition_matches` is not
+on the `/api/db` allowlist (no client uses it).
 
 The **officials' devices** keep working: referee and bench tablets only read
 (relay, live sockets, anonymous `/api/db`); the coaches' roster upload no longer
@@ -240,23 +265,46 @@ no match actions). The bundle (`access: "full"`, still without PINs and personal
 data) needs one of the match's PINs: the referee PIN while the referee
 connection is on, a bench PIN while that bench is on, or the game PIN.
 
-- Relay: `subscribe-match { matchId, pin }`, or `{ token }` on this server. A
-  PIN offered before the scorer synced the match is checked once it arrives.
-  Wrong PINs: `{code:'pin-invalid'}`; over 5 per socket / 20 per IP (LAN: 5)
-  per minute nothing is compared (`rate-limited`). `match-action` goes only to
-  sockets with access; `live-state-update` to every subscriber (it is what
-  Livescore shows anyway), and the summary keeps `data.liveState` for the
-  LedBox bridge.
+- Relay: `subscribe-match { matchId, pin }` (or `join_match` with a pin), or
+  `{ token }` on this server. The `role` / `device` / `team` fields only label
+  the socket; a role grants nothing. A PIN offered before the scorer synced the
+  match is checked once it arrives. Wrong PINs: `{code:'pin-invalid'}`; over 5
+  per socket and minute, or over the brute-force budget every PIN check of this
+  server shares (`validate-connection-pin`, `validate-pin`, `GET /api/match/:id`
+  with a PIN, the relay's subscribe PINs and scoreboard game-PIN claims, the
+  PocketBase snapshot, the inline take-over: **20 wrong PINs per 10 minutes per
+  address**, IPv6 by /64; right PINs are refunded), nothing is compared
+  (`rate-limited`). The LAN relays keep their own per-socket/per-IP limits.
+  `match-action` goes only to sockets with access; `live-state-update` to every
+  subscriber (it is what Livescore shows anyway), and the summary keeps
+  `data.liveState` for the LedBox bridge.
+- Scoreboard claims (cloud): a socket syncing a room it does not own yet is
+  checked against the database first. When the room key (`external_id`), or
+  the row the synced match points at (`externalId` uuid / `seed_key`), is
+  stored with a game PIN, the synced game PIN must be that one
+  (`not-match-owner` otherwise, a counted guess); a correct one also takes the
+  room back from a squatter. The relay's `live-state-update` -> `db-change`
+  publishes to a row only when the synced game PIN is that row's, so a socket
+  owning some room cannot speak for another match's Livescore or alarm.
 - HTTP: `X-OV-Match-Pin` or `X-OV-Match-Token` on `GET /api/match/:id`.
 - Tokens: `validate-pin` and `validate-connection-pin` answer `token`, an HMAC
-  capability for that one match (`lib/matchAccess.js`, 12 h). On anonymous
-  `/api/db` reads `X-OV-Match-Token` unlocks the **rosters of that match only**
-  (the referee/bench fallback when the relay has no copy); without it anonymous
-  `matches` reads have no roster columns, and anonymous `events` reads never
-  carry payloads, lineups or state snapshots.
+  capability for that one match (`lib/matchAccess.js`, 6 h; none for the
+  upload PINs). It is bound to the role it was issued for and carries a
+  fingerprint of that role's PIN: it stops granting as soon as the role's
+  connection is switched off or (on the relay, which holds the PINs) its PIN is
+  regenerated, not only when it expires. On anonymous `/api/db` reads
+  `X-OV-Match-Token` unlocks the **rosters of that match only** while the
+  role's connection is on (the referee/bench fallback when the relay has no
+  copy); without it anonymous `matches` reads have no roster columns, and
+  anonymous `events` reads never carry payloads, lineups or state snapshots.
+  The secret is `OV_MATCH_TOKEN_SECRET`, else derived from `OV_PIN_SECRET`, so
+  tokens survive a restart without an extra setting.
 - The apps remember the PIN and token of a successful PIN check in memory
   (`serverDataSync.rememberMatchAccess`) and send them with every subscribe and
-  fetch of that match. On the LAN nothing needs setting up.
+  fetch of that match (the relay keeps the PIN next to a token, so an expired
+  token falls back to the PIN). When the API fallback reads the match without
+  its rosters (token expired), the app renews the token with the remembered PIN
+  once a minute at most. On the LAN nothing needs setting up.
 
 The game list stays anonymous and keeps `external_id`: the roster-upload app
 needs it before the PIN step (its PIN check is bound to that match), the live
@@ -293,26 +341,38 @@ Each account sees only its own backup objects: `STORAGE_OWNER_SCOPE=prefix`
 with `STORAGE_OWNER_SCOPE_BUCKETS=backup` (the defaults) stores them under
 `backup/{user id}/…` transparently, so list, download and restore work for the
 uploader and show nothing to anyone else. Restore by game number + game PIN
-(`/api/match/restore-by-pin`) is the PIN-gated path for everyone else. Files
+(`/api/match/restore-by-pin`) is the PIN-gated path for everyone else: the
+restore screen's cloud search (game number + game PIN) runs it next to the
+backup list and offers the cloud match itself ("From Database"), so a
+replacement tablet signed in with another account still restores the match
+(and, signed in, becomes its editor). Restore in place from the scoreboard's
+options lists the current account's backups only. Files
 stored before this change (`backup/backups/…`, no user folder) are no longer
 reachable through the API; the 30-day sweep still removes them (and sweeps
 every account's `{user id}/backups`).
 
 ### Sign-up
 
-Auto-confirmed (no email flow yet). Limits: 5 per hour per IP, 3 per hour per
-email address (across IPs), 100 per hour in total; client `roles` in the
-metadata are dropped and `profiles.roles` is never writable by a client.
+Auto-confirmed (no email flow yet). Limits: 5 per hour per IP (/64), 3 per
+hour per mailbox (across IPs; `name+tag@` counts as `name@`), and 300 created
+accounts per hour in total (requests for existing addresses or that fail are
+not counted, so nobody can use the budget up without creating that many
+accounts); client `roles` in the metadata are dropped and `profiles.roles` is
+never writable by a client.
 
 ### Still open (accepted, with impact)
 
-- **Any signed-in account reads full match rows** through `/api/db` (rosters
-  with dates of birth, officials, signatures) and, since sign-up is open, so
-  can anyone willing to create an account. Owner-scoped reads need the
-  scorer's devices and My Matches checked first.
-- **Any socket can still become the relay scoreboard of a match the relay
-  does not hold yet** (proved by its game PIN from then on), as before.
+- **A relay room that is not in the database** (LAN, or a cloud match the
+  scorer has not synced over HTTP yet) is claimed by its first scoreboard and
+  proved by its game PIN from then on, as before.
 - **Session tokens stay in localStorage** (httpOnly cookies are a later change).
+- **Rolling out:** deploy the cloud backend and the desktop/LAN relays outside
+  match hours, and run `db/005_match_ownership.sql` before the new backend
+  starts. Referee and bench tablets opened before the update run the old app:
+  it sends no PIN on subscribe and does not know `access`, so the relay's next
+  update (the summary) empties their lineups and rosters until the page is
+  reloaded and the PIN entered again. Make sure those apps take the service
+  worker update (UpdateBanner) before the next match.
 
 ### Cutover: frontend and backend ship together
 
@@ -502,7 +562,7 @@ Sessions last 30 days, slide forward when fewer than 15 days remain, and never l
 
 **Protected routes** call `await auth.requireUser(req, res)` (writes the 401/503 itself) or `await auth.verifyToken(req)` (returns the user or `null`, throws on database errors).
 
-**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, 5/s for all sign-ins together, and a lock for 15 min after 10 failures per email (attempts still being checked count towards it, so parallel requests cannot overshoot); sign-up 5/hour per IP, 3/hour per email address, 100/hour in total; session checks 300/min per IP. Per-IP buckets key IPv6 clients on their /64 (`ipBucketKey`), so pass the raw client IP. Override with `createAuth({ limits, lockout, ipKey })`.
+**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, 5/s for all sign-ins together, and a lock for 15 min after 10 failures per email (attempts still being checked count towards it, so parallel requests cannot overshoot); sign-up 5/hour per IP, 3/hour per mailbox (plus-tags removed), 300 created accounts/hour in total; session checks 300/min per IP. Per-IP buckets key IPv6 clients on their /64 (`ipBucketKey`), so pass the raw client IP. Override with `createAuth({ limits, lockout, ipKey })`.
 
 **CPU guard.** bcryptjs runs on the main event loop, which also serves the live-scoring relay. At most `bcryptMaxConcurrent` (2) bcrypt operations run at once and `bcryptMaxQueue` (16) wait; beyond that, and when the global sign-in bucket is empty, the answer is **503 `auth_busy`** with `Retry-After`, never a queued request. Existing sessions are unaffected.
 
