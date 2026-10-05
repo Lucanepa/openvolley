@@ -18,6 +18,7 @@ import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectionSetupModal from './components/options/ConnectionSetupModal'
 import { useSyncQueue } from './hooks/useSyncQueue'
+import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import mikasaVolleyball from './mikasa_v200w.png'
@@ -102,6 +103,10 @@ export default function App() {
   const [spotlightTarget, setSpotlightTarget] = useState(null)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
+  // The sync indicator reads the queue counts itself (a live query there, so a
+  // queue write does not re-render the whole app); it only needs to know
+  // whether the cloud is waiting for a sign-in.
+  const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
 
   // Compute current page for contextual help
@@ -502,25 +507,31 @@ export default function App() {
     // --- Check cloud sync status (instant — based on existing syncStatus state) ---
     // (status key 'supabase' kept for the UI; the cloud is the OpenVolley backend now)
     if (syncStatus === 'synced' || syncStatus === 'syncing') {
-      updateStatus('supabase', 'connected', { status: 'connected', message: 'Supabase is connected and syncing' })
+      updateStatus('supabase', 'connected', { status: 'connected', message: 'Cloud backend is connected and syncing' })
+    } else if (syncStatus === 'auth_required') {
+      // The backend is reachable; writes wait for a sign-in (banner + indicator say so)
+      updateStatus('supabase', 'connected', {
+        status: 'connected',
+        message: 'Cloud backend is reachable. Sign in to sync this device\'s matches.'
+      })
     } else if (syncStatus === 'online_no_supabase') {
       updateStatus('supabase', 'not_configured', {
         status: 'not_configured',
-        message: 'Supabase client not initialized',
-        details: 'Supabase environment variables may be set but client failed to initialize. Check your .env file.'
+        message: 'No cloud backend configured',
+        details: 'This build has no backend URL; matches are kept on this device (and the local server, if any).'
       })
     } else if (syncStatus === 'connecting') {
-      updateStatus('supabase', 'connecting', { status: 'connecting', message: 'Connecting to Supabase...' })
+      updateStatus('supabase', 'connecting', { status: 'connecting', message: 'Connecting to the cloud backend...' })
     } else if (syncStatus === 'error') {
       updateStatus('supabase', 'error', {
         status: 'error',
-        message: 'Supabase connection error',
-        details: 'Check your Supabase credentials and network connection'
+        message: 'Cloud backend error',
+        details: 'The backend answered with an error. Sync keeps retrying in the background.'
       })
     } else if (syncStatus === 'offline') {
-      updateStatus('supabase', 'offline', { status: 'offline', message: 'Device is offline or Supabase is unreachable' })
+      updateStatus('supabase', 'offline', { status: 'offline', message: 'Device is offline or the cloud backend is unreachable' })
     } else {
-      updateStatus('supabase', 'unknown', { status: 'unknown', message: 'Supabase status unknown' })
+      updateStatus('supabase', 'unknown', { status: 'unknown', message: 'Cloud backend status unknown' })
     }
 
     // --- Run async checks in parallel ---
@@ -2923,7 +2934,7 @@ export default function App() {
               localStorage.setItem('offlineMode', val.toString())
             }}
             onOpenSetup={openMatchSetup}
-            queueStats={syncStatus}
+            queueStats={queueStats}
             onRetryErrors={retryErrors}
             dashboardServer={isElectron && dashboardServerEnabled ? {
               enabled: dashboardServerEnabled,
@@ -4102,6 +4113,9 @@ export default function App() {
               onDismiss={handleStartupDismiss}
               onGoOffline={handleStartupGoOffline}
             />
+
+            {/* Not signed in while the cloud needs an account: non-blocking */}
+            {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
 
           </div>
         </>

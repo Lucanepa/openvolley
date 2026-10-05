@@ -24,8 +24,9 @@ import { rewriteQueuedSyncJobs } from '../utils/syncIds'
  * - action: 'insert' | 'update' | 'delete' | 'restore' - determines operation
  * - payload: Data to sync, includes external_id for deduplication
  * - ts: Timestamp when queued (for ordering)
- * - status: 'queued' | 'sending' | 'sent' | 'error' | 'superseded' | 'dropped' - processing state
- *   ('sending': claimed by useSequentialSync; 'superseded'/'dropped': never sent)
+ * - status: 'queued' | 'sending' | 'sent' | 'error' | 'failed' | 'superseded' | 'dropped' - processing state
+ *   ('sending': claimed by useSequentialSync; 'error': retried with backoff;
+ *   'failed': refused by the backend (4xx), retried only by hand; 'superseded'/'dropped': never sent)
  *
  * Processing order: match → set → event (respects foreign key dependencies)
  *
@@ -301,16 +302,40 @@ db.version(16).stores({
 // The upgrade must never reject: a failed upgrade leaves the database unopenable.
 db.version(17).stores({}).upgrade(async tx => {
   try {
+    // events too: a legacy 'coin_toss_<seed>' job must get its local event id
+    // here, not the '<seed>:e:coin_toss' fallback (a later re-confirmed coin
+    // toss would then add a second cloud row)
     const { rewritten, dropped, failed } = await rewriteQueuedSyncJobs({
       queue: tx.table('sync_queue'),
       sets: tx.table('sets'),
-      matches: tx.table('matches')
+      matches: tx.table('matches'),
+      events: tx.table('events')
     })
     if (rewritten || dropped || failed) {
       console.log(`[db] v17: namespaced ${rewritten} queued set/event jobs, dropped ${dropped}, failed ${failed}`)
     }
   } catch (e) {
     console.warn('[db] v17 queue id rewrite skipped:', e?.message)
+  }
+})
+
+// Version 18: The coin toss event was queued as 'coin_toss_<seed_key>', which the
+// backend refuses forever (400 OV_UNSCOPED_EXTERNAL_ID: the match key must be the
+// prefix). Rewrite those waiting jobs to `${seed}:e:<local event id>` and put the
+// parked ones back in the queue. No schema change; must never reject (see v17).
+db.version(18).stores({}).upgrade(async tx => {
+  try {
+    const { rewritten, dropped, failed } = await rewriteQueuedSyncJobs({
+      queue: tx.table('sync_queue'),
+      sets: tx.table('sets'),
+      matches: tx.table('matches'),
+      events: tx.table('events')
+    }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    if (rewritten || dropped || failed) {
+      console.log(`[db] v18: rewrote ${rewritten} queued coin toss/set/event jobs, dropped ${dropped}, failed ${failed}`)
+    }
+  } catch (e) {
+    console.warn('[db] v18 coin toss id rewrite skipped:', e?.message)
   }
 })
 
