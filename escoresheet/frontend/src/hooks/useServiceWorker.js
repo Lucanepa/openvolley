@@ -50,6 +50,69 @@ async function deleteAllIndexedDB() {
   console.log('[SW] Cleared IndexedDB')
 }
 
+/** Resolves with the worker once it is installed (waiting), or null on failure/timeout. */
+function waitUntilInstalled(worker, timeoutMs) {
+  if (worker.state === 'installed') return Promise.resolve(worker)
+  return new Promise((resolve) => {
+    const done = (value) => {
+      clearTimeout(timer)
+      worker.removeEventListener('statechange', onState)
+      resolve(value)
+    }
+    const onState = () => {
+      if (worker.state === 'installed') done(worker)
+      else if (worker.state === 'redundant' || worker.state === 'activated') done(null)
+    }
+    const timer = setTimeout(() => done(null), timeoutMs)
+    worker.addEventListener('statechange', onState)
+  })
+}
+
+/**
+ * True when the server that serves this app answers. version.json is never
+ * precached and matches no runtime route, so this really hits the network.
+ */
+export async function canReachAppServer(timeoutMs = 4000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = setTimeout(() => controller?.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}version.json?t=${Date.now()}`, {
+      cache: 'no-store',
+      signal: controller?.signal
+    })
+    return res.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Options > "Clear cache": delete every Cache Storage entry, unregister the
+ * service workers and reload this page with its query kept (?match=&team=
+ * keep a referee/bench tablet attached to the live match).
+ *
+ * Returns false WITHOUT touching anything when the app's server cannot be
+ * reached: with the precache and the worker gone, the reload would have
+ * nothing to load from, and the device would be stuck on a browser error page
+ * for the rest of the match.
+ */
+export async function clearCachesAndReload({ includeLocalStorage = false } = {}) {
+  if (!(await canReachAppServer())) return false
+  if (typeof caches !== 'undefined') {
+    const cacheNames = await caches.keys()
+    await Promise.all(cacheNames.map((name) => caches.delete(name)))
+  }
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(registrations.map((reg) => reg.unregister()))
+  }
+  if (includeLocalStorage) localStorage.clear()
+  window.location.replace(buildReloadUrl())
+  return true
+}
+
 /**
  * Activate the waiting service worker and reload this tab with it.
  *
@@ -59,14 +122,20 @@ async function deleteAllIndexedDB() {
  * fully precached, and Workbox drops outdated precache entries on activate, so
  * the app still loads offline right after the update.
  */
-export async function applyServiceWorkerUpdate({ clearIndexedDB = false, timeoutMs = 4000 } = {}) {
+export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
   const reload = () => window.location.replace(buildReloadUrl())
   try {
     if (clearIndexedDB) await deleteAllIndexedDB()
 
     const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null
     const reg = sw ? await sw.getRegistration() : null
-    const waiting = reg?.waiting
+    // Options > "Update": the new worker may not even be downloaded yet. A plain
+    // reload would keep the old active worker (skipWaiting is off) and serve the
+    // old precached app, so fetch it and wait for it to finish installing.
+    if (reg && checkForUpdate && !reg.waiting && !reg.installing) {
+      await reg.update().catch(() => {})
+    }
+    const waiting = reg?.waiting || (reg?.installing ? await waitUntilInstalled(reg.installing, timeoutMs) : null)
     if (waiting) {
       // Wait for the new worker to take control before reloading, so the reload
       // is served by it (with a timeout in case controllerchange never fires).
@@ -134,20 +203,17 @@ export function useServiceWorker() {
       if (!reg || cancelled) return
       registration = reg
 
-      // If there's a waiting worker, an update is available
-      if (reg.waiting) {
-        setNeedRefresh(true)
-        return
-      }
-
-      // If there's an installing worker, wait for it
-      if (reg.installing) {
-        trackInstalling(reg.installing)
-        return
-      }
-
-      // Listen for new updates
+      // Listen for new updates (always: an install in progress at mount must not
+      // stop later updates in this session from being noticed)
       reg.addEventListener('updatefound', onUpdateFound)
+
+      if (reg.waiting) {
+        // A waiting worker means an update is available
+        setNeedRefresh(true)
+      } else if (reg.installing) {
+        // An installing worker: wait for it
+        trackInstalling(reg.installing)
+      }
     }).catch(() => {})
 
     // Check for updates periodically (every 5 minutes)

@@ -1,5 +1,27 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { buildReloadUrl, stripCacheBustParam, applyServiceWorkerUpdate } from '../useServiceWorker'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { buildReloadUrl, stripCacheBustParam, applyServiceWorkerUpdate, clearCachesAndReload } from '../useServiceWorker'
+
+// Shared stubs for the browser APIs the update / clear-cache paths touch
+const originalLocation = window.location
+const originalSW = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker')
+function restoreBrowserStubs() {
+  Object.defineProperty(window, 'location', { value: originalLocation, configurable: true, writable: true })
+  if (originalSW) Object.defineProperty(navigator, 'serviceWorker', originalSW)
+  else delete navigator.serviceWorker
+  delete globalThis.caches
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+}
+function stubLocation(href) {
+  const replace = vi.fn()
+  Object.defineProperty(window, 'location', { value: { href, replace }, configurable: true, writable: true })
+  return replace
+}
+function stubServiceWorker(value) {
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value })
+}
 
 describe('buildReloadUrl', () => {
   it('keeps match/team/server params and the hash, adds cache_bust', () => {
@@ -94,5 +116,107 @@ describe('applyServiceWorkerUpdate', () => {
     })
     await applyServiceWorkerUpdate()
     expect(new URL(replace.mock.calls[0][0]).searchParams.get('match')).toBe('3')
+  })
+})
+
+describe('applyServiceWorkerUpdate({ checkForUpdate }) - Options > Update', () => {
+  afterEach(restoreBrowserStubs)
+
+  it('fetches the new worker, waits for it to install, then activates it (a plain reload would keep the old one)', async () => {
+    const replace = stubLocation('https://host/?x=1')
+    let onControllerChange
+    const listeners = {}
+    const installing = {
+      state: 'installing',
+      addEventListener: vi.fn((type, cb) => { listeners[type] = cb }),
+      removeEventListener: vi.fn(),
+      postMessage: vi.fn(() => onControllerChange())
+    }
+    const reg = { waiting: null, installing: null }
+    reg.update = vi.fn(async () => {
+      reg.installing = installing
+      // finishes installing a moment later
+      setTimeout(() => { installing.state = 'installed'; listeners.statechange() }, 10)
+    })
+    stubServiceWorker({
+      getRegistration: vi.fn().mockResolvedValue(reg),
+      addEventListener: vi.fn((type, cb) => { if (type === 'controllerchange') onControllerChange = cb })
+    })
+
+    await applyServiceWorkerUpdate({ checkForUpdate: true })
+
+    expect(reg.update).toHaveBeenCalledTimes(1)
+    expect(installing.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' })
+    expect(replace).toHaveBeenCalledTimes(1)
+    expect(new URL(replace.mock.calls[0][0]).searchParams.get('x')).toBe('1')
+  })
+
+  it('does not post SKIP_WAITING to a worker that never finishes installing', async () => {
+    const replace = stubLocation('https://host/')
+    const installing = { state: 'installing', addEventListener: vi.fn(), removeEventListener: vi.fn(), postMessage: vi.fn() }
+    stubServiceWorker({
+      getRegistration: vi.fn().mockResolvedValue({ waiting: null, installing, update: vi.fn() }),
+      addEventListener: vi.fn()
+    })
+    await applyServiceWorkerUpdate({ checkForUpdate: true, timeoutMs: 20 })
+    expect(installing.postMessage).not.toHaveBeenCalled()
+    expect(replace).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('clearCachesAndReload', () => {
+  afterEach(restoreBrowserStubs)
+
+  function stubCachesAndSW() {
+    const cachesDelete = vi.fn().mockResolvedValue(true)
+    globalThis.caches = { keys: vi.fn().mockResolvedValue(['workbox-precache-v2-x', 'api-cache']), delete: cachesDelete }
+    const unregister = vi.fn().mockResolvedValue(true)
+    stubServiceWorker({ getRegistrations: vi.fn().mockResolvedValue([{ unregister }]) })
+    return { cachesDelete, unregister }
+  }
+
+  it('wipes caches, unregisters and reloads with ?match=&team= kept when the server answers', async () => {
+    const replace = stubLocation('https://host/referee/?match=42&team=home')
+    const { cachesDelete, unregister } = stubCachesAndSW()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+
+    expect(await clearCachesAndReload()).toBe(true)
+
+    expect(cachesDelete).toHaveBeenCalledTimes(2)
+    expect(unregister).toHaveBeenCalledTimes(1)
+    const url = new URL(replace.mock.calls[0][0])
+    expect(url.pathname).toBe('/referee/')
+    expect(url.searchParams.get('match')).toBe('42')
+    expect(url.searchParams.get('team')).toBe('home')
+    expect(url.searchParams.has('cache_bust')).toBe(true)
+  })
+
+  it('touches nothing when the server is unreachable (the reload could not load the app offline)', async () => {
+    const replace = stubLocation('https://host/referee/?match=42')
+    const { cachesDelete, unregister } = stubCachesAndSW()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    localStorage.setItem('keep', '1')
+
+    expect(await clearCachesAndReload({ includeLocalStorage: true })).toBe(false)
+
+    expect(cachesDelete).not.toHaveBeenCalled()
+    expect(unregister).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+    expect(localStorage.getItem('keep')).toBe('1')
+    localStorage.removeItem('keep')
+  })
+
+  // Every clear-cache / update entry point must go through the shared helpers;
+  // the old `pathname + '?cache_bust='` reload dropped ?match=&team= and
+  // detached referee/bench tablets from the live match.
+  it.each([
+    'components/DashboardHeader.jsx',
+    'components/SimpleHeader.jsx',
+    'components/options/HomeOptionsModal.jsx',
+    'components/options/ScoreboardOptionsModal.jsx'
+  ])('%s keeps the query on reload', (file) => {
+    const src = readFileSync(resolve(__dirname, '../..', file), 'utf8')
+    expect(src).not.toMatch(/location\.pathname \+ '\?cache_bust='/)
+    expect(src).toMatch(/clearCachesAndReload\(/)
   })
 })
