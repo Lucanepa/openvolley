@@ -33,31 +33,56 @@ npm start
 
 Server runs on `http://localhost:8080`.
 
-### Deploy to Infomaniak
+### Two runtime modes
 
-1. Deploy the `escoresheet/backend` directory to your Infomaniak Node.js hosting
-2. Set **Start Command** to `node server.js`
-3. Set environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY` (or SMTP vars)
+| Mode | Start | What it serves |
+| --- | --- | --- |
+| **LAN / desktop relay** (no `DATABASE_URL`, or `--local`) | `node server.js --local` | WebSocket relay, static frontend, email, iCal. `/api/db`, `/api/auth/*`, `/api/storage/*`, `/api/match/restore*` and `/api/match/validate-connection-pin` answer 503. Unchanged from before the migration. |
+| **Self-hosted cloud** (`DATABASE_URL` set) | `node server.js` | Everything above plus the data layer on its own Postgres (`lib/pgQuery.js`, `lib/matchRestore.js`, `lib/auth.js`) and filesystem storage (`lib/storage.js`), and realtime (`?purpose=live` sockets, `lib/realtimeHub.js`). No Supabase client or key anywhere. |
 
-### Verify Deployment
+The data-layer modules (and `pg`) are loaded with a dynamic `import()` at
+startup in cloud mode only; loading does not connect. A database that is down
+makes `/health` answer 503 and data requests 503 until it is back; a
+configuration error (bad `TRUST_PROXY`, `STORAGE_OWNER_SCOPE` or `STORAGE_*_MB`)
+stops the process.
 
-Test the health endpoint:
+HTTP and WebSocket share **one port** (`PORT`): `server.on('upgrade')` routes
+`?purpose=live` upgrades to the realtime hub and every other upgrade to the
+role-socket relay. There is no separate WS port, so one tunnel/router entry
+covers both.
+
+### Verify a deployment
 
 ```bash
-curl https://backend.openvolley.app/health
+curl -fsS https://backend.openvolley.app/health/live   # process up (no DB)
+curl -fsS https://backend.openvolley.app/health        # db, catalog, sentinel, floor, backup age
 ```
 
-Expected response:
+Cloud-mode `/health` (HTTP 200 only when `db`, `catalog`, `sentinel` and `floor` are ok, else 503; cached 2 s):
 
 ```json
 {
-  "status": "healthy",
+  "status": "ok",
   "mode": "cloud",
   "uptime": 123.45,
-  "connections": 0,
-  "activeRooms": 0
+  "db": "ok",
+  "catalog": { "ok": true, "tables": 9, "loadedAt": "2026-10-05T12:00:00.000Z" },
+  "sentinel": "ok",
+  "storageWritable": true,
+  "diskFreeMB": 14211,
+  "floor": "ok",
+  "lastBackupAt": "2026-10-05T11:05:00.000Z",
+  "lastBackupAgeMin": 55,
+  "connections": { "role": 4, "live": 61 },
+  "activeRooms": 3,
+  "realtime": { "sockets": 61, "ips": 2, "channels": 70, "...": "hub counters" }
 }
 ```
+
+`db` is `ok|down`, `sentinel` is `ok|missing`, `floor` is `ok|low|unknown`.
+`lastBackupAt`/`lastBackupAgeMin` are `null` when `$STATUS_DIR/last_backup`
+is missing or unreadable (reported only, never a 503). LAN `/health` keeps the
+old shape (`status: healthy`, `mode: local`, always 200).
 
 Test WebSocket (browser console):
 
@@ -101,15 +126,38 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `PORT` | Server port | `8080` |
-| `RENDER` | Auto-set by Render (enables cloud mode) | - |
+| `PORT` | HTTP **and** WebSocket port (upgrades on the same port) | `8080` |
+| `DATABASE_URL` | Postgres connection string. Set: self-hosted cloud mode. Unset (or `--local` on the command line): LAN relay mode, no database. | - |
+| `STORAGE_ROOT` | Object storage root (`{root}/{bucket}/{path}`), must contain the `.ovdata` sentinel or every write gets 503. `STORAGE_DIR` is accepted as the older name. | `/data/storage` |
+| `STATUS_DIR` | Read-only directory with `last_backup` (a UTC timestamp, e.g. `date -u +%FT%TZ`) reported by `/health`. | `/var/lib/openvolley-status` |
+| `PUBLIC_ORIGINS` | Extra trusted browser origins, comma separated (CORS with credentials, CSP connect-src), on top of `https://*.openvolley.app` and the built-in list. | - |
+| `TRUST_PROXY` | `cloudflare`: the client IP is `cf-connecting-ip` (only valid when the origin is reachable through Cloudflare only). Unset: the socket peer address. Any other value stops the server. | - |
+| `IS_CLOUD` | Strict cloud CORS/HSTS/CSP without a database (relay-only cloud). Implied by `DATABASE_URL`. | - |
+| `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
+| `CONTACT_EMAIL` | Contact form recipient; also named in the "password reset unavailable" message | `volleyball@lucanepa.com` |
+| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE` | See "Self-hosted storage" below | |
+| `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
 | `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
 | `SMTP_HOST` | SMTP server hostname (alternative to Resend) | - |
 | `SMTP_PORT` | SMTP port | `587` |
 | `SMTP_USER` | SMTP username | - |
 | `SMTP_PASS` | SMTP password | - |
-| `CONTACT_EMAIL` | Recipient for contact form submissions | `volleyball@lucanepa.com` |
+| `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | Optional relay snapshot backup (unchanged) | - |
+
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read.
+
+Rate limits in cloud mode (per minute unless noted; sized for a venue NAT):
+`/api/db` reads 600 per IP, writes 600 per user (and 1200 per IP before the
+token lookup); `/api/storage/*` 600 per IP plus the per-user write quota of
+`lib/storage.js`; `validate-connection-pin` 60 per IP and 20 per IP + PIN type;
+`/api/match/restore` 30 per user; `/api/match/restore-by-pin` 60 per IP plus the
+attempt limiter (20 failed per caller / 5 per caller and game in 10 min); auth
+buckets live in `lib/auth.js`. Role sockets: 200 per IP in cloud mode (50 on
+the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
+Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
+the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
+allows that header.
 
 Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works on all cloud platforms) or SMTP credentials.
 
@@ -127,21 +175,11 @@ Replaces Supabase Storage behind `POST /api/storage/upload`, `/download` and `/l
 
 Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
 
-Wiring in server.js (one block for the three actions; `userId` is the verified caller):
-
-```js
-const storage = createStorage({ ...storageOptionsFromEnv(process.env), checkQuota: createWriteQuota() })
-// ...
-let body
-try {
-  body = await readJsonBody(req, storage.maxBodyBytes) // not MAX_MATCH_BODY_SIZE
-} catch (e) {
-  const r = e.message === 'Body too large' ? storage.bodyTooLarge() : { status: 400, body: { data: null, error: { message: 'Invalid request' } } }
-  res.writeHead(r.status, { 'Content-Type': 'application/json' })
-  return res.end(JSON.stringify(r.body))
-}
-const { status, body: out } = await storage.handle(action, body, { userId })
-```
+Wired in server.js (cloud mode): one `/api/storage/*` block, session required,
+the body read with `storage.maxBodyBytes`, an oversized body answered with
+`storage.bodyTooLarge()` (413; the request is drained, not destroyed, so the
+answer arrives), then `storage.handle(action, body, { userId })`. `STORAGE_ROOT`
+(or `STORAGE_DIR`) is the root. `sweep()` runs 5 min after start and then daily.
 
 Preparing a root by hand (dev, staging):
 
@@ -154,9 +192,13 @@ Tests: `npm test` (or `node --test tests/storage.test.js`). They use a temp dire
 
 ## API Endpoints
 
+### `GET /health/live`
+
+Liveness for the container healthcheck: `{"status":"ok","uptime":...}`, always 200, never touches the database.
+
 ### `GET /health`
 
-Health check. Also responds on `/`.
+Health check. In cloud mode see "Verify a deployment" above (503 when db, catalog, sentinel or floor is not ok). LAN mode:
 
 ```json
 {
@@ -548,7 +590,7 @@ Deployed on Infomaniak at `https://backend.openvolley.app`.
 ## Postgres data layer (`lib/pgQuery.js`, `lib/matchRestore.js`)
 
 Replacement for the Supabase/PostgREST calls behind `/api/db`, used when
-`DATABASE_URL` is set (not wired into `server.js` yet). Both modules are plain
+`DATABASE_URL` is set (wired into `server.js`). Both modules are plain
 ESM with no side effects at import time. The catalog is read lazily from
 `information_schema` on first use and retried with backoff while the database
 is down.
@@ -589,17 +631,16 @@ state `status` is renamed to `match_status`). Sets and events without
 the stored object. `changes` lists the old children as `DELETE` (keys only)
 before the new rows.
 
-### Wiring notes for `server.js`
+### How `server.js` uses it
 
-- `restoreByPin(body, { limitKey })`: pass the client IP (the Cloudflare /
-  Traefik client address, not the socket peer). Without it every caller shares
-  one bucket of 20 failed attempts per 10 min.
-- Internal PIN validation that scans matches (`status` in setup/live) must pass
-  `maxRows` (e.g. 20000) or order by `scheduled_at` desc, or better filter by the
-  match id the client sends: the default cap is 1000 rows, as on Supabase.
+- `restoreByPin(body, { limitKey })` gets the client IP (`cf-connecting-ip`
+  with `TRUST_PROXY=cloudflare`), IPv6 keyed by /64.
+- `validate-connection-pin` scans setup/live indoor matches with
+  `{ internal: true, maxRows: 20000 }`, newest `scheduled_at` first.
+- Successful writes publish their `changes` to `?purpose=live` subscribers.
 - Accepted until match ownership (plan Phase 7): any signed-in session can
   restore any match by `external_id`, and a non-empty `game_pin` in the backup
-  replaces the stored PIN. Record this next to the other §9 trade-offs.
+  replaces the stored PIN.
 
 ### Running the Postgres tests
 
@@ -619,3 +660,16 @@ docker stop ov-test-pg
 
 The synthetic schema mirrors the 2026-10 inventory, not the real dump. Once
 `schema_public.sql` exists, run the suites against a scrubbed copy of it too.
+
+`tests/server.e2e.test.js` boots `server.js` itself with `DATABASE_URL`, a temp
+`STORAGE_ROOT` and `STATUS_DIR` on a random port, and drives sign-up/sign-in,
+`/api/db` writes with namespaced set/event ids, a `?purpose=live` subscriber,
+secret redaction, PIN validation, both restore endpoints, storage and
+`/health`. It uses `PG_TEST_URL` like the other suites, or starts (and always
+stops) its own `postgres:17-alpine` container with `OV_E2E_DOCKER=1`:
+
+```bash
+OV_E2E_DOCKER=1 node --test tests/server.e2e.test.js
+```
+
+Its second suite boots `server.js --local` without a database and needs neither.
