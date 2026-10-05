@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CircleHelp, X } from 'lucide-react'
 import FAQItem from './FAQItem'
 import { helpContent } from './helpContent'
+import { IconButton } from '../../ui/IconButton.jsx'
 
 const pageNames = {
   home: 'contextHelp.pageNames.home',
@@ -12,6 +14,10 @@ const pageNames = {
   manualAdjustments: 'contextHelp.pageNames.manualAdjustments'
 }
 
+// volleyui side sheet: white panel with a stone hairline and shadow-xl,
+// eyebrow page name under a text-base title, the round × close, and the
+// questions as flat rows with stone-100 dividers. Behaviour unchanged (slides
+// in from the right; Escape and the phone backdrop close it).
 export default function ContextualHelpPanel({ open, onClose, currentPage, onShowMe }) {
   const { t } = useTranslation()
 
@@ -34,119 +40,67 @@ export default function ContextualHelpPanel({ open, onClose, currentPage, onShow
       {open && (
         <div
           onClick={onClose}
+          className="no-print fixed inset-0 bg-slate-900/40"
           style={{
-            position: 'fixed',
-            inset: 0,
             zIndex: 1000,
-            background: 'rgba(0,0,0,0.3)',
             display: window.innerWidth < 500 ? 'block' : 'none'
           }}
         />
       )}
 
       {/* Panel */}
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: window.innerWidth < 500 ? '100%' : 340,
-        zIndex: 1001,
-        background: 'rgba(17, 24, 39, 0.97)',
-        borderLeft: '1px solid rgba(255,255,255,0.1)',
-        transform: open ? 'translateX(0)' : 'translateX(100%)',
-        transition: 'transform 0.3s ease-out',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: open ? '-8px 0 32px rgba(0,0,0,0.4)' : 'none'
-      }}>
+      <div
+        role="complementary"
+        aria-label={t('contextHelp.helpButton', 'Help')}
+        className="ov-kit no-print fixed bottom-0 right-0 top-0 flex flex-col border-l border-stone-200 bg-white text-stone-800"
+        style={{
+          width: window.innerWidth < 500 ? '100%' : 340,
+          zIndex: 1001,
+          transform: open ? 'translateX(0)' : 'translateX(100%)',
+          // visibility follows the slide, so the closed panel's rows leave the tab order
+          transition: 'transform 0.3s ease-out, visibility 0.3s',
+          visibility: open ? 'visible' : 'hidden',
+          boxShadow: open ? '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)' : 'none'
+        }}
+      >
         {/* Header */}
-        <div style={{
-          padding: '16px 18px',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexShrink: 0
-        }}>
-          <div>
-            <div style={{
-              fontSize: 16,
-              fontWeight: 700,
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
-            }}>
-              <span style={{ fontSize: 18 }}>&#x2753;</span>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-base font-bold text-stone-900">
+              <CircleHelp size={18} className="shrink-0 text-stone-400" aria-hidden="true" />
               {t('contextHelp.helpButton', 'Help')}
             </div>
-            <div style={{
-              fontSize: 12,
-              color: 'rgba(255,255,255,0.5)',
-              marginTop: 2
-            }}>
+            <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
               {pageName}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 6,
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: 'rgba(255,255,255,0.6)',
-              fontSize: 16,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            &#x2715;
-          </button>
+          <IconButton variant="close" label={t('modal.close', 'Close')} icon={X} onClick={onClose} className="-mr-2" />
         </div>
 
         {/* FAQ List */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px 14px'
-        }}>
+        <div className="flex-1 overflow-y-auto px-2 py-2">
           {items.length > 0 ? (
-            items.map((item, i) => (
-              <FAQItem
-                key={i}
-                questionKey={item.questionKey}
-                answerKey={item.answerKey}
-                helpId={item.helpId}
-                tooltipKey={item.tooltipKey}
-                onShowMe={onShowMe}
-              />
-            ))
+            <div className="divide-y divide-stone-100">
+              {items.map((item, i) => (
+                <FAQItem
+                  key={i}
+                  questionKey={item.questionKey}
+                  answerKey={item.answerKey}
+                  helpId={item.helpId}
+                  tooltipKey={item.tooltipKey}
+                  onShowMe={onShowMe}
+                />
+              ))}
+            </div>
           ) : (
-            <div style={{
-              textAlign: 'center',
-              padding: 30,
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: 13
-            }}>
+            <div className="px-4 py-14 text-center text-sm font-medium text-stone-500">
               {t('contextHelp.noHelp', 'No help available for this page.')}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: '12px 18px',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          fontSize: 11,
-          color: 'rgba(255,255,255,0.3)',
-          textAlign: 'center',
-          flexShrink: 0
-        }}>
+        <div className="shrink-0 border-t border-stone-100 px-4 py-3 text-center text-[11px] text-stone-400">
           OpenVolley eScoresheet
         </div>
       </div>

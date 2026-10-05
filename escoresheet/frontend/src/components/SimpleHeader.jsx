@@ -1,8 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ChevronDown, Maximize, Menu, X } from 'lucide-react'
 import i18n from '../i18n'
 import { ClipboardIcon, TrashIcon } from './icons'
 import { clearCachesAndReload } from '../hooks/useServiceWorker'
+import { cn } from '../ui/cn.js'
+import { toast } from '../ui/uiStore.js'
+import { SegmentedControl } from '../ui/SegmentedControl.jsx'
+import {
+  HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, HEADER_TITLE, MENU_PANEL, MENU_SECTION, MENU_ROW, MENU_SUBROW,
+  MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
+} from './chromeClasses'
+import HeaderMenuItem from './HeaderMenuItem'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -60,6 +69,10 @@ const languages = [
  * Left: Title/version
  * Middle: Hamburger menu (collapsible)
  * Right: Fullscreen button
+ *
+ * volleyui chrome: white bar with a stone hairline, kit header buttons, the
+ * menu as a white anchored dropdown with 48 px rows, the optional toggle as a
+ * kit segmented pill (slate-900 when on).
  */
 export default function SimpleHeader({
   title,
@@ -80,11 +93,11 @@ export default function SimpleHeader({
     try {
       // Keeps ?match=&team= on reload; refuses when the server is unreachable
       if (!(await clearCachesAndReload())) {
-        window.alert(t('options.alerts.clearCacheNeedsServer', 'Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.'))
+        toast.error(t('options.alerts.clearCacheNeedsServer', 'Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.'), { lang: toastLang() })
       }
     } catch (error) {
       console.error('Error clearing cache:', error)
-      window.alert(t('options.alerts.failedToClearCache', { error: error.message }))
+      toast.error(t('options.alerts.failedToClearCache', { error: error.message }), { lang: toastLang() })
     }
   }
 
@@ -100,487 +113,196 @@ export default function SimpleHeader({
     return () => document.removeEventListener('click', handleClick)
   }, [menuOpen])
 
+  const currentLanguage = languages.find(l => l.code === i18n.language)
+  const CurrentFlag = currentLanguage ? currentLanguage.Flag : FlagGB
+  const activeToggle = toggleOptions ? toggleOptions.findIndex(o => o.active) : -1
+
   return (
-    <div style={{
-      height: '40px',
-      minHeight: '40px',
-      maxHeight: '40px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '0 12px',
-      background: 'var(--panel)',
-      borderBottom: '1px solid var(--border)'
-    }}>
+    <div
+      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between')}
+      style={{ height: '40px', minHeight: '40px', maxHeight: '40px', padding: '0 12px' }}
+    >
       {/* LEFT: Title/Version or Toggle */}
-      <div style={{
-        flex: '1 1 0',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        minWidth: 0
-      }}>
+      <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
         {/* Segmented Toggle (like LOCAL/REMOTE) */}
         {toggleOptions && toggleOptions.length > 0 ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: 'var(--panel-2)',
-            borderRadius: '6px',
-            padding: '2px',
-            gap: '2px'
-          }}>
-            {toggleOptions.map((option, idx) => (
-              <button
-                key={idx}
-                onClick={option.onClick}
-                style={{
-                  padding: '4px 10px',
-                  fontSize: 'clamp(11px, 2.5vw, 13px)',
-                  fontWeight: 600,
-                  background: option.active ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                  color: option.active ? '#60a5fa' : 'var(--muted)',
-                  border: option.active ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          // The courtside referee's view switch: h-9 segments from the tablet
+          // breakpoint up (RESTYLE-SPEC 3.6); no frame padding there so it fits the 40 px bar.
+          <SegmentedControl
+            variant="pill"
+            ariaLabel={t('refereeDashboard.view', 'View')}
+            options={toggleOptions.map((option, idx) => ({ value: String(idx), label: option.label }))}
+            value={activeToggle >= 0 ? String(activeToggle) : ''}
+            onChange={(v) => toggleOptions[Number(v)]?.onClick?.()}
+            className="shrink-0 sm:p-0 sm:[&_button]:h-9 sm:[&_button]:px-3"
+          />
         ) : title ? (
-          <span style={{
-            fontSize: 'clamp(12px, 3vw, 15px)',
-            fontWeight: 700,
-            color: 'var(--text)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
+          <span className={HEADER_TITLE}>
             {title}
           </span>
         ) : null}
       </div>
 
       {/* MIDDLE: Hamburger Menu */}
-      <div
-        className="simple-header-menu"
-        style={{
-          flex: '0 0 auto',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          position: 'relative'
-        }}
-      >
+      <div className="simple-header-menu relative flex flex-none items-center justify-center">
         {/* Always show hamburger - at minimum has language, version, and clear cache */}
-        <>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setMenuOpen(!menuOpen)
-            }}
-              style={{
-                padding: '6px 14px',
-                fontSize: '16px',
-                background: menuOpen ? 'var(--panel)' : 'var(--panel-2)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '28px',
-                minWidth: '44px',
-                transition: 'all 0.15s'
-              }}
-              aria-label={t('header.menu')}
-              title={t('header.menu')}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen(!menuOpen)
+          }}
+          aria-expanded={menuOpen}
+          className={cn(HEADER_BTN, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
+          aria-label={t('header.menu')}
+          title={t('header.menu')}
+        >
+          {menuOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
+        </button>
+
+        {/* Dropdown Menu */}
+        {menuOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setMenuOpen(false)}
+              className="fixed inset-0"
+              style={{ zIndex: 998 }}
+            />
+            <div
+              className={cn('absolute left-1/2 top-full mt-1.5 flex w-max min-w-[220px] max-w-[280px] -translate-x-1/2 flex-col', MENU_PANEL)}
+              style={{ zIndex: 1000 }}
             >
-              {menuOpen ? '✕' : '☰'}
-            </button>
+              {menuItems.map((item, index) => {
+                // Divider
+                if (item.divider) {
+                  return <div key={`divider-${index}`} className={MENU_SEP} />
+                }
 
-            {/* Dropdown Menu */}
-            {menuOpen && (
-              <>
-                {/* Backdrop */}
-                <div
-                  onClick={() => setMenuOpen(false)}
-                  style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    zIndex: 998
-                  }}
-                />
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  marginTop: '6px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '10px',
-                  overflow: 'hidden',
-                  zIndex: 1000,
-                  minWidth: '200px',
-                  maxWidth: '280px',
-                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
-                }}>
-                  {menuItems.map((item, index) => {
-                    // Divider
-                    if (item.divider) {
-                      return (
-                        <div
-                          key={`divider-${index}`}
-                          style={{
-                            height: '1px',
-                            background: 'var(--border)',
-                            margin: '4px 0'
-                          }}
-                        />
-                      )
-                    }
-
-                    // Section header
-                    if (item.header) {
-                      return (
-                        <div
-                          key={`header-${index}`}
-                          style={{
-                            padding: '8px 14px 4px',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: 'var(--muted)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px'
-                          }}
-                        >
-                          {item.header}
-                        </div>
-                      )
-                    }
-
-                    return (
-                      <button
-                        key={index}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (!item.disabled && item.onClick) {
-                            item.onClick()
-                          }
-                          if (!item.keepOpen) {
-                            setMenuOpen(false)
-                          }
-                        }}
-                        disabled={item.disabled}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          width: '100%',
-                          padding: '12px 14px',
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          background: item.active
-                            ? (item.color ? `${item.color}20` : 'var(--panel-2)')
-                            : 'transparent',
-                          color: item.disabled
-                            ? 'var(--muted)'
-                            : (item.color || 'var(--text)'),
-                          border: 'none',
-                          cursor: item.disabled ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          opacity: item.disabled ? 0.5 : 1,
-                          transition: 'background 0.15s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!item.disabled) {
-                            e.currentTarget.style.background = item.active
-                              ? (item.color ? `${item.color}30` : 'var(--panel-2)')
-                              : 'var(--panel-2)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = item.active
-                            ? (item.color ? `${item.color}20` : 'var(--panel-2)')
-                            : 'transparent'
-                        }}
-                      >
-                        {item.icon && <span style={{ fontSize: '15px', width: '20px', textAlign: 'center' }}>{item.icon}</span>}
-                        <span style={{ flex: 1 }}>{item.label}</span>
-
-                        {/* Badge */}
-                        {item.badge && (
-                          <span style={{
-                            padding: '2px 6px',
-                            fontSize: '9px',
-                            fontWeight: 700,
-                            background: item.badgeColor || 'var(--border)',
-                            color: item.badgeTextColor || 'var(--text)',
-                            borderRadius: '4px'
-                          }}>
-                            {item.badge}
-                          </span>
-                        )}
-
-                        {/* Toggle switch */}
-                        {item.toggle !== undefined && (
-                          <span style={{
-                            width: '36px',
-                            height: '20px',
-                            background: item.toggle ? '#22c55e' : 'var(--border)',
-                            borderRadius: '10px',
-                            position: 'relative',
-                            transition: 'background 0.2s',
-                            flexShrink: 0
-                          }}>
-                            <span style={{
-                              position: 'absolute',
-                              top: '2px',
-                              left: item.toggle ? '18px' : '2px',
-                              width: '16px',
-                              height: '16px',
-                              background: '#fff',
-                              borderRadius: '50%',
-                              transition: 'left 0.2s'
-                            }} />
-                          </span>
-                        )}
-
-                        {/* Submenu arrow */}
-                        {item.submenu && (
-                          <span style={{ fontSize: '10px', color: 'var(--muted)' }}>▶</span>
-                        )}
-                      </button>
-                    )
-                  })}
-
-                  {/* Language selector */}
-                  {menuItems.length > 0 && <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setLanguageExpanded(!languageExpanded)
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      width: '100%',
-                      padding: '10px 14px',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      background: 'transparent',
-                      color: 'var(--muted)',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textAlign: 'left'
-                    }}
-                  >
-                    <span style={{ fontSize: '13px', width: '20px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {(() => { const current = languages.find(l => l.code === i18n.language); return current ? <current.Flag /> : <FlagGB /> })()}
-                    </span>
-                    <span style={{ flex: 1 }}>{t('header.language', 'Language')}</span>
-                    <span style={{
-                      fontSize: '8px',
-                      transform: languageExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s'
-                    }}>▼</span>
-                  </button>
-
-                  {/* Language options */}
-                  {languageExpanded && (
-                    <div style={{
-                      borderTop: '1px solid var(--border)',
-                      background: 'var(--panel-2)'
-                    }}>
-                      {languages.map((lang) => (
-                        <button
-                          key={lang.code}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            i18n.changeLanguage(lang.code)
-                            setLanguageExpanded(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 14px 10px 44px',
-                            fontSize: '12px',
-                            fontWeight: i18n.language === lang.code ? 600 : 400,
-                            background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
-                            color: i18n.language === lang.code ? '#4ade80' : 'var(--text)',
-                            border: 'none',
-                            borderLeft: i18n.language === lang.code ? '3px solid #22c55e' : '3px solid transparent',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            transition: 'all 0.15s'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (i18n.language !== lang.code) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (i18n.language !== lang.code) {
-                              e.currentTarget.style.background = 'transparent'
-                            }
-                          }}
-                        >
-                          <span style={{ display: 'flex', alignItems: 'center' }}><lang.Flag /></span>
-                          <span>{lang.label}</span>
-                        </button>
-                      ))}
+                // Section header
+                if (item.header) {
+                  return (
+                    <div key={`header-${index}`} className={MENU_SECTION}>
+                      {item.header}
                     </div>
-                  )}
+                  )
+                }
 
-                  {/* Version info at bottom */}
-                  <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setVersionExpanded(!versionExpanded)
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      width: '100%',
-                      padding: '10px 14px',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      background: 'transparent',
-                      color: 'var(--muted)',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textAlign: 'left'
-                    }}
-                  >
-                    <span style={{ width: '20px', display: 'flex', justifyContent: 'center' }}><ClipboardIcon size={13} /></span>
-                    <span style={{ flex: 1 }}>Version {currentVersion}</span>
-                  </button>
+                return <HeaderMenuItem key={index} item={item} onClose={() => setMenuOpen(false)} />
+              })}
 
-                  {/* Clear Cache */}
-                  <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-                  {!confirmingClearCache ? (
+              {/* Language selector */}
+              {menuItems.length > 0 && <div className={MENU_SEP} />}
+              <button
+                type="button"
+                aria-expanded={languageExpanded}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLanguageExpanded(!languageExpanded)
+                }}
+                className={cn(MENU_ROW, languageExpanded && 'bg-stone-100')}
+              >
+                <span className={MENU_ICON}><CurrentFlag /></span>
+                <span className="flex-1">{t('header.language', 'Language')}</span>
+                <ChevronDown size={14} aria-hidden="true" className={cn('text-stone-400 transition-transform', languageExpanded && 'rotate-180')} />
+              </button>
+
+              {/* Language options */}
+              {languageExpanded && (
+                <div className={MENU_NEST}>
+                  {languages.map((lang) => (
                     <button
+                      type="button"
+                      key={lang.code}
+                      aria-pressed={i18n.language === lang.code}
                       onClick={(e) => {
                         e.stopPropagation()
-                        setConfirmingClearCache(true)
+                        i18n.changeLanguage(lang.code)
+                        setLanguageExpanded(false)
                       }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        width: '100%',
-                        padding: '10px 14px',
-                        fontSize: '11px',
-                        fontWeight: 500,
-                        background: 'transparent',
-                        color: '#ef4444',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background 0.15s'
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                      className={cn(MENU_SUBROW, i18n.language === lang.code && MENU_ROW_ON)}
                     >
-                      <span style={{ width: '20px', display: 'flex', justifyContent: 'center' }}><TrashIcon size={13} /></span>
-                      <span style={{ flex: 1 }}>{t('options.clearCache', 'Clear Cache')}</span>
+                      <span className="flex w-5 items-center justify-center"><lang.Flag /></span>
+                      <span>{lang.label}</span>
                     </button>
-                  ) : (
-                    <div style={{ padding: '10px 14px' }}>
-                      <div style={{ fontSize: '11px', color: 'var(--text)', marginBottom: '8px' }}>
-                        {t('options.clearCacheConfirm', 'Clear cache and reload?')}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleClearCache()
-                          }}
-                          style={{
-                            padding: '4px 12px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: '#ef4444',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('common.yes', 'Yes')}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setConfirmingClearCache(false)
-                          }}
-                          style={{
-                            padding: '4px 12px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: 'var(--panel)',
-                            color: 'var(--text)',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('common.cancel', 'Cancel')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              </>
-            )}
+              )}
+
+              {/* Version info at bottom */}
+              <div className={MENU_SEP} />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setVersionExpanded(!versionExpanded)
+                }}
+                className={cn(MENU_ROW, 'text-stone-500')}
+              >
+                <span className={MENU_ICON}><ClipboardIcon size={13} /></span>
+                <span className="flex-1 tabular-nums">Version {currentVersion}</span>
+              </button>
+
+              {/* Clear Cache */}
+              <div className={MENU_SEP} />
+              {!confirmingClearCache ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setConfirmingClearCache(true)
+                  }}
+                  className={cn(MENU_ROW, MENU_ROW_DANGER)}
+                >
+                  <span className={cn(MENU_ICON, 'text-red-500')}><TrashIcon size={13} /></span>
+                  <span className="flex-1">{t('options.clearCache', 'Clear Cache')}</span>
+                </button>
+              ) : (
+                <div className="px-3 py-2">
+                  <div className="mb-2 text-sm font-medium text-stone-800">
+                    {t('options.clearCacheConfirm', 'Clear cache and reload?')}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingClearCache(false)
+                      }}
+                      className={cn(HEADER_BTN, 'h-10 flex-1 border-stone-300 text-sm text-stone-700')}
+                    >
+                      {t('common.cancel', 'Cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleClearCache()
+                      }}
+                      className={cn(HEADER_BTN, 'h-10 flex-1 border-red-600 bg-red-600 text-sm font-semibold text-white hover:bg-red-700')}
+                    >
+                      {t('common.yes', 'Yes')}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </>
+        )}
       </div>
 
       {/* RIGHT: Fullscreen Button */}
-      <div style={{
-        flex: '1 1 0',
-        display: 'flex',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
+      <div className="flex flex-1 basis-0 items-center justify-end gap-2">
         {onFullscreen && (
           <button
+            type="button"
             onClick={onFullscreen}
-            style={{
-              padding: '6px 12px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: isFullscreen ? 'rgba(34, 197, 94, 0.2)' : 'var(--panel)',
-              color: isFullscreen ? '#22c55e' : 'var(--text)',
-              border: isFullscreen ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid var(--border)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              height: '28px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              transition: 'all 0.15s'
-            }}
+            aria-pressed={isFullscreen}
+            className={cn(HEADER_BTN, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
             aria-label={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
             title={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
           >
-            {isFullscreen ? '⛶' : '⛶'}
+            <Maximize size={15} aria-hidden="true" />
           </button>
         )}
       </div>
