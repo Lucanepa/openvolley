@@ -28735,7 +28735,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       width={500}
       hideCloseButton={true}
     >
-      <div style={{ padding: '24px' }}>
+      <div style={{ padding: '16px 0 0' }}>
         {/* Centered container for position inputs */}
         <div style={{
           display: 'flex',
@@ -29212,38 +29212,16 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               marginBottom: '12px'
             }}>
               {editHistory.length > 0 && (
-                <button
-                  className="secondary"
-                  onClick={handleUndoLastEdit}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 16px',
-                    fontSize: '13px'
-                  }}
-                >
-                  <span style={{ fontSize: '16px' }}>↩</span>
+                <SbButton onClick={handleUndoLastEdit}>
+                  <span style={{ fontSize: '16px' }} aria-hidden="true">↩</span>
                   {t('scoreboard.lineupModal.undoLastEdit', 'Undo last edit')}
-                </button>
+                </SbButton>
               )}
               {lineup.some(v => v && v.trim() !== '') && (
-                <button
-                  className="secondary"
-                  onClick={handleClearLineup}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 16px',
-                    fontSize: '13px',
-                    color: '#ef4444',
-                    borderColor: 'rgba(239, 68, 68, 0.3)'
-                  }}
-                >
-                  <span style={{ fontSize: '16px' }}>✕</span>
+                <SbButton variant="danger-outline" onClick={handleClearLineup}>
+                  <span style={{ fontSize: '16px' }} aria-hidden="true">✕</span>
                   {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
-                </button>
+                </SbButton>
               )}
             </div>
 
@@ -29304,31 +29282,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         )}
 
         {errors.length > 0 && (
-          <div style={{
-            padding: '12px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid #ef4444',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            color: '#ef4444',
-            fontSize: '14px'
-          }}>
+          <div role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" style={{ marginBottom: '16px' }}>
             {t('scoreboard.lineupModal.validationError', 'Please check: All numbers must exist in roster, not be liberos, and not be duplicated.')}
           </div>
         )}
 
         {confirmMessage && (
-          <div style={{
-            padding: '12px',
-            background: 'rgba(74, 222, 128, 0.1)',
-            border: '1px solid #4ade80',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            color: '#4ade80',
-            fontSize: '14px',
-            fontWeight: 600,
-            textAlign: 'center'
-          }}>
+          <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 text-center" style={{ marginBottom: '16px' }}>
             {confirmMessage}
           </div>
         )}
@@ -29336,13 +29296,14 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
 
           {confirmMessage === null && (
-            <button onClick={handleConfirm}>
+            <SbButton variant="positive" onClick={handleConfirm}>
               {t('scoreboard.lineupModal.confirm', 'Confirm')}
-            </button>
+            </SbButton>
           )}
 
-          <button
-            className={confirmMessage === null ? 'secondary' : ''}
+          {/* Before confirming, Close cancels (white); after, it is the "Done" (slate). */}
+          <SbButton
+            variant={confirmMessage === null ? 'secondary' : 'dark'}
             onClick={() => {
               // If lineup was confirmed (confirmMessage exists), refresh state before closing
               if (confirmMessage) {
@@ -29353,21 +29314,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             }}
           >
             {t('scoreboard.lineupModal.close', 'Close')}
-          </button>
+          </SbButton>
           {confirmMessage !== null && (
-            <button
-              className="secondary"
-              onClick={handleModify}
-              style={{
-                background: 'var(--panel-2)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '10px',
-                cursor: 'point  er'
-              }}
-            >
+            <SbButton onClick={handleModify}>
               {t('scoreboard.lineupModal.modify', 'Modify')}
-            </button>
+            </SbButton>
           )}
         </div>
       </div>
