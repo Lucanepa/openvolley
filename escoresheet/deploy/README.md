@@ -44,8 +44,10 @@ network, and carries `traefik.enable=false`.
 | `compose.yaml` | VM, `/opt/openvolley` | The three services, two networks, limits, bind mounts with `create_host_path: false` |
 | `env.example` | VM | Template for `/opt/openvolley/.env` (mode 600). Lists every variable; no real values |
 | `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`; everything else 404 |
-| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` |
-| `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`; `--ship <host>` streams it to the VM and keeps a `.tar.gz` for rollbacks |
+| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
+| `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
+| `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
+| `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
 | `host-prep.sh` | VM, as root | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
 | `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
 | `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check |
@@ -69,10 +71,22 @@ These names are shared with the self-host wiring in `escoresheet/backend` and mu
 
 Health endpoints: `GET /health/live` (no DB; Docker healthcheck) and `GET /health` (db ping,
 catalog, floor, sentinel, disk free, backup age; 503 on db/floor/sentinel failure; used by
-monitors and `restore-test.sh`). The image's healthcheck falls back to `/health` when
-`/health/live` answers 404, so images built before the wiring still report healthy; a
-pre-wiring image must **not** be deployed (it has no Postgres code), and `restore-test.sh`
-fails on it by design unless `RT_REQUIRE_DB_HEALTH=0`.
+monitors and `restore-test.sh`). A pre-wiring image (no Postgres code; it would run today's
+unauthenticated local relay mode) is kept off the server three ways: `build-image.sh` refuses
+to build the tree (`--allow-prewiring` makes a local-only `-prewiring` tag that it never ships),
+the image's healthcheck has **no** fallback to `/health`, so such an image never turns healthy
+and `ov-tunnel` (`depends_on: service_healthy`) never starts in front of it, and
+`restore-test.sh` refuses `-prewiring`/`-dirty` tags and fails on missing `/health/live`
+(`RT_ALLOW_DEV_IMAGE=1 RT_REQUIRE_DB_HEALTH=0` for local kit experiments only).
+
+Mount guards: `ov-postgres` and `ov-backend` both exit (code 78, retried by `restart:
+unless-stopped`) while their filesystem's `.ovdata` sentinel is missing, so neither runs on a
+bare mountpoint, and each retry binds the mount afresh once it is back. `ov-postgres` also
+refuses to `initdb` when a cluster has existed on the filesystem (`state/initialized`) but
+`data/PG_VERSION` is gone.
+
+**Never `source` `.env`** into a shell: Compose prefers exported shell variables over `.env`,
+so later `up`/rollback commands in that shell would silently use the old values.
 
 ## What touches KSCW (isolation on the shared VM)
 
@@ -80,7 +94,7 @@ Everything the kit does on `lucanepa-prod`, and nothing else:
 
 | Shared resource | What OpenVolley uses | Bound |
 |---|---|---|
-| Disk | `/var/lib/openvolley/{pg,storage}.img` (23 GB, allocated once), `/data/openvolley/backups`, Docker images (~350 MB per backend tag), container logs | Loop images are hard caps: a runaway cannot grow past them. `host-prep.sh` refuses unless 20 GB stay free after allocation. `backup-openvolley.sh` refuses to write below 10 GB free. Logs `json-file` 5 x 10 MB per service |
+| Disk | `/var/lib/openvolley/{pg,storage}.img` (23 GB, allocated once), `/data/openvolley/backups`, `/opt/openvolley/images` + Docker images (~350 MB per backend tag), container logs | Loop images are hard caps: a runaway cannot grow past them. `host-prep.sh` refuses unless 20 GB stay free after allocation. The backups directory is on the root fs and **not** a loop image: `backup-openvolley.sh` estimates every output (db dump, each tar) before writing it and refuses when it would leave under 10 GB free (`OV_MIN_FREE_MB`) or push the directory past 20 GB (`OV_BACKUP_MAX_MB`); a refusal alerts through the Kuma push. Rollback images: `build-image.sh --ship` keeps the newest 5 archives and tags plus the deployed one. Logs `json-file` 5 x 10 MB per service |
 | RAM | 256 + 256 + 128 MB | `mem_limit` = `memswap_limit` (no swap, so KSCW's page cache is not pushed out), `oom_score_adj: 500` (on host OOM the kernel picks OpenVolley first) |
 | CPU / pids | 1.0 + 0.5 + 0.5 CPU, 256 / 128 / 64 pids | `cpus`, `pids_limit`; backups run `nice 10`, idle-ish I/O class |
 | Docker daemon | Containers and networks labelled `com.docker.compose.project=openvolley` | No published ports, no `coolify` network, `traefik.enable=false`, bind mounts only (no named volumes, so `docker volume prune` cannot hit data) |
@@ -136,3 +150,20 @@ that dump, failed on a raised floor, on a wrong passphrase and in strict mode on
 image; `host-prep.sh` apply run twice (idempotent) inside a throwaway privileged container with
 64 MB images, immutable bare mountpoint refused writes, a lost image with its fstab line still
 present was refused; `shellcheck` clean.
+
+Review fixes, same day: `build-image.sh` refuses the current pre-wiring tree (and `--ship` with
+`--allow-prewiring`); the `-prewiring` image stays `unhealthy` and `ov-tunnel` stays `Created`
+("dependency failed to start"); `ov-backend` exits 78 without the storage sentinel and starts
+once it is back; `ov-postgres` writes `state/initialized` and then refuses (exit 78, no initdb) on
+an emptied `data/`; a shell-exported `OV_MIN_MATCHES` overrides `.env` (the reason for "never
+source .env"), and the quoted `env.example` now sources completely; `apply-roles.sh` (quoted
+password, refuses non-URL-safe passwords and a failing statement; password not in any argv);
+`restore-db.sh` refused while the backend ran, on an encrypted file, while the backup lock was
+held and while another session was connected, restored with matching counts (old database kept,
+`counts.reset` touched, `template1` pollution ignored), and rolled back to the untouched old
+database on a truncated stream, a truncated file, a failing `pg_dump` in the pipe and a count
+mismatch; `backup-openvolley.sh` refused an unset fingerprint and stopped before a tar that would
+exceed `OV_BACKUP_MAX_MB` (no partial left); `restore-test.sh` refused a dev tag, a missing tag
+file and a missing `roles.sql`, swept a planted leftover container, network and `/dev/shm`
+directory, passed, and cleaned up everything on SIGTERM; `prune-images.sh` kept the newest N plus
+the deployed tag. All throwaway containers, networks, images and temp dirs removed afterwards.

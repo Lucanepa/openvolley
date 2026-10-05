@@ -8,8 +8,10 @@
 #   1. pick the newest db-*.dump.gpg (+ .counts) from RT_SOURCE (NAS share via
 #      ssh, or a local dir); refuse if it is older than RT_MAX_AGE_H
 #   2. decrypt into a private dir under /dev/shm
+#   0. one run at a time (flock); removes leftovers of a run that was killed
+#      (containers/networks labelled openvolley.restore-test=1, ${RT_WORK_BASE}/ov-rt.*)
 #   3. throwaway postgres (tmpfs PGDATA, internal network, no ports), pg_restore
-#      --no-owner --no-privileges, then roles (db/roles.sql if present)
+#      --no-owner --no-privileges, then db/roles.sql (required)
 #   4. row-count floors: restored counts within RT_SLACK_PCT of the dump's
 #      .counts file, and not below RT_FLOOR_FILE (last passing run) minus
 #      RT_FLOOR_SLACK_PCT
@@ -20,11 +22,17 @@
 #
 # Settings (env or ${RT_CONF:-~/.config/openvolley/restore-test.env}):
 #   RT_SOURCE            nas:/volume1/backups/openvolley/hetzner | /local/dir
-#   RT_BACKEND_IMAGE     default: newest local openvolley-backend:* image
+#   RT_BACKEND_IMAGE     default: the tag in RT_TAG_FILE (written by
+#                        `build-image.sh --ship hetzner`); *-dirty / *-prewiring
+#                        tags are refused unless RT_ALLOW_DEV_IMAGE=1
+#   RT_TAG_FILE          ~/ov-ops/shipped-hetzner
 #   RT_PG_IMAGE          postgres:17.11-alpine
 #   RT_GNUPGHOME         default $GNUPGHOME or ~/.gnupg
 #   RT_GPG_PASSPHRASE_FILE  default $CREDENTIALS_DIRECTORY/gpg-pass if present
-#   RT_ROLES_SQL         default <repo>/escoresheet/backend/db/roles.sql
+#   RT_ROLES_SQL         default <repo>/escoresheet/backend/db/roles.sql; missing
+#                        = failure, unless RT_ALLOW_BUILTIN_ROLES=1 (pre-wiring tests)
+#   RT_PG_MEMORY (1g)    memory limit of the throwaway postgres; its tmpfs PGDATA
+#   RT_PG_TMPFS (640m)   counts against it, so keep TMPFS well below MEMORY
 #   RT_FLOOR_FILE        ~/ov-ops/restore-floor
 #   RT_MAX_AGE_H (30)  RT_SLACK_PCT (1)  RT_FLOOR_SLACK_PCT (1)
 #   RT_REQUIRE_DB_HEALTH (1; 0 only for images that predate the self-host wiring)
@@ -49,6 +57,12 @@ if [[ -z "$RT_GPG_PASSPHRASE_FILE" && -n "${CREDENTIALS_DIRECTORY:-}" && -f "${C
   RT_GPG_PASSPHRASE_FILE="${CREDENTIALS_DIRECTORY}/gpg-pass"
 fi
 RT_ROLES_SQL=${RT_ROLES_SQL:-$KIT_DIR/../backend/db/roles.sql}
+RT_ALLOW_BUILTIN_ROLES=${RT_ALLOW_BUILTIN_ROLES:-0}
+RT_TAG_FILE=${RT_TAG_FILE:-$HOME/ov-ops/shipped-hetzner}
+RT_ALLOW_DEV_IMAGE=${RT_ALLOW_DEV_IMAGE:-0}
+RT_PG_MEMORY=${RT_PG_MEMORY:-1g}
+RT_PG_TMPFS=${RT_PG_TMPFS:-640m}
+RT_LOCK_FILE=${RT_LOCK_FILE:-${XDG_RUNTIME_DIR:-/tmp}/openvolley-restore-test.lock}
 RT_FLOOR_FILE=${RT_FLOOR_FILE:-$HOME/ov-ops/restore-floor}
 RT_MAX_AGE_H=${RT_MAX_AGE_H:-30}
 RT_SLACK_PCT=${RT_SLACK_PCT:-1}
@@ -84,14 +98,38 @@ cleanup() {
   return "$rc"
 }
 trap cleanup EXIT
+# systemd's TimeoutStartSec sends SIGTERM: exit through the EXIT trap so the
+# daemon-owned containers and the decrypted dump in /dev/shm are removed.
+trap 'exit 143' TERM INT HUP
 
 command -v gpg >/dev/null || fail "gpg missing"
 docker version >/dev/null 2>&1 || fail "docker not reachable"
 
-if [[ -z "$RT_BACKEND_IMAGE" ]]; then
-  RT_BACKEND_IMAGE=$(docker images openvolley-backend --format '{{.Repository}}:{{.Tag}}' | grep -v ':<none>$' | head -n1 || true)
-  [[ -n "$RT_BACKEND_IMAGE" ]] || fail "no openvolley-backend image found (build-image.sh, or set RT_BACKEND_IMAGE)"
+# --- 0. single instance + leftovers of a killed run --------------------------------
+exec 8>"$RT_LOCK_FILE"
+flock -n 8 || fail "another restore test is running (${RT_LOCK_FILE})"
+stale=$(docker ps -aq --filter label=openvolley.restore-test=1)
+if [[ -n "$stale" ]]; then
+  log "removing leftover restore-test containers: $(echo "$stale" | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  docker rm -f -v $stale >/dev/null || true
 fi
+stale=$(docker network ls -q --filter label=openvolley.restore-test=1)
+if [[ -n "$stale" ]]; then
+  # shellcheck disable=SC2086
+  docker network rm $stale >/dev/null || true
+fi
+find "${RT_WORK_BASE%/}" -maxdepth 1 -name 'ov-rt.*' -user "$(id -u)" -exec rm -rf -- {} + 2>/dev/null || true
+
+if [[ -z "$RT_BACKEND_IMAGE" ]]; then
+  [[ -s "$RT_TAG_FILE" ]] || fail "no ${RT_TAG_FILE} (written by build-image.sh --ship hetzner); set RT_BACKEND_IMAGE"
+  RT_BACKEND_IMAGE=$(head -n1 "$RT_TAG_FILE")
+fi
+case "$RT_BACKEND_IMAGE" in
+  *-dirty|*-prewiring)
+    [[ "$RT_ALLOW_DEV_IMAGE" == 1 ]] || fail "refusing dev image ${RT_BACKEND_IMAGE} (not a deployable build); RT_ALLOW_DEV_IMAGE=1 for local tests" ;;
+esac
+docker image inspect "$RT_BACKEND_IMAGE" >/dev/null 2>&1 || fail "image ${RT_BACKEND_IMAGE} not present locally (rebuild that commit with build-image.sh)"
 log "backend image ${RT_BACKEND_IMAGE}, postgres image ${RT_PG_IMAGE}"
 
 WORK=$(mktemp -d "${RT_WORK_BASE%/}/ov-rt.XXXXXX")
@@ -140,10 +178,12 @@ rm -f -- "$DUMP"
 # --- 3. throwaway postgres + restore ------------------------------------------------
 OWNER_PW=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 APP_PW=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
-docker network create --internal "$NET" >/dev/null
+docker network create --internal --label openvolley.restore-test=1 "$NET" >/dev/null
+# tmpfs pages count against the container's memory cgroup: TMPFS < MEMORY, so a
+# large restore fails with "No space left on device" instead of an OOM kill.
 docker run -d --name "$PG" --network "$NET" --network-alias ov-postgres \
-  --memory 256m --memory-swap 256m --cpus 1 --pids-limit 128 \
-  --tmpfs /var/lib/postgresql/data:size=4g \
+  --memory "$RT_PG_MEMORY" --memory-swap "$RT_PG_MEMORY" --cpus 1 --pids-limit 128 \
+  --tmpfs "/var/lib/postgresql/data:size=${RT_PG_TMPFS}" \
   -e POSTGRES_DB=openvolley -e POSTGRES_USER=ov_owner -e POSTGRES_PASSWORD="$OWNER_PW" \
   --label openvolley.restore-test=1 \
   "$RT_PG_IMAGE" postgres -c timezone=UTC -c max_connections=20 >/dev/null
@@ -164,8 +204,10 @@ log "pg_restore ok"
 if [[ -f "$RT_ROLES_SQL" ]]; then
   log "roles: ${RT_ROLES_SQL}"
   psql_rt -v ov_app_pw="$APP_PW" <"$RT_ROLES_SQL" >/dev/null || fail "roles.sql"
+elif [[ "$RT_ALLOW_BUILTIN_ROLES" != 1 ]]; then
+  fail "roles: ${RT_ROLES_SQL} not found (RT_ALLOW_BUILTIN_ROLES=1 only for pre-wiring tests)"
 else
-  log "roles: ${RT_ROLES_SQL} not found, using the built-in equivalent"
+  log "WARNING: ${RT_ROLES_SQL} not found, using the built-in stand-in (RT_ALLOW_BUILTIN_ROLES=1)"
   psql_rt -v ov_app_pw="$APP_PW" >/dev/null <<'SQL' || fail "built-in roles"
 DO $$ BEGIN CREATE ROLE ov_app LOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER ROLE ov_app PASSWORD :'ov_app_pw';

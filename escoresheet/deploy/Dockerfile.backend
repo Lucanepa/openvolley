@@ -50,20 +50,24 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 COPY <<'EOF' /usr/local/lib/openvolley/healthcheck.cjs
 // Docker liveness probe. Exit 0 = healthy. Never touches the database.
+// Deliberately NO fallback to /health: an image built from a tree without the
+// self-host wiring (no /health/live) must never become healthy, so ov-tunnel
+// (depends_on: service_healthy) never starts in front of it.
+const fs = require('fs')
 const port = process.env.PORT || 8080
-const get = (p) => fetch(`http://127.0.0.1:${port}${p}`, { signal: AbortSignal.timeout(4000) })
-get('/health/live')
-  .then((r) => (r.status === 404 ? get('/health') : r))
-  .then((r) => process.exit(r.ok ? 0 : 1))
+const root = process.env.STORAGE_ROOT
+if (root && !fs.existsSync(`${root}/.ovdata`)) process.exit(1) // storage fs not mounted
+fetch(`http://127.0.0.1:${port}/health/live`, { signal: AbortSignal.timeout(4000) })
+  .then((r) => process.exit(r.status === 200 ? 0 : 1))
   .catch(() => process.exit(1))
 EOF
 
 USER node
 EXPOSE 8080
 
-# Liveness only (no database): Docker restarts on this, monitors use /health.
-# The probe falls back to /health when /health/live answers 404, so images
-# built from trees that predate the self-host wiring still report healthy.
+# Liveness only (no database); monitors and restore-test.sh use /health.
+# Unhealthy when /health/live is missing (pre-wiring tree) or the storage
+# sentinel is absent. build-image.sh also refuses to build a pre-wiring tree.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "/usr/local/lib/openvolley/healthcheck.cjs"]
 
