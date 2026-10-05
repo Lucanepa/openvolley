@@ -359,6 +359,22 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(bogus.json.error.code, 'invalid_token')
   })
 
+  it('logs rejected /api/db writes with status, code, table, action and request id, never values', async () => {
+    const row = { external_id: ext, game_n: 4711, game_pin: GAME_PIN }
+    const anon = await api(srv.base, '/api/db', { body: { table: 'matches', action: 'upsert', params: { data: row, onConflict: 'external_id' } } })
+    const old = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'matches', action: 'upsert', params: { data: row, onConflict: 'external_id' } } })
+    const anonId = anon.headers.get('x-request-id')
+    const oldId = old.headers.get('x-request-id')
+    assert.match(anonId, /^[0-9a-f]{12}$/)
+    await waitUntil(() => srv.output.join('').includes(`req=${oldId}`), { what: 'rejection log line' })
+    const log = srv.output.join('')
+    assert.match(log, new RegExp(`\\[DB\\] rejected req=${anonId} status=401 code=missing_token table=matches action=upsert`))
+    assert.match(log, new RegExp(`\\[DB\\] rejected req=${oldId} status=426 code=OV_CLIENT_TOO_OLD table=matches action=upsert`))
+    assert.equal(containsSecret(log), false, 'a PIN reached the server log')
+    assert.equal(log.includes(token), false, 'a session token reached the server log')
+    assert.equal(log.includes(ext), false, 'a row value reached the server log')
+  })
+
   it('upserts a match through /api/db and publishes it without secrets', async () => {
     const r = await api(srv.base, '/api/db', {
       token,
