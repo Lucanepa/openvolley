@@ -1291,6 +1291,7 @@
     "switchToReception": "Zur Annahmeformation wechseln"
   },
   "connection": {
+    "changeServer": "Server wechseln",
     "title": "Verbindungseinrichtung",
     "chooseConnection": "Wie sollen die Geräte verbunden werden:",
     "sameWifi": "Gleiches WLAN-Netzwerk",
@@ -1349,6 +1350,7 @@
     "failedToLoadLeagues": "Ligen konnten nicht geladen werden"
   },
   "livescore": {
+    "staleData": "Verbindungsproblem: die zuletzt bekannten Ergebnisse werden angezeigt",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfügbare Spiele werden geladen...",
     "selectGame": "Wählen Sie ein Spiel aus, um das Live-Ergebnis anzuzeigen",

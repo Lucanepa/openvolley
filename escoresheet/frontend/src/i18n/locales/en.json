@@ -1421,6 +1421,7 @@
     "switchToReception": "Switch to reception formation"
   },
   "connection": {
+    "changeServer": "Change server",
     "title": "Connection Setup",
     "chooseConnection": "Choose how devices will connect:",
     "sameWifi": "Same WiFi Network",
@@ -1509,6 +1510,7 @@
     "failedToLoadLeagues": "Failed to load leagues"
   },
   "livescore": {
+    "staleData": "Connection problem: showing the last known scores",
     "title": "Live Scoring",
     "loadingGames": "Loading available games...",
     "selectGame": "Select a game to view live scores",
