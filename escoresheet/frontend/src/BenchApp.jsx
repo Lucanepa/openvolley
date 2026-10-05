@@ -12,7 +12,14 @@ import mikasaVolleyball from './mikasa_v200w.png'
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
-import { PhoneIcon, RefreshIcon } from './components/icons'
+import { CalendarX2, ChevronRight, RefreshCw } from 'lucide-react'
+import { Button } from './ui/Button.jsx'
+import { IconButton } from './ui/IconButton.jsx'
+import { FormError } from './ui/Field.jsx'
+import { EmptyState } from './ui/EmptyState.jsx'
+import { RowList } from './ui/Row.jsx'
+import { SkeletonRows } from './ui/Skeleton.jsx'
+import { EntryPage, EntryCard, PinInput, ListLabel, GameRow, NarrowScreenOverlay } from './components/dashboards/EntryKit.jsx'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -76,7 +83,7 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
 }
 
 export default function BenchApp() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null)
   const [autoConnectTeam, setAutoConnectTeam] = useState(null)
@@ -735,126 +742,34 @@ export default function BenchApp() {
           onConnectionModeChange={handleConnectionModeChange}
         />
 
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '400px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <img
-            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-            alt="Volleyball"
-            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
-          />
-          <h1 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            marginBottom: '12px'
-          }}>
-            {teamName}
-          </h1>
-          <p style={{
-            fontSize: '14px',
-            color: 'var(--muted)',
-            marginBottom: '32px'
-          }}>
-            {t('benchDashboard.enterPin')}
-          </p>
-
-          <form onSubmit={handlePinSubmit} style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center'
-          }}>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              aria-label={t('benchDashboard.enterPin')}
-              maxLength={6}
-              style={{
-                width: '80%',
-                maxWidth: '280px',
-                padding: '16px',
-                fontSize: '24px',
-                fontWeight: 700,
-                textAlign: 'center',
-                letterSpacing: '8px',
-                background: 'var(--bg)',
-                border: error ? '2px solid #ef4444' : '2px solid var(--border)',
-                borderRadius: '8px',
-                color: 'var(--text)',
-                marginBottom: '16px'
-              }}
-            />
-
-            {error && (
-              <div style={{
-                width: '100%',
-                padding: '12px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid #ef4444',
-                borderRadius: '6px',
-                color: '#ef4444',
-                fontSize: '14px',
-                marginBottom: '16px',
-                textAlign: 'center'
-              }}>
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              style={{
-                width: '50%',
-                maxWidth: '200px',
-                padding: '16px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                marginBottom: '16px'
-              }}
-            >
-              {t('benchDashboard.connect')}
-            </button>
-          </form>
-
-          <button
-            onClick={handleBack}
-            style={{
-              width: '50%',
-              maxWidth: '200px',
-              padding: '12px',
-              fontSize: '14px',
-              fontWeight: 500,
-              background: 'transparent',
-              color: 'var(--muted)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
+        <EntryPage>
+          <EntryCard
+            art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
+            title={teamName}
+            subtitle={t('benchDashboard.enterPin')}
           >
-            {t('benchDashboard.back')}
-          </button>
-        </div>
-        </div>
+            <form onSubmit={handlePinSubmit} className="flex flex-col gap-4">
+              <PinInput
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                aria-label={t('benchDashboard.enterPin')}
+                maxLength={6}
+                invalid={!!error}
+              />
+
+              <FormError size="md" className="text-center">{error}</FormError>
+
+              <Button type="submit" size="xl" block>
+                {t('benchDashboard.connect')}
+              </Button>
+            </form>
+
+            <Button variant="ghost" size="xl" block className="mt-3 font-medium" onClick={handleBack}>
+              {t('benchDashboard.back')}
+            </Button>
+          </EntryCard>
+        </EntryPage>
       </div>
     )
   }
@@ -883,106 +798,40 @@ export default function BenchApp() {
           onConnectionModeChange={handleConnectionModeChange}
         />
 
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          maxWidth: '500px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <img
-            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-            alt="Volleyball"
-            style={{ width: '80px', height: '80px', marginBottom: '20px' }}
-          />
-          <h1 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            marginBottom: '12px'
-          }}>
-            {t('benchDashboard.selectTeam')}
-          </h1>
-          <p style={{
-            fontSize: '14px',
-            color: 'var(--muted)',
-            marginBottom: '32px'
-          }}>
-            {t('benchDashboard.game')} {selectedMatch.gameNumber}
-          </p>
-
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <button
-              onClick={() => handleTeamSelect('home')}
-              style={{
-                width: '100%',
-                padding: '20px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.opacity = '0.9'}
-              onMouseOut={(e) => e.target.style.opacity = '1'}
-            >
-              {homeTeamName}
-            </button>
-
-            <button
-              onClick={() => handleTeamSelect('away')}
-              style={{
-                width: '100%',
-                padding: '20px',
-                fontSize: '18px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.opacity = '0.9'}
-              onMouseOut={(e) => e.target.style.opacity = '1'}
-            >
-              {awayTeamName}
-            </button>
-          </div>
-
-          <button
-            onClick={handleBack}
-            style={{
-              marginTop: '24px',
-              width: '100%',
-              padding: '12px',
-              fontSize: '14px',
-              fontWeight: 500,
-              background: 'transparent',
-              color: 'var(--muted)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
+        <EntryPage>
+          <EntryCard
+            art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
+            title={t('benchDashboard.selectTeam')}
+            subtitle={`${t('benchDashboard.game')} ${selectedMatch.gameNumber ?? ''}`.trim()}
           >
-            {t('benchDashboard.back')}
-          </button>
-        </div>
-        </div>
+            <div className="flex flex-col gap-3">
+              <Button
+                variant="secondary"
+                size="xl"
+                block
+                iconRight={ChevronRight}
+                className="h-auto min-h-14 justify-between py-3 text-left text-base whitespace-normal"
+                onClick={() => handleTeamSelect('home')}
+              >
+                {homeTeamName}
+              </Button>
+              <Button
+                variant="secondary"
+                size="xl"
+                block
+                iconRight={ChevronRight}
+                className="h-auto min-h-14 justify-between py-3 text-left text-base whitespace-normal"
+                onClick={() => handleTeamSelect('away')}
+              >
+                {awayTeamName}
+              </Button>
+            </div>
+
+            <Button variant="ghost" size="xl" block className="mt-6 font-medium" onClick={handleBack}>
+              {t('benchDashboard.back')}
+            </Button>
+          </EntryCard>
+        </EntryPage>
       </div>
     )
   }
@@ -998,72 +847,7 @@ export default function BenchApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       {/* Narrow screen blocking overlay */}
-      {(viewportWidth < 357 || viewportHeight < 650) && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.5)',
-          zIndex: 99999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          textAlign: 'center'
-        }}>
-          <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            color: '#ffffff',
-            marginBottom: '16px'
-          }}>
-            {t('common.screenTooSmall', 'Screen too Small')}
-          </h2>
-          <p style={{
-            fontSize: '16px',
-            color: '#9ca3af',
-            maxWidth: '300px',
-            lineHeight: 1.5,
-            marginBottom: '24px'
-          }}>
-            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
-          </p>
-          <button
-            onClick={() => {
-              if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => {})
-              }
-            }}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'var(--accent, #3b82f6)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span>⛶</span>
-            <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
-          </button>
-          <p style={{
-            fontSize: '12px',
-            color: '#6b7280',
-            marginTop: '12px'
-          }}>
-            {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
-          </p>
-        </div>
-      )}
+      {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
 
       <UpdateBanner />
 
@@ -1082,153 +866,67 @@ export default function BenchApp() {
         onConnectionModeChange={handleConnectionModeChange}
       />
 
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px'
-      }}>
-      <div style={{
-        background: 'var(--bg-secondary)',
-        borderRadius: '12px',
-        padding: '40px',
-        maxWidth: '500px',
-        width: '100%',
-        textAlign: 'center'
-      }}>
-        <img
-          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
-          alt="Volleyball"
-          style={{ width: '80px', height: '80px', marginBottom: '20px' }}
-        />
-        <h1 style={{
-            fontSize: '32px',
-            fontWeight: 700,
-            marginBottom: '8px'
-          }}>
-            {t('benchDashboard.title')}
-          </h1>
-
+      <EntryPage>
+        <EntryCard
+          width="md"
+          art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
+          title={t('benchDashboard.title')}
+        >
         {loadingMatches ? (
-          <p style={{ color: 'var(--muted)', fontSize: '14px' }}>{t('benchDashboard.loadingGames')}</p>
+          <div role="status" className="text-left">
+            <span className="sr-only">{t('benchDashboard.loadingGames')}</span>
+            <SkeletonRows rows={3} pill={false} />
+          </div>
         ) : availableMatches.length === 0 ? (
-          <div
-            onClick={handleTestModeClick}
-            style={{
-              padding: '24px',
-              background: 'var(--panel-2)',
-              borderRadius: '12px',
-              textAlign: 'center',
-              cursor: 'default',
-              userSelect: 'none'
-            }}
-          >
-            <div style={{
-              fontSize: '16px',
-              color: 'var(--muted)',
-              marginBottom: '8px'
-            }}>
-              {t('benchDashboard.noActiveGames')}
-            </div>
-            <button
-              type="button"
-              onClick={loadMatches}
-              disabled={loadingMatches}
-              style={{
-                marginTop: '12px',
-                padding: '10px 20px',
-                fontSize: '14px',
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                color: 'var(--accent)',
-                cursor: loadingMatches ? 'not-allowed' : 'pointer',
-                opacity: loadingMatches ? 0.5 : 1
-              }}
+          <div onClick={handleTestModeClick} className="cursor-default select-none">
+            <EmptyState
+              icon={CalendarX2}
+              className="py-6"
+              action={
+                <Button variant="secondary" size="xl" icon={RefreshCw} onClick={loadMatches} disabled={loadingMatches}>
+                  {loadingMatches ? t('common.loading', 'Loading...') : t('benchDashboard.loadGames', 'Load Games')}
+                </Button>
+              }
             >
-              {loadingMatches ? t('common.loading', 'Loading...') : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><RefreshIcon size={14} />{t('benchDashboard.loadGames', 'Load Games')}</span>}
-            </button>
+              {t('benchDashboard.noActiveGames')}
+            </EmptyState>
           </div>
         ) : (
-          <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px' }}>
-            <p style={{
-              fontSize: '14px',
-              color: 'var(--muted)',
-              margin: 0
-            }}>
-              {t('benchDashboard.selectGame')}
-            </p>
-            <button
-              type="button"
-              onClick={loadMatches}
-              disabled={loadingMatches}
-              aria-label={t('benchDashboard.loadGames', 'Load Games')}
-              style={{
-                padding: '4px 10px',
-                fontSize: '12px',
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                color: 'var(--accent)',
-                cursor: loadingMatches ? 'not-allowed' : 'pointer',
-                opacity: loadingMatches ? 0.5 : 1
-              }}
+          <div className="text-left">
+            <ListLabel
+              action={
+                <IconButton
+                  variant="outline"
+                  icon={RefreshCw}
+                  label={t('benchDashboard.loadGames', 'Load Games')}
+                  onClick={loadMatches}
+                  disabled={loadingMatches}
+                />
+              }
             >
-              {loadingMatches ? '...' : <RefreshIcon size={14} />}
-            </button>
+              {t('benchDashboard.selectGame')}
+            </ListLabel>
+            <RowList className="max-h-[300px] overflow-y-auto">
+              {availableMatches.map((m) => (
+                <GameRow
+                  key={m.id}
+                  match={m}
+                  lang={i18n.language}
+                  home={m.homeTeamName || t('common.home')}
+                  away={m.awayTeamName || t('common.away')}
+                  gameLabel={`${t('benchDashboard.game')} ${m.gameNumber}`}
+                  onOpen={() => handleMatchSelect(m)}
+                  label={`${t('benchDashboard.game')} ${m.gameNumber}`}
+                  status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
+                />
+              ))}
+            </RowList>
           </div>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            maxHeight: '300px',
-            overflowY: 'auto'
-          }}>
-            {availableMatches.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => handleMatchSelect(m)}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'opacity 0.2s',
-                  textAlign: 'left'
-                }}
-                onMouseOver={(e) => e.target.style.opacity = '0.9'}
-                onMouseOut={(e) => e.target.style.opacity = '1'}
-              >
-                <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-                  {t('benchDashboard.game')} {m.gameNumber}
-                </div>
-                <div style={{ fontSize: '14px', opacity: 0.8 }}>
-                  {m.homeTeamName || t('common.home')} {t('benchDashboard.vs')} {m.awayTeamName || t('common.away')}
-                </div>
-              </button>
-            ))}
-          </div>
-          </>
         )}
 
-        {error && (
-          <p style={{
-            fontSize: '14px',
-            color: '#ef4444',
-            marginTop: '16px'
-          }}>
-            {error}
-          </p>
-        )}
-      </div>
-      </div>
+        <FormError size="md" className="mt-4">{error}</FormError>
+        </EntryCard>
+      </EntryPage>
     </div>
   )
 }
