@@ -485,6 +485,76 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.deepEqual(mine.json.data, [{ user_id: userId }])
   })
 
+  it('anonymous live subscribers and anonymous selects get no dates of birth, signatures or officials', async () => {
+    const DOB = '2002-03-04'
+    const SIG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'
+    const leaks = (text) => text.includes(DOB) || text.includes('data:image') || text.includes('Rita') || containsSecret(text)
+    // The livescore page's own subscription (every indoor match), anonymous
+    const spy = await openSocket(`${srv.wsUrl}/?purpose=live`)
+    try {
+      await subscribe(spy, 'spy', [{ table: 'matches', event: 'UPDATE', column: 'sport_type', value: 'indoor' }])
+      const upd = await api(srv.base, '/api/db', {
+        token,
+        body: {
+          table: 'matches',
+          action: 'update',
+          params: {
+            data: {
+              players_home: [{ number: 4, first_name: 'Ana', last_name: 'Muster', dob: DOB, is_captain: true }],
+              bench_home: [{ role: 'Coach', firstName: 'Carl', lastName: 'Coach', dob: DOB }],
+              officials: [{ role: '1st referee', firstName: 'Rita', lastName: 'Ref', dob: DOB }],
+              signatures: { home_coach: SIG, away_captain: SIG },
+              approval: { signature: SIG },
+              set_results: [{ set: 1, home: 25, away: 2 }],
+              connections: { pending_home_roster: { players: [{ number: 9, dob: DOB }] } }
+            },
+            filters: [{ type: 'eq', column: 'external_id', value: ext }]
+          }
+        }
+      })
+      assert.equal(upd.status, 200, upd.text)
+      const change = await spy.waitFor((m) => m.type === 'db-change' && m.table === 'matches' && m.new?.external_id === ext, 5000, 'matches UPDATE')
+      assert.deepEqual(change.new.set_results, [{ set: 1, home: 25, away: 2 }], 'livescore still gets its set chips')
+      for (const col of ['players_home', 'bench_home', 'officials', 'signatures', 'approval', 'connections']) {
+        assert.equal(col in change.new, false, `${col} reached an anonymous live socket`)
+      }
+      assert.equal(leaks(spy.raw.join('\n')), false, 'personal data reached an anonymous live socket')
+
+      // Anonymous /api/db: rosters without dob (referee/bench fallback), no officials/signatures
+      const anon = await api(srv.base, '/api/db', { proto: null, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
+      assert.equal(anon.status, 200, anon.text)
+      assert.equal(leaks(anon.text), false, anon.text.slice(0, 300))
+      assert.deepEqual(anon.json.data.players_home, [{ number: 4, first_name: 'Ana', last_name: 'Muster', is_captain: true }])
+      assert.equal(anon.json.data.connections.referee_enabled, true)
+      assert.equal('pending_home_roster' in anon.json.data.connections, false)
+      for (const col of ['officials', 'signatures', 'approval']) assert.equal(col in anon.json.data, false, col)
+      const named = await api(srv.base, '/api/db', { proto: null, body: { table: 'matches', action: 'select', params: { columns: 'signatures, officials, players_home', filters: [{ type: 'eq', column: 'external_id', value: ext }] } } })
+      assert.equal(named.status, 200)
+      assert.equal(leaks(named.text), false)
+      // A forged or expired token reads the public view too
+      const forged = await api(srv.base, '/api/db', { token: 'y'.repeat(43), proto: null, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }] } } })
+      assert.equal(forged.status, 200)
+      assert.equal(leaks(forged.text), false)
+      // Hidden keys cannot be probed through a filter or an order
+      for (const params of [
+        { columns: 'id', filters: [{ type: 'contains', column: 'players_home', value: JSON.stringify([{ dob: DOB }]) }] },
+        { columns: 'id', filters: [{ type: 'eq', column: 'officials->>0', value: 'x' }] },
+        { columns: 'id', order: [{ column: 'signatures', ascending: true }] }
+      ]) {
+        const r = await api(srv.base, '/api/db', { proto: null, body: { table: 'matches', action: 'select', params } })
+        assert.equal(r.status, 400, JSON.stringify(params))
+        assert.equal(r.json.error.code, 'OV_SECRET_FILTER')
+      }
+      // A signed-in scorer still reads the whole row (its sync queue merges officials etc.)
+      const mine = await api(srv.base, '/api/db', { token, proto: null, body: { table: 'matches', action: 'select', params: { columns: 'officials, players_home', filters: [{ type: 'eq', column: 'external_id', value: ext }], single: true } } })
+      assert.equal(mine.status, 200, mine.text)
+      assert.equal(mine.json.data.officials[0].dob, DOB)
+      assert.equal(mine.json.data.players_home[0].dob, DOB)
+    } finally {
+      spy.ws.close()
+    }
+  })
+
   it('validates connection PINs server-side without returning them', async () => {
     const ok = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, body: { pin: PINS.referee, type: 'referee' } })
     assert.equal(ok.status, 200, ok.text)
