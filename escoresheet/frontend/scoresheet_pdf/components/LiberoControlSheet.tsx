@@ -196,11 +196,14 @@ const Footer: React.FC<{
         </span>
       </div>
     </div>
-    <div className="border-b border-black px-2 py-[2px]">
+    <div className="border-b border-black px-2 py-[2px] whitespace-normal break-words leading-tight">
       <span className="text-[8px] font-bold">Remark(s): </span>
-      {/* One slot per team above; any further re-designation of the same team goes here */}
+      {/* One slot per team above; any further re-designation of the same team goes here,
+          one line each so several redesignations wrap instead of clipping */}
       {extraRedesignations.length > 0 ? (
-        <span className="text-[8px]">{extraRedesignations.map(formatRedesignation).join('; ')}</span>
+        extraRedesignations.map((r, i) => (
+          <div key={i} className="text-[8px]">{formatRedesignation(r)}</div>
+        ))
       ) : (
         <span className="text-[8px]">{'_'.repeat(80)}</span>
       )}
