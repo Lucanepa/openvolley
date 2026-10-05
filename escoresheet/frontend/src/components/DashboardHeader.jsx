@@ -6,11 +6,11 @@ import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, Monito
 import { clearCachesAndReload } from '../hooks/useServiceWorker'
 import { cn } from '../ui/cn.js'
 import { toast } from '../ui/uiStore.js'
-import { SwitchTrack } from '../ui/Switch.jsx'
 import {
   HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, HEADER_TITLE, HEADER_META, MENU_PANEL, MENU_SECTION, MENU_ROW,
-  MENU_SUBROW, MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, itemTone, toastLang
+  MENU_SUBROW, MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
+import HeaderMenuItem from './HeaderMenuItem'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -181,18 +181,28 @@ export default function DashboardHeader({
     menuItems.push({ header: t('refereeDashboard.status', 'Status') })
 
     const statusLabels = {
-      server: <span className="inline-flex items-center gap-1.5"><MonitorIcon size={13} /> Server</span>,
-      websocket: <span className="inline-flex items-center gap-1.5"><SatelliteDishIcon size={13} /> WebSocket</span>,
-      supabase: <span className="inline-flex items-center gap-1.5"><DatabaseIcon size={13} /> Database</span>
+      server: { icon: <MonitorIcon size={13} />, label: 'Server' },
+      websocket: { icon: <SatelliteDishIcon size={13} />, label: 'WebSocket' },
+      supabase: { icon: <DatabaseIcon size={13} />, label: 'Database' }
+    }
+    // A status row: the service, then a dot and a word in its tone
+    const statusInfo = (status) => {
+      if (status === 'connected') return { tone: 'ok', word: t('connectionStatus.connected', 'Connected') }
+      if (status === 'connecting') return { tone: 'warn', word: t('connectionStatus.connecting', 'Connecting') }
+      if (status === 'not_available') return { tone: 'neutral', word: t('connectionStatus.naStatic', 'N/A (Static)') }
+      if (status === 'no_match') return { tone: 'neutral', word: t('connectionStatus.noMatch', 'No Match') }
+      if (status === 'unknown') return { tone: 'neutral', word: t('connectionStatus.unknown', 'Unknown') }
+      if (status === 'error') return { tone: 'error', word: t('connectionStatus.error', 'Error') }
+      return { tone: 'error', word: t('connectionStatus.disconnected', 'Disconnected') }
     }
 
     Object.entries(connectionStatuses).forEach(([key, status]) => {
       if (statusLabels[key]) {
         menuItems.push({
-          icon: status === 'connected' ? '✅' : status === 'connecting' ? <RefreshIcon size={13} /> : '❌',
-          label: statusLabels[key],
-          disabled: true,
-          color: status === 'connected' ? '#22c55e' : status === 'connecting' ? '#fbbf24' : '#ef4444'
+          icon: statusLabels[key].icon,
+          label: statusLabels[key].label,
+          info: true,
+          status: statusInfo(status)
         })
       }
     })
@@ -202,7 +212,7 @@ export default function DashboardHeader({
   if (onBack) {
     if (menuItems.length > 0) menuItems.push({ divider: true })
     menuItems.push({
-      icon: '✕',
+      icon: <X size={14} aria-hidden="true" />,
       label: backLabel || t('common.back', 'Back'),
       onClick: onBack,
       color: '#ef4444'
@@ -216,20 +226,21 @@ export default function DashboardHeader({
   // the menu as a white anchored dropdown with 48 px rows.
   return (
     <div
-      className={cn(HEADER_BAR, 'flex items-center justify-between')}
+      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between')}
       style={{ height: '40px', minHeight: '40px', maxHeight: '40px', padding: '0 12px' }}
     >
       {/* LEFT: Title/Version */}
       <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
-        <span className={HEADER_TITLE}>
+        <span className={cn(HEADER_TITLE, 'min-w-0')}>
           {title}
         </span>
+        {/* Below sm the screen's name has the row: subtitle and version are menu-level detail */}
         {subtitle && (
-          <span className={HEADER_META}>
+          <span className={cn(HEADER_META, 'hidden min-w-0 sm:inline')}>
             {subtitle}
           </span>
         )}
-        <span className="shrink-0 text-[10px] tabular-nums tracking-normal text-stone-400">
+        <span className="hidden shrink-0 text-[10px] tabular-nums tracking-normal text-stone-400 sm:inline">
           v{currentVersion}
         </span>
       </div>
@@ -279,47 +290,7 @@ export default function DashboardHeader({
                   )
                 }
 
-                const tone = itemTone(item.color)
-                const danger = tone.className === 'text-red-600'
-
-                return (
-                  <button
-                    type="button"
-                    key={index}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (!item.disabled && item.onClick) {
-                        item.onClick()
-                      }
-                      if (!item.keepOpen) {
-                        setMenuOpen(false)
-                      }
-                    }}
-                    disabled={item.disabled}
-                    aria-pressed={item.active !== undefined ? !!item.active : undefined}
-                    className={cn(
-                      MENU_ROW,
-                      danger ? MENU_ROW_DANGER : tone.className,
-                      item.active && 'bg-stone-100 font-semibold text-stone-900'
-                    )}
-                    style={tone.style}
-                  >
-                    {item.icon && <span className={cn(MENU_ICON, tone.className || 'text-stone-400')}>{item.icon}</span>}
-                    <span className="flex-1">{item.label}</span>
-
-                    {/* Badge */}
-                    {item.badge && (
-                      <span className={MENU_COUNT}>
-                        {item.badge}
-                      </span>
-                    )}
-
-                    {/* Toggle switch: on/off that applies immediately (kit Switch look) */}
-                    {item.toggle !== undefined && (
-                      <SwitchTrack checked={!!item.toggle} className={item.toggle ? 'bg-emerald-500' : undefined} />
-                    )}
-                  </button>
-                )
+                return <HeaderMenuItem key={index} item={item} onClose={() => setMenuOpen(false)} />
               })}
 
               {/* Language selector */}

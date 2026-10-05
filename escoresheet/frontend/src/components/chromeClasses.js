@@ -49,6 +49,12 @@ export const MENU_SUBROW = `flex w-full min-h-11 items-center gap-2.5 px-3 py-2 
 /** The chosen row in a choice list (language, scale, connection mode). */
 export const MENU_ROW_ON = 'bg-slate-900 text-white hover:bg-slate-800'
 
+/**
+ * Informational menu row (a status, the TEST MODE flag): not a control, so no
+ * hover, no pointer and full opacity. Text is a 700/800 tone (AA on white).
+ */
+export const MENU_INFO_ROW = 'flex w-full min-h-11 items-center gap-3 px-3 py-2 rounded-lg text-left text-sm font-medium tracking-normal cursor-default select-none'
+
 /** Destructive / leave row (Stop the match, Back, Exit, Clear cache). */
 export const MENU_ROW_DANGER = 'text-red-600 hover:bg-red-50'
 
@@ -78,9 +84,6 @@ export const STATUS_TONES = {
   violet: { pill: 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100', dot: 'bg-violet-500', text: 'text-violet-800' },
 }
 
-/** The TEST MATCH badge (svrz FlagPill, amber-800 on amber-100, about 6.5:1). */
-export const TEST_BADGE = 'inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold tracking-normal text-amber-800'
-
 /**
  * Legacy menu-item colours passed in by callers (Referee, UploadRoster...)
  * mapped to the kit's text tones. Unknown values fall back to the inline colour.
@@ -101,6 +104,23 @@ const ITEM_TONES = {
 /** The kit toast's own label language (its dismiss button): DE for German UIs, else EN. */
 export function toastLang() {
   return String(i18n.language || '').startsWith('de') ? 'DE' : 'EN'
+}
+
+/**
+ * The same legacy colours as a STATUS_TONES key, for informational rows (a
+ * status reads as a status, never as the red destructive-action row).
+ */
+const ITEM_STATUS_TONES = {
+  'text-emerald-700': 'ok',
+  'text-sky-700': 'info',
+  'text-amber-700': 'warn',
+  'text-red-600': 'error',
+}
+
+/** STATUS_TONES key for a caller-supplied menu item colour (neutral when unknown). */
+export function itemStatusTone(color) {
+  const cls = color ? ITEM_TONES[String(color).toLowerCase()] : undefined
+  return ITEM_STATUS_TONES[cls] || 'neutral'
 }
 
 /** { className, style } for a caller-supplied menu item colour. */
