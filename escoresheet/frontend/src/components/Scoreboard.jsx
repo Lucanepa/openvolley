@@ -32,7 +32,7 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../doma
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
-import { validateReopenedRoster, referencedPlayerNumbers } from '../domain/roster'
+import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
@@ -3991,9 +3991,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       : (data?.awayTeam?.name || 'Away')
 
     // Numbers are how the event log refers to players: refuse invalid / duplicate
-    // numbers, a third libero, a second captain, and removing or renumbering a
-    // player the record already uses (domain/roster, tested). The editor stays open.
-    const { valid, errors } = validateReopenedRoster(editedPlayers, snapshotPlayers, referencedPlayerNumbers(data?.events, teamKey))
+    // numbers, a third libero, a second captain, removing a player the record
+    // already uses, and renumbering onto a number the record uses. A player in
+    // the record may move to an unused number: that team's events are rewritten
+    // below (domain/roster, tested). The editor stays open on an error.
+    const { valid, errors, renumbers } = validateReopenedRoster(editedPlayers, snapshotPlayers, referencedPlayerNumbers(data?.events, teamKey))
     if (!valid) {
       showAlert(errors.join('\n'), 'error')
       return
@@ -4062,11 +4064,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
+    // A renumbered player keeps their history: rewrite the numbers in that
+    // team's events, and in the court captain designation on the match
+    const renumberMatchUpdate = {}
+    if (renumbers?.length) {
+      const teamEvents = await db.events.where('matchId').equals(matchId).toArray()
+      for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
+        await db.events.update(id, { payload })
+      }
+      const matchNow = await db.matches.get(matchId)
+      const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+      const renumbered = renumbers.find(r => String(r.from) === String(matchNow?.[courtCaptainField]))
+      if (renumbered) {
+        renumberMatchUpdate[courtCaptainField] = typeof matchNow[courtCaptainField] === 'number' ? Number(renumbered.to) : renumbered.to
+      }
+    }
+
     // Persist bench officials
     const benchField = teamKey === 'home' ? 'bench_home' : 'bench_away'
     const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
       [benchField]: editedBench,
+      ...renumberMatchUpdate,
       remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
     })
 
