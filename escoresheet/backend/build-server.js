@@ -60,6 +60,8 @@ run([
   `--outfile=${bundlePath}`,
   '--external:bufferutil',
   '--external:utf-8-validate',
+  // pg's optional native binding: never installed, never loaded (pg falls back to pure JS)
+  '--external:pg-native',
   '--define:import.meta.url=__import_meta_url',
   '--banner:js="const __import_meta_url = require(\'url\').pathToFileURL(__filename).href;"'
 ].join(' '))

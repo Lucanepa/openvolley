@@ -16,24 +16,50 @@ import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
 import { randomBytes, createHash, timingSafeEqual } from 'crypto'
-import { createClient } from '@supabase/supabase-js'
 import { existsSync, readFileSync, statSync } from 'fs'
+import { readFile } from 'fs/promises'
+import { isIP } from 'net'
 import { join, extname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import QRCode from 'qrcode'
 import PocketBase from 'pocketbase'
-import { redactSecrets } from './lib/secrets.js'
+import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
+// realtimeHub only needs `ws` and node core, so the LAN/SEA bundle can import it
+// statically. It is only *instantiated* in DATABASE_URL mode.
+import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch } from './lib/realtimeHub.js'
 
 const PORT = process.env.PORT || 8080
 
-// --- Supabase admin client (server-side only, never exposed to frontend) ---
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseAdmin = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
-  : null
-if (SUPABASE_URL) console.log('[Supabase] Admin client:', supabaseAdmin ? 'CONFIGURED' : 'NOT CONFIGURED')
+// --- Runtime mode -----------------------------------------------------------
+// DATABASE_URL set (and no --local flag): the backend serves /api/db, auth,
+// storage and realtime from its own Postgres + filesystem (self-hosted cloud).
+// Otherwise it is the LAN / desktop relay exactly as before: no database, the
+// data endpoints answer 503 and the relay is all there is.
+const IS_LOCAL = !process.env.DATABASE_URL || process.argv.includes('--local')
+const DATABASE_URL = IS_LOCAL ? null : process.env.DATABASE_URL
+const DB_MODE = !!DATABASE_URL
+// A DATABASE_URL deployment is a public cloud deployment (strict CORS, HSTS,
+// no client IPs in /api/server/connections) even without IS_CLOUD.
+const IS_CLOUD = !!process.env.IS_CLOUD || DB_MODE
+// TRUST_PROXY=cloudflare: the origin is only reachable through Cloudflare, so
+// cf-connecting-ip is the client address. Unset: the socket peer address.
+const TRUST_PROXY = String(process.env.TRUST_PROXY || '').trim().toLowerCase()
+if (TRUST_PROXY && TRUST_PROXY !== 'cloudflare') {
+  console.error(`[Config] TRUST_PROXY must be "cloudflare" or unset (got ${JSON.stringify(process.env.TRUST_PROXY)})`)
+  process.exit(1)
+}
+// Extra trusted browser origins (comma list), on top of *.openvolley.app.
+const PUBLIC_ORIGINS = String(process.env.PUBLIC_ORIGINS || '')
+  .split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
+// Object storage root (bind mount with a .ovdata sentinel). STORAGE_DIR is the
+// older name used by lib/storage.js and its README; STORAGE_ROOT wins.
+const STORAGE_ROOT = process.env.STORAGE_ROOT || process.env.STORAGE_DIR || '/data/storage'
+// Read-only directory holding `last_backup` (UTC timestamp written by the host's backup job).
+const STATUS_DIR = process.env.STATUS_DIR || '/var/lib/openvolley-status'
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+// X-OV-Proto this server requires for writes (pgQuery minWriteProto).
+const MIN_WRITE_PROTO = 2
 
 // --- PocketBase backup client (server-side only, parallel to Supabase) ---
 const POCKETBASE_URL = process.env.POCKETBASE_URL
@@ -102,35 +128,101 @@ async function initPocketBase() {
 // Initialize asynchronously (non-blocking — server starts regardless)
 if (POCKETBASE_URL) initPocketBase()
 
-// Allowed tables/buckets for proxy endpoints
-// ('teams' was dropped: the table no longer exists, only a dead test loader read it)
+// Tables /api/db may touch ('teams' was dropped: the table no longer exists).
+// Columns are checked against the live catalog by lib/pgQuery.js, which also
+// refuses any filter/order on a secret column (no PIN oracle).
 const ALLOWED_TABLES = ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database', 'user_matches', 'svrz_games', 'beach_competition_matches']
-const ALLOWED_BUCKETS = ['scoresheets', 'backup']
-const ALLOWED_RPC = ['delete_user']
-const DB_RATE_LIMIT_MAX = 200
-const AUTH_RATE_LIMIT_MAX = 10
+const DB_RATE_LIMIT_MAX = 200 // relay reads (/api/match/list, /api/match/:id, ...)
+const AUTH_RATE_LIMIT_MAX = 10 // verify-reopen-password, PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
-const STORAGE_RATE_LIMIT_MAX = 200
-
-// Per-table column whitelist for filter/order operations.
-// Only real columns (checked against the live schema) that the indoor and beach
-// clients filter or order on. Secret columns are never filterable: an anonymous
-// eq/like filter on game_pin would let anyone probe match PINs.
-const ALLOWED_COLUMNS = {
-  matches: ['id', 'external_id', 'sport_type', 'game_n', 'scheduled_at', 'status', 'test', 'created_at', 'match_info->>competition_name'],
-  sets: ['id', 'external_id', 'match_id', 'index', 'sport_type'],
-  events: ['id', 'external_id', 'match_id', 'set_index', 'seq', 'ts', 'sport_type'],
-  match_live_state: ['id', 'match_id', 'sport_type', 'match_status', 'updated_at'],
-  profiles: ['id', 'user_id'],
-  referee_database: ['id', 'sport_type', 'last_name', 'first_name'],
-  user_matches: ['id', 'user_id', 'match_external_id', 'role', 'sport_type', 'created_at'],
-  svrz_games: ['id', 'gender', 'league', 'datetime'],
-  beach_competition_matches: ['id', 'scheduled_at', 'status']
-}
+// Venue-NAT sized buckets (plan §4 Phase 2/3, §9): one address may carry a whole hall.
+const DB_READ_RATE_LIMIT_MAX = 600   // /api/db reads per IP and minute
+const DB_WRITE_RATE_LIMIT_MAX = 600  // /api/db writes per user id and minute
+const DB_WRITE_IP_RATE_LIMIT_MAX = 1200 // /api/db writes per IP, checked before the token lookup
+const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
+const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP + PIN type (+ match when sent)
+const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP
+const RESTORE_RATE_LIMIT_MAX = 30    // /api/match/restore per user
+const RESTORE_PIN_IP_RATE_LIMIT_MAX = 60 // /api/match/restore-by-pin per IP (the attempt limiter is inside)
+// Internal scan of setup/live matches for validate-connection-pin
+const PIN_SCAN_MAX_ROWS = 20000
 
 // Columns/JSONB keys that must NEVER be returned to a client (SECRET_COLUMNS,
 // redactSecrets) live in lib/secrets.js, shared with lib/realtimeHub.js.
+
+// --- Self-hosted data layer (DATABASE_URL mode only) ------------------------
+// pg, lib/pgQuery.js, lib/matchRestore.js, lib/auth.js and lib/storage.js are
+// loaded with a dynamic import() the first time they are needed, never at the
+// top level: the SEA build bundles to CJS (no top-level await), and the LAN
+// binary must start without a database. Nothing here connects at load time;
+// the pg Pool connects lazily and the catalog loads on first use with backoff.
+let dataLayer = null
+let dataLayerPromise = null
+function getDataLayer() {
+  if (!DB_MODE) return null
+  dataLayerPromise ??= Promise.all([
+    import('./lib/pgQuery.js'),
+    import('./lib/matchRestore.js'),
+    import('./lib/auth.js'),
+    import('./lib/storage.js')
+  ]).then(([pgq, mr, au, st]) => {
+    const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
+    const db = pgq.createPgQuery({
+      connectionString: DATABASE_URL,
+      allowedTables: ALLOWED_TABLES,
+      secretColumns: SECRET_COLUMNS,
+      minWriteProto: MIN_WRITE_PROTO,
+      ...(poolMax ? { poolMax } : {})
+    })
+    const restore = mr.createMatchRestore(db)
+    // One pg Pool for everything (auth shares pgQuery's pool).
+    const auth = au.createAuth({ pool: db.pool, contactEmail: CONTACT_EMAIL })
+    const storage = st.createStorage({
+      ...st.storageOptionsFromEnv({ ...process.env, STORAGE_DIR: STORAGE_ROOT }),
+      checkQuota: st.createWriteQuota()
+    })
+    dataLayer = { db, restore, auth, storage, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    return dataLayer
+  })
+  return dataLayerPromise
+}
+
+// Realtime (Supabase Realtime replacement): `?purpose=live` sockets get
+// db-change events from /api/db + /api/match/restore write-through and from the
+// scoreboard's relay live-state-update. DATABASE_URL mode only: a LAN relay
+// answers live sockets with its normal 'connected' (mode local) hello, which
+// the frontend shim treats as "realtime not supported".
+const realtimeHub = DB_MODE
+  ? createRealtimeHub({ redact: redactSecrets, getClientIp: (req) => getClientIp(req) })
+  : null
+let liveStateRelay = null // created below, once activeMatches exists
+
+/**
+ * Publish pgQuery/matchRestore `changes` ([{table, eventType, row}]) to live
+ * subscribers. Consecutive rows of the same table and type go out as one
+ * publish, so the hub's per-channel coalescing applies. Never throws.
+ */
+function publishChanges(changes) {
+  if (!realtimeHub || !Array.isArray(changes) || changes.length === 0) return
+  try {
+    let i = 0
+    while (i < changes.length) {
+      const { table, eventType } = changes[i]
+      const rows = []
+      while (i < changes.length && changes[i].table === table && changes[i].eventType === eventType) {
+        rows.push(changes[i].row)
+        i++
+      }
+      if (table === 'matches' && eventType === 'DELETE' && liveStateRelay) {
+        for (const r of rows) liveStateRelay.invalidate(r?.id, r?.external_id)
+      }
+      realtimeHub.broadcastDbChange(table, eventType, rows)
+    }
+  } catch (err) {
+    console.warn('[realtime] broadcast failed:', err.message)
+  }
+}
 
 // Tables that are per-user private: every action requires a valid token AND is
 // constrained to rows the caller owns (user_id === auth user id).
@@ -254,8 +346,7 @@ const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
     pass: process.env.SMTP_PASS
   }
 }) : null
-const IS_CLOUD = process.env.IS_CLOUD
-const IS_LOCAL = !SUPABASE_URL || process.argv.includes('--local')
+// IS_CLOUD / IS_LOCAL are defined at the top (runtime mode).
 
 // --- Static file serving for standalone/local mode ---
 const __filename = fileURLToPath(import.meta.url)
@@ -322,15 +413,38 @@ function getLocalIPs() {
 }
 
 // In-memory storage for active matches
-// NOTE: This resets on server restart - Supabase is the source of truth for persistence
+// NOTE: This resets on server restart - the database (cloud) or the scoreboard's
+// IndexedDB (LAN) is the source of truth for persistence
 const activeMatches = new Map()
 const connections = new Map()
 const rooms = new Map() // Match rooms for isolated communication
 
+// relay live-state-update -> match_live_state db-change for live subscribers
+// (livescore, the referee's scorer alarm) even while the scorer's HTTP sync is down.
+if (realtimeHub) {
+  liveStateRelay = createLiveStateRelay({
+    hub: realtimeHub,
+    getSyncedMatch: (id) => activeMatches.get(String(id)),
+    lookupMatch: async (key) => {
+      const layer = await getDataLayer()
+      const r = await layer.db.runQuery({
+        table: 'matches',
+        action: 'select',
+        params: { columns: 'id, sport_type', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
+      }, { internal: true })
+      if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
+      return r.body.data?.[0] || null
+    }
+  })
+}
+
 // --- Capacity limits ---
 const MAX_ROOMS = 500
 const MAX_CONNECTIONS = 2000
-const MAX_CONNECTIONS_PER_IP = 50
+// Role sockets (scoreboard/referee/bench/livescore relay) per IP. A cloud relay
+// sits behind venue NATs (plan §4 Phase 3: 200); the LAN relay keeps 50.
+// `?purpose=live` sockets are counted separately by the realtime hub (500/IP, 3000 total).
+const MAX_CONNECTIONS_PER_IP = IS_CLOUD ? 200 : 50
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 // Dexie match ids restart at 1 on every device, so ids collide across
 // devices/venues: a match nobody owns may be claimed by another scoreboard —
@@ -492,12 +606,6 @@ const VALID_TEAMS = ['home', 'away']
 const ROLES_REQUIRING_PIN = ['referee', 'bench']
 
 // --- Security helpers ---
-function isValidStoragePath(filePath) {
-  if (!filePath || typeof filePath !== 'string') return false
-  if (filePath.includes('..') || filePath.startsWith('/') || filePath.includes('\\')) return false
-  return true
-}
-
 function isValidEmail(email) {
   if (!email || typeof email !== 'string' || email.length > 254) return false
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -510,14 +618,16 @@ function isValidPin(pin) {
 // --- Client IP extraction (X-Forwarded-For hardening) ---
 // SECURITY: client-supplied X-Forwarded-For is never trusted. Only the
 // Cloudflare CF-Connecting-IP header (set by the proxy, stripped from client
-// input) is honored, and only in cloud mode. In every other mode we key on the
-// real socket address so per-IP rate limits cannot be defeated by spoofing XFF.
+// input) is honored, and only with TRUST_PROXY=cloudflare, i.e. when the origin
+// is reachable through Cloudflare only (Traefik ov-cf-only allowlist). In every
+// other mode we key on the real socket address so per-IP rate limits cannot be
+// defeated by spoofing headers.
 function getClientIp(req) {
-  if (IS_CLOUD) {
-    const cfIp = req.headers['cf-connecting-ip']
-    if (cfIp) return cfIp.trim()
+  if (TRUST_PROXY === 'cloudflare') {
+    const cfIp = String(req.headers['cf-connecting-ip'] || '').trim()
+    if (cfIp && isIP(cfIp)) return cfIp.replace(/^::ffff:/, '')
   }
-  const addr = req.socket.remoteAddress || 'unknown'
+  const addr = req.socket?.remoteAddress || 'unknown'
   return addr.replace('::ffff:', '')
 }
 
@@ -531,10 +641,16 @@ const rateLimitMaps = {
   relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, /api/pocketbase/*
   contact: new Map(),   // /api/contact
   email: new Map(),     // /api/match/send-info
-  auth: new Map(),      // /api/auth/*, /api/verify-reopen-password
+  auth: new Map(),      // /api/verify-reopen-password, PocketBase PIN proof (lib/auth.js has its own buckets)
   ical: new Map(),      // /api/official-matches
-  db: new Map(),        // /api/db
-  storage: new Map()    // /api/storage/*, /api/db/rpc
+  db: new Map(),        // /api/db reads, per IP
+  dbWrite: new Map(),   // /api/db writes, per user id
+  dbWriteIp: new Map(), // /api/db writes, per IP (before the token lookup)
+  storage: new Map(),   // /api/storage/*, per IP
+  pin: new Map(),       // validate-connection-pin, per IP + type (+ match)
+  pinIp: new Map(),     // validate-connection-pin, per IP
+  restore: new Map(),   // /api/match/restore, per user id
+  restorePin: new Map() // /api/match/restore-by-pin, per IP
 }
 
 function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
@@ -560,7 +676,77 @@ setInterval(() => {
       }
     }
   }
+  // lib/auth.js in-memory counters (sign-in/sign-up/session buckets, lockouts)
+  try { dataLayer?.auth.sweep() } catch { /* ignore */ }
 }, 5 * 60 * 1000)
+
+// --- Request body reader ---
+// Reads at most maxSize bytes. A larger body is NOT destroyed mid-stream (that
+// lost the error response with the socket): the promise rejects with
+// code BODY_TOO_LARGE, the rest of the body is discarded, and the handler sends
+// its 413 (see sendBodyError) with `Connection: close`.
+function readJsonBody(req, maxSize = MAX_BODY_SIZE) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    let settled = false
+    const tooLarge = () => {
+      settled = true
+      chunks.length = 0
+      const err = new Error('Body too large')
+      err.code = 'BODY_TOO_LARGE'
+      reject(err)
+    }
+    const declared = Number(req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > maxSize) {
+      tooLarge()
+      req.resume() // drain and discard
+      return
+    }
+    req.on('data', (chunk) => {
+      if (settled) return
+      size += chunk.length
+      if (size > maxSize) return tooLarge()
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (settled) return
+      settled = true
+      try {
+        const text = Buffer.concat(chunks).toString('utf8')
+        resolve(text ? JSON.parse(text) : {})
+      } catch {
+        reject(new Error('Invalid JSON'))
+      }
+    })
+    req.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
+  })
+}
+
+/**
+ * Answer a readJsonBody failure: 413 (connection closed after the response)
+ * for an oversized body, else 400. `tooLargeBody` overrides the 413 body.
+ */
+function sendBodyError(res, err, { tooLargeBody, invalidBody } = {}) {
+  if (res.headersSent) return
+  if (err?.code === 'BODY_TOO_LARGE') {
+    res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' })
+    res.end(JSON.stringify(tooLargeBody || { data: null, error: { message: 'Request body too large', code: 'OV_BODY_TOO_LARGE' } }))
+    return
+  }
+  res.writeHead(400, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(invalidBody || { data: null, error: { message: 'Invalid request', code: 'OV_INVALID_REQUEST' } }))
+}
+
+function sendJson(res, status, body, headers = {}) {
+  if (res.headersSent) return
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers })
+  res.end(JSON.stringify(body))
+}
 
 // --- Log sanitizer (prevent log injection via newlines/control chars) ---
 function sanitizeLog(str) {
@@ -609,6 +795,8 @@ setInterval(() => {
 
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
 const MAX_MATCH_BODY_SIZE = 5 * 1024 * 1024 // 5MB for match data with email
+// A whole match backup (match + sets + up to 20000 events) for /api/match/restore
+const MAX_RESTORE_BODY_SIZE = 16 * 1024 * 1024
 
 // iCal feed configuration for Swiss VolleyManager
 const ICAL_FEEDS = {
@@ -789,6 +977,7 @@ const ALLOWED_ORIGINS = [
 function isTrustedOrigin(origin) {
   if (!origin) return false
   if (ALLOWED_ORIGINS.includes(origin)) return true
+  if (PUBLIC_ORIGINS.includes(origin)) return true
   if (/^https:\/\/[a-z0-9-]+\.openvolley\.app$/.test(origin)) return true
   // LAN origins for the local/standalone server (http on private ranges + localhost)
   if (!IS_CLOUD && /^https?:\/\/(localhost|127\.0\.0\.1|(\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(origin)) return true
@@ -804,6 +993,95 @@ function getCorsOrigin(req) {
   return { origin: ALLOWED_ORIGINS[0], credentials: false }
 }
 
+// connect-src for pages this server serves itself (same-origin bundle).
+// No *.supabase.co any more: realtime runs over this server's own socket.
+const CLOUD_CONNECT_SRC = [
+  "'self'",
+  'https://*.openvolley.app',
+  'wss://*.openvolley.app',
+  ...PUBLIC_ORIGINS,
+  ...PUBLIC_ORIGINS.filter(o => o.startsWith('https://')).map(o => 'wss://' + o.slice('https://'.length))
+].join(' ')
+
+// --- Health ------------------------------------------------------------------
+// /health/live: process is up (Docker healthcheck). Never touches the database.
+// /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
+//               free space (floor), last backup age, socket pools. 503 when the
+//               db, catalog, floor or sentinel is not ok. Cached for 2 s.
+const HEALTH_CACHE_MS = 2000
+const HEALTH_DB_TIMEOUT_MS = 3000
+let healthCache = null // { at, status, body }
+let healthInFlight = null
+
+function withTimeout(promise, ms, label) {
+  let timer
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms); timer.unref?.() })
+  ]).finally(() => clearTimeout(timer))
+}
+
+async function readLastBackup() {
+  try {
+    const text = (await readFile(join(STATUS_DIR, 'last_backup'), 'utf8')).trim().split(/\s+/)[0]
+    const at = Date.parse(text)
+    if (!Number.isFinite(at)) return { lastBackupAt: null, lastBackupAgeMin: null }
+    return { lastBackupAt: new Date(at).toISOString(), lastBackupAgeMin: Math.max(0, Math.floor((Date.now() - at) / 60000)) }
+  } catch {
+    return { lastBackupAt: null, lastBackupAgeMin: null }
+  }
+}
+
+function relayStats() {
+  return {
+    connections: { role: connections.size, live: realtimeHub ? realtimeHub.stats().sockets : 0 },
+    activeRooms: rooms.size
+  }
+}
+
+async function computeCloudHealth() {
+  const body = { status: 'ok', mode: 'cloud', uptime: process.uptime(), db: 'down', catalog: { ok: false, tables: 0 } }
+  let layer = null
+  try {
+    layer = await getDataLayer()
+  } catch (err) {
+    body.status = 'down'
+    body.error = 'data layer failed to load'
+    console.error('[Health] data layer:', err.message)
+  }
+  if (layer) {
+    try {
+      body.db = (await withTimeout(layer.db.ping(), HEALTH_DB_TIMEOUT_MS, 'db ping')) ? 'ok' : 'down'
+    } catch {
+      body.db = 'down'
+    }
+    if (body.db === 'ok') {
+      try { await withTimeout(layer.db.ensureCatalog(), HEALTH_DB_TIMEOUT_MS, 'catalog') } catch { /* reported below */ }
+    }
+    const cat = layer.db.catalogStatus()
+    body.catalog = { ok: !!cat.ok, tables: cat.tables ?? 0, loadedAt: cat.loadedAt ?? null }
+    const st = await layer.storage.health()
+    body.sentinel = st.sentinel ? 'ok' : 'missing'
+    body.storageWritable = !!st.storageWritable
+    body.diskFreeMB = st.diskFreeMB
+    body.floor = st.lowSpace === true ? 'low' : (st.lowSpace === false ? 'ok' : 'unknown')
+  }
+  Object.assign(body, await readLastBackup(), relayStats())
+  if (realtimeHub) body.realtime = realtimeHub.stats()
+  const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok'
+  if (!healthy) body.status = 'degraded'
+  return { status: healthy ? 200 : 503, body }
+}
+
+function cloudHealth() {
+  const now = Date.now()
+  if (healthCache && now - healthCache.at < HEALTH_CACHE_MS) return Promise.resolve(healthCache)
+  healthInFlight ??= computeCloudHealth()
+    .then((r) => { healthCache = { at: Date.now(), ...r }; return healthCache })
+    .finally(() => { healthInFlight = null })
+  return healthInFlight
+}
+
 // Create HTTP server
 const server = createServer((req, res) => {
   // Enable CORS with proper origin handling
@@ -811,7 +1089,10 @@ const server = createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', cors.origin)
   res.setHeader('Vary', 'Origin')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  // X-OV-Proto: the client protocol version; /api/db writes and
+  // /api/match/restore need >= 2. Without it here every browser write would
+  // fail the CORS preflight.
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-OV-Proto')
   if (cors.credentials) res.setHeader('Access-Control-Allow-Credentials', 'true')
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -825,7 +1106,7 @@ const server = createServer((req, res) => {
   // are not left without a policy. connect-src is widened in non-cloud mode so LAN
   // clients can reach arbitrary same-network IPs.
   const connectSrc = IS_CLOUD
-    ? "connect-src 'self' wss://*.openvolley.app https://*.supabase.co"
+    ? `connect-src ${CLOUD_CONNECT_SRC}`
     : "connect-src 'self' ws: wss: http: https:"
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
@@ -843,9 +1124,33 @@ const server = createServer((req, res) => {
     return
   }
 
-  const url = new URL(req.url, `http://${req.headers.host}`)
+  let url
+  try {
+    url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+  } catch {
+    res.writeHead(400)
+    res.end('Bad Request')
+    return
+  }
+
+  // Liveness (Docker healthcheck): no database, no disk, always cheap.
+  if (url.pathname === '/health/live') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }))
+    return
+  }
 
   // Health check
+  if (url.pathname === '/health' && DB_MODE) {
+    cloudHealth().then(
+      (h) => sendJson(res, h.status, h.body, { 'Cache-Control': 'no-store' }),
+      (err) => {
+        console.error('[Health] failed:', err?.message)
+        sendJson(res, 503, { status: 'down', mode: 'cloud' }, { 'Cache-Control': 'no-store' })
+      }
+    )
+    return
+  }
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
@@ -1653,29 +1958,52 @@ Generated by eScoresheet
     return
   }
 
-  // ==================== SUPABASE PROXY ENDPOINTS ====================
+  // ==================== DATA ENDPOINTS (self-hosted Postgres) ====================
+  // /api/db, /api/match/restore*, /api/match/validate-connection-pin,
+  // /api/storage/*, /api/auth/*. They need DATABASE_URL; without it (LAN relay,
+  // desktop binary) they answer 503, as the old Supabase proxy did when it was
+  // not configured.
+  const TOO_MANY = { data: null, error: { message: 'Too many requests', code: 'OV_RATE_LIMITED' } }
+  const sendTooMany = (body = TOO_MANY, retryAfter = '60') => sendJson(res, 429, body, { 'Retry-After': retryAfter })
+  const sendNoDb = (body = { data: null, error: { message: 'Database not configured on server', code: 'OV_DB_NOT_CONFIGURED' } }) => sendJson(res, 503, body)
+  const sendLayerError = (where, err, body = { data: null, error: { message: 'Service unavailable', code: 'OV_DB_UNAVAILABLE', retryable: true } }) => {
+    console.error(`[${where}] error:`, err?.message || err)
+    sendJson(res, 503, body)
+  }
 
-  // Server-side connection-PIN validation. Replaces the old client-side check
-  // that shipped every match's connection_pins to the browser. The PIN is
-  // compared server-side and never returned to the client.
+  // Server-side connection-PIN validation. The PIN is compared server-side and
+  // never returned to the client. Reads run as trusted server code (internal:
+  // no redaction of connection_pins), never through the client contract.
   if (url.pathname === '/api/match/validate-connection-pin' && req.method === 'POST') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ success: false, error: 'Too many attempts. Please wait a minute before trying again.' }))
+    const tooMany = { success: false, error: 'Too many attempts. Please wait a minute before trying again.' }
+    if (isRateLimited(clientIp, PIN_IP_RATE_LIMIT_MAX, 'pinIp')) {
+      sendTooMany(tooMany)
       return
     }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ success: false, error: 'Supabase not configured on server' }))
+    if (!DB_MODE) {
+      sendNoDb({ success: false, error: 'Database not configured on server' })
       return
     }
     ;(async () => {
+      let body
       try {
-        const { pin, type = 'referee' } = await readJsonBody(req)
+        body = await readJsonBody(req)
+      } catch (err) {
+        sendBodyError(res, err, { invalidBody: { success: false, error: 'Invalid request' }, tooLargeBody: { success: false, error: 'Invalid request' } })
+        return
+      }
+      try {
+        const { pin, type = 'referee' } = body || {}
+        // Own bucket per IP + PIN type (+ match when the client names one), so a
+        // venue NAT validating several devices is not starved by one bucket.
+        const matchKey = body?.matchId != null ? String(body.matchId).slice(0, 64) : '*'
+        if (isRateLimited(`${clientIp}|${String(type).slice(0, 20)}|${matchKey}`, PIN_RATE_LIMIT_MAX, 'pin')) {
+          sendTooMany(tooMany)
+          return
+        }
         if (!isValidPin(pin)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Invalid PIN format' }))
+          sendJson(res, 400, { success: false, error: 'Invalid PIN format' })
           return
         }
         // enabledKey null => no enable flag gates this PIN type (upload PINs)
@@ -1686,23 +2014,30 @@ Generated by eScoresheet
           upload_home: { pinKey: 'upload_home', enabledKey: null },
           upload_away: { pinKey: 'upload_away', enabledKey: null }
         }
-        const cfg = TYPE_CONFIG[type]
+        const cfg = Object.prototype.hasOwnProperty.call(TYPE_CONFIG, type) ? TYPE_CONFIG[type] : null
         if (!cfg) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
+          sendJson(res, 400, { success: false, error: 'Invalid request' })
           return
         }
         const pinStr = String(pin).trim()
-        const { data, error } = await supabaseAdmin
-          .from('matches')
-          .select('id, external_id, game_n, status, scheduled_at, home_team, away_team, connections, connection_pins')
-          .in('status', ['setup', 'live'])
-          .eq('sport_type', 'indoor')
-        if (error) {
-          res.writeHead(500, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Validation failed' }))
+        const layer = await getDataLayer()
+        const { status, body: out } = await layer.db.runQuery({
+          table: 'matches',
+          action: 'select',
+          params: {
+            columns: 'id, external_id, game_n, status, scheduled_at, home_team, away_team, connections, connection_pins',
+            filters: [
+              { type: 'in', column: 'status', value: ['setup', 'live'] },
+              { type: 'eq', column: 'sport_type', value: 'indoor' }
+            ],
+            order: [{ column: 'scheduled_at', ascending: false, nullsFirst: false }]
+          }
+        }, { internal: true, maxRows: PIN_SCAN_MAX_ROWS })
+        if (status !== 200) {
+          sendJson(res, 500, { success: false, error: 'Validation failed' })
           return
         }
+        const data = out.data
         const matchRow = (data || []).find(m => {
           const pins = m.connection_pins || {}
           const conns = m.connections || {}
@@ -1713,13 +2048,11 @@ Generated by eScoresheet
           return a.length === b.length && timingSafeEqual(a, b)
         })
         if (!matchRow) {
-          res.writeHead(404, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Invalid PIN code' }))
+          sendJson(res, 404, { success: false, error: 'Invalid PIN code' })
           return
         }
         const conns = matchRow.connections || {}
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
+        sendJson(res, 200, {
           success: true,
           match: {
             id: matchRow.external_id || matchRow.id,
@@ -1734,98 +2067,67 @@ Generated by eScoresheet
             homeTeamColor: matchRow.home_team?.color,
             awayTeamColor: matchRow.away_team?.color
           }
-        }))
+        })
       } catch (err) {
         console.error('[validate-connection-pin] Error:', err.message)
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
+        sendJson(res, 500, { success: false, error: 'Validation failed' })
       }
     })()
     return
   }
 
-  // Helper: require a valid Supabase bearer token. Writes a 401 and returns null on failure.
-  const requireAuthUser = async () => {
-    const authHeader = req.headers['authorization']
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-    if (!token) {
-      res.writeHead(401, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Authentication required' }))
-      return null
-    }
-    const { data, error } = await supabaseAdmin.auth.getUser(token)
-    if (error || !data?.user) {
-      res.writeHead(401, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Invalid or expired token' }))
-      return null
-    }
-    return data.user
-  }
-
-  // Helper: read JSON body
-  const readJsonBody = (req, maxSize = MAX_BODY_SIZE) => new Promise((resolve, reject) => {
-    let body = ''
-    req.on('data', chunk => {
-      body += chunk.toString()
-      if (body.length > maxSize) { req.destroy(); reject(new Error('Body too large')) }
-    })
-    req.on('end', () => {
-      try { resolve(body ? JSON.parse(body) : {}) }
-      catch (e) { reject(new Error('Invalid JSON')) }
-    })
-    req.on('error', reject)
-  })
-
-  // POST /api/db — Generic database proxy
+  // POST /api/db — the PostgREST-shaped contract of apiClient.js, served by
+  // lib/pgQuery.js. Reads are anonymous (secret columns redacted and never
+  // filterable); writes need a session and X-OV-Proto >= 2; profiles and
+  // user_matches are scoped to the caller. Successful writes on matches, sets,
+  // events and match_live_state are published to live subscribers.
   if (url.pathname === '/api/db' && req.method === 'POST') {
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+    if (!DB_MODE) {
+      sendNoDb()
       return
     }
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'db')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-
     ;(async () => {
+      let request
       try {
-        const { table, action, params = {} } = await readJsonBody(req, MAX_MATCH_BODY_SIZE)
-
-        if (!ALLOWED_TABLES.includes(table)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
+        request = await readJsonBody(req, MAX_MATCH_BODY_SIZE)
+      } catch (err) {
+        sendBodyError(res, err)
+        return
+      }
+      try {
+        const { table, action } = request || {}
+        const params = request?.params ?? {}
+        if (typeof table !== 'string' || !ALLOWED_TABLES.includes(table) ||
+            !['select', 'insert', 'update', 'upsert', 'delete'].includes(action) ||
+            params === null || typeof params !== 'object' || Array.isArray(params)) {
+          sendJson(res, 400, { data: null, error: { message: 'Invalid request', code: 'OV_INVALID_REQUEST' } })
+          return
+        }
+        const isWrite = action !== 'select'
+        const ownerScoped = OWNER_SCOPED_TABLES.has(table)
+        if (isWrite
+          ? isRateLimited(clientIp, DB_WRITE_IP_RATE_LIMIT_MAX, 'dbWriteIp')
+          : isRateLimited(clientIp, DB_READ_RATE_LIMIT_MAX, 'db')) {
+          sendTooMany()
           return
         }
 
-        const WRITE_ACTIONS = ['insert', 'update', 'upsert', 'delete']
-        const isWrite = WRITE_ACTIONS.includes(action)
-        const ownerScoped = OWNER_SCOPED_TABLES.has(table)
-
-        // Resolve the authenticated user. Required for any write, and for ALL
-        // actions on owner-scoped tables (profiles/user_matches).
+        const layer = await getDataLayer()
+        // A session is required for any write, and for ALL actions on
+        // owner-scoped tables. requireUser answers 401 / 503 itself.
         let authUser = null
         if (isWrite || ownerScoped) {
-          const authHeader = req.headers['authorization']
-          const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-          if (!token) {
-            res.writeHead(401, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Authentication required' }))
-            return
-          }
-          const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token)
-          if (authError || !userData?.user) {
-            res.writeHead(401, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Invalid or expired token' }))
-            return
-          }
-          authUser = userData.user
+          authUser = await layer.auth.requireUser(req, res)
+          if (!authUser) return
+        }
+        if (isWrite && isRateLimited(authUser.id, DB_WRITE_RATE_LIMIT_MAX, 'dbWrite')) {
+          sendTooMany()
+          return
         }
 
-        // Strip columns a client may never write, and force ownership on
-        // owner-scoped inserts/upserts so a caller cannot write another user's rows.
+        // Strip columns a client may never write; owner-scoped rows get the
+        // caller's user_id (pgQuery's scope forces it as well).
         const sanitizeWriteData = (data) => {
           const deny = WRITE_DENYLIST[table] || []
           const one = (row) => {
@@ -1837,519 +2139,167 @@ Generated by eScoresheet
           }
           return Array.isArray(data) ? data.map(one) : one(data)
         }
+        const p = { ...params }
+        if (p.data !== undefined) p.data = sanitizeWriteData(p.data)
 
-        let query = supabaseAdmin.from(table)
-
-        // Build query based on action
-        if (action === 'select') {
-          query = query.select(params.columns || '*', params.count ? { count: params.count, head: params.head || false } : undefined)
-        } else if (action === 'insert') {
-          query = query.insert(sanitizeWriteData(params.data))
-        } else if (action === 'upsert') {
-          query = query.upsert(sanitizeWriteData(params.data), params.onConflict ? { onConflict: params.onConflict } : undefined)
-        } else if (action === 'update') {
-          query = query.update(sanitizeWriteData(params.data))
-        } else if (action === 'delete') {
-          query = query.delete()
-        } else {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
+        // Never an unfiltered update/delete (pgQuery refuses it too). On
+        // owner-scoped tables the forced user_id filter is the filter.
+        if ((action === 'update' || action === 'delete') && !ownerScoped && !(Array.isArray(p.filters) && p.filters.length > 0)) {
+          sendJson(res, 400, { data: null, error: { message: 'A filter is required for update/delete', code: 'OV_UNFILTERED_WRITE' } })
           return
         }
 
-        // Apply filters (validate column names against per-table whitelist)
-        const ALLOWED_FILTER_TYPES = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'in', 'contains', 'is']
-        const tableColumns = ALLOWED_COLUMNS[table]
-        let filterCount = 0
-        if (params.filters) {
-          for (const f of params.filters) {
-            if (!f.column || !ALLOWED_FILTER_TYPES.includes(f.type) || (tableColumns && !tableColumns.includes(f.column))) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ error: 'Invalid request' }))
-              return
-            }
-            // On owner-scoped tables, a client-supplied user_id filter is ignored;
-            // ownership is enforced by the forced .eq('user_id', authUser.id) below.
-            if (ownerScoped && f.column === 'user_id') continue
-            filterCount++
-            if (f.type === 'eq') query = query.eq(f.column, f.value)
-            else if (f.type === 'neq') query = query.neq(f.column, f.value)
-            else if (f.type === 'gt') query = query.gt(f.column, f.value)
-            else if (f.type === 'gte') query = query.gte(f.column, f.value)
-            else if (f.type === 'lt') query = query.lt(f.column, f.value)
-            else if (f.type === 'lte') query = query.lte(f.column, f.value)
-            else if (f.type === 'like') query = query.like(f.column, f.value)
-            else if (f.type === 'ilike') query = query.ilike(f.column, f.value)
-            else if (f.type === 'in') query = query.in(f.column, f.value)
-            else if (f.type === 'contains') query = query.contains(f.column, f.value)
-            else if (f.type === 'is') query = query.is(f.column, f.value)
-          }
-        }
-
-        // Enforce row ownership on owner-scoped tables for every action.
-        if (ownerScoped && authUser) {
-          query = query.eq('user_id', authUser.id)
-          filterCount++
-        }
-
-        // Never allow an unfiltered update/delete (would mutate the whole table).
-        if ((action === 'update' || action === 'delete') && filterCount === 0) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'A filter is required for update/delete' }))
-          return
-        }
-
-        // Apply modifiers
-        if (params.order) {
-          for (const o of (Array.isArray(params.order) ? params.order : [params.order])) {
-            if (!o.column || (tableColumns && !tableColumns.includes(o.column))) {
-              res.writeHead(400, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ error: 'Invalid request' }))
-              return
-            }
-            query = query.order(o.column, { ascending: o.ascending !== false })
-          }
-        }
-        if (params.limit) query = query.limit(params.limit)
-        if (params.single) query = query.single()
-        if (params.maybeSingle) query = query.maybeSingle()
-
-        const { data, error, count } = await query
-
-        if (error) {
-          console.error(`[DB Proxy] ${action} ${table} error:`, error.message)
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: 'Database operation failed' } }))
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: redactSecrets(table, data), error: null, count: count ?? undefined }))
-        }
+        const r = await layer.db.runQuery({ table, action, params: p }, {
+          proto: req.headers['x-ov-proto'],
+          scope: ownerScoped ? { column: 'user_id', value: authUser.id } : undefined
+        })
+        if (r.status === 200 && r.changes?.length) publishChanges(r.changes)
+        // redactSecrets is belt and braces: pgQuery never returns secret columns.
+        sendJson(res, r.status, { ...r.body, data: redactSecrets(table, r.body.data) },
+          r.status >= 500 ? { 'Retry-After': '5' } : {})
       } catch (err) {
-        console.error('[DB Proxy] Error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Database operation failed' }))
+        console.error('[DB] Error:', err.message)
+        sendJson(res, 500, { data: null, error: { message: 'Database operation failed', code: 'OV_INTERNAL' } })
       }
     })()
     return
   }
 
-  // POST /api/db/rpc — RPC proxy
-  if (url.pathname === '/api/db/rpc' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
-      return
-    }
+  // Removed with the Supabase proxy: no caller, never worked under service_role.
+  if (url.pathname === '/api/db/rpc') {
+    sendJson(res, 404, { data: null, error: { message: 'Not found', code: 'OV_REMOVED' } })
+    return
+  }
 
+  // POST /api/match/restore {match, sets, events, liveState} — a cloud restore
+  // in ONE transaction (replaces the client's multi-step upsert/delete/upsert).
+  if (url.pathname === '/api/match/restore' && req.method === 'POST') {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
     ;(async () => {
       try {
-        // Require auth for RPC calls
-        const authHeader = req.headers['authorization']
-        const rpcToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-        if (!rpcToken) {
-          res.writeHead(401, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Authentication required' }))
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        if (isRateLimited(user.id, RESTORE_RATE_LIMIT_MAX, 'restore')) {
+          sendTooMany()
           return
         }
-        const { data: rpcUser, error: rpcAuthError } = await supabaseAdmin.auth.getUser(rpcToken)
-        if (rpcAuthError || !rpcUser?.user) {
-          res.writeHead(401, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid or expired token' }))
+        let body
+        try {
+          body = await readJsonBody(req, MAX_RESTORE_BODY_SIZE)
+        } catch (err) {
+          sendBodyError(res, err)
           return
         }
-
-        const { fn, params = {} } = await readJsonBody(req)
-        if (!ALLOWED_RPC.includes(fn)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
-          return
-        }
-        const { data, error } = await supabaseAdmin.rpc(fn, params)
-        if (error) {
-          console.error(`[RPC Proxy] ${fn} error:`, error.message)
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: 'Operation failed' } }))
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data, error: null }))
-        }
+        const r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'] })
+        if (r.status === 200) publishChanges(r.changes)
+        sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
       } catch (err) {
-        console.error('[RPC Proxy] Error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Operation failed' }))
+        sendLayerError('match/restore', err)
       }
     })()
     return
   }
 
-  // POST /api/storage/upload — Upload file to Supabase Storage
-  if (url.pathname === '/api/storage/upload' && req.method === 'POST') {
+  // POST /api/match/restore-by-pin {gameN, pin} — anonymous, exact match on
+  // game number AND game PIN, attempt-limited per caller (lib/matchRestore.js).
+  if (url.pathname === '/api/match/restore-by-pin' && req.method === 'POST') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
+    if (isRateLimited(clientIp, RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
+      sendTooMany()
       return
     }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
+    if (!DB_MODE) {
+      sendNoDb()
       return
     }
+    ;(async () => {
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch (err) {
+        sendBodyError(res, err)
+        return
+      }
+      try {
+        const layer = await getDataLayer()
+        const r = await layer.restore.restoreByPin(body, { limitKey: layer.ipKey(clientIp) })
+        sendJson(res, r.status, r.body, r.status === 429 ? { 'Retry-After': '600' } : {})
+      } catch (err) {
+        sendLayerError('match/restore-by-pin', err)
+      }
+    })()
+    return
+  }
 
+  // POST /api/storage/{upload,download,list} — lib/storage.js on STORAGE_ROOT.
+  // signed-url answers 404 (removed). Every call needs a session.
+  if (url.pathname.startsWith('/api/storage/') && req.method === 'POST') {
+    const clientIp = getClientIp(req)
+    if (isRateLimited(clientIp, STORAGE_IP_RATE_LIMIT_MAX, 'storage')) {
+      sendTooMany()
+      return
+    }
+    if (!DB_MODE) {
+      sendNoDb({ data: null, error: { message: 'Storage not configured on server', code: 'OV_STORAGE_NOT_CONFIGURED' } })
+      return
+    }
+    const action = url.pathname.slice('/api/storage/'.length)
     ;(async () => {
       try {
-        // Require auth for storage uploads
-        const authHeader = req.headers['authorization']
-        const uploadToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-        if (!uploadToken) {
-          res.writeHead(401, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Authentication required' }))
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        let body
+        try {
+          body = await readJsonBody(req, layer.storage.maxBodyBytes)
+        } catch (err) {
+          sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
           return
         }
-        const { data: uploadUser, error: uploadAuthError } = await supabaseAdmin.auth.getUser(uploadToken)
-        if (uploadAuthError || !uploadUser?.user) {
-          res.writeHead(401, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid or expired token' }))
-          return
-        }
-
-        const { bucket, path: filePath, fileBase64, contentType, upsert } = await readJsonBody(req, MAX_MATCH_BODY_SIZE)
-        if (!ALLOWED_BUCKETS.includes(bucket)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
-          return
-        }
-        if (!isValidStoragePath(filePath)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid file path' }))
-          return
-        }
-        const fileBuffer = Buffer.from(fileBase64, 'base64')
-        const { data, error } = await supabaseAdmin.storage
-          .from(bucket)
-          .upload(filePath, fileBuffer, { contentType: contentType || 'application/octet-stream', upsert: upsert !== false })
-        if (error) {
-          console.error('[Storage Upload] Supabase error:', error.message)
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data, error: null }))
-        }
+        const { status, body: out } = await layer.storage.handle(action, body, { userId: user.id })
+        sendJson(res, status, out)
       } catch (err) {
-        console.error('[Storage Upload] Error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Storage operation failed' }))
+        sendLayerError('Storage', err, { data: null, error: { message: 'Storage unavailable', code: 'OV_STORAGE_UNAVAILABLE' } })
       }
     })()
     return
   }
 
-  // POST /api/storage/download — Download file from Supabase Storage
-  if (url.pathname === '/api/storage/download' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
-      return
-    }
-
-    ;(async () => {
-      try {
-        if (!(await requireAuthUser())) return
-        const { bucket, path: filePath } = await readJsonBody(req)
-        if (!ALLOWED_BUCKETS.includes(bucket)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
-          return
-        }
-        if (!isValidStoragePath(filePath)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid file path' }))
-          return
-        }
-        const { data, error } = await supabaseAdmin.storage.from(bucket).download(filePath)
-        if (error) {
-          console.error('[Storage Download] Supabase error:', error.message)
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
-        } else {
-          // Convert blob to base64
-          const arrayBuffer = await data.arrayBuffer()
-          const base64 = Buffer.from(arrayBuffer).toString('base64')
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: base64, error: null }))
-        }
-      } catch (err) {
-        console.error('[Storage Download] Error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Storage operation failed' }))
-      }
-    })()
-    return
-  }
-
-  // POST /api/storage/list — List files in Supabase Storage
-  if (url.pathname === '/api/storage/list' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
-      return
-    }
-
-    ;(async () => {
-      try {
-        if (!(await requireAuthUser())) return
-        const { bucket, path: dirPath, options } = await readJsonBody(req)
-        if (!ALLOWED_BUCKETS.includes(bucket)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
-          return
-        }
-        if (dirPath && !isValidStoragePath(dirPath)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid file path' }))
-          return
-        }
-        const { data, error } = await supabaseAdmin.storage.from(bucket).list(dirPath, options || {})
-        if (error) {
-          console.error('[Storage List] Supabase error:', error.message)
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data, error: null }))
-        }
-      } catch (err) {
-        console.error('[Storage List] Error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Storage operation failed' }))
-      }
-    })()
-    return
-  }
-
-  // POST /api/storage/signed-url — Create signed URL for Supabase Storage
-  if (url.pathname === '/api/storage/signed-url' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, STORAGE_RATE_LIMIT_MAX, 'storage')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
-      return
-    }
-
-    ;(async () => {
-      try {
-        if (!(await requireAuthUser())) return
-        const { bucket, path: filePath, expiresIn } = await readJsonBody(req)
-        if (!ALLOWED_BUCKETS.includes(bucket)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid request' }))
-          return
-        }
-        if (!isValidStoragePath(filePath)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Invalid file path' }))
-          return
-        }
-        const MAX_SIGNED_URL_EXPIRY = 3600 // 1 hour max
-        const safeExpiresIn = Math.min(expiresIn || 3600, MAX_SIGNED_URL_EXPIRY)
-        const { data, error } = await supabaseAdmin.storage.from(bucket).createSignedUrl(filePath, safeExpiresIn)
-        if (error) {
-          console.error('[Storage SignedUrl] Supabase error:', error.message)
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data: null, error: { message: 'Storage operation failed' } }))
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ data, error: null }))
-        }
-      } catch (err) {
-        console.error('[Storage SignedUrl] Error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Storage operation failed' }))
-      }
-    })()
-    return
-  }
-
-  // POST /api/auth/* — Auth proxy endpoints
+  // POST /api/auth/* — lib/auth.js (auth.users + opaque sessions in
+  // auth.app_sessions). It applies its own per-IP / per-email buckets and
+  // lockout, so the old 10/min per-IP 'auth' limit (which broke a venue NAT)
+  // does not apply here.
   if (url.pathname.startsWith('/api/auth/') && req.method === 'POST') {
+    if (!DB_MODE) {
+      sendNoDb({ data: null, error: { message: 'Auth not configured', code: 'auth_unavailable' } })
+      return
+    }
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-    if (!supabaseAdmin) {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Supabase not configured on server' }))
-      return
-    }
-
-    const authAction = url.pathname.replace('/api/auth/', '')
-
+    const action = url.pathname.slice('/api/auth/'.length)
     ;(async () => {
+      let layer
       try {
-        const body = await readJsonBody(req)
-        let result
-
-        switch (authAction) {
-          case 'sign-in': {
-            const { data, error } = await supabaseAdmin.auth.signInWithPassword({
-              email: body.email,
-              password: body.password
-            })
-            result = { data: data ? { user: data.user, session: data.session } : null, error: error ? { message: error.message } : null }
-            break
-          }
-          case 'sign-up': {
-            // SECURITY: never trust client-supplied roles (the profiles trigger
-            // copies user_metadata.roles into profiles.roles). Strip privileged
-            // keys so a signup cannot self-assign roles.
-            const safeMeta = { ...(body.metadata || {}) }
-            delete safeMeta.roles
-            const { data, error } = await supabaseAdmin.auth.admin.createUser({
-              email: body.email,
-              password: body.password,
-              email_confirm: true,
-              user_metadata: safeMeta
-            })
-            result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
-            break
-          }
-          case 'sign-out': {
-            // With service_role, we can use admin API to sign out a user by their JWT
-            // But typically sign-out is client-side (just clear tokens)
-            result = { data: null, error: null }
-            break
-          }
-          case 'get-user': {
-            // Verify JWT and return user
-            const token = body.access_token
-            if (!token) {
-              result = { data: null, error: { message: 'No access token provided' } }
-              break
-            }
-            const { data, error } = await supabaseAdmin.auth.getUser(token)
-            result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
-            break
-          }
-          case 'reset-password': {
-            // SECURITY: only honor redirectTo if it targets a trusted origin, so
-            // the recovery-token link can't be pointed at an attacker domain.
-            let safeRedirect
-            try {
-              if (body.redirectTo) {
-                const r = new URL(body.redirectTo)
-                if (isTrustedOrigin(r.origin)) safeRedirect = body.redirectTo
-              }
-            } catch { /* invalid URL — ignore */ }
-            const { data, error } = await supabaseAdmin.auth.resetPasswordForEmail(body.email, {
-              redirectTo: safeRedirect
-            })
-            result = { data, error: error ? { message: error.message } : null }
-            break
-          }
-          case 'update-user': {
-            const token = body.access_token
-            if (!token) {
-              result = { data: null, error: { message: 'No access token provided' } }
-              break
-            }
-            // Get user from token first
-            const { data: userData } = await supabaseAdmin.auth.getUser(token)
-            if (!userData?.user) {
-              result = { data: null, error: { message: 'Invalid token' } }
-              break
-            }
-            const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userData.user.id, {
-              email: body.email
-            })
-            result = { data: data ? { user: data.user } : null, error: error ? { message: error.message } : null }
-            break
-          }
-          case 'delete-account': {
-            const token = body.access_token
-            if (!token) {
-              result = { data: null, error: { message: 'No access token provided' } }
-              break
-            }
-            const { data: userData } = await supabaseAdmin.auth.getUser(token)
-            if (!userData?.user) {
-              result = { data: null, error: { message: 'Invalid token' } }
-              break
-            }
-            const { error } = await supabaseAdmin.auth.admin.deleteUser(userData.user.id)
-            result = { data: null, error: error ? { message: error.message } : null }
-            break
-          }
-          case 'profile': {
-            // Get or update profile
-            const token = body.access_token
-            if (!token) {
-              result = { data: null, error: { message: 'No access token provided' } }
-              break
-            }
-            const { data: userData } = await supabaseAdmin.auth.getUser(token)
-            if (!userData?.user) {
-              result = { data: null, error: { message: 'Invalid token' } }
-              break
-            }
-            if (body.updates) {
-              // Update profile
-              const { data, error } = await supabaseAdmin
-                .from('profiles')
-                .update(body.updates)
-                .eq('user_id', userData.user.id)
-                .select()
-                .single()
-              result = { data, error: error ? { message: error.message } : null }
-            } else {
-              // Get profile
-              const { data, error } = await supabaseAdmin
-                .from('profiles')
-                .select('*')
-                .eq('user_id', userData.user.id)
-                .single()
-              result = { data, error: error ? { message: error.message } : null }
-            }
-            break
-          }
-          default:
-            res.writeHead(404, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Invalid request' }))
-            return
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify(result))
+        layer = await getDataLayer()
       } catch (err) {
-        console.error(`[Auth Proxy] ${authAction} error:`, err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Authentication error' }))
+        sendLayerError('Auth', err, { data: null, error: { message: 'Authentication is temporarily unavailable', code: 'auth_unavailable' } })
+        return
       }
+      if (!layer.AUTH_ACTIONS.includes(action)) {
+        layer.sendAuthResult(res, { status: 404, body: { data: null, error: { message: 'Invalid request' } } })
+        return
+      }
+      let body
+      try {
+        body = await readJsonBody(req)
+      } catch (err) {
+        sendBodyError(res, err, { invalidBody: { data: null, error: { message: 'Invalid request' } } })
+        return
+      }
+      layer.sendAuthResult(res, await layer.auth.handleAuthRequest(action, body, { ip: clientIp, headers: req.headers }))
     })()
     return
   }
@@ -2613,9 +2563,12 @@ Generated by eScoresheet
   res.end('Not Found')
 })
 
-// Create WebSocket server
+// Create WebSocket server. HTTP and WebSocket share one port (PORT): upgrades
+// are routed here. `?purpose=live` sockets (DATABASE_URL mode) go to the
+// realtime hub's own small-frame, no-deflate server; everything else is a role
+// socket (scoreboard/referee/bench/livescore relay) on this one.
 const wss = new WebSocketServer({
-  server,
+  noServer: true,
   // Increase limits for match data
   maxPayload: 10 * 1024 * 1024, // 10MB
   perMessageDeflate: {
@@ -2636,13 +2589,23 @@ const wss = new WebSocketServer({
 })
 
 wss.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`\n❌ Port ${PORT} is already in use.`)
-    console.error(`   Another instance of the server may be running.`)
-    console.error(`   Stop it first, or set a different port: PORT=8081 ./openvolley-server-*\n`)
-    process.exit(1)
-  }
+  // Listen errors (EADDRINUSE) reach server.on('error'); a noServer wss never sees them.
+  console.error('❌ WebSocket server error:', err.message)
 })
+
+server.on('upgrade', (req, socket, head) => {
+  socket.on('error', () => { /* client went away mid-handshake */ })
+  if (realtimeHub && isLiveRequest(req)) {
+    realtimeHub.handleUpgrade(req, socket, head, { ip: getClientIp(req) })
+    return
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+})
+
+// Server-side ping for role sockets behind Cloudflare (it closes WebSockets idle
+// for 100 s): every 30 s, and a socket that missed the previous pong is
+// terminated. Cloud only; the LAN relay keeps its old behaviour.
+const roleHeartbeat = IS_CLOUD ? (realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ intervalMs: 30000 })) : null
 
 wss.on('connection', (ws, req) => {
   // Enforce global connection cap
@@ -2677,6 +2640,7 @@ wss.on('connection', (ws, req) => {
   }
 
   connections.set(clientId, clientInfo)
+  roleHeartbeat?.track(ws)
 
   console.log(`✅ Client connected: ${clientId} from ${ip} (Total: ${connections.size})`)
 
@@ -2734,6 +2698,15 @@ wss.on('connection', (ws, req) => {
         case 'live-state-update':
           // Scoreboard's computed live-state (same message as the LAN relays)
           handleLiveStateUpdate(clientInfo, message)
+          // DATABASE_URL mode: also a match_live_state db-change for live
+          // subscribers (livescore, scorer alarm), even when HTTP sync is down.
+          if (liveStateRelay) {
+            liveStateRelay.handle(clientInfo, message).then((r) => {
+              if (!r.ok && !['forbidden', 'not_synced', 'no_match_key', 'unknown_match'].includes(r.reason)) {
+                console.warn('[realtime] live-state-update not published:', r.reason)
+              }
+            }, (err) => console.warn('[realtime] live-state relay failed:', err?.message))
+          }
           break
 
         case 'clear-all-matches':
@@ -3274,6 +3247,10 @@ function handleLiveStateUpdate(clientInfo, message) {
 // Remove a match from the relay: tell its room first, then drop room + state.
 // The PocketBase backup is retired, not deleted.
 function removeMatch(matchId) {
+  if (liveStateRelay) {
+    const key = matchKeyFromSyncedMatch(activeMatches.get(matchId)?.match)
+    if (key) liveStateRelay.invalidate(key.value)
+  }
   broadcastToRoom(matchId, { type: 'match-deleted', matchId })
   const room = rooms.get(matchId)
   if (room) {
@@ -3362,10 +3339,56 @@ server.on('error', (err) => {
   throw err
 })
 
+// --- DATABASE_URL mode: load the data layer at startup -----------------------
+// Loading does not connect: a database that is down only makes /health say so
+// (and requests answer 503) until it is back. A configuration error (bad
+// STORAGE_OWNER_SCOPE, unloadable module) stops the process instead of serving
+// half a backend.
+if (DB_MODE) {
+  getDataLayer().then((layer) => {
+    console.log('[DB] data layer ready (pgQuery, auth, storage at ' + STORAGE_ROOT + ')')
+    layer.db.ensureCatalog().then(
+      (cat) => console.log(`[DB] catalog loaded: ${cat.allowed.length} tables`),
+      (err) => console.warn('[DB] catalog not loaded yet (retrying on demand):', err.message)
+    )
+    // Expired sessions, hourly
+    setInterval(() => {
+      layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
+    }, 60 * 60 * 1000).unref()
+    // backup/backups/** older than 30 days and stale temp files: 5 min after start, then daily
+    const runSweep = () => layer.storage.sweep()
+      .then((r) => console.log('[Storage] sweep', JSON.stringify(r)))
+      .catch((err) => console.error('[Storage] sweep failed:', err.message))
+    setTimeout(runSweep, 5 * 60 * 1000).unref()
+    setInterval(runSweep, 24 * 60 * 60 * 1000).unref()
+  }, (err) => {
+    console.error('❌ [DB] could not initialise the data layer:', err.message)
+    process.exit(1)
+  })
+}
+
+// --- Graceful shutdown (docker stop / systemd) -------------------------------
+let shuttingDown = false
+function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[Server] ${signal}: shutting down`)
+  const force = setTimeout(() => process.exit(0), 5000)
+  force.unref()
+  try { realtimeHub?.close() } catch { /* ignore */ }
+  for (const c of connections.values()) {
+    try { c.ws.close(1001, 'Server shutting down') } catch { /* ignore */ }
+  }
+  server.close()
+  Promise.resolve(dataLayer?.db.close()).catch(() => {}).finally(() => process.exit(0))
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+
 server.listen(PORT, () => {
   const ips = getLocalIPs()
   const primaryIP = ips[0]?.address || 'localhost'
-  const mode = IS_CLOUD ? 'CLOUD' : IS_LOCAL ? 'LOCAL' : 'HYBRID'
+  const mode = DB_MODE ? 'CLOUD (DATABASE_URL)' : IS_CLOUD ? 'CLOUD RELAY' : 'LOCAL'
 
   const ipLines = ips.map(ip => `  📡 ${ip.name}: http://${ip.address}:${PORT}`).join('\n')
 
