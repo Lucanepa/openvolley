@@ -1,0 +1,27 @@
+# cloudflared ingress for the "openvolley" tunnel.
+#
+# The tunnel is locally managed (created with `cloudflared tunnel create
+# openvolley`), so ingress rules come from this file. Credentials come from
+# TUNNEL_TOKEN in /opt/openvolley/.env; no credentials file is mounted.
+#
+# Validate without connecting:
+#   docker run --rm -v "$PWD/cloudflared:/etc/cloudflared:ro" \
+#     cloudflare/cloudflared:2026.5.2 tunnel --config /etc/cloudflared/config.yml ingress validate
+#
+# Every hostname reaches the same origin: ov-backend on the compose network
+# "ov-edge". No host port is involved.
+no-autoupdate: true
+originRequest:
+  connectTimeout: 10s
+  tcpKeepAlive: 30s
+  keepAliveTimeout: 90s
+  # The origin is plain HTTP inside the compose network; TLS ends at Cloudflare.
+  noHappyEyeballs: true
+ingress:
+  - hostname: backend.openvolley.app
+    service: http://ov-backend:8080
+  # Pre-go-live check hostname (RUNBOOK-hetzner.md step 9). Harmless when no
+  # DNS record points at it; delete its CNAME after go-live.
+  - hostname: ov-preflight.openvolley.app
+    service: http://ov-backend:8080
+  - service: http_status:404
