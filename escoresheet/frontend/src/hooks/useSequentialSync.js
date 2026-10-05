@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
-import { apiFrom } from '../lib/apiClient'
-import { JSONB_COLUMNS } from '../db/matchRepository'
+import { processJob, errorBackoffMs, DROP_JOB } from './useSyncQueue'
+
+const TIMED_OUT = 'timed_out'
 
 /**
  * useSequentialSync - Hook for sequential sync operations at set end
@@ -17,204 +18,78 @@ export function useSequentialSync() {
   /**
    * Process a single sync job directly (not via background queue)
    * Returns: { success: boolean, offline?: boolean, error?: string, jobId: number }
+   *
+   * The job is stored as 'sending' so the background queue (useSyncQueue) does not
+   * pick it up while this direct call is in flight; it goes back to 'queued' if
+   * the call does not complete, and useSyncQueue reclaims abandoned 'sending' rows.
+   * Processing reuses useSyncQueue's processJob, so both paths send the same thing.
    */
   const executeAndWait = useCallback(async (job, timeout = 10000) => {
     // 1. Write to IndexedDB sync_queue first (for retry if app closes)
     const jobId = await db.sync_queue.add({
       ...job,
       ts: Date.now(),
-      status: 'queued'
+      status: 'sending',
+      sending_since: Date.now()
     })
 
     // 2. If offline, return warning (data saved locally)
     if (!navigator.onLine) {
+      await db.sync_queue.update(jobId, { status: 'queued' })
       console.warn('[SequentialSync] Offline - job queued for later:', job.resource, job.action)
       return { success: false, offline: true, jobId }
     }
 
-    // 3. Execute API call directly
+    // 3. Execute API call directly, bounded by the timeout so the set-end modal
+    // cannot hang on a stalled request
+    let timer = null
     try {
-      const result = await processJobDirect(job)
+      const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(TIMED_OUT), timeout) })
+      const result = await Promise.race([processJob({ ...job, id: jobId }), timedOut])
 
-      if (result.success) {
+      if (result === true) {
         await db.sync_queue.update(jobId, { status: 'sent' })
         console.log(`[SequentialSync] ${job.resource} ${job.action} successful`)
         return { success: true, jobId }
-      } else {
-        // LOG THE ERROR with full details
-        console.error(`[SequentialSync] Supabase sync FAILED for ${job.resource}:`, {
-          action: job.action,
-          error: result.error?.message || result.error,
-          code: result.error?.code,
-          details: result.error?.details,
-          hint: result.error?.hint,
-          payload: job.payload
-        })
-
-        await db.sync_queue.update(jobId, {
-          status: 'error',
-          error_message: result.error?.message || String(result.error),
-          error_code: result.error?.code
-        })
-
-        return { success: false, error: result.error?.message || String(result.error), jobId }
       }
+
+      if (result === DROP_JOB) {
+        await db.sync_queue.update(jobId, { status: 'dropped' })
+        return { success: false, error: 'Job cannot be attributed to a match', jobId }
+      }
+
+      if (result === false) {
+        // Permanent failure (details logged by processJob): the background queue
+        // retries it with backoff
+        console.error(`[SequentialSync] Supabase sync FAILED for ${job.resource}:`, { action: job.action, payload: job.payload })
+        await db.sync_queue.update(jobId, { status: 'error', attempts: 1, next_attempt_at: Date.now() + errorBackoffMs(1) })
+        return { success: false, error: `${job.resource} ${job.action} failed`, jobId }
+      }
+
+      // Timed out, retry later (match not in the cloud yet, 5xx), rate limited or
+      // unreachable: the data is saved locally and the background queue sends it.
+      console.warn(`[SequentialSync] ${job.resource} ${job.action} deferred to the sync queue:`, result === TIMED_OUT ? 'timeout' : result)
+      await db.sync_queue.update(jobId, { status: 'queued' })
+      return { success: false, offline: true, jobId }
     } catch (error) {
       // LOG THE ERROR with full details
       console.error(`[SequentialSync] Supabase sync EXCEPTION for ${job.resource}:`, {
         action: job.action,
         error: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
         stack: error.stack,
         payload: job.payload
       })
 
       await db.sync_queue.update(jobId, {
-        status: 'error',
-        error_message: error.message,
-        error_code: error.code
+        status: 'queued',
+        error_message: error.message
       })
 
       return { success: false, error: error.message, jobId }
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }, [])
-
-  /**
-   * Process a job directly to Supabase (similar to useSyncQueue.processJob but synchronous)
-   */
-  const processJobDirect = async (job) => {
-    try {
-      // ==================== SET UPDATE ====================
-      if (job.resource === 'set' && job.action === 'update') {
-        const { external_id, ...updateData } = job.payload
-
-        const { error } = await apiFrom('sets')
-          .update({ ...updateData, sport_type: 'indoor' })
-          .eq('external_id', external_id)
-
-        if (error) {
-          return { success: false, error }
-        }
-        return { success: true }
-      }
-
-      // ==================== SET INSERT ====================
-      if (job.resource === 'set' && job.action === 'insert') {
-        let setPayload = { ...job.payload }
-
-        // Resolve match_id from external_id if needed
-        if (setPayload.match_id && typeof setPayload.match_id === 'string') {
-          const { data: matchData, error: lookupError } = await apiFrom('matches')
-            .select('id')
-            .eq('external_id', setPayload.match_id)
-            .maybeSingle()
-
-          if (lookupError) {
-            return { success: false, error: lookupError }
-          }
-
-          if (!matchData) {
-            return { success: false, error: { message: 'Match not found in Supabase', code: 'MATCH_NOT_FOUND' } }
-          }
-
-          setPayload.match_id = matchData.id
-        }
-
-        const { error } = await apiFrom('sets')
-          .upsert({ ...setPayload, sport_type: 'indoor' }, { onConflict: 'external_id' })
-
-        if (error) {
-          return { success: false, error }
-        }
-        return { success: true }
-      }
-
-      // ==================== EVENT INSERT ====================
-      if (job.resource === 'event' && job.action === 'insert') {
-        let eventPayload = { ...job.payload }
-
-        // Resolve match_id from external_id if needed
-        if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
-          const { data: matchData, error: lookupError } = await apiFrom('matches')
-            .select('id')
-            .eq('external_id', eventPayload.match_id)
-            .maybeSingle()
-
-          if (lookupError) {
-            return { success: false, error: lookupError }
-          }
-
-          if (!matchData) {
-            return { success: false, error: { message: 'Match not found in Supabase', code: 'MATCH_NOT_FOUND' } }
-          }
-
-          eventPayload.match_id = matchData.id
-        }
-
-        const { error } = await apiFrom('events')
-          .upsert({ ...eventPayload, sport_type: 'indoor' }, { onConflict: 'external_id' })
-
-        if (error) {
-          return { success: false, error }
-        }
-        return { success: true }
-      }
-
-      // ==================== MATCH UPDATE ====================
-      if (job.resource === 'match' && job.action === 'update') {
-        const { id, ...updateData } = job.payload
-
-        // JSONB columns that need to be merged instead of replaced (shared list)
-        const jsonbColumns = JSONB_COLUMNS
-        const hasJsonbColumns = jsonbColumns.some(col => updateData[col] !== undefined)
-
-        let finalUpdateData = { ...updateData }
-
-        // If updating JSONB columns, fetch existing values and merge
-        if (hasJsonbColumns) {
-          const columnsToFetch = jsonbColumns.filter(col => updateData[col] !== undefined)
-          const { data: existingMatch, error: fetchError } = await apiFrom('matches')
-            .select(columnsToFetch.join(','))
-            .eq('external_id', id)
-            .maybeSingle()
-
-          if (fetchError) {
-            console.warn('[SequentialSync] Match fetch for merge error:', fetchError)
-            // Continue with update anyway
-          }
-
-          if (existingMatch) {
-            for (const col of columnsToFetch) {
-              if (updateData[col] && typeof updateData[col] === 'object' && !Array.isArray(updateData[col])) {
-                finalUpdateData[col] = {
-                  ...(existingMatch[col] || {}),
-                  ...updateData[col]
-                }
-              }
-            }
-          }
-        }
-
-        const { error } = await apiFrom('matches')
-          .update(finalUpdateData)
-          .eq('external_id', id)
-
-        if (error) {
-          return { success: false, error }
-        }
-        return { success: true }
-      }
-
-      // Unknown resource/action
-      console.warn('[SequentialSync] Unknown job type:', job.resource, job.action)
-      return { success: true }
-
-    } catch (err) {
-      return { success: false, error: err }
-    }
-  }
 
   /**
    * Main function: Sync set end sequentially with UI progress

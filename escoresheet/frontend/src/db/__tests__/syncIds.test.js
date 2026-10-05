@@ -4,9 +4,11 @@ import {
   eventExtId,
   parseExtId,
   isBareLocalId,
+  jobMatchKey,
   resolveJobExternalId,
   rewriteQueuedSyncJobs
 } from '../../utils/syncIds'
+import { buildConnectionPins } from '../../utils/connectionPins'
 
 // Minimal in-memory stand-in for the Dexie tables the v17 upgrade touches.
 function fakeTable(rows = []) {
@@ -109,5 +111,29 @@ describe('Dexie v17 upgrade: rewriteQueuedSyncJobs', () => {
 
   it('leaves non set/event jobs alone', async () => {
     expect(await resolveJobExternalId({ resource: 'match', payload: { id: 'x' } }, { sets: sets(), matches: matches() })).toBeNull()
+  })
+})
+
+describe('jobMatchKey', () => {
+  it('finds the match of every job kind', () => {
+    expect(jobMatchKey({ resource: 'match', action: 'insert', payload: { external_id: 'm1' } })).toBe('m1')
+    expect(jobMatchKey({ resource: 'match', action: 'update', payload: { id: 'm1' } })).toBe('m1')
+    expect(jobMatchKey({ resource: 'match', action: 'restore', payload: { match: { external_id: 'm1' } } })).toBe('m1')
+    expect(jobMatchKey({ resource: 'set', action: 'insert', payload: { match_id: 'm1', external_id: 'm1:s:3' } })).toBe('m1')
+    expect(jobMatchKey({ resource: 'set', action: 'update', payload: { external_id: 'm1:s:3' } })).toBe('m1')
+    expect(jobMatchKey({ resource: 'event', action: 'insert', payload: { external_id: '7' } })).toBeNull()
+  })
+})
+
+describe('buildConnectionPins', () => {
+  it('builds every role from the local match and skips empty PINs', () => {
+    expect(buildConnectionPins({
+      refereePin: '111111',
+      homeTeamPin: 222222,
+      awayTeamPin: '',
+      homeTeamUploadPin: null,
+      awayTeamUploadPin: ' 555555 '
+    })).toEqual({ referee: '111111', bench_home: '222222', upload_away: '555555' })
+    expect(buildConnectionPins(null)).toEqual({})
   })
 })
