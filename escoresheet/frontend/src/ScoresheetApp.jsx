@@ -3,7 +3,17 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
 import App from '../scoresheet_pdf/App_Scoresheet'
-import { ClipboardIcon } from './components/icons'
+import { ArrowLeft, ChevronRight, ClipboardList, FileX2, X } from 'lucide-react'
+import { cn } from './ui/cn.js'
+import { Card } from './ui/Card.jsx'
+import { FOCUS_RING } from './ui/Button.jsx'
+import { Row, RowList, DateRail } from './ui/Row.jsx'
+import { Chip, CountBadge } from './ui/Chip.jsx'
+import { EmptyState } from './ui/EmptyState.jsx'
+import { GateMessage } from './ui/ErrorScreen.jsx'
+import { AppSpinner } from './ui/AppSpinner.jsx'
+import { weekdayLabel, dayLabel, timeLabel } from './ui/format.js'
+import { scheduledInstant } from './components/dashboards/EntryKit.jsx'
 
 // Fetch scoresheet data from Supabase storage (only _final files)
 const fetchFromStorage = async (date, game) => {
@@ -155,20 +165,18 @@ const getUrlParams = () => {
   return { date, game, matchId, action }
 }
 
-// Format date for display
-const formatDate = (dateStr) => {
-  try {
-    const date = new Date(dateStr + 'T12:00:00')
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
-  } catch {
-    return dateStr
-  }
-}
+// Full-page loading state (kit spinner on the warm stone page).
+const PageLoading = ({ label }) => (
+  <div className="ov-kit flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
+    <AppSpinner label={label} />
+  </div>
+)
+
+// A list row's text-styled link: the dark lead tool and the outline tool (kit RowTool, as <a>).
+const ROW_LINK = cn(
+  'inline-flex h-8 flex-1 basis-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium transition-colors sm:flex-none sm:basis-auto sm:px-3 sm:text-xs',
+  FOCUS_RING,
+)
 
 // Collapsible section component for hierarchical grouping
 const CollapsibleSection = ({ title, count, depth = 0, defaultOpen = false, children }) => {
@@ -181,29 +189,24 @@ const CollapsibleSection = ({ title, count, depth = 0, defaultOpen = false, chil
     'text-xs font-medium'
   ]
 
-  const depthBorderColors = [
-    'border-l-blue-500',
-    'border-l-indigo-400',
-    'border-l-violet-400',
-    'border-l-purple-300'
-  ]
-
   return (
     <div className="mb-2" style={{ marginLeft: depth > 0 ? 12 : 0 }}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 border-l-4 ${depthBorderColors[depth] || depthBorderColors[3]} hover:bg-gray-50 transition-colors cursor-pointer`}
+        aria-expanded={isOpen}
+        className={cn(
+          'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-xl border border-stone-200/70 bg-white px-3 py-2 text-left shadow-card transition-colors hover:bg-stone-50',
+          FOCUS_RING,
+        )}
       >
-        <div className="flex items-center gap-2">
-          <span
-            className="text-gray-400 text-xs transition-transform duration-200"
-            style={{ display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-          >
-            &#9654;
-          </span>
-          <span className={`text-gray-800 ${depthClasses[depth] || depthClasses[3]}`}>{title}</span>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{count}</span>
-        </div>
+        <ChevronRight
+          size={16}
+          className={cn('shrink-0 text-stone-400 transition-transform duration-200', isOpen && 'rotate-90')}
+          aria-hidden
+        />
+        <span className={cn('min-w-0 text-stone-900', depthClasses[depth] || depthClasses[3])}>{title}</span>
+        <CountBadge tone="stone">{count}</CountBadge>
       </button>
       {isOpen && (
         <div className="mt-1">
@@ -214,7 +217,7 @@ const CollapsibleSection = ({ title, count, depth = 0, defaultOpen = false, chil
   )
 }
 
-// Match card component for individual matches
+// One archived match: date rail, home over away, game number and final score chips, view / download tools
 const MatchCard = ({ match }) => {
   const homeTeam = match.home_team?.name || 'Team A'
   const awayTeam = match.away_team?.name || 'Team B'
@@ -222,52 +225,51 @@ const MatchCard = ({ match }) => {
   const scheduledAt = match.scheduled_at || match.created_at
   const date = scheduledAt ? new Date(scheduledAt).toISOString().slice(0, 10) : null
   const gameNumber = match.game_n || match.external_id
-  const displayDate = scheduledAt ? formatDate(new Date(scheduledAt).toISOString().slice(0, 10)) : ''
+  const when = scheduledInstant(scheduledAt)
+  const day = when ? dayLabel(when) : ''
 
   return (
-    <div
-      className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow mb-2"
-      style={{ marginLeft: 12 }}
-    >
-      <div className="flex-1">
-        <div className="flex items-center gap-3 mb-1">
-          {match.game_n && (
-            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-              Game {match.game_n}
-            </span>
-          )}
-          {finalScore && (
-            <span className="text-sm font-semibold text-emerald-600">{finalScore}</span>
-          )}
+    <Row
+      leading={
+        <DateRail
+          weekday={day ? weekdayLabel(when, 'en') : undefined}
+          date={day || '–'}
+          time={day ? timeLabel(when) || undefined : undefined}
+        />
+      }
+      title={
+        <div className="min-w-0 text-left">
+          <p className="text-sm font-semibold leading-snug break-words text-stone-900 sm:text-[15px]">{homeTeam}</p>
+          <p className="text-sm leading-snug break-words text-stone-600 sm:text-[15px]">
+            <span className="sr-only">vs </span>{awayTeam}
+          </p>
         </div>
-        <div className="text-base font-medium text-gray-800">
-          {homeTeam} vs {awayTeam}
-        </div>
-        {displayDate && (
-          <div className="text-xs text-gray-400 mt-1">{displayDate}</div>
-        )}
-      </div>
-      <div className="flex gap-2">
-        {date && gameNumber && (
-          <>
-            <a
-              href={`?date=${date}&game=${gameNumber}`}
-              className="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600"
-            >
-              View
-            </a>
-            <a
-              href={`?date=${date}&game=${gameNumber}&action=save`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-600 border border-gray-200 rounded-md hover:bg-gray-200"
-            >
-              Download PDF
-            </a>
-          </>
-        )}
-      </div>
-    </div>
+      }
+      chips={(match.game_n || finalScore) ? (
+        <>
+          {match.game_n && <Chip>Game {match.game_n}</Chip>}
+          {finalScore && <Chip tone="emerald"><span className="tabular-nums">{finalScore}</span></Chip>}
+        </>
+      ) : undefined}
+      tools={date && gameNumber ? (
+        <>
+          <a
+            href={`?date=${date}&game=${gameNumber}`}
+            className={cn(ROW_LINK, 'bg-slate-900 text-white hover:bg-slate-800')}
+          >
+            View
+          </a>
+          <a
+            href={`?date=${date}&game=${gameNumber}&action=save`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(ROW_LINK, 'border border-stone-300 bg-white text-stone-600 hover:bg-stone-50')}
+          >
+            Download PDF
+          </a>
+        </>
+      ) : undefined}
+    />
   )
 }
 
@@ -296,24 +298,18 @@ const ScoresheetViewer = ({ date, game, action }) => {
   }, [date, game])
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-gray-600">Loading scoresheet...</div>
-      </div>
-    )
+    return <PageLoading label="Loading scoresheet..." />
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-5">
-        <div className="text-2xl font-bold text-red-500">Scoresheet Not Found</div>
-        <div className="text-gray-600">{error}</div>
-        <button
-          onClick={() => window.location.href = '/'}
-          className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-        >
-          Back to List
-        </button>
+      <div className="ov-kit">
+        <GateMessage
+          icon={FileX2}
+          title="Scoresheet not found"
+          body={error}
+          action={{ label: 'Back to list', icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { window.location.href = '/' } }}
+        />
       </div>
     )
   }
@@ -344,41 +340,35 @@ const ScoresheetList = () => {
   const tree = useMemo(() => buildArchiveTree(matches), [matches])
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-gray-600">Loading scoresheets...</div>
-      </div>
-    )
+    return <PageLoading label="Loading scoresheets..." />
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-5">
-        <div className="text-2xl font-bold text-red-500">Error Loading Scoresheets</div>
-        <div className="text-gray-600">{error}</div>
+      <div className="ov-kit">
+        <GateMessage title="Error loading scoresheets" body={error} />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-5">
+    <div className="ov-kit min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6 sm:py-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="w-12 h-12" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Scoresheet Archive</h1>
-            <p className="text-gray-500">
+        <Card className="flex items-center gap-4">
+          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="h-10 w-10 shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">Scoresheet archive</h1>
+            <p className="text-sm text-stone-500">
               {matches.length} scoresheet{matches.length !== 1 ? 's' : ''} available
             </p>
           </div>
-        </div>
+        </Card>
 
         {matches.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-            <div className="mb-4 flex justify-center text-gray-400"><ClipboardIcon size={48} /></div>
-            <div className="text-lg text-gray-500">No scoresheets uploaded yet</div>
-          </div>
+          <Card>
+            <EmptyState icon={ClipboardList}>No scoresheets uploaded yet</EmptyState>
+          </Card>
         ) : (
           tree.map(levelGroup => (
             <CollapsibleSection
@@ -412,9 +402,13 @@ const ScoresheetList = () => {
                           depth={3}
                           defaultOpen={gGroup.leagues.length === 1}
                         >
-                          {lGroup.matches.map(match => (
-                            <MatchCard key={match.external_id} match={match} />
-                          ))}
+                          <Card pad="list" stack={false} className="mb-2 ml-3">
+                            <RowList soft>
+                              {lGroup.matches.map(match => (
+                                <MatchCard key={match.external_id} match={match} />
+                              ))}
+                            </RowList>
+                          </Card>
                         </CollapsibleSection>
                       ))}
                     </CollapsibleSection>
@@ -493,24 +487,18 @@ const MatchIdViewer = ({ matchId, action }) => {
 
   // Show loading state while initial data is being fetched
   if (match === undefined) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-gray-600">Loading scoresheet...</div>
-      </div>
-    )
+    return <PageLoading label="Loading scoresheet..." />
   }
 
   if (match === null) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-5">
-        <div className="text-2xl font-bold text-red-500">Match Not Found</div>
-        <div className="text-gray-600">Match ID: {matchId}</div>
-        <button
-          onClick={() => window.close()}
-          className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-        >
-          Close Window
-        </button>
+      <div className="ov-kit">
+        <GateMessage
+          icon={FileX2}
+          title="Match not found"
+          body={`Match ID: ${matchId}`}
+          action={{ label: 'Close window', icon: <X className="h-4 w-4" />, onClick: () => window.close() }}
+        />
       </div>
     )
   }
