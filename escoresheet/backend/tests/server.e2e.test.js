@@ -25,7 +25,7 @@ import { dirname, join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import WebSocket from 'ws'
-import { createDatabaseSql, testSchemaSql } from './helpers/pgTestDb.js'
+import { createDatabase, testSchemaSql } from './helpers/pgTestDb.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(HERE, '..')
@@ -182,7 +182,12 @@ async function provisionDatabase() {
   const admin = new pg.Client({ connectionString: adminUrl })
   await admin.connect()
   const name = `ov_e2e_${process.pid}_${Date.now().toString(36)}`
-  await admin.query(createDatabaseSql(name, { useTemplate: !USE_DOCKER }))
+  try {
+    await createDatabase(admin, name, { useTemplate: !USE_DOCKER })
+  } catch (err) {
+    await admin.end().catch(() => {})
+    throw err
+  }
   cleanup.unshift(async () => {
     try { await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`) } finally { await admin.end().catch(() => {}) }
   })
