@@ -31,7 +31,7 @@ import { NOTICE } from '../ui/tones.js'
 // winner bar and the big set score are frozen and keep their inline styles.
 // Section head: a name on the dark 1.5px rule (kit SectionHeader).
 const SECTION_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5 mb-3'
-const SECTION_TITLE = 'text-[11px] font-bold uppercase tracking-wider text-stone-800'
+const SECTION_TITLE = 'm-0 text-[11px] font-bold uppercase tracking-wider text-stone-800'
 // The Scoresheet menu trigger: kit toolbar button, courtside height.
 const TOOLBAR_TRIGGER = 'inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-stone-200 bg-white text-sm font-medium text-stone-700 shadow-sm hover:bg-stone-50 transition-colors'
 // Decision dialogs: stone-900/60 + blur, white rounded-2xl panel, shadow-2xl.
@@ -1296,8 +1296,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Winner, Results and Sanctions - All side by side on larger screens */}
       <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
         {/* Winner Card */}
-        <div className="card" style={{ flex: '1 1 280px', minWidth: '260px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
-          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.winner', 'Winner')}</h3></div>
+        <div className="card" style={{ flex: '1 1 280px', minWidth: '260px', padding: 'calc(16px * var(--scale-factor)) 20px 20px', display: 'flex', flexDirection: 'column' }}>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.winner', 'Winner')}</h3></div>
           {/* Team Name with background */}
           <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>
             {winner}
@@ -1336,7 +1336,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('results')}
         >
-          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.results', 'Results')}</h3></div>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.results', 'Results')}</h3></div>
           <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <ResultsTable
               teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
@@ -1355,7 +1355,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('sanctions')}
         >
-          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3></div>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.sanctions', 'Sanctions')}</h3></div>
           <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <SanctionsTable
               items={sanctionsInBox}
@@ -1368,7 +1368,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Captain Signatures */}
       {!isApproved && (
         <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
-          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3></div>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3></div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <SignatureBox role="captain-a" />
             <SignatureBox role="captain-b" />
@@ -1404,7 +1404,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         <div className="card" style={{ marginBottom: '16px' }}>
           <div className={SECTION_HEAD}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
+              <h3 className={SECTION_TITLE}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
               {/* Whose turn it is: a state, so a round pill (sky = pending,
                   emerald once every signature is in). */}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${currentStep === 'complete' ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'}`}>
