@@ -68,6 +68,49 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
     "gamePin",
 ];
 
+/// Personal data the relay never hands out. Subscribing needs no PIN and the
+/// room key is the match's public external_id, so every match object and
+/// bundle that leaves the relay is public (only the scorer, who sent it, has
+/// the full bundle). Same lists as lanRelayCore.cjs / backend publicColumns.js.
+const PERSON_PRIVATE_FIELDS: &[&str] = &[
+    "dob",
+    "dateOfBirth",
+    "date_of_birth",
+    "birthDate",
+    "birthdate",
+    "birth_date",
+    "country",
+    "nationality",
+    "email",
+    "phone",
+    "address",
+];
+/// Match keys never relayed, besides every key containing "signature".
+const MATCH_PRIVATE_FIELDS: &[&str] = &[
+    "officials",
+    "signatures",
+    "approval",
+    "manualChanges",
+    "manual_changes",
+    "pendingHomeRoster",
+    "pendingAwayRoster",
+    "pending_home_roster",
+    "pending_away_roster",
+];
+/// Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
+const MATCH_ROSTER_FIELDS: &[&str] = &[
+    "players_home",
+    "players_away",
+    "bench_home",
+    "bench_away",
+    "players_team1",
+    "players_team2",
+    "benchHome",
+    "benchAway",
+    "homePlayers",
+    "awayPlayers",
+];
+
 /// Same cap as the Node relays / cloud relay.
 const WS_MAX_MESSAGE: usize = 10 * 1024 * 1024;
 const MAX_MATCH_ID_LEN: usize = 128;
@@ -266,18 +309,48 @@ fn iso_now() -> String {
     )
 }
 
+/// Remove the personal keys of every person in a roster array.
+fn strip_people(list: &mut Value) {
+    if let Some(arr) = list.as_array_mut() {
+        for p in arr.iter_mut() {
+            if let Some(o) = p.as_object_mut() {
+                for k in PERSON_PRIVATE_FIELDS {
+                    o.remove(*k);
+                }
+            }
+        }
+    }
+}
+
+/// Make a match object public: no PINs, no officials / signatures / pending
+/// rosters / manual changes, rosters without personal keys.
 fn strip_secrets(m: &mut Value) {
     if let Some(obj) = m.as_object_mut() {
         for k in MATCH_SECRET_FIELDS {
             obj.remove(*k);
         }
+        for k in MATCH_PRIVATE_FIELDS {
+            obj.remove(*k);
+        }
+        obj.retain(|k, _| !k.to_ascii_lowercase().contains("signature"));
+        for k in MATCH_ROSTER_FIELDS {
+            if let Some(v) = obj.get_mut(*k) {
+                strip_people(v);
+            }
+        }
     }
 }
 
+/// A bundle as the relay hands it out: public match, players without personal keys.
 fn strip_bundle_secrets(bundle: &Value) -> Value {
     let mut b = bundle.clone();
     if let Some(m) = b.get_mut("match") {
         strip_secrets(m);
+    }
+    for k in ["homePlayers", "awayPlayers"] {
+        if let Some(v) = b.get_mut(k) {
+            strip_people(v);
+        }
     }
     b
 }
@@ -1659,6 +1732,25 @@ mod tests {
         assert_eq!(msg["liveState"], json!({ "points_a": 5 }));
         let text = msg.to_string();
         assert!(!text.contains("987654") && !text.contains("314159"));
+    }
+
+    #[test]
+    fn match_messages_carry_no_personal_data() {
+        let mut b = bundle(7, "987654", "live");
+        b["match"]["officials"] = json!([{ "role": "1st referee", "lastName": "Ref", "dob": "1980-01-01" }]);
+        b["match"]["homeCoachSignature"] = json!("data:image/png;base64,SIG");
+        b["match"]["signatures"] = json!({ "home_coach": "data:image/png;base64,SIG" });
+        b["match"]["pendingHomeRoster"] = json!({ "players": [] });
+        b["match"]["bench_home"] = json!([{ "role": "Coach", "lastName": "Coach", "dob": "1970-02-02" }]);
+        b["homePlayers"] = json!([{ "number": 7, "lastName": "Player", "dob": "2000-03-03", "country": "SUI" }]);
+        let msg = bundle_message("match-data-update", "7", &b, None);
+        let text = msg.to_string();
+        for secret in ["1980-01-01", "1970-02-02", "2000-03-03", "SUI", "base64,SIG", "pendingHomeRoster", "officials"] {
+            assert!(!text.contains(secret), "{secret} leaked: {text}");
+        }
+        assert_eq!(msg["homePlayers"][0]["number"], json!(7));
+        assert_eq!(msg["match"]["bench_home"][0]["role"], json!("Coach"));
+        assert_eq!(msg["match"]["status"], json!("live"));
     }
 
     #[tokio::test]

@@ -97,10 +97,26 @@
  * (256 KB) when a change is published is terminated; with maxTotal 3000 that
  * bounds buffered fan-out at ~750 MB worst case. Lower maxTotal on the Pi.
  *
+ * Duplicates: the two copies of one scoreboard state (relay push and HTTP
+ * write-through) carry the same updated_at. For ordered tables a row whose
+ * ordering value equals the newest one published for its key, and whose
+ * columns all equal that row's (timestamps compared as instants, JSON
+ * objects whatever their key order), is not sent again. Only one frame per
+ * scorer state reaches the viewers; a same-timestamp row that changes any
+ * value they see (the scorer-attention alarm) still goes out. The rows
+ * compared are kept redacted and projected, for the maxDuplicateRows most
+ * recently published keys only.
+ *
  * Secrets: every row is deep-cloned and passed through `redact(table, row)`
  * once per publish, before filters are evaluated, so a filter on a redacted
  * column can never match (no PIN oracle) and redacted columns never leave
  * the process. Use lib/secrets.js redactSecrets, the same function /api/db uses.
+ *
+ * Projection: live sockets are anonymous, so after redact every row also goes
+ * through `project(table, row)` (server.js: lib/publicColumns.js
+ * projectLiveRow, a per-table column allowlist), also before filters. Filter
+ * columns must survive the projection (they do: id/external_id/match_id/
+ * sport_type are on every list).
  */
 import { WebSocketServer } from 'ws'
 
@@ -201,10 +217,71 @@ function stripInternal(row) {
   return row
 }
 
+// ISO timestamps as the scoreboard writes them ('...T12:00:01.500Z') and as
+// Postgres returns them ('...T12:00:01.5+00:00') are the same instant.
+const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)$/
+
+/** Deep equality for row values: key order ignored, timestamps compared as instants. */
+function valuesEqual(a, b, depth = 0) {
+  if (a === b) return true
+  if (a == null || b == null) return a == null && b == null
+  if (depth > 20) return false
+  if (a instanceof Date || b instanceof Date) {
+    const ms = (v) => (v instanceof Date ? v.getTime() : (typeof v === 'string' && ISO_TS_RE.test(v) ? Date.parse(v) : NaN))
+    const ta = ms(a)
+    return Number.isFinite(ta) && ta === ms(b)
+  }
+  if (typeof a === 'string' && typeof b === 'string') {
+    if (!ISO_TS_RE.test(a) || !ISO_TS_RE.test(b)) return false
+    const ta = Date.parse(a)
+    return Number.isFinite(ta) && ta === Date.parse(b)
+  }
+  if (typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) if (!valuesEqual(a[i], b[i], depth + 1)) return false
+    return true
+  }
+  const ka = Object.keys(a).filter(k => a[k] !== undefined)
+  const kb = Object.keys(b).filter(k => b[k] !== undefined)
+  if (ka.length !== kb.length) return false
+  for (const k of ka) {
+    if (!Object.prototype.hasOwnProperty.call(b, k) || !valuesEqual(a[k], b[k], depth + 1)) return false
+  }
+  return true
+}
+
+const isEmptyValue = (v) => v == null || v === 0 || v === false || v === '' ||
+  (Array.isArray(v) && v.length === 0) ||
+  (typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && Object.keys(v).length === 0)
+
+/**
+ * Does `row` say nothing that `known` (the columns already published for the
+ * same state) does not? Shared columns must be equal. A column `known` lacks
+ * is no news only when it is the row id or empty (null, 0, false, '', [], {}):
+ * the database copy of a relay push carries the id and the defaults of
+ * columns the scoreboard never writes. Anything else counts as a change.
+ */
+function sameColumns(known, row) {
+  for (const [k, v] of Object.entries(row)) {
+    if (k.startsWith('__')) continue
+    if (!Object.prototype.hasOwnProperty.call(known, k)) {
+      if (k === 'id' || isEmptyValue(v)) continue
+      return false
+    }
+    if (!valuesEqual(known[k], v)) return false
+  }
+  return true
+}
+
 /**
  * @typedef {Object} HubOptions
  * @property {(table: string, row: object) => object} redact  REQUIRED. Strips secret
  *           columns; may mutate and must return the row (server.js redactSecrets fits).
+ * @property {(table: string, row: object) => object} [project]  Applied after redact:
+ *           returns the row live subscribers may see (lib/publicColumns.js projectLiveRow).
+ *           Default: the redacted row.
  * @property {string[]} [tables]            Subscribable tables.
  * @property {string[] | ((table: string, column: string) => boolean)} [filterColumns]
  *           Allowed filter columns, or a predicate (e.g. backed by the pgQuery catalog
@@ -226,6 +303,9 @@ function stripInternal(row) {
  *           already published for the same `key`. Default
  *           { match_live_state: { key: 'match_id', column: 'updated_at' } }; {} disables.
  * @property {number} [maxOrderingEntries=10000]  Keys remembered for ordering (oldest evicted).
+ * @property {number} [maxDuplicateRows=256]  Newest rows kept for the duplicate check
+ *           (most recently published keys; older keys keep their ordering value only).
+ *           Kept redacted and projected, as subscribers would see them.
  * @property {number} [maxFutureSkewMs=5000]  Ordering values further in the future are clamped to now + this.
  * @property {() => number} [now=Date.now]  Clock for the clamp (tests).
  * @property {Object<string, Array<{table: string, key: string, from?: string, carry?: string[]}>>} [cascadeDeletes]
@@ -243,6 +323,7 @@ function stripInternal(row) {
 export function createRealtimeHub(options = {}) {
   const {
     redact,
+    project = null,
     tables = DEFAULT_TABLES,
     filterColumns = DEFAULT_FILTER_COLUMNS,
     allowUnfiltered = false,
@@ -257,6 +338,7 @@ export function createRealtimeHub(options = {}) {
     maxBufferedBytes = 256 * 1024,
     ordering = { match_live_state: { key: 'match_id', column: 'updated_at' } },
     maxOrderingEntries = 10000,
+    maxDuplicateRows = 256,
     maxFutureSkewMs = 5000,
     now: clock = Date.now,
     cascadeDeletes = { matches: [{ table: 'match_live_state', key: 'match_id', from: 'id', carry: ['sport_type'] }] },
@@ -267,6 +349,14 @@ export function createRealtimeHub(options = {}) {
 
   if (typeof redact !== 'function') {
     throw new TypeError('createRealtimeHub: options.redact(table, row) is required')
+  }
+  if (project != null && typeof project !== 'function') {
+    throw new TypeError('createRealtimeHub: options.project must be a function (table, row) => row')
+  }
+  // redact, then project: what a live subscriber may see of a row
+  const publicRow = (table, row) => {
+    const redacted = redact(table, row) || row
+    return project ? (project(table, redacted) || {}) : redacted
   }
 
   const tableSet = new Set(tables)
@@ -279,9 +369,17 @@ export function createRealtimeHub(options = {}) {
   const ipCounts = new Map()
   /** @type {Map<string, Set<object>>} table -> channels with at least one sub on it */
   const byTable = new Map()
-  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0 }
+  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0 }
   /** `${table}\0${key}` -> newest published ordering value (ms) */
   const newest = new Map()
+  /**
+   * `${table}\0${key}` -> that newest row as subscribers see it (redacted,
+   * projected), for the duplicate check. Only the maxDuplicateRows most
+   * recently published keys: the two copies of a state arrive within seconds,
+   * and a whole match_live_state row per key ever seen would grow to tens of
+   * MB on a long-running relay (the Pi).
+   */
+  const recentRows = new Map()
 
   const heartbeat = createHeartbeat({ intervalMs: pingIntervalMs })
 
@@ -502,6 +600,7 @@ export function createRealtimeHub(options = {}) {
     const id = `${table}\0${key}`
     if (type === 'DELETE') {
       newest.delete(id)
+      recentRows.delete(id)
       return true
     }
     const rawTs = toMillis(raw[rule.column])
@@ -515,10 +614,31 @@ export function createRealtimeHub(options = {}) {
       counters.staleDropped++
       return false
     }
+    // The other copy of the newest state (relay push vs HTTP write-through):
+    // same ordering value and nothing a subscriber would see differs. Remember
+    // the union of both copies' columns, so a third copy compares against all.
+    const seen = prev != null && ts === prev ? recentRows.get(id) : undefined
+    const visible = visibleRow(table, raw)
+    if (seen && visible && sameColumns(seen, visible)) {
+      counters.duplicateDropped++
+      recentRows.set(id, { ...seen, ...visible })
+      return false
+    }
     newest.delete(id) // re-insert: Map order doubles as LRU order
-    newest.set(id, prev != null && prev > ts ? prev : ts)
+    newest.set(id, ts)
     if (newest.size > maxOrderingEntries) newest.delete(newest.keys().next().value)
+    recentRows.delete(id)
+    if (visible && maxDuplicateRows > 0) {
+      recentRows.set(id, visible)
+      if (recentRows.size > maxDuplicateRows) recentRows.delete(recentRows.keys().next().value)
+    }
     return true
+  }
+
+  /** A row as a live subscriber would see it (clone, internals out, redact, project). */
+  function visibleRow(table, raw) {
+    const row = cloneRow(raw)
+    return row ? publicRow(table, stripInternal(row)) : null
   }
 
   /**
@@ -577,11 +697,11 @@ export function createRealtimeHub(options = {}) {
     for (const { i, raw, type } of accepted) {
       let row = cloneRow(raw)
       if (!row) continue
-      row = redact(table, stripInternal(row)) || row
+      row = publicRow(table, stripInternal(row))
       let previous = null
       if (type === 'UPDATE' && oldRows && oldRows[i]) {
         previous = cloneRow(oldRows[i])
-        if (previous) previous = redact(table, stripInternal(previous)) || previous
+        if (previous) previous = publicRow(table, stripInternal(previous))
       }
       const payload = type === 'DELETE'
         ? { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: {}, old: row }
@@ -646,6 +766,7 @@ export function createRealtimeHub(options = {}) {
       channels,
       tables: Object.fromEntries([...byTable].map(([t, set]) => [t, set.size])),
       orderingKeys: newest.size,
+      duplicateRows: recentRows.size,
       ...counters
     }
   }
