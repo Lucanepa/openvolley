@@ -553,11 +553,13 @@ button {
   font-size: calc(13px * var(--scale-factor));
 }
 
-/* Outside the scoring centre column: kit radius (rounded-lg) and the app's
-   Inter instead of the browser's control font. The rally controls, game
-   captain chips and anything else in .court-wrapper keep their exact shape
-   and face (frozen, muscle memory). */
-button:where(:not(.court-wrapper button)) {
+/* Outside the scoring areas: kit radius (rounded-lg) and the app's Inter
+   instead of the browser's control font. Every frozen scoring scope keeps its
+   buttons' exact shape, face and height (muscle memory): the centre column
+   (.court-wrapper, .rally-controls), the side columns (.team-controls: TO/SUB,
+   sanction chips, IR & Delays, bench, liberos) and the phone scoring block
+   (.smartphone-layout: Start Rally, Point L/R, TO). */
+button:where(:not(:is(.court-wrapper, .team-controls, .smartphone-layout, .rally-controls) button)) {
   border-radius: var(--ov-radius);
   font-family: inherit;
 }
@@ -576,6 +578,7 @@ button.secondary:hover:not(:disabled) {
 /* Start Rally / Replay: the same outline look, drawn inside the box so the
    frozen rally buttons keep their exact size and position. */
 .rally-controls button.secondary {
+  color: var(--ov-text-body); /* stone-800: the most-used courtside action reads full strength */
   border: none;
   box-shadow: inset 0 0 0 1px var(--ov-hairline-strong);
 }
