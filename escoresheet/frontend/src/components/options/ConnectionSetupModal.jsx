@@ -6,7 +6,6 @@ import QRCodeModal, { buildConnectionUrl } from '../QRCodeModal'
 import {
   getLocalIP,
   getServerStatus,
-  getConnectionCount,
   copyToClipboard,
   buildAppUrls,
   buildWebSocketUrl,
@@ -14,6 +13,8 @@ import {
   buildCloudUrls
 } from '../../utils/networkInfo'
 import { db } from '../../db/db'
+import { useRelayTablets } from '../../hooks/useRealtimeConnection'
+import { relayMatchKey } from '../../utils/serverDataSync'
 import { SignalIcon, GlobeIcon } from '../icons'
 
 export default function ConnectionSetupModal({
@@ -31,7 +32,6 @@ export default function ConnectionSetupModal({
   const [connectionMode, setConnectionMode] = useState('lan') // 'lan' | 'internet'
   const [localIP, setLocalIP] = useState(null)
   const [serverStatus, setServerStatus] = useState({ running: false })
-  const [connectionCount, setConnectionCount] = useState({ totalClients: 0 })
   const [loading, setLoading] = useState(true)
   const [copyFeedback, setCopyFeedback] = useState(null)
   const [showQRModal, setShowQRModal] = useState(null) // 'referee' | 'bench_home' | 'bench_away' | 'livescore' | null
@@ -47,14 +47,12 @@ export default function ConnectionSetupModal({
     const loadNetworkInfo = async () => {
       setLoading(true)
       try {
-        const [ip, status, connections] = await Promise.all([
+        const [ip, status] = await Promise.all([
           getLocalIP(),
-          getServerStatus(),
-          getConnectionCount()
+          getServerStatus()
         ])
         setLocalIP(ip)
         setServerStatus(status)
-        setConnectionCount(connections)
       } catch (err) {
         console.error('Error loading network info:', err)
       } finally {
@@ -63,18 +61,6 @@ export default function ConnectionSetupModal({
     }
 
     loadNetworkInfo()
-
-    // Poll for connection count updates
-    const interval = setInterval(async () => {
-      try {
-        const connections = await getConnectionCount()
-        setConnectionCount(connections)
-      } catch {
-        // Ignore polling errors
-      }
-    }, 5000)
-
-    return () => clearInterval(interval)
   }, [open])
 
   // Handle copy with feedback
@@ -120,6 +106,14 @@ export default function ConnectionSetupModal({
 
   // Resolve the seed key for QR code URL building
   const seedKey = matchSeedKey || match?.seed_key || match?.externalId || matchId
+
+  // Devices on this match: the relay the tablets use (cloud backend or LAN
+  // server), asked by the seed key the tablets subscribe with. It used to ask
+  // window.location, which on a static deployment is the SPA, not the relay.
+  const relayKey = match ? relayMatchKey(match, matchId) : (matchSeedKey || null)
+  const relayTablets = useRelayTablets(open && relayKey ? String(relayKey) : null, match, { enabled: open, intervalMs: 5000 })
+  const devicesOnMatch = relayTablets.connections?.dashboardClients ?? relayTablets.watchers
+  const watchingMatch = relayTablets.connections?.matchSubscriptions?.[String(relayKey)] ?? relayTablets.watchers
 
   const renderModeSelector = () => (
     <div style={{ marginBottom: 24 }}>
@@ -417,17 +411,17 @@ export default function ConnectionSetupModal({
       }}>
         <span style={{
           fontSize: 28, fontWeight: 700,
-          color: connectionCount.totalClients > 0 ? '#22c55e' : 'var(--muted)'
+          color: devicesOnMatch > 0 ? '#22c55e' : 'var(--muted)'
         }}>
-          {connectionCount.totalClients}
+          {devicesOnMatch}
         </span>
         <span style={{ fontSize: 14, color: 'var(--muted)' }}>
-          {connectionCount.totalClients === 1 ? t('connection.deviceConnected') : t('connection.devicesConnected')}
+          {devicesOnMatch === 1 ? t('connection.deviceConnected') : t('connection.devicesConnected')}
         </span>
       </div>
-      {matchId && connectionCount.matchSubscriptions && (
+      {relayKey && relayTablets.connections && (
         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
-          {t('connection.watchingThisMatch', { count: connectionCount.matchSubscriptions[matchId] || 0 })}
+          {t('connection.watchingThisMatch', { count: watchingMatch || 0 })}
         </div>
       )}
     </div>

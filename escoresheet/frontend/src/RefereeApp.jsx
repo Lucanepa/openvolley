@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData } from './utils/serverDataSync'
+import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
@@ -15,8 +15,27 @@ import { RefreshIcon } from './components/icons'
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
 
+/**
+ * Re-check a stored referee PIN (after a reload) the way handlePinSubmit checks
+ * a typed one: the backend's database check first, then the LAN relay. The
+ * match must still be the stored one. Ids stay strings: they are seed keys
+ * ('match_…'), and Number() of one is NaN.
+ * @returns {Promise<object|null>} the match, or null
+ */
+export async function revalidateRefereeSession(storedMatchId, storedPin, { checkCloud = validatePinSupabase, checkLan = validatePin } = {}) {
+  const same = (r) => r?.success && r.match && String(r.match.id) === String(storedMatchId)
+  let result = null
+  try { result = await checkCloud(storedPin, 'referee') } catch { result = null }
+  if (same(result)) return result.match
+  try { result = await checkLan(storedPin, 'referee') } catch { result = null }
+  return same(result) ? result.match : null
+}
+
 export default function RefereeApp() {
   const { t } = useTranslation()
+  // Label this tablet on the relay (scorer's tablet status) before the
+  // dashboard subscribes
+  useState(() => setRelayDevice('referee'))
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [pinInput, setPinInput] = useState('')
@@ -139,84 +158,14 @@ export default function RefereeApp() {
       debugInfo.server = { status: 'disconnected', message: `Network error: ${err.message || 'Failed to connect to server'}` }
     }
     
-    // Check WebSocket server availability
-    try {
-      // Check if we have a configured backend URL (Render/cloud backend)
-      const backendUrl = import.meta.env.VITE_BACKEND_URL
+    // Relay reachable? An HTTP status check on the configured backend: the old
+    // check opened (and dropped) a WebSocket on every load just to see it open.
+    const relayStatus = await getRelayServerStatus()
+    statuses.websocket = relayStatus.running ? 'connected' : 'disconnected'
+    debugInfo.websocket = relayStatus.running
+      ? { status: 'connected', message: 'WebSocket server is reachable' }
+      : { status: 'disconnected', message: 'WebSocket server is not reachable' }
 
-      let wsUrl
-      if (backendUrl) {
-        // Use configured backend (Render cloud)
-        const url = new URL(backendUrl)
-        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        wsUrl = `${protocol}//${url.host}`
-      } else {
-        // Fallback to local WebSocket server or same origin in production
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        // In production (HTTPS), use same origin without port (Cloudflare handles routing)
-        // In development (HTTP), use port 8080
-        if (window.location.protocol === 'https:') {
-          wsUrl = `${protocol}://${hostname}`
-        } else {
-          const wsPort = 8080
-          wsUrl = `${protocol}://${hostname}:${wsPort}`
-        }
-      }
-
-      const wsTest = new WebSocket(wsUrl)
-      let resolved = false
-
-      // Use longer timeout for cloud backends
-      const connectionTimeout = backendUrl ? 10000 : 2000
-
-      await new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          if (!resolved) {
-            resolved = true
-            try { wsTest.close() } catch (e) {}
-            statuses.websocket = 'disconnected'
-            debugInfo.websocket = { status: 'disconnected', message: `Connection timeout after ${connectionTimeout / 1000}s` }
-            resolve()
-          }
-        }, connectionTimeout)
-
-        wsTest.onopen = () => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            try { wsTest.close() } catch (e) {}
-            statuses.websocket = 'connected'
-            debugInfo.websocket = { status: 'connected', message: 'WebSocket server is reachable' }
-            resolve()
-          }
-        }
-
-        wsTest.onerror = () => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            try { wsTest.close() } catch (e) {}
-            statuses.websocket = 'disconnected'
-            debugInfo.websocket = { status: 'disconnected', message: `WebSocket connection error` }
-            resolve()
-          }
-        }
-        
-        wsTest.onclose = () => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            statuses.websocket = 'disconnected'
-            resolve()
-          }
-        }
-      })
-    } catch (err) {
-      statuses.websocket = 'disconnected'
-      debugInfo.websocket = { status: 'disconnected', message: `Error: ${err.message}` }
-    }
-    
     statuses.scoreboard = statuses.server
     debugInfo.scoreboard = debugInfo.server
     
@@ -386,21 +335,21 @@ export default function RefereeApp() {
       setIsMasterMode(true)
       setMatchId(-1) // Use -1 as a sentinel for master mode
     } else if (storedMatchId && storedPin) {
-      validatePin(storedPin, 'referee')
-        .then(result => {
-          if (result.success && result.match && String(result.match.id) === String(storedMatchId)) {
-            setMatchId(Number(storedMatchId))
-            setMatch(result.match)
+      revalidateRefereeSession(storedMatchId, storedPin)
+        .then(restored => {
+          if (restored) {
+            // Numeric LAN ids stay numbers, seed keys stay strings
+            setMatchId(/^\d+$/.test(String(restored.id)) ? Number(restored.id) : restored.id)
+            setMatch(restored)
             setPinInput(storedPin)
+            // The backend chosen before the reload is still configured
+            setServerReady(true)
           } else {
             localStorage.removeItem('refereeMatchId')
             localStorage.removeItem('refereePin')
           }
         })
-        .catch(() => {
-          localStorage.removeItem('refereeMatchId')
-          localStorage.removeItem('refereePin')
-        })
+        .catch(() => { /* unreachable now: keep the credentials for the next load */ })
     }
   }, [])
   
