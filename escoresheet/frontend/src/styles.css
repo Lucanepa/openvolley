@@ -429,16 +429,25 @@ label {
 /* Form fields: the kit's standard input (white, stone-300 hairline, stone-800
    text, rounded-lg; RESTYLE-SPEC 3.2). This replaces the dark-theme
    #0f172a fill, which left dark text on a dark slab. Sizing is unchanged. */
+/* Box metrics stay on every input exactly as before (checkbox and file-input
+   rows were laid out against them; moving them is a layout change). */
 input {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
+  font-size: calc(13px * var(--scale-factor));
+  line-height: 1.2;
+}
+
+/* The field look only on text-like fields, not on checkboxes, radios,
+   sliders, colour pickers or file pickers (RESTYLE-SPEC 2.4), matching the
+   focus rules above. :where keeps the old `input` specificity so every
+   class-level override still wins as before. */
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])) {
   background: var(--ov-card);
   border: 1px solid var(--ov-hairline-strong);
   border-radius: var(--ov-radius);
   color: var(--ov-text-body);
   font-family: inherit;
-  font-size: calc(13px * var(--scale-factor));
-  line-height: 1.2;
 }
 
 /* TimeInput24 (set start/end time, match times) still carries a dark-theme
@@ -446,7 +455,10 @@ input {
    hairline until its owner (RESTYLE-SPEC P3b) converts the inline style.
    The selector matches only TimeInput24's dark-fallback signature, never the
    Scoreboard inputs that read var(--bg-secondary) with their own borders
-   (the lineup grid paints errors red there). */
+   (the lineup grid paints errors red there).
+   TODO(P3b): delete this selector when TimeInput24's defaultInputStyle loses
+   its background and border keys; it stops matching silently once that
+   inline style string changes. */
 input[style*="var(--bg-secondary, #1f2937)"] {
   border-color: var(--ov-hairline-strong) !important;
 }
@@ -474,6 +486,13 @@ input[type="radio"] {
 .match-record input[type="checkbox"],
 .match-record input[type="radio"] {
   accent-color: var(--ov-selected);
+}
+
+/* R4 as well for focus: the scoreboard's own fields (lineup-modal positions,
+   Manual Changes scores, remarks) ring slate-900, not red-500, next to the
+   court. Its modals render inside .match-record (no portal). */
+.match-record {
+  --ring: var(--ov-selected);
 }
 
 textarea {
