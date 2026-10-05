@@ -1518,7 +1518,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         </Button>
       </div>
 
-      <div className="ov-kit" data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
+      <div data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
         {/* Team A */}
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
           {/* Row 1: Team label + Team name bar */}
@@ -1545,16 +1545,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
           {/* Row 3: Roster Button */}
-          <Button
-            variant="secondary"
-            size="xl"
-            onClick={() => setRosterModal('teamA')}
-            style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
-          >
-            {t('coinToss.showRoster')} ({teamAInfo.roster.length})
-          </Button>
+          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="secondary"
+              size="xl"
+              onClick={() => setRosterModal('teamA')}
+              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
+            >
+              {t('coinToss.showRoster')} ({teamAInfo.roster.length})
+            </Button>
+          </div>
           {/* Row 4: Signatures */}
-          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
+          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <Button
                 variant="secondary"
@@ -1627,16 +1629,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
           {/* Row 3: Roster Button */}
-          <Button
-            variant="secondary"
-            size="xl"
-            onClick={() => setRosterModal('teamB')}
-            style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
-          >
-            {t('coinToss.showRoster')} ({teamBInfo.roster.length})
-          </Button>
+          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="secondary"
+              size="xl"
+              onClick={() => setRosterModal('teamB')}
+              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
+            >
+              {t('coinToss.showRoster')} ({teamBInfo.roster.length})
+            </Button>
+          </div>
           {/* Row 3: Signatures */}
-          <div style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
+          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <Button
                 variant="secondary"
@@ -2375,7 +2379,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p className="text-sm text-stone-700" style={{ margin: '0 0 24px', fontSize: '16px', whiteSpace: 'pre-line' }}>
+            <p className="text-base text-stone-700" style={{ margin: '0 0 24px', whiteSpace: 'pre-line' }}>
               {noticeModal.message}
             </p>
             <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
