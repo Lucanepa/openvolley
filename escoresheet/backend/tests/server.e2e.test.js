@@ -25,10 +25,10 @@ import { dirname, join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import WebSocket from 'ws'
+import { createDatabase, testSchemaSql } from './helpers/pgTestDb.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(HERE, '..')
-const SCHEMA_SQL = readFileSync(join(HERE, 'fixtures', 'synthetic_schema.sql'), 'utf8')
 const SESSIONS_SQL = readFileSync(join(BACKEND_DIR, 'db', '002_app_sessions.sql'), 'utf8')
 
 const PG_TEST_URL = process.env.PG_TEST_URL || process.env.TEST_DATABASE_URL || ''
@@ -182,7 +182,12 @@ async function provisionDatabase() {
   const admin = new pg.Client({ connectionString: adminUrl })
   await admin.connect()
   const name = `ov_e2e_${process.pid}_${Date.now().toString(36)}`
-  await admin.query(`CREATE DATABASE "${name}"`)
+  try {
+    await createDatabase(admin, name, { useTemplate: !USE_DOCKER })
+  } catch (err) {
+    await admin.end().catch(() => {})
+    throw err
+  }
   cleanup.unshift(async () => {
     try { await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`) } finally { await admin.end().catch(() => {}) }
   })
@@ -191,7 +196,7 @@ async function provisionDatabase() {
   const c = new pg.Client({ connectionString: url.toString() })
   await c.connect()
   try {
-    await c.query(SCHEMA_SQL)
+    await c.query(testSchemaSql({ useTemplate: !USE_DOCKER }))
     await c.query(SESSIONS_SQL)
   } finally { await c.end() }
   return {
