@@ -20,13 +20,15 @@
 }
 
 /* Frozen scoring readouts keep the exact pre-restyle palette (RESTYLE-SPEC 4).
-   The aliases above turn the app from slate to stone. Inside the court (discs,
-   position tags I-VI, captain marks), the big rally score, the toolbar set-score
-   boxes, the TO/SUB counters and the set-end / match-end readouts the old
-   values are pinned instead, so they stay pixel-identical. This only sets
-   custom properties (and re-resolves the inherited text colour); the frozen
-   rules themselves are not edited. */
-:where(.court, .set-score-display, [data-help-id="scoreboard-set-display"],
+   The aliases above turn the app from slate to stone. In the scoring centre
+   column (.court-wrapper: big rally score, serve box, referee names, game
+   captain chips, the court with its discs, position tags I-VI and captain
+   marks, the rally controls, the per-set tables), the compact score, the
+   toolbar set-score boxes, the TO/SUB counters and the set-end / match-end
+   readouts the old values are pinned instead, so they stay pixel-identical.
+   This only sets custom properties (and re-resolves the inherited text
+   colour); the frozen rules themselves are not edited. */
+:where(.court-wrapper, .court, .set-score-display, [data-help-id="scoreboard-set-display"],
        .to-sub-counter, .set-end-readout, .match-end-score) {
   --bg: #f1f5f9;
   --panel: #ffffff;
@@ -535,10 +537,11 @@ button {
   font-size: calc(13px * var(--scale-factor));
 }
 
-/* Outside the rally controls and the court: kit radius (rounded-lg) and the
-   app's Inter instead of the browser's control font. The rally controls keep
-   their exact shape and face (frozen, muscle memory). */
-button:where(:not(.rally-controls button, .court button)) {
+/* Outside the scoring centre column: kit radius (rounded-lg) and the app's
+   Inter instead of the browser's control font. The rally controls, game
+   captain chips and anything else in .court-wrapper keep their exact shape
+   and face (frozen, muscle memory). */
+button:where(:not(.court-wrapper button)) {
   border-radius: var(--ov-radius);
   font-family: inherit;
 }
