@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import i18n from '../i18n'
-import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState } from '../utils/serverDataSync'
+import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, newerLiveState, applyNewerLiveState } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -350,9 +350,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // When the last relay push was applied: a refetch started before it is older
   const lastPushAtRef = useRef(0)
   const fetchSeqRef = useRef(0)
+  // Newest live state seen from any source (relay push, relay copy, database
+  // row), and the last relay bundle as received: a newer live state wins over
+  // an older relay copy's score (applyNewerLiveState).
+  const newestLiveStateRef = useRef(null)
+  const lastRelayResultRef = useRef(null)
+  useEffect(() => {
+    newestLiveStateRef.current = null
+    lastRelayResultRef.current = null
+  }, [matchId])
 
   // Helper function to update match data state (with debounce to reduce flickering)
-  const updateMatchDataState = useCallback((result) => {
+  const updateMatchDataState = useCallback((incoming) => {
+    let result = incoming
     if (result && result.success) {
       dataSourceRef.current = result.source || null
       if (result.source === 'live_state') {
@@ -360,6 +370,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         if (result.liveState?.updated_at && isNewerLiveState(result.liveState, lastLiveStateTsRef.current)) {
           lastLiveStateTsRef.current = result.liveState.updated_at
         }
+      } else {
+        lastRelayResultRef.current = incoming
+        newestLiveStateRef.current = newerLiveState(newestLiveStateRef.current, result.liveState)
+        result = applyNewerLiveState(result, newestLiveStateRef.current)
       }
       const sets = (result.sets || []).sort((a, b) => a.index - b.index)
       const currentSet = sets.find(s => !s.finished) || null
@@ -695,6 +709,38 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     watchDbChanges: false
   })
 
+  // No link to the scoresheet: the device is offline, or the relay socket has
+  // been down for a few seconds (a quick reconnect is not worth a warning).
+  // The dashboard then shows a warning: what it shows may be out of date.
+  const [linkDown, setLinkDown] = useState(false)
+  useEffect(() => {
+    if (isMasterMode || !matchId) {
+      setLinkDown(false)
+      return
+    }
+    let downSince = null
+    // (Database-only mode opens no relay socket)
+    const usesRelay = connectionType !== CONNECTION_TYPES.SUPABASE
+    const check = () => {
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      if (offline || (usesRelay && getWebSocketStatus(matchId) !== 'connected')) {
+        if (downSince === null) downSince = Date.now()
+      } else {
+        downSince = null
+      }
+      setLinkDown(offline || (downSince !== null && Date.now() - downSince >= 5000))
+    }
+    check()
+    const timer = setInterval(check, 2000)
+    window.addEventListener('online', check)
+    window.addEventListener('offline', check)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('online', check)
+      window.removeEventListener('offline', check)
+    }
+  }, [matchId, isMasterMode, connectionType])
+
   // Initial data fetch when connection changes or component mounts
   useEffect(() => {
     if (!isMasterMode && matchId && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
@@ -944,7 +990,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             return
           }
 
-          // Relay data: refetch the relay's bundle (points, lineups, subs, libero, sanctions, undoes, replays, ...)
+          // Relay data: show this row's score now when it is newer than the
+          // relay copy shown (that copy may lag: the scorer's sync can land
+          // after its live state), then refetch the relay's bundle (points,
+          // lineups, subs, libero, sanctions, undoes, replays, ...); an older
+          // copy read back never rolls the score back (updateMatchDataState).
+          newestLiveStateRef.current = newerLiveState(newestLiveStateRef.current, state)
+          if (lastRelayResultRef.current) updateMatchDataState(lastRelayResultRef.current)
           console.log('[Referee] 📡 Realtime change detected, refetching data...')
           fetchFreshData()
         }
@@ -2677,6 +2729,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
+      {linkDown && (
+        <div role="alert" style={{
+          position: 'fixed',
+          top: 8,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          maxWidth: 'min(560px, calc(100vw - 32px))',
+          padding: '8px 14px',
+          borderRadius: 8,
+          background: '#7f1d1d',
+          color: '#fff',
+          fontSize: 13,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+        }}>
+          {t('refereeDashboard.linkDown', 'Offline: no connection to the scoresheet. Score and server may be out of date.')}
+        </div>
+      )}
       {/* Narrow screen blocking overlay */}
       {(viewportWidth < 357 || viewportHeight < 650) && (
         <div style={{
