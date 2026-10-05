@@ -16,6 +16,8 @@ import { db } from '../../db/db'
 import { useRelayTablets } from '../../hooks/useRealtimeConnection'
 import { relayMatchKey } from '../../utils/serverDataSync'
 import { SignalIcon, GlobeIcon } from '../icons'
+import { Loader2, QrCode } from 'lucide-react'
+import { cn, FOCUS_RING, Switch } from '../../ui'
 
 export default function ConnectionSetupModal({
   open,
@@ -115,50 +117,45 @@ export default function ConnectionSetupModal({
   const devicesOnMatch = relayTablets.connections?.dashboardClients ?? relayTablets.watchers
   const watchingMatch = relayTablets.connections?.matchSubscriptions?.[String(relayKey)] ?? relayTablets.watchers
 
+  // Kit recipes: selectable option card (chosen = slate ring), small outline button.
+  const optionCls = (on) => cn(
+    'flex-1 max-w-[220px] rounded-xl border px-4 py-4 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+    on ? 'border-slate-900 bg-white ring-1 ring-slate-900' : 'border-stone-200 bg-white hover:bg-stone-50',
+    FOCUS_RING
+  )
+  const smallBtn = (done) => cn(
+    'inline-flex h-9 items-center justify-center rounded-lg border px-3 text-xs font-medium transition-colors',
+    done ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-50',
+    FOCUS_RING
+  )
+
   const renderModeSelector = () => (
-    <div style={{ marginBottom: 24 }}>
-      <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 16, textAlign: 'center' }}>
+    <div className="mb-5">
+      <p className="mb-3 text-center text-sm text-stone-500">
         {t('connection.chooseConnection')}
       </p>
-      <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+      <div className="flex justify-center gap-3">
         <button
+          type="button"
+          aria-pressed={connectionMode === 'lan'}
           onClick={() => setConnectionMode('lan')}
-          style={{
-            flex: 1,
-            maxWidth: 200,
-            padding: '20px 16px',
-            background: connectionMode === 'lan' ? 'var(--accent)' : 'var(--panel)',
-            color: connectionMode === 'lan' ? '#000' : 'var(--text)',
-            border: connectionMode === 'lan' ? 'none' : '1px solid var(--border)',
-            borderRadius: 12,
-            cursor: 'pointer',
-            textAlign: 'center'
-          }}
+          className={optionCls(connectionMode === 'lan')}
         >
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}><SignalIcon size={32} /></div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>{t('connectionSetup.lan', 'LAN')}</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>{t('connection.sameWifi')}</div>
+          <div className="mb-2 flex justify-center text-stone-500"><SignalIcon size={28} /></div>
+          <div className="text-sm font-semibold text-stone-900">{t('connectionSetup.lan', 'LAN')}</div>
+          <div className="mt-0.5 text-xs text-stone-500">{t('connection.sameWifi')}</div>
         </button>
 
         <button
+          type="button"
+          aria-pressed={connectionMode === 'internet'}
           onClick={() => setConnectionMode('internet')}
-          style={{
-            flex: 1,
-            maxWidth: 200,
-            padding: '20px 16px',
-            background: connectionMode === 'internet' ? 'var(--accent)' : 'var(--panel)',
-            color: connectionMode === 'internet' ? '#000' : 'var(--text)',
-            border: connectionMode === 'internet' ? 'none' : '1px solid var(--border)',
-            borderRadius: 12,
-            cursor: 'pointer',
-            textAlign: 'center',
-            opacity: cloudBackendUrl ? 1 : 0.5
-          }}
+          className={optionCls(connectionMode === 'internet')}
           disabled={!cloudBackendUrl}
         >
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}><GlobeIcon size={32} /></div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>{t('connectionSetup.internet', 'Internet')}</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
+          <div className="mb-2 flex justify-center text-stone-500"><GlobeIcon size={28} /></div>
+          <div className="text-sm font-semibold text-stone-900">{t('connectionSetup.internet', 'Internet')}</div>
+          <div className="mt-0.5 text-xs text-stone-500">
             {cloudBackendUrl ? t('connection.cloudRelay') : t('connection.notConfigured')}
           </div>
         </button>
@@ -166,216 +163,144 @@ export default function ConnectionSetupModal({
     </div>
   )
 
-  // Reusable connection row component for each role
+  // Reusable connection row component for each role. `color` is the role's
+  // identity colour; it stays on the 2px rail only.
   const renderConnectionRow = (role, label, pin, color, { enabled, dbField, syncField, pinSyncField } = {}) => {
     const url = buildConnectionUrl(role, seedKey)
     const hasToggle = dbField != null
 
     return (
-      <div key={role} style={{
-        background: 'var(--panel-2)',
-        borderRadius: 8,
-        padding: 16,
-        marginBottom: 12,
-        borderLeft: `3px solid ${enabled === false ? '#6b7280' : color}`,
-        opacity: enabled === false ? 0.6 : 1,
-        transition: 'opacity 0.2s, border-color 0.2s'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: enabled === false ? 0 : 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {hasToggle && (
-              <div
-                role="switch"
-                aria-checked={!!enabled}
-                aria-label={label}
-                tabIndex={0}
-                onClick={() => handleToggleConnection(dbField, syncField, pinSyncField, !enabled)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleConnection(dbField, syncField, pinSyncField, !enabled) } }}
-                style={{
-                  position: 'relative',
-                  width: 40,
-                  height: 22,
-                  background: enabled ? '#22c55e' : '#6b7280',
-                  borderRadius: 11,
-                  cursor: 'pointer',
-                  transition: 'background 0.2s',
-                  flexShrink: 0
-                }}
+      <div key={role} className={cn('flex items-stretch gap-3 py-3 transition-opacity', enabled === false && 'opacity-60')}>
+        <span className="w-[2px] shrink-0 self-stretch rounded-full" style={{ background: enabled === false ? '#e7e5e4' : color }} />
+        <div className="min-w-0 flex-1">
+          <div className={cn('flex items-center justify-between gap-3', enabled !== false && 'mb-2')}>
+            <div className="flex items-center gap-2.5">
+              {hasToggle && (
+                <Switch
+                  checked={!!enabled}
+                  aria-label={label}
+                  onCheckedChange={() => handleToggleConnection(dbField, syncField, pinSyncField, !enabled)}
+                />
+              )}
+              <h4 className="text-sm font-semibold text-stone-900">{label}</h4>
+            </div>
+            {enabled !== false && (
+              <button
+                type="button"
+                onClick={() => setShowQRModal(role)}
+                className={cn(smallBtn(false), 'h-11 px-3.5')}
               >
-                <div style={{
-                  position: 'absolute',
-                  top: 2,
-                  left: enabled ? 20 : 2,
-                  width: 18,
-                  height: 18,
-                  background: '#fff',
-                  borderRadius: '50%',
-                  transition: 'left 0.2s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                }} />
-              </div>
+                <QrCode size={14} aria-hidden="true" className="mr-1.5 text-stone-400" />
+                {t('connection.showQR', 'Show QR')}
+              </button>
             )}
-            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{label}</h4>
           </div>
+
           {enabled !== false && (
-            <button
-              onClick={() => setShowQRModal(role)}
-              style={{
-                padding: '6px 14px',
-                fontSize: 12,
-                background: `${color}20`,
-                border: `1px solid ${color}40`,
-                borderRadius: 6,
-                color,
-                cursor: 'pointer',
-                fontWeight: 600
-              }}
-            >
-              {t('connection.showQR', 'Show QR')}
-            </button>
-          )}
-        </div>
-
-        {enabled !== false && (
-          <>
-            {/* PIN display */}
-            {pin && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>PIN:</span>
-                <code style={{
-                  background: `${color}15`,
-                  padding: '4px 10px',
-                  borderRadius: 4,
-                  color,
-                  fontWeight: 600,
-                  fontSize: 16,
-                  letterSpacing: 2
-                }}>
-                  {pin}
-                </code>
-                <button
-                  onClick={() => handleCopy(pin, `${role}-pin`)}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: 11,
-                    background: copyFeedback === `${role}-pin` ? '#22c55e' : 'var(--panel-2)',
-                    border: 'none',
-                    borderRadius: 4,
-                    color: 'var(--text)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {copyFeedback === `${role}-pin` ? t('options.copied') : t('options.copy')}
-                </button>
-              </div>
-            )}
-
-            {/* Inline small QR code + URL */}
-            {url && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ background: '#fff', borderRadius: 4, padding: 4, flexShrink: 0 }}>
-                  <QRCodeSVG value={url} size={60} level="L" />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <code style={{
-                    display: 'block',
-                    fontSize: 11,
-                    color: 'var(--muted)',
-                    wordBreak: 'break-all',
-                    lineHeight: 1.4
-                  }}>
-                    {url}
+            <>
+              {/* PIN display */}
+              {pin && (
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">PIN:</span>
+                  <code className="rounded border border-stone-200 bg-stone-50 px-2 py-0.5 font-mono text-base font-semibold tracking-[0.3em] text-stone-900">
+                    {pin}
                   </code>
                   <button
-                    onClick={() => handleCopy(url, `${role}-url`)}
-                    style={{
-                      marginTop: 4,
-                      padding: '2px 8px',
-                      fontSize: 11,
-                      background: copyFeedback === `${role}-url` ? '#22c55e' : 'var(--panel-2)',
-                      border: 'none',
-                      borderRadius: 4,
-                      color: 'var(--text)',
-                      cursor: 'pointer'
-                    }}
+                    type="button"
+                    onClick={() => handleCopy(pin, `${role}-pin`)}
+                    className={smallBtn(copyFeedback === `${role}-pin`)}
                   >
-                    {copyFeedback === `${role}-url` ? t('options.copied') : t('options.copyUrl', 'Copy URL')}
+                    {copyFeedback === `${role}-pin` ? t('options.copied') : t('options.copy')}
                   </button>
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              )}
+
+              {/* Inline small QR code + URL */}
+              {url && (
+                <div className="flex items-center gap-3">
+                  <div className="shrink-0 rounded-md border border-stone-200 bg-white p-1">
+                    <QRCodeSVG value={url} size={60} level="L" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <code className="block break-all font-mono text-[11px] leading-snug text-stone-500">
+                      {url}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(url, `${role}-url`)}
+                      className={cn(smallBtn(copyFeedback === `${role}-url`), 'mt-1.5')}
+                    >
+                      {copyFeedback === `${role}-url` ? t('options.copied') : t('options.copyUrl', 'Copy URL')}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     )
   }
 
+  const statusDot = (ok) => (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-sans text-[11px] font-medium', ok ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800')}>
+      <span className={cn('h-2 w-2 rounded-full', ok ? 'bg-emerald-500' : 'bg-red-500')} />
+      {ok === 'configured' ? t('connection.configured') : ok ? t('options.running') : t('options.notRunning')}
+    </span>
+  )
+
   const renderNetworkInfo = () => (
-    <div style={{
-      background: 'var(--panel-2)',
-      borderRadius: 8,
-      padding: 16,
-      marginBottom: 20
-    }}>
-      <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 600 }}>
+    <div className="mb-5 rounded-xl border border-stone-200/70 bg-stone-50/60 p-4">
+      <h4 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-stone-500">
         {connectionMode === 'lan'
           ? t('connection.localNetworkAddress')
           : t('connection.cloudBackend')}
       </h4>
       {connectionMode === 'lan' ? (
         loading ? (
-          <p style={{ color: 'var(--muted)' }}>{t('connection.detectingNetwork')}</p>
+          <p className="flex items-center gap-2 text-sm text-stone-500">
+            <Loader2 size={14} className="animate-spin text-stone-400" aria-hidden="true" />
+            {t('connection.detectingNetwork')}
+          </p>
         ) : localIP ? (
-          <div style={{ fontFamily: 'monospace', fontSize: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span>{t('connection.ipAddress')}:</span>
-              <span style={{ color: 'var(--accent)' }}>{localIP}:{port}</span>
+          <div className="space-y-2 font-mono text-sm text-stone-700">
+            <div className="flex justify-between gap-3">
+              <span className="font-sans text-stone-500">{t('connection.ipAddress')}:</span>
+              <span className="text-stone-900">{localIP}:{port}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span>WebSocket:</span>
-              <span style={{ color: 'var(--accent)' }}>{wsUrl}</span>
+            <div className="flex justify-between gap-3">
+              <span className="font-sans text-stone-500">WebSocket:</span>
+              <span className="break-all text-stone-900">{wsUrl}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{t('connection.status')}:</span>
-              <span style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                color: serverStatus.running ? '#22c55e' : '#ef4444'
-              }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: serverStatus.running ? '#22c55e' : '#ef4444'
-                }} />
-                {serverStatus.running ? t('options.running') : t('options.notRunning')}
-              </span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-sans text-stone-500">{t('connection.status')}:</span>
+              {statusDot(!!serverStatus.running)}
             </div>
           </div>
         ) : (
-          <p style={{ color: '#ef4444' }}>{t('connection.couldNotDetectIP')}</p>
+          <p role="alert" className="text-sm font-medium text-red-700">{t('connection.couldNotDetectIP')}</p>
         )
       ) : (
         cloudBackendUrl ? (
-          <div style={{ fontFamily: 'monospace', fontSize: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-              <span>URL:</span>
-              <span style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{cloudBackendUrl}</span>
+          <div className="space-y-2 font-mono text-sm text-stone-700">
+            <div className="flex flex-wrap justify-between gap-2">
+              <span className="font-sans text-stone-500">URL:</span>
+              <span className="break-all text-stone-900">{cloudBackendUrl}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{t('connection.status')}:</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
-                {t('connection.configured')}
-              </span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-sans text-stone-500">{t('connection.status')}:</span>
+              {statusDot('configured')}
             </div>
           </div>
         ) : (
-          <p style={{ color: '#ef4444' }}>{t('connection.noCloudBackend')}</p>
+          <p role="alert" className="text-sm font-medium text-red-700">{t('connection.noCloudBackend')}</p>
         )
       )}
     </div>
   )
 
   const renderConnections = () => (
-    <div>
+    <div className="divide-y divide-stone-100">
       {renderConnectionRow('referee', t('connection.role.referee', 'Referee Dashboard'), refereePin, '#3b82f6', {
         enabled: match?.refereeConnectionEnabled === true,
         dbField: 'refereeConnectionEnabled',
@@ -399,28 +324,17 @@ export default function ConnectionSetupModal({
   )
 
   const renderConnectedDevices = () => (
-    <div style={{
-      background: 'var(--panel-2)',
-      borderRadius: 8,
-      padding: 16,
-      marginTop: 8
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        padding: 12, background: 'var(--panel-2)', borderRadius: 8
-      }}>
-        <span style={{
-          fontSize: 28, fontWeight: 700,
-          color: devicesOnMatch > 0 ? '#22c55e' : 'var(--muted)'
-        }}>
+    <div className="mt-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-4">
+      <div className="flex items-center justify-center gap-2">
+        <span className={cn('text-2xl font-bold tabular-nums', devicesOnMatch > 0 ? 'text-emerald-600' : 'text-stone-400')}>
           {devicesOnMatch}
         </span>
-        <span style={{ fontSize: 14, color: 'var(--muted)' }}>
+        <span className="text-sm text-stone-600">
           {devicesOnMatch === 1 ? t('connection.deviceConnected') : t('connection.devicesConnected')}
         </span>
       </div>
       {relayKey && relayTablets.connections && (
-        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
+        <div className="mt-2 text-center text-xs text-stone-500">
           {t('connection.watchingThisMatch', { count: watchingMatch || 0 })}
         </div>
       )}
@@ -435,7 +349,7 @@ export default function ConnectionSetupModal({
         onClose={onClose}
         width={520}
       >
-        <div style={{ padding: '8px 0' }}>
+        <div className="ov-kit py-2">
           {renderModeSelector()}
           {renderNetworkInfo()}
           {renderConnections()}
