@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, Maximize, Menu, X } from 'lucide-react'
+import { ChevronDown, Maximize, Menu, X } from 'lucide-react'
 import i18n from '../i18n'
 import { ClipboardIcon, TrashIcon } from './icons'
 import { clearCachesAndReload } from '../hooks/useServiceWorker'
 import { cn } from '../ui/cn.js'
 import { toast } from '../ui/uiStore.js'
-import { SwitchTrack } from '../ui/Switch.jsx'
 import { SegmentedControl } from '../ui/SegmentedControl.jsx'
 import {
   HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, HEADER_TITLE, MENU_PANEL, MENU_SECTION, MENU_ROW, MENU_SUBROW,
-  MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, itemTone, toastLang
+  MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
+import HeaderMenuItem from './HeaderMenuItem'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -119,22 +119,23 @@ export default function SimpleHeader({
 
   return (
     <div
-      className={cn(HEADER_BAR, 'flex items-center justify-between')}
+      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between')}
       style={{ height: '40px', minHeight: '40px', maxHeight: '40px', padding: '0 12px' }}
     >
       {/* LEFT: Title/Version or Toggle */}
       <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
         {/* Segmented Toggle (like LOCAL/REMOTE) */}
         {toggleOptions && toggleOptions.length > 0 ? (
-          <div className="ov-kit">
-            <SegmentedControl
-              variant="pill"
-              ariaLabel={t('refereeDashboard.view', 'View')}
-              options={toggleOptions.map((option, idx) => ({ value: String(idx), label: option.label }))}
-              value={activeToggle >= 0 ? String(activeToggle) : ''}
-              onChange={(v) => toggleOptions[Number(v)]?.onClick?.()}
-            />
-          </div>
+          // The courtside referee's view switch: h-9 segments from the tablet
+          // breakpoint up (RESTYLE-SPEC 3.6); no frame padding there so it fits the 40 px bar.
+          <SegmentedControl
+            variant="pill"
+            ariaLabel={t('refereeDashboard.view', 'View')}
+            options={toggleOptions.map((option, idx) => ({ value: String(idx), label: option.label }))}
+            value={activeToggle >= 0 ? String(activeToggle) : ''}
+            onChange={(v) => toggleOptions[Number(v)]?.onClick?.()}
+            className="shrink-0 sm:p-0 sm:[&_button]:h-9 sm:[&_button]:px-3"
+          />
         ) : title ? (
           <span className={HEADER_TITLE}>
             {title}
@@ -187,52 +188,7 @@ export default function SimpleHeader({
                   )
                 }
 
-                const tone = itemTone(item.color)
-                const danger = tone.className === 'text-red-600'
-
-                return (
-                  <button
-                    type="button"
-                    key={index}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (!item.disabled && item.onClick) {
-                        item.onClick()
-                      }
-                      if (!item.keepOpen) {
-                        setMenuOpen(false)
-                      }
-                    }}
-                    disabled={item.disabled}
-                    aria-pressed={item.active !== undefined ? !!item.active : undefined}
-                    className={cn(
-                      MENU_ROW,
-                      danger ? MENU_ROW_DANGER : tone.className,
-                      item.active && 'bg-stone-100 font-semibold'
-                    )}
-                    style={tone.style}
-                  >
-                    {item.icon && <span className={cn(MENU_ICON, tone.className || 'text-stone-400')}>{item.icon}</span>}
-                    <span className="flex-1">{item.label}</span>
-
-                    {/* Badge */}
-                    {item.badge && (
-                      <span className={MENU_COUNT}>
-                        {item.badge}
-                      </span>
-                    )}
-
-                    {/* Toggle switch: on/off that applies immediately (kit Switch look) */}
-                    {item.toggle !== undefined && (
-                      <SwitchTrack checked={!!item.toggle} className={item.toggle ? 'bg-emerald-500' : undefined} />
-                    )}
-
-                    {/* Submenu arrow */}
-                    {item.submenu && (
-                      <ChevronRight size={14} aria-hidden="true" className="text-stone-400" />
-                    )}
-                  </button>
-                )
+                return <HeaderMenuItem key={index} item={item} onClose={() => setMenuOpen(false)} />
               })}
 
               {/* Language selector */}
