@@ -3059,8 +3059,10 @@ export default function App() {
               const trigger = new Date().toISOString()
               setScorerAttentionTrigger(trigger)
               try {
+                // updated_at too: the realtime hub orders match_live_state by
+                // updated_at and drops a row older than the last relayed one.
                 const { error } = await apiFrom('match_live_state')
-                  .update({ scorer_attention_trigger: trigger })
+                  .update({ scorer_attention_trigger: trigger, updated_at: trigger })
                   .eq('match_id', supabaseMatchId)
                 if (error) throw error
                 if (typeof navigator !== 'undefined' && navigator.vibrate) {
