@@ -7,7 +7,11 @@ vi.mock('../../lib/apiClient', () => ({
     const b = {
       select(cols) { call.columns = cols; return b },
       in(c, v) { call.filters.push(['in', c, v]); return b },
-      order() { return b },
+      eq(c, v) { call.filters.push(['eq', c, v]); return b },
+      gte(c, v) { call.filters.push(['gte', c, v]); return b },
+      lte(c, v) { call.filters.push(['lte', c, v]); return b },
+      order(c, o) { call.order = [c, o]; return b },
+      limit(n) { call.limit = n; return b },
       then(resolve) {
         api.calls.push(call)
         return Promise.resolve({ data: api.rows, error: null }).then(resolve)
@@ -40,6 +44,16 @@ describe('roster upload match list', () => {
     expect(q.filters).toContainEqual(['in', 'status', ['setup']])
     // never the PINs, nor the pending rosters/signatures in connections
     expect(q.columns).not.toMatch(/connection|pin/)
+  })
+
+  it('lists only a window around now (a day back, two weeks ahead), soonest first, with a limit', async () => {
+    const now = Date.parse('2026-10-05T12:00:00Z')
+    await listRosterUploadMatches({ now })
+    const q = api.calls[0]
+    expect(q.filters).toContainEqual(['gte', 'scheduled_at', '2026-10-04T12:00:00.000Z'])
+    expect(q.filters).toContainEqual(['lte', 'scheduled_at', '2026-10-19T12:00:00.000Z'])
+    expect(q.order).toEqual(['scheduled_at', { ascending: true }])
+    expect(q.limit).toBe(200)
   })
 
   it('a match whose coin toss is done (live), final or a test match is closed for upload', () => {
