@@ -256,6 +256,28 @@ describe('self-hosted backend contract', () => {
     expect(sentHeaders(1)['X-OV-Proto']).toBe('2')
   })
 
+  it('apiAuth.updateProfile writes through /api/db (the auth profile route is read-only)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user_id: 'u1', first_name: 'New' }, error: null }))
+    const r = await apiAuth.updateProfile({ first_name: 'New' })
+    const [url, init] = globalThis.fetch.mock.calls[0]
+    expect(url).toBe('http://backend.test/api/db')
+    expect(init.headers.Authorization).toBe('Bearer tok')
+    expect(JSON.parse(init.body)).toMatchObject({ table: 'profiles', action: 'update', params: { data: { first_name: 'New' }, returning: '*', single: true } })
+    expect(r.data).toEqual({ user_id: 'u1', first_name: 'New' })
+  })
+
+  it('exports the token event names the sync queue listens to', async () => {
+    const mod = await import('../apiClient')
+    expect(mod.AUTH_TOKEN_STORAGE_KEY).toBe('api_auth_token')
+    const seen = []
+    const h = (e) => seen.push(e.detail)
+    window.addEventListener(mod.AUTH_TOKEN_CHANGE_EVENT, h)
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { session: { access_token: 'n', user: { id: 'u2' } }, user: { id: 'u2' } }, error: null }))
+    await apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    window.removeEventListener(mod.AUTH_TOKEN_CHANGE_EVENT, h)
+    expect(seen).toEqual([{ access_token: 'n', user: { id: 'u2' } }])
+  })
+
   it('apiMatchRestore posts the whole match to /api/match/restore with the session', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'uuid', counts: { sets: 1, events: 2, liveState: 0 } }, error: null }))
     const r = await apiMatchRestore({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}] })

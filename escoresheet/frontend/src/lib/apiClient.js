@@ -592,8 +592,10 @@ export const apiAuth = {
     return authRequest('profile', { access_token: accessToken })
   },
 
-  async updateProfile(updates, token) {
-    const accessToken = token || getStoredToken()?.access_token
-    return authRequest('profile', { access_token: accessToken, updates })
+  // /api/auth/profile is read-only (it ignores `updates` and answers 200), so a
+  // write sent there looked saved and was not. Profile writes go through
+  // /api/db, which scopes the row to the signed-in user and strips roles.
+  async updateProfile(updates) {
+    return apiFrom('profiles').update(updates).select().single()
   }
 }
