@@ -48,10 +48,34 @@ export default function StartupConnectivityModal({
     connectionStatuses[key] !== 'unknown' && connectionStatuses[key] !== 'connecting'
   )
   const hasErrors = coreChecked && !primaryOk
+  // Scoring needs only the local database: once the checks are done it can go
+  // on, synced or not (the queue keeps retrying, the header shows 'Offline')
+  const canContinue = primaryOk || (hasErrors && dbOk)
 
-  // Countdown + auto-dismiss once primary services are OK
+  // Reloaded without network: nothing to wait for, resume silently. The header's
+  // connection indicator shows 'Offline'; offline mode is NOT switched on (that
+  // would persist and hide this check and the sign-in banner on later loads).
+  const [browserOffline, setBrowserOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
   useEffect(() => {
-    if (!open || !primaryOk || hasAutoDismissed.current) return
+    if (typeof window === 'undefined') return undefined
+    const update = () => setBrowserOffline(navigator.onLine === false)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
+  useEffect(() => {
+    if (open && browserOffline && !hasAutoDismissed.current) {
+      hasAutoDismissed.current = true
+      onDismiss?.()
+    }
+  }, [open, browserOffline, onDismiss])
+
+  // Countdown + auto-dismiss once scoring can go on
+  useEffect(() => {
+    if (!open || !canContinue || hasAutoDismissed.current) return
 
     setCountdown(AUTO_DISMISS_SECONDS)
 
@@ -70,9 +94,9 @@ export default function StartupConnectivityModal({
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [open, primaryOk, onDismiss])
+  }, [open, canContinue, onDismiss])
 
-  if (!open) return null
+  if (!open || browserOffline) return null
 
   // Show DB + cloud always, show fallback services only when connected
   const visibleKeys = [
@@ -241,8 +265,8 @@ export default function StartupConnectivityModal({
           gap: 10,
           alignItems: 'center'
         }}>
-          {primaryOk ? (
-            /* Dismiss button with countdown when all OK */
+          {canContinue && (
+            /* Dismiss button with countdown: synced, or checks done and scoring works locally */
             <button
               onClick={onDismiss}
               style={{
@@ -264,7 +288,8 @@ export default function StartupConnectivityModal({
                 ({countdown}s)
               </span>
             </button>
-          ) : (
+          )}
+          {!primaryOk && (
             /* Go Offline - when primary checks fail or still connecting */
             <button
               onClick={onGoOffline}
