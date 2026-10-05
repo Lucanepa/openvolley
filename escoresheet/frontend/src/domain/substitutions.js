@@ -56,6 +56,83 @@ export function validateManualSubstitution(events, teamKey, setIndex, playerOut,
 }
 
 /**
+ * Plan the event changes that remove ONE substitution from the record (manual
+ * correction). The live engine stores the substitution's lineup as a sub-event
+ * of it (seq N.x with fromSubstitution), so that is the lineup to delete — not
+ * "the team's latest lineup", which may belong to a later rotation, substitution
+ * or libero replacement. Every later lineup / libero event of that team in the
+ * set is then corrected by player NUMBER (the substitute is replaced by the
+ * player he came on for, wherever rotations have moved him), not by the
+ * position recorded at substitution time.
+ *
+ * Refused when a later substitution of that team in the set involves either
+ * player (e.g. the return substitution): removing only the first would leave
+ * the record inconsistent; the later one has to be deleted first.
+ *
+ * @param {Array} events all events of the match
+ * @param {object} subEvent the substitution event to delete
+ * @returns {{blocked: true, reason: string} | {blocked: false, deleteIds: Array, updates: Array<{id:any, payload:object}>}}
+ */
+export function planSubstitutionDeletion(events, subEvent) {
+  const team = subEvent?.payload?.team
+  const setIndex = subEvent?.setIndex ?? 1
+  const seq = subEvent?.seq || 0
+  const baseSeq = Math.floor(seq)
+  const playerIn = String(subEvent?.payload?.playerIn)
+  const playerOut = subEvent?.payload?.playerOut
+
+  const later = (events || []).filter(e =>
+    e.id !== subEvent.id &&
+    e.payload?.team === team &&
+    (e.setIndex ?? 1) === setIndex &&
+    (e.seq || 0) > seq
+  )
+
+  const involved = (n) => n !== undefined && n !== null && (String(n) === playerIn || String(n) === String(playerOut))
+  const conflicting = later.find(e =>
+    e.type === 'substitution' && (involved(e.payload?.playerIn) || involved(e.payload?.playerOut))
+  )
+  if (conflicting) {
+    return {
+      blocked: true,
+      reason: `#${playerOut} / #${playerIn} take part in a later substitution (#${conflicting.payload?.playerOut} -> #${conflicting.payload?.playerIn}). Delete that one first.`
+    }
+  }
+
+  // Keep the stored value's type (numbers vs strings) when swapping numbers back.
+  const restore = (value) => (typeof value === 'number' ? Number(playerOut) : String(playerOut))
+  const deleteIds = [subEvent.id]
+  const updates = []
+
+  for (const e of later) {
+    if (e.type === 'lineup') {
+      if (Math.floor(e.seq || 0) === baseSeq && e.payload?.fromSubstitution) {
+        deleteIds.push(e.id) // the lineup this substitution created
+        continue
+      }
+      let changed = false
+      const lineup = { ...(e.payload?.lineup || {}) }
+      for (const pos of Object.keys(lineup)) {
+        if (String(lineup[pos]) === playerIn) { lineup[pos] = restore(lineup[pos]); changed = true }
+      }
+      const payload = { ...e.payload, lineup }
+      const ls = e.payload?.liberoSubstitution
+      if (ls && String(ls.playerNumber) === playerIn) {
+        payload.liberoSubstitution = { ...ls, playerNumber: restore(ls.playerNumber) }
+        changed = true
+      }
+      if (changed) updates.push({ id: e.id, payload })
+    } else if (e.type === 'libero_entry' && String(e.payload?.playerOut) === playerIn) {
+      updates.push({ id: e.id, payload: { ...e.payload, playerOut: restore(e.payload.playerOut) } })
+    } else if (e.type === 'libero_exit' && String(e.payload?.playerIn) === playerIn) {
+      updates.push({ id: e.id, payload: { ...e.payload, playerIn: restore(e.payload.playerIn) } })
+    }
+  }
+
+  return { blocked: false, deleteIds, updates }
+}
+
+/**
  * Validate a manually added timeout: max 2 regular timeouts per team per set
  * (FIVB 15.4.1), the same limit the live Scoreboard enforces.
  * @returns {{legal: boolean, reason?: string}}

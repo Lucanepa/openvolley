@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateManualSubstitution, getSetSubstitutions, validateManualTimeout } from '../substitutions'
+import { validateManualSubstitution, getSetSubstitutions, validateManualTimeout, planSubstitutionDeletion } from '../substitutions'
 
 const sub = (team, setIndex, playerOut, playerIn, seq) => ({
   type: 'substitution', setIndex, seq, payload: { team, playerOut, playerIn },
@@ -69,5 +69,60 @@ describe('validateManualTimeout (FIVB 15.4.1)', () => {
     const events = [to('home', 1), to('home', 1), to('away', 1), to('home', 2)]
     expect(validateManualTimeout(events, 'away', 1).legal).toBe(true)
     expect(validateManualTimeout(events, 'home', 2).legal).toBe(true)
+  })
+})
+
+describe('planSubstitutionDeletion', () => {
+  const L = (id, seq, lineup, extra = {}) => ({ id, type: 'lineup', setIndex: 1, seq, payload: { team: 'home', lineup, ...extra } })
+  const start = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
+  const subEv = { id: 's1', type: 'substitution', setIndex: 1, seq: 10, payload: { team: 'home', position: 'III', playerOut: 3, playerIn: 13 } }
+  const subLineup = L('l10', 10.1, { ...start, III: '13' }, { fromSubstitution: true })
+
+  it('deletes the substitution and its own lineup sub-event, not the latest lineup', () => {
+    // a later rotation lineup (seq 12.1) must be corrected, not deleted
+    const rotation = L('l12', 12.1, { I: '2', II: '13', III: '4', IV: '5', V: '6', VI: '1' })
+    const plan = planSubstitutionDeletion([L('l0', 1, start), subEv, subLineup, rotation], subEv)
+    expect(plan.blocked).toBe(false)
+    expect(plan.deleteIds).toEqual(['s1', 'l10'])
+    expect(plan.updates).toEqual([{ id: 'l12', payload: { team: 'home', lineup: { I: '2', II: '3', III: '4', IV: '5', V: '6', VI: '1' } } }])
+  })
+
+  it('maps the player by number wherever he has rotated to', () => {
+    const later = L('l20', 20.1, { I: '13', II: '4', III: '5', IV: '6', V: '1', VI: '2' })
+    const plan = planSubstitutionDeletion([subEv, subLineup, later], subEv)
+    expect(plan.updates[0].payload.lineup.I).toBe('3')
+  })
+
+  it('does not touch earlier lineups or the other team', () => {
+    const other = { ...L('a1', 11.1, { I: '13' }), payload: { team: 'away', lineup: { I: '13' } } }
+    const plan = planSubstitutionDeletion([L('l0', 1, start), subEv, subLineup, other], subEv)
+    expect(plan.updates).toEqual([])
+    expect(plan.deleteIds).toEqual(['s1', 'l10'])
+  })
+
+  it('corrects libero records that reference the substitute', () => {
+    const liberoLineup = L('l15', 15.1, { ...start, III: '13', I: '9' }, { liberoSubstitution: { position: 'I', liberoNumber: 9, playerNumber: 13 } })
+    const entry = { id: 'e15', type: 'libero_entry', setIndex: 1, seq: 15, payload: { team: 'home', playerOut: 13, liberoIn: 9 } }
+    const exit = { id: 'x16', type: 'libero_exit', setIndex: 1, seq: 16, payload: { team: 'home', playerIn: '13', liberoOut: 9 } }
+    const plan = planSubstitutionDeletion([subEv, subLineup, liberoLineup, entry, exit], subEv)
+    const byId = Object.fromEntries(plan.updates.map(u => [u.id, u.payload]))
+    expect(byId.l15.liberoSubstitution.playerNumber).toBe(3)
+    expect(byId.l15.lineup.III).toBe('3')
+    expect(byId.e15.playerOut).toBe(3)
+    expect(byId.x16.playerIn).toBe('3')
+  })
+
+  it('refuses when a later substitution involves either player (return substitution)', () => {
+    const back = { id: 's2', type: 'substitution', setIndex: 1, seq: 30, payload: { team: 'home', position: 'IV', playerOut: 13, playerIn: 3 } }
+    const plan = planSubstitutionDeletion([subEv, subLineup, back], subEv)
+    expect(plan.blocked).toBe(true)
+    expect(plan.reason).toMatch(/later substitution/)
+  })
+
+  it('works for legacy data without the lineup sub-event', () => {
+    const later = L('l20', 20, { ...start, III: '13' })
+    const plan = planSubstitutionDeletion([subEv, later], subEv)
+    expect(plan.deleteIds).toEqual(['s1'])
+    expect(plan.updates[0].payload.lineup.III).toBe('3')
   })
 })
