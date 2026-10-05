@@ -4,6 +4,102 @@ import { processJob, errorBackoffMs, DROP_JOB } from './useSyncQueue'
 
 const TIMED_OUT = 'timed_out'
 
+// Store the outcome of a direct processJob call on its sync_queue row and map it
+// to the executeAndWait result.
+async function settleJob(job, jobId, result) {
+  if (result === true) {
+    await db.sync_queue.update(jobId, { status: 'sent' })
+    console.log(`[SequentialSync] ${job.resource} ${job.action} successful`)
+    return { success: true, jobId }
+  }
+
+  if (result === DROP_JOB) {
+    await db.sync_queue.update(jobId, { status: 'dropped' })
+    return { success: false, error: 'Job cannot be attributed to a match', jobId }
+  }
+
+  if (result === false) {
+    // Permanent failure (details logged by processJob): the background queue
+    // retries it with backoff
+    console.error(`[SequentialSync] Supabase sync FAILED for ${job.resource}:`, { action: job.action, payload: job.payload })
+    await db.sync_queue.update(jobId, { status: 'error', attempts: 1, next_attempt_at: Date.now() + errorBackoffMs(1) })
+    return { success: false, error: `${job.resource} ${job.action} failed`, jobId }
+  }
+
+  // Retry later (match not in the cloud yet, 5xx), rate limited or unreachable:
+  // the data is saved locally and the background queue sends it.
+  console.warn(`[SequentialSync] ${job.resource} ${job.action} deferred to the sync queue:`, result)
+  await db.sync_queue.update(jobId, { status: 'queued' })
+  return { success: false, offline: true, jobId }
+}
+
+async function settleException(job, jobId, error) {
+  console.error(`[SequentialSync] Supabase sync EXCEPTION for ${job.resource}:`, {
+    action: job.action,
+    error: error?.message,
+    stack: error?.stack,
+    payload: job.payload
+  })
+  await db.sync_queue.update(jobId, { status: 'queued', error_message: error?.message })
+  return { success: false, error: error?.message, jobId }
+}
+
+/**
+ * Send one sync job now and wait for it (bounded by `timeout`).
+ * Returns: { success: boolean, offline?: boolean, error?: string, jobId: number }
+ *
+ * The job is stored as 'sending' so the background queue (useSyncQueue) neither
+ * picks it up nor lets newer jobs of the same entity overtake it while this
+ * direct call is in flight. On timeout the caller gets { offline: true } at
+ * once, but the row stays 'sending' until the original call settles: putting it
+ * back to 'queued' earlier would let the background flush send it a second time
+ * concurrently. useSyncQueue reclaims 'sending' rows abandoned by a closed tab.
+ * Processing reuses useSyncQueue's processJob, so both paths send the same thing.
+ */
+export async function sendJobNow(job, timeout = 10000) {
+  // 1. Write to IndexedDB sync_queue first (for retry if app closes)
+  const jobId = await db.sync_queue.add({
+    ...job,
+    ts: Date.now(),
+    status: 'sending',
+    sending_since: Date.now()
+  })
+
+  // 2. If offline, return warning (data saved locally)
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    await db.sync_queue.update(jobId, { status: 'queued' })
+    console.warn('[SequentialSync] Offline - job queued for later:', job.resource, job.action)
+    return { success: false, offline: true, jobId }
+  }
+
+  // 3. Execute API call directly; the set-end modal waits at most `timeout`
+  const inFlight = Promise.resolve()
+    .then(() => processJob({ ...job, id: jobId }))
+    .then(
+      (result) => settleJob(job, jobId, result),
+      (error) => settleException(job, jobId, error)
+    )
+    .catch((err) => {
+      console.error('[SequentialSync] Could not store the sync outcome:', err)
+      return { success: false, error: err?.message, jobId }
+    })
+
+  let timer = null
+  const timedOut = new Promise(resolve => {
+    timer = setTimeout(() => resolve(TIMED_OUT), timeout)
+  })
+  try {
+    const outcome = await Promise.race([inFlight, timedOut])
+    if (outcome === TIMED_OUT) {
+      console.warn(`[SequentialSync] ${job.resource} ${job.action} still in flight after ${timeout} ms; continuing in the background`)
+      return { success: false, offline: true, jobId }
+    }
+    return outcome
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 /**
  * useSequentialSync - Hook for sequential sync operations at set end
  *
@@ -15,81 +111,8 @@ const TIMED_OUT = 'timed_out'
 export function useSequentialSync() {
   const [syncState, setSyncState] = useState(null)
 
-  /**
-   * Process a single sync job directly (not via background queue)
-   * Returns: { success: boolean, offline?: boolean, error?: string, jobId: number }
-   *
-   * The job is stored as 'sending' so the background queue (useSyncQueue) does not
-   * pick it up while this direct call is in flight; it goes back to 'queued' if
-   * the call does not complete, and useSyncQueue reclaims abandoned 'sending' rows.
-   * Processing reuses useSyncQueue's processJob, so both paths send the same thing.
-   */
-  const executeAndWait = useCallback(async (job, timeout = 10000) => {
-    // 1. Write to IndexedDB sync_queue first (for retry if app closes)
-    const jobId = await db.sync_queue.add({
-      ...job,
-      ts: Date.now(),
-      status: 'sending',
-      sending_since: Date.now()
-    })
-
-    // 2. If offline, return warning (data saved locally)
-    if (!navigator.onLine) {
-      await db.sync_queue.update(jobId, { status: 'queued' })
-      console.warn('[SequentialSync] Offline - job queued for later:', job.resource, job.action)
-      return { success: false, offline: true, jobId }
-    }
-
-    // 3. Execute API call directly, bounded by the timeout so the set-end modal
-    // cannot hang on a stalled request
-    let timer = null
-    try {
-      const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(TIMED_OUT), timeout) })
-      const result = await Promise.race([processJob({ ...job, id: jobId }), timedOut])
-
-      if (result === true) {
-        await db.sync_queue.update(jobId, { status: 'sent' })
-        console.log(`[SequentialSync] ${job.resource} ${job.action} successful`)
-        return { success: true, jobId }
-      }
-
-      if (result === DROP_JOB) {
-        await db.sync_queue.update(jobId, { status: 'dropped' })
-        return { success: false, error: 'Job cannot be attributed to a match', jobId }
-      }
-
-      if (result === false) {
-        // Permanent failure (details logged by processJob): the background queue
-        // retries it with backoff
-        console.error(`[SequentialSync] Supabase sync FAILED for ${job.resource}:`, { action: job.action, payload: job.payload })
-        await db.sync_queue.update(jobId, { status: 'error', attempts: 1, next_attempt_at: Date.now() + errorBackoffMs(1) })
-        return { success: false, error: `${job.resource} ${job.action} failed`, jobId }
-      }
-
-      // Timed out, retry later (match not in the cloud yet, 5xx), rate limited or
-      // unreachable: the data is saved locally and the background queue sends it.
-      console.warn(`[SequentialSync] ${job.resource} ${job.action} deferred to the sync queue:`, result === TIMED_OUT ? 'timeout' : result)
-      await db.sync_queue.update(jobId, { status: 'queued' })
-      return { success: false, offline: true, jobId }
-    } catch (error) {
-      // LOG THE ERROR with full details
-      console.error(`[SequentialSync] Supabase sync EXCEPTION for ${job.resource}:`, {
-        action: job.action,
-        error: error.message,
-        stack: error.stack,
-        payload: job.payload
-      })
-
-      await db.sync_queue.update(jobId, {
-        status: 'queued',
-        error_message: error.message
-      })
-
-      return { success: false, error: error.message, jobId }
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
-  }, [])
+  /** See sendJobNow. */
+  const executeAndWait = useCallback((job, timeout = 10000) => sendJobNow(job, timeout), [])
 
   /**
    * Main function: Sync set end sequentially with UI progress
