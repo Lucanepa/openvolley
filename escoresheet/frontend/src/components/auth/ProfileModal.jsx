@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { PROFILE_NOT_SAVED } from './profileWrite'
+import { X } from 'lucide-react'
+import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -139,314 +141,182 @@ export default function ProfileModal({ open, onClose }) {
     setLoading(false)
   }
 
-  const modalStyle = {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(15, 23, 42, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000
-  }
-
-  const contentStyle = {
-    width: 'min(90vw, 440px)',
-    maxHeight: '90vh',
-    background: 'var(--panel)',
-    border: '2px solid #3b82f6',
-    borderRadius: 12,
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column'
-  }
-
-  const headerStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 20px',
-    background: 'rgba(59, 130, 246, 0.1)',
-    borderBottom: '1px solid rgba(59, 130, 246, 0.3)'
-  }
-
-  const inputStyle = {
-    width: '100%',
-    padding: '12px 16px',
-    background: 'var(--panel-2)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    color: 'var(--text)',
-    fontSize: 16,
-    outline: 'none',
-    boxSizing: 'border-box'
-  }
-
-  const buttonStyle = {
-    width: '100%',
-    padding: '12px 16px',
-    background: '#3b82f6',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontWeight: 600,
-    fontSize: 16,
-    cursor: 'pointer'
-  }
+  const labelCls = 'mb-1.5 block text-sm font-medium text-stone-700'
 
   return (
-    <div style={modalStyle} onClick={onClose}>
-      <div style={contentStyle} onClick={e => e.stopPropagation()}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-modal-title"
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
-        <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
+        <div className="flex items-center justify-between gap-3 border-b border-stone-200/70 px-5 py-2 sm:px-6">
+          <h2 id="profile-modal-title" className="text-lg font-bold text-stone-900">
             {t('auth.profile', 'Profile')}
           </h2>
-          <button
-            onClick={onClose}
-            aria-label={t('common.close', 'Close')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--muted)',
-              fontSize: 24,
-              cursor: 'pointer',
-              padding: 0,
-              lineHeight: 1
-            }}
-          >
-            x
-          </button>
+          <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
         </div>
 
         {/* Body */}
-        <div style={{ padding: 20, overflowY: 'auto' }}>
+        <div className="overflow-y-auto px-5 py-5 sm:px-6">
           {error && (
-            <div style={{
-              padding: '10px 14px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: 8,
-              color: '#ef4444',
-              marginBottom: 16,
-              fontSize: 14
-            }}>
+            <p role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
-            </div>
+            </p>
           )}
 
           {success && (
-            <div style={{
-              padding: '10px 14px',
-              background: 'rgba(34, 197, 94, 0.15)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              borderRadius: 8,
-              color: '#22c55e',
-              marginBottom: 16,
-              fontSize: 14
-            }}>
+            <p className="mb-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
               {t('auth.profileUpdated', 'Profile updated successfully')}
-            </div>
+            </p>
           )}
 
           {/* Email */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
+          <div className="mb-4">
+            <label htmlFor={isEditingEmail ? 'profile-new-email' : undefined} className={labelCls}>
               {t('auth.email', 'Email')}
             </label>
 
             {emailSuccess && (
-              <div style={{
-                padding: '10px 14px',
-                background: 'rgba(34, 197, 94, 0.15)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                borderRadius: 8,
-                color: '#22c55e',
-                marginBottom: 8,
-                fontSize: 13
-              }}>
+              <p className="mb-2 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-xs text-green-700">
                 {t('auth.emailChangeConfirmation', 'Check your new email to confirm the change')}
-              </div>
+              </p>
             )}
 
             {emailError && (
-              <div style={{
-                padding: '10px 14px',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: 8,
-                color: '#ef4444',
-                marginBottom: 8,
-                fontSize: 13
-              }}>
+              <p role="alert" className="mb-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {emailError}
-              </div>
+              </p>
             )}
 
             {isEditingEmail ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
+              <div className="flex gap-2">
+                <Input
+                  id="profile-new-email"
+                  size="lg"
                   type="email"
                   value={newEmail}
                   onChange={e => setNewEmail(e.target.value)}
                   placeholder={t('auth.newEmail', 'New email address')}
                   aria-label={t('auth.newEmail', 'New email address')}
-                  style={{ ...inputStyle, flex: 1 }}
+                  className="min-w-0 flex-1"
                   autoFocus
                 />
-                <button
+                <Button
+                  variant="dark"
+                  size="xl"
                   onClick={handleEmailChange}
                   disabled={emailLoading || !newEmail}
-                  style={{
-                    padding: '12px 16px',
-                    background: (!newEmail || emailLoading) ? '#4b5563' : '#3b82f6',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontWeight: 500,
-                    cursor: (!newEmail || emailLoading) ? 'not-allowed' : 'pointer',
-                    fontSize: 14,
-                    whiteSpace: 'nowrap'
-                  }}
+                  loading={emailLoading}
+                  className="shrink-0 whitespace-nowrap rounded-lg font-medium"
                 >
                   {emailLoading ? '...' : t('auth.save', 'Save')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="xl"
                   onClick={() => {
                     setIsEditingEmail(false)
                     setNewEmail('')
                     setEmailError('')
                   }}
-                  style={{
-                    padding: '12px 16px',
-                    background: 'var(--panel-2)',
-                    color: 'var(--text)',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    fontSize: 14
-                  }}
+                  className="shrink-0 rounded-lg font-medium"
                 >
                   {t('common.cancel', 'Cancel')}
-                </button>
+                </Button>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <div style={{
-                  ...inputStyle,
-                  flex: 1,
-                  background: 'var(--panel-2)',
-                  color: 'var(--muted)'
-                }}>
+              <div className="flex items-center gap-2">
+                <div className="flex h-11 min-w-0 flex-1 items-center truncate rounded-xl border border-stone-200 bg-stone-50 px-3 text-base text-stone-600">
                   {user?.email}
                 </div>
-                <button
+                <Button
+                  variant="secondary"
+                  size="xl"
                   onClick={() => setIsEditingEmail(true)}
-                  style={{
-                    padding: '12px 16px',
-                    background: 'transparent',
-                    color: '#3b82f6',
-                    border: '1px solid #3b82f6',
-                    borderRadius: 8,
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    fontSize: 14
-                  }}
+                  className="shrink-0 rounded-lg font-medium"
                 >
                   {t('auth.change', 'Change')}
-                </button>
+                </Button>
               </div>
             )}
           </div>
 
           {/* Role (read-only) */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
+          <div className="mb-4">
+            <div className={labelCls}>
               {t('auth.roles', 'Role')}
-            </label>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <span
-                style={{
-                  padding: '6px 12px',
-                  background: '#22c55e',
-                  color: '#fff',
-                  borderRadius: 6,
-                  fontSize: 13
-                }}
-              >
+            </div>
+            <div className="flex gap-1.5">
+              <span className="inline-flex items-center whitespace-nowrap rounded border border-emerald-200 bg-emerald-50 px-1.5 py-[3px] text-[11px] font-semibold leading-none text-emerald-700">
                 {t('auth.roleScorer', 'Scorer')}
               </span>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name fields */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                  {t('auth.firstName', 'First name')}
-                </label>
-                <input
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('auth.firstName', 'First name')}>
+                <Input
+                  size="lg"
                   type="text"
                   value={firstName}
                   onChange={e => setFirstName(e.target.value)}
                   aria-label={t('auth.firstName', 'First name')}
-                  style={inputStyle}
+                  autoComplete="given-name"
                 />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                  {t('auth.lastName', 'Last name')}
-                </label>
-                <input
+              </Field>
+              <Field label={t('auth.lastName', 'Last name')}>
+                <Input
+                  size="lg"
                   type="text"
                   value={lastName}
                   onChange={e => setLastName(e.target.value)}
                   aria-label={t('auth.lastName', 'Last name')}
-                  style={inputStyle}
+                  autoComplete="family-name"
                 />
-              </div>
+              </Field>
             </div>
 
             {/* Country and DOB */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                  {t('auth.country', 'Country')}
-                </label>
-                <input
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('auth.country', 'Country')}>
+                <Input
+                  size="lg"
                   type="text"
                   value={country}
                   onChange={e => setCountry(e.target.value.toUpperCase())}
                   placeholder="CHE"
                   maxLength={3}
                   aria-label={t('auth.country', 'Country')}
-                  style={{ ...inputStyle, textTransform: 'uppercase' }}
+                  className="uppercase"
                 />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                  {t('auth.dob', 'Date of birth')}
-                </label>
-                <input
+              </Field>
+              <Field label={t('auth.dob', 'Date of birth')}>
+                <Input
+                  size="lg"
                   type="date"
                   value={dob}
                   onChange={e => setDob(e.target.value)}
                   aria-label={t('auth.dob', 'Date of birth')}
-                  style={inputStyle}
                 />
-              </div>
+              </Field>
             </div>
 
             <button
               type="submit"
-              style={{
-                ...buttonStyle,
-                background: success ? '#22c55e' : (!hasChanges ? '#4b5563' : '#3b82f6'),
-                cursor: (!hasChanges || loading) ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.7 : 1
-              }}
               disabled={!hasChanges || loading}
+              aria-busy={loading || undefined}
+              className={cn(
+                'inline-flex !mt-5 h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed',
+                success ? 'bg-emerald-600' : 'bg-red-600 hover:bg-red-700 disabled:bg-stone-300',
+                loading && 'opacity-70',
+                FOCUS_RING
+              )}
             >
               {loading
                 ? t('auth.saving', 'Saving...')
@@ -458,34 +328,21 @@ export default function ProfileModal({ open, onClose }) {
 
 
           {/* Danger Zone - Delete Account */}
-          <div style={{
-            marginTop: 24,
-            padding: '16px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: 8
-          }}>
-            <div style={{ color: '#ef4444', fontWeight: 600, marginBottom: 8 }}>
+          <div className="mt-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-red-700">
               {t('auth.dangerZone', 'Danger Zone')}
             </div>
-            <p style={{ color: '#fca5a5', fontSize: 13, marginBottom: 12 }}>
+            <p className="mt-1 mb-3 text-sm text-stone-600">
               {t('auth.deleteAccountWarning', 'Deleting your account is permanent and cannot be undone.')}
             </p>
-            <button
+            <Button
+              variant="danger-outline"
+              size="xl"
               onClick={() => setShowDeleteConfirm(true)}
-              style={{
-                padding: '10px 16px',
-                background: 'transparent',
-                color: '#ef4444',
-                border: '1px solid #ef4444',
-                borderRadius: 6,
-                fontWeight: 500,
-                cursor: 'pointer',
-                fontSize: 14
-              }}
+              className="rounded-lg bg-white font-medium"
             >
               {t('auth.deleteAccount', 'Delete Account')}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -493,123 +350,69 @@ export default function ProfileModal({ open, onClose }) {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2100
-          }}
+          className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+          style={{ zIndex: 2100 }}
           onClick={() => setShowDeleteConfirm(false)}
         >
           <div
-            style={{
-              width: 'min(90vw, 400px)',
-              background: 'var(--panel)',
-              border: '2px solid #ef4444',
-              borderRadius: 12,
-              overflow: 'hidden'
-            }}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-delete-title"
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
-            {/* Header */}
-            <div style={{
-              padding: '16px 20px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              borderBottom: '1px solid rgba(239, 68, 68, 0.3)'
-            }}>
-              <h3 style={{ margin: 0, color: '#ef4444', fontSize: 18, fontWeight: 600 }}>
-                {t('auth.confirmDeleteAccount', 'Confirm Account Deletion')}
-              </h3>
-            </div>
+            <h3 id="profile-delete-title" className="text-lg font-bold text-stone-900">
+              {t('auth.confirmDeleteAccount', 'Confirm Account Deletion')}
+            </h3>
 
-            {/* Body */}
-            <div style={{ padding: 20 }}>
-              <p style={{ color: '#fca5a5', fontSize: 14, marginBottom: 16 }}>
-                {t('auth.deleteAccountConfirmMessage', 'This action is permanent. All your data will be deleted.')}
+            <p className="mt-2 mb-4 text-sm text-stone-600">
+              {t('auth.deleteAccountConfirmMessage', 'This action is permanent. All your data will be deleted.')}
+            </p>
+
+            <label htmlFor="profile-delete-email" className="mb-1 block text-sm font-medium text-stone-700">
+              {t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
+            </label>
+            <p className="mb-2 font-mono text-xs text-stone-500">
+              {user?.email}
+            </p>
+
+            {deleteError && (
+              <p role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {deleteError}
               </p>
+            )}
 
-              <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
-                {t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
-              </p>
-              <p style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8, fontFamily: 'monospace' }}>
-                {user?.email}
-              </p>
+            <Input
+              id="profile-delete-email"
+              size="lg"
+              type="email"
+              value={deleteEmailInput}
+              onChange={e => setDeleteEmailInput(e.target.value)}
+              placeholder={user?.email}
+              aria-label={t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
+              className="text-sm"
+            />
 
-              {deleteError && (
-                <div style={{
-                  padding: '10px 14px',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: 8,
-                  color: '#ef4444',
-                  marginBottom: 12,
-                  fontSize: 14
-                }}>
-                  {deleteError}
-                </div>
-              )}
-
-              <input
-                type="email"
-                value={deleteEmailInput}
-                onChange={e => setDeleteEmailInput(e.target.value)}
-                placeholder={user?.email}
-                aria-label={t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  background: 'var(--panel-2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  color: 'var(--text)',
-                  fontSize: 14,
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                  marginBottom: 16
-                }}
-              />
-
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    background: 'var(--panel-2)',
-                    color: 'var(--text)',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    fontSize: 14
-                  }}
-                >
-                  {t('common.cancel', 'Cancel')}
-                </button>
-                <button
-                  onClick={handleDeleteAccount}
-                  disabled={deleteLoading || deleteEmailInput !== user?.email}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    background: deleteEmailInput === user?.email ? '#ef4444' : '#4b5563',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontWeight: 600,
-                    cursor: deleteEmailInput === user?.email ? 'pointer' : 'not-allowed',
-                    fontSize: 14,
-                    opacity: deleteLoading ? 0.7 : 1
-                  }}
-                >
-                  {deleteLoading
-                    ? t('auth.deleting', 'Deleting...')
-                    : t('auth.deleteAccountConfirm', 'Delete My Account')}
-                </button>
-              </div>
+            <div className="mt-6 flex gap-2">
+              <Button
+                variant="secondary"
+                size="xl"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 rounded-lg font-medium"
+              >
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button
+                variant="danger"
+                size="xl"
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading || deleteEmailInput !== user?.email}
+                className={cn('flex-1 rounded-lg', deleteLoading && 'opacity-70')}
+              >
+                {deleteLoading
+                  ? t('auth.deleting', 'Deleting...')
+                  : t('auth.deleteAccountConfirm', 'Delete My Account')}
+              </Button>
             </div>
           </div>
         </div>
