@@ -101,12 +101,25 @@ export function isTabletOrMobile() {
 }
 
 /**
- * Detect if running on a static deployment (*.openvolley.app)
+ * A host that serves the apps as static files, with no backend behind it:
+ * *.openvolley.app, the Cloudflare Pages previews (*.pages.dev, e.g.
+ * dev.openvolley-app.pages.dev) and GitHub Pages. Its /api/* paths answer
+ * with the SPA's index.html.
+ * @param {string} hostname
+ */
+export function isStaticHost(hostname) {
+  const host = String(hostname || '').toLowerCase()
+  return host === 'openvolley.app' || host.endsWith('.openvolley.app') ||
+    host.endsWith('.pages.dev') || host.endsWith('.github.io')
+}
+
+/**
+ * Detect if running on a static deployment (see isStaticHost)
  * Static deployments have no backend server, so they need to use cloud relay
  */
 export function isStaticDeployment() {
   if (typeof window === 'undefined') return false
-  return window.location.hostname.endsWith('.openvolley.app')
+  return isStaticHost(window.location.hostname)
 }
 
 /**
@@ -116,8 +129,23 @@ export function isStaticDeployment() {
 export function isServedFromLocalServer() {
   if (typeof window === 'undefined') return false
   if (import.meta.env.DEV) return false
-  if (window.location.hostname.endsWith('.openvolley.app')) return false
+  if (isStaticHost(window.location.hostname)) return false
   return true
+}
+
+/**
+ * Where this page asks its own server for /api/server/status (relay WS port,
+ * LAN address): the dev server or a local server (Pi, desktop app). Null on a
+ * static deployment, which has no such endpoint (it answered every 10 s poll
+ * with its index.html), and for a page opened from disk.
+ * @returns {string|null}
+ */
+export function getLocalServerStatusUrl() {
+  if (typeof window === 'undefined' || !window.location) return null
+  const { protocol, hostname, origin } = window.location
+  if (protocol !== 'http:' && protocol !== 'https:') return null
+  if (!import.meta.env.DEV && isStaticHost(hostname)) return null
+  return `${origin}/api/server/status`
 }
 
 // Get backend URL from environment or use current host

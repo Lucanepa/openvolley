@@ -4,6 +4,8 @@ import {
   relayMatchPayload,
   buildLiveStateMatchData,
   isNewerLiveState,
+  newerLiveState,
+  applyNewerLiveState,
   summarizeRelayTablets,
   applyRelayTablets,
   matchTeamNames,
@@ -16,10 +18,18 @@ import {
 const SEED = 'match_1791215210058_yxkc82'
 
 describe('relay key and payload (scorer)', () => {
-  it('publishes under the seed key, not the Dexie id every device starts at', () => {
-    expect(relayMatchKey({ id: 1, seed_key: SEED }, 1)).toBe(SEED)
-    expect(relayMatchKey({ id: 1 }, 1)).toBe('1') // test match without a seed key
-    expect(relayMatchKey(null, 7)).toBe('7')
+  it('publishes under the seed key, never the Dexie id every device starts at', () => {
+    expect(relayMatchKey({ id: 1, seed_key: SEED })).toBe(SEED)
+    // A test match carries seedKey (the relays key by seed_key ?? seedKey too)
+    expect(relayMatchKey({ id: 1, seedKey: 'test-match-default' })).toBe('test-match-default')
+    // A blank match before Create Match has none: not published
+    expect(relayMatchKey({ id: 1 })).toBeNull()
+    expect(relayMatchKey({ id: 1, seed_key: '  ' })).toBeNull()
+    expect(relayMatchKey(null)).toBeNull()
+  })
+
+  it('stamps the sync with the scorer\'s clock (tablets compare live-state pushes with it)', () => {
+    expect(relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 1234 }).match._syncedAt).toBe(1234)
   })
 
   it('sends the PINs with the first sync of a socket and when one changes, never otherwise', () => {
@@ -259,5 +269,81 @@ describe('relay subscription (tablets)', () => {
     window.dispatchEvent(new Event('online'))
     expect(FakeWebSocket.instances).toHaveLength(2)
     unsubscribe()
+  })
+
+  it('shows a live-state push newer than the relay copy, and never an older one', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_newest', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    const at = (ms) => new Date(Date.UTC(2026, 9, 5, 18, 6, 0) + ms).toISOString()
+    const syncedAt = Date.parse(at(0))
+    ws.receive({
+      type: 'match-full-data', matchId: 'match_newest',
+      match: { id: 1, coinTossTeamA: 'away', _syncedAt: syncedAt },
+      sets: [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
+    })
+    // Point for team A (= away): pushed before the scorer's sync landed
+    ws.receive({ type: 'live-state-update', matchId: 'match_newest', liveState: { current_set: 1, points_a: 1, points_b: 0, updated_at: at(800) } })
+    expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 0, awayPoints: 1 })
+    expect(updates.at(-1).liveState.points_a).toBe(1)
+    // An older push arriving late changes nothing
+    const count = updates.length
+    ws.receive({ type: 'live-state-update', matchId: 'match_newest', liveState: { current_set: 1, points_a: 0, points_b: 0, updated_at: at(400) } })
+    expect(updates).toHaveLength(count)
+    // The scorer's next sync (newer than the push) is shown as it is
+    ws.receive({
+      type: 'match-data-update', matchId: 'match_newest',
+      match: { id: 1, coinTossTeamA: 'away', _syncedAt: Date.parse(at(900)) },
+      sets: [{ index: 1, homePoints: 0, awayPoints: 1, finished: false }],
+      liveState: { current_set: 1, points_a: 1, points_b: 0, updated_at: at(800) }
+    })
+    expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 0, awayPoints: 1 })
+    unsubscribe()
+  })
+})
+
+describe('newest live state wins over an older relay copy (referee / bench)', () => {
+  const T0 = Date.UTC(2026, 9, 5, 18, 6, 0)
+  const iso = (ms) => new Date(T0 + ms).toISOString()
+  const bundle = (over = {}) => ({
+    success: true,
+    match: { id: 1, coinTossTeamA: 'home', _syncedAt: T0 },
+    sets: [
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { index: 2, homePoints: 3, awayPoints: 4, finished: false }
+    ],
+    ...over
+  })
+
+  it('takes the newer live state, unless the incoming one is older', () => {
+    const a = { updated_at: iso(1000) }
+    const b = { updated_at: iso(2000) }
+    expect(newerLiveState(a, b)).toBe(b)
+    expect(newerLiveState(b, a)).toBe(b)
+    expect(newerLiveState(null, a)).toBe(a)
+    expect(newerLiveState(a, null)).toBe(a)
+    expect(newerLiveState(a, { points_a: 1 })).toEqual({ points_a: 1 }) // no timestamp: newer
+  })
+
+  it('puts a newer live state\'s points on the set it names (team A/B mapped to home/away)', () => {
+    const live = { current_set: 2, points_a: 5, points_b: 4, updated_at: iso(500) }
+    const out = applyNewerLiveState(bundle(), live)
+    expect(out.sets[1]).toMatchObject({ index: 2, homePoints: 5, awayPoints: 4 })
+    expect(out.sets[0]).toMatchObject({ homePoints: 25, awayPoints: 20 })
+    expect(out.liveState).toBe(live)
+    const awayIsA = applyNewerLiveState(bundle({ match: { id: 1, coinTossTeamA: 'away', _syncedAt: T0 } }), live)
+    expect(awayIsA.sets[1]).toMatchObject({ homePoints: 4, awayPoints: 5 })
+  })
+
+  it('leaves the relay copy alone when it is newer, from an older scorer, or the set is over', () => {
+    const b = bundle()
+    expect(applyNewerLiveState(b, { current_set: 2, points_a: 9, points_b: 9, updated_at: iso(-500) })).toBe(b)
+    const noStamp = bundle({ match: { id: 1, coinTossTeamA: 'home' } })
+    expect(applyNewerLiveState(noStamp, { current_set: 2, points_a: 9, points_b: 9, updated_at: iso(500) })).toBe(noStamp)
+    // Set 1 is finished: its result is the relay's
+    expect(applyNewerLiveState(b, { current_set: 1, points_a: 0, points_b: 0, updated_at: iso(500) }).sets[0]).toMatchObject({ homePoints: 25 })
+    // The bundle's own live state by default
+    expect(applyNewerLiveState(bundle({ liveState: { current_set: 2, points_a: 4, points_b: 4, updated_at: iso(1) } })).sets[1]).toMatchObject({ homePoints: 4, awayPoints: 4 })
   })
 })

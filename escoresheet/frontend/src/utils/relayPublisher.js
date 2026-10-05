@@ -1,29 +1,261 @@
 /**
  * The scorer's side of the match relay, kept out of the components so it can be
- * tested: which PINs go with a sync, the order of live-state pushes and
- * match_live_state writes, and how long to wait before reconnecting.
- * Used by Scoreboard.jsx and App.jsx.
+ * tested: the one relay connection App.jsx and Scoreboard.jsx share, which PINs
+ * go with a sync, the order of live-state pushes and match_live_state writes,
+ * and how long to wait before reconnecting.
  */
 import { relayMatchPayload } from './serverDataSync'
 
 /**
- * PINs go to the relay with the first sync on a socket and when one changed;
- * the relay keeps the stored ones meanwhile. Any relay error about the match
- * (a refusal, a lost room, 'pins-required') makes the next sync carry them again.
+ * PINs go to the relay with the first sync of a match key on a socket and when
+ * one changed; the relay keeps the stored ones meanwhile. Keyed by socket AND
+ * key: a match that just got its seed key (a new relay room) proves it with its
+ * PINs; a PIN-less first sync would have left that room without them. Any relay
+ * error about the match (a refusal, a lost room, 'pins-required') makes the
+ * next sync carry them again.
  */
 export function createRelayPinTracker() {
-  let sent = { ws: null, signature: null }
+  let sent = { ws: null, key: null, signature: null }
   return {
     /**
-     * The match object for a sync on `ws`. Call commit() once it was sent.
+     * The match object for a sync of `key` on `ws`. Call commit() once it was sent.
      * @returns {{ match: object, commit: () => void }}
      */
-    payloadFor(ws, match) {
-      const { match: out, pinSignature } = relayMatchPayload(match, sent.ws === ws ? sent.signature : null)
-      return { match: out, commit: () => { sent = { ws, signature: pinSignature } } }
+    payloadFor(ws, match, key = null) {
+      const same = sent.ws === ws && sent.key === key
+      const { match: out, pinSignature } = relayMatchPayload(match, same ? sent.signature : null)
+      return { match: out, commit: () => { sent = { ws, key, signature: pinSignature } } }
     },
     reset() {
-      sent = { ws: null, signature: null }
+      sent = { ws: null, key: null, signature: null }
+    }
+  }
+}
+
+const WS_CONNECTING = 0
+const WS_OPEN = 1
+const isRelayRequest = (message) => typeof message?.type === 'string' && message.type.endsWith('-request')
+
+/**
+ * The scorer's ONE relay connection. App.jsx (the current match, in every
+ * view) and Scoreboard.jsx (every scoring action) both attach to it. They used
+ * to open a socket each: the relay grants the scoreboard role per socket, so
+ * the two proved the same match over and over (one sent PINs, the other left
+ * them out) and the refusals counted toward the relay's per-IP claim limit,
+ * which every scorer behind the venue's NAT shares. One socket is one owner.
+ *
+ * - attach(url, { onOpen(socket), onMessage(message, socket) }) -> detach().
+ *   onOpen runs on every (re)connect, and right away when the socket is
+ *   already open. Relay requests ('*-request') go to the most recently
+ *   attached user only, so each gets one answer; everything else goes to all.
+ * - The socket closes once the last user detached (not in between: an effect
+ *   re-run detaches and attaches again in the same commit).
+ * - Reconnects with relayReconnectDelay; at once when the device is back
+ *   online or the tab visible again, and when a ping gets no answer (a
+ *   half-open socket on venue Wi-Fi without uplink otherwise stays OPEN).
+ * - `pins` is the connection's PIN tracker (createRelayPinTracker).
+ */
+export function createScorerRelay({
+  createSocket = (url) => new WebSocket(url),
+  reconnectDelay = (attempt) => relayReconnectDelay(attempt),
+  setTimer = (fn, ms) => setTimeout(fn, ms),
+  clearTimer = (t) => clearTimeout(t),
+  events = typeof window !== 'undefined' ? window : null,
+  doc = typeof document !== 'undefined' ? document : null,
+  pingIntervalMs = 25000,
+  pongTimeoutMs = 10000
+} = {}) {
+  const users = []
+  const pins = createRelayPinTracker()
+  let url = null
+  let ws = null
+  let attempt = 0
+  let reconnectTimer = null
+  let closeTimer = null
+  let pingTimer = null
+  let pongTimer = null
+  let lastMessageAt = 0
+  let listening = false
+
+  const safe = (fn) => {
+    try { fn() } catch (err) { console.error('[ScorerRelay] handler failed:', err) }
+  }
+  const isOpen = () => !!ws && ws.readyState === WS_OPEN
+
+  function stopPing() {
+    if (pingTimer) clearTimer(pingTimer)
+    if (pongTimer) clearTimer(pongTimer)
+    pingTimer = null
+    pongTimer = null
+  }
+
+  function drop(socket, code, reason) {
+    socket.onopen = null
+    socket.onmessage = null
+    socket.onclose = null
+    socket.onerror = () => {}
+    try {
+      if (socket.readyState === WS_OPEN) socket.close(code, reason)
+      // Closing a socket that is still connecting logs a browser error: close it once open
+      else if (socket.readyState === WS_CONNECTING) socket.onopen = () => { try { socket.close(code, reason) } catch { /* gone */ } }
+    } catch { /* already gone */ }
+  }
+
+  function scheduleReconnect(delay = null) {
+    if (users.length === 0 || reconnectTimer) return
+    reconnectTimer = setTimer(connect, delay ?? reconnectDelay(attempt))
+    attempt += 1
+  }
+
+  function ping() {
+    pingTimer = null
+    const socket = ws
+    if (!socket || socket.readyState !== WS_OPEN) return
+    const sentAt = Date.now()
+    try { socket.send(JSON.stringify({ type: 'ping', timestamp: sentAt })) } catch { /* closing */ }
+    pongTimer = setTimer(() => {
+      pongTimer = null
+      if (ws !== socket) return
+      if (lastMessageAt >= sentAt) {
+        pingTimer = setTimer(ping, pingIntervalMs)
+        return
+      }
+      // No answer: dead, even though it still says OPEN
+      ws = null
+      drop(socket, 4000, 'No answer to ping')
+      scheduleReconnect(0)
+    }, pongTimeoutMs)
+  }
+
+  function connect() {
+    reconnectTimer = null
+    if (!url || users.length === 0) return
+    if (ws && (ws.readyState === WS_OPEN || ws.readyState === WS_CONNECTING)) return
+    let socket
+    try {
+      socket = createSocket(url)
+    } catch (err) {
+      console.error('[ScorerRelay] connection error:', err)
+      scheduleReconnect()
+      return
+    }
+    ws = socket
+    socket.onerror = () => { /* onclose follows */ }
+    socket.onopen = () => {
+      if (ws !== socket) return
+      attempt = 0
+      lastMessageAt = Date.now()
+      stopPing()
+      pingTimer = setTimer(ping, pingIntervalMs)
+      for (const user of [...users]) safe(() => user.onOpen?.(socket))
+    }
+    socket.onmessage = (event) => {
+      if (ws !== socket) return
+      lastMessageAt = Date.now()
+      let message
+      try { message = JSON.parse(event.data) } catch { return }
+      if (!message || typeof message !== 'object') return
+      const targets = isRelayRequest(message) ? users.slice(-1) : [...users]
+      for (const user of targets) safe(() => user.onMessage?.(message, socket))
+    }
+    socket.onclose = () => {
+      if (ws !== socket) return
+      ws = null
+      stopPing()
+      scheduleReconnect()
+    }
+  }
+
+  // Back online / tab visible again: reconnect now instead of after the backoff
+  function reconnectNow() {
+    if (users.length === 0) return
+    if (doc && doc.visibilityState === 'hidden') return
+    if (ws && (ws.readyState === WS_OPEN || ws.readyState === WS_CONNECTING)) return
+    if (reconnectTimer) {
+      clearTimer(reconnectTimer)
+      reconnectTimer = null
+    }
+    connect()
+  }
+
+  function listen(on) {
+    if (on === listening) return
+    listening = on
+    const method = on ? 'addEventListener' : 'removeEventListener'
+    events?.[method]?.('online', reconnectNow)
+    doc?.[method]?.('visibilitychange', reconnectNow)
+  }
+
+  function shutdown() {
+    closeTimer = null
+    if (users.length > 0) return
+    listen(false)
+    stopPing()
+    if (reconnectTimer) clearTimer(reconnectTimer)
+    reconnectTimer = null
+    attempt = 0
+    if (ws) {
+      const socket = ws
+      ws = null
+      drop(socket, 1000, 'Scorer left the match')
+    }
+    url = null
+    pins.reset()
+  }
+
+  return {
+    get socket() { return ws },
+    get userCount() { return users.length },
+    pins,
+    isOpen,
+    reconnectNow,
+    /** Send on the open socket; false when there is none. */
+    send(payload) {
+      if (!isOpen()) return false
+      try {
+        ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload))
+        return true
+      } catch {
+        return false
+      }
+    },
+    attach(nextUrl, user = {}) {
+      if (!nextUrl) return () => {}
+      if (closeTimer) {
+        clearTimer(closeTimer)
+        closeTimer = null
+      }
+      const entry = { onOpen: user.onOpen, onMessage: user.onMessage }
+      users.push(entry)
+      listen(true)
+      if (url !== nextUrl) {
+        // Another relay (the LAN server's WS port is known now, ?server= changed)
+        url = nextUrl
+        if (ws) {
+          const old = ws
+          ws = null
+          stopPing()
+          drop(old, 1000, 'Relay changed')
+        }
+        if (reconnectTimer) clearTimer(reconnectTimer)
+        reconnectTimer = null
+        attempt = 0
+        pins.reset()
+        connect()
+      } else if (isOpen()) {
+        const socket = ws
+        Promise.resolve().then(() => {
+          if (users.includes(entry) && ws === socket) safe(() => entry.onOpen?.(socket))
+        })
+      } else if (!ws && !reconnectTimer) {
+        connect()
+      }
+      return () => {
+        const i = users.indexOf(entry)
+        if (i === -1) return
+        users.splice(i, 1)
+        if (users.length === 0 && !closeTimer) closeTimer = setTimer(shutdown, 0)
+      }
     }
   }
 }
@@ -90,3 +322,6 @@ export function relayReconnectDelay(attempt) {
   const n = Math.max(0, Math.min(Number(attempt) || 0, 16))
   return Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
 }
+
+/** The scorer page's relay connection, shared by App.jsx and Scoreboard.jsx. */
+export const scorerRelay = createScorerRelay()

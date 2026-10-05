@@ -1,6 +1,7 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import {
   createRelayPinTracker,
+  createScorerRelay,
   createLiveStateOrder,
   isRelayErrorFor,
   relayReconnectDelay
@@ -60,6 +61,15 @@ describe('scorer relay publishing: PINs', () => {
     expect(hasPins(pins.payloadFor(ws, match()).match)).toBe(true)
   })
 
+  it('sends the PINs with the first sync of a new key on the same socket (the match got its seed key)', () => {
+    const pins = createRelayPinTracker()
+    const ws = {}
+    pins.payloadFor(ws, match(), 'match_1_a').commit()
+    expect(hasPins(pins.payloadFor(ws, match(), 'match_1_a').match)).toBe(false)
+    const other = pins.payloadFor(ws, match({ seed_key: 'match_2_b' }), 'match_2_b')
+    expect(hasPins(other.match)).toBe(true)
+  })
+
   it('recognises errors about this match only', () => {
     const ids = [1, 'match_1_a']
     expect(isRelayErrorFor({ type: 'error', code: 'pins-required', matchId: 'match_1_a' }, ids)).toBe(true)
@@ -116,6 +126,146 @@ describe('scorer relay publishing: live-state order', () => {
     expect(order.shouldPush(b)).toBe(true)
     expect(await order.write(b, async () => 'written')).toBe('written')
     now.mockRestore()
+  })
+})
+
+describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
+  class FakeSocket {
+    constructor(url) {
+      this.url = url
+      this.readyState = 0
+      this.sent = []
+      this.closed = null
+    }
+    send(text) { this.sent.push(JSON.parse(text)) }
+    close(code) {
+      this.readyState = 3
+      this.closed = code
+      this.onclose?.({ code })
+    }
+    open() {
+      this.readyState = 1
+      this.onopen?.()
+    }
+    receive(msg) { this.onmessage?.({ data: JSON.stringify(msg) }) }
+    drop() {
+      this.readyState = 3
+      this.onclose?.({ code: 1006 })
+    }
+  }
+  let sockets
+  let events
+  const make = (opts = {}) => {
+    sockets = []
+    events = new EventTarget()
+    return createScorerRelay({
+      createSocket: (url) => {
+        const s = new FakeSocket(url)
+        sockets.push(s)
+        return s
+      },
+      events,
+      doc: null,
+      ...opts
+    })
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('App and Scoreboard share one socket: one owner of the match on the relay', async () => {
+    const relay = make()
+    const app = { onOpen: vi.fn(), onMessage: vi.fn() }
+    const board = { onOpen: vi.fn(), onMessage: vi.fn() }
+    const detachApp = relay.attach('wss://relay', app)
+    sockets[0].open()
+    expect(app.onOpen).toHaveBeenCalledTimes(1)
+    const detachBoard = relay.attach('wss://relay', board)
+    await Promise.resolve()
+    expect(sockets).toHaveLength(1)
+    expect(board.onOpen).toHaveBeenCalledWith(sockets[0])
+
+    // The PIN tracker is the connection's: what App sent with PINs, the
+    // Scoreboard does not resend (and vice versa)
+    relay.pins.payloadFor(sockets[0], match(), 'match_1_a').commit()
+    expect(hasPins(relay.pins.payloadFor(relay.socket, match(), 'match_1_a').match)).toBe(false)
+
+    // Errors and updates reach both; a relay request gets one answer
+    sockets[0].receive({ type: 'error', code: 'pins-required', matchId: 'match_1_a' })
+    expect(app.onMessage).toHaveBeenCalledTimes(1)
+    expect(board.onMessage).toHaveBeenCalledTimes(1)
+    sockets[0].receive({ type: 'match-data-request', requestId: 'r1', matchId: 'match_1_a' })
+    expect(board.onMessage).toHaveBeenCalledTimes(2)
+    expect(app.onMessage).toHaveBeenCalledTimes(1)
+
+    // The Scoreboard leaving (a sub-view) keeps the socket for App
+    detachBoard()
+    vi.runOnlyPendingTimers()
+    expect(sockets[0].closed).toBeNull()
+    expect(relay.userCount).toBe(1)
+    sockets[0].receive({ type: 'game-number-request', requestId: 'r2' })
+    expect(app.onMessage).toHaveBeenCalledTimes(2)
+
+    // An effect re-run (detach + attach in one commit) keeps it too
+    detachApp()
+    const detachAgain = relay.attach('wss://relay', app)
+    vi.runOnlyPendingTimers()
+    expect(sockets[0].closed).toBeNull()
+    expect(sockets).toHaveLength(1)
+
+    // The last one leaving closes it
+    detachAgain()
+    vi.runOnlyPendingTimers()
+    expect(sockets[0].closed).toBe(1000)
+    expect(relay.send({ type: 'ping' })).toBe(false)
+  })
+
+  it('reconnects with backoff, at once when back online, and re-runs every onOpen', () => {
+    const relay = make()
+    const app = { onOpen: vi.fn() }
+    relay.attach('wss://relay', app)
+    sockets[0].open()
+    sockets[0].drop()
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(4999)
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    expect(sockets).toHaveLength(2)
+    sockets[1].drop()
+    // Back online: no waiting for the 10 s backoff
+    events.dispatchEvent(new Event('online'))
+    expect(sockets).toHaveLength(3)
+    sockets[2].open()
+    expect(app.onOpen).toHaveBeenCalledTimes(2)
+    expect(app.onOpen).toHaveBeenLastCalledWith(sockets[2])
+  })
+
+  it('replaces a socket that stops answering pings (Wi-Fi without uplink keeps it OPEN)', () => {
+    const relay = make({ pingIntervalMs: 1000, pongTimeoutMs: 500 })
+    relay.attach('wss://relay', {})
+    sockets[0].open()
+    vi.advanceTimersByTime(1000)
+    expect(sockets[0].sent.at(-1).type).toBe('ping')
+    sockets[0].receive({ type: 'pong' })
+    vi.advanceTimersByTime(500)
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(1000) // next ping, no answer
+    vi.advanceTimersByTime(500)
+    expect(sockets[0].closed).toBe(4000)
+    vi.advanceTimersByTime(1)
+    expect(sockets).toHaveLength(2)
+  })
+
+  it('moves to another relay URL (LAN server port known) with fresh PINs', () => {
+    const relay = make()
+    relay.attach('ws://host:8080', {})
+    sockets[0].open()
+    relay.pins.payloadFor(sockets[0], match(), 'match_1_a').commit()
+    relay.attach('ws://host:8181', {})
+    expect(sockets[0].closed).toBe(1000)
+    expect(sockets[1].url).toBe('ws://host:8181')
+    sockets[1].open()
+    expect(hasPins(relay.pins.payloadFor(sockets[1], match(), 'match_1_a').match)).toBe(true)
   })
 })
 

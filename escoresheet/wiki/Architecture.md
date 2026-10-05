@@ -146,8 +146,10 @@ Two independent sync paths:
 
 2. **WebSocket relay** (`useRealtimeConnection`): Optional backend server for instant updates between Scoreboard, Referee, and Bench devices. Works over local WiFi (no internet) or cloud relay.
    - Every relay client resolves the relay through `getRelayWebSocketUrl()` (`utils/backendConfig.js`), so the scorer publishes where its tablets listen.
-   - Match rooms are keyed by the match's `seed_key` (the Dexie id only for a match without one). Subscribers, including the point-hub LedBox bridge, must use the seed key (`MATCH_ID=<seed key>`, or look it up via `/api/match/list` / `/api/match/by-game-number`). A request by Dexie id is not answered.
-   - The scorer sends its PINs with a socket's first sync and when one changes. A relay that lost the match answers a PIN-less sync with `pins-required`, and the scorer resends them. Protocol reference: `frontend/electron/lanRelayCore.cjs`.
+   - Match rooms are keyed by the match's `seed_key` (a test match's `seedKey`). The scorer does not publish a match before it has one: a Dexie id is never a room key. Subscribers, including the point-hub LedBox bridge, must use the seed key (`MATCH_ID=<seed key>`, or look it up via `/api/match/list` / `/api/match/by-game-number`). A request by Dexie id is not answered.
+   - The scorer page has one relay connection (`scorerRelay` in `utils/relayPublisher.js`), shared by `App.jsx` (the current match, in every view) and `Scoreboard.jsx` (every scoring action), so one socket owns the match on the relay.
+   - The scorer sends its PINs with the first sync of a key on its socket and when one changes. A relay that lost the match, or a socket that has not proved it yet, answers a PIN-less sync with `pins-required`, and the scorer resends them. That is not a failed claim: only claims carrying a wrong game PIN count toward the claim limits. Protocol reference: `frontend/electron/lanRelayCore.cjs`.
+   - Tablets show the newest score whichever path brought it: a live-state push newer than the relay copy (`match._syncedAt`, the scorer's clock) overrides that copy's score (`applyNewerLiveState`). Referee and bench links (QR codes) preselect the match by its seed key and still ask for the PIN.
 
 Both paths are optional. The app functions fully offline with local IndexedDB only.
 
