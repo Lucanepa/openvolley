@@ -3,9 +3,11 @@
  *
  *   newRequestId()                       short random id, echoed as X-Request-Id
  *   formatDbRejection({...})             one line for a rejected /api/db request
- *   createLogLimiter({ max, windowMs })  at most `max` lines per window, then a
- *                                        "N suppressed" note (anonymous probes
- *                                        cannot flood the log)
+ *   createLogLimiter({ max, windowMs })  at most `max` lines per key (error
+ *                                        code) and window, then a per-key
+ *                                        "suppressed" note (anonymous probes
+ *                                        cannot flood the log or crowd out
+ *                                        the rare codes)
  *   createConnectionSummary({...})       counts socket opens/closes (and other
  *                                        chatty events) and prints one summary
  *                                        line per interval instead of one line
@@ -43,29 +45,62 @@ export function formatDbRejection({ reqId, status, code, table, action }) {
 }
 
 /**
- * Passes at most `max` lines per `windowMs`; the first line after a window
- * with drops is preceded by "[log] N similar lines suppressed".
- * @returns {(line: string) => void}
+ * Rate-limits log lines per key (e.g. the error code): each key gets its own
+ * budget of `max` lines per `windowMs`, so a flood of one kind (anonymous
+ * 401s, 429s from a prober) cannot hide the rare, important kinds
+ * (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD). At most `maxKeys` keys are
+ * tracked per window; further keys share the budget of the key "other".
+ *
+ * Dropped lines are counted per key and reported as one line when the window
+ * ends: "[log] suppressed in the last 60s: OV_RATE_LIMITED=1200, invalid_token=40".
+ * The note is written by the next line after the window or by flush(), which
+ * the caller runs from a timer so a burst followed by quiet still reports.
+ *
+ *   const log = createLogLimiter({ max: 30, windowMs: 60_000 })
+ *   log(line, code)
+ *   setInterval(() => log.flush(), 60_000).unref()
+ *
+ * @returns {((line: string, key?: string) => void) & { flush: () => string | null }}
  */
-export function createLogLimiter({ max = 30, windowMs = 60_000, write = (l) => console.warn(l), now = Date.now } = {}) {
+export function createLogLimiter({ max = 30, windowMs = 60_000, maxKeys = 32, write = (l) => console.warn(l), now = Date.now } = {}) {
   let windowStart = now()
-  let count = 0
-  let suppressed = 0
-  return function limited(line) {
-    const t = now()
-    if (t - windowStart >= windowMs) {
-      if (suppressed > 0) write(`[log] ${suppressed} similar line(s) suppressed in the last ${Math.round((t - windowStart) / 1000)}s`)
-      windowStart = t
-      count = 0
-      suppressed = 0
+  let counts = new Map()
+  let suppressed = new Map()
+
+  function rollover(t) {
+    let note = null
+    if (suppressed.size > 0) {
+      const parts = [...suppressed].map(([k, n]) => `${token(k)}=${n}`)
+      note = `[log] suppressed in the last ${Math.max(1, Math.round((t - windowStart) / 1000))}s: ${parts.join(', ')}`
+      write(note)
     }
-    if (count < max) {
-      count++
+    windowStart = t
+    counts = new Map()
+    suppressed = new Map()
+    return note
+  }
+
+  function limited(line, key = 'default') {
+    const t = now()
+    if (t - windowStart >= windowMs) rollover(t)
+    let k = String(key ?? 'default')
+    if (!counts.has(k) && counts.size >= maxKeys) k = 'other'
+    const n = counts.get(k) || 0
+    if (n < max) {
+      counts.set(k, n + 1)
       write(line)
     } else {
-      suppressed++
+      suppressed.set(k, (suppressed.get(k) || 0) + 1)
     }
   }
+
+  /** End the window if it has elapsed, writing the suppression note. */
+  limited.flush = () => {
+    const t = now()
+    return t - windowStart >= windowMs ? rollover(t) : null
+  }
+
+  return limited
 }
 
 /**
