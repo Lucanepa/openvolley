@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getFirstServeForSet, getSetResult, isDecidingSet } from '../rules'
+import { getFirstServeForSet, getSetResult, isDecidingSet, scoreFromPointEvents } from '../rules'
 
 describe('getFirstServeForSet', () => {
   it('set 1 uses match.firstServe', () => {
@@ -83,5 +83,17 @@ describe('isDecidingSet + bestOf-aware match end', () => {
 
   it('no match end without a set winner', () => {
     expect(getSetResult(20, 18, 1, { bestOf: 5, homeSetsWon: 2, awaySetsWon: 2 }).isMatchEnd).toBe(false)
+  })
+})
+
+describe('scoreFromPointEvents', () => {
+  const pt = (team, setIndex) => ({ type: 'point', setIndex, payload: { team } })
+  it('counts point events of the set per team', () => {
+    const events = [pt('home', 1), pt('away', 1), pt('home', 1), pt('home', 2), { type: 'timeout', setIndex: 1, payload: { team: 'home' } }]
+    expect(scoreFromPointEvents(events, 1)).toEqual({ homePoints: 2, awayPoints: 1 })
+    expect(scoreFromPointEvents(events, 2)).toEqual({ homePoints: 1, awayPoints: 0 })
+  })
+  it('empty set is 0-0', () => {
+    expect(scoreFromPointEvents([], 3)).toEqual({ homePoints: 0, awayPoints: 0 })
   })
 })

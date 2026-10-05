@@ -71,3 +71,23 @@ export function getSetResult(homePoints, awayPoints, setIndex, opts = {}) {
 
   return { winner, isSetWon: !!winner, pointsToWin, isMatchEnd }
 }
+
+/**
+ * A set's score as recorded by its point events (every rally point, delay
+ * penalty point and forfeit-awarded point is logged as a 'point' event). Used to
+ * keep sets.homePoints/awayPoints in step after a point event is edited or
+ * deleted by hand.
+ * @param {Array} events
+ * @param {number} setIndex
+ * @returns {{homePoints:number, awayPoints:number}}
+ */
+export function scoreFromPointEvents(events, setIndex) {
+  let homePoints = 0
+  let awayPoints = 0
+  for (const e of events || []) {
+    if (e.type !== 'point' || (e.setIndex ?? 1) !== setIndex) continue
+    if (e.payload?.team === 'home') homePoints++
+    else if (e.payload?.team === 'away') awayPoints++
+  }
+  return { homePoints, awayPoints }
+}
