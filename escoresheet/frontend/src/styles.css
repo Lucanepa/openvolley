@@ -1000,7 +1000,7 @@ button:disabled {
   gap: 0.76cqw;
   padding: 0.6cqw 0.85cqw;
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ov-hairline-soft);
   border-radius: calc(12px * var(--scale-factor));
   position: sticky;
   top: 0;
@@ -1098,7 +1098,7 @@ button:disabled {
 .toolbar-divider {
   width: 1px;
   height: 1cqw;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ov-hairline);
 }
 
 .toolbar-clock {
@@ -1165,7 +1165,7 @@ button:disabled {
   background: var(--panel);
   padding: 0.6cqw 1.3cqw;
   border-radius: 0.6cqw;
-  border: 0.1cqw solid rgba(255, 255, 255, 0.1);
+  border: 0.1cqw solid var(--ov-hairline);
   min-width: 7.2cqw;
   text-align: center;
 }
@@ -1399,7 +1399,7 @@ button:disabled {
   flex-direction: column;
   gap: calc(10px * var(--scale-factor));
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ov-hairline-soft);
   border-radius: calc(12px * var(--scale-factor));
   padding: calc(10px * var(--scale-factor));
   width: 100%;
@@ -1434,7 +1434,7 @@ button:disabled {
   align-items: center;
   gap: calc(10px * var(--scale-factor));
   padding-bottom: calc(8px * var(--scale-factor));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--ov-hairline);
 }
 
 .team-info {
@@ -1811,7 +1811,7 @@ button.start-rally-button {
   justify-content: center;
   padding: 12px 16px;
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ov-hairline-soft);
   border-radius: 12px;
 }
 
