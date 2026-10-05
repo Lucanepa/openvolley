@@ -518,7 +518,36 @@ const wsDebugInfo = {
   errors: [],
   wsUrl: null,
   readyState: null,
-  lastError: null
+  lastError: null,
+  lastServerError: null
+}
+
+/**
+ * Build the subscriber payload from a relay 'match-data-update' or
+ * 'match-full-data' message. Every relay (cloud backend, LAN server, Electron,
+ * Tauri, Vite dev) sends the bundle flat on the message; older LAN relays nested
+ * it under `data`, so both shapes are accepted.
+ * @returns {object|null} { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, liveState?, _timestamp, _scoreboardTimestamp }
+ */
+export function readRelayBundle(message) {
+  if (!message || typeof message !== 'object') return null
+  const src = message.match === undefined && message.data && typeof message.data === 'object'
+    ? message.data
+    : message
+  if (!src.match) return null
+  const payload = {
+    match: src.match,
+    homeTeam: src.homeTeam || src.teams?.[0],
+    awayTeam: src.awayTeam || src.teams?.[1],
+    homePlayers: src.homePlayers || src.players?.filter(p => p.teamId === src.match?.homeTeamId) || [],
+    awayPlayers: src.awayPlayers || src.players?.filter(p => p.teamId === src.match?.awayTeamId) || [],
+    sets: src.sets || [],
+    events: src.events || [],
+    _timestamp: message._timestamp || message.timestamp,
+    _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
+  }
+  if (src.liveState !== undefined) payload.liveState = src.liveState
+  return payload
 }
 
 /**
@@ -695,37 +724,46 @@ export function subscribeToMatchData(matchId, onUpdate) {
             return
           }
 
-          if (message.type === 'match-data-update' && String(message.matchId) === matchIdStr) {
-            // Match data updated, notify all subscribers
-            // Pass through timestamp fields for latency tracking
-            // Server sends data directly on message, not in a .data wrapper
-            const dataWithTimestamps = {
-              match: message.match,
-              homeTeam: message.homeTeam || message.teams?.[0],
-              awayTeam: message.awayTeam || message.teams?.[1],
-              homePlayers: message.homePlayers || message.players?.filter(p => p.teamId === message.match?.homeTeamId) || [],
-              awayPlayers: message.awayPlayers || message.players?.filter(p => p.teamId === message.match?.awayTeamId) || [],
-              sets: message.sets || [],
-              events: message.events || [],
-              _timestamp: message._timestamp || message.timestamp,
-              _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
+          const notify = (payload) => {
+            connection.subscribers.forEach(subscriber => {
+              try {
+                subscriber(payload)
+              } catch (err) {
+                console.error('[ServerDataSync] Error in subscriber callback:', err)
+              }
+            })
+          }
+
+          if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr) {
+            // Match data (full snapshot on subscribe, then every scoreboard sync).
+            // Pass through timestamp fields for latency tracking.
+            const payload = readRelayBundle(message)
+            if (payload) {
+              // The relay decides whether the last live-state still applies: it
+              // re-sends it with every bundle while the same scoreboard / game PIN
+              // keeps the match, and drops it on a takeover. Re-applying an old
+              // one here would show another match's sides, sets or 'ended' state.
+              connection.lastLiveState = payload.liveState
+              connection.lastPayload = payload
+              notify(payload)
             }
-            connection.subscribers.forEach(subscriber => {
-              try {
-                subscriber(dataWithTimestamps)
-              } catch (err) {
-                console.error('[ServerDataSync] Error in subscriber callback:', err)
-              }
-            })
-          } else if (message.type === 'match-full-data' && String(message.matchId) === matchIdStr) {
-            // Full match data received, notify all subscribers
-            connection.subscribers.forEach(subscriber => {
-              try {
-                subscriber(message.data)
-              } catch (err) {
-                console.error('[ServerDataSync] Error in subscriber callback:', err)
-              }
-            })
+          } else if (message.type === 'live-state-update' && String(message.matchId) === matchIdStr) {
+            // Scoreboard's computed live-state (LAN relays): re-deliver the last
+            // bundle with it so consumers see one consistent object.
+            connection.lastLiveState = message.liveState
+            if (connection.lastPayload) {
+              connection.lastPayload = { ...connection.lastPayload, liveState: message.liveState }
+              notify(connection.lastPayload)
+            }
+          } else if (message.type === 'match-deleted' && String(message.matchId) === matchIdStr) {
+            // Match removed from the relay (match end / scorer deleted it)
+            connection.lastPayload = null
+            connection.lastLiveState = undefined
+            notify({ _deleted: true, matchId: matchIdStr })
+          } else if (message.type === 'error') {
+            // Relay refused something (rate limit, not the match's scoreboard, ...)
+            wsDebugInfo.lastServerError = { time: Date.now(), code: message.code || null, message: message.message || 'Server error' }
+            console.warn('[ServerDataSync] Relay error:', message.code || '', message.message || '')
           } else if (message.type === 'match-action' && String(message.matchId) === matchIdStr) {
             // Action received from scoreboard (timeout, substitution, set_end, etc.)
             connection.subscribers.forEach(subscriber => {
@@ -1120,7 +1158,11 @@ export async function listAvailableMatchesForBenchSupabase() {
  * Validate PIN against Supabase database
  * Returns match data if PIN is valid
  */
-export async function validatePinSupabase(pin, type = 'referee') {
+export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000 } = {}) {
+  // Bounded: on a venue network that drops packets to the internet this check
+  // must fail fast so the caller can fall back to the LAN relay.
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller && timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null
   try {
     const pinStr = String(pin).trim()
 
@@ -1137,7 +1179,8 @@ export async function validatePinSupabase(pin, type = 'referee') {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinStr, type })
+      body: JSON.stringify({ pin: pinStr, type }),
+      ...(controller ? { signal: controller.signal } : {})
     })
 
     let result
@@ -1153,8 +1196,11 @@ export async function validatePinSupabase(pin, type = 'referee') {
 
     return { success: true, match: result.match }
   } catch (error) {
+    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out' }
     console.error('[validatePinSupabase] Exception:', error)
     return { success: false, error: error.message }
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
