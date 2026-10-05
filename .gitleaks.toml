@@ -6,6 +6,10 @@
 #
 # Lesson encoded here: the default ruleset is a floor, not a ceiling. Every
 # credential format this stack actually uses needs an explicit rule.
+#
+# Regression test: .githooks/test-gitleaks-config.sh (builds fake secrets at
+# runtime and checks which rules fire). Run it after editing this file.
+# Needs gitleaks >= 8.25 for the [[allowlists]] targetRules blocks below.
 
 [extend]
 useDefault = true
@@ -18,8 +22,10 @@ keywords = [":fx"]
 
 [[rules]]
 id = "deepl-api-key-assignment"
-description = "DEEPL_API_KEY assigned a non-placeholder value (catches Pro keys, which have no :fx)"
-regex = '''(?i)deepl[_-]?api[_-]?key["'\s]*[:=]["'\s]*([0-9a-zA-Z\-:]{20,})'''
+description = "DEEPL_API_KEY / DEEPL_KEY assigned a non-placeholder value (catches Pro keys, which have no :fx)"
+# openvolley's scripts/translate.js reads DEEPL_KEY, so "api" is optional.
+regex = '''(?i)deepl[_-]?(?:api[_-]?)?key["'\s]*[:=]["'\s]*([0-9a-zA-Z\-:]{20,})'''
+secretGroup = 1
 keywords = ["deepl"]
 allowlists = [
   { regexes = ['''(?i)(your|example|placeholder|xxx+|<[^>]+>|\$\{?[A-Z_]+\}?|changeme|redacted)'''] },
@@ -34,29 +40,120 @@ allowlists = [
   { regexes = ['''(?i)(your|example|placeholder|xxx+|<[^>]+>|\$\{?[A-Z_]+\}?|secrets\.|process\.env|import\.meta\.env)'''] },
 ]
 
+# Supabase legacy keys are JWTs whose payload carries "role". The anon key is
+# publishable (it ships in every browser bundle); service_role bypasses RLS.
+# The payload is base64url, so match "service_role" at each of the three
+# possible byte alignments instead of decoding.
 [[rules]]
 id = "supabase-service-role-jwt"
-description = "Supabase JWT — flags service_role separately from the harmless anon key"
-regex = '''eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+description = "Supabase service_role JWT (bypasses RLS — must never leave the backend)"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]*(?:c2VydmljZV9yb2xl|NlcnZpY2Vfcm9s|zZXJ2aWNlX3Jv)[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{20,}'''
 keywords = ["eyJ"]
 
 [[rules]]
+id = "supabase-secret-api-key"
+description = "Supabase new-style secret API key (sb_secret_…; sb_publishable_ is public)"
+regex = '''\bsb_secret_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "resend-api-key"
+description = "Resend API key (re_<id>_<secret>)"
+regex = '''\b(re_[A-Za-z0-9]{6,}_[A-Za-z0-9]{16,})\b'''
+secretGroup = 1
+entropy = 3.0
+keywords = ["re_"]
+
+[[rules]]
+id = "openvolley-env-secret"
+description = "A secret env var this stack reads (SMTP, Resend, Supabase service role, PocketBase admin, DeepL, TLS key, Postgres, publish tokens) assigned a literal"
+regex = '''(?i)\b[A-Z0-9_]*(?:SMTP_PASS(?:WORD)?|RESEND_API_KEY|SERVICE_ROLE_KEY|POCKETBASE_ADMIN_PASSWORD|PB_ADMIN_PASSWORD|DEEPL(?:_API)?_KEY|SSL_KEY_BASE64|LIVE_PUBLISH_TOKEN|REOPEN_PASSWORD_HASH|POSTGRES_PASSWORD|PGPASSWORD|JWT_SECRET)\b["'\s]*[:=][ \t]*["']?([^\s"'`$<{]{8,})'''
+secretGroup = 1
+keywords = ["smtp_pass", "resend_api_key", "service_role_key", "admin_password", "deepl", "ssl_key_base64", "live_publish_token", "reopen_password_hash", "postgres_password", "pgpassword", "jwt_secret"]
+allowlists = [
+  # Values that are references, not literals: env.X, process.env.X, secrets.X, a ternary/expression.
+  { regexes = ['''(?i)^(?:process\.|import\.meta|env\.|secrets\.|vars\.|os\.environ|getenv|req\.|config\.)'''] },
+  { regexes = ['''(?i)(your[_\- ]|example|placeholder|xxx+|change[_\- ]?me|replace[_\- ]?me|redacted|\.\.\.|\*\*\*)'''] },
+]
+
+[[rules]]
+id = "postgres-uri-password"
+description = "postgres:// connection string with an inline password"
+regex = '''(?i)\bpostgres(?:ql)?://[^:@/\s"'`]+:([^@\s/"'`]{6,})@'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://"]
+allowlists = [
+  { regexes = ['''(?i)^(?:password|postgres|pass|secret|changeme|example|placeholder|xxx+|\$.*|<.*>|\{.*\}|\*+)$'''] },
+]
+
+[[rules]]
+id = "base64-pem-private-key"
+description = "Base64-encoded PEM private key (e.g. SSL_KEY_BASE64) — the stock private-key rule only sees the plain PEM header"
+regex = '''LS0tLS1CRUdJTiB(?:QUklWQVRFIEtFWS|SU0EgUFJJVkFURSBLRVkt|FQyBQUklWQVRFIEtFWS|EU0EgUFJJVkFURSBLRVkt|PUEVOU1NIIFBSSVZBVEUgS0VZ|FTkNSWVBURUQgUFJJVkFURSBLRVkt)[A-Za-z0-9+/]{64,}'''
+keywords = ["ls0tls1crudjtib"]
+
+# Wi-Fi: openvolley once shipped the LedBox AP passphrase inside a WIFI: QR
+# payload. Field order in that format is free (S/T/P), so do not anchor on T.
+[[rules]]
 id = "wifi-wpa-passphrase"
 description = "WIFI: QR payload embedding a WPA passphrase (openvolley shipped one as a PNG)"
-regex = '''WIFI:T:WPA;S:[^;]+;P:[^;]+;'''
-keywords = ["WIFI:T:WPA"]
+regex = '''WIFI:(?:[^;\s]*;)*?P:([^;"'\s]{8,63});'''
+secretGroup = 1
+keywords = ["wifi:"]
+allowlists = [
+  { regexes = ['''(?i)(<[^>]*>?|\{[^}]*\}?|\$|xxx+|your|example|placeholder|changeme|redacted|^pass(word|phrase)?$)'''] },
+]
+
+[[rules]]
+id = "wifi-config-psk"
+description = "hostapd wpa_passphrase= / wpa_supplicant or NetworkManager psk= with a literal value"
+regex = '''(?im)^[ \t]*(?:wpa_passphrase|psk)[ \t]*=[ \t]*"?([^"\s#]{8,64})"?'''
+secretGroup = 1
+keywords = ["wpa_passphrase", "psk"]
+allowlists = [
+  { regexes = ['''(?i)(<[^>]*>?|\{[^}]*\}?|\$|xxx+|your|example|placeholder|changeme|redacted|^pass(word|phrase)?$)'''] },
+]
 
 [[rules]]
 id = "generic-credential-assignment"
-description = "Broad sweep: SECRET/PASSWORD/TOKEN/APIKEY assigned a literal. Noisy by design — this is an inventory rule, expect false positives."
-regex = '''(?i)\b([a-z_]*(secret|password|passwd|api[_-]?key|auth[_-]?token|access[_-]?token))\b["'\s]*[:=]["'\s]*["']([^"'\s$<{]{12,})["']'''
-keywords = ["secret", "password", "passwd", "apikey", "api_key", "api-key", "auth_token", "access_token"]
+description = "Broad sweep: SECRET/PASSWORD/PASSPHRASE/TOKEN/APIKEY assigned a literal. Noisy by design — this is an inventory rule, expect false positives."
+# The value is group 1; the name is non-capturing so allowlists and entropy see the value, not the variable name.
+regex = '''(?i)\b[a-z_]*(?:secret|password|passwd|passphrase|_pass|_pwd|api[_-]?key|auth[_-]?token|access[_-]?token)\b["'\s]*[:=]["'\s]*["']([^"'\s$<{]{8,})["']'''
+secretGroup = 1
+keywords = ["secret", "password", "passwd", "passphrase", "_pass", "_pwd", "apikey", "api_key", "api-key", "auth_token", "authtoken", "access_token", "accesstoken"]
 allowlists = [
-  { regexes = ['''(?i)(your[_\- ]|example|placeholder|sample|dummy|xxx+|change[_\- ]?me|replace[_\- ]?me|redacted|_here|test|fake|foo|bar|\.\.\.|<[^>]+>|\$\{?[A-Z_]+\}?|process\.env|import\.meta\.env|secrets\.)'''], regexTarget = "match" },
+  # Placeholders. Matched against the value only (not the whole line), so a
+  # real secret assigned to e.g. test_api_key is still reported.
+  { regexes = ['''(?i)(your[_\- ]|example|placeholder|dummy|xxx+|change[_\- ]?me|replace[_\- ]?me|redacted|_here$|\.\.\.|\*\*\*|<[^>]+>|\$\{?[A-Z_]+\}?)'''] },
+  # A snake/kebab-case identifier is a key name or enum, not a secret:
+  # access_token="access_token". A single word is NOT allowed (vendor firmware
+  # once hard-coded the board's sudo password as one lowercase word).
+  { regexes = ['''^[a-z]+(?:[_\-.][a-z]+)+$'''] },
+  # i18n labels: "password": "Passwort".
+  { regexes = ['''(?i)^(?:password|passwort|passphrase|kennwort|secret|token|api[_ -]?key)$'''] },
+  { regexTarget = "match", regexes = ['''(?i)(process\.env|import\.meta\.env|secrets\.)'''] },
 ]
 
+# The anon key is meant to be public (see supabase-service-role-jwt above), so
+# the stock "jwt" rule would otherwise flag every bundle that embeds it.
+[[allowlists]]
+description = "Supabase anon JWT is publishable"
+targetRules = ["jwt"]
+regexTarget = "match"
+regexes = ['''^eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*(?:InJvbGUiOiJhbm9u|Jyb2xlIjoiYW5v|icm9sZSI6ImFub24i)''']
+
+# openvolley identifiers the stock generic-api-key rule mistakes for keys:
+# seed_key is a match id (match_<ts>_<rand>), fetchWithAuth is a minified fn.
+[[allowlists]]
+description = "openvolley identifiers that look like keys"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''(?i)seed_?key["'\s]*[:=]''', '''fetchWithAuth\s*=''']
+
 # Lockfiles, vendored deps and build output are noise, not history worth purging.
-[allowlist]
+# ([[allowlists]] form: gitleaks refuses the legacy [allowlist] table next to it.)
+[[allowlists]]
+description = "Lockfiles, vendored deps, build output"
 paths = [
   '''(^|/)node_modules/''',
   '''(^|/)vendor/''',
