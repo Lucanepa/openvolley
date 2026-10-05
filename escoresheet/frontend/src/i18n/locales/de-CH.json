@@ -1358,6 +1358,7 @@
     "selectGame": "Spiil uswähle",
     "gamesAvailable": "{{count}} verfügbar",
     "gameNumber": "Spiil #{{number}}",
+    "selected": "Usgwählt",
     "vs": "vs",
     "tbd": "No offe",
     "connectionPin": "Verbindigs-PIN",

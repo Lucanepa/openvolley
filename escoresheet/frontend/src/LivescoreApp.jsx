@@ -9,7 +9,18 @@ import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStat
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { listedGames, getSetResults, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, isEndedStatus, shouldAutoConnect } from './utils/livescoreModel'
 import mikasaVolleyball from './mikasa_v200w.png'
-import { PhoneIcon } from './components/icons'
+import { AlertTriangle, Radio, RefreshCw, Server } from 'lucide-react'
+import { cn } from './ui/cn.js'
+import { BANNER_BASE, BANNER } from './ui/tones.js'
+import { Button, ButtonGroup } from './ui/Button.jsx'
+import { Card } from './ui/Card.jsx'
+import { FormError } from './ui/Field.jsx'
+import { EmptyState } from './ui/EmptyState.jsx'
+import { Row, RowList, DateRail } from './ui/Row.jsx'
+import { Chip } from './ui/Chip.jsx'
+import { StatusPill } from './ui/StatusPill.jsx'
+import { SkeletonRows } from './ui/Skeleton.jsx'
+import { NarrowScreenOverlay } from './components/dashboards/EntryKit.jsx'
 
 function shouldAutoConnectNow() {
   if (typeof window === 'undefined') return false
@@ -253,21 +264,13 @@ export default function LivescoreApp() {
   const staleNotice = stale ? (
     <div
       role="status"
-      style={{
-        position: 'fixed',
-        bottom: '8px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        padding: '4px 10px',
-        borderRadius: '6px',
-        background: 'var(--panel)',
-        color: 'var(--muted)',
-        fontSize: '12px',
-        zIndex: 50,
-        pointerEvents: 'none'
-      }}
+      className="ov-kit pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4"
+      style={{ bottom: 'calc(8px + env(safe-area-inset-bottom, 0px))' }}
     >
-      {t('livescore.staleData', 'Connection problem: showing the last known scores')}
+      <div className={cn(BANNER_BASE, BANNER.mild)}>
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+        <span>{t('livescore.staleData', 'Connection problem: showing the last known scores')}</span>
+      </div>
     </div>
   ) : null
 
@@ -290,72 +293,7 @@ export default function LivescoreApp() {
       }}>
         {staleNotice}
         {/* Narrow screen blocking overlay */}
-        {(viewportWidth < 357 || viewportHeight < 650) && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-            zIndex: 99999,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-            textAlign: 'center'
-          }}>
-            <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
-            <h2 style={{
-              fontSize: '24px',
-              fontWeight: 700,
-              color: '#ffffff',
-              marginBottom: '16px'
-            }}>
-              {t('common.screenTooSmall', 'Screen too Small')}
-            </h2>
-            <p style={{
-              fontSize: '16px',
-              color: '#9ca3af',
-              maxWidth: '300px',
-              lineHeight: 1.5,
-              marginBottom: '24px'
-            }}>
-              {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
-            </p>
-            <button
-              onClick={() => {
-                if (document.documentElement.requestFullscreen) {
-                  document.documentElement.requestFullscreen().catch(() => { })
-                }
-              }}
-              style={{
-                padding: '12px 24px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'var(--accent, #3b82f6)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <span>⛶</span>
-              <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
-            </button>
-            <p style={{
-              fontSize: '12px',
-              color: '#6b7280',
-              marginTop: '12px'
-            }}>
-              {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
-            </p>
-          </div>
-        )}
+        {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
 
         {/* Header */}
         <DashboardHeader
@@ -518,72 +456,7 @@ export default function LivescoreApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       {/* Narrow screen blocking overlay */}
-      {(viewportWidth < 357 || viewportHeight < 650) && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.5)',
-          zIndex: 99999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          textAlign: 'center'
-        }}>
-          <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            color: '#ffffff',
-            marginBottom: '16px'
-          }}>
-            {t('common.screenTooSmall', 'Screen too Small')}
-          </h2>
-          <p style={{
-            fontSize: '16px',
-            color: '#9ca3af',
-            maxWidth: '300px',
-            lineHeight: 1.5,
-            marginBottom: '24px'
-          }}>
-            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
-          </p>
-          <button
-            onClick={() => {
-              if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => { })
-              }
-            }}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'var(--accent, #3b82f6)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span>⛶</span>
-            <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
-          </button>
-          <p style={{
-            fontSize: '12px',
-            color: '#6b7280',
-            marginTop: '12px'
-          }}>
-            {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
-          </p>
-        </div>
-      )}
+      {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
 
       <UpdateBanner />
       {staleNotice}
@@ -599,52 +472,34 @@ export default function LivescoreApp() {
       />
 
       {/* Content */}
-      <div style={{ padding: '16px' }}>
+      <div className="ov-kit px-4 py-6">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-            {t('common.loading', 'Loading...')}
-          </div>
+          <Card pad="list" className="mx-auto max-w-3xl">
+            <span className="sr-only">{t('common.loading', 'Loading...')}</span>
+            <SkeletonRows rows={3} />
+          </Card>
         ) : error ? (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-            <div style={{ color: '#ef4444', marginBottom: '16px' }}>{error}</div>
-            <button
-              onClick={fetchLiveGames}
-              style={{
-                padding: '10px 20px',
-                background: 'var(--panel)',
-                border: 'none',
-                borderRadius: '6px',
-                color: 'var(--text)',
-                cursor: 'pointer'
-              }}
-            >
-              {t('common.retry', 'Retry')}
-            </button>
-            {/* A stored server (e.g. a venue LAN server) may be unreachable now */}
-            <button
-              onClick={handleChangeServer}
-              style={{
-                marginLeft: '8px',
-                padding: '10px 20px',
-                background: 'var(--panel)',
-                border: 'none',
-                borderRadius: '6px',
-                color: 'var(--text)',
-                cursor: 'pointer'
-              }}
-            >
-              {t('connection.changeServer', 'Change server')}
-            </button>
-          </div>
+          <Card className="mx-auto max-w-md text-center">
+            <FormError size="md">{error}</FormError>
+            <ButtonGroup className="mt-4 justify-center">
+              <Button variant="secondary" size="xl" icon={RefreshCw} onClick={fetchLiveGames}>
+                {t('common.retry', 'Retry')}
+              </Button>
+              {/* A stored server (e.g. a venue LAN server) may be unreachable now */}
+              <Button variant="ghost" size="xl" icon={Server} onClick={handleChangeServer}>
+                {t('connection.changeServer', 'Change server')}
+              </Button>
+            </ButtonGroup>
+          </Card>
         ) : shownGames.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-            <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
-            <div>{t('livescore.noActiveGame', 'No live games')}</div>
-          </div>
+          <Card className="mx-auto max-w-md">
+            <EmptyState icon={Radio}>{t('livescore.noActiveGame', 'No live games')}</EmptyState>
+          </Card>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <Card pad="list" className="mx-auto max-w-3xl">
+            <RowList soft>
             {shownGames.map((game) => {
-              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam } = getLeftRight(game)
+              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(game)
               const gameN = game.game_n || ''
               const league = game.league || ''
               const rawGender = game.gender || ''
@@ -652,97 +507,57 @@ export default function LivescoreApp() {
               const genderSymbol = rawGender.toLowerCase().startsWith('m') ? '♂'
                 : rawGender.toLowerCase().startsWith('f') || rawGender.toLowerCase().startsWith('w') ? '♀'
                   : rawGender
+              const tone = isMatchEnded ? 'emerald' : 'red'
+              const serveBall = (
+                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" className="inline-block h-3.5 w-3.5 shrink-0" />
+              )
 
               return (
-                <button
+                <Row
                   key={game.match_id}
-                  onClick={() => setSelectedGame(game.match_id)}
-                  style={{
-                    padding: '16px',
-                    background: 'var(--panel-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '12px',
-                    color: 'var(--text)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'background 0.2s',
-                    width: 'auto'
-                  }}
-                >
-                  {/* Game N, League, Gender */}
-                  {(gameN || league || genderSymbol) && (
-                    <div style={{
-                      marginBottom: '8px',
-                      fontSize: '12px',
-                      color: 'var(--muted)',
-                      textAlign: 'center'
-                    }}>
-                      {gameN && <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Game {gameN}</span>}
-                      {gameN && (league || genderSymbol) && ' • '}
-                      {[league, genderSymbol].filter(Boolean).join(' • ')}
+                  tone={tone}
+                  onOpen={() => setSelectedGame(game.match_id)}
+                  label={[
+                    `${leftName} ${leftScore} – ${rightScore} ${rightName}`,
+                    isMatchEnded ? t('livescore.final', 'FINAL') : `Set ${game.current_set || 1}`,
+                    gameN ? t('livescore.game', { number: gameN }) : '',
+                  ].filter(Boolean).join(', ')}
+                  className="min-h-11"
+                  leading={
+                    <DateRail
+                      tone={tone}
+                      weekday={gameN ? t('benchDashboard.game', 'Game') : undefined}
+                      date={gameN || '–'}
+                      time={genderSymbol || undefined}
+                      league={league || undefined}
+                    />
+                  }
+                  title={
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 text-left">
+                      <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-snug break-words text-stone-900 sm:text-[15px]">
+                        <span className="min-w-0">{leftName}</span>
+                        {!isMatchEnded && servingTeam === 'left' && serveBall}
+                      </p>
+                      <span className="text-right text-[28px] font-bold leading-tight tabular-nums text-stone-900 sm:text-3xl">{leftScore}</span>
+                      <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-snug break-words text-stone-900 sm:text-[15px]">
+                        <span className="min-w-0">{rightName}</span>
+                        {!isMatchEnded && servingTeam === 'right' && serveBall}
+                      </p>
+                      <span className="text-right text-[28px] font-bold leading-tight tabular-nums text-stone-900 sm:text-3xl">{rightScore}</span>
                     </div>
-                  )}
-
-                  {/* Teams and Score */}
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr auto auto auto 1fr',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    {/* Left Team - right aligned */}
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      gap: '6px'
-                    }}>
-                      {!isMatchEnded && servingTeam === 'left' && (
-                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
-                      )}
-                      {leftName}
-                    </div>
-
-                    {/* Score - colon centered */}
-                    <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'right', minWidth: '24px' }}>{leftScore}</span>
-                    <span style={{ fontSize: '20px', color: 'var(--muted)' }}>:</span>
-                    <span style={{ fontSize: '28px', fontWeight: 700, textAlign: 'left', minWidth: '24px' }}>{rightScore}</span>
-
-                    {/* Right Team - left aligned */}
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-start',
-                      gap: '6px'
-                    }}>
-                      {rightName}
-                      {!isMatchEnded && servingTeam === 'right' && (
-                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '14px', height: '14px' }} />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Set Score or Final indicator */}
-                  <div style={{
-                    marginTop: '8px',
-                    fontSize: '12px',
-                    color: isMatchEnded ? '#22c55e' : 'var(--muted)',
-                    textAlign: 'center',
-                    fontWeight: isMatchEnded ? 600 : 400
-                  }}>
-                    {isMatchEnded
-                      ? t('livescore.final', 'FINAL')
-                      : `Set ${game.current_set || 1} • Sets: ${leftSets} - ${rightSets}`
-                    }
-                  </div>
-                </button>
+                  }
+                  meta={!isMatchEnded ? <span className="tabular-nums">{`Sets: ${leftSets} – ${rightSets}`}</span> : undefined}
+                  chips={isMatchEnded && setResults.length > 0
+                    ? setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}–{r.right}</span></Chip>)
+                    : undefined}
+                  status={isMatchEnded
+                    ? <StatusPill tone="done">{t('livescore.final', 'FINAL')}</StatusPill>
+                    : <StatusPill tone="brand"><span className="tabular-nums">{`Set ${game.current_set || 1}`}</span></StatusPill>}
+                />
               )
             })}
-          </div>
+            </RowList>
+          </Card>
         )}
       </div>
     </div>
