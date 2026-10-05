@@ -7,12 +7,15 @@
 # contains a scannable literal and passes its own pre-commit scan.
 #
 # Usage: .githooks/test-gitleaks-config.sh   (exit 0 = all cases pass)
+# A missing gitleaks (>= 8.25) or python3 is a failure (exit 2), not a skip, so
+# a CI job that runs this cannot pass while testing nothing.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="$ROOT/.gitleaks.toml"
-command -v gitleaks >/dev/null 2>&1 || { echo "SKIP: gitleaks not on PATH"; exit 0; }
-command -v python3 >/dev/null 2>&1 || { echo "SKIP: python3 not on PATH"; exit 0; }
+for tool in gitleaks python3; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: $tool not on PATH, nothing was tested" >&2; exit 2; }
+done
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -64,6 +67,12 @@ expect miss openvolley-env-secret c.yml     "  RESEND_API_KEY: \${{ secrets.RESE
 expect miss openvolley-env-secret a.js      "const pass = process.env.SMTP_PASS || ''"
 expect miss openvolley-env-secret a.js      "  SMTP_PASS: process.env.SMTP_PASS,"
 expect miss openvolley-env-secret .env.ex   "SMTP_PASS=your-smtp-password"
+expect hit  openvolley-env-secret .env.prod "SMTP_PASS=$(rnd 6)abcDEF"
+expect miss openvolley-env-secret a.js      "  SMTP_PASS: smtpPass,"
+expect miss openvolley-env-secret a.ts      "  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),"
+expect miss openvolley-env-secret a.js      "  jwt_secret: jwtSecret,"
+expect miss openvolley-env-secret c.yml     "      POSTGRES_PASSWORD: postgres"
+expect hit  openvolley-env-secret c.yml     "      POSTGRES_PASSWORD: $(rnd 20)"
 expect hit  resend-api-key        a.js      "const k = 're_$(rnd 8)_$(rnd 24)'"
 
 # DeepL: translate.js reads DEEPL_KEY (Pro keys have no :fx suffix).
@@ -81,8 +90,23 @@ expect hit  wifi-wpa-passphrase gen.py "QR = 'WIFI:T:WPA;S:ledbox;P:$(rnd 18);;'
 expect hit  wifi-wpa-passphrase gen.py "QR = 'WIFI:S:ledbox;T:WPA;P:$(rnd 18);;'"
 expect miss wifi-wpa-passphrase gen.py "QR = f'WIFI:T:WPA;S:{ssid};P:{passphrase};;'"
 expect hit  wifi-config-psk     wpa.conf  "  psk=\"$(rnd 18)\""
+expect hit  wifi-wpa-passphrase gen.py "QR = 'WIFI:T:WPA;S:Hall Net;P:$(rnd 6) $(rnd 6)\\;$(rnd 4);;'"
 expect hit  wifi-config-psk     hostapd.conf "wpa_passphrase=$(rnd 18)"
+expect hit  wifi-config-psk     hostapd.conf "wpa_psk=$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
 expect miss wifi-config-psk     hostapd.conf "wpa_passphrase=<your-passphrase>"
+
+# Wi-Fi in prose: the hall-guide form that leaked the second AP passphrase.
+expect hit  wifi-ssid-passphrase-prose guide.html "  <li><b>Board wifi</b><span>ledbox_C$(rnd 4) / $(rnd 12)</span></li>"
+expect hit  wifi-ssid-passphrase-prose guide.html "    <div class=\"sub\">ledbox_C$(rnd 4) · $(rnd 12)</div>"
+expect hit  wifi-ssid-passphrase-prose notes.md   "SSID: HallNet / $(rnd 14)"
+expect miss wifi-ssid-passphrase-prose notes.md   "see escoresheet/ledbox_api/handlers.py and ledbox_api/routes.py"
+expect miss wifi-ssid-passphrase-prose notes.md   "| SSID / Passwort | notes |"
+expect miss wifi-ssid-passphrase-prose notes.md   "SSID see https://example.org/wifi-setup-guide"
+expect miss wifi-ssid-passphrase-prose guide.html "<span>ledbox_C0000 / &lt;passphrase&gt;</span>"
+expect hit  wifi-passphrase-label      guide.html "<b>WLAN-Passwort</b>: <code>$(rnd 12)</code>"
+expect hit  wifi-passphrase-label      notes.md   "Wi-Fi password: $(rnd 12)"
+expect miss wifi-passphrase-label      a.js       "  wifiPassword: cfg.wifiPassword,"
+expect miss wifi-passphrase-label      notes.md   "Wi-Fi password: <ask the hall manager>"
 
 # Generic sweep: placeholders are allowed only on the value, not the whole line.
 expect hit  generic-credential-assignment a.py "test_api_key = \"$(rnd 24)\""
@@ -91,6 +115,8 @@ expect hit  generic-credential-assignment a.py "sudoPassword = '$(rnd 9 | tr 'A-
 expect miss generic-credential-assignment a.py "password = \"your-password-here\""
 expect miss generic-credential-assignment a.js "access_token=\"access_token\""
 expect miss generic-credential-assignment de.json "  \"password\": \"Passwort\","
+expect miss generic-credential-assignment auth.test.js "  const r = await login({ email: 'a@example.ch', password: 'pw$(rnd 6)' })"
+expect hit  supabase-secret-api-key       auth.test.js "const k = 'sb_""secret_$(rnd 32)'"
 
 # Known openvolley look-alikes.
 expect miss generic-api-key b.json "{\"seed_key\": \"match_$(rnd 10)_$(rnd 10)\"}"
