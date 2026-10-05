@@ -10,6 +10,15 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { sanitizeSimple } from '../src/utils/stringUtils';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData } from './utils/extractLiberoData';
+import {
+  getStartingLineup,
+  assignSubsToColumns,
+  countRegularSubstitutions,
+  displaySetNumber,
+  getScoreBeforeEvent,
+  getSet5LeftTeamLabel,
+  getFirstServeTeamKey
+} from './utils/scoresheetModel';
 import { PhoneIcon } from '../src/components/icons';
 
 interface AppScoresheetProps {
@@ -96,6 +105,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const hasLiberoActivity = useMemo(() => {
     const hasLiberos = lcsData.teamALiberos.length > 0 || lcsData.teamBLiberos.length > 0;
     if (!hasLiberos) return false;
+    if (lcsData.redesignations.length > 0) return true;
     const hasReplacements = lcsData.sets.some(s =>
       s.teamAReplacements.length > 0 ||
       s.teamBReplacements.length > 0 ||
@@ -130,19 +140,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     }
 
     // Get starting lineup from events
-    // Use the most recent lineup event for each team (manual overrides have higher seq)
+    // Scoreboard writes a lineup event on every rotation, substitution and libero swap,
+    // so the starting lineup is the (latest) isInitial lineup, not the latest lineup event.
     const setEvents = events?.filter(e => e.setIndex === setNumber) || [];
-    const homeLineupEvents = setEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home');
-    const awayLineupEvents = setEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away');
-    const homeLineupEvent = homeLineupEvents.length > 0 ? homeLineupEvents[homeLineupEvents.length - 1] : undefined;
-    const awayLineupEvent = awayLineupEvents.length > 0 ? awayLineupEvents[awayLineupEvents.length - 1] : undefined;
 
     // Extract lineup arrays (positions I-VI)
-    const homeLineupObj = homeLineupEvent?.payload?.lineup || {};
-    const awayLineupObj = awayLineupEvent?.payload?.lineup || {};
-    const positions = ['I', 'II', 'III', 'IV', 'V', 'VI'];
-    const homeLineupArray = positions.map(pos => homeLineupObj[pos] ? String(homeLineupObj[pos]) : '');
-    const awayLineupArray = positions.map(pos => awayLineupObj[pos] ? String(awayLineupObj[pos]) : '');
+    const homeLineupArray = getStartingLineup(setEvents, setNumber, 'home');
+    const awayLineupArray = getStartingLineup(setEvents, setNumber, 'away');
 
     // Determine left and right lineups based on team assignments and swapping
     const leftLineup = !isSwapped
@@ -175,20 +179,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     // Set 1: coinTossServeA determines if A or B serves
     // Set 2, 4: The opposite team from set 1 serves
     // Set 3: Same as set 1
-    // Set 5: Uses set5FirstServe if available
-    let firstServeTeam: 'home' | 'away';
-    if (setNumber === 5 && match?.set5FirstServe) {
-      // Set 5 uses explicit set5FirstServe setting
-      const set5ServeLabel = match.set5FirstServe; // 'A' or 'B'
-      firstServeTeam = set5ServeLabel === 'A' ? teamAKey : teamBKey;
-    } else {
-      // For sets 1-4 (and set 5 without explicit setting)
-      // Set 1, 3, 5: Team that won coin toss serve choice serves
-      // Set 2, 4: Opposite team serves
-      const coinTossFirstServeTeam = match?.coinTossServeA ? teamAKey : teamBKey;
-      const isOddSet = setNumber % 2 === 1; // Sets 1, 3, 5 are odd
-      firstServeTeam = isOddSet ? coinTossFirstServeTeam : (coinTossFirstServeTeam === 'home' ? 'away' : 'home');
-    }
+    // Set 5: Uses set5FirstServe if available (else the set 1 server)
+    // Shared with the set-5 service tracker and S/R cross so all three agree
+    const firstServeTeam: 'home' | 'away' = getFirstServeTeamKey(setNumber, match, teamAKey, teamBKey);
 
     // Service tracking: track service rounds for each team
     interface ServiceRound {
@@ -1045,19 +1038,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     ];
 
     // Helper function to convert Map to position-based array
-    const convertSubsMapToArray = (subsMap: Map<number, SubRecordLocal[]>, lineup: string[]): SubRecordLocal[][] => {
-      const result: SubRecordLocal[][] = [[], [], [], [], [], []];
-      // For each position in the initial lineup, find substitutions for that player
-      lineup.forEach((playerNum, positionIndex) => {
-        if (playerNum && playerNum.trim() !== '') {
-          const playerNumInt = parseInt(playerNum, 10);
-          if (!isNaN(playerNumInt) && subsMap.has(playerNumInt)) {
-            result[positionIndex] = subsMap.get(playerNumInt)!;
-          }
-        }
-      });
-      return result;
-    };
+    // leftLineup/rightLineup are the STARTING lineups, so open substitutions keep their column
+    const convertSubsMapToArray = (subsMap: Map<number, SubRecordLocal[]>, lineup: string[]): SubRecordLocal[][] =>
+      assignSubsToColumns(subsMap, lineup);
 
     // Convert Map back to position-based array based on initial lineup
     // For Set 5, split into before/after court change
@@ -1223,20 +1206,24 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const shouldShowSet4 = isBestOf3 ? false : (teamASetsWonForSet4Check >= 1 && teamBSetsWonForSet4Check >= 1);
 
   // For set 5, determine which team is on left based on set5LeftTeam
-  // If set5LeftTeam is 'B', then Team B is on left, otherwise Team A is on left
+  // set5LeftTeam 'A'/'B' from the deciding-set toss
   // Set 5 should only be displayed if the set 5 coin toss has been done
-  // OR if the set has been started/has points (fallback to assuming Team A on left if coin toss missing)
+  // OR if the set has been started/has points (if the toss is missing, fall back like Scoreboard:
+  // teams switched as in set 2/4, i.e. Team B on left)
   const set5Info = sets?.find(s => s.index === 5);
   const set5HasStarted = set5Info && (set5Info.homePoints > 0 || set5Info.awayPoints > 0 || set5Info.startTime);
 
   const hasSet5CoinToss = !!(match?.set5LeftTeam || match?.set5FirstServe || set5HasStarted);
-  const set5LeftTeamIsB = match?.set5LeftTeam === 'B'; // default to false (Team A) if missing
+  const set5LeftTeamIsB = getSet5LeftTeamLabel(match) === 'B';
   // getSetData uses isSwapped: true means Team B on left, false means Team A on left
   const set5Data = hasSet5CoinToss ? getSetData(5, set5LeftTeamIsB) : null;
 
   // Determine which team actually changes sides (the one on the left)
   const set5TeamOnLeft = set5LeftTeamIsB ? teamBKey : teamAKey;
   const set5TeamOnRight = set5LeftTeamIsB ? teamAKey : teamBKey;
+
+  // First server of the deciding set - one value for the service tracker, S/R cross and set data
+  const set5FirstServeTeamKey = getFirstServeTeamKey(5, match, teamAKey, teamBKey);
 
   // Calculate set results for Results section
   const calculateSetResults = () => {
@@ -1277,15 +1264,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         : null;
 
       // Count substitutions (only if set is finished)
+      // Exceptional substitutions are not regular ones (not drawn in the set box either)
       const teamASubstitutions = isSetFinished
-        ? setEvents.filter(e =>
-          e.type === 'substitution' && e.payload?.team === teamAKey
-        ).length
+        ? countRegularSubstitutions(setEvents, teamAKey)
         : null;
       const teamBSubstitutions = isSetFinished
-        ? setEvents.filter(e =>
-          e.type === 'substitution' && e.payload?.team === teamBKey
-        ).length
+        ? countRegularSubstitutions(setEvents, teamBKey)
         : null;
 
       // Determine winner (1 if won, 0 otherwise, only if set is finished)
@@ -1373,30 +1357,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         return new Date(a.ts).getTime() - new Date(b.ts).getTime();
       });
 
-    // Helper to get score at a specific event timestamp
-    const getScoreAtEvent = (eventTimestamp: Date, setIndex: number): string => {
-      // Get all point events before or at this timestamp in this set
-      const pointEvents = events
-        .filter(e =>
-          e.setIndex === setIndex &&
-          e.type === 'point' &&
-          new Date(e.ts).getTime() <= eventTimestamp.getTime()
-        )
-        .sort((a, b) => {
-          const aSeq = a.seq || 0;
-          const bSeq = b.seq || 0;
-          if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-          return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-        });
-
-      // Count points
-      let homeScore = 0;
-      let awayScore = 0;
-
-      for (const e of pointEvents) {
-        if (e.payload?.team === 'home') homeScore++;
-        else if (e.payload?.team === 'away') awayScore++;
-      }
+    // Helper to get score at a specific sanction event
+    // Points before it in event order (seq; ts only when seq is missing), like every other block
+    const getScoreAtEvent = (sanctionEvent: any): string => {
+      const { home: homeScore, away: awayScore } = getScoreBeforeEvent(events, sanctionEvent);
 
       // Map to Team A/B based on team keys
       const teamAScore = teamAKey === 'home' ? homeScore : awayScore;
@@ -1412,14 +1376,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       const payload = event.payload || {};
       const sanctionType = payload.type;
       const eventTeam = payload.team; // 'home' or 'away'
-      const setIndex = event.setIndex;
+      // Printed set number (best-of-3 deciding set is stored at index 5 but is set 3)
+      const setNumberLabel = displaySetNumber(event.setIndex, match?.bestOf);
 
       // Map team to A or B
       const teamLabel = (eventTeam === teamAKey) ? 'A' : 'B';
 
       // Get score at the moment of this sanction
-      const eventTimestamp = new Date(event.ts);
-      const rawScore = getScoreAtEvent(eventTimestamp, setIndex);
+      const rawScore = getScoreAtEvent(event);
 
       // Format score as "sanctionedTeam:otherTeam" (sanctioned team score first)
       const [teamAScoreStr, teamBScoreStr] = rawScore.split(':');
@@ -1440,7 +1404,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
           team: teamLabel,
           playerNr: 'D', // "D" marker for delay sanctions
           type: sanctionType === 'delay_warning' ? 'warning' : 'penalty',
-          set: setIndex,
+          set: setNumberLabel,
           score: score
         };
         sanctionRecords.push(record);
@@ -1475,7 +1439,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             team: teamLabel,
             playerNr: playerNr,
             type: sanctionType as 'warning' | 'penalty' | 'expulsion' | 'disqualification',
-            set: setIndex,
+            set: setNumberLabel,
             score: score
           };
           sanctionRecords.push(record);
@@ -1730,7 +1694,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   try {
 
     // Determine first serve team for Set 5
-    const set5FirstServeTeam = match?.set5FirstServe === 'A' ? teamAKey : teamBKey;
+    const set5FirstServeTeam = set5FirstServeTeamKey;
     const set5TeamAKey = teamAKey;
     const set5TeamBKey = teamBKey;
 
@@ -2739,6 +2703,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
               teamAKey={teamAKey as 'home' | 'away'}
               lcsData={lcsData}
               coinTossConfirmed={coinTossConfirmed}
+              bestOf={bestOf}
             />
           </div>
         )}
@@ -2948,23 +2913,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       teamNameB={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? teamAShortName : teamBShortName) : ''}
                       teamALabel={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? "B" : "A") : ''}
                       teamBLabel={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? "A" : "B") : ''}
-                      firstServeTeamA={hasSet5CoinToss && set5Data ? (() => {
-                        // Determine which team serves first based on set5FirstServe
+                      firstServeTeamA={hasSet5CoinToss && set5Data
                         // SetFive expects firstServeTeamA to indicate if the team in Panel 1 serves
-                        if (match?.set5FirstServe) {
-                          const firstServeIsLeft = match.set5FirstServe === match?.set5LeftTeam;
-                          // If Team B is on left, then firstServeTeamA should be true if B serves
-                          return set5LeftTeamIsB
-                            ? (match.set5FirstServe === 'B')
-                            : (match.set5FirstServe === 'A');
-                        }
-                        // Fallback to coin toss if set5FirstServe not set
-                        return set5LeftTeamIsB
-                          ? !(match?.coinTossServeA || false)
-                          : (match?.coinTossServeA || false);
-                      })() : undefined}
+                        ? set5FirstServeTeamKey === set5TeamOnLeft
+                        : undefined}
                       startTime={hasSet5CoinToss && set5Data ? set5Data.startTime : ''}
                       endTime={hasSet5CoinToss && set5Data ? set5Data.endTime : ''}
+                      setFinished={hasSet5CoinToss && set5Data ? set5Data.setFinished : false}
                       lineupA={hasSet5CoinToss && set5Data ? set5Data.leftLineup : ['', '', '', '', '', '']}
                       subsA={hasSet5CoinToss && set5Data ? set5Data.leftSubs : [[], [], [], [], [], []]}
                       timeoutsA={hasSet5CoinToss && set5Data ? set5Data.leftTimeouts : ['', '']}
