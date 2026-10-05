@@ -434,13 +434,12 @@ export default function RefereeApp() {
       return
     }
 
-    // Check for master PIN first
-    if (pinInput === MASTER_PIN) {
+    // Master PIN enters test mode, but only when no real match uses that PIN
+    // (it used to be checked first and shadowed a real match's referee PIN).
+    const enterMasterMode = () => {
       setIsMasterMode(true)
       setMatchId(-1) // Use -1 as sentinel for master/test mode
       localStorage.setItem('refereeMasterMode', 'true')
-      setIsLoading(false)
-      return
     }
 
     try {
@@ -463,6 +462,8 @@ export default function RefereeApp() {
         setMatch(result.match)
         localStorage.setItem('refereeMatchId', String(result.match.id))
         localStorage.setItem('refereePin', pinInput)
+      } else if (pinInput === MASTER_PIN) {
+        enterMasterMode()
       } else {
         setError(t('refereeDashboard.errors.invalidPin'))
         setPinInput('')
@@ -470,6 +471,10 @@ export default function RefereeApp() {
         localStorage.removeItem('refereePin')
       }
     } catch (err) {
+      if (pinInput === MASTER_PIN) {
+        enterMasterMode()
+        return
+      }
       console.error('Error validating PIN:', err)
       setError(err.message || t('refereeDashboard.errors.invalidPin'))
       setPinInput('')
