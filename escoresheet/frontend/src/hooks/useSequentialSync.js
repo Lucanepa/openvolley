@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
-import { processJob, errorBackoffMs, DROP_JOB } from './useSyncQueue'
+import { processJob, errorBackoffMs, DROP_JOB, AUTH_REQUIRED, PERMANENT_FAILURE } from './useSyncQueue'
 
 const TIMED_OUT = 'timed_out'
 
@@ -16,6 +16,21 @@ async function settleJob(job, jobId, result) {
   if (result === DROP_JOB) {
     await db.sync_queue.update(jobId, { status: 'dropped' })
     return { success: false, error: 'Job cannot be attributed to a match', jobId }
+  }
+
+  if (result === PERMANENT_FAILURE) {
+    // Refused by the backend (4xx): not retried automatically, shown in the
+    // sync indicator with a manual retry
+    console.error(`[SequentialSync] ${job.resource} ${job.action} refused by the backend`)
+    await db.sync_queue.update(jobId, { status: 'failed', attempts: 1, failed_at: Date.now() })
+    return { success: false, error: `${job.resource} ${job.action} refused`, jobId }
+  }
+
+  if (result === AUTH_REQUIRED) {
+    // No session: saved locally, sent once the scorer signs in
+    console.warn(`[SequentialSync] ${job.resource} ${job.action} needs a sign-in; left in the sync queue`)
+    await db.sync_queue.update(jobId, { status: 'queued' })
+    return { success: false, offline: true, authRequired: true, jobId }
   }
 
   if (result === false) {

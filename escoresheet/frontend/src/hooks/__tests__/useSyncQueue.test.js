@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
 
 // ---------------------------------------------------------------------------
 // In-memory stand-ins for the Dexie tables and the /api/db client
@@ -9,6 +10,7 @@ function fakeTable(rows = []) {
   const collection = (pred) => ({
     toArray: async () => [...map.values()].filter(pred).sort((a, b) => a.id - b.id),
     first: async () => [...map.values()].filter(pred)[0],
+    count: async () => [...map.values()].filter(pred).length,
     and: (fn) => collection(r => pred(r) && fn(r))
   })
   return {
@@ -68,6 +70,8 @@ vi.mock('../../lib/apiClient', () => {
     return b
   }
   return {
+    AUTH_TOKEN_CHANGE_EVENT: 'api-auth-token-change',
+    AUTH_TOKEN_STORAGE_KEY: 'api_auth_token',
     apiFrom: (table) => builder(table),
     apiMatchRestore: async (payload) => {
       const call = { table: '__restore', action: 'restore', data: payload, filters: [] }
@@ -84,6 +88,12 @@ import {
   retryErrorsInternal,
   payloadCovers,
   errorBackoffMs,
+  isAuthError,
+  isPermanentError,
+  redactForLog,
+  getSyncQueueStats,
+  clearAuthBlock,
+  useSyncQueue,
   STOP_PASS
 } from '../useSyncQueue'
 
@@ -100,8 +110,10 @@ beforeEach(() => {
   fakeDb.sync_queue = fakeTable()
   fakeDb.matches = fakeTable([{ id: 1, seed_key: 'match_100_aaa', refereePin: '111111', homeTeamPin: '222222', awayTeamPin: '333333', homeTeamUploadPin: '444444' }])
   fakeDb.sets = fakeTable([{ id: 5, matchId: 1, index: 1 }])
+  fakeDb.events = fakeTable([{ id: 9, matchId: 1, type: 'coin_toss' }])
   api.calls = []
   api.respond = defaultRespond
+  clearAuthBlock()
 })
 
 describe('runQueuePass', () => {
@@ -146,7 +158,7 @@ describe('runQueuePass', () => {
     expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
   })
 
-  it('a failed set insert holds back the later update of the same set (per-entity FIFO)', async () => {
+  it('a refused set insert holds back the later update of the same set (per-entity FIFO)', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'set', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', index: 1 } },
       { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', finished: true } }
@@ -157,9 +169,9 @@ describe('runQueuePass', () => {
 
     const outcome = await runQueuePass()
     expect(outcome.hasError).toBe(true)
-    expect(fakeDb.sync_queue.map.get(1).status).toBe('error')
+    expect(outcome.hasFailed).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
     expect(fakeDb.sync_queue.map.get(1).attempts).toBe(1)
-    expect(fakeDb.sync_queue.map.get(1).next_attempt_at).toBeGreaterThan(Date.now())
     expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
     expect(api.calls.some(c => c.table === 'sets' && c.action === 'update')).toBe(false)
   })
@@ -294,14 +306,25 @@ describe('runQueuePass', () => {
     expect(sent.liveState).toEqual({ match_status: 'live' })
   })
 
-  it('restore fails (and is retried) when the server rolls it back', async () => {
+  it('restore refused by the server (400, rolled back) is parked as failed', async () => {
     fakeDb.sync_queue.reset([restoreJob()])
     api.respond = (call) => (call.table === '__restore'
       ? { data: null, error: { message: 'Database operation failed', code: 'OV_UNSCOPED_EXTERNAL_ID', status: 400 } }
       : defaultRespond(call))
 
     await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'failed', last_error: { status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' } })
+  })
+
+  it('restore that throws (no HTTP answer) is retried with backoff', async () => {
+    fakeDb.sync_queue.reset([restoreJob()])
+    api.respond = (call) => {
+      if (call.table === '__restore') throw new Error('boom')
+      return defaultRespond(call)
+    }
+    await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('error')
+    expect(fakeDb.sync_queue.map.get(1).next_attempt_at).toBeGreaterThan(Date.now())
   })
 
   it('restore stays queued on 426 (old bundle) and 5xx', async () => {
@@ -410,5 +433,142 @@ describe('helpers', () => {
 
   it('exports the stop marker', () => {
     expect(STOP_PASS).toBe('stop')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// E2E findings: coin toss id, permanent 4xx, sign-in required, auto-retry
+// ---------------------------------------------------------------------------
+
+describe('legacy coin toss jobs', () => {
+  it('a queued coin_toss_<seed> job is sent as <seed>:e:<local coin toss event id>', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa', type: 'coin_toss', set_index: 1 } }
+    ])
+    await runQueuePass()
+    const upsert = api.calls.find(c => c.table === 'events' && c.action === 'upsert')
+    expect(upsert.data.external_id).toBe('match_100_aaa:e:9')
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'sent', payload: { external_id: 'match_100_aaa:e:9' } })
+  })
+})
+
+describe('failure classes', () => {
+  it('classifies 401 as sign-in required and other 4xx as permanent', () => {
+    expect(isAuthError({ status: 401, code: 'missing_token' })).toBe(true)
+    expect(isAuthError({ status: 0, network: true })).toBe(false)
+    expect(isPermanentError({ status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' })).toBe(true)
+    expect(isPermanentError({ status: 403 })).toBe(true)
+    for (const status of [401, 408, 426, 429, 500, 503, 0]) expect(isPermanentError({ status }), String(status)).toBe(false)
+  })
+
+  it('a 400 (OV_UNSCOPED_EXTERNAL_ID) is marked failed with its reason and not auto-retried', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } }
+    ])
+    api.respond = (call) => (call.action === 'upsert'
+      ? { data: null, error: { message: 'Database operation failed', code: 'OV_UNSCOPED_EXTERNAL_ID', status: 400 } }
+      : defaultRespond(call))
+
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'failed', attempts: 1, last_error: { status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' } })
+
+    // the backoff-driven auto retry leaves it alone, even long after
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.now() + 24 * 3600 * 1000)
+    try {
+      expect(await retryErrorsInternal()).toBe(false)
+      expect(await retryErrorsInternal({ force: true })).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+
+    // a manual "Retry All" (or a sign-in) gives it another try
+    expect(await retryErrorsInternal({ force: true, includeFailed: true })).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+  })
+
+  it('a 401 leaves every job queued without counting an attempt and stops the pass', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_200_bbb:e:1', match_id: 'match_200_bbb' } }
+    ])
+    api.respond = (call) => (call.action === 'upsert'
+      ? { data: null, error: { message: 'Authentication required', code: 'missing_token', status: 401 } }
+      : defaultRespond(call))
+
+    const outcome = await runQueuePass()
+    expect(outcome).toMatchObject({ authRequired: true, stopped: true, hasError: false })
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued' })
+    expect(fakeDb.sync_queue.map.get(1).attempts).toBeUndefined()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(api.calls.filter(c => c.action === 'upsert')).toHaveLength(1)
+  })
+
+  it('logs match payloads without PINs', () => {
+    expect(redactForLog({ external_id: 'm', game_pin: '123456', connection_pins: { referee: '1' }, home_team: { name: 'A' } }))
+      .toEqual({ external_id: 'm', home_team: { name: 'A' } })
+  })
+})
+
+describe('getSyncQueueStats', () => {
+  it('counts pending, errored and failed jobs', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, status: 'queued' }, { id: 2, status: 'sending' }, { id: 3, status: 'error' },
+      { id: 4, status: 'failed' }, { id: 5, status: 'sent' }, { id: 6, status: 'dropped' }
+    ])
+    expect(await getSyncQueueStats()).toEqual({ pending: 2, error: 1, failed: 1 })
+  })
+})
+
+describe('useSyncQueue flush loop', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('requeues an errored job once its backoff has passed, while the 5 s poll runs', async () => {
+    const { unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+
+    // Parked after the mount-time forced retry already ran (as in the e2e run)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'error', attempts: 1, next_attempt_at: Date.now() + 10000, payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } }
+    ])
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('error') // backoff not over yet
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    unmount()
+  })
+
+  it('waits for a sign-in after a 401 (no request churn), then resumes at once', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    let signedIn = false
+    api.respond = (call) => (call.action === 'upsert' && !signedIn
+      ? { data: null, error: { message: 'Authentication required', code: 'missing_token', status: 401 } }
+      : defaultRespond(call))
+
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(result.current.syncStatus).toBe('auth_required')
+    expect(api.calls.filter(c => c.action === 'upsert')).toHaveLength(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+
+    signedIn = true
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('api-auth-token-change', { detail: { access_token: 't' } }))
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(result.current.syncStatus).toBe('synced')
+    unmount()
   })
 })
