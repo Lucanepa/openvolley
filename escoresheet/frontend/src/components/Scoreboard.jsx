@@ -17713,9 +17713,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: 'calc(16px * var(--scale-factor)) 0',
                           fontSize: 'calc(20px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#000',
+                          background: '#0f172a', // slate-900: the kit's dark key action (was black)
                           color: '#fff',
-                          border: '1px solid rgba(255,255,255,0.3)',
+                          border: '1px solid #0f172a',
                           borderRadius: 'calc(12px * var(--scale-factor))',
                           cursor: 'pointer',
                           width: '100%',
@@ -17738,9 +17738,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: 'calc(16px * var(--scale-factor)) 0',
                           fontSize: 'calc(20px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#000',
+                          background: '#0f172a', // slate-900: the kit's dark key action (was black)
                           color: '#fff',
-                          border: '1px solid rgba(255,255,255,0.3)',
+                          border: '1px solid #0f172a',
                           borderRadius: 'calc(12px * var(--scale-factor))',
                           cursor: 'pointer',
                           width: '100%',
@@ -17763,7 +17763,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: 'calc(16px * var(--scale-factor)) 0',
                           fontSize: 'calc(18px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#22c55e',
+                          background: '#059669', // emerald-600: the kit confirm (white text reads AA)
                           color: '#fff',
                           border: 'none',
                           borderRadius: 'calc(12px * var(--scale-factor))',
