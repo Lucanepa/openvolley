@@ -20,7 +20,9 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync, renameSync } from 'fs'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -116,7 +118,6 @@ function createScoresheetHtml(config) {
   <meta name="theme-color" content="${config.themeColor}" />
   <meta name="description" content="${config.description}" />
   <title>${config.title}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* Global Font Setting */
     body {
@@ -206,6 +207,10 @@ async function buildSubdomain(subdomain, basePath = '/') {
 
   try {
     await build({
+      // Do NOT merge vite.config.js: its plugins would be concatenated with these
+      // (two VitePWA + two react() fighting over sw.js / manifest, and
+      // DISABLE_PWA could not turn the main config's VitePWA off).
+      configFile: false,
       root: frontendDir,
       base: basePath,
       publicDir: 'public',
@@ -213,18 +218,34 @@ async function buildSubdomain(subdomain, basePath = '/') {
         __APP_VERSION__: JSON.stringify(appVersion)
       },
       resolve: {
-        dedupe: ['react', 'react-dom', 'dexie']
+        dedupe: ['react', 'react-dom', 'dexie'],
+        alias: {
+          '@': resolve(frontendDir, 'src')
+        }
       },
       plugins: [
         react(),
+        // Tailwind used to reach these builds only via the merged vite.config.js
+        tailwindcss(),
         ...(!disablePWA ? [VitePWA({
           registerType: 'prompt',
-          includeAssets: ['openvolley_no_bg.png'],
+          includeAssets: ['openvolley_no_bg.png', 'favicon.ico', 'ball.png', 'fonts/*.woff2'],
           workbox: {
+            // Same precache/offline rules as the main build (pwa-workbox.js)
+            globPatterns: PRECACHE_GLOB_PATTERNS,
+            ignoreURLParametersMatching: IGNORE_URL_PARAMETERS,
+            // The page is built as _build_<app>.html and renamed to index.html
+            // below; precache it under its final name, or the SW install 404s
+            // and the app never becomes available offline.
+            manifestTransforms: [async (entries) => ({
+              manifest: entries.map((e) => (e.url === tempIndexName ? { ...e, url: 'index.html' } : e)),
+              warnings: []
+            })],
             skipWaiting: false,
             clientsClaim: true,
             navigateFallback: null,
             runtimeCaching: [
+              offlineNavigationRoute,
               {
                 urlPattern: /^https?:\/\/.*\/api\/.*/i,
                 handler: 'NetworkFirst',
@@ -235,7 +256,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
                 }
               },
               {
-                urlPattern: /\.(?:js|css|png|jpg|jpeg|svg|gif|woff|woff2)$/,
+                urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
                 handler: 'CacheFirst',
                 options: {
                   cacheName: 'static-assets',
@@ -263,8 +284,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
             background_color: '#ffffff',
             theme_color: config.themeColor,
             icons: [
-              { src: 'openvolley_no_bg.png', sizes: '192x192', type: 'image/png' },
-              { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
+              // Real 192/512 renditions (openvolley_no_bg.png itself is 1024x1024)
+              { src: 'openvolley_icon_192.png', sizes: '192x192', type: 'image/png' },
+              { src: 'openvolley_icon_512.png', sizes: '512x512', type: 'image/png' }
             ]
           }
         })] : [])
