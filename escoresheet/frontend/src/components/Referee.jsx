@@ -4123,7 +4123,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     if (lastEvent.type === 'libero_exit') return `${t('refereeDashboard.events.liberoOut')} ${teamInfo}`
                     if (lastEvent.type === 'libero_exchange') return `${t('refereeDashboard.events.liberoExchange')} ${teamInfo}`
                     if (lastEvent.type === 'libero_redesignation') return `${t('refereeDashboard.events.liberoRedesignation')} ${teamInfo}`
-                    if (lastEvent.type === 'set_end') return t('refereeDashboard.events.setEnd', { set: lastEvent.data?.setIndex || '' })
+                    if (lastEvent.type === 'set_end') return t('refereeDashboard.events.setEnd', { set: lastEvent.data?.setIndex ? displaySetNumber(lastEvent.data.setIndex, refBestOf) : '' })
                     if (lastEvent.type === 'sanction') {
                       const sanctionData = lastEvent.data || {}
                       // Short sanction type labels

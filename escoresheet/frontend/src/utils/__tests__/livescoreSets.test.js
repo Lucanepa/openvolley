@@ -38,6 +38,16 @@ describe('liveSetNumber: the real set number of a best-of-3 decider', () => {
     expect(liveBestOf({ current_set: 3 })).toBe(5)
     expect(liveBestOf({ best_of: '3' })).toBe(3)
   })
+
+  it('a best-of-5 interval before the decider with Team B\'s set dropped (old scoreboards) stays set 5', () => {
+    // 2:2 pushed as 2:1 at the set_end of set 4
+    expect(liveBestOf({ current_set: 5, sets_won_a: 2, sets_won_b: 1, match_status: 'interval' })).toBe(5)
+    expect(liveSetNumber({ current_set: 5, sets_won_a: 2, sets_won_b: 1, match_status: 'interval' })).toBe(5)
+    // ...a finished best-of-3 2:1 is still set 3
+    expect(liveSetNumber({ current_set: 5, sets_won_a: 1, sets_won_b: 2, match_status: 'ended' })).toBe(3)
+    // the joined match's own format wins over any guess
+    expect(liveBestOf({ current_set: 5, sets_won_a: 1, sets_won_b: 1, matches: { match_info: { best_of: 5 } } })).toBe(5)
+  })
 })
 
 describe('liveSetsWon: FINAL counts the sets Team B won', () => {
@@ -100,6 +110,22 @@ describe('stale rows', () => {
   it('listedGames hides stale rows, even ones already shown', () => {
     const shown = new Set(['p'])
     expect(listedGames([playing(ago(5 * HOUR)), ended(ago(MIN))], shown, NOW).map((g) => g.match_id)).toEqual(['e'])
+  })
+
+  it('a match being played on a scorer whose clock is hours slow stays listed once this page sees it change', () => {
+    const seen = new Map()
+    const slow = (points) => ({ match_id: 's', match_status: 'in_progress', points_a: points, updated_at: ago(4 * HOUR + points * MIN) })
+    // First sighting: only the scorer's (slow) timestamp is known
+    expect(listedGames([slow(1)], new Set(), NOW, seen)).toEqual([])
+    // The next rally arrives: this page saw it change now
+    expect(listedGames([slow(2)], new Set(), NOW + MIN, seen).map((g) => g.match_id)).toEqual(['s'])
+    // ...and it goes stale after IDLE_LISTED_MS of silence by this page's clock
+    expect(listedGames([slow(2)], new Set(), NOW + MIN + IDLE_LISTED_MS + MIN, seen)).toEqual([])
+    // A row seen once is not "news": an old abandoned row stays hidden
+    const old = new Map()
+    expect(listedGames([playing(ago(5 * HOUR))], new Set(['p']), NOW, old)).toEqual([])
+    expect(listedGames([playing(ago(5 * HOUR))], new Set(['p']), NOW + MIN, old)).toEqual([])
+    expect(isStaleGame(playing(ago(5 * HOUR)), NOW, NOW - MIN)).toBe(false)
   })
 
   it('counts only the games still being played as live', () => {

@@ -51,6 +51,8 @@ export default function LivescoreApp() {
   // Matches shown as started in this session (stay listed after an undo to
   // 0:0) and matches watched while they could still change their set results.
   const shownStartedRef = useRef(new Set())
+  // When this page saw each row change (the scorer's clock may be off)
+  const rowChangesRef = useRef(new Map())
   const watchedRef = useRef(new Set())
   const finalRefetchAttemptsRef = useRef(new Map())
   const [finalRefetchTick, setFinalRefetchTick] = useState(0)
@@ -185,7 +187,7 @@ export default function LivescoreApp() {
 
   // Only started (or finished) matches are listed: a match appears when it is
   // under way, not at the first lineup confirm. See utils/livescoreModel.js.
-  const shownGames = useMemo(() => listedGames(liveGames, shownStartedRef.current, listNow), [liveGames, listNow])
+  const shownGames = useMemo(() => listedGames(liveGames, shownStartedRef.current, listNow, rowChangesRef.current), [liveGames, listNow])
 
   // FINAL view set results: match_live_state UPDATEs carry no set_results,
   // so a match that ends while this page watches it keeps the (empty)
