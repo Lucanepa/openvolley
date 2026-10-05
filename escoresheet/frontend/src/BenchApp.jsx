@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
+import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
@@ -429,9 +429,19 @@ export default function BenchApp() {
     }
 
     try {
-      // Validate PIN with server (no local IndexedDB)
+      // Validate PIN server-side (no local IndexedDB), like RefereeApp: the
+      // backend's Supabase check first (the bench lists Supabase matches), then
+      // the LAN relay. Offline the first call just fails and the relay answers.
       const pinType = selectedTeam === 'home' ? 'homeTeam' : 'awayTeam'
-      const result = await validatePin(pinInput.trim(), pinType)
+      let result = await validatePinSupabase(pinInput.trim(), selectedTeam === 'home' ? 'bench_home' : 'bench_away')
+      if (result.success && result.match) {
+        // The server only accepts a bench PIN while that bench is enabled; older
+        // backends don't echo the flag, which would trip the disconnect check.
+        const flag = selectedTeam === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
+        if (result.match[flag] === undefined) result = { ...result, match: { ...result.match, [flag]: true } }
+      } else {
+        result = await validatePin(pinInput.trim(), pinType)
+      }
 
       if (result.success && result.match) {
         setMatchId(result.match.id)
