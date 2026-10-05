@@ -1341,6 +1341,7 @@
     "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort."
   },
   "refereeDashboard": {
+    "linkDown": "Hors ligne : pas de connexion à la feuille de match. Le score et le service peuvent ne pas être à jour.",
     "title": "Espace Arbitre",
     "dashboardTitle": "Tableau de bord Arbitre",
     "status": "Statut",

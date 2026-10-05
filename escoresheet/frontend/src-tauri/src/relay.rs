@@ -80,7 +80,9 @@ const STALE_TAKEOVER: Duration = Duration::from_secs(10 * 60);
 /// Rate-limit window shared by every per-IP / per-connection counter.
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 /// Wrong game-PIN claims per IP / connection per window before claims needing
-/// proof are refused without comparing the PIN (no guessing oracle).
+/// proof are refused without comparing the PIN (no guessing oracle). One limit
+/// for both on purpose: on the venue LAN every scorer device has its own
+/// address, unlike the cloud relay behind venue NATs (per-IP limit 20 there).
 const CLAIM_FAILURE_LIMIT: u32 = 5;
 /// Distinct match ids one (non-loopback) IP may own, and new ids per window.
 const MAX_OWNED_PER_IP: usize = 4;
@@ -1130,7 +1132,7 @@ fn claim_error_message(code: &str) -> &'static str {
         "not-match-owner" => "Match is owned by another scoreboard (game PIN mismatch)",
         "rate-limited" => "Too many failed scoreboard claims. Wait a minute.",
         "too-many-matches" => "This device already drives the maximum number of matches",
-        "pins-required" => "The relay no longer holds this match: send it again with its PINs",
+        "pins-required" => "Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)",
         _ => "Refused",
     }
 }

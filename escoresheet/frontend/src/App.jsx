@@ -51,9 +51,9 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
-import { getRelayWebSocketUrl, getLocalServerStatusUrl } from './utils/backendConfig'
+import { getRelayWebSocketUrl, getLocalServerStatusUrl, isStaticHost } from './utils/backendConfig'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
-import { isRelayErrorFor, scorerRelay } from './utils/relayPublisher'
+import { isRelayErrorFor, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -478,10 +478,8 @@ export default function App() {
     }
 
     // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
-    const isStaticDeployment = !import.meta.env.DEV && (
-      window.location.hostname.includes('github.io') ||
-      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
-    )
+    // (backendConfig.isStaticHost: *.openvolley.app, *.pages.dev, *.github.io)
+    const isStaticDeployment = !import.meta.env.DEV && isStaticHost(window.location.hostname)
 
     // Check if we have a configured backend URL (cloud backend)
     const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
@@ -967,14 +965,15 @@ export default function App() {
     currentMatchIdRef.current = activeMatchId
 
     // The relay the Scoreboard and the tablets use (backendConfig)
-    const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+    const wsUrl = scorerRelayUrl({ wsPort: serverStatus?.wsPort })
     if (!wsUrl) return // page opened from disk: no relay
 
     // Relay room key of the current match (its seed key; null before it has one)
     const relayKeyOfCurrent = () => relayMatchKey(currentMatchRef.current)
 
-    // The match for the relay: never game_pin / connection_pins
-    const relayMatchOf = (match) => relayMatchPayload(match).match
+    // The match for the relay: never game_pin / connection_pins. `mark`: the
+    // live-state order marked before the IndexedDB reads (applyNewerLiveState)
+    const relayMatchOf = (match, mark) => relayMatchPayload(match, null, { mark }).match
 
     // What an unauthenticated caller may learn about the match (no PINs)
     const publicMatchSummary = (m) => ({
@@ -1006,6 +1005,9 @@ export default function App() {
       if (!relayKey) return
 
       try {
+        // Before the reads: a live state numbered after this mark is newer
+        // than what this sync carries (applyNewerLiveState on the tablets)
+        const syncMark = scorerLiveOrder.mark()
         // Load full match data
         const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
           currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
@@ -1028,7 +1030,7 @@ export default function App() {
         // Full match object - scoreboard is source of truth, always overwrite.
         // PINs only on this connection's first sync of the key and when one
         // changed; never game_pin / connection_pins (see relayMatchPayload).
-        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, currentMatchData, relayKey)
+        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, currentMatchData, relayKey, syncMark)
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
         // The relay keys the room by the seed_key (what the tablets know).
@@ -1125,6 +1127,7 @@ export default function App() {
           return
         }
 
+        const syncMark = scorerLiveOrder.mark()
         const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
           currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
           currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
@@ -1140,7 +1143,7 @@ export default function App() {
           matchId: relayKey,
           success: true,
           matchData: {
-            match: relayMatchOf(currentMatchData),
+            match: relayMatchOf(currentMatchData, syncMark),
             homeTeam,
             awayTeam,
             homePlayers,

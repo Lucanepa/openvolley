@@ -101,7 +101,9 @@ const ORPHAN_TAKEOVER_MS = 60 * 1000
 const STALE_TAKEOVER_MS = 10 * 60 * 1000
 // Wrong game-PIN claims allowed per IP / per socket per minute. Past that every
 // claim needing proof is refused WITHOUT comparing the PIN, so the answer is
-// no oracle for guessing it.
+// no oracle for guessing it. One limit for both on purpose: on the venue LAN
+// every scorer device has its own address (no NAT in between), unlike the
+// cloud relay (backend/server.js CLAIM_FAILURE_LIMIT_PER_IP = 20, venue NATs).
 const CLAIM_FAILURE_LIMIT = 5
 // Distinct match ids the sockets of one (non-loopback) IP may own at once, and
 // new ids one IP may claim per minute: stops a LAN device squatting on ids.
@@ -593,7 +595,7 @@ function createLanRelay(options = {}) {
     'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
     'too-many-matches': 'This device already drives the maximum number of matches',
     'bad-request': 'Unknown connection',
-    'pins-required': 'The relay no longer holds this match: send it again with its PINs',
+    'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
   }
 
   /**

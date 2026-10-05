@@ -198,14 +198,52 @@ export function isNewerLiveState(row, lastTs, { allowEqual = false } = {}) {
 const liveStateTime = (liveState) => Date.parse(liveState?.updated_at)
 
 /**
+ * The scorer's order of a live state: its sequence number and session
+ * (relayPublisher.createLiveStateOrder), or null (a match_live_state row from
+ * the database, an older scorer).
+ */
+function liveStateOrderOf(liveState) {
+  const seq = Number(liveState?._seq)
+  const session = liveState?._session
+  return Number.isFinite(seq) && typeof session === 'string' && session ? { seq, session } : null
+}
+
+/**
  * Which live state to keep when `incoming` arrives after `current` (relay
- * push, relay bundle, match_live_state row): `incoming` unless its updated_at
- * is older. Either may be missing; unknown timestamps count as newer.
+ * push, relay bundle, match_live_state row): `incoming` unless it is older.
+ * Two states of one scorer session compare by sequence number (never by the
+ * wall clock: an NTP step back would freeze the view on the state from before
+ * the step); otherwise by updated_at. Either may be missing; unknown
+ * timestamps count as newer.
  */
 export function newerLiveState(current, incoming) {
   if (!incoming) return current || null
   if (!current) return incoming
+  const a = liveStateOrderOf(current)
+  const b = liveStateOrderOf(incoming)
+  if (a && b && a.session === b.session) return b.seq < a.seq ? current : incoming
   return liveStateTime(incoming) < liveStateTime(current) ? current : incoming
+}
+
+/**
+ * Was `liveState` computed after the relay bundle was read on the scorer?
+ * - Same scorer session: its sequence number is higher than the bundle's
+ *   match._syncedSeq (the last number issued before the sync read IndexedDB).
+ * - Otherwise its updated_at is later than match._syncedAt (both on the
+ *   scorer's clock; the fallback for a database row or an older scorer).
+ * False when the bundle carries neither (an older scorer).
+ */
+export function isLiveStateNewerThanBundle(liveState, bundle) {
+  if (!liveState || !bundle) return false
+  const match = bundle.match
+  const order = liveStateOrderOf(liveState)
+  const syncedSeq = Number(match?._syncedSeq)
+  if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
+    return order.seq > syncedSeq
+  }
+  const syncedAt = Number(match?._syncedAt)
+  const liveAt = liveStateTime(liveState)
+  return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && liveAt > syncedAt
 }
 
 /**
@@ -214,17 +252,14 @@ export function newerLiveState(current, incoming) {
  * arrive later, be refused, or be read back from the relay before the scorer's
  * sync landed. Then the live state's points replace those of the set it names,
  * so the referee and bench show the newest score whichever path brought it.
- * "Newer" compares the live state's updated_at with the bundle's
- * match._syncedAt, both on the scorer's clock. A bundle without _syncedAt
- * (older scorer) or an older live state is returned as it is.
+ * "Newer": isLiveStateNewerThanBundle. A bundle that does not say when it was
+ * read (older scorer) or an older live state is returned as it is.
  * @param {object} bundle - { match, sets, liveState?, ... }
  * @param {object|null} [liveState] - defaults to the bundle's own
  */
 export function applyNewerLiveState(bundle, liveState = bundle?.liveState) {
   if (!bundle || !liveState || !Array.isArray(bundle.sets)) return bundle
-  const syncedAt = Number(bundle.match?._syncedAt)
-  const liveAt = liveStateTime(liveState)
-  if (!Number.isFinite(syncedAt) || Number.isNaN(liveAt) || liveAt <= syncedAt) return bundle
+  if (!isLiveStateNewerThanBundle(liveState, bundle)) return bundle
   const out = { ...bundle, liveState }
   const index = Number(liveState.current_set)
   const pointsA = Number(liveState.points_a)
@@ -241,6 +276,47 @@ export function applyNewerLiveState(bundle, liveState = bundle?.liveState) {
     return { ...s, homePoints, awayPoints }
   })
   return changed ? { ...out, sets } : out
+}
+
+/**
+ * The newest live state a tablet has seen from any source (relay push, relay
+ * bundle, match_live_state row) and the last relay bundle as received, so a
+ * newer live state wins over an older bundle's score (applyNewerLiveState):
+ * - bundle(result): a relay bundle (getMatchData / subscribeToMatchData
+ *   result). Returns it with the newest live state applied. A bundle read on
+ *   the scorer after the kept state supersedes it (which also frees a state
+ *   kept from before a clock step on the scorer). Results built from a
+ *   match_live_state row (source 'live_state') pass through.
+ * - liveState(row): a live state from elsewhere (database row). True when it
+ *   is now the newest: re-deliver bundle(lastBundle) to show it.
+ */
+export function createLiveStateTracker() {
+  let newest = null
+  let lastBundle = null
+  return {
+    get newest() { return newest },
+    get lastBundle() { return lastBundle },
+    reset() {
+      newest = null
+      lastBundle = null
+    },
+    bundle(result) {
+      if (!result?.success || result.source === 'live_state' || !Array.isArray(result.sets)) return result
+      lastBundle = result
+      const m = result.match
+      if (newest && (m?._syncedSeq != null || m?._syncedAt != null) && !isLiveStateNewerThanBundle(newest, result)) {
+        newest = null
+      }
+      newest = newerLiveState(newest, result.liveState)
+      return applyNewerLiveState(result, newest)
+    },
+    liveState(row) {
+      if (!row || typeof row !== 'object') return false
+      const before = newest
+      newest = newerLiveState(newest, row)
+      return newest !== before
+    }
+  }
 }
 
 /**
@@ -1530,12 +1606,22 @@ export function relayMatchKey(match) {
  * The match object a scorer sends in sync-match-data. PINs go only with the
  * first sync on a socket and when one changes (the relay keeps the stored ones
  * meanwhile); pass the signature returned last time for this socket, or null.
- * `_syncedAt` (the scorer's clock) lets the tablets tell whether a live-state
- * push is newer than this copy (applyNewerLiveState).
+ * `_syncedSeq` / `_syncSession` (the scorer's live-state order, marked before
+ * the sync read IndexedDB: `mark` = { seq, session, at }) let the tablets tell
+ * whether a live-state push is newer than this copy (applyNewerLiveState);
+ * `_syncedAt` (the scorer's clock) is the fallback when the two come from
+ * different sessions.
  * @returns {{ match: object, pinSignature: string }}
  */
-export function relayMatchPayload(match, lastPinSignature = null, { now = Date.now() } = {}) {
-  const out = { ...(match || {}), _syncedAt: now }
+export function relayMatchPayload(match, lastPinSignature = null, { now = Date.now(), mark = null } = {}) {
+  const out = { ...(match || {}) }
+  delete out._syncedSeq
+  delete out._syncSession
+  out._syncedAt = Number.isFinite(mark?.at) ? mark.at : now
+  if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
+    out._syncedSeq = mark.seq
+    out._syncSession = mark.session
+  }
   const pins = {}
   for (const f of RELAY_PIN_FIELDS) {
     const v = f === 'gamePin' ? (out.gamePin ?? out.game_pin) : out[f]

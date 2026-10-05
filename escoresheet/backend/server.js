@@ -3359,7 +3359,7 @@ const CLAIM_ERRORS = {
   'not-match-owner': 'Match is owned by another scoreboard (game PIN mismatch)',
   'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
   'too-many-matches': 'This address already drives the maximum number of matches',
-  'pins-required': 'The relay no longer holds this match: send it again with its PINs',
+  'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
   'room-limit': 'Server room limit reached'
 }
 

@@ -4,7 +4,9 @@ import {
   createScorerRelay,
   createLiveStateOrder,
   isRelayErrorFor,
-  relayReconnectDelay
+  relayReconnectDelay,
+  scorerRelayUrl,
+  resetScorerRelayUrl
 } from '../relayPublisher'
 import { getRelayWebSocketUrl, setBackendOverride } from '../backendConfig'
 
@@ -306,5 +308,63 @@ describe('getRelayWebSocketUrl (one relay for the scorer and its tablets)', () =
     vi.stubEnv('VITE_BACKEND_URL', '')
     vi.stubEnv('DEV', true)
     expect(getRelayWebSocketUrl()).toBe(`ws://${window.location.hostname}:8080`)
+  })
+})
+
+describe('scorerRelayUrl (App and Scoreboard attach to the same url)', () => {
+  afterEach(() => {
+    resetScorerRelayUrl()
+    localStorage.clear()
+    vi.unstubAllEnvs()
+  })
+
+  it('remembers the LAN relay\'s WS port: a remount without a status keeps the url', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('DEV', false)
+    const host = window.location.hostname
+    const withPort = scorerRelayUrl({ wsPort: 8181 })
+    expect(withPort).toBe(`ws://${host}:8181`)
+    // Scoreboard remounted: no server status yet
+    expect(scorerRelayUrl()).toBe(withPort)
+    expect(scorerRelayUrl({ wsPort: null })).toBe(withPort)
+  })
+
+  it('two users attaching with urls from it share one socket (no flapping)', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('DEV', false)
+    const sockets = []
+    const relay = createScorerRelay({
+      createSocket: (url) => {
+        const s = { url, readyState: 0, send: vi.fn(), close: vi.fn() }
+        sockets.push(s)
+        return s
+      },
+      setTimer: () => 0,
+      clearTimer: () => {},
+      events: null,
+      doc: null
+    })
+    const detachApp = relay.attach(scorerRelayUrl({ wsPort: 8181 }), {})
+    const detachBoard = relay.attach(scorerRelayUrl(), {})
+    expect(sockets).toHaveLength(1)
+    expect(sockets[0].url).toBe(`ws://${window.location.hostname}:8181`)
+    detachBoard()
+    detachApp()
+  })
+})
+
+describe('live-state order marks (what a relay sync records)', () => {
+  it('marks the last number issued and the session, before the reads', () => {
+    const order = createLiveStateOrder({ session: 'abc', now: () => 42 })
+    expect(order.mark()).toEqual({ seq: 0, session: 'abc', at: 42 })
+    order.next()
+    order.next()
+    expect(order.mark()).toEqual({ seq: 2, session: 'abc', at: 42 })
+    expect(order.current()).toBe(2)
+  })
+
+  it('each order has its own session id', () => {
+    expect(createLiveStateOrder().session).not.toBe(createLiveStateOrder().session)
+    expect(typeof createLiveStateOrder().session).toBe('string')
   })
 })
