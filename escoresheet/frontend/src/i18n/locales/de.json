@@ -1230,6 +1230,7 @@
     "selectGame": "Spiel auswählen",
     "gamesAvailable": "{{count}} verfügbar",
     "gameNumber": "Spiel #{{number}}",
+    "selected": "Ausgewählt",
     "vs": "vs",
     "tbd": "Noch offen",
     "connectionPin": "Verbindungs-PIN",

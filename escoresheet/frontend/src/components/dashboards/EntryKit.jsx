@@ -16,11 +16,13 @@ import { Row, DateRail } from '../../ui/Row.jsx';
 import { Chip } from '../../ui/Chip.jsx';
 import { weekdayLabel, dayLabel, timeLabel } from '../../ui/format.js';
 
-/** Centred content area under a dashboard header; scopes the kit preflight. */
+/** Centred content area under a dashboard header; scopes the kit preflight.
+ *  Centred with auto margins, not justify-center: when the card is taller than
+ *  the space (landscape phone) the overflow then scrolls from the top. */
 export function EntryPage({ className, children }) {
   return (
-    <div className={cn('ov-kit flex flex-1 min-h-0 flex-col items-center justify-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6', className)}>
-      {children}
+    <div className={cn('ov-kit flex flex-1 min-h-0 flex-col items-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6', className)}>
+      <div className="my-auto flex w-full flex-col items-center">{children}</div>
     </div>
   );
 }
@@ -95,12 +97,21 @@ export function scheduledInstant(value) {
  * @param {string} props.away        away team name
  * @param {string} [props.noDate]    shown in the rail when the game has no date ("TBD")
  * @param {Function} [props.onOpen]
- * @param {any} [props.status]       top-right indicator
+ * @param {any} [props.status]       top-right indicator (keep it aria-hidden: the row label carries the meaning)
+ * @param {string} [props.selectedLabel] when set, this row is the chosen one; the word ("Selected") ends its accessible name
  */
-export function GameRow({ match, lang, gameLabel, home, away, noDate, onOpen, status, label }) {
+export function GameRow({ match, lang, gameLabel, home, away, noDate, onOpen, status, selectedLabel }) {
   const when = scheduledInstant(match?.scheduledAt);
   const date = when ? dayLabel(when) : '';
   const tone = match?.status === 'live' ? 'red' : 'stone';
+  // An aria-label on the row button replaces its whole content, so build it
+  // from that content: teams first, then the game number, the date, the state.
+  const label = [
+    [home, away].filter(Boolean).join(' – '),
+    gameLabel,
+    date ? `${weekdayLabel(when, lang)} ${date} ${timeLabel(when)}`.trim() : noDate,
+    selectedLabel,
+  ].filter(Boolean).join(', ');
   return (
     <Row
       tone={tone}
@@ -121,7 +132,7 @@ export function GameRow({ match, lang, gameLabel, home, away, noDate, onOpen, st
       chips={gameLabel ? <Chip>{gameLabel}</Chip> : undefined}
       status={status}
       onOpen={onOpen}
-      label={label}
+      label={onOpen ? label : undefined}
       className="min-h-11"
     />
   );
