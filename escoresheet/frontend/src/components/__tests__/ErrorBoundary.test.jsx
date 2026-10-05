@@ -38,4 +38,21 @@ describe('ErrorBoundary', () => {
     expect(src).toMatch(/<React\.StrictMode>\s*<ErrorBoundary[^>]*>[\s\S]*<\/ErrorBoundary>\s*<\/React\.StrictMode>/)
     expect(src).not.toMatch(/replaceState\(null, '', window\.location\.pathname\)/)
   })
+
+  // The main build's /scoresheet page is scoresheet/index.html ->
+  // scoresheet_pdf/index_scoresheet.tsx (scoresheet-main.jsx is only used by the
+  // subdomain build). It has its own boundary: every render must use it.
+  it('main-build scoresheet entry (index_scoresheet.tsx) wraps every root.render in its ErrorBoundary', () => {
+    const html = readFileSync(resolve(__dirname, '../../../scoresheet/index.html'), 'utf8')
+    expect(html).toMatch(/src="\/scoresheet_pdf\/index_scoresheet\.tsx"/)
+    const src = readFileSync(resolve(__dirname, '../../../scoresheet_pdf/index_scoresheet.tsx'), 'utf8')
+    const renders = src.split('root.render(').slice(1)
+    expect(renders.length).toBeGreaterThan(0)
+    // Every render except the synchronous catch-path fallback (plain markup)
+    const appRenders = renders.filter((r) => /<React\.StrictMode>/.test(r.slice(0, 80)))
+    expect(appRenders.length).toBe(renders.length - 1)
+    for (const r of appRenders) {
+      expect(r).toMatch(/^\s*<React\.StrictMode>\s*<ErrorBoundary>/)
+    }
+  })
 })
