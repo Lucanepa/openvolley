@@ -7,6 +7,14 @@ import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
 import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
+import { Info, LifeBuoy, X } from 'lucide-react'
+import { Button, cn, IconButton, SegmentedControl, Switch } from '../../ui'
+
+// Kit field recipes for the small inline number/select controls (h-9, svrz md).
+const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
+// Kit secondary button, h-11 (courtside touch size).
+const BTN_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ' + 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
+const BTN_DANGER_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors ' + 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
 
 const currentVersion = __APP_VERSION__
 
@@ -14,49 +22,25 @@ function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
 
   return (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
-      <div
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        aria-expanded={showTooltip}
         onClick={(e) => {
           e.stopPropagation()
           setShowTooltip(!showTooltip)
         }}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '16px',
-          height: '16px',
-          borderRadius: '50%',
-          background: showTooltip ? 'rgba(59, 130, 246, 0.5)' : 'var(--border)',
-          color: 'var(--muted)',
-          fontSize: '11px',
-          fontWeight: 600,
-          cursor: 'pointer'
-        }}
+        className={cn(
+          'inline-flex h-5 w-5 items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/50',
+          showTooltip ? 'bg-sky-50 text-sky-700' : 'text-stone-400 hover:bg-sky-50 hover:text-sky-700'
+        )}
       >
-        i
-      </div>
+        <Info size={14} aria-hidden="true" />
+      </button>
       {showTooltip && (
         <div
           onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            marginTop: '8px',
-            padding: '8px 12px',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            fontSize: '12px',
-            color: 'var(--text)',
-            whiteSpace: 'normal',
-            width: 'max-content',
-            maxWidth: '250px',
-            zIndex: 10,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-          }}
+          className="absolute left-1/2 top-full z-10 mt-2 w-max max-w-[250px] -translate-x-1/2 whitespace-normal rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-normal leading-relaxed text-stone-700 shadow-xl"
         >
           {title}
         </div>
@@ -66,68 +50,34 @@ function InfoDot({ title }) {
 }
 
 function ToggleSwitch({ value, onToggle }) {
-  return (
-    <button
-      onClick={onToggle}
-      style={{
-        width: '52px',
-        height: '28px',
-        minHeight: '28px',
-        maxHeight: '28px',
-        padding: 0,
-        boxSizing: 'border-box',
-        borderRadius: '14px',
-        border: 'none',
-        cursor: 'pointer',
-        background: value ? '#22c55e' : 'var(--border)',
-        position: 'relative',
-        transition: 'background 0.2s',
-        flexShrink: 0,
-        marginLeft: '16px'
-      }}
-    >
-      <div style={{
-        width: '20px',
-        height: '20px',
-        borderRadius: '10px',
-        background: '#fff',
-        position: 'absolute',
-        top: '4px',
-        left: value ? '28px' : '4px',
-        transition: 'left 0.2s'
-      }} />
-    </button>
-  )
+  // Kit Switch, lg (h-7 w-12) for tablets; the row around it is the 48px hit row.
+  return <Switch size="lg" checked={!!value} onCheckedChange={() => onToggle()} className="ml-4" />
 }
 
 function Row({ children, style }) {
+  // svrz settings row: flat, min 48px, the Section list draws the hairlines.
+  // Spacing between rows comes from the dividers, so a passed marginBottom is dropped.
+  const { marginBottom, ...rest } = style || {}
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 16px',
-        background: 'var(--panel-2)',
-        borderRadius: '8px',
-        flexShrink: 0,
-        height: 'auto',
-        ...style
-      }}
-    >
+    <div className="flex min-h-12 shrink-0 items-center justify-between py-3" style={rest}>
       {children}
     </div>
   )
 }
 
-function Section({ title, children, borderBottom = true }) {
+function Section({ title, children }) {
+  // svrz section head (name on a dark 1.5px rule) over a flat divided list.
   return (
-    <div style={{ marginBottom: '24px', paddingBottom: borderBottom ? '24px' : 0, borderBottom: borderBottom ? '1px solid var(--border)' : 'none' }}>
+    <section className="mb-6">
       {title ? (
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>{title}</h3>
+        <div className="flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5">
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-stone-800">{title}</h3>
+        </div>
       ) : null}
-      {children}
-    </div>
+      <div className="divide-y divide-stone-100">
+        {children}
+      </div>
+    </section>
   )
 }
 
@@ -144,24 +94,13 @@ function DurationInput({ value, onChange, label }) {
     const newVal = Math.max(60, Math.min(600, minutes * 60 + s))
     onChange(newVal)
   }
-  const inputStyle = {
-    width: '36px',
-    padding: '4px',
-    fontSize: '14px',
-    fontFamily: 'monospace',
-    fontWeight: 600,
-    textAlign: 'center',
-    background: 'var(--panel)',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    color: 'var(--text)'
-  }
+  const inputCls = cn(SMALL_FIELD, 'w-14 font-semibold')
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '16px' }}>
-      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} style={inputStyle} aria-label={`${label} minutes`} />
-      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>'</span>
-      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} style={inputStyle} aria-label={`${label} seconds`} />
-      <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '14px' }}>''</span>
+    <div className="ml-4 flex items-center gap-1">
+      <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={`${label} minutes`} />
+      <span className="text-sm font-semibold text-stone-500">'</span>
+      <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
+      <span className="text-sm font-semibold text-stone-500">''</span>
     </div>
   )
 }
@@ -323,55 +262,15 @@ export default function HomeOptionsModal({
       width={750}
       hideCloseButton={true}
     >
+      <div className="ov-kit">
       {/* Sticky Header */}
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        background: 'var(--panel)',
-        borderBottom: '1px solid var(--border)',
-        padding: '12px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 10
-      }}>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('options.title')}</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={() => setSupportFeedbackOpen(true)}
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
+        <h2 className="text-lg font-bold text-stone-900">{t('options.title')}</h2>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="md" icon={LifeBuoy} onClick={() => setSupportFeedbackOpen(true)} className="h-11 whitespace-nowrap">
             {t('supportFeedback.button')}
-          </button>
-          <button
-            onClick={onClose}
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '6px',
-              border: 'none',
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              fontSize: '18px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title={t('options.close')}
-          >
-            ×
-          </button>
+          </Button>
+          <IconButton variant="close" icon={X} label={t('options.close')} onClick={onClose} />
         </div>
       </div>
 
@@ -381,17 +280,17 @@ export default function HomeOptionsModal({
         onClose={() => setSupportFeedbackOpen(false)}
         currentPage="options"
       />
-      <div style={{ padding: '24px', maxHeight: 'calc(80vh - 60px)', overflowY: 'auto' }}>
+      <div className="max-h-[calc(80vh-60px)] overflow-y-auto px-2 pt-4 pb-2 text-stone-800 sm:px-4">
         <Section title={null}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.checkAccidentalRallyStart')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.checkAccidentalRallyStart')}</div>
                 <InfoDot title={t('options.checkAccidentalRallyStartInfo', { duration: accidentalRallyStartDuration })} />
               </div>
               {checkAccidentalRallyStart && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -403,18 +302,9 @@ export default function HomeOptionsModal({
                       setAccidentalRallyStartDuration(val)
                       localStorage.setItem('accidentalRallyStartDuration', String(val))
                     }}
-                    style={{
-                      width: '50px',
-                      padding: '4px 8px',
-                      fontSize: '12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      textAlign: 'center'
-                    }}
+                    className={cn(SMALL_FIELD, 'w-16')}
                   />
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
+                  <span className="text-xs text-stone-500">{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -429,14 +319,14 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.checkAccidentalPointAward')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.checkAccidentalPointAward')}</div>
                 <InfoDot title={t('options.checkAccidentalPointAwardInfo', { duration: accidentalPointAwardDuration })} />
               </div>
               {checkAccidentalPointAward && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.duration')}:</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">{t('options.duration')}:</span>
                   <input
                     type="number"
                     min="1"
@@ -448,18 +338,9 @@ export default function HomeOptionsModal({
                       setAccidentalPointAwardDuration(val)
                       localStorage.setItem('accidentalPointAwardDuration', String(val))
                     }}
-                    style={{
-                      width: '50px',
-                      padding: '4px 8px',
-                      fontSize: '12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      textAlign: 'center'
-                    }}
+                    className={cn(SMALL_FIELD, 'w-16')}
                   />
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.seconds')}</span>
+                  <span className="text-xs text-stone-500">{t('options.seconds')}</span>
                 </div>
               )}
             </div>
@@ -474,8 +355,8 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.manageCaptainOnCourt')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.manageCaptainOnCourt')}</div>
               <InfoDot title={t('options.manageCaptainOnCourtInfo')} />
             </div>
             <ToggleSwitch
@@ -489,8 +370,8 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.liberoExitConfirmation')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.liberoExitConfirmation')}</div>
               <InfoDot title={t('options.liberoExitConfirmationInfo')} />
             </div>
             <ToggleSwitch
@@ -504,8 +385,8 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.liberoEntrySuggestion')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.liberoEntrySuggestion')}</div>
               <InfoDot title={t('options.liberoEntrySuggestionInfo')} />
             </div>
             <ToggleSwitch
@@ -519,8 +400,8 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.setIntervalDuration')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.setIntervalDuration')}</div>
               <InfoDot title={t('options.setIntervalDurationInfo')} />
             </div>
             <DurationInput
@@ -534,25 +415,16 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.keyboardShortcuts')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.keyboardShortcuts')}</div>
               <InfoDot title={t('options.keyboardShortcutsInfo')} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="flex items-center gap-2">
               {keybindingsEnabled && (
                 <button
+                  type="button"
                   onClick={() => setKeybindingsModalOpen(true)}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: 'rgba(59, 130, 246, 0.2)',
-                    color: '#3b82f6',
-                    border: '1px solid rgba(59, 130, 246, 0.4)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
+                  className={BTN_OUTLINE}
                 >
                   {t('options.keybindings')}
                 </button>
@@ -569,14 +441,14 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row style={{ alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableLfpTracking')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.enableLfpTracking')}</div>
                 <InfoDot title={t('options.lfpTrackingInfo')} />
               </div>
               {lfpTrackingEnabled && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('options.minimumLfpsOnCourt')}</span>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">{t('options.minimumLfpsOnCourt')}</span>
                   <select
                     value={lfpMinimumOnCourt}
                     aria-label={t('options.minimumLfpsOnCourt')}
@@ -585,19 +457,10 @@ export default function HomeOptionsModal({
                       setLfpMinimumOnCourt(val)
                       localStorage.setItem('lfpMinimumOnCourt', String(val))
                     }}
-                    style={{
-                      padding: '4px 4px',
-                      fontSize: '12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      textAlign: 'center',
-                      width: '44px'
-                    }}
+                    className={cn(SMALL_FIELD, 'w-16')}
                   >
                     {[1, 2, 3, 4, 5, 6].map(n => (
-                      <option key={n} value={n} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{n}</option>
+                      <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
                 </div>
@@ -616,83 +479,40 @@ export default function HomeOptionsModal({
 
         <Section title={t('options.displayMode')}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.screenMode')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.screenMode')}</div>
                 <InfoDot title={t('options.screenModeInfo')} />
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {['auto', 'desktop', 'tablet'].map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => {
-                      if (mode === 'tablet') {
-                        enterDisplayMode(mode)
-                        return
-                      }
-                      if (mode === 'desktop') {
-                        exitDisplayMode()
-                        return
-                      }
-                      setDisplayMode(mode)
-                      localStorage.setItem('displayMode', mode)
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      background: displayMode === mode ? '#3b82f6' : 'var(--panel)',
-                      color: displayMode === mode ? '#fff' : 'var(--text)',
-                      border: displayMode === mode ? '1px solid #3b82f6' : '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <span>{mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode}</span>
-                    {modeDescriptions[mode] ? (
-                      <span
-                        title={modeDescriptions[mode]}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: displayMode === mode ? 'rgba(255, 255, 255, 0.3)' : 'var(--border)',
-                          color: displayMode === mode ? '#fff' : 'var(--muted)',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          cursor: 'help'
-                        }}
-                      >
-                        i
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                ariaLabel={t('options.screenMode')}
+                value={displayMode}
+                className="max-w-md [&>button]:h-11 [&>button]:text-sm [&>button]:capitalize"
+                options={['auto', 'desktop', 'tablet'].map(mode => ({
+                  value: mode,
+                  label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
+                  title: modeDescriptions[mode]
+                }))}
+                onChange={(mode) => {
+                  if (mode === 'tablet') {
+                    enterDisplayMode(mode)
+                    return
+                  }
+                  if (mode === 'desktop') {
+                    exitDisplayMode()
+                    return
+                  }
+                  setDisplayMode(mode)
+                  localStorage.setItem('displayMode', mode)
+                }}
+              />
 
               {displayMode !== 'desktop' && displayMode !== 'auto' && (
-                <div style={{ marginTop: '12px' }}>
+                <div className="mt-3">
                   <button
+                    type="button"
                     onClick={exitDisplayMode}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: 'rgba(239, 68, 68, 0.2)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
+                    className={BTN_DANGER_OUTLINE}
                   >
                     {t('options.exitMode', { mode: displayMode })}
                   </button>
@@ -702,8 +522,8 @@ export default function HomeOptionsModal({
           </Row>
 
           <Row>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.screenAlwaysOn')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.screenAlwaysOn')}</div>
               <InfoDot title={t('options.screenAlwaysOnInfo')} />
             </div>
             <ToggleSwitch value={wakeLockActive} onToggle={toggleWakeLock} />
@@ -713,8 +533,8 @@ export default function HomeOptionsModal({
         {dashboardServer && (
           <Section title={t('options.dashboardServer')}>
             <Row style={{ marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.enableDashboards')}</div>
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.enableDashboards')}</div>
                 <InfoDot title={t('options.enableDashboardsInfo')} />
               </div>
               <ToggleSwitch
@@ -726,63 +546,32 @@ export default function HomeOptionsModal({
             {dashboardServer.enabled && (
               <>
                 {/* Server Status */}
-                <div style={{
-                  background: 'var(--panel-2)',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('options.serverStatus')}</span>
-                    <span style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      fontSize: '13px',
-                      color: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
-                    }}>
-                      <span style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: dashboardServer.serverRunning ? '#22c55e' : '#ef4444'
-                      }} />
+                <div className="py-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-xs text-stone-500">{t('options.serverStatus')}</span>
+                    <span className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                      dashboardServer.serverRunning ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                    )}>
+                      <span className={cn('h-2 w-2 rounded-full', dashboardServer.serverRunning ? 'bg-emerald-500' : 'bg-red-500')} />
                       {dashboardServer.serverRunning ? t('options.running') : t('options.notRunning')}
                     </span>
                   </div>
 
                   {dashboardServer.serverRunning && dashboardServer.connectionUrl && (
                     <>
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                      <div className="mb-3">
+                        <div className="mb-1 text-xs text-stone-500">
                           {t('options.connectDashboardsTo')}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <code style={{
-                            flex: 1,
-                            padding: '10px 12px',
-                            background: 'var(--panel-2)',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            fontFamily: 'monospace',
-                            color: '#22c55e',
-                            wordBreak: 'break-all'
-                          }}>
+                        <div className="flex items-center gap-2">
+                          <code className="min-w-0 flex-1 break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2.5 font-mono text-sm text-stone-700">
                             {dashboardServer.connectionUrl}
                           </code>
                           <button
+                            type="button"
                             onClick={() => handleCopy(dashboardServer.connectionUrl, 'URL')}
-                            style={{
-                              padding: '10px 14px',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              background: copyFeedback === 'URL' ? '#22c55e' : 'var(--panel)',
-                              border: 'none',
-                              borderRadius: '6px',
-                              color: 'var(--text)',
-                              cursor: 'pointer',
-                              whiteSpace: 'nowrap'
-                            }}
+                            className={cn(BTN_OUTLINE, 'whitespace-nowrap', copyFeedback === 'URL' && 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50')}
                           >
                             {copyFeedback === 'URL' ? t('options.copied') : t('options.copy')}
                           </button>
@@ -790,36 +579,18 @@ export default function HomeOptionsModal({
                       </div>
 
                       {dashboardServer.refereePin && (
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
+                        <div className="mb-3">
+                          <div className="mb-1 text-xs text-stone-500">
                             {t('options.refereePin')}:
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <code style={{
-                              padding: '10px 16px',
-                              background: 'rgba(59, 130, 246, 0.2)',
-                              borderRadius: '6px',
-                              fontSize: '20px',
-                              fontFamily: 'monospace',
-                              fontWeight: 700,
-                              color: '#3b82f6',
-                              letterSpacing: '2px'
-                            }}>
+                          <div className="flex items-center gap-2">
+                            <code className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-2 font-mono text-xl font-bold tracking-[0.3em] text-stone-900">
                               {dashboardServer.refereePin}
                             </code>
                             <button
+                              type="button"
                               onClick={() => handleCopy(dashboardServer.refereePin, 'PIN')}
-                              style={{
-                                padding: '10px 14px',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                background: copyFeedback === 'PIN' ? '#22c55e' : 'var(--panel)',
-                                border: 'none',
-                                borderRadius: '6px',
-                                color: 'var(--text)',
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap'
-                              }}
+                              className={cn(BTN_OUTLINE, 'whitespace-nowrap', copyFeedback === 'PIN' && 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50')}
                             >
                               {copyFeedback === 'PIN' ? t('options.copied') : t('options.copy')}
                             </button>
@@ -828,11 +599,11 @@ export default function HomeOptionsModal({
                       )}
 
                       {/* QR Code */}
-                      <div style={{ textAlign: 'center', marginTop: '16px' }}>
-                        <div style={{ background: '#fff', padding: 6, borderRadius: 6, display: 'inline-block' }}>
+                      <div className="mt-4 text-center">
+                        <div className="inline-block rounded-lg border border-stone-200 bg-white p-1.5">
                           <QRCodeSVG value={`${dashboardServer.connectionUrl}/referee`} size={120} level="L" />
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '6px' }}>
+                        <div className="mt-1.5 text-[11px] text-stone-500">
                           {t('options.scanToOpen')}
                         </div>
                       </div>
@@ -840,54 +611,31 @@ export default function HomeOptionsModal({
                   )}
 
                   {!dashboardServer.serverRunning && (
-                    <div style={{
-                      padding: '12px',
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      color: 'var(--text)'
-                    }}>
-                      <strong style={{ color: '#ef4444' }}>{t('options.serverNotDetected')}</strong>
+                    <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-stone-700">
+                      <strong className="font-semibold text-red-700">{t('options.serverNotDetected')}</strong>
                       <br />
-                      {t('options.startBackendServer')} <code style={{ background: 'var(--panel-2)', padding: '2px 6px', borderRadius: '3px' }}>npm run start:backend</code>
+                      {t('options.startBackendServer')} <code className="rounded border border-stone-200 bg-white px-1.5 py-0.5 font-mono">npm run start:backend</code>
                     </div>
                   )}
                 </div>
 
                 {/* Connected Dashboards */}
-                <div style={{
-                  background: 'var(--panel-2)',
-                  borderRadius: '8px',
-                  padding: '16px'
-                }}>
-                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>
+                <div className="py-3">
+                  <div className="mb-3 text-xs text-stone-500">
                     {t('options.connectedDashboards')}
                   </div>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '12px',
-                    padding: '16px',
-                    background: 'var(--panel-2)',
-                    borderRadius: '8px'
-                  }}>
-                    <span style={{
-                      fontSize: '36px',
-                      fontWeight: 700,
-                      color: dashboardServer.dashboardCount > 0 ? '#22c55e' : 'var(--muted)'
-                    }}>
+                  <div className="flex items-center justify-center gap-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-4">
+                    <span className={cn('text-3xl font-bold tabular-nums', dashboardServer.dashboardCount > 0 ? 'text-emerald-600' : 'text-stone-400')}>
                       {dashboardServer.dashboardCount || 0}
                     </span>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: '14px', color: 'var(--text)' }}>
+                    <div className="text-left">
+                      <div className="text-sm text-stone-800">
                         {dashboardServer.dashboardCount === 1
                           ? t('options.dashboardConnected', { count: dashboardServer.dashboardCount || 0 })
                           : t('options.dashboardsConnected', { count: dashboardServer.dashboardCount || 0 })}
                       </div>
                       {dashboardServer.dashboardCount > 0 && (
-                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
+                        <div className="mt-0.5 text-[11px] text-stone-500">
                           {t('options.refereeBenchCount', { refereeCount: dashboardServer.refereeCount || 0, benchCount: dashboardServer.benchCount || 0 })}
                         </div>
                       )}
@@ -896,33 +644,20 @@ export default function HomeOptionsModal({
 
                   {/* Individual clients list */}
                   {dashboardServer.connectedDashboards?.length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
+                    <div className="mt-3 divide-y divide-stone-100 rounded-lg border border-stone-200">
                       {dashboardServer.connectedDashboards.map((client, idx) => (
                         <div
                           key={client.id || idx}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '8px 12px',
-                            background: 'var(--panel-2)',
-                            borderRadius: '6px',
-                            marginBottom: idx < dashboardServer.connectedDashboards.length - 1 ? '6px' : 0
-                          }}
+                          className="flex items-center justify-between px-3 py-2"
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              background: '#22c55e'
-                            }} />
-                            <span style={{ fontSize: '13px', fontWeight: 600, textTransform: 'capitalize' }}>
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-green-500" title="Connected" />
+                            <span className="text-sm font-semibold capitalize text-stone-900">
                               {client.role}
                               {client.team && ` (${client.team})`}
                             </span>
                           </div>
-                          <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'monospace' }}>
+                          <span className="font-mono text-[11px] text-stone-500">
                             {client.ip}
                           </span>
                         </div>
@@ -936,33 +671,14 @@ export default function HomeOptionsModal({
         )}
 
         {onOpenConnectionSetup && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <div className="mb-6 flex flex-col gap-3">
             <button
+              type="button"
               onClick={() => {
                 onClose?.()
                 onOpenConnectionSetup?.()
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-                color: 'var(--text)',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                width: '100%',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)'
-              }}
+              className={cn('flex w-full min-h-12 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-800 shadow-sm transition-colors hover:bg-stone-50', 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1')}
             >
               <SatelliteDishIcon size={20} />
               <span>{t('options.setupConnections')}</span>
@@ -976,9 +692,9 @@ export default function HomeOptionsModal({
         {backup && (
           <Section title={t('options.backup')}>
             <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.autoBackup')}</div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <div className="text-sm font-semibold text-stone-900">{t('options.autoBackup')}</div>
                   <InfoDot title={backup.hasFileSystemAccess
                     ? t('options.autoBackupFolderInfo')
                     : t('options.autoBackupDownloadInfo')
@@ -998,39 +714,23 @@ export default function HomeOptionsModal({
 
               {backup.hasFileSystemAccess ? (
                 // Chrome/Edge: Folder selection
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                <div>
+                  <div className="mb-2 text-xs text-stone-500">
                     {t('options.backupLocation')}: {backup.backupDirName || t('common.notSet')}
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="flex flex-wrap gap-2">
                     <button
+                      type="button"
                       onClick={backup.selectBackupDir}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: 'rgba(59, 130, 246, 0.2)',
-                        color: '#3b82f6',
-                        border: '1px solid rgba(59, 130, 246, 0.4)',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
+                      className={BTN_OUTLINE}
                     >
                       {backup.backupDirName ? t('options.changeFolder') : t('options.selectBackupFolder')}
                     </button>
                     {backup.backupDirName && (
                       <button
+                        type="button"
                         onClick={backup.clearBackupDir}
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#ef4444',
-                          border: '1px solid rgba(239, 68, 68, 0.4)',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
+                        className={BTN_DANGER_OUTLINE}
                       >
                         {t('options.clear')}
                       </button>
@@ -1039,83 +739,57 @@ export default function HomeOptionsModal({
                 </div>
               ) : (
                 // Safari/Firefox: Show browser limitation notice + event-based backup
-                <div style={{ marginTop: '8px' }}>
-                  <div style={{
-                    padding: '10px 12px',
-                    background: 'rgba(251, 191, 36, 0.15)',
-                    border: '1px solid rgba(251, 191, 36, 0.3)',
-                    borderRadius: '6px',
-                    marginBottom: '12px'
-                  }}>
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#fbbf24', marginBottom: '4px' }}>
+                <div>
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <div className="mb-1 text-xs font-semibold text-amber-800">
                       {t('options.limitedBrowserSupport')}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--muted)', lineHeight: '1.4' }}>
+                    <div className="text-[11px] leading-snug text-stone-600">
                       {t('options.limitedBrowserSupportDesc')}
                     </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                  <div className="mb-2 text-xs text-stone-500">
                     {t('options.eventBasedAutoDownload')}:
                   </div>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, 1fr)',
-                    gap: '6px',
-                    fontSize: '11px',
-                    color: 'var(--muted)'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.setStart')}
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px] text-stone-600">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span> {t('options.setStart')}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.setEnd')}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span> {t('options.setEnd')}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.matchEnd')}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span> {t('options.matchEnd')}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#22c55e' }}>✓</span> {t('options.timeoutCalled')}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600">✓</span> {t('options.timeoutCalled')}
                     </div>
                   </div>
-                  <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '8px' }}>
+                  <div className="mt-2 text-[11px] text-stone-400">
                     {t('options.eventBasedNote')}
                   </div>
                 </div>
               )}
 
               {backup.lastBackup && (
-                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                <div className="text-[11px] tabular-nums text-stone-500">
                   {t('options.lastBackup')}: {backup.lastBackup.toLocaleTimeString()}
                 </div>
               )}
 
               {backup.backupError && (
-                <div style={{
-                  marginTop: '8px',
-                  padding: '8px',
-                  background: 'rgba(239,68,68,0.2)',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  color: '#ef4444'
-                }}>
+                <div role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
                   {backup.backupError}
                 </div>
               )}
 
-              <div style={{ marginTop: '8px' }}>
+              <div>
                 <button
+                  type="button"
                   onClick={() => backup.manualBackup()}
                   disabled={backup.isBackingUp}
-                  style={{
-                    padding: '8px 16px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    background: backup.isBackingUp ? 'var(--panel)' : 'rgba(34, 197, 94, 0.2)',
-                    color: backup.isBackingUp ? 'var(--muted)' : '#22c55e',
-                    border: backup.isBackingUp ? '1px solid var(--border)' : '1px solid rgba(34, 197, 94, 0.4)',
-                    borderRadius: '6px',
-                    cursor: backup.isBackingUp ? 'not-allowed' : 'pointer'
-                  }}
+                  aria-busy={backup.isBackingUp || undefined}
+                  className={BTN_OUTLINE}
                 >
                   {backup.isBackingUp ? t('options.backingUp') : t('options.downloadBackupNow')}
                 </button>
@@ -1126,47 +800,31 @@ export default function HomeOptionsModal({
 
         <Section title={t('options.appVersion')}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="flex items-center justify-between">
               <div>
-                <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.currentVersion')}</div>
-                <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>
+                <div className="text-sm font-semibold text-stone-900">{t('options.currentVersion')}</div>
+                <div className="mt-0.5 text-xs tabular-nums text-stone-500">
                   v{currentVersion}
                 </div>
               </div>
               <button
+                type="button"
                 onClick={checkForUpdates}
                 disabled={updateCheck.checking}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: updateCheck.checking ? 'var(--panel)' : 'rgba(59, 130, 246, 0.2)',
-                  color: updateCheck.checking ? 'var(--muted)' : '#3b82f6',
-                  border: updateCheck.checking ? '1px solid var(--border)' : '1px solid rgba(59, 130, 246, 0.4)',
-                  borderRadius: '6px',
-                  cursor: updateCheck.checking ? 'not-allowed' : 'pointer'
-                }}
+                aria-busy={updateCheck.checking || undefined}
+                className={BTN_OUTLINE}
               >
                 {updateCheck.checking ? t('options.checking') : t('options.checkForUpdates')}
               </button>
             </div>
 
             {updateCheck.result === 'available' && (
-              <div style={{
-                padding: '12px',
-                background: 'rgba(34, 197, 94, 0.15)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                borderRadius: '6px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px'
-              }}>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#22c55e' }}>
+                  <div className="text-sm font-semibold text-green-800">
                     {t('options.updateAvailable')}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>
+                  <div className="mt-0.5 text-xs tabular-nums text-stone-600">
                     {currentVersion} → {newVersion}
                   </div>
                 </div>
@@ -1174,16 +832,8 @@ export default function HomeOptionsModal({
                   // A plain reload keeps the old active service worker (skipWaiting
                   // is off) and serves the old precached app: activate the new one.
                   onClick={() => applyServiceWorkerUpdate({ checkForUpdate: true })}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: '#22c55e',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
+                  type="button"
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                 >
                   {t('options.refreshToUpdate')}
                 </button>
@@ -1191,27 +841,13 @@ export default function HomeOptionsModal({
             )}
 
             {updateCheck.result === 'latest' && (
-              <div style={{
-                padding: '10px 12px',
-                background: 'rgba(59, 130, 246, 0.1)',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
-                borderRadius: '6px',
-                fontSize: '13px',
-                color: 'var(--text)'
-              }}>
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
                 {t('options.latestVersion')}
               </div>
             )}
 
             {updateCheck.result === 'error' && (
-              <div style={{
-                padding: '10px 12px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
-                borderRadius: '6px',
-                fontSize: '13px',
-                color: '#ef4444'
-              }}>
+              <div role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {t('options.couldNotCheckUpdates')}
               </div>
             )}
@@ -1220,52 +856,22 @@ export default function HomeOptionsModal({
 
         <Section title={t('options.cacheManagement')} borderBottom={false}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ fontWeight: 600, fontSize: '15px' }}>{t('options.clearApplicationCache')}</div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.clearApplicationCache')}</div>
               <InfoDot title={t('options.clearApplicationCacheInfo')} />
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="flex flex-wrap gap-2">
               <button
+                type="button"
                 onClick={() => setClearCacheModal({ type: 'cache' })}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
-                }}
+                className={BTN_DANGER_OUTLINE}
               >
                 {t('options.clearCache')}
               </button>
               <button
+                type="button"
                 onClick={() => setClearCacheModal({ type: 'all' })}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: 'rgba(239, 68, 68, 0.4)',
-                  color: '#fff',
-                  border: '1px solid rgba(239, 68, 68, 0.6)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.5)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.4)'
-                }}
+                className="inline-flex h-11 items-center justify-center rounded-lg border border-red-100 bg-red-50 px-4 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
               >
                 {t('options.clearAll')}
               </button>
@@ -1277,72 +883,41 @@ export default function HomeOptionsModal({
         {clearCacheModal && (
           <div
             onClick={() => setClearCacheModal(null)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(15, 23, 42, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10000
-            }}
+            className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+            style={{ zIndex: 10000 }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: '12px',
-                padding: '24px',
-                maxWidth: '400px',
-                width: '90%'
-              }}
+              role="alertdialog"
+              aria-modal="true"
+              className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
             >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
+              <h3 className="text-lg font-bold text-stone-900">
                 {t('options.confirmClearCache')}
               </h3>
-              <p style={{ margin: '0 0 16px 0', color: 'var(--text)', lineHeight: 1.5 }}>
+              <p className="mt-2 text-sm leading-relaxed text-stone-600">
                 {clearCacheModal.type === 'all'
                   ? t('options.clearAllWarning')
                   : t('options.clearCacheWarning')
                 }
               </p>
               {clearCacheModal.type === 'all' && (
-                <p style={{ margin: '0 0 16px 0', color: '#ef4444', fontSize: '13px' }}>
+                <p className="mt-2 text-xs font-medium text-red-700">
                   {t('options.resetPreferencesWarning')}
                 </p>
               )}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <div className="mt-6 flex justify-end gap-2">
                 <button
+                  type="button"
                   onClick={() => setClearCacheModal(null)}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className="inline-flex h-11 items-center justify-center rounded-lg border border-stone-300 bg-white px-4 text-sm text-stone-700 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                 >
                   {t('common.cancel')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => executeClearCache(clearCacheModal.type === 'all')}
-                  style={{
-                    padding: '10px 20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: '#ef4444',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                 >
                   {clearCacheModal.type === 'all' ? t('options.clearAll') : t('options.clearCache')}
                 </button>
@@ -1351,16 +926,10 @@ export default function HomeOptionsModal({
           </div>
         )}
 
-        <div style={{
-          marginTop: '24px',
-          paddingTop: '24px',
-          borderTop: '1px solid var(--border)',
-          textAlign: 'center',
-          fontSize: '12px',
-          color: 'var(--muted)'
-        }}>
+        <div className="border-t border-stone-100 pt-4 text-center text-xs text-stone-500">
           {t('common.support', 'Support:')} luca.canepa@gmail.com
         </div>
+      </div>
       </div>
 
       {/* Keybindings Modal */}
@@ -1370,72 +939,35 @@ export default function HomeOptionsModal({
             setKeybindingsModalOpen(false)
             setEditingKey(null)
           }}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(15, 23, 42, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2000
-          }}
+          className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
+          style={{ zIndex: 2000 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--panel)',
-              borderRadius: '12px',
-              padding: '24px',
-              minWidth: '360px',
-              maxWidth: '90vw',
-              maxHeight: '80vh',
-              overflowY: 'auto',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
-            }}
+            role="dialog"
+            aria-modal="true"
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6"
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>{t('options.keybindings')}</h3>
-              <button
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-stone-900">{t('options.keybindings')}</h3>
+              <IconButton
+                variant="close"
+                icon={X}
+                label={t('common.close', 'Close')}
                 onClick={() => {
                   setKeybindingsModalOpen(false)
                   setEditingKey(null)
                 }}
-                aria-label={t('common.close', 'Close')}
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  fontSize: '16px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                ×
-              </button>
+              />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="divide-y divide-stone-100">
               {keyBindingKeys.map((key) => (
                 <div
                   key={key}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '10px 12px',
-                    background: 'var(--panel-2)',
-                    borderRadius: '8px'
-                  }}
+                  className="flex min-h-12 items-center justify-between gap-3 py-2"
                 >
-                  <span style={{ fontSize: '14px', color: 'var(--text)' }}>{t(`options.keybindingLabels.${key}`)}</span>
+                  <span className="text-sm text-stone-800">{t(`options.keybindingLabels.${key}`)}</span>
                   <button
                     onClick={() => {
                       if (editingKey === key) {
@@ -1458,19 +990,13 @@ export default function HomeOptionsModal({
                         window.addEventListener('keydown', handleKeyCapture, true)
                       }
                     }}
-                    style={{
-                      padding: '6px 14px',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      fontFamily: 'monospace',
-                      background: editingKey === key ? 'rgba(59, 130, 246, 0.3)' : 'var(--panel)',
-                      color: editingKey === key ? '#60a5fa' : 'var(--text)',
-                      border: editingKey === key ? '1px solid #3b82f6' : '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      minWidth: '80px',
-                      transition: 'all 0.2s'
-                    }}
+                    type="button"
+                    aria-pressed={editingKey === key}
+                    className={cn(
+                      'inline-flex h-9 min-w-20 items-center justify-center rounded-lg border px-3 font-mono text-sm font-semibold transition-colors',
+                      editingKey === key ? 'border-slate-900 bg-slate-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-50',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
+                    )}
                   >
                     {editingKey === key ? t('options.pressKey') : (
                       keyBindings[key] === ' ' ? 'Space' :
@@ -1488,40 +1014,24 @@ export default function HomeOptionsModal({
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+            <div className="mt-5 flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setKeyBindings(defaultKeyBindings)
                   localStorage.setItem('keyBindings', JSON.stringify(defaultKeyBindings))
                 }}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
+                className="mr-auto inline-flex h-11 items-center justify-center rounded-lg border border-stone-300 bg-white px-4 text-sm text-stone-700 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
               >
                 {t('options.resetDefaults')}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setKeybindingsModalOpen(false)
                   setEditingKey(null)
                 }}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  background: '#3b82f6',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
+                className="inline-flex h-11 items-center justify-center rounded-lg bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
               >
                 {t('common.close')}
               </button>
