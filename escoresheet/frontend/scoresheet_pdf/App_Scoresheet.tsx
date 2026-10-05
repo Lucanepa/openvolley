@@ -141,7 +141,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
     // Get starting lineup from events
     // Scoreboard writes a lineup event on every rotation, substitution and libero swap,
-    // so the starting lineup is the (latest) isInitial lineup, not the latest lineup event.
+    // so the starting lineup is the last entered lineup (initial or FIVB 7.3.4 rectification)
+    // before the set's first point, not the latest lineup event.
     const setEvents = events?.filter(e => e.setIndex === setNumber) || [];
 
     // Extract lineup arrays (positions I-VI)
@@ -3001,6 +3002,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       result={result}
                       coinTossConfirmed={coinTossConfirmed}
                       bestOf={bestOf}
+                      blankResultUntilFinished
                     />
                   </div>
                 </div>

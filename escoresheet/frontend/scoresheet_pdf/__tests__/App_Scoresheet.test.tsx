@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { render } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { LiberoControlSheet } from '../components/LiberoControlSheet'
+import { Results } from '../components/FooterSection'
 
 // Fixture: best-of-3, Team A = home. Set 1 finished 25:20 with a rotation, an open
 // substitution (5 -> 9) and an exceptional one; set 2 finished; deciding set (index 5) started.
@@ -95,6 +96,24 @@ describe('App_Scoresheet', () => {
     // Match not finished: final RESULT box stays empty instead of a live "1:1"
     expect(text).toContain('WINNERRESULTAHOM')
   })
+
+  it('prints a pre-rally line-up rectification (FIVB 7.3.4) and the later substitution of the rectified-in player', () => {
+    const data = buildMatch()
+    // Set 2: before the first rally, home rectifies position I from 1 to 17 (LineupModal mode 'manual');
+    // after a point, 17 is substituted by 9.
+    data.events.push(ev('lineup', 2, { team: 'home', lineup: { ...HOME_START, I: 17 }, isInitial: false }))
+    data.events.push(ev('point', 2, { team: 'away' }))
+    data.events.push(ev('substitution', 2, { team: 'home', playerOut: 17, playerIn: 9, position: 'I' }))
+    data.events.push(ev('lineup', 2, { team: 'home', lineup: { ...HOME_START, I: 9 }, fromSubstitution: true }))
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const text = container.querySelector('.scoresheet-container')?.textContent || ''
+
+    const set2 = between(text, 'SET2', 'SET3')
+    expect(set2).toContain('IIIIIIIVVVI1723456')
+    expect(set2).not.toContain('IIIIIIIVVVI123456')
+    // 17 -> 9 at 0:1 drawn in column I (first column right after the starting row)
+    expect(set2).toMatch(/IIIIIIIVVVI17234569/)
+  })
 })
 
 describe('LiberoControlSheet', () => {
@@ -130,5 +149,31 @@ describe('LiberoControlSheet', () => {
     const text = container.textContent || ''
     for (const n of [1, 2, 3, 4, 5]) expect(text).toContain(`SET ${n}`)
     expect(text).toContain('Set 5, Points 10 : 12')
+  })
+})
+
+describe('Results', () => {
+  const setResults = [
+    { setNumber: 1, teamATimeouts: 0, teamASubstitutions: 0, teamAWon: 1, teamAPoints: 25, teamBTimeouts: 0, teamBSubstitutions: 0, teamBWon: 0, teamBPoints: 20, duration: '' },
+    { setNumber: 2, teamATimeouts: 0, teamASubstitutions: 0, teamAWon: 1, teamAPoints: 25, teamBTimeouts: 0, teamBSubstitutions: 0, teamBWon: 0, teamBPoints: 18, duration: '' }
+  ] as any
+  const resultBox = (container: HTMLElement) => {
+    const label = Array.from(container.querySelectorAll('span')).find(el => el.textContent === 'RESULT' && el.className.includes('absolute'))
+    return label?.parentElement?.textContent?.replace('RESULT', '') || ''
+  }
+
+  it('keeps the live set count by default (MatchEntry view)', () => {
+    const { container } = render(<Results setResults={setResults} bestOf={3} />)
+    expect(resultBox(container)).toBe('2:0')
+  })
+
+  it('stays blank on the official sheet until the match is finished', () => {
+    const { container } = render(<Results setResults={setResults} bestOf={3} blankResultUntilFinished />)
+    expect(resultBox(container)).toBe('')
+  })
+
+  it('prints the final result when given', () => {
+    const { container } = render(<Results setResults={setResults} bestOf={3} result="2-0" blankResultUntilFinished />)
+    expect(resultBox(container)).toBe('2:0')
   })
 })
