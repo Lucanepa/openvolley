@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import { getBackendUrl } from '../utils/backendConfig'
 import { copyToClipboard } from '../utils/networkInfo'
+import { matchTeamNames } from '../utils/serverDataSync'
 import { useState } from 'react'
 
 const ROLE_LABELS = {
@@ -18,6 +19,35 @@ const ROLE_COLORS = {
   livescore: '#8b5cf6'
 }
 
+const ROLE_SUBDOMAINS = {
+  referee: 'referee',
+  bench_home: 'bench',
+  bench_away: 'bench',
+  livescore: 'livescore'
+}
+
+/**
+ * Where the tablet app for a role lives when the tablets use the cloud backend:
+ * next to the scorer's own deployment. The scorer on dev-app.openvolley.app
+ * links dev-referee / dev-bench / dev-livescore, app.openvolley.app links the
+ * production sites; a scorer page that is not on openvolley.app (local dev,
+ * desktop app) links production.
+ * @param {string} role - 'referee' | 'bench_home' | 'bench_away' | 'livescore'
+ * @param {string} [hostname] - the scorer page's hostname
+ */
+export function cloudTabletBase(role, hostname = typeof window !== 'undefined' ? window.location.hostname : '') {
+  const sub = ROLE_SUBDOMAINS[role]
+  if (!sub) return null
+  let prefix = ''
+  const host = String(hostname || '').toLowerCase()
+  if (host.endsWith('.openvolley.app')) {
+    const label = host.slice(0, -'.openvolley.app'.length)
+    // <prefix>app.openvolley.app -> <prefix><sub>.openvolley.app ('dev-app' -> 'dev-')
+    if (!label.includes('.') && label.endsWith('app')) prefix = label.slice(0, -'app'.length)
+  }
+  return `https://${prefix}${sub}.openvolley.app`
+}
+
 /**
  * Build the connection URL for a specific role
  */
@@ -28,13 +58,7 @@ function buildConnectionUrl(role, matchSeedKey) {
   const isCloud = backendUrl.includes('openvolley.app')
 
   if (isCloud) {
-    const baseUrls = {
-      referee: 'https://referee.openvolley.app',
-      bench_home: 'https://bench.openvolley.app',
-      bench_away: 'https://bench.openvolley.app',
-      livescore: 'https://livescore.openvolley.app'
-    }
-    const base = baseUrls[role]
+    const base = cloudTabletBase(role)
     const params = new URLSearchParams()
     params.set('server', backendUrl)
     if (matchSeedKey) params.set('match', matchSeedKey)
@@ -71,6 +95,8 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
   const [copyFeedback, setCopyFeedback] = useState(false)
 
   const url = buildConnectionUrl(role, matchSeedKey)
+  // The scorer's Dexie match stores homeName/awayName
+  const teamNames = matchTeamNames(match)
   const color = ROLE_COLORS[role] || '#fff'
   const label = t(`connection.role.${role}`, ROLE_LABELS[role] || role)
 
@@ -127,7 +153,7 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
         {/* Match info */}
         {match && (
           <p style={{ color: 'rgba(255,255,255,0.5)', margin: '0 0 24px', fontSize: 14 }}>
-            {match.homeTeamName || match.home_team_name || 'Home'} vs {match.awayTeamName || match.away_team_name || 'Away'}
+            {teamNames.home || 'Home'} vs {teamNames.away || 'Away'}
           </p>
         )}
 
