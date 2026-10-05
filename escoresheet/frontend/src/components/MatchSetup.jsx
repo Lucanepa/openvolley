@@ -231,12 +231,22 @@ const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle, label }) {
   )
 })
 
+// Roster and bench grids as a svrz table (SPEC 3.8): one bordered box, hairline
+// row dividers, the 11px uppercase head strip. Rows keep the legacy 6px radius
+// and 2px side borders so the frozen captain/libero outlines (inline) are unchanged.
+// No overflow-hidden on the box: it drops the grid item's automatic minimum
+// height and the fixed-height .setup grid then collapses the table. The head
+// strip rounds its own top corners to sit inside the box instead.
+const ROSTER_TABLE = 'rounded-lg border border-stone-200 bg-white gap-y-0 divide-y divide-stone-100'
+const ROSTER_TABLE_HEAD = 'rounded-t-[7px] rounded-b-none bg-stone-50 text-[11px] font-bold uppercase tracking-wide text-stone-500'
 // One official (1st/2nd referee, scorer, assistant scorer): a bordered box with
 // a heading strip, the kit inner box of the setup page card (never a card in a card).
 const OFFICIAL_BOX = 'rounded-xl border border-stone-200 bg-white overflow-hidden transition-colors'
 const OFFICIAL_BOX_COLLAPSED = 'rounded-xl border border-dashed border-stone-200 overflow-hidden transition-colors'
-const OFFICIAL_HEAD = 'flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-2.5 border-b border-stone-100 bg-stone-50/60'
-const OFFICIAL_HEAD_COLLAPSED = 'flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-2.5'
+// One head height for every box (h-8 Database button + py-2 + hairline), and a
+// tighter inline gap so title + Database + switch stay on one line at 1280.
+const OFFICIAL_HEAD = 'flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 min-h-12.25 px-4 py-2 border-b border-stone-100 bg-stone-50/60'
+const OFFICIAL_HEAD_COLLAPSED = 'flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 min-h-12 px-4 py-2'
 const OFFICIAL_TITLE = 'whitespace-nowrap text-sm font-semibold text-stone-700'
 
 const OfficialCard = memo(function OfficialCard({
@@ -264,12 +274,12 @@ const OfficialCard = memo(function OfficialCard({
     <div className={isCollapsed ? OFFICIAL_BOX_COLLAPSED : OFFICIAL_BOX}>
       <div className={isCollapsed ? OFFICIAL_HEAD_COLLAPSED : OFFICIAL_HEAD}>
         <span className={cn(OFFICIAL_TITLE, isCollapsed && 'text-stone-500')}>{title}</span>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           {hasDatabase && !isCollapsed && (
             <Button
               variant="ghost"
-              size="xs"
-              className="bg-white"
+              size="sm"
+              className="bg-white px-2"
               onClick={(e) => {
                 e.stopPropagation()
                 onOpenDatabase(e, selectorKey)
@@ -321,7 +331,7 @@ const LineJudgesCard = memo(function LineJudgesCard({
       </div>
       {!isCollapsed && (
         <div className="p-4">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <Field tone="compact" className={FIELD} label={t('matchSetup.lineJudge1')}><Input aria-label={t('matchSetup.lineJudge1')} className="capitalize" value={lineJudge1} onChange={e => setLineJudge1(e.target.value)} placeholder={t('matchSetup.name')} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.lineJudge2')}><Input aria-label={t('matchSetup.lineJudge2')} className="capitalize" value={lineJudge2} onChange={e => setLineJudge2(e.target.value)} placeholder={t('matchSetup.name')} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.lineJudge3')}><Input aria-label={t('matchSetup.lineJudge3')} className="capitalize" value={lineJudge3} onChange={e => setLineJudge3(e.target.value)} placeholder={t('matchSetup.name')} /></Field>
@@ -3372,7 +3382,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <span className={OFFICIAL_TITLE}>{t('matchSetup.gameDetails')}</span>
             </div>
             <div className="flex flex-col gap-3 p-4">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
                 <Field tone="compact" className={FIELD} label={t('matchSetup.gameNumber')}><Input aria-label={t('matchSetup.gameNumber')} className="tabular-nums" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></Field>
                 <Field tone="compact" className={FIELD} label={t('matchSetup.league')}><Input aria-label={t('matchSetup.league')} className="capitalize" value={league} onChange={e => setLeague(e.target.value)} /></Field>
               </div>
@@ -4200,9 +4210,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
         )}
-        <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
+        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)}>
           {/* Roster Header Row */}
-          <div className="roster-grid-row grid-header">
+          <div className={cn('roster-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div></div>
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
@@ -4422,9 +4432,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div data-help-id="setup-bench-officials" className="mt-4">
           <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.home')}`} />
         </div>
-        <div className="bench-grid">
+        <div className={cn('bench-grid', ROSTER_TABLE)}>
           {/* Bench Header Row */}
-          <div className="bench-grid-row grid-header">
+          <div className={cn('bench-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
@@ -5366,9 +5376,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
         )}
-        <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
+        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)}>
           {/* Roster Header Row */}
-          <div className="roster-grid-row grid-header">
+          <div className={cn('roster-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div></div>
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
@@ -5581,9 +5591,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div className="mt-4">
           <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.away')}`} />
         </div>
-        <div className="bench-grid">
+        <div className={cn('bench-grid', ROSTER_TABLE)}>
           {/* Bench Header Row */}
-          <div className="bench-grid-row grid-header">
+          <div className={cn('bench-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
