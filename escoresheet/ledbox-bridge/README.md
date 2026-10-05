@@ -16,10 +16,7 @@ One copy, one direction. point-hub is the source of truth.
 
 ## Deploying the board
 
-```bash
-ssh lenovoserver
-cd ~/repos/point-hub && git pull && bash deploy-board.sh
-```
+See point-hub's README (`deploy-board.sh`).
 
 Nothing else in this monorepo imported the bridge, so removing it changes no other component.
 
@@ -27,12 +24,12 @@ Nothing else in this monorepo imported the bridge, so removing it changes no oth
 
 Kept out of any public repo (both this one and point-hub are public):
 
-- `firmware/src`, `firmware/plugin`, `firmware/libs`, `firmware/manifest.xml` — Tech4Sport's own
-  firmware: decompiled sources, their plugins and their shipped `.so` binaries.
-- `firmware/nota-emilio-*.md` — private correspondence with their maintainer.
-- `firmware/**/wifi_qr.png` — the image encodes the board's AP passphrase, so committing it
-  publishes the credential. It is derived: rebuild with `gen_qr.py` from the vault entry
-  *LedBox - ledbox_C0270 WiFi (Tech4Sport)*.
+- The board vendor's own firmware: decompiled sources, plugins, shipped binaries and firmware
+  archives.
+- Private correspondence with the vendor.
+- Wi-Fi QR images and any other file that holds the board's AP passphrase. They are derived:
+  regenerate them from the password manager and never commit them.
 
-Those are archived at `~/projects/ledbox-vendor-firmware/` and belong on the private Gitea,
-not on GitHub.
+Those live in private storage, not on GitHub. Everything in this directory except this README
+is gitignored (`escoresheet/.gitignore`), so leftovers in an old checkout cannot be committed
+by accident.

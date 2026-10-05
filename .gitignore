@@ -5,10 +5,22 @@
 cert.pem
 key.pem
 
+# Certificate / signing bundles (desktop code signing)
+*.p12
+*.pfx
+
 # Environment files with secrets
 .env
 .env.local
 .env.production
+.env.*
+!.env.example
+# Wrangler local secrets
+.dev.vars
+.dev.vars.*
+
+# PocketBase data dir (holds the admin account and all records)
+pb_data/
 
 # Wrangler cache (may contain auth tokens)
 .wrangler/
