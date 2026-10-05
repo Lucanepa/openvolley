@@ -113,6 +113,28 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 
 Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works on all cloud platforms) or SMTP credentials.
 
+## Self-hosted storage (`lib/storage.js`)
+
+Replaces Supabase Storage behind `POST /api/storage/upload`, `/download` and `/list` (buckets `scoresheets` and `backup`). Objects live at `{STORAGE_DIR}/{bucket}/{path}`. The request and response shapes are the ones `apiStorage` in `frontend/src/lib/apiClient.js` already uses; `signed-url` is gone (404, it had no caller).
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `STORAGE_DIR` | Storage root. Must contain the sentinel file `.ovdata`, or every write is refused with 503 (protects against an unmounted volume). | `/data/storage` |
+| `STORAGE_BACKUP_MIN_FREE_MB` | `backup/` writes are refused (507) when free space would drop below this. `scoresheets/` writes still pass. | `2048` |
+| `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). | `5` |
+| `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently). For the Phase 7 security release; leave off until then. | `off` |
+
+Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no control/bidi/zero-width characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included.
+
+Preparing a root by hand (dev, staging):
+
+```bash
+mkdir -p ~/ov-storage && touch ~/ov-storage/.ovdata
+STORAGE_DIR=~/ov-storage node server.js
+```
+
+Tests: `npm test` (or `node --test tests/storage.test.js`). They use a temp directory only, no Postgres and no Docker.
+
 ## API Endpoints
 
 ### `GET /health`
