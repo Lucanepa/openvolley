@@ -559,6 +559,59 @@ describe('failure classes', () => {
     expect(redactForLog({ external_id: 'm', game_pin: '123456', connection_pins: { referee: '1' }, home_team: { name: 'A' } }))
       .toEqual({ external_id: 'm', home_team: { name: 'A' } })
   })
+
+  it('redactForLog drops PIN fields at any depth and in any spelling, keeps the rest', () => {
+    const out = redactForLog({
+      id: 'm',
+      gamePin: '1',
+      PIN: '2',
+      homeTeamUploadPin: '3',
+      connectionPins: { referee: '4' },
+      match: { refereePin: '5', status: 'live', teams: [{ name: 'A', bench_home_pin: '6' }] },
+      mapping: 'kept',
+      pinned: true,
+      when: 123456
+    })
+    expect(out).toEqual({ id: 'm', match: { status: 'live', teams: [{ name: 'A' }] }, mapping: 'kept', pinned: true, when: 123456 })
+  })
+
+  it('redactForLog masks PIN values inside texts and error messages', () => {
+    expect(redactForLog('Key (game_pin)=(123456) already exists.')).toBe('Key (game_pin)=([redacted]) already exists.')
+    expect(redactForLog('{"refereePin":"654321","n":42}')).toBe('{"refereePin":"[redacted]","n":42}')
+    expect(redactForLog('Processing 12345 queued items')).toBe('Processing 12345 queued items')
+    const err = redactForLog(new Error('duplicate game_pin 123456'))
+    expect(err.message).toBe('duplicate game_pin [redacted]')
+    const plain = new Error('boom')
+    expect(redactForLog(plain)).toBe(plain)
+    expect(redactForLog({ code: 'X', details: 'Key (game_pin)=(123456)' })).toEqual({ code: 'X', details: 'Key (game_pin)=([redacted])' })
+  })
+
+  it('no console line of a queue pass carries a PIN (payloads, nested PINs, backend errors)', async () => {
+    const lines = []
+    const capture = (...args) => { lines.push(JSON.stringify(args.map(a => (a instanceof Error ? { message: a.message } : a)))) }
+    const spies = ['log', 'warn', 'error'].map(m => vi.spyOn(console, m).mockImplementation(capture))
+    try {
+      fakeDb.sync_queue.reset([
+        { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa', game_pin: '999999', connection_pins: { referee: '111111' } } },
+        { id: 2, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', game_pin: '999999', connection_pins: { referee: '111111' } } },
+        { id: 3, resource: 'set', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', debug: { gamePin: '999999' } } },
+        { id: 4, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:9', match_id: 'match_100_aaa', refereePin: '111111' } }
+      ])
+      api.respond = (call) => {
+        if (call.table === 'matches' && call.action === 'select') return ok({ id: MATCH_UUID })
+        if (call.action === 'upsert' && call.table === 'matches') return ok()
+        return { data: null, error: { status: 400, message: 'Key (game_pin)=(999999) bad', details: { home_team_pin: '222222' } } }
+      }
+      await runQueuePass()
+    } finally {
+      spies.forEach(s => s.mockRestore())
+    }
+    expect(lines.length).toBeGreaterThan(0)
+    expect(lines.some(l => l.includes('Match insert payload'))).toBe(true)
+    for (const pin of ['999999', '111111', '222222', '333333', '444444']) {
+      expect(lines.filter(l => l.includes(pin))).toEqual([])
+    }
+  })
 })
 
 describe('pruneSyncQueue', () => {
