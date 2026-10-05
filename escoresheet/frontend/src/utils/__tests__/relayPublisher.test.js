@@ -3,7 +3,8 @@ import {
   createRelayPinTracker,
   createLiveStateOrder,
   isRelayErrorFor,
-  relayReconnectDelay
+  relayReconnectDelay,
+  relayConnectionStatus
 } from '../relayPublisher'
 import { getRelayWebSocketUrl, setBackendOverride } from '../backendConfig'
 
@@ -156,5 +157,51 @@ describe('getRelayWebSocketUrl (one relay for the scorer and its tablets)', () =
     vi.stubEnv('VITE_BACKEND_URL', '')
     vi.stubEnv('DEV', true)
     expect(getRelayWebSocketUrl()).toBe(`ws://${window.location.hostname}:8080`)
+  })
+})
+
+describe('relayConnectionStatus (status modal, no probe socket)', () => {
+  const WS_URL = 'ws://192.168.1.10:8080'
+  const statusCheck = (running) => vi.fn(async () => ({ running }))
+
+  it('no relay for the page: not available, nothing asked', async () => {
+    const getStatus = statusCheck(true)
+    expect(await relayConnectionStatus({ wsUrl: null, ws: null, getStatus })).toMatchObject({ status: 'not_available' })
+    expect(getStatus).not.toHaveBeenCalled()
+  })
+
+  it("the scorer's own open socket answers without a request", async () => {
+    const getStatus = statusCheck(false)
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: { readyState: 1 }, getStatus })).toMatchObject({ status: 'connected' })
+    expect(getStatus).not.toHaveBeenCalled()
+  })
+
+  it('no open socket (home page, reconnect pending): the HTTP status check decides', async () => {
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: null, getStatus: statusCheck(true) }))
+      .toMatchObject({ status: 'connected', message: 'WebSocket server is reachable' })
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: { readyState: 3 }, getStatus: statusCheck(false) }))
+      .toMatchObject({ status: 'disconnected', details: `Relay: ${WS_URL}` })
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: { readyState: 0 }, getStatus: statusCheck(false) }))
+      .toMatchObject({ status: 'connecting' })
+  })
+
+  it('by default asks GET /api/server/status and never opens a WebSocket', async () => {
+    const OrigWS = globalThis.WebSocket
+    const wsCtor = vi.fn()
+    globalThis.WebSocket = wsCtor
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ running: true })
+    })
+    try {
+      expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: null })).toMatchObject({ status: 'connected' })
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(String(fetchSpy.mock.calls[0][0])).toMatch(/\/api\/server\/status$/)
+      expect(wsCtor).not.toHaveBeenCalled()
+    } finally {
+      fetchSpy.mockRestore()
+      globalThis.WebSocket = OrigWS
+    }
   })
 })

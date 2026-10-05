@@ -217,11 +217,46 @@ function summarizeError(error) {
   }
 }
 
-const SECRET_LOG_KEY = /pin/i
-/** A match payload for the console: PINs and connection_pins left out. */
-export function redactForLog(payload) {
-  if (!payload || typeof payload !== 'object') return payload
-  return Object.fromEntries(Object.entries(payload).filter(([k]) => !SECRET_LOG_KEY.test(k)))
+// A PIN field: 'pin' as a word of the key (game_pin, gamePin, connection_pins,
+// homeTeamUploadPin, PIN), not any key that contains the letters (mapping).
+const isSecretLogKey = (key) =>
+  /(^|_)pins?(_|$)/.test(String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase())
+
+// PIN values inside text: `Key (game_pin)=(123456)` from a unique violation,
+// `"refereePin":"123456"` in a serialized body.
+const PIN_IN_TEXT = /(pins?(?![a-z])[^\d\n]{0,24}?)\d{4,8}/gi
+const redactText = (text) => text.replace(PIN_IN_TEXT, '$1[redacted]')
+
+const LOG_REDACT_DEPTH = 6
+
+/**
+ * A value for the console (and so for uploaded logs): PIN fields left out at
+ * any depth (game_pin, connection_pins, refereePin, ...), PIN values in error
+ * texts masked. Anything else is passed through unchanged.
+ */
+export function redactForLog(value, depth = 0) {
+  if (typeof value === 'string') return redactText(value)
+  if (!value || typeof value !== 'object' || depth > LOG_REDACT_DEPTH) return value
+  if (Array.isArray(value)) return value.map((v) => redactForLog(v, depth + 1))
+  if (value instanceof Error) {
+    const message = redactText(String(value.message || ''))
+    return message === value.message ? value : { name: value.name, message }
+  }
+  const proto = Object.getPrototypeOf(value)
+  if (proto !== Object.prototype && proto !== null) return value
+  const out = {}
+  for (const [k, v] of Object.entries(value)) {
+    if (!isSecretLogKey(k)) out[k] = redactForLog(v, depth + 1)
+  }
+  return out
+}
+
+// Every console line of the sync queue goes through redactForLog: job payloads
+// and backend errors can carry game_pin / connection_pins.
+const safeLog = {
+  log: (...args) => console.log(...args.map((a) => redactForLog(a))),
+  warn: (...args) => console.warn(...args.map((a) => redactForLog(a))),
+  error: (...args) => console.error(...args.map((a) => redactForLog(a)))
 }
 
 // apiFrom rejects (throws) when fetch itself fails. Matched on the message only:
@@ -390,7 +425,7 @@ export async function retryErrorsInternal({ force = false, includeFailed = false
     const requeue = due.filter(job => !superseded.has(job.id))
     if (requeue.length === 0) return reclaimed > 0 || superseded.size > 0
 
-    console.log(`[SyncQueue] ${force || includeFailed ? 'Retrying' : 'Auto-retrying'} ${requeue.length} errored jobs${superseded.size ? ` (${superseded.size} superseded)` : ''}`)
+    safeLog.log(`[SyncQueue] ${force || includeFailed ? 'Retrying' : 'Auto-retrying'} ${requeue.length} errored jobs${superseded.size ? ` (${superseded.size} superseded)` : ''}`)
     for (const job of requeue) {
       const changes = { status: 'queued', retry_count: 0 }
       if (job.status === 'failed') {
@@ -400,7 +435,7 @@ export async function retryErrorsInternal({ force = false, includeFailed = false
     }
     return true
   } catch (err) {
-    console.error('[SyncQueue] Auto-retry errors failed:', err)
+    safeLog.error('[SyncQueue] Auto-retry errors failed:', err)
     return false
   }
 }
@@ -427,7 +462,7 @@ export async function pruneSyncQueue({ retentionMs = SENT_RETENTION_MS, now = Da
     if (ids.length > 0) await db.sync_queue.bulkDelete(ids)
     return ids.length
   } catch (err) {
-    console.warn('[SyncQueue] Could not prune the sync queue:', err?.message)
+    safeLog.warn('[SyncQueue] Could not prune the sync queue:', err?.message)
     return 0
   }
 }
@@ -465,7 +500,7 @@ export function clearAuthBlock() {
 export async function resumeAfterSignIn() {
   clearAuthBlock()
   const requeued = await retryErrorsInternal({ force: true, includeFailed: true })
-  console.log(`[SyncQueue] Signed in - resuming sync${requeued ? ' (requeued parked jobs)' : ''}`)
+  safeLog.log(`[SyncQueue] Signed in - resuming sync${requeued ? ' (requeued parked jobs)' : ''}`)
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('sync-queue-write'))
 }
 
@@ -504,7 +539,7 @@ async function processJobInner(job, ctx) {
     if (job.resource === 'set' || job.resource === 'event') {
       const resolved = await resolveJobExternalId(job, { sets: db.sets, matches: db.matches, events: db.events })
       if (resolved?.drop) {
-        console.warn('[SyncQueue] Dropping job that cannot be attributed to a match:', job.resource, job.payload?.external_id)
+        safeLog.warn('[SyncQueue] Dropping job that cannot be attributed to a match:', job.resource, job.payload?.external_id)
         return DROP_JOB
       }
       if (resolved?.external_id) {
@@ -519,14 +554,14 @@ async function processJobInner(job, ctx) {
       // Filter to valid columns only - handles old backup formats with invalid fields
       const matchPayload = filterMatchPayload(await withFullConnectionPins(job.payload?.external_id, job.payload))
 
-      console.log('[SyncQueue] Match insert payload:', redactForLog(matchPayload))
+      safeLog.log('[SyncQueue] Match insert payload:', redactForLog(matchPayload))
       const { error } = await apiFrom('matches')
         .upsert(matchPayload, { onConflict: 'external_id' })
       if (error) {
-        console.error('[SyncQueue] Match insert error:', error, redactForLog(matchPayload))
+        safeLog.error('[SyncQueue] Match insert error:', error, redactForLog(matchPayload))
         return failureResult(error, ctx)
       }
-      console.log('[SyncQueue] Match insert successful')
+      safeLog.log('[SyncQueue] Match insert successful')
       return true
     }
 
@@ -551,7 +586,7 @@ async function processJobInner(job, ctx) {
           .maybeSingle()
 
         if (fetchError) {
-          console.error('[SyncQueue] Match fetch for merge error:', fetchError)
+          safeLog.error('[SyncQueue] Match fetch for merge error:', fetchError)
           // Do not overwrite JSON columns blind when the backend is struggling
           if (isStopError(fetchError) || isTransientError(fetchError)) return failureResult(fetchError, ctx)
           // Otherwise continue with update anyway - worst case we overwrite
@@ -570,21 +605,21 @@ async function processJobInner(job, ctx) {
         }
       }
 
-      console.log('[SyncQueue] Match update payload:', redactForLog({ id, ...finalUpdateData }))
+      safeLog.log('[SyncQueue] Match update payload:', redactForLog({ id, ...finalUpdateData }))
       const { error } = await apiFrom('matches')
         .update(finalUpdateData)
         .eq('external_id', id)
       if (error) {
-        console.error('[SyncQueue] Match update error:', error, redactForLog(job.payload))
+        safeLog.error('[SyncQueue] Match update error:', error, redactForLog(job.payload))
         return failureResult(error, ctx)
       }
-      console.log('[SyncQueue] Match update successful')
+      safeLog.log('[SyncQueue] Match update successful')
       return true
     }
 
     if (job.resource === 'match' && job.action === 'delete') {
       const { id } = job.payload
-      console.log('[SyncQueue] 🗑️ Starting match delete for external_id:', id)
+      safeLog.log('[SyncQueue] 🗑️ Starting match delete for external_id:', id)
 
       // First, look up the match to get its UUID
       const { data: matchData, error: lookupError } = await apiFrom('matches')
@@ -593,18 +628,18 @@ async function processJobInner(job, ctx) {
         .maybeSingle()
 
       if (lookupError) {
-        console.error('[SyncQueue] Match lookup error:', lookupError, job.payload)
+        safeLog.error('[SyncQueue] Match lookup error:', lookupError, job.payload)
         return failureResult(lookupError, ctx)
       }
 
       if (!matchData) {
         // Match doesn't exist in Supabase, consider it successfully deleted
-        console.log('[SyncQueue] Match not found in Supabase (already deleted?):', id)
+        safeLog.log('[SyncQueue] Match not found in Supabase (already deleted?):', id)
         return true
       }
 
       const matchUuid = matchData.id
-      console.log('[SyncQueue] 🔍 Found match UUID:', matchUuid)
+      safeLog.log('[SyncQueue] 🔍 Found match UUID:', matchUuid)
 
       // Count records before deletion for debugging
       const { count: eventsCountBefore } = await apiFrom('events')
@@ -616,44 +651,44 @@ async function processJobInner(job, ctx) {
       const { count: liveStateCountBefore } = await apiFrom('match_live_state')
         .select('*', { count: 'exact', head: true })
         .eq('match_id', matchUuid)
-      console.log('[SyncQueue] 📊 Records before delete:', {
+      safeLog.log('[SyncQueue] 📊 Records before delete:', {
         events: eventsCountBefore,
         sets: setsCountBefore,
         match_live_state: liveStateCountBefore
       })
 
       // Delete events for this match
-      console.log('[SyncQueue] 🗑️ Deleting events...')
+      safeLog.log('[SyncQueue] 🗑️ Deleting events...')
       const { error: eventsError } = await apiFrom('events')
         .delete()
         .eq('match_id', matchUuid)
         .select('*', { count: 'exact', head: true })
       if (eventsError) {
-        console.warn('[SyncQueue] Events delete error (continuing):', eventsError)
+        safeLog.warn('[SyncQueue] Events delete error (continuing):', eventsError)
       } else {
-        console.log('[SyncQueue] ✅ Events deleted')
+        safeLog.log('[SyncQueue] ✅ Events deleted')
       }
 
       // Delete sets for this match
-      console.log('[SyncQueue] 🗑️ Deleting sets...')
+      safeLog.log('[SyncQueue] 🗑️ Deleting sets...')
       const { error: setsError } = await apiFrom('sets')
         .delete()
         .eq('match_id', matchUuid)
       if (setsError) {
-        console.warn('[SyncQueue] Sets delete error (continuing):', setsError)
+        safeLog.warn('[SyncQueue] Sets delete error (continuing):', setsError)
       } else {
-        console.log('[SyncQueue] ✅ Sets deleted')
+        safeLog.log('[SyncQueue] ✅ Sets deleted')
       }
 
       // Delete match_live_state for this match
-      console.log('[SyncQueue] 🗑️ Deleting match_live_state...')
+      safeLog.log('[SyncQueue] 🗑️ Deleting match_live_state...')
       const { error: liveStateError } = await apiFrom('match_live_state')
         .delete()
         .eq('match_id', matchUuid)
       if (liveStateError) {
-        console.warn('[SyncQueue] match_live_state delete error (continuing):', liveStateError)
+        safeLog.warn('[SyncQueue] match_live_state delete error (continuing):', liveStateError)
       } else {
-        console.log('[SyncQueue] ✅ match_live_state deleted')
+        safeLog.log('[SyncQueue] ✅ match_live_state deleted')
       }
 
       // Verify all related records are deleted before deleting match
@@ -666,7 +701,7 @@ async function processJobInner(job, ctx) {
       const { count: liveStateCountAfter } = await apiFrom('match_live_state')
         .select('*', { count: 'exact', head: true })
         .eq('match_id', matchUuid)
-      console.log('[SyncQueue] 📊 Records after delete:', {
+      safeLog.log('[SyncQueue] 📊 Records after delete:', {
         events: eventsCountAfter,
         sets: setsCountAfter,
         match_live_state: liveStateCountAfter
@@ -674,20 +709,20 @@ async function processJobInner(job, ctx) {
 
       // If any records remain, warn but continue
       if (eventsCountAfter > 0 || setsCountAfter > 0 || liveStateCountAfter > 0) {
-        console.warn('[SyncQueue] ⚠️ Some records were not deleted (RLS issue?). Attempting match delete anyway...')
+        safeLog.warn('[SyncQueue] ⚠️ Some records were not deleted (RLS issue?). Attempting match delete anyway...')
       }
 
       // Delete the match
-      console.log('[SyncQueue] 🗑️ Deleting match...')
+      safeLog.log('[SyncQueue] 🗑️ Deleting match...')
       const { error: matchError } = await apiFrom('matches')
         .delete()
         .eq('id', matchUuid)
       if (matchError) {
-        console.error('[SyncQueue] Match delete error:', matchError, job.payload)
+        safeLog.error('[SyncQueue] Match delete error:', matchError, job.payload)
         return failureResult(matchError, ctx)
       }
 
-      console.log('[SyncQueue] ✅ Deleted match and related records from Supabase:', id)
+      safeLog.log('[SyncQueue] ✅ Deleted match and related records from Supabase:', id)
       return true
     }
 
@@ -701,12 +736,12 @@ async function processJobInner(job, ctx) {
 
       // SAFETY CHECK: external_id is required - identifies THIS specific match
       if (!match?.external_id) {
-        console.error('[SyncQueue] Restore failed: missing external_id in match payload')
+        safeLog.error('[SyncQueue] Restore failed: missing external_id in match payload')
         return false
       }
 
       const externalId = match.external_id
-      console.log('[SyncQueue] Processing restore job for match:', externalId)
+      safeLog.log('[SyncQueue] Processing restore job for match:', externalId)
 
       try {
         // Old backup formats carry fields that are not columns; the server drops
@@ -718,17 +753,17 @@ async function processJobInner(job, ctx) {
           liveState: liveState || null
         })
         if (error) {
-          console.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
+          safeLog.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
           // 426 (old bundle), 429, 5xx and network errors: retry later
           return failureResult(error, ctx)
         }
-        console.log('[SyncQueue] Restore complete for match:', externalId, data?.counts || '')
+        safeLog.log('[SyncQueue] Restore complete for match:', externalId, data?.counts || '')
         if (data?.dropped && Object.keys(data.dropped).length) {
-          console.warn('[SyncQueue] Restore: server dropped unknown keys:', data.dropped)
+          safeLog.warn('[SyncQueue] Restore: server dropped unknown keys:', data.dropped)
         }
         return true
       } catch (restoreErr) {
-        console.error('[SyncQueue] Restore exception:', restoreErr)
+        safeLog.error('[SyncQueue] Restore exception:', restoreErr)
         ctx.error = summarizeError(restoreErr)
         return isNetworkException(restoreErr) ? STOP_NETWORK : false
       }
@@ -756,7 +791,7 @@ async function processJobInner(job, ctx) {
       const { error } = await apiFrom('sets')
         .upsert(setPayload, { onConflict: 'external_id' })
       if (error) {
-        console.error('[SyncQueue] Set insert error:', error, setPayload)
+        safeLog.error('[SyncQueue] Set insert error:', error, setPayload)
         return failureResult(error, ctx)
       }
       return true
@@ -787,7 +822,7 @@ async function processJobInner(job, ctx) {
 
       const { error } = await query
       if (error) {
-        console.error('[SyncQueue] Set update error:', error, job.payload)
+        safeLog.error('[SyncQueue] Set update error:', error, job.payload)
         return failureResult(error, ctx)
       }
       return true
@@ -816,18 +851,18 @@ async function processJobInner(job, ctx) {
       const { error } = await apiFrom('events')
         .upsert(eventPayload, { onConflict: 'external_id' })
       if (error) {
-        console.error('[SyncQueue] Event insert error:', error, eventPayload)
+        safeLog.error('[SyncQueue] Event insert error:', error, eventPayload)
         return failureResult(error, ctx)
       }
       return true
     }
 
     // Unknown resource/action - mark as done to avoid infinite loop
-    console.warn('[SyncQueue] Unknown job type:', job.resource, job.action)
+    safeLog.warn('[SyncQueue] Unknown job type:', job.resource, job.action)
     return true
 
   } catch (err) {
-    console.error('[SyncQueue] Job processing error:', err, job.resource, job.action)
+    safeLog.error('[SyncQueue] Job processing error:', err, job.resource, job.action)
     ctx.error = summarizeError(err)
     return isNetworkException(err) ? STOP_NETWORK : false
   }
@@ -885,7 +920,7 @@ export async function runQueuePass() {
   const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
   if (queued.length === 0) return outcome
 
-  console.log(`[SyncQueue] Processing ${queued.length} queued items`)
+  safeLog.log(`[SyncQueue] Processing ${queued.length} queued items`)
 
   // Group jobs by resource type for ordered processing
   const jobsByResource = {}
@@ -905,7 +940,7 @@ export async function runQueuePass() {
     const pending = await db.sync_queue.where('status').anyOf('error', 'failed', 'sending').toArray()
     pendingBlocks = pendingEntityBlocks(pending)
   } catch (err) {
-    console.warn('[SyncQueue] Could not read pending jobs for ordering:', err?.message)
+    safeLog.warn('[SyncQueue] Could not read pending jobs for ordering:', err?.message)
   }
   const isHeldBack = (key, jobId) => blocked.has(key) || (pendingBlocks.has(key) && pendingBlocks.get(key) < jobId)
 
@@ -975,7 +1010,7 @@ export async function runQueuePass() {
         // application code): back off this job and stop the pass, the next job
         // would most likely get the same page.
         const attempts = (job.attempts || 0) + 1
-        console.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) got a ${jobError?.status} without a backend error code; retrying later`)
+        safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) got a ${jobError?.status} without a backend error code; retrying later`)
         await db.sync_queue.update(job.id, {
           status: 'error',
           attempts,
@@ -989,7 +1024,7 @@ export async function runQueuePass() {
 
       if (result === PERMANENT_FAILURE) {
         // Refused by the backend: the same payload would be refused again
-        console.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend, retried only hourly or by hand:`, jobError?.code || jobError?.status)
+        safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend, retried only hourly or by hand:`, jobError?.code || jobError?.status)
         await db.sync_queue.update(job.id, {
           status: 'failed',
           attempts: (job.attempts || 0) + 1,
@@ -1012,7 +1047,7 @@ export async function runQueuePass() {
         const currentRetries = job.retry_count || 0
         if (currentRetries >= MAX_DEPENDENCY_RETRIES) {
           // Park as error; the auto-retry brings it back with backoff
-          console.warn(`[SyncQueue] Job ${job.id} (${job.resource}) exceeded max retries, marking as error`)
+          safeLog.warn(`[SyncQueue] Job ${job.id} (${job.resource}) exceeded max retries, marking as error`)
           const attempts = (job.attempts || 0) + 1
           await db.sync_queue.update(job.id, {
             status: 'error',
@@ -1122,7 +1157,7 @@ export function useSyncQueue() {
           // Table doesn't exist - this is expected if tables aren't set up yet
           return probeFailed('online_no_supabase')
         }
-        console.error('[SyncQueue] Connection check error:', error)
+        safeLog.error('[SyncQueue] Connection check error:', error)
         return probeFailed('error')
       }
       // Cache successful connection
@@ -1136,7 +1171,7 @@ export function useSyncQueue() {
       if (isNetworkException(err)) {
         return probeFailed('offline')
       }
-      console.error('[SyncQueue] Connection check exception:', err)
+      safeLog.error('[SyncQueue] Connection check exception:', err)
       return probeFailed('error')
     }
   }, [])
@@ -1208,7 +1243,7 @@ export function useSyncQueue() {
         setSyncStatus('synced')
       }
     } catch (err) {
-      console.error('[SyncQueue] Flush error:', err)
+      safeLog.error('[SyncQueue] Flush error:', err)
       setSyncStatus('error')
     } finally {
       flushInProgress = false
@@ -1230,7 +1265,7 @@ export function useSyncQueue() {
           const connected = await checkSupabaseConnection(true)
           if (connected) {
             // When coming back online, retry errored jobs first, then flush queued
-            console.log('[SyncQueue] Back online - retrying errored jobs and flushing queue')
+            safeLog.log('[SyncQueue] Back online - retrying errored jobs and flushing queue')
             await retryErrorsInternal({ force: true })
             flush()
           }

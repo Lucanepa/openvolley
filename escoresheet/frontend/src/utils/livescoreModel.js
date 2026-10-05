@@ -26,10 +26,9 @@
  *   explicit pre-start statuses (pre_match, scheduled, not_started) are never
  *   live, so a scoreboard that starts writing one is honoured as is.
  *
- * Open: Start Set alone (no rally yet) is not visible, because set_start is
- * not pushed to match_live_state. The companion change is in Scoreboard.jsx
- * (sync 'set_start' after writing it; write 'pre_match' for setup upserts);
- * livescore already honours both.
+ * Start Set alone (no rally yet) lists the match: Scoreboard.jsx pushes
+ * 'set_start' to match_live_state right after writing it. Open: the scorer
+ * does not write 'pre_match' for setup upserts yet; livescore honours it.
  *
  * A match the list has already shown as started stays listed for the rest of
  * the session (an undo back to 0:0 must not make it vanish).
