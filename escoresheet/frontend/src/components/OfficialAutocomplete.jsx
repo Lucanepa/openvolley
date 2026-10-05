@@ -95,10 +95,6 @@ export default function OfficialAutocomplete({
             width: '100%',
             padding: '8px 12px',
             paddingRight: hasHistory ? '32px' : '12px',
-            borderRadius: 6,
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            background: 'rgba(15, 23, 42, 0.5)',
-            color: 'var(--text)',
             fontSize: '13px',
             minHeight: 36,
             boxSizing: 'border-box',
@@ -111,21 +107,10 @@ export default function OfficialAutocomplete({
           <button
             type="button"
             onClick={() => setShowDropdown(!showDropdown)}
-            style={{
-              position: 'absolute',
-              right: '6px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-              padding: '4px',
-              fontSize: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
+            aria-label={t('officialAutocomplete.selectFromHistory', 'Select from history')}
+            title={t('officialAutocomplete.selectFromHistory', 'Select from history')}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md bg-transparent p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors"
+            style={{ border: 'none' }}
             tabIndex={-1}
           >
             <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
@@ -137,30 +122,13 @@ export default function OfficialAutocomplete({
 
       {/* Dropdown */}
       {showDropdown && filteredOfficials.length > 0 && (
+        // Anchored dropdown: white card, stone hairline, card-lg shadow
+        // (RESTYLE-SPEC 3.4; was a dark #1e293b popover).
         <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            minWidth: '220px',
-            maxHeight: '250px',
-            overflowY: 'auto',
-            background: '#1e293b',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '6px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-            zIndex: 1000,
-            marginTop: '2px'
-          }}
+          className="absolute left-0 right-0 top-full mt-1 overflow-y-auto rounded-xl border border-stone-200 bg-white p-1.5 shadow-card-lg"
+          style={{ minWidth: '220px', maxHeight: '250px', zIndex: 1000 }}
         >
-          <div style={{
-            padding: '6px 10px',
-            fontSize: '10px',
-            color: 'rgba(255,255,255,0.5)',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(0,0,0,0.2)'
-          }}>
+          <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">
             {t('officialAutocomplete.selectFromHistory', 'Select from history')}
           </div>
 
@@ -169,28 +137,11 @@ export default function OfficialAutocomplete({
               key={index}
               type="button"
               onClick={() => handleSelectOfficial(official)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px',
-                width: '100%',
-                padding: '10px 12px',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: index < filteredOfficials.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none',
-                color: 'var(--text)',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 0.15s'
-              }}
-              onMouseEnter={(e) => e.target.style.background = 'rgba(59, 130, 246, 0.2)'}
-              onMouseLeave={(e) => e.target.style.background = 'transparent'}
+              className="flex w-full min-h-11 items-center justify-between gap-2 rounded-lg bg-transparent px-2.5 text-left text-stone-800 hover:bg-stone-100 transition-colors"
+              style={{ border: 'none' }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: '13px',
-                  fontWeight: 500,
+                <div className="text-sm font-medium" style={{
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
