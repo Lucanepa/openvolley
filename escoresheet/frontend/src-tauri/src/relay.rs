@@ -18,10 +18,17 @@
 //!   - a socket proves the scoreboard role for a match with the match's game PIN
 //!     (first sync of a new match claims it); only proven sockets may write,
 //!     send actions / live-state, delete or clear (their own) matches;
-//!   - PINs are validated by the relay from its own store, never by a WS client.
+//!   - PINs are validated by the relay from its own store, never by a WS client,
+//!     and /api/match/validate-pin + by-game-number are rate limited per IP;
+//!   - an id nobody owns is reusable after 60 s when its match is finished, after
+//!     10 min otherwise, and its displaced game PIN may reclaim it once; wrong-PIN
+//!     claims are limited per IP / connection and a LAN IP may own few ids;
+//!   - the liveState is kept across syncs only for the same owner / game PIN and
+//!     is mirrored as `data: { liveState }` for the LedBox bridge;
+//!   - only the relay host itself may take / release the main-instance lock.
 
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -64,10 +71,24 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
 /// Same cap as the Node relays / cloud relay.
 const WS_MAX_MESSAGE: usize = 10 * 1024 * 1024;
 const MAX_MATCH_ID_LEN: usize = 128;
-/// A match whose scoreboard left this long ago may be claimed by another
-/// scoreboard (Dexie ids restart at 1 on every device). Far longer than a
-/// Wi-Fi blip, so a live scoreboard is never displaced.
+/// A FINISHED match whose scoreboard left this long ago may be claimed by
+/// another scoreboard (Dexie ids restart at 1 on every device). Far longer than
+/// a Wi-Fi blip, so a live scoreboard is never displaced.
 const ORPHAN_TAKEOVER: Duration = Duration::from_secs(60);
+/// An UNFINISHED match is claimable only after this long without an owner.
+const STALE_TAKEOVER: Duration = Duration::from_secs(10 * 60);
+/// Rate-limit window shared by every per-IP / per-connection counter.
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+/// Wrong game-PIN claims per IP / connection per window before claims needing
+/// proof are refused without comparing the PIN (no guessing oracle).
+const CLAIM_FAILURE_LIMIT: u32 = 5;
+/// Distinct match ids one (non-loopback) IP may own, and new ids per window.
+const MAX_OWNED_PER_IP: usize = 4;
+const NEW_CLAIM_LIMIT: u32 = 10;
+/// Same per-IP budgets as the Node relays' HTTP endpoints.
+const VALIDATE_PIN_LIMIT: u32 = 10;
+const BY_GAME_NUMBER_LIMIT: u32 = 60;
+const FINISHED_STATUSES: &[&str] = &["final", "ended", "completed", "finished"];
 
 type Tx = mpsc::UnboundedSender<Message>;
 
@@ -81,6 +102,31 @@ struct Pending {
     targets: HashSet<u64>,
 }
 
+/// What the relay knows about one WebSocket connection.
+struct ConnMeta {
+    ip: IpAddr,
+    /// 'subscriber' | 'referee' | 'bench' | 'livescore' (from subscribe-match)
+    role: String,
+    connected_at: String,
+}
+
+/// One fixed-window counter.
+struct Window {
+    count: u32,
+    start: std::time::Instant,
+}
+
+/// How a scoreboard claim was granted (see `claim`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClaimKind {
+    Owner,
+    Proved,
+    New,
+    Open,
+    Takeover,
+    Reclaim,
+}
+
 pub struct AppState {
     /// matchId -> bundle { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, liveState? }
     matches: Mutex<HashMap<String, Value>>,
@@ -91,6 +137,12 @@ pub struct AppState {
     owners: Mutex<HashMap<u64, HashSet<String>>>,
     /// match id -> when its last owning connection left
     orphaned_since: Mutex<HashMap<String, std::time::Instant>>,
+    /// connection id -> ip / role / connected time
+    conn_meta: Mutex<HashMap<u64, ConnMeta>>,
+    /// fixed-window counters: "fail:ip:..", "fail:ws:..", "new:..", "pin:..", "gn:.."
+    limits: Mutex<HashMap<String, Window>>,
+    /// match id -> game PIN an unfinished match had before a stale takeover
+    displaced: Mutex<HashMap<String, String>>,
     pending: Mutex<HashMap<String, Pending>>,
     next_id: AtomicU64,
     pub http_port: u16,
@@ -105,6 +157,9 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         subs: Mutex::new(HashMap::new()),
         owners: Mutex::new(HashMap::new()),
         orphaned_since: Mutex::new(HashMap::new()),
+        conn_meta: Mutex::new(HashMap::new()),
+        limits: Mutex::new(HashMap::new()),
+        displaced: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         http_port,
@@ -118,8 +173,88 @@ pub fn local_ip_string() -> String {
         .unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
-fn is_loopback(addr: &SocketAddr) -> bool {
-    addr.ip().is_loopback()
+/// IPv4-mapped IPv6 (`::ffff:a.b.c.d`) as plain IPv4.
+fn canonical_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
+        v4 => v4,
+    }
+}
+
+/// The request comes from the relay host itself: loopback, or one of its own
+/// interface addresses (the desktop app calls the relay on its LAN IP).
+fn is_local(addr: &SocketAddr) -> bool {
+    let ip = canonical_ip(addr.ip());
+    if ip.is_loopback() {
+        return true;
+    }
+    local_ip_address::list_afinet_netifas()
+        .map(|list| list.iter().any(|(_, a)| canonical_ip(*a) == ip))
+        .unwrap_or(false)
+}
+
+fn window_count(map: &HashMap<String, Window>, key: &str) -> u32 {
+    match map.get(key) {
+        Some(w) if w.start.elapsed() <= RATE_WINDOW => w.count,
+        _ => 0,
+    }
+}
+
+/// Count one more hit for `key` and return the count in the current window.
+fn window_bump(map: &mut HashMap<String, Window>, key: &str) -> u32 {
+    if map.len() > 10_000 {
+        map.retain(|_, w| w.start.elapsed() <= RATE_WINDOW);
+        if map.len() > 10_000 {
+            map.clear(); // bound memory under a flood
+        }
+    }
+    let w = map
+        .entry(key.to_string())
+        .or_insert(Window { count: 0, start: std::time::Instant::now() });
+    if w.start.elapsed() > RATE_WINDOW {
+        w.count = 0;
+        w.start = std::time::Instant::now();
+    }
+    w.count += 1;
+    w.count
+}
+
+async fn http_rate_limited(state: &Arc<AppState>, prefix: &str, addr: &SocketAddr, limit: u32) -> bool {
+    let key = format!("{prefix}:{}", canonical_ip(addr.ip()));
+    window_bump(&mut *state.limits.lock().await, &key) > limit
+}
+
+fn is_finished(m: Option<&Value>) -> bool {
+    let status = m
+        .and_then(|m| m.get("status"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    FINISHED_STATUSES.contains(&status.as_str())
+}
+
+/// RFC 3339 UTC timestamp (like JS `toISOString()`), without a date crate.
+fn iso_now() -> String {
+    let ms = now_ms();
+    let secs = ms / 1000;
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    // Civil-from-days (Howard Hinnant), valid for the Unix era.
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60,
+        ms % 1000
+    )
 }
 
 fn strip_secrets(m: &mut Value) {
@@ -197,6 +332,8 @@ fn bundle_from(src: &Value) -> Option<Value> {
 }
 
 /// A flat, PIN-free match message: `{ type, matchId, match, homeTeam, ..., liveState? }`.
+/// A stored liveState is mirrored as `data: { liveState }` (nothing else under
+/// `data`) for the LedBox bridge, which reads `msg.data.liveState`.
 fn bundle_message(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<Value>) -> Value {
     let mut out = strip_bundle_secrets(bundle);
     if let Some(obj) = out.as_object_mut() {
@@ -205,6 +342,9 @@ fn bundle_message(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<
         obj.insert("matchId".into(), json!(match_id));
         obj.insert("_timestamp".into(), json!(now));
         obj.insert("_scoreboardTimestamp".into(), sb_ts.unwrap_or(json!(now)));
+        if let Some(live) = obj.get("liveState").cloned() {
+            obj.insert("data".into(), json!({ "liveState": live }));
+        }
     }
     out
 }
@@ -253,7 +393,7 @@ pub async fn serve(
         http,
         http_app.into_make_service_with_connect_info::<SocketAddr>(),
     );
-    let ws_fut = axum::serve(ws, ws_app.into_make_service());
+    let ws_fut = axum::serve(ws, ws_app.into_make_service_with_connect_info::<SocketAddr>());
 
     tokio::select! {
         _ = http_fut => {},
@@ -266,8 +406,8 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/server/status", get(server_status))
-        .route("/api/server/register-main", get(register_main))
-        .route("/api/server/unregister-main", get(unregister_main))
+        .route("/api/server/register-main", get(register_main).post(register_main))
+        .route("/api/server/unregister-main", get(unregister_main).post(unregister_main))
         .route("/api/match/validate-pin", post(validate_pin))
         .route("/api/match/list", get(match_list))
         .route("/api/match/by-game-number", get(by_game_number))
@@ -387,51 +527,54 @@ async fn server_status(State(state): State<Arc<AppState>>) -> Response {
     )
 }
 
+/// Main-instance lock: only the relay host itself may take (and always
+/// re-take) or release it, so a LAN device can never lock the scoretable out
+/// of "/". Same rule as lanRelayCore's createMainInstanceGate.
 async fn register_main(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
+    if !is_local(&addr) {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            json!({ "success": false, "error": "Only the scoretable machine can register the main instance" }),
+        );
+    }
     let instance_id = headers
         .get("x-instance-id")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("instance-{}", state.next_id.fetch_add(1, Ordering::Relaxed)));
-
-    let mut main = state.main_instance.lock().await;
-    if main.is_none() || is_loopback(&addr) {
-        *main = Some(instance_id.clone());
-        json_response(StatusCode::OK, json!({ "success": true, "instanceId": instance_id }))
-    } else {
-        json_response(
-            StatusCode::CONFLICT,
-            json!({ "success": false, "error": "Main instance already registered", "existingInstanceId": *main }),
-        )
-    }
+    *state.main_instance.lock().await = Some(instance_id.clone());
+    json_response(StatusCode::OK, json!({ "success": true, "instanceId": instance_id }))
 }
 
 async fn unregister_main(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
 ) -> Response {
-    let instance_id = headers
-        .get("x-instance-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let mut main = state.main_instance.lock().await;
-    if *main == instance_id || is_loopback(&addr) {
-        *main = None;
-        json_response(StatusCode::OK, json!({ "success": true }))
-    } else {
-        json_response(
+    if !is_local(&addr) {
+        return json_response(
             StatusCode::FORBIDDEN,
             json!({ "success": false, "error": "Not the registered instance" }),
-        )
+        );
     }
+    *state.main_instance.lock().await = None;
+    json_response(StatusCode::OK, json!({ "success": true }))
 }
 
-async fn validate_pin(State(state): State<Arc<AppState>>, Json(body): Json<Value>) -> Response {
+async fn validate_pin(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> Response {
+    if http_rate_limited(&state, "pin", &addr, VALIDATE_PIN_LIMIT).await {
+        return json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({ "success": false, "error": "Too many attempts. Please wait a minute before trying again." }),
+        );
+    }
     let pin = match body.get("pin") {
         Some(Value::String(p)) => p.trim().to_string(),
         Some(Value::Number(n)) => n.to_string(),
@@ -475,7 +618,17 @@ async fn validate_pin(State(state): State<Arc<AppState>>, Json(body): Json<Value
     )
 }
 
+/// Path match id, normalised like every WS match id (trimmed, length-capped).
+fn path_match_id(raw: String) -> Option<String> {
+    norm_id(Some(&Value::String(raw)))
+}
+
+fn bad_match_id() -> Response {
+    json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Match ID required" }))
+}
+
 async fn match_get(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    let Some(id) = path_match_id(id) else { return bad_match_id() };
     {
         let matches = state.matches.lock().await;
         if let Some(bundle) = matches.get(&id) {
@@ -544,10 +697,14 @@ async fn match_list(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn by_game_number(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    let game_number = params.get("gameNumber").cloned().unwrap_or_default();
+    if http_rate_limited(&state, "gn", &addr, BY_GAME_NUMBER_LIMIT).await {
+        return json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "success": false, "error": "Too many requests" }));
+    }
+    let game_number = params.get("gameNumber").map(|s| s.trim().to_string()).unwrap_or_default();
     if game_number.is_empty() {
         return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Game number required" }));
     }
@@ -588,6 +745,7 @@ async fn match_patch(
     Path(id): Path<String>,
     Json(updates): Json<Value>,
 ) -> Response {
+    let Some(id) = path_match_id(id) else { return bad_match_id() };
     let rid = format!("match-update-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
     let req_msg = json!({ "type": "match-update-request", "requestId": rid, "matchId": id, "updates": updates });
     match ws_roundtrip(&state, req_msg, &rid, "match-update-response", Some(id.clone())).await {
@@ -610,12 +768,14 @@ async fn server_connections(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    let filter = params.get("matchId").cloned();
+    let filter = params.get("matchId").and_then(|f| norm_id(Some(&Value::String(f.clone()))));
     let mut clients: Vec<Value> = Vec::new();
     let mut counts = serde_json::Map::new();
+    let (mut referees, mut benches) = (0, 0);
     {
         let owners = state.owners.lock().await;
         let subs = state.subs.lock().await;
+        let meta = state.conn_meta.lock().await;
         for (match_id, set) in subs.iter() {
             counts.insert(match_id.clone(), json!(set.len()));
             if filter.as_deref().map_or(false, |f| f != match_id) {
@@ -626,7 +786,21 @@ async fn server_connections(
                 if owners.get(conn).map_or(false, |o| !o.is_empty()) {
                     continue;
                 }
-                clients.push(json!({ "id": format!("c{conn}"), "ip": Value::Null, "role": "subscriber", "team": Value::Null, "matchId": match_id }));
+                let m = meta.get(conn);
+                let role = m.map_or("subscriber", |m| m.role.as_str());
+                match role {
+                    "referee" => referees += 1,
+                    "bench" => benches += 1,
+                    _ => {}
+                }
+                clients.push(json!({
+                    "id": format!("c{conn}"),
+                    "ip": m.map(|m| m.ip.to_string()),
+                    "role": role,
+                    "team": Value::Null,
+                    "matchId": match_id,
+                    "connectedAt": m.map(|m| m.connected_at.clone()),
+                }));
             }
         }
     }
@@ -636,8 +810,8 @@ async fn server_connections(
         json!({
             "totalClients": total,
             "dashboardClients": clients.len(),
-            "referees": 0,
-            "benches": 0,
+            "referees": referees,
+            "benches": benches,
             "clients": clients,
             "matchSubscriptions": counts,
         }),
@@ -651,6 +825,7 @@ async fn server_connections(
 async fn static_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     uri: Uri,
 ) -> Response {
     let path = uri.path();
@@ -660,9 +835,12 @@ async fn static_handler(
         return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Not found" }));
     }
 
-    // Single main-instance gate — skipped for the loopback desktop window.
-    if (path == "/" || path == "/index.html") && !is_loopback(&addr) {
-        if state.main_instance.lock().await.is_some() {
+    // Single main-instance gate — skipped for the desktop app itself and for a
+    // request that presents the registered instance id.
+    if (path == "/" || path == "/index.html") && !is_local(&addr) {
+        let main = state.main_instance.lock().await.clone();
+        let presented = headers.get("x-instance-id").and_then(|v| v.to_str().ok());
+        if main.is_some() && presented != main.as_deref() {
             return (
                 StatusCode::FORBIDDEN,
                 [("content-type", "text/html")],
@@ -732,9 +910,13 @@ fn try_file(path: &str) -> Option<Response> {
 // WebSocket relay
 // ---------------------------------------------------------------------------
 
-async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
     ws.max_message_size(WS_MAX_MESSAGE)
-        .on_upgrade(move |socket| handle_socket(socket, state))
+        .on_upgrade(move |socket| handle_socket(socket, state, canonical_ip(addr.ip())))
 }
 
 async fn send_to(state: &Arc<AppState>, conn_id: u64, msg: &Value) {
@@ -793,11 +975,15 @@ async fn ws_roundtrip(
     }
 }
 
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
     let (mut sink, mut stream) = socket.split();
     let conn_id = state.next_id.fetch_add(1, Ordering::Relaxed);
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     state.clients.lock().await.insert(conn_id, tx.clone());
+    state.conn_meta.lock().await.insert(
+        conn_id,
+        ConnMeta { ip, role: "subscriber".to_string(), connected_at: iso_now() },
+    );
 
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -820,6 +1006,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     }
 
     state.clients.lock().await.remove(&conn_id);
+    state.conn_meta.lock().await.remove(&conn_id);
+    state.limits.lock().await.remove(&format!("fail:ws:{conn_id}"));
     {
         let mut owners = state.owners.lock().await;
         if let Some(owned) = owners.remove(&conn_id) {
@@ -859,47 +1047,154 @@ async fn is_owner(state: &Arc<AppState>, conn_id: u64, match_id: &str) -> bool {
         .map_or(false, |o| o.contains(match_id))
 }
 
-/// Prove the scoreboard role for `match_id` with the match's own game PIN:
-/// a match new to the relay is claimed by its first scoreboard; a stored match
-/// with a game PIN needs the same PIN; a stored match without one (test match)
-/// may be written by anyone, but only an existing owner may attach a PIN to it;
-/// a match nobody has owned for ORPHAN_TAKEOVER may be taken over by anyone.
-async fn claim(state: &Arc<AppState>, conn_id: u64, match_id: &str, incoming: Option<&Value>) -> bool {
-    let stored_pin = {
-        let matches = state.matches.lock().await;
-        matches.get(match_id).map(|b| game_pin_of(b.get("match")))
+/// Squatting limits for a connection about to own an id it did not own.
+fn new_claim_denied(
+    owners: &HashMap<u64, HashSet<String>>,
+    meta: &HashMap<u64, ConnMeta>,
+    limits: &mut HashMap<String, Window>,
+    ip: Option<IpAddr>,
+    match_id: &str,
+) -> Option<&'static str> {
+    let ip = match ip {
+        Some(ip) if !ip.is_loopback() => ip, // the scoretable machine itself is exempt
+        _ => return None,
     };
-    let mut owners = state.owners.lock().await;
-    let mut orphaned = state.orphaned_since.lock().await;
-    let abandoned = !owners.values().any(|o| o.contains(match_id))
-        && orphaned.get(match_id).map_or(false, |t| t.elapsed() >= ORPHAN_TAKEOVER);
-    let owned = owners.entry(conn_id).or_default();
-    if let (Some(stored), false) = (stored_pin, abandoned) {
-        let incoming_pin = game_pin_of(incoming);
-        match stored {
-            Some(p) => {
-                if incoming_pin.as_deref() != Some(p.as_str()) {
-                    return false;
-                }
-            }
-            None => {
-                if incoming_pin.is_some() && !owned.contains(match_id) {
-                    return false;
-                }
-            }
+    let mut ids: HashSet<&String> = HashSet::new();
+    for (cid, owned) in owners.iter() {
+        if meta.get(cid).map(|m| m.ip) == Some(ip) {
+            ids.extend(owned.iter().filter(|id| id.as_str() != match_id));
         }
     }
-    owned.insert(match_id.to_string());
-    orphaned.remove(match_id);
-    true
+    if ids.len() >= MAX_OWNED_PER_IP {
+        return Some("too-many-matches");
+    }
+    if window_bump(limits, &format!("new:{ip}")) > NEW_CLAIM_LIMIT {
+        return Some("rate-limited");
+    }
+    None
 }
 
-/// Store a bundle, keeping the last pushed liveState (syncs don't carry one).
-async fn store_bundle(state: &Arc<AppState>, match_id: &str, mut bundle: Value) -> Value {
+fn claim_error_message(code: &str) -> &'static str {
+    match code {
+        "not-match-owner" => "Match is owned by another scoreboard (game PIN mismatch)",
+        "rate-limited" => "Too many failed scoreboard claims. Wait a minute.",
+        "too-many-matches" => "This device already drives the maximum number of matches",
+        _ => "Refused",
+    }
+}
+
+/// Prove the scoreboard role for `match_id` with the match's own game PIN
+/// (port of lanRelayCore `claim`):
+/// - a match new to the relay is claimed by its first scoreboard;
+/// - a stored match with a game PIN needs the same PIN;
+/// - a stored match without one (test match) may be written by anyone, but
+///   only an existing owner may attach a PIN to it;
+/// - a match nobody has owned for ORPHAN_TAKEOVER (finished) / STALE_TAKEOVER
+///   (in play) may be taken over; an unfinished one taken over with another
+///   PIN may be reclaimed once by its own PIN.
+/// Wrong-PIN claims are limited per IP and per connection: over the limit a
+/// claim needing proof is refused BEFORE the PIN is compared (no oracle).
+async fn claim(
+    state: &Arc<AppState>,
+    conn_id: u64,
+    match_id: &str,
+    incoming: Option<&Value>,
+) -> Result<ClaimKind, &'static str> {
+    let stored = {
+        let matches = state.matches.lock().await;
+        matches.get(match_id).map(|b| (game_pin_of(b.get("match")), is_finished(b.get("match"))))
+    };
+    let incoming_pin = game_pin_of(incoming);
+    // Fixed lock order: owners -> orphaned -> conn_meta -> limits -> displaced.
+    let mut owners = state.owners.lock().await;
+    let mut orphaned = state.orphaned_since.lock().await;
+    let meta = state.conn_meta.lock().await;
+    let mut limits = state.limits.lock().await;
+    let mut displaced = state.displaced.lock().await;
+    let ip = meta.get(&conn_id).map(|m| m.ip);
+    let was_owner = owners.get(&conn_id).map_or(false, |o| o.contains(match_id));
+
+    let grant = |owners: &mut HashMap<u64, HashSet<String>>,
+                 orphaned: &mut HashMap<String, std::time::Instant>,
+                 kind: ClaimKind| {
+        owners.entry(conn_id).or_default().insert(match_id.to_string());
+        orphaned.remove(match_id);
+        Ok(kind)
+    };
+
+    let Some((stored_pin, finished)) = stored else {
+        if !was_owner {
+            if let Some(code) = new_claim_denied(&owners, &meta, &mut limits, ip, match_id) {
+                return Err(code);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, if was_owner { ClaimKind::Owner } else { ClaimKind::New });
+    };
+    if stored_pin.is_none() && (incoming_pin.is_none() || was_owner) {
+        if !was_owner {
+            if let Some(code) = new_claim_denied(&owners, &meta, &mut limits, ip, match_id) {
+                return Err(code);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, if was_owner { ClaimKind::Owner } else { ClaimKind::Open });
+    }
+    // An owner re-sending its own PIN proved it already: never rate limited.
+    if was_owner && stored_pin.is_some() && incoming_pin == stored_pin {
+        return grant(&mut owners, &mut orphaned, ClaimKind::Owner);
+    }
+    let mut keys = vec![format!("fail:ws:{conn_id}")];
+    if let Some(ip) = ip {
+        keys.push(format!("fail:ip:{ip}"));
+    }
+    if keys.iter().any(|k| window_count(&limits, k) >= CLAIM_FAILURE_LIMIT) {
+        return Err("rate-limited");
+    }
+    if stored_pin.is_some() && incoming_pin == stored_pin {
+        return grant(&mut owners, &mut orphaned, ClaimKind::Proved);
+    }
+    if incoming_pin.is_some() && displaced.get(match_id) == incoming_pin.as_ref() {
+        displaced.remove(match_id);
+        for (cid, owned) in owners.iter_mut() {
+            if *cid != conn_id {
+                owned.remove(match_id);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, ClaimKind::Reclaim);
+    }
+    let grace = if finished { ORPHAN_TAKEOVER } else { STALE_TAKEOVER };
+    let abandoned = !owners.values().any(|o| o.contains(match_id))
+        && orphaned.get(match_id).map_or(false, |t| t.elapsed() >= grace);
+    if abandoned {
+        if let Some(code) = new_claim_denied(&owners, &meta, &mut limits, ip, match_id) {
+            return Err(code);
+        }
+        match &stored_pin {
+            Some(p) if incoming_pin.as_ref() != Some(p) && !finished => {
+                displaced.insert(match_id.to_string(), p.clone());
+            }
+            _ => {
+                displaced.remove(match_id);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, ClaimKind::Takeover);
+    }
+    for k in &keys {
+        window_bump(&mut limits, k);
+    }
+    Err("not-match-owner")
+}
+
+/// Store a bundle. A sync carries no liveState: the last one pushed is kept
+/// only while the same scoreboard / game PIN keeps the match — never across a
+/// takeover, reclaim or PIN change (it would describe another match).
+async fn store_bundle(state: &Arc<AppState>, match_id: &str, mut bundle: Value, kind: ClaimKind) -> Value {
     let mut matches = state.matches.lock().await;
-    if let Some(prev_live) = matches.get(match_id).and_then(|p| p.get("liveState")).cloned() {
-        if bundle.get("liveState").is_none() {
-            bundle["liveState"] = prev_live;
+    if let Some(prev) = matches.get(match_id) {
+        let same_pin = game_pin_of(prev.get("match")) == game_pin_of(bundle.get("match"));
+        if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) && same_pin && bundle.get("liveState").is_none() {
+            if let Some(prev_live) = prev.get("liveState").cloned() {
+                bundle["liveState"] = prev_live;
+            }
         }
     }
     matches.insert(match_id.to_string(), bundle.clone());
@@ -912,6 +1207,7 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     state.subs.lock().await.remove(match_id);
     state.matches.lock().await.remove(match_id);
     state.orphaned_since.lock().await.remove(match_id);
+    state.displaced.lock().await.remove(match_id);
     for owned in state.owners.lock().await.values_mut() {
         owned.remove(match_id);
     }
@@ -937,11 +1233,14 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 send_error(tx, "bad-request", "sync-match-data needs matchId and match", None);
                 return;
             };
-            if !claim(state, conn_id, &match_id, bundle.get("match")).await {
-                send_error(tx, "not-match-owner", "Match is owned by another scoreboard (game PIN mismatch)", Some(&match_id));
-                return;
-            }
-            let stored = store_bundle(state, &match_id, bundle).await;
+            let kind = match claim(state, conn_id, &match_id, bundle.get("match")).await {
+                Ok(kind) => kind,
+                Err(code) => {
+                    send_error(tx, code, claim_error_message(code), Some(&match_id));
+                    return;
+                }
+            };
+            let stored = store_bundle(state, &match_id, bundle, kind).await;
             let update = bundle_message("match-data-update", &match_id, &stored, data.get("_timestamp").cloned());
             notify_subscribers(state, &match_id, &update, Some(conn_id)).await;
         }
@@ -951,6 +1250,13 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 return;
             };
             state.subs.lock().await.entry(match_id.clone()).or_default().insert(conn_id);
+            if let Some(role) = data.get("role").and_then(|v| v.as_str()) {
+                if matches!(role, "referee" | "bench" | "livescore") {
+                    if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+                        m.role = role.to_string();
+                    }
+                }
+            }
             let stored = state.matches.lock().await.get(&match_id).cloned();
             if let Some(bundle) = stored {
                 let full = bundle_message("match-full-data", &match_id, &bundle, None);
@@ -1079,8 +1385,8 @@ async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: 
             let payload = data.get("data").or_else(|| data.get("matchData")).cloned().unwrap_or(Value::Null);
             match (bundle_from(&payload), &match_id) {
                 (Some(bundle), Some(id)) if Some(id) == expected_match.as_ref() => {
-                    if claim(state, conn_id, id, bundle.get("match")).await {
-                        let stored = store_bundle(state, id, bundle).await;
+                    if let Ok(kind) = claim(state, conn_id, id, bundle.get("match")).await {
+                        let stored = store_bundle(state, id, bundle, kind).await;
                         if msg_type == "match-update-response" {
                             let update = bundle_message("match-data-update", id, &stored, None);
                             notify_subscribers(state, id, &update, Some(conn_id)).await;
@@ -1141,5 +1447,144 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
         if let Some(tx) = clients.get(&id) {
             let _ = tx.send(Message::Text(text.clone()));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: the protocol rules shared with lanRelayCore (the full wire scenario
+// runs from vitest against a built binary, see lanRelayProtocol.test.js).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bundle(id: u64, pin: &str, status: &str) -> Value {
+        json!({
+            "match": { "id": id, "status": status, "gamePin": pin, "refereePin": "314159" },
+            "homeTeam": null, "awayTeam": null, "homePlayers": [], "awayPlayers": [], "sets": [], "events": [],
+        })
+    }
+
+    async fn connect(state: &Arc<AppState>, id: u64, ip: &str) {
+        state.conn_meta.lock().await.insert(
+            id,
+            ConnMeta { ip: ip.parse().unwrap(), role: "subscriber".into(), connected_at: iso_now() },
+        );
+    }
+
+    async fn sync(state: &Arc<AppState>, conn: u64, id: &str, b: Value) -> Result<ClaimKind, &'static str> {
+        let kind = claim(state, conn, id, b.get("match")).await?;
+        store_bundle(state, id, b, kind).await;
+        Ok(kind)
+    }
+
+    /// The owner of `id` disconnects `ago` ago.
+    async fn leave(state: &Arc<AppState>, conn: u64, id: &str, ago: Duration) {
+        state.owners.lock().await.remove(&conn);
+        let when = std::time::Instant::now().checked_sub(ago).unwrap();
+        state.orphaned_since.lock().await.insert(id.to_string(), when);
+    }
+
+    #[tokio::test]
+    async fn guessing_the_game_pin_is_cut_off_without_an_oracle() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.66").await;
+        assert!(sync(&state, 1, "7", bundle(7, "987654", "live")).await.is_ok());
+        for i in 0..CLAIM_FAILURE_LIMIT {
+            let wrong = format!("{}", 100000 + i);
+            assert_eq!(sync(&state, 2, "7", bundle(7, &wrong, "live")).await.err(), Some("not-match-owner"));
+        }
+        // The right PIN is refused exactly like a wrong one now
+        assert_eq!(sync(&state, 2, "7", bundle(7, "987654", "live")).await.err(), Some("rate-limited"));
+        // The proven scoreboard is unaffected
+        assert!(matches!(sync(&state, 1, "7", bundle(7, "987654", "live")).await, Ok(ClaimKind::Owner)));
+    }
+
+    #[tokio::test]
+    async fn an_unfinished_match_is_kept_for_its_scorer_and_can_be_reclaimed() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.66").await;
+        connect(&state, 3, "192.168.1.10").await;
+        sync(&state, 1, "1", bundle(1, "111111", "live")).await.unwrap();
+        state.matches.lock().await.get_mut("1").unwrap()["liveState"] = json!({ "sets_won_a": 2 });
+
+        // Asleep through a set break: not claimable yet
+        leave(&state, 1, "1", Duration::from_secs(120)).await;
+        assert_eq!(sync(&state, 2, "1", bundle(1, "666666", "live")).await.err(), Some("not-match-owner"));
+
+        // Gone for longer than STALE_TAKEOVER: another scorer may reuse the id,
+        // without the old match's live-state
+        leave(&state, 1, "1", STALE_TAKEOVER + Duration::from_secs(1)).await;
+        assert!(matches!(sync(&state, 2, "1", bundle(1, "666666", "live")).await, Ok(ClaimKind::Takeover)));
+        assert!(state.matches.lock().await.get("1").unwrap().get("liveState").is_none());
+
+        // The original game PIN takes it back once
+        assert!(matches!(sync(&state, 3, "1", bundle(1, "111111", "live")).await, Ok(ClaimKind::Reclaim)));
+        assert!(!is_owner(&state, 2, "1").await);
+        assert_eq!(sync(&state, 2, "1", bundle(1, "666666", "live")).await.err(), Some("not-match-owner"));
+    }
+
+    #[tokio::test]
+    async fn a_finished_match_id_is_reusable_after_a_minute_without_reclaim() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.11").await;
+        sync(&state, 1, "1", bundle(1, "111111", "final")).await.unwrap();
+        leave(&state, 1, "1", ORPHAN_TAKEOVER + Duration::from_secs(1)).await;
+        assert!(matches!(sync(&state, 2, "1", bundle(1, "222222", "live")).await, Ok(ClaimKind::Takeover)));
+        connect(&state, 3, "192.168.1.10").await;
+        assert_eq!(sync(&state, 3, "1", bundle(1, "111111", "final")).await.err(), Some("not-match-owner"));
+    }
+
+    #[tokio::test]
+    async fn live_state_is_kept_only_for_the_same_game_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.10").await;
+        sync(&state, 1, "7", bundle(7, "987654", "live")).await.unwrap();
+        state.matches.lock().await.get_mut("7").unwrap()["liveState"] = json!({ "points_a": 5 });
+        // Reconnected scorer (new connection, same PIN) keeps it
+        assert!(matches!(sync(&state, 2, "7", bundle(7, "987654", "live")).await, Ok(ClaimKind::Proved)));
+        let stored = state.matches.lock().await.get("7").cloned().unwrap();
+        assert_eq!(stored["liveState"], json!({ "points_a": 5 }));
+
+        // ...and every match message mirrors it for the LedBox bridge, PIN-free
+        let msg = bundle_message("match-full-data", "7", &stored, None);
+        assert_eq!(msg["data"], json!({ "liveState": { "points_a": 5 } }));
+        assert_eq!(msg["liveState"], json!({ "points_a": 5 }));
+        let text = msg.to_string();
+        assert!(!text.contains("987654") && !text.contains("314159"));
+    }
+
+    #[tokio::test]
+    async fn a_lan_device_cannot_squat_on_many_ids() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.66").await;
+        for id in 1..=MAX_OWNED_PER_IP as u64 {
+            assert!(sync(&state, 1, &id.to_string(), bundle(id, "000000", "live")).await.is_ok());
+        }
+        let next = (MAX_OWNED_PER_IP + 1).to_string();
+        assert_eq!(sync(&state, 1, &next, bundle(9, "000000", "live")).await.err(), Some("too-many-matches"));
+        // The scoretable machine itself is exempt
+        connect(&state, 2, "127.0.0.1").await;
+        for id in 20..30u64 {
+            assert!(sync(&state, 2, &id.to_string(), bundle(id, "000000", "live")).await.is_ok());
+        }
+    }
+
+    #[test]
+    fn helpers() {
+        assert_eq!(path_match_id(" 7 ".into()).as_deref(), Some("7"));
+        assert!(path_match_id("".into()).is_none());
+        assert!(path_match_id("x".repeat(MAX_MATCH_ID_LEN + 1)).is_none());
+        let iso = iso_now();
+        assert_eq!(iso.len(), 24, "{iso}");
+        assert!(iso.ends_with('Z') && iso.as_bytes()[10] == b'T');
+        assert_eq!(canonical_ip("::ffff:127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
+        assert!(is_local(&"127.0.0.1:1".parse().unwrap()));
+        assert!(!is_local(&"203.0.113.9:1".parse().unwrap()));
     }
 }
