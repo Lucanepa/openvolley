@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+#
+# OpenVolley cloud backend image.
+#
+# Packages escoresheet/backend (server.js + whatever lib/, db/, scripts/ the
+# self-host wiring adds). Build context is escoresheet/backend; this file and
+# its ignore list live in escoresheet/deploy so the backend directory stays
+# untouched:
+#
+#   docker build -f escoresheet/deploy/Dockerfile.backend \
+#                -t openvolley-backend:$(git rev-parse --short HEAD) escoresheet/backend
+#
+# or simply escoresheet/deploy/build-image.sh.
+#
+# Runtime contract (see README.md): PORT (8080), DATABASE_URL, STORAGE_ROOT,
+# STATUS_DIR, PUBLIC_ORIGINS, TRUST_PROXY, RESEND_*/SMTP_*. HTTP and WebSocket
+# share PORT (ws attaches to the http server via upgrade).
+#
+# The image runs as the unprivileged `node` user (uid 1000) and never writes
+# outside /tmp, STORAGE_ROOT and its own process memory, so it works with
+# `read_only: true` + a tmpfs on /tmp.
+
+ARG NODE_IMAGE=node:22.23.3-bookworm-slim
+
+FROM ${NODE_IMAGE} AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+# --ignore-scripts: no runtime dependency needs an install script (ws, pg,
+# bcryptjs, nodemailer, qrcode are pure JS); this keeps the build hermetic.
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+ && npm cache clean --force
+
+FROM ${NODE_IMAGE}
+ARG OV_REVISION=unknown
+LABEL org.opencontainers.image.title="openvolley-backend" \
+      org.opencontainers.image.source="https://github.com/Lucanepa/openvolley" \
+      org.opencontainers.image.revision="${OV_REVISION}"
+
+ENV NODE_ENV=production \
+    PORT=8080 \
+    STORAGE_ROOT=/data/storage \
+    STATUS_DIR=/var/lib/openvolley-status \
+    OV_REVISION=${OV_REVISION} \
+    NPM_CONFIG_UPDATE_NOTIFIER=false
+
+WORKDIR /app
+# Everything owned by root and not writable by `node`: the app cannot modify
+# its own code even if the rootfs were mounted read-write.
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+COPY <<'EOF' /usr/local/lib/openvolley/healthcheck.cjs
+// Docker liveness probe. Exit 0 = healthy. Never touches the database.
+const port = process.env.PORT || 8080
+const get = (p) => fetch(`http://127.0.0.1:${port}${p}`, { signal: AbortSignal.timeout(4000) })
+get('/health/live')
+  .then((r) => (r.status === 404 ? get('/health') : r))
+  .then((r) => process.exit(r.ok ? 0 : 1))
+  .catch(() => process.exit(1))
+EOF
+
+USER node
+EXPOSE 8080
+
+# Liveness only (no database): Docker restarts on this, monitors use /health.
+# The probe falls back to /health when /health/live answers 404, so images
+# built from trees that predate the self-host wiring still report healthy.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node", "/usr/local/lib/openvolley/healthcheck.cjs"]
+
+CMD ["node", "server.js"]

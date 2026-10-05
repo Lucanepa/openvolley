@@ -1,0 +1,21 @@
+# lenovoserver only (holds the openvolley-backup PRIVATE key). Install:
+#   sudo install -m 644 openvolley-restore-test.service openvolley-restore-test.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now openvolley-restore-test.timer
+# Adjust User= and the paths below if the ops checkout lives elsewhere.
+[Unit]
+Description=OpenVolley weekly restore test (newest NAS dump -> throwaway postgres + backend, /health + floors)
+Wants=docker.service network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=lucanepa
+# Passphrase of the openvolley-backup key (file mode 0600). The script reads
+# it from $CREDENTIALS_DIRECTORY/gpg-pass.
+LoadCredential=gpg-pass:/home/lucanepa/.config/openvolley/gpg-passphrase
+# Optional overrides (RT_SOURCE, RT_BACKEND_IMAGE, RT_KUMA_PUSH_URL, ...).
+EnvironmentFile=-/home/lucanepa/.config/openvolley/restore-test.env
+ExecStart=/home/lucanepa/ov-ops/deploy/restore-test.sh
+TimeoutStartSec=30min
+Nice=10
+NoNewPrivileges=yes

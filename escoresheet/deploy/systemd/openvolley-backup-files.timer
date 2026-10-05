@@ -1,0 +1,11 @@
+[Unit]
+Description=OpenVolley nightly backup with storage snapshot at 03:35
+# 03:35 stays clear of the KSCW jobs on lucanepa-prod (dev refresh 03:00,
+# Sunday autopatch + restore test 04:00) and lands before the NAS pull (04:30).
+
+[Timer]
+OnCalendar=*-*-* 03:35:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
