@@ -24,14 +24,30 @@
  *   -> { type:'subscribe-db', id, subs:[{table, event, column?, value?}] }
  *   <- { type:'subscribe-db-ack', id } | { type:'subscribe-db-error', id, code, message }
  *   -> { type:'unsubscribe-db', id }
- *   <- { type:'db-change', id, schema, table, eventType, new, old, commit_timestamp }
+ *   <- { type:'db-change', id, ids?, schema, table, eventType, new, old, commit_timestamp }
+ *        (ids: every channel of this socket the row is for; the server sends a
+ *        row once per socket)
  *   -> { type:'ping' }  <- { type:'pong' }
  *
  * The socket opens lazily on the first subscribe, reconnects with
  * exponential backoff plus jitter, re-subscribes every channel after a
- * reconnect, sends an application ping every 25 s (browsers cannot see the
- * server's protocol pings) and closes itself shortly after the last channel
- * is removed. The backend URL is resolved on every connect attempt through
+ * reconnect and closes itself shortly after the last channel is removed.
+ *
+ * Liveness: every 25 s it sends an application ping (browsers cannot see the
+ * server's protocol pings) and drops the socket only if nothing at all comes
+ * back within pongTimeoutMs of that ping. The check never compares against the
+ * time of the last message, so background-tab timer throttling (one tick a
+ * minute) cannot make a healthy socket look dead. When the tab becomes visible
+ * with a socket open, it probes at once instead of waiting for the next tick.
+ *
+ * Capability check: the first frame must be { type:'connected', mode:'live',
+ * protocol >= 1 }. A relay without live support (the LAN relays in
+ * frontend/server.js, lanRelayCore.js and Electron answer mode 'local' or no
+ * mode) is remembered as unsupported for that URL: the socket is closed, every
+ * channel gets CHANNEL_ERROR (err.code 'unsupported') once, and no further
+ * sockets are opened to that URL until the backend URL changes.
+ *
+ * The backend URL is resolved on every connect attempt through
  * utils/backendConfig.js, so a runtime override takes effect on reconnect.
  */
 import { getWebSocketUrl } from '../utils/backendConfig'
@@ -209,11 +225,14 @@ export function createRelayRealtime(options = {}) {
   /** @type {Map<string, RelayChannel>} */
   const channels = new Map()
   let ws = null
+  let wsBase = null // base URL the current socket was opened for
+  let helloSeen = false // current socket sent a valid live 'connected'
+  let unsupportedBase = null // base URL known to lack live support
   let attempts = 0
   let reconnectTimer = null
   let heartbeatTimer = null
+  let pongTimer = null
   let idleTimer = null
-  let lastSeen = 0
   let listening = false
 
   const client = {
@@ -257,7 +276,10 @@ export function createRelayRealtime(options = {}) {
 
     /** Connection state, for debugging panels. */
     get connectionState() {
-      if (!ws) return reconnectTimer ? 'reconnecting' : 'closed'
+      if (!ws) {
+        if (reconnectTimer) return 'reconnecting'
+        return unsupportedBase ? 'unsupported' : 'closed'
+      }
       return ws.readyState === OPEN ? 'open' : 'connecting'
     },
 
@@ -328,6 +350,12 @@ export function createRelayRealtime(options = {}) {
       scheduleReconnect()
       return
     }
+    if (base === unsupportedBase) {
+      // Known not to speak the live protocol: no socket, no retry loop. A new
+      // subscribe, 'online' or a visible tab re-checks the URL.
+      failChannels(unsupportedError())
+      return
+    }
 
     let socket
     try {
@@ -338,11 +366,11 @@ export function createRelayRealtime(options = {}) {
       return
     }
     ws = socket
-    lastSeen = Date.now()
+    wsBase = base
+    helloSeen = false
 
     socket.onopen = () => {
       if (ws !== socket) return
-      lastSeen = Date.now()
       startHeartbeat()
       for (const ch of channels.values()) {
         startJoin(ch)
@@ -351,9 +379,19 @@ export function createRelayRealtime(options = {}) {
     }
     socket.onmessage = (event) => {
       if (ws !== socket) return
-      lastSeen = Date.now()
+      // Any frame proves the socket is alive.
+      clearTimeout(pongTimer)
+      pongTimer = null
       let msg
       try { msg = JSON.parse(event.data) } catch { return }
+      if (!helloSeen) {
+        if (msg && msg.type === 'connected' && msg.mode === 'live' && Number(msg.protocol) >= 1) {
+          helloSeen = true
+        } else {
+          markUnsupported()
+          return
+        }
+      }
       handleMessage(msg)
     }
     socket.onerror = () => { /* a close event follows */ }
@@ -391,9 +429,11 @@ export function createRelayRealtime(options = {}) {
         return
       }
       case 'db-change': {
-        const ch = channels.get(msg.id)
-        if (!ch || ch.state !== 'joined') return
-        ch._dispatch(msg)
+        const ids = Array.isArray(msg.ids) ? [...new Set(msg.ids)] : [msg.id]
+        for (const id of ids) {
+          const ch = channels.get(id)
+          if (ch && ch.state === 'joined') ch._dispatch(msg)
+        }
         return
       }
       default:
@@ -401,9 +441,24 @@ export function createRelayRealtime(options = {}) {
     }
   }
 
+  function unsupportedError() {
+    const err = new Error('This server does not support realtime database changes')
+    err.code = 'unsupported'
+    return err
+  }
+
+  function markUnsupported() {
+    unsupportedBase = wsBase
+    client._log('warn', '[relayRealtime] relay has no live (purpose=live) support:', wsBase)
+    closeSocket()
+    failChannels(unsupportedError())
+  }
+
   function failChannels(err) {
     for (const ch of channels.values()) {
       ch.state = 'errored'
+      clearTimeout(ch._joinTimer)
+      ch._joinTimer = null
       ch._emit(REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR, err)
     }
   }
@@ -412,6 +467,7 @@ export function createRelayRealtime(options = {}) {
     stopHeartbeat()
     const socket = ws
     ws = null
+    wsBase = null
     if (socket) {
       socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null
     }
@@ -426,6 +482,7 @@ export function createRelayRealtime(options = {}) {
     reconnectTimer = null
     const socket = ws
     ws = null
+    wsBase = null
     if (!socket) return
     socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null
     try { socket.close(1000, 'client closing') } catch { /* ignore */ }
@@ -442,22 +499,31 @@ export function createRelayRealtime(options = {}) {
   function startHeartbeat() {
     stopHeartbeat()
     if (heartbeatMs <= 0) return
-    heartbeatTimer = setInterval(() => {
-      if (!ws || ws.readyState !== OPEN) return
-      if (Date.now() - lastSeen > heartbeatMs + pongTimeoutMs) {
-        // Half-open connection (common on mobile): drop it and reconnect.
-        const socket = ws
-        onSocketGone(new Error('Realtime heartbeat timed out'))
-        try { socket.close(4000, 'heartbeat timeout') } catch { /* ignore */ }
-        return
-      }
-      sendRaw({ type: 'ping' })
-    }, heartbeatMs)
+    heartbeatTimer = setInterval(probe, heartbeatMs)
+  }
+
+  /**
+   * Send a ping and give the server pongTimeoutMs to answer with anything.
+   * Only a missing answer to THIS ping drops the socket (half-open
+   * connections are common on mobile).
+   */
+  function probe() {
+    if (!ws || ws.readyState !== OPEN || pongTimer) return
+    if (!sendRaw({ type: 'ping' })) return
+    const socket = ws
+    pongTimer = setTimeout(() => {
+      pongTimer = null
+      if (ws !== socket) return
+      onSocketGone(new Error('Realtime heartbeat timed out'))
+      try { socket.close(4000, 'heartbeat timeout') } catch { /* ignore */ }
+    }, pongTimeoutMs)
   }
 
   function stopHeartbeat() {
     clearInterval(heartbeatTimer)
     heartbeatTimer = null
+    clearTimeout(pongTimer)
+    pongTimer = null
   }
 
   function scheduleIdleClose() {
@@ -480,7 +546,10 @@ export function createRelayRealtime(options = {}) {
     connect()
   }
   function onVisibility() {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') onWake()
+    if (typeof document === 'undefined' || document.visibilityState !== 'visible') return
+    // Socket open: check it now rather than at the next (possibly throttled) tick.
+    if (ws && ws.readyState === OPEN) probe()
+    else onWake()
   }
   function startListening() {
     if (listening || typeof window === 'undefined' || !window.addEventListener) return
