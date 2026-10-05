@@ -8718,7 +8718,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isDisqualified: false
       })
     }
-  }, [draggedPlayer, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
+  }, [draggedPlayer, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed, getCurrentServe])
 
   // ========== Touch Drag Handlers (for mobile/tablet) ==========
 
@@ -9707,7 +9707,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee])
+  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
 
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
@@ -10992,7 +10992,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [liberoConfirm, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable])
+  }, [liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
 
   const cancelLibero = useCallback(() => {
     setLiberoDropdown(null)
