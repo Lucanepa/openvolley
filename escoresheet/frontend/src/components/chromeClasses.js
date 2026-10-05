@@ -15,6 +15,15 @@ import { FOCUS_RING } from '../ui/Button.jsx'
 
 export { FOCUS_RING }
 
+/**
+ * Wrapper for a single header control outside `.ov-kit`: `display: contents`
+ * (no box, the layout is unchanged) but the control is then inside the kit
+ * scope, so it draws only the kit FOCUS_RING and not also the legacy
+ * `:not(.ov-kit *):focus-visible` outline (styles.css), and the legacy
+ * `button {}` rules no longer reach it.
+ */
+export const KIT_SCOPE = 'ov-kit contents'
+
 /** Top bar: white with a stone hairline (svrz header, RESTYLE-SPEC 3.5). */
 export const HEADER_BAR = 'bg-white border-b border-stone-200/70'
 

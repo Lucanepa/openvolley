@@ -5,7 +5,7 @@ import { applyRelayTablets, relayMatchKey } from '../utils/serverDataSync'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
-import { FOCUS_RING, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
+import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 export default function TabletStatusIndicator({ match }) {
   const { t } = useTranslation()
@@ -71,18 +71,20 @@ export default function TabletStatusIndicator({ match }) {
 
   return (
     <div ref={buttonRef} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        onClick={openMenu}
-        aria-expanded={menuOpen}
-        title={t('tabletStatus.title', 'Tablet Status')}
-        className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill)}
-      >
-        {/* Status dot */}
-        <span className={cn('h-2 w-2 shrink-0 rounded-full', overallTone.dot)} />
-        <span className="tabular-nums">{summary.connectedCount}/{summary.expectedCount}</span>
-        <ChevronDown size={12} aria-hidden="true" className={cn('opacity-70 transition-transform', menuOpen && 'rotate-180')} />
-      </button>
+      <span className={KIT_SCOPE}>
+        <button
+          type="button"
+          onClick={openMenu}
+          aria-expanded={menuOpen}
+          title={t('tabletStatus.title', 'Tablet Status')}
+          className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill)}
+        >
+          {/* Status dot */}
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', overallTone.dot)} />
+          <span className="tabular-nums">{summary.connectedCount}/{summary.expectedCount}</span>
+          <ChevronDown size={12} aria-hidden="true" className={cn('opacity-70 transition-transform', menuOpen && 'rotate-180')} />
+        </button>
+      </span>
 
       {menuOpen && (
         <div

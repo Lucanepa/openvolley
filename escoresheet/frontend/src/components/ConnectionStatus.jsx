@@ -4,7 +4,7 @@ import { db } from '../db/db'
 import { useSyncQueueStats } from '../hooks/useSyncQueue'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
-import { FOCUS_RING, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
+import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 // The local server + WebSocket path (LAN relay) works on its own, cloud or not
 function isServerWebsocketViable(serverStatus, websocketStatus) {
@@ -245,35 +245,39 @@ export default function ConnectionStatus({
 
   return (
     <div style={{ position: 'relative' }} data-connection-menu>
-      <div
-        ref={buttonRef}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!showConnectionMenu) {
-            calculateMenuPosition()
-          }
-          setShowConnectionMenu(!showConnectionMenu)
-        }}
-        className={cn(STATUS_PILL, overallTone.pill, currentSize.pill)}
-      >
-        <span className={cn('inline-block shrink-0 rounded-full', currentSize.dot, overallTone.dot)}></span>
-        <span className="inline-flex items-center">
-          {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
-            overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
-              overallStatus === 'offline'
-                ? (pendingCount > 0
-                  ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
-                  : t('connectionStatus.offline', 'Offline'))
-                : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
-                  t('connectionStatus.error', 'Error')}
-          {errorCount > 0 && (
-            <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold tabular-nums text-white">
-              {errorCount}
-            </span>
-          )}
-        </span>
-        <ChevronDown size={currentSize.chevron} aria-hidden="true" className={cn('opacity-70 transition-transform', showConnectionMenu && 'rotate-180')} />
-      </div>
+      <span className={KIT_SCOPE}>
+        <button
+          type="button"
+          ref={buttonRef}
+          aria-expanded={showConnectionMenu}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!showConnectionMenu) {
+              calculateMenuPosition()
+            }
+            setShowConnectionMenu(!showConnectionMenu)
+          }}
+          className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill, currentSize.pill)}
+        >
+          <span className={cn('inline-block shrink-0 rounded-full', currentSize.dot, overallTone.dot)}></span>
+          <span className="inline-flex items-center">
+            {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
+              overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
+                overallStatus === 'offline'
+                  ? (pendingCount > 0
+                    ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
+                    : t('connectionStatus.offline', 'Offline'))
+                  : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
+                    t('connectionStatus.error', 'Error')}
+            {errorCount > 0 && (
+              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold tabular-nums text-white">
+                {errorCount}
+              </span>
+            )}
+          </span>
+          <ChevronDown size={currentSize.chevron} aria-hidden="true" className={cn('opacity-70 transition-transform', showConnectionMenu && 'rotate-180')} />
+        </button>
+      </span>
 
       {/* Connection Status Menu */}
       {showConnectionMenu && (
