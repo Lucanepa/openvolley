@@ -4,6 +4,7 @@ import { getBackendUrl } from '../utils/backendConfig'
 import { copyToClipboard } from '../utils/networkInfo'
 import { matchTeamNames } from '../utils/serverDataSync'
 import { useState } from 'react'
+import { cn, FOCUS_RING } from '../ui'
 
 const ROLE_LABELS = {
   referee: 'Referee Dashboard',
@@ -117,86 +118,57 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
       setTimeout(() => setCopyFeedback(false), 2000)
     }
   }
-
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.92)',
-        zIndex: 2000,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        pointerEvents: 'auto'
-      }}
+      className="ov-kit fixed inset-0 flex flex-col items-center justify-center bg-stone-900/60 p-6 backdrop-blur-sm"
+      style={{ zIndex: 2000, pointerEvents: 'auto' }}
       onClick={(e) => { e.stopPropagation(); onClose() }}
     >
       <div
-        style={{
-          background: '#111827',
-          borderRadius: 16,
-          padding: 32,
-          maxWidth: 420,
-          width: '100%',
-          textAlign: 'center'
-        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qr-modal-title"
+        className="w-full max-w-[420px] rounded-2xl bg-white p-6 text-center shadow-2xl sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Role label */}
-        <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 600, color }}>
+        {/* Role label; the role colour rides on a small rule above it */}
+        <span className="mx-auto mb-3 block h-1 w-10 rounded-full" style={{ background: color }} aria-hidden="true" />
+        <h2 id="qr-modal-title" className="text-xl font-bold tracking-tight text-stone-900">
           {label}
         </h2>
 
         {/* Match info */}
         {match && (
-          <p style={{ color: 'rgba(255,255,255,0.5)', margin: '0 0 24px', fontSize: 14 }}>
+          <p className="mt-1 mb-5 text-sm text-stone-500">
             {teamNames.home || 'Home'} vs {teamNames.away || 'Away'}
           </p>
         )}
 
         {/* QR Code */}
         {url ? (
-          <div style={{
-            background: '#fff',
-            borderRadius: 12,
-            padding: 16,
-            display: 'inline-block',
-            marginBottom: 20
-          }}>
+          <div className="mb-4 inline-block rounded-xl border border-stone-200 bg-white p-4">
             <QRCodeSVG value={url} size={280} level="M" />
           </div>
         ) : (
-          <p style={{ color: '#ef4444', margin: '24px 0' }}>
+          <p role="alert" className="my-6 text-sm font-medium text-red-700">
             {t('connection.noBackendConfigured', 'No backend server configured')}
           </p>
         )}
 
         {/* URL text */}
         {url && (
-          <div style={{ marginBottom: 16 }}>
-            <p style={{
-              fontSize: 12,
-              color: 'rgba(255,255,255,0.4)',
-              wordBreak: 'break-all',
-              margin: '0 0 8px',
-              fontFamily: 'monospace'
-            }}>
+          <div className="mb-4">
+            <p className="mb-2 break-all font-mono text-xs text-stone-500">
               {url}
             </p>
             <button
+              type="button"
               onClick={handleCopy}
-              style={{
-                padding: '6px 16px',
-                fontSize: 12,
-                background: copyFeedback ? '#22c55e' : 'rgba(255,255,255,0.1)',
-                border: 'none',
-                borderRadius: 6,
-                color: '#fff',
-                cursor: 'pointer'
-              }}
+              className={cn(
+                'inline-flex h-11 items-center justify-center rounded-lg border px-3.5 text-xs font-medium transition-colors',
+                copyFeedback ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-50',
+                FOCUS_RING
+              )}
             >
               {copyFeedback ? t('options.copied', 'Copied!') : t('options.copyUrl', 'Copy URL')}
             </button>
@@ -205,36 +177,24 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
 
         {/* PIN */}
         {pin && (
-          <div style={{ marginBottom: 20 }}>
-            <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>PIN: </span>
-            <span style={{
-              fontSize: 28,
-              fontWeight: 700,
-              letterSpacing: 6,
-              color
-            }}>
+          <div className="mb-4">
+            <span className="text-sm text-stone-500">PIN: </span>
+            <span className="font-mono text-3xl font-bold tracking-[0.3em] text-stone-900">
               {pin}
             </span>
           </div>
         )}
 
         {/* Instructions */}
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', margin: '0 0 20px' }}>
+        <p className="mb-5 text-sm text-stone-500">
           {t('connection.scanWithPhone', 'Scan with phone or tablet camera to connect directly')}
         </p>
 
         {/* Close button */}
         <button
+          type="button"
           onClick={onClose}
-          style={{
-            padding: '10px 32px',
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 8,
-            color: '#fff',
-            cursor: 'pointer',
-            fontSize: 14
-          }}
+          className={cn('inline-flex h-11 min-w-32 items-center justify-center rounded-lg bg-slate-900 px-6 text-sm font-medium text-white transition-colors hover:bg-slate-800', FOCUS_RING)}
         >
           {t('modal.close', 'Close')}
         </button>
