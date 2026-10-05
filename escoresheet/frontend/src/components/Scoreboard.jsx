@@ -5453,6 +5453,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Cloud copy of the set start (it was only ever stored locally)
     queueEventSync(db, setStartEventId)
+    // Live state too: the livescore lists the match from Start Set, not the first rally
+    syncLiveStateToSupabase('set_start', null, null)
 
     // Debug log: set start
     debugLogger.log('SET_START', {
@@ -5485,7 +5487,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (timeDifferent) {
       setShowRemarks(true)
     }
-  }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup, syncToReferee])
+  }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
