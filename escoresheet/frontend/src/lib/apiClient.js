@@ -1,10 +1,17 @@
 /**
- * API Client — Drop-in replacement for Supabase frontend calls.
- * Routes all DB/storage/auth operations through the backend proxy
- * so that Supabase credentials stay server-side.
+ * API Client — the supabase-js-shaped client for the OpenVolley backend.
+ * Every DB/storage/auth operation goes to the backend (/api/db, /api/storage/*,
+ * /api/auth/*, /api/match/restore*), which serves them from its own Postgres
+ * and filesystem. No database credentials or keys exist in the frontend.
  */
 
 import { getApiUrl } from '../utils/backendConfig'
+
+// Client protocol version, sent as X-OV-Proto on every data request. The
+// backend refuses writes below 2 (426 OV_CLIENT_TOO_OLD), so queued jobs from
+// an old cached bundle (pre-namespaced set/event ids, client-side JSON merge)
+// cannot act on the shared database.
+export const OV_PROTO = '2'
 
 // The backend sends errors either as a plain string ('Too many requests') or as
 // { message }. Callers read error.message / error.status, so always hand them an
@@ -201,7 +208,7 @@ export function apiFrom(table) {
 // ==================== Helpers ====================
 
 function getAuthHeaders() {
-  const headers = { 'Content-Type': 'application/json' }
+  const headers = { 'Content-Type': 'application/json', 'X-OV-Proto': OV_PROTO }
   const token = getStoredToken()
   if (token?.access_token) {
     headers['Authorization'] = `Bearer ${token.access_token}`
@@ -209,23 +216,52 @@ function getAuthHeaders() {
   return headers
 }
 
-// ==================== RPC ====================
+// ==================== Match restore ====================
 
-export async function apiRpc(fn, params = {}) {
-  const apiUrl = getApiUrl('/api/db/rpc')
-  if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
+// A whole-match restore can carry thousands of events; the server runs it in
+// one transaction with a 60 s statement timeout.
+export const RESTORE_REQUEST_TIMEOUT_MS = 90000
 
+async function postJson(path, body, { auth = true, timeoutMs = DB_REQUEST_TIMEOUT_MS, fallbackError = 'Request failed' } = {}) {
+  const apiUrl = getApiUrl(path)
+  if (!apiUrl) return { data: null, error: { message: 'Backend not available' }, status: 0 }
+  let response
   try {
-    const response = await fetch(apiUrl, {
+    response = await fetch(apiUrl, {
       method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ fn, params })
+      headers: auth ? getAuthHeaders() : { 'Content-Type': 'application/json', 'X-OV-Proto': OV_PROTO },
+      body: JSON.stringify(body),
+      signal: requestTimeoutSignal(timeoutMs)
     })
-    return safeJsonResponse(response, 'RPC operation failed')
   } catch (err) {
-    // Offline: reject symmetrically with apiFrom instead of throwing 'Failed to fetch'
-    return { data: null, error: networkError(err) }
+    return { data: null, error: networkError(err), status: 0 }
   }
+  const result = await safeJsonResponse(response, fallbackError)
+  return { data: result.data ?? null, error: result.error ?? null, status: result.status }
+}
+
+/**
+ * Restore one match in the cloud in a single server-side transaction:
+ * upsert the match by external_id, replace its sets, events and live state.
+ * Needs a session. 426 / 429 / 5xx / network errors are worth retrying later.
+ * @param {{match: object, sets?: object[], events?: object[], liveState?: object|null}} payload
+ * @returns {Promise<{data: {id: string, counts: {sets: number, events: number, liveState: number}, dropped?: object}|null, error: object|null, status: number}>}
+ */
+export function apiMatchRestore({ match, sets = [], events = [], liveState = null }) {
+  return postJson('/api/match/restore', { match, sets, events, liveState }, {
+    timeoutMs: RESTORE_REQUEST_TIMEOUT_MS,
+    fallbackError: 'Match restore failed'
+  })
+}
+
+/**
+ * Look a match up by game number and game PIN (exact match, attempt-limited).
+ * Anonymous. 404 (error.code OV_NOT_FOUND) = no match with this number and PIN;
+ * 429 (OV_TOO_MANY_ATTEMPTS) = too many wrong guesses, wait a few minutes.
+ * @returns {Promise<{data: {match: object, sets: object[], events: object[], liveState: object|null}|null, error: object|null, status: number}>}
+ */
+export function apiMatchRestoreByPin(gameN, pin) {
+  return postJson('/api/match/restore-by-pin', { gameN, pin }, { auth: false, fallbackError: 'Match lookup failed' })
 }
 
 // ==================== Base64 (storage uploads) ====================
@@ -400,6 +436,14 @@ function storeToken(session) {
   notifyTokenChange(session)
 }
 
+// Refresh the stored session in place (sliding expiry, fresh user) without
+// announcing a sign-in: the session did not change hands.
+function refreshStoredToken(session) {
+  try {
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+  } catch { /* storage full or blocked: keep the old copy */ }
+}
+
 /**
  * Did the auth server reject the token itself? Only then may the stored login be
  * cleared. Offline (network error), rate limiting (429) and server errors (5xx)
@@ -414,10 +458,11 @@ export function isSessionRejected(result) {
   if (err.network) return false
   const status = err.status ?? result.status
   if (status === 401 || err.code === 'invalid_token') return true
-  // The current proxy answers get-user with HTTP 200 + { error } when Supabase
-  // rejects the JWT (expired, bad signature, deleted user). Match only GoTrue's
-  // token errors, never generic gateway text ('invalid response from upstream')
-  // seen during an outage.
+  // The self-hosted backend answers 401 invalid_token. The old Supabase proxy
+  // answered get-user with HTTP 200 + { error } when GoTrue rejected the JWT;
+  // kept for a backend that still runs it. Match only GoTrue's token errors,
+  // never generic gateway text ('invalid response from upstream') seen during
+  // an outage.
   if (status === 200 && SESSION_REJECTED_MESSAGE.test(err.message || '')) return true
   return false
 }
@@ -441,6 +486,12 @@ export const apiAuth = {
   },
 
   async signOut() {
+    // Revoke the session on the server first (best effort: offline or a server
+    // error must not keep the user signed in on this device).
+    const token = getStoredToken()?.access_token
+    if (token) {
+      try { await authRequest('sign-out', { access_token: token }) } catch { /* ignore */ }
+    }
     storeToken(null)
     return { error: null }
   },
@@ -459,7 +510,15 @@ export const apiAuth = {
       // Offline / 429 / 5xx: keep the stored login and return it unverified
       return { data: { session: { ...session, unverified: true } }, error: null }
     }
-    return { data: { session: { ...session, user: result.data?.user ?? session.user } }, error: null }
+    // The server slides the expiry (30 days, capped at 90 from sign-in); keep
+    // its expires_at so getStoredToken's local expiry check follows it.
+    const refreshed = {
+      ...session,
+      user: result.data?.user ?? session.user,
+      ...(typeof result.data?.session?.expires_at === 'number' ? { expires_at: result.data.session.expires_at } : {})
+    }
+    if (refreshed.expires_at !== session.expires_at || refreshed.user !== session.user) refreshStoredToken(refreshed)
+    return { data: { session: refreshed }, error: null }
   },
 
   async getUser(token) {

@@ -352,7 +352,7 @@ const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'pri
   return <LiveScoresheet initialMatchData={initialData} action={action} />;
 };
 
-// Storage scoresheet component - fetches from Supabase storage
+// Storage scoresheet component - fetches from backend storage (apiStorage)
 const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ date, game, action }) => {
   const [matchData, setMatchData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
@@ -849,7 +849,7 @@ if (urlMatchId) {
     </React.StrictMode>
   );
 } else if (storageParams) {
-  // Load from Supabase storage
+  // Load from backend storage (apiStorage)
   root.render(
     <React.StrictMode>
       <ErrorBoundary>
