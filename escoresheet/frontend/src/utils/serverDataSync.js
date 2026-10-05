@@ -1444,10 +1444,14 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
 /**
  * Validate a roster-upload PIN server-side (Supabase mode).
  * The upload PINs are never sent to the client; the server compares them.
+ * With matchExternalId the PIN is checked against that match only (the server
+ * filters on it, and the answer must name it): a PIN of match A never unlocks
+ * the roster upload of match B.
  * @param {'home'|'away'} team
  * @param {string} pin
+ * @param {string} [matchExternalId] the match the roster will be written to
  */
-export async function validateUploadPinSupabase(team, pin) {
+export async function validateUploadPinSupabase(team, pin, matchExternalId) {
   try {
     const pinStr = String(pin).trim()
     if (!pinStr || pinStr.length !== 6) {
@@ -1458,12 +1462,19 @@ export async function validateUploadPinSupabase(team, pin) {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinStr, type: team === 'home' ? 'upload_home' : 'upload_away' })
+      body: JSON.stringify({
+        pin: pinStr,
+        type: team === 'home' ? 'upload_home' : 'upload_away',
+        ...(matchExternalId ? { matchExternalId: String(matchExternalId) } : {})
+      })
     })
     let result
     try { result = await response.json() } catch { return { success: false, error: 'Validation failed' } }
     if (!response.ok || !result?.success) {
       return { success: false, error: result?.error || 'Invalid upload PIN' }
+    }
+    if (matchExternalId && String(result.match?.id ?? '') !== String(matchExternalId)) {
+      return { success: false, error: 'Invalid upload PIN' }
     }
     return { success: true, match: result.match }
   } catch (error) {

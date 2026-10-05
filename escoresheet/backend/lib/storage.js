@@ -13,7 +13,23 @@
  *   download {bucket, path}                                   -> {data:<base64>, error:null}
  *   list     {bucket, path, options:{limit,offset,sortBy,search}} -> {data:[{name,id,created_at,updated_at,last_accessed_at,metadata}], error:null}
  *   signed-url                                                -> 404 (removed, no caller)
- * Errors come back as {data:null, error:{message, code}} with an HTTP status.
+ * Errors come back as {data:null, error:{message, code}} with an HTTP status,
+ * except a download of a missing object: 200 {data:null, error:{code:
+ * 'OV_STORAGE_NOT_FOUND'}} (a normal answer, e.g. no log file or backup yet;
+ * a 404 made every browser log a console error).
+ *
+ * Uploader-only buckets (options.uploaderReadBuckets, from the environment
+ * 'scoresheets'): the account that CREATES an object owns it. The owner record
+ * is {root}/.owners/{bucket}/{sha256(key)}.json = {"key", "owners":[...]}.
+ *   - download: owners only (403 OV_STORAGE_FORBIDDEN for anyone else);
+ *   - upload to an existing object: owners only (403 otherwise), so uploading
+ *     to a path never adds the caller to someone else's object;
+ *   - list: only the objects the caller owns (folders are always shown);
+ *   - record and commit of one key run under one in-process lock, so a reader
+ *     never sees an object with a stale record (one server process per root).
+ * The scorer app names its scoresheets with a 128-bit random part
+ * ({date}/game{n}_k{32 hex}_final.json), so a stranger cannot claim the path of
+ * a real scoresheet before the scorer uploads it.
  *
  * Usage (see README "Self-hosted storage" section for the server.js wiring):
  *   import { createStorage, storageOptionsFromEnv } from './lib/storage.js'
@@ -33,8 +49,12 @@ export const DEFAULT_ROOT = '/data/storage'
 export const DEFAULT_BUCKETS = Object.freeze(['scoresheets', 'backup'])
 export const SENTINEL_NAME = '.ovdata'
 export const TMP_DIR_NAME = '.tmp'
+export const OWNERS_DIR_NAME = '.owners'
 export const DEFAULT_CONTENT_TYPES = Object.freeze(['application/json', 'text/plain', 'application/pdf'])
 export const SIGNED_URL_REMOVED = true
+
+/** Owner list cap per object (uploads only ever record one; the rest is operator grants). */
+export const MAX_OWNERS = 16
 
 const MiB = 1024 * 1024
 const GiB = 1024 * MiB
@@ -236,6 +256,8 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
  *   STORAGE_SCORESHEETS_MIN_FREE_MB  free-space floor for scoresheets/ writes (default 256)
  *   STORAGE_MAX_FILE_MB              per-object size cap (default 5)
  *   STORAGE_OWNER_SCOPE              off | require | prefix (default off; Phase 7 security release)
+ *   STORAGE_UPLOADER_READ_BUCKETS    comma-separated buckets only an object's uploader may
+ *                                    download (default 'scoresheets'; 'none' turns it off)
  * Throws on a value it does not understand, so a typo fails at startup
  * instead of silently running with the default.
  */
@@ -263,6 +285,17 @@ export function storageOptionsFromEnv(env = process.env) {
   else if (scope !== '' && scope !== 'off') {
     throw new TypeError(`storage: STORAGE_OWNER_SCOPE must be off, require or prefix (got ${JSON.stringify(env.STORAGE_OWNER_SCOPE)})`)
   }
+  const readRaw = env.STORAGE_UPLOADER_READ_BUCKETS
+  const readList = readRaw === undefined || String(readRaw).trim() === '' ? 'scoresheets' : String(readRaw).trim().toLowerCase()
+  if (readList === 'none') {
+    opts.uploaderReadBuckets = []
+  } else {
+    const names = readList.split(',').map((b) => b.trim()).filter(Boolean)
+    if (!names.length || names.some((b) => !DEFAULT_BUCKETS.includes(b))) {
+      throw new TypeError(`storage: STORAGE_UPLOADER_READ_BUCKETS must be none or a list of ${DEFAULT_BUCKETS.join(', ')} (got ${JSON.stringify(readRaw)})`)
+    }
+    opts.uploaderReadBuckets = [...new Set(names)]
+  }
   return opts
 }
 
@@ -288,6 +321,9 @@ export function storageOptionsFromEnv(env = process.env) {
  *          string        allow, use this path instead (re-validated)
  *          anything else (false, null, undefined, objects, numbers) -> 403
  * @param {string[]} [options.ownerScopeBuckets] buckets the owner scope applies to (default: all)
+ * @param {string[]} [options.uploaderReadBuckets=[]] buckets whose objects only
+ *        the accounts that uploaded them may download (owner records under
+ *        {root}/.owners; an upload there needs a userId)
  * @param {Function} [options.statfs] injectable fs.statfs (tests)
  * @param {Function} [options.now] injectable clock (ms)
  * @param {object}   [options.logger=console]
@@ -306,6 +342,7 @@ export function createStorage(options = {}) {
   const checkQuota = options.checkQuota || null
   const ownerScope = options.ownerScope || false
   const ownerScopeBuckets = new Set(options.ownerScopeBuckets || buckets)
+  const uploaderReadBuckets = new Set(options.uploaderReadBuckets || [])
   const statfs = options.statfs || ((p) => fsp.statfs(p))
   const now = options.now || Date.now
   const logger = options.logger || console
@@ -318,6 +355,9 @@ export function createStorage(options = {}) {
 
   if (ownerScope && !['require', 'prefix'].includes(ownerScope) && typeof ownerScope !== 'function') {
     throw new TypeError(`storage: unknown ownerScope ${String(ownerScope)}`)
+  }
+  for (const b of uploaderReadBuckets) {
+    if (!buckets.has(b)) throw new TypeError(`storage: uploaderReadBuckets has unknown bucket ${String(b)}`)
   }
 
   // ---------- path resolution ----------
@@ -464,6 +504,121 @@ export function createStorage(options = {}) {
     if (r && typeof r === 'object' && r.ok === false) throw err.quota(r.message)
   }
 
+  // ---------- owner records (uploader-only buckets) ----------
+
+  // One record per object, under a hashed name: no nested folders to walk, and
+  // the record can never collide with an object or another record.
+  async function ownersFile(rr, bucket, key, create) {
+    const dir = path.join(rr, OWNERS_DIR_NAME)
+    if (!(await ensureDir(dir, create))) return null
+    const bucketDir = path.join(dir, bucket)
+    if (!(await ensureDir(bucketDir, create))) return null
+    const h = crypto.createHash('sha256').update(key).digest('hex')
+    return path.join(bucketDir, `${h}.json`)
+  }
+
+  async function readOwners(rr, bucket, key) {
+    const file = await ownersFile(rr, bucket, key, false)
+    if (!file) return []
+    let fh
+    try {
+      fh = await fsp.open(file, fsc.O_RDONLY | O_NOFOLLOW)
+      const rec = JSON.parse(await fh.readFile('utf8'))
+      return Array.isArray(rec?.owners) ? rec.owners.filter((o) => typeof o === 'string') : []
+    } catch (e) {
+      if (isCode(e, 'ENOENT')) return []
+      if (e instanceof SyntaxError) {
+        logger.error?.('[Storage] unreadable owner record for', bucket)
+        return []
+      }
+      throw e
+    } finally {
+      await fh?.close().catch(() => {})
+    }
+  }
+
+  // Owner check, record write and object commit of one key run one after the
+  // other (in-process: one server process per storage root).
+  const ownerLocks = new Map()
+  function withOwnerLock(id, fn) {
+    const prev = ownerLocks.get(id) || Promise.resolve()
+    const run = prev.then(fn, fn)
+    const tail = run.catch(() => {})
+    ownerLocks.set(id, tail)
+    tail.then(() => { if (ownerLocks.get(id) === tail) ownerLocks.delete(id) })
+    return run
+  }
+
+  const ownerLockId = (bucket, key) => `${bucket}/${key}`
+
+  /**
+   * Replace the owner record of bucket/key (atomic rewrite). Callers hold the
+   * key's owner lock. The record keeps the key so sweep() can drop records
+   * whose object is gone.
+   */
+  async function writeOwners(rr, bucket, key, owners) {
+    const file = await ownersFile(rr, bucket, key, true)
+    const tmpDir = path.join(rr, TMP_DIR_NAME)
+    await ensureDir(tmpDir, true)
+    const tmp = path.join(tmpDir, `${crypto.randomUUID()}.part`)
+    try {
+      const fh = await fsp.open(tmp, fsc.O_WRONLY | fsc.O_CREAT | fsc.O_EXCL | O_NOFOLLOW, 0o640)
+      try {
+        await fh.writeFile(JSON.stringify({ key, owners: [...new Set(owners)].slice(0, MAX_OWNERS) }))
+        await fh.sync()
+      } finally {
+        await fh.close()
+      }
+      await fsp.rename(tmp, file)
+    } finally {
+      await fsp.rm(tmp, { force: true }).catch(() => {})
+    }
+  }
+
+  /** lstat of an object; null when there is none. */
+  async function objectStat(bucket, segs) {
+    const r = await resolve(bucket, segs)
+    if (!r) return null
+    try {
+      return await fsp.lstat(r.target)
+    } catch (e) {
+      if (isCode(e, 'ENOENT', 'ENOTDIR')) return null
+      throw e
+    }
+  }
+
+  /**
+   * Operator tool (scripts/storage-owner.mjs, never reachable over HTTP): read
+   * or change who may read an existing object in an uploader-only bucket, e.g.
+   * to hand a scoresheet stored before owner records existed to the scorer who
+   * uploaded it. mode 'add' appends userIds, 'set' replaces the list ([] = nobody).
+   * Returns the new owner list.
+   */
+  async function setOwners({ bucket, path: p, userIds = [], mode = 'add' } = {}) {
+    assertBucket(bucket)
+    if (!uploaderReadBuckets.has(bucket)) throw err.invalidBucket()
+    if (!['add', 'set'].includes(mode)) throw err.invalidRequest('mode must be add or set')
+    if (!Array.isArray(userIds) || userIds.some((u) => typeof u !== 'string' || !USER_ID_RE.test(u))) throw err.invalidRequest('invalid user id')
+    const segs = parse(p)
+    const rr = await assertWritable()
+    const key = segs.join('/')
+    return withOwnerLock(ownerLockId(bucket, key), async () => {
+      const st = await objectStat(bucket, segs)
+      if (!st || !st.isFile()) throw err.notFound()
+      const owners = mode === 'set' ? userIds : [...(await readOwners(rr, bucket, key)), ...userIds]
+      await writeOwners(rr, bucket, key, owners)
+      return readOwners(rr, bucket, key)
+    })
+  }
+
+  /** Current owners of an object (operator tool). */
+  async function getOwners({ bucket, path: p } = {}) {
+    assertBucket(bucket)
+    const segs = parse(p)
+    const rr = await realRoot()
+    return readOwners(rr, bucket, segs.join('/'))
+  }
+
   // ---------- operations ----------
 
   /**
@@ -486,24 +641,49 @@ export function createStorage(options = {}) {
     }
     if (buf.length > maxFileBytes) throw err.tooLarge()
 
+    // Uploader-only bucket: no account, no object (nobody could read it back)
+    const uploaderOnly = uploaderReadBuckets.has(bucket)
+    if (uploaderOnly && (typeof userId !== 'string' || !USER_ID_RE.test(userId))) throw err.forbidden()
+
     const rr = await assertWritable()
     await assertFreeSpace(rr, bucket, buf.length)
 
+    const key = diskSegs.join('/')
+    const write = () => writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert: upsert !== false, userId, uploaderOnly })
+    await (uploaderOnly ? withOwnerLock(ownerLockId(bucket, key), write) : write())
+
+    const clientPath = segs.join('/')
+    return { path: clientPath, id: objectId(bucket, key), fullPath: `${bucket}/${clientPath}` }
+  }
+
+  async function writeObject({ rr, bucket, segs, diskSegs, key, buf, ct, doUpsert, userId, uploaderOnly }) {
     let { dir, target } = await resolve(bucket, diskSegs, { create: true })
-    const doUpsert = upsert !== false
 
     // Existing entry checks (a symlink or folder at the target is never replaced).
+    let existing = false
     try {
       const st = await fsp.lstat(target)
       if (st.isSymbolicLink()) throw err.symlink()
       if (!st.isFile()) throw err.conflict()
-      if (!doUpsert) throw err.exists()
+      existing = true
     } catch (e) {
       if (!isCode(e, 'ENOENT')) throw e
     }
+    // Only an owner may replace an object in an uploader-only bucket (also
+    // before the 409, so a stranger cannot even probe for it). Objects stored
+    // before owner records existed have none: nobody replaces them.
+    if (existing && uploaderOnly && !(await readOwners(rr, bucket, key)).includes(userId)) throw err.forbidden()
+    if (existing && !doUpsert) throw err.exists()
 
     // Charged only for a write that is otherwise going ahead (no quota spent on 4xx refusals).
     await runQuota({ userId: userId ?? null, bucket, path: segs.join('/'), size: buf.length, contentType: ct })
+
+    // A new object: its creator is its only owner, replacing any stale record
+    // left by an object that is gone. Written before the commit and under the
+    // key's lock, so the object is never readable under an older record; a
+    // failed commit leaves a record for a missing object, which the next
+    // creator replaces and sweep() removes. An existing object keeps its record.
+    if (uploaderOnly && !existing) await writeOwners(rr, bucket, key, [userId])
 
     const tmpDir = path.join(rr, TMP_DIR_NAME)
     await ensureDir(tmpDir, true)
@@ -529,10 +709,6 @@ export function createStorage(options = {}) {
       await fsp.rm(tmp, { force: true }).catch(() => {})
     }
     await syncDir(dir)
-
-    const key = diskSegs.join('/')
-    const clientPath = segs.join('/')
-    return { path: clientPath, id: objectId(bucket, key), fullPath: `${bucket}/${clientPath}` }
   }
 
   /** Move the finished temp file into place (rename for upsert, link() otherwise). */
@@ -585,6 +761,12 @@ export function createStorage(options = {}) {
       fh = await fsp.open(r.target, fsc.O_RDONLY | O_NOFOLLOW)
       const fst = await fh.stat()
       if (!fst.isFile()) throw err.notFound()
+      // Uploader-only bucket: an existing object is read only by its owners
+      // (objects stored before owners were recorded have none: 403 for all)
+      if (uploaderReadBuckets.has(bucket)) {
+        const owners = typeof userId === 'string' ? await readOwners(r.rr, bucket, diskSegs.join('/')) : []
+        if (!owners.includes(userId)) throw err.forbidden()
+      }
       if (fst.size > maxDownloadBytes) throw err.tooLarge()
       return await fh.readFile()
     } catch (e) {
@@ -652,11 +834,19 @@ export function createStorage(options = {}) {
     }
     const keyPrefix = diskSegs.length ? diskSegs.join('/') + '/' : ''
     // Filter on the dirent alone first; symlinks, sockets and devices are never listed.
-    const candidates = dirents.filter((d) => {
+    let candidates = dirents.filter((d) => {
       if (d.name.startsWith('.')) return false
       if (search && !d.name.toLowerCase().startsWith(search)) return false
       return d.isDirectory() || d.isFile()
     })
+    // Uploader-only bucket: a caller sees only the objects it owns (the names
+    // carry the unguessable part of a scoresheet path); folders are shown.
+    if (uploaderReadBuckets.has(bucket)) {
+      const uid = typeof userId === 'string' ? userId : null
+      const visible = await Promise.all(candidates.map(async (d) =>
+        d.isDirectory() || (uid !== null && (await readOwners(r.rr, bucket, keyPrefix + d.name)).includes(uid))))
+      candidates = candidates.filter((_, i) => visible[i])
+    }
     const byName = (a, b) => {
       const c = a.name < b.name ? -1 : a.name > b.name ? 1 : 0
       return desc ? -c : c
@@ -708,8 +898,11 @@ export function createStorage(options = {}) {
     const tmpRemoved = await sweepTemp(rr)
     const segs = parse(prefix, true)
     const r = await resolve(bucket, segs, { isDir: true })
-    const result = { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved }
-    if (!r) return result
+    const result = { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved, ownerRecordsRemoved: 0 }
+    if (!r) {
+      result.ownerRecordsRemoved = await sweepOwners(rr)
+      return result
+    }
     const cutoff = now() - maxAgeMs
 
     // readdir({withFileTypes}) does not follow symlinks: they report
@@ -757,7 +950,59 @@ export function createStorage(options = {}) {
     }
 
     await walk(r.dir)
+    result.ownerRecordsRemoved = await sweepOwners(rr)
     return result
+  }
+
+  /**
+   * Remove owner records whose object no longer exists, so a stale record can
+   * never hand read rights to an object written later at the same path (the
+   * upload of a new object replaces the record anyway; this is the clean-up).
+   * Records touched in the last sweepDirGraceMs are kept (an upload in flight
+   * writes the record just before its commit), and each check runs under the
+   * key's owner lock.
+   */
+  async function sweepOwners(rr) {
+    let removed = 0
+    for (const bucket of uploaderReadBuckets) {
+      const dir = path.join(rr, OWNERS_DIR_NAME, bucket)
+      let names
+      try {
+        const st = await fsp.lstat(dir)
+        if (!st.isDirectory()) continue
+        names = await fsp.readdir(dir)
+      } catch {
+        continue
+      }
+      for (const name of names) {
+        if (!/^[0-9a-f]{64}\.json$/.test(name)) continue
+        const full = path.join(dir, name)
+        try {
+          const st = await fsp.lstat(full)
+          if (!st.isFile() || st.mtimeMs > now() - sweepDirGraceMs) continue
+          let rec
+          try {
+            rec = JSON.parse(await fsp.readFile(full, 'utf8'))
+          } catch {
+            continue // unreadable: leave it for an operator
+          }
+          const key = typeof rec?.key === 'string' ? rec.key : null
+          const segs = key ? parseStoragePath(key, pathLimits) : null
+          if (!segs || crypto.createHash('sha256').update(key).digest('hex') !== name.slice(0, 64)) continue
+          await withOwnerLock(ownerLockId(bucket, key), async () => {
+            const obj = await objectStat(bucket, segs)
+            if (obj) return
+            const again = await fsp.lstat(full).catch(() => null)
+            if (!again || again.mtimeMs > now() - sweepDirGraceMs) return
+            await fsp.unlink(full)
+            removed++
+          })
+        } catch {
+          // raced
+        }
+      }
+    }
+    return removed
   }
 
   async function sweepTemp(rr) {
@@ -838,7 +1083,18 @@ export function createStorage(options = {}) {
         return { status: 200, body: { data, error: null } }
       }
       if (action === 'download') {
-        const buf = await download({ bucket: body.bucket, path: body.path, userId })
+        let buf
+        try {
+          buf = await download({ bucket: body.bucket, path: body.path, userId })
+        } catch (e) {
+          // A missing object is an answer, not a failure (first log append, no
+          // backup yet): 200 with the error, so browsers log no console error.
+          // apiStorage returns it as { data: null, error } either way.
+          if (e instanceof StorageError && e.code === 'OV_STORAGE_NOT_FOUND') {
+            return { status: 200, body: { data: null, error: { message: e.message, code: e.code } } }
+          }
+          throw e
+        }
         return { status: 200, body: { data: buf.toString('base64'), error: null } }
       }
       if (action === 'list') {
@@ -867,6 +1123,7 @@ export function createStorage(options = {}) {
   return {
     root,
     buckets: [...buckets],
+    uploaderReadBuckets: [...uploaderReadBuckets],
     maxFileBytes,
     maxBodyBytes,
     upload,
@@ -875,6 +1132,8 @@ export function createStorage(options = {}) {
     sweep,
     health,
     handle,
-    bodyTooLarge
+    bodyTooLarge,
+    getOwners,
+    setOwners
   }
 }

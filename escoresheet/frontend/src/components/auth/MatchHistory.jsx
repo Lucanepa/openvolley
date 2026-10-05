@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { apiFrom } from '../../lib/apiClient'
 import { ClipboardIcon } from '../icons'
+import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
@@ -50,7 +51,9 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
       // Get match details for each match_external_id (which references matches.external_id)
       const matchIds = userMatches.map(m => m.match_external_id)
       const { data: matchDetails, error: matchError } = await apiFrom('matches')
-        .select('external_id, team_a, team_b, final_score, winner, status, start_time, created_at')
+        // matches has no team_a/team_b/start_time columns (the backend refuses
+        // unknown ones): the teams are home_team/away_team, the date scheduled_at
+        .select('external_id, game_n, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
         .in('external_id', matchIds)
         .eq('sport_type', 'indoor')
 
@@ -78,6 +81,15 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   }
 
   if (!open) return null
+
+  // A finalized match opens its approved scoresheet, readable only by the
+  // account that uploaded it: opened on this origin, where the session is.
+  const openMatch = (match) => {
+    if (onSelectMatch) return onSelectMatch(match)
+    const url = finalScoresheetUrl(match)
+    if (url) window.open(url, '_blank', 'noopener')
+  }
+  const canOpen = (match) => !!onSelectMatch || !!finalScoresheetUrl(match)
 
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
@@ -190,18 +202,18 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {matches.map((match, index) => (
                 <div
-                  key={match.match_external_id || index}
-                  onClick={() => onSelectMatch?.(match)}
+                  key={`${match.match_external_id || index}:${match.userRole || ''}`}
+                  onClick={() => openMatch(match)}
                   style={{
                     padding: '14px 16px',
                     background: 'var(--panel-2)',
                     border: '1px solid var(--border)',
                     borderRadius: 8,
-                    cursor: onSelectMatch ? 'pointer' : 'default',
+                    cursor: canOpen(match) ? 'pointer' : 'default',
                     transition: 'border-color 0.2s'
                   }}
                   onMouseEnter={e => {
-                    if (onSelectMatch) e.currentTarget.style.borderColor = '#3b82f6'
+                    if (canOpen(match)) e.currentTarget.style.borderColor = '#3b82f6'
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.borderColor = 'var(--border)'
@@ -216,13 +228,13 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ color: 'var(--text)', fontWeight: 500 }}>
-                        {getTeamName(match.team_a)}
+                        {getTeamName(match.home_team)}
                       </div>
                       <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                         {t('matchHistory.vs', 'vs')}
                       </div>
                       <div style={{ color: 'var(--text)', fontWeight: 500 }}>
-                        {getTeamName(match.team_b)}
+                        {getTeamName(match.away_team)}
                       </div>
                     </div>
                     {match.final_score && (
@@ -245,7 +257,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                     fontSize: 12
                   }}>
                     <div style={{ color: 'var(--muted)' }}>
-                      {formatDate(match.start_time || match.created_at)}
+                      {formatDate(match.scheduled_at || match.created_at)}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <span style={{

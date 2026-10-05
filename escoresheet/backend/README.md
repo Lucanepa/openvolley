@@ -215,8 +215,35 @@ Replaces Supabase Storage behind `POST /api/storage/upload`, `/download` and `/l
 | `STORAGE_SCORESHEETS_MIN_FREE_MB` | Smaller floor for `scoresheets/` writes, so the volume never reaches ENOSPC. | `256` |
 | `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). server.js must read the body with `storage.maxBodyBytes` (base64 + 64 KiB) for this to hold. | `5` |
 | `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently). For the Phase 7 security release; leave off until then. Any other value stops the server at startup. | `off` |
+| `STORAGE_UPLOADER_READ_BUCKETS` | Buckets whose objects only the account that created them may read, replace or list (see "Who can read a scoresheet" below); `none` turns it off. Any bucket other than `scoresheets`/`backup` stops the server at startup. | `scoresheets` |
 
 Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
+
+A download of a missing object answers **200** `{ data: null, error: { code: 'OV_STORAGE_NOT_FOUND' } }` rather than 404: the scorer reads its log file / backups before the first write, and a 404 made every browser log a console error. `apiStorage` returns it as `{ data: null, error }` exactly as before.
+
+### Who can read a scoresheet
+
+Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry players' and officials' names, dates of birth and signature images. **Only the signed-in account that created a file can read, replace or list it.** Everyone else gets 401 (no session) or 403 `OV_STORAGE_FORBIDDEN`. The bucket is never public, and there are no share links.
+
+- **Ownership comes from creating the file, not from uploading to its path.** The first upload of a path records its account as the owner in `{STORAGE_DIR}/.owners/{bucket}/{sha256(path)}.json` (`{"key":"<path>","owners":["<user uuid>"]}`, written atomically). An upload to an existing file by anyone else is refused with 403 and changes nothing: there is no way to add yourself to someone else's file. Owner check, record and commit of one path run under one lock in the server process, so a download never sees a file under an older record. (One server process per `STORAGE_DIR`.)
+- **The path cannot be claimed in advance.** Game numbers and dates are public (`/api/db` reads), so a key-less name could be squatted by anyone who uploads first. The scorer app therefore names the files with `{key}` = `k` + 128 random bits that it keeps on the scoring device (localStorage, never on the match record, which is synced and backed up). `n` is the game number, or the external id of a match without one (no shared `unknown` name).
+- **Finding your own file.** `list` in an uploader-only bucket shows the caller only its own files (folders are always shown), so the random part never leaks. The viewer (`/scoresheet/?date=…&game=…`, opened from **My Matches**) lists the date folder and opens the caller's newest approved file of that game.
+- **Clean-up.** `sweep()` (daily) removes owner records whose file is gone (after a few minutes' grace, under the same lock), so a stale record can never hand rights to a file written later at the same path. Uploads only ever record one owner; the list is capped at 16 for operator grants.
+
+Why not a share link: a link is a bearer secret that keeps working for whoever it is forwarded to and ends up in browser history, chat logs and referrers. Why not "the match's owner": `matches` rows have no server-verified owner (any signed-in account can write any row, and any account can write a `user_matches` row for any match), so they cannot prove who scored a match.
+
+**Files stored before this change** (`game{n}_final.json`, `game{n}.json`, `game{n}.pdf`) have no owner record and are readable by nobody through the API (nor replaceable). There is no trustworthy source to seed them from (see above), so an operator grants them one by one, after confirming out of band who scored the match:
+
+```bash
+# on hetzner: docker exec -it ov-backend <command>
+node scripts/storage-owner.mjs unowned 2026-05-12          # files without an owner (optionally one folder)
+psql "$DATABASE_URL" -c "SELECT id FROM auth.users WHERE email = lower('scorer@example.ch')"
+node scripts/storage-owner.mjs grant 2026-05-12/game4711_final.json <user uuid>
+node scripts/storage-owner.mjs show  2026-05-12/game4711_final.json
+node scripts/storage-owner.mjs set   2026-05-12/game4711_final.json            # nobody again
+```
+
+The script uses `STORAGE_ROOT` / `STORAGE_DIR` like the server and can run while it does. The viewer finds a granted legacy file too (its name parses without the key).
 
 Wired in server.js (cloud mode): one `/api/storage/*` block, session required,
 the body read with `storage.maxBodyBytes`, an oversized body answered with
