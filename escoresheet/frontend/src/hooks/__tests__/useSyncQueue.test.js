@@ -235,14 +235,28 @@ describe('retryErrorsInternal', () => {
     expect(fakeDb.sync_queue.map.get(1).status).toBe('superseded')
   })
 
-  it('does not supersede when the newer update lacks a field', async () => {
+  it('keeps only the fields no newer sent update wrote', async () => {
     fakeDb.sync_queue.reset([
-      { id: 1, resource: 'match', action: 'update', status: 'error', payload: { id: 'match_100_aaa', status: 'live', winner: 'home' } },
-      { id: 2, resource: 'match', action: 'update', status: 'sent', payload: { id: 'match_100_aaa', status: 'ended' } }
+      { id: 1, resource: 'match', action: 'update', status: 'error', payload: { id: 'match_100_aaa', status: 'live', winner: 'home', match_info: { hall: 'A', city: 'Y' } } },
+      { id: 2, resource: 'match', action: 'update', status: 'sent', payload: { id: 'match_100_aaa', status: 'ended', match_info: { hall: 'B' } } }
     ])
 
     await retryErrorsInternal({ force: true })
-    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+    const job = fakeDb.sync_queue.map.get(1)
+    expect(job.status).toBe('queued')
+    // the stale 'live' must not be replayed over 'ended'
+    expect(job.payload).toEqual({ id: 'match_100_aaa', winner: 'home', match_info: { city: 'Y' } })
+  })
+
+  it('ignores sent updates of other matches and older ones', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'update', status: 'sent', payload: { id: 'match_100_aaa', status: 'setup' } },
+      { id: 2, resource: 'match', action: 'update', status: 'error', payload: { id: 'match_100_aaa', status: 'live' } },
+      { id: 3, resource: 'match', action: 'update', status: 'sent', payload: { id: 'match_200_bbb', status: 'ended' } }
+    ])
+
+    await retryErrorsInternal({ force: true })
+    expect(fakeDb.sync_queue.map.get(2)).toMatchObject({ status: 'queued', payload: { id: 'match_100_aaa', status: 'live' } })
   })
 
   it('respects each job\'s backoff unless forced', async () => {

@@ -172,8 +172,30 @@ async function withFullConnectionPins(seedKey, payload) {
 }
 
 /**
- * Mark errored match updates as 'superseded' when a newer update for the same
- * match carrying the same fields has already been sent.
+ * The part of an older match update that no newer (already sent) update has
+ * written: top-level fields, and keys inside JSON object fields. Replaying the
+ * rest would put old values back over newer ones.
+ */
+export function remainingAfterNewer(older, newer) {
+  const remaining = {}
+  for (const [key, value] of Object.entries(older)) {
+    if (key === 'id') { remaining.id = value; continue }
+    if (!(key in newer)) { remaining[key] = value; continue }
+    const n = newer[key]
+    const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v)
+    if (isObj(value) && isObj(n)) {
+      const rest = Object.fromEntries(Object.entries(value).filter(([sub]) => !(sub in n)))
+      if (Object.keys(rest).length > 0) remaining[key] = rest
+    }
+    // otherwise the newer update replaced the whole field
+  }
+  return remaining
+}
+
+/**
+ * Errored match updates vs newer updates of the same match that were already
+ * sent: fields the newer ones wrote are removed from the stale job, and a job
+ * left with nothing to write is marked 'superseded'.
  * @returns {Promise<Set<number>>} ids of the superseded jobs
  */
 export async function supersedeStaleMatchUpdates(errorJobs) {
@@ -185,10 +207,15 @@ export async function supersedeStaleMatchUpdates(errorJobs) {
     .and(j => j.status === 'sent' && j.action === 'update')
     .toArray()
   for (const job of stale) {
-    const newer = sentUpdates.find(s => s.id > job.id && s.payload?.id === job.payload.id && payloadCovers(s.payload, job.payload))
-    if (newer) {
+    const newer = sentUpdates.filter(s => s.id > job.id && s.payload?.id === job.payload.id)
+    if (newer.length === 0) continue
+    let remaining = job.payload
+    for (const s of newer) remaining = remainingAfterNewer(remaining, s.payload)
+    if (Object.keys(remaining).length <= 1) {
       await db.sync_queue.update(job.id, { status: 'superseded' })
       superseded.add(job.id)
+    } else if (!payloadCovers(remaining, job.payload)) {
+      await db.sync_queue.update(job.id, { payload: remaining, superseded_fields: true })
     }
   }
   return superseded
@@ -713,9 +740,13 @@ export async function runQueuePass() {
         continue
       }
 
-      // Everything below leaves the entity unsynced: block its later jobs
+      // Everything below leaves the entity unsynced: block its later jobs. A
+      // set/event that must wait (match not in the cloud yet) holds back the
+      // rest of its match too, instead of every job repeating the same lookup.
       blocked.add(key)
-      if (job.resource === 'match' && job.action !== 'update' && matchKey) blocked.add(`whole:${matchKey}`)
+      if (matchKey && ((job.resource === 'match' && job.action !== 'update') || (job.resource !== 'match' && result === null))) {
+        blocked.add(`whole:${matchKey}`)
+      }
 
       if (result === STOP_PASS || result === STOP_NETWORK) {
         // Rate limited or backend unreachable: leave the job queued as it is
