@@ -1,0 +1,147 @@
+/* Volleyball style tokens: Tailwind v4.
+ *
+ * Generalised from svrz_rc src/index.css (Swiss Volley Region Zürich referee
+ * coaching app). Paste it as the app's main stylesheet, or @import it from
+ * there. It needs:
+ *   npm i tailwindcss @tailwindcss/vite @fontsource-variable/inter
+ *
+ * The look rests on the brand red overriding Tailwind's red-600/700. Every
+ * `bg-red-600` / `hover:bg-red-700` / `text-red-600` in the kit is therefore
+ * the brand, not stock Tailwind red. The other red steps (50..500, 800, 900)
+ * stay stock and are used for tints, borders and danger text.
+ *
+ * Changes from svrz_rc, each marked "kit:" below:
+ *   1. `.shadow-card` / `.shadow-card-lg` hand-written helpers dropped. The
+ *      @theme entries already generate those utilities. The unlayered helpers
+ *      beat every layered utility, so `hover:shadow-card-lg` never fired and a
+ *      `ring-*` on a card was wiped by the raw box-shadow.
+ *   2. `scroll-behavior: smooth` only applies when reduced motion is not
+ *      requested.
+ *   3. A global reduced-motion rule. It stops the decorative CSS motion,
+ *      i.e. spin, pulse, orbit and transitions.
+ *   4. App-specific rules (.rich-surface, .tpl-field) left out.
+ */
+
+/* ov: `@import "tailwindcss";` removed. OpenVolley's src/tailwind.css imports
+   Tailwind's theme + utilities itself, WITHOUT preflight (the legacy
+   styles.css still owns the element reset), and then imports this file. */
+/* The build with the optical-size axis: "opsz" 32 is Inter Display.
+   (svrz_rc index.css:2-3) */
+@import "@fontsource-variable/inter/opsz.css";
+
+@theme {
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Swiss Volley brand red, the app's primary accent (index.css:8-12).
+     brand       = the red itself, for one-off tokens (charts, theme-color)
+     brand-soft  = red-50 equivalent wash, for a brand-tinted surface
+     red-600/700 = overridden so the whole `red-600 hover:red-700` vocabulary
+                   is the brand and its pressed state. */
+  --color-brand: #e2001a;
+  --color-brand-soft: #fef2f2;
+  --color-red-600: #e2001a;
+  --color-red-700: #be0014;
+
+  /* Layered, soft elevation tuned for the warm stone surface (index.css:14-16).
+     Generates the `shadow-card` / `shadow-card-lg` utilities, which compose
+     with ring-* and work under hover:/focus: variants. */
+  --shadow-card: 0 1px 2px -1px rgb(28 25 23 / 0.06), 0 6px 20px -8px rgb(28 25 23 / 0.12);
+  --shadow-card-lg: 0 2px 4px -2px rgb(28 25 23 / 0.08), 0 16px 40px -12px rgb(28 25 23 / 0.16);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Light only: every surface is a stone/white card. Declaring it stops a
+       phone in dark mode from rendering native form controls dark, which left
+       score boxes and date pickers unreadable (index.css:23-26). */
+    color-scheme: light;
+  }
+
+  /* kit: smooth scrolling only for people who have not asked for less motion */
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+
+  body {
+    font-family: var(--font-sans);
+    /* Inter Display at every size. The axis runs 14 (Text) to 32 (Display),
+       and is pinned here rather than left to font-optical-sizing, which would
+       give small text the Text cut (index.css:31-35). */
+    font-variation-settings: "opsz" 32;
+    font-optical-sizing: none;
+    /* cv02 open 4, cv03 open 6, cv04 open 9, cv11 single-storey a */
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-stone-100);
+    color: var(--color-stone-800);
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-brand) 18%, transparent);
+  }
+
+  /* Thin neutral scrollbar on desktop (index.css:47-51) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-stone-300) transparent;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  * {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  html, body, #root {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Loading spinner orbits (svrz_rc AppSpinner.tsx, index.css:105-122).
+   The satellite rides a path set inline as `offset-path`; this only supplies
+   the motion. offset-rotate is pinned to 0deg because a tumbling ball reads as
+   a glitch, not as spin. */
+.svrz-orbit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  animation: svrz-orbit 2.8s linear infinite;
+}
+
+@keyframes svrz-orbit {
+  to { offset-distance: 100%; }
+}
+
+/* Asked for less motion: park the orbit satellites (index.css:127-129) and,
+   kit: stop every other decorative CSS motion too. A spinner is never the only
+   loading signal (every caller also carries a label), so stopping it costs no
+   information. */
+@media (prefers-reduced-motion: reduce) {
+  .svrz-orbit { animation: none; }
+  .animate-spin,
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce { animation: none !important; }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
