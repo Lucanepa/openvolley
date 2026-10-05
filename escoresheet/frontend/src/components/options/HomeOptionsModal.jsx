@@ -6,6 +6,7 @@ import SupportFeedbackModal from '../SupportFeedbackModal'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
 import { SatelliteDishIcon } from '../icons'
+import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
 
 const currentVersion = __APP_VERSION__
 
@@ -233,27 +234,12 @@ export default function HomeOptionsModal({
     }
   }, [])
 
-  // Clear cache functions
-  const clearServiceWorkerCaches = async () => {
-    if ('caches' in window) {
-      const cacheNames = await caches.keys()
-      await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)))
-    }
-  }
-
-  const unregisterServiceWorkers = async () => {
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations()
-      await Promise.all(registrations.map(registration => registration.unregister()))
-    }
-  }
-
   const checkForUpdates = async () => {
     setUpdateCheck({ checking: true, result: null })
     setNewVersion(null)
     try {
       // Fetch latest version from server (bypass cache)
-      const res = await fetch(`/version.json?t=${Date.now()}`)
+      const res = await fetch(`${import.meta.env.BASE_URL}version.json?t=${Date.now()}`, { cache: 'no-store' })
       const data = await res.json()
       const latestVersion = data.version
 
@@ -275,15 +261,11 @@ export default function HomeOptionsModal({
 
   const executeClearCache = async (includeLocalStorage) => {
     try {
-      await clearServiceWorkerCaches()
-      await unregisterServiceWorkers()
-
-      if (includeLocalStorage) {
-        localStorage.clear()
+      // Refuse when the server is unreachable: with the precache and service
+      // worker gone, the reload could not load the app at all.
+      if (!(await clearCachesAndReload({ includeLocalStorage }))) {
+        showAlert(t('options.alerts.clearCacheNeedsServer', 'Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.'), 'error')
       }
-
-      // Force reload bypassing browser HTTP cache
-      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     } catch (error) {
       console.error('Error clearing cache:', error)
       showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')
@@ -1189,7 +1171,9 @@ export default function HomeOptionsModal({
                   </div>
                 </div>
                 <button
-                  onClick={() => window.location.reload()}
+                  // A plain reload keeps the old active service worker (skipWaiting
+                  // is off) and serves the old precached app: activate the new one.
+                  onClick={() => applyServiceWorkerUpdate({ checkForUpdate: true })}
                   style={{
                     padding: '6px 12px',
                     fontSize: '12px',

@@ -1086,6 +1086,7 @@
       "failedToLoadBackupData": "Failed to load backup data",
       "failedToRestoreBackup": "Failed to restore backup: {{error}}",
       "failedToClearCache": "Failed to clear cache: {{error}}",
+      "clearCacheNeedsServer": "Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.",
       "someItemsFailedToClear": "Some items failed to clear: {{errors}}"
     }
   },
