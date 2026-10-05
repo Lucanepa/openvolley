@@ -484,10 +484,14 @@ export default function HomeOptionsModal({
                 <div className="text-sm font-semibold text-stone-900">{t('options.screenMode')}</div>
                 <InfoDot title={t('options.screenModeInfo')} />
               </div>
+              {/* joined (aria-pressed buttons): commits on click/Enter/Space only, so
+                  arrowing across segments cannot trigger fullscreen as a radiogroup would. */}
               <SegmentedControl
                 ariaLabel={t('options.screenMode')}
+                variant="joined"
+                size="lg"
                 value={displayMode}
-                className="max-w-md [&>button]:h-11 [&>button]:text-sm [&>button]:capitalize"
+                className="max-w-md [&>button]:capitalize"
                 options={['auto', 'desktop', 'tablet'].map(mode => ({
                   value: mode,
                   label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
