@@ -284,8 +284,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
             background_color: '#ffffff',
             theme_color: config.themeColor,
             icons: [
-              { src: 'openvolley_no_bg.png', sizes: '192x192', type: 'image/png' },
-              { src: 'openvolley_no_bg.png', sizes: '512x512', type: 'image/png' }
+              // Real 192/512 renditions (openvolley_no_bg.png itself is 1024x1024)
+              { src: 'openvolley_icon_192.png', sizes: '192x192', type: 'image/png' },
+              { src: 'openvolley_icon_512.png', sizes: '512x512', type: 'image/png' }
             ]
           }
         })] : [])
