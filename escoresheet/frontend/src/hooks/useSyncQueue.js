@@ -375,8 +375,10 @@ function installAuthListener() {
   _authListenerInstalled = true
   const onSession = (session) => { if (session) resumeAfterSignIn() }
   window.addEventListener(AUTH_TOKEN_CHANGE_EVENT, (e) => onSession(e.detail))
+  // Another tab signed in. Only a new session (no old value): another tab
+  // refreshing the stored session's expiry is not a sign-in.
   window.addEventListener('storage', (e) => {
-    if (e.key === AUTH_TOKEN_STORAGE_KEY && e.newValue) onSession(e.newValue)
+    if (e.key === AUTH_TOKEN_STORAGE_KEY && e.newValue && !e.oldValue) onSession(e.newValue)
   })
 }
 installAuthListener()
