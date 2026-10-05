@@ -1,5 +1,40 @@
 import { Player, LCSData, LiberoSetData, LiberoReplacement, LiberoRedesignation } from '../types_scoresheet';
 
+const LIBERO_RANK: Record<string, number> = { libero1: 0, libero2: 1 };
+
+/**
+ * Registered liberos of a team for the LCS header ("No: __ (A) No: __").
+ * On re-designation Scoreboard rewrites the unable libero to libero 'unable' (and the
+ * new one to 'redesignated'), so the unable libero's registered type is recovered from
+ * the libero_unable / libero_redesignation events; the new libero is printed in the
+ * re-designation footer instead.
+ */
+export function getHeaderLiberos(
+  players: Player[],
+  events: any[],
+  teamKey: 'home' | 'away'
+): { number: number; type: string }[] {
+  const registeredType = new Map<number, string>();
+  (events || []).forEach((e: any) => {
+    if (e?.payload?.team !== teamKey) return;
+    if (e.type === 'libero_unable' && e.payload?.liberoNumber != null && e.payload?.liberoType) {
+      registeredType.set(Number(e.payload.liberoNumber), e.payload.liberoType);
+    } else if (e.type === 'libero_redesignation' && e.payload?.unableLiberoNumber != null && e.payload?.unableLiberoType) {
+      registeredType.set(Number(e.payload.unableLiberoNumber), e.payload.unableLiberoType);
+    }
+  });
+
+  const rank = (type: string) => (type in LIBERO_RANK ? LIBERO_RANK[type] : 2);
+  return players
+    .filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'unable')
+    .map(p => {
+      const number = Number(p.number);
+      const type = p.libero === 'unable' ? (registeredType.get(number) || 'unable') : (p.libero as string);
+      return { number, type };
+    })
+    .sort((a, b) => rank(a.type) - rank(b.type));
+}
+
 export function extractLiberoData(
   events: any[],
   sets: any[],
@@ -10,15 +45,8 @@ export function extractLiberoData(
   const teamBKey = teamAKey === 'home' ? 'away' : 'home';
 
   // Identify liberos per team
-  const teamALiberos = teamAPlayers
-    .filter(p => p.libero === 'libero1' || p.libero === 'libero2')
-    .map(p => ({ number: Number(p.number), type: p.libero as string }))
-    .sort((a, b) => (a.type === 'libero1' ? -1 : 1));
-
-  const teamBLiberos = teamBPlayers
-    .filter(p => p.libero === 'libero1' || p.libero === 'libero2')
-    .map(p => ({ number: Number(p.number), type: p.libero as string }))
-    .sort((a, b) => (a.type === 'libero1' ? -1 : 1));
+  const teamALiberos = getHeaderLiberos(teamAPlayers, events, teamAKey);
+  const teamBLiberos = getHeaderLiberos(teamBPlayers, events, teamBKey);
 
   const redesignations: LiberoRedesignation[] = [];
   const lcsSetData: LiberoSetData[] = [];
