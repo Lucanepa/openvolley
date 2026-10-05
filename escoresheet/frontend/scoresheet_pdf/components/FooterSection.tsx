@@ -381,12 +381,10 @@ export const Results: React.FC<ResultsProps> = ({
                      <span className="text-[12px] absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
                      <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">
                          {(() => {
-                             // Calculate sets won by each team from setResults
-                             const teamASetsWon = setResults.reduce((sum, r) => sum + (r.teamAWon || 0), 0);
-                             const teamBSetsWon = setResults.reduce((sum, r) => sum + (r.teamBWon || 0), 0);
-                             // Winner has 3 sets, loser has the remaining
-                             const winnerSets = Math.max(teamASetsWon, teamBSetsWon);
-                             const loserSets = Math.min(teamASetsWon, teamBSetsWon);
+                             // `result` ("3-1", or "3:1" from MatchEntry) is only set once the match
+                             // is finished, like WINNER - no live set count on an unfinished sheet
+                             if (!result) return null;
+                             const [winnerSets = '', loserSets = ''] = result.split(/[-:]/);
                              return (
                                  <>
                                      <span className="w-1/2 text-right">{winnerSets}</span>
