@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import { useSyncQueueStats } from '../hooks/useSyncQueue'
+import { ChevronDown } from 'lucide-react'
+import { cn } from '../ui/cn.js'
+import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 // The local server + WebSocket path (LAN relay) works on its own, cloud or not
 function isServerWebsocketViable(serverStatus, websocketStatus) {
@@ -127,31 +130,36 @@ export default function ConnectionStatus({
     }
   }, [showConnectionMenu, showDebugMenu])
 
+  // Each status: its word and a kit tone (pill + dot + text, chromeClasses
+  // STATUS_TONES). Offline is a normal state for a hall without network, so it
+  // reads neutral, not as an error.
   const getStatusColor = (status, key) => {
     if (status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing') {
-      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: status === 'syncing' ? t('connectionStatus.syncing', 'Syncing') : t('connectionStatus.connected', 'Connected') }
+      return { tone: 'ok', text: status === 'syncing' ? t('connectionStatus.syncing', 'Syncing') : t('connectionStatus.connected', 'Connected') }
     } else if (status === 'awaiting_match') {
-      return { bg: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)', dot: '#22c55e', text: t('connectionStatus.connected', 'Connected') }
+      return { tone: 'ok', text: t('connectionStatus.connected', 'Connected') }
     } else if (status === 'attention') {
-      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: t('connectionStatus.error', 'Error') }
+      return { tone: 'error', text: t('connectionStatus.error', 'Error') }
     } else if (status === 'no_match') {
       // For websocket, "no_match" means waiting for a match to be selected - show as gray/ready
       const text = key === 'websocket' ? t('connectionStatus.noMatch', 'No Match') : t('connectionStatus.ready', 'Ready')
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text }
-    } else if (status === 'disconnected' || status === 'error' || status === 'offline') {
-      return { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)', dot: '#ef4444', text: status === 'error' ? t('connectionStatus.error', 'Error') : status === 'offline' ? t('connectionStatus.offline', 'Offline') : t('connectionStatus.disconnected', 'Disconnected') }
+      return { tone: 'neutral', text }
+    } else if (status === 'offline') {
+      return { tone: 'neutral', text: t('connectionStatus.offline', 'Offline') }
+    } else if (status === 'disconnected' || status === 'error') {
+      return { tone: 'error', text: status === 'error' ? t('connectionStatus.error', 'Error') : t('connectionStatus.disconnected', 'Disconnected') }
     } else if (status === 'not_configured' || status === 'not_applicable') {
-      return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: t('connectionStatus.notConfigured', 'Not Configured') }
+      return { tone: 'warn', text: t('connectionStatus.notConfigured', 'Not Configured') }
     } else if (status === 'not_available') {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: t('connectionStatus.naStatic', 'N/A (Static)') }
+      return { tone: 'neutral', text: t('connectionStatus.naStatic', 'N/A (Static)') }
     } else if (status === 'connecting') {
-      return { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308', text: t('connectionStatus.connecting', 'Connecting') }
+      return { tone: 'warn', text: t('connectionStatus.connecting', 'Connecting') }
     } else if (status === 'auth_required') {
-      return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: t('connectionStatus.signInToSync', 'Sign in to sync') }
+      return { tone: 'warn', text: t('connectionStatus.signInToSync', 'Sign in to sync') }
     } else if (status === 'test_mode') {
-      return { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgba(139, 92, 246, 0.5)', dot: '#8b5cf6', text: t('connectionStatus.testMode', 'Test Mode') }
+      return { tone: 'violet', text: t('connectionStatus.testMode', 'Test Mode') }
     } else {
-      return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: t('connectionStatus.unknown', 'Unknown') }
+      return { tone: 'neutral', text: t('connectionStatus.unknown', 'Unknown') }
     }
   }
 
@@ -226,128 +234,70 @@ export default function ConnectionStatus({
         : getOverallStatus()
   const statusInfo = getStatusColor(overallStatus)
 
-  const sizeStyles = {
-    normal: {
-      fontSize: '12px',
-      padding: '4px 8px',
-      dotSize: '8px'
-    },
-    small: {
-      fontSize: '10px',
-      padding: '3px 6px',
-      dotSize: '6px'
-    },
-    large: {
-      fontSize: '14px',
-      padding: '6px 12px',
-      dotSize: '10px'
-    }
+  const sizeClasses = {
+    normal: { pill: '', dot: 'h-2 w-2', chevron: 12 },
+    small: { pill: 'h-6 px-2 text-[10px]', dot: 'h-1.5 w-1.5', chevron: 10 },
+    large: { pill: 'h-9 px-3 text-sm', dot: 'h-2.5 w-2.5', chevron: 14 }
   }
 
-  const currentSize = sizeStyles[size]
+  const currentSize = sizeClasses[size] || sizeClasses.normal
+  const overallTone = STATUS_TONES[statusInfo.tone] || STATUS_TONES.neutral
 
   return (
     <div style={{ position: 'relative' }} data-connection-menu>
-      <div
-        ref={buttonRef}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!showConnectionMenu) {
-            calculateMenuPosition()
-          }
-          setShowConnectionMenu(!showConnectionMenu)
-        }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-          height: '25px',
-          fontSize: currentSize.fontSize,
-          padding: currentSize.padding,
-          background: statusInfo.bg,
-          border: `1px solid ${statusInfo.border}`,
-          borderRadius: '4px',
-          cursor: 'pointer',
-          transition: 'all 0.2s'
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = statusInfo.bg.replace('0.2', '0.3')
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = statusInfo.bg
-        }}
-      >
-        <span style={{
-          display: 'inline-block',
-          width: currentSize.dotSize,
-          height: currentSize.dotSize,
-          borderRadius: '50%',
-          background: statusInfo.dot
-        }}></span>
-        <span>
-          {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
-            overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
-              overallStatus === 'offline'
-                ? (pendingCount > 0
-                  ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
-                  : t('connectionStatus.offline', 'Offline'))
-                : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
-                  t('connectionStatus.error', 'Error')}
-          {errorCount > 0 && (
-            <span style={{
-              background: '#ef4444',
-              color: '#fff',
-              fontSize: '9px',
-              borderRadius: '10px',
-              padding: '0px 5px',
-              marginLeft: '4px',
-              fontWeight: 800
-            }}>
-              {errorCount}
-            </span>
-          )}
-        </span>
-        <span style={{ fontSize: `${parseInt(currentSize.fontSize) - 2}px`, marginLeft: '4px' }}>
-          {showConnectionMenu ? '▲' : '▼'}
-        </span>
-      </div>
+      <span className={KIT_SCOPE}>
+        <button
+          type="button"
+          ref={buttonRef}
+          aria-expanded={showConnectionMenu}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!showConnectionMenu) {
+              calculateMenuPosition()
+            }
+            setShowConnectionMenu(!showConnectionMenu)
+          }}
+          className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill, currentSize.pill)}
+        >
+          <span className={cn('inline-block shrink-0 rounded-full', currentSize.dot, overallTone.dot)}></span>
+          <span className="inline-flex items-center">
+            {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
+              overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
+                overallStatus === 'offline'
+                  ? (pendingCount > 0
+                    ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
+                    : t('connectionStatus.offline', 'Offline'))
+                  : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
+                    t('connectionStatus.error', 'Error')}
+            {errorCount > 0 && (
+              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold tabular-nums text-white">
+                {errorCount}
+              </span>
+            )}
+          </span>
+          <ChevronDown size={currentSize.chevron} aria-hidden="true" className={cn('opacity-70 transition-transform', showConnectionMenu && 'rotate-180')} />
+        </button>
+      </span>
 
       {/* Connection Status Menu */}
       {showConnectionMenu && (
         <div
           ref={menuRef}
           onClick={(e) => e.stopPropagation()}
+          className={cn('fixed w-max min-w-[220px] max-w-[300px] overflow-y-auto overflow-x-hidden', POPOVER_PANEL)}
           style={{
-            position: 'fixed',
             top: `${menuPosition.top}px`,
             left: `${menuPosition.left}px`,
-            maxWidth: '300px',
-            width: 'max-content',
-            minWidth: '200px',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
             maxHeight: `${menuPosition.maxHeight}px`,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            zIndex: 1000,
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)'
+            zIndex: 1000
           }}
         >
-          <div style={{
-            fontSize: '11px',
-            fontWeight: 600,
-            color: 'var(--muted)',
-            marginBottom: '8px',
-            paddingBottom: '4px',
-            borderBottom: '1px solid var(--border)'
-          }}>
+          <div className="mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
             {t('connectionStatus.title', 'Connection Status')}
           </div>
           {Object.entries(connectionStatuses).map(([key, status]) => {
             const itemStatusInfo = getStatusColor(status, key)
+            const itemTone = STATUS_TONES[itemStatusInfo.tone] || STATUS_TONES.neutral
 
             let displayText = itemStatusInfo.text
             if (key === 'match' && status !== 'no_match' && status !== 'unknown') {
@@ -357,108 +307,64 @@ export default function ConnectionStatus({
             const isConnected = status === 'connected' || status === 'live' || status === 'scheduled' || status === 'synced' || status === 'syncing'
             const isReady = key === 'match' && status === 'no_match'
             const debugInfo = connectionDebugInfo[key]
+            const expandable = !isConnected && !isReady
 
             return (
-              <div key={key} style={{ position: 'relative' }} data-debug-menu>
+              <div key={key} className="relative border-b border-stone-100 last:border-b-0" data-debug-menu>
                 <div
                   onClick={(e) => {
-                    if (!isConnected && !isReady) {
+                    if (expandable) {
                       e.stopPropagation()
                       setShowDebugMenu(showDebugMenu === key ? null : key)
                     }
                   }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '8px',
-                    padding: '6px 8px',
-                    marginBottom: '4px',
-                    fontSize: '12px',
-                    background: itemStatusInfo.bg,
-                    border: `1px solid ${itemStatusInfo.border}`,
-                    borderRadius: '4px',
-                    cursor: (!isConnected && !isReady) ? 'pointer' : 'default',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isConnected && !isReady) {
-                      e.currentTarget.style.background = itemStatusInfo.bg.replace('0.2', '0.3')
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isConnected && !isReady) {
-                      e.currentTarget.style.background = itemStatusInfo.bg
-                    }
-                  }}
+                  className={cn(
+                    'flex min-h-9 items-center justify-between gap-3 rounded-md px-1.5 py-1.5 text-xs transition-colors',
+                    expandable ? 'cursor-pointer hover:bg-stone-50' : 'cursor-default'
+                  )}
                 >
-                  <span style={{ fontWeight: 600 }}>{labelMap[key] || key}:</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{
-                      display: 'inline-block',
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: itemStatusInfo.dot
-                    }}></span>
-                    <span style={{ color: status === 'no_match' ? 'rgba(156, 163, 175, 1)' : 'inherit' }}>{displayText}</span>
-                    {!isConnected && !isReady && (
-                      <span style={{ fontSize: '10px', marginLeft: '4px' }}>
-                        {showDebugMenu === key ? '▲' : '▼'}
-                      </span>
+                  <span className="font-semibold text-stone-700">{labelMap[key] || key}:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', itemTone.dot)}></span>
+                    <span className={cn('font-medium', status === 'no_match' ? 'text-stone-500' : itemTone.text)}>{displayText}</span>
+                    {expandable && (
+                      <ChevronDown size={12} aria-hidden="true" className={cn('text-stone-400 transition-transform', showDebugMenu === key && 'rotate-180')} />
                     )}
                   </div>
                 </div>
 
                 {/* Queue stats for the cloud backend */}
                 {key === 'supabase' && (pendingCount > 0 || errorCount > 0 || authRequired) && (
-                  <div style={{
-                    padding: '8px',
-                    margin: '0 8px 8px',
-                    background: 'var(--panel-2)',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px'
-                  }}>
+                  <div className="mx-1.5 mb-2 flex flex-col gap-1 rounded-lg border border-stone-200 bg-stone-50 p-2 text-[11px]">
                     {authRequired && (
-                      <div style={{ color: '#f59e0b' }}>
+                      <div className="text-amber-800">
                         {t('connectionStatus.signInToSyncHint', 'Not signed in: changes are kept on this device until you sign in.')}
                       </div>
                     )}
                     {pendingCount > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#3b82f6' }}>
+                      <div className="flex justify-between gap-2 text-sky-800">
                         <span>{t('connectionStatus.pendingBackgroundSync', 'Pending background sync:')}</span>
-                        <span style={{ fontWeight: 700 }}>{pendingCount}</span>
+                        <span className="font-bold tabular-nums">{pendingCount}</span>
                       </div>
                     )}
                     {stats.failed > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ef4444' }}>
+                      <div className="flex justify-between gap-2 text-red-700">
                         <span>{t('connectionStatus.refusedByServer', 'Refused by the server:')}</span>
-                        <span style={{ fontWeight: 700 }}>{stats.failed}</span>
+                        <span className="font-bold tabular-nums">{stats.failed}</span>
                       </div>
                     )}
                     {errorCount > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ef4444' }}>
+                      <div className="flex items-center justify-between gap-2 text-red-700">
                         <span>{t('connectionStatus.synchronizationErrors', 'Synchronization errors:')}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 700 }}>{errorCount}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold tabular-nums">{errorCount}</span>
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation()
                               onRetryErrors?.()
                             }}
-                            style={{
-                              padding: '2px 8px',
-                              background: '#ef4444',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '4px',
-                              fontSize: '10px',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            className={cn('inline-flex h-8 items-center rounded-lg border-0 bg-slate-900 px-2.5 text-[11px] font-semibold tracking-normal text-white hover:bg-slate-800 transition-colors cursor-pointer', FOCUS_RING)}
                           >
                             {t('common.retryAll', 'Retry All')}
                           </button>
@@ -469,31 +375,16 @@ export default function ConnectionStatus({
                 )}
 
                 {/* Debug Menu - inline instead of absolute to avoid overflow */}
-                {!isConnected && !isReady && showDebugMenu === key && (
+                {expandable && showDebugMenu === key && (
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    style={{
-                      marginTop: '4px',
-                      marginBottom: '8px',
-                      background: 'var(--panel-2)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      padding: '10px',
-                      fontSize: '11px',
-                      lineHeight: '1.5',
-                      wordBreak: 'break-word'
-                    }}
+                    className="mx-1.5 mb-2 break-words rounded-lg border border-stone-200 bg-stone-50 p-2.5 text-[11px] leading-relaxed text-stone-700"
                   >
-                    <div style={{
-                      fontWeight: 600,
-                      marginBottom: '8px',
-                      color: '#ef4444',
-                      fontSize: '12px'
-                    }}>
+                    <div className="mb-2 text-xs font-semibold text-red-700">
                       {t('connectionStatus.statusInformation', 'Status Information')}
                     </div>
-                    <div style={{ marginBottom: '6px', color: 'var(--text)' }}>
-                      <strong>{t('connectionStatus.statusLabel', 'Status:')}</strong> {(() => {
+                    <div className="mb-1.5">
+                      <strong className="font-semibold text-stone-900">{t('connectionStatus.statusLabel', 'Status:')}</strong> {(() => {
                         const statusText = (debugInfo?.status || status || '').toString()
                         return statusText
                           .replace(/_/g, ' ')
@@ -502,11 +393,11 @@ export default function ConnectionStatus({
                           .join(' ')
                       })()}
                     </div>
-                    <div style={{ marginBottom: '6px', color: 'var(--text)' }}>
-                      <strong>{t('connectionStatus.messageLabel', 'Message:')}</strong> {debugInfo?.message || t('connectionStatus.connectionIssueDetected', 'Connection issue detected')}
+                    <div className="mb-1.5">
+                      <strong className="font-semibold text-stone-900">{t('connectionStatus.messageLabel', 'Message:')}</strong> {debugInfo?.message || t('connectionStatus.connectionIssueDetected', 'Connection issue detected')}
                     </div>
                     {debugInfo?.details && (
-                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)', color: 'var(--muted)', fontSize: '10px' }}>
+                      <div className="mt-2 border-t border-stone-200 pt-2 text-[10px] text-stone-500">
                         {debugInfo.details}
                       </div>
                     )}

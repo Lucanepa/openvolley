@@ -77,51 +77,24 @@ export default function WsDebugOverlay({ matchId }) {
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      style={{
-        position: 'fixed',
-        bottom: 10,
-        left: 10,
-        right: 10,
-        maxHeight: '50vh',
-        overflowY: 'auto',
-        background: 'rgba(0, 0, 0, 0.9)',
-        color: '#0f0',
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        padding: '10px',
-        borderRadius: '8px',
-        zIndex: 99999,
-        border: '1px solid #0f0'
-      }}
+      className="no-print fixed bottom-2.5 left-2.5 right-2.5 max-h-[50vh] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/95 p-3 font-mono text-[11px] text-stone-200 shadow-card-lg"
+      style={{ zIndex: 99999 }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <strong style={{ color: '#fff' }}>WebSocket Debug</strong>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      {/* Developer console: dark slate (the kit's tooltip surface), status words in their hue */}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <strong className="font-sans text-xs font-semibold text-white">WebSocket Debug</strong>
+        <div className="flex gap-2">
           <button
+            type="button"
             onClick={handleForceReconnect}
-            style={{
-              padding: '4px 8px',
-              fontSize: '10px',
-              background: '#f60',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className="inline-flex h-8 items-center rounded-lg border-0 bg-amber-400 px-3 font-sans text-[11px] font-semibold text-slate-900 hover:bg-amber-300 transition-colors cursor-pointer"
           >
             Force Reconnect
           </button>
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); setVisible(false) }}
-            style={{
-              padding: '4px 8px',
-              fontSize: '10px',
-              background: '#666',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className="inline-flex h-8 items-center rounded-lg border border-slate-600 bg-transparent px-3 font-sans text-[11px] font-semibold text-stone-200 hover:bg-white/10 transition-colors cursor-pointer"
           >
             Close
           </button>
@@ -129,58 +102,58 @@ export default function WsDebugOverlay({ matchId }) {
       </div>
 
       {debugInfo ? (
-        <div style={{ lineHeight: '1.6' }}>
+        <div className="leading-relaxed">
           <div>
-            <span style={{ color: '#888' }}>Status:</span>{' '}
-            <span style={{
-              color: debugInfo.readyStateLabel === 'OPEN' ? '#0f0' :
-                     debugInfo.readyStateLabel === 'CONNECTING' ? '#ff0' : '#f00'
-            }}>
+            <span className="text-stone-400">Status:</span>{' '}
+            <span className={
+              debugInfo.readyStateLabel === 'OPEN' ? 'text-emerald-400' :
+                debugInfo.readyStateLabel === 'CONNECTING' ? 'text-amber-300' : 'text-red-400'
+            }>
               {debugInfo.readyStateLabel}
             </span>
           </div>
           <div>
-            <span style={{ color: '#888' }}>URL:</span> {debugInfo.wsUrl || 'N/A'}
+            <span className="text-stone-400">URL:</span> {debugInfo.wsUrl || 'N/A'}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Connected:</span>{' '}
-            {formatTime(debugInfo.connectedAt)} {debugInfo.connectedAt && <span style={{ color: '#888' }}>({formatAgo(debugInfo.connectedAt)})</span>}
+            <span className="text-stone-400">Connected:</span>{' '}
+            {formatTime(debugInfo.connectedAt)} {debugInfo.connectedAt && <span className="text-stone-400">({formatAgo(debugInfo.connectedAt)})</span>}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Last message:</span>{' '}
-            {formatTime(debugInfo.lastMessageAt)} {debugInfo.lastMessageAt && <span style={{ color: '#888' }}>({formatAgo(debugInfo.lastMessageAt)})</span>}
+            <span className="text-stone-400">Last message:</span>{' '}
+            {formatTime(debugInfo.lastMessageAt)} {debugInfo.lastMessageAt && <span className="text-stone-400">({formatAgo(debugInfo.lastMessageAt)})</span>}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Last ping:</span>{' '}
-            {formatTime(debugInfo.lastPingAt)} {debugInfo.lastPingAt && <span style={{ color: '#888' }}>({formatAgo(debugInfo.lastPingAt)})</span>}
+            <span className="text-stone-400">Last ping:</span>{' '}
+            {formatTime(debugInfo.lastPingAt)} {debugInfo.lastPingAt && <span className="text-stone-400">({formatAgo(debugInfo.lastPingAt)})</span>}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Last pong:</span>{' '}
-            {formatTime(debugInfo.lastPongAt)} {debugInfo.lastPongAt && <span style={{ color: '#888' }}>({formatAgo(debugInfo.lastPongAt)})</span>}
+            <span className="text-stone-400">Last pong:</span>{' '}
+            {formatTime(debugInfo.lastPongAt)} {debugInfo.lastPongAt && <span className="text-stone-400">({formatAgo(debugInfo.lastPongAt)})</span>}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Messages received:</span> {debugInfo.messagesReceived}
+            <span className="text-stone-400">Messages received:</span> {debugInfo.messagesReceived}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Connection attempts:</span> {debugInfo.connectionAttempts}
+            <span className="text-stone-400">Connection attempts:</span> {debugInfo.connectionAttempts}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Reconnect attempts:</span> {debugInfo.reconnectAttempts}
+            <span className="text-stone-400">Reconnect attempts:</span> {debugInfo.reconnectAttempts}
           </div>
           <div>
-            <span style={{ color: '#888' }}>Subscribers:</span> {debugInfo.subscriberCount}
+            <span className="text-stone-400">Subscribers:</span> {debugInfo.subscriberCount}
           </div>
           {debugInfo.lastError && (
-            <div style={{ color: '#f66' }}>
-              <span style={{ color: '#888' }}>Last error:</span>{' '}
+            <div className="text-red-400">
+              <span className="text-stone-400">Last error:</span>{' '}
               {formatTime(debugInfo.lastError.time)} - {debugInfo.lastError.message}
             </div>
           )}
           {debugInfo.errors.length > 0 && (
-            <div style={{ marginTop: '8px', borderTop: '1px solid #333', paddingTop: '8px' }}>
-              <div style={{ color: '#888' }}>Recent errors ({debugInfo.errors.length}):</div>
+            <div className="mt-2 border-t border-slate-700 pt-2">
+              <div className="text-stone-400">Recent errors ({debugInfo.errors.length}):</div>
               {debugInfo.errors.slice(-5).map((err, i) => (
-                <div key={i} style={{ color: '#f66', fontSize: '10px' }}>
+                <div key={i} className="text-[10px] text-red-400">
                   {formatTime(err.time)} - {err.message}
                 </div>
               ))}
@@ -188,10 +161,10 @@ export default function WsDebugOverlay({ matchId }) {
           )}
         </div>
       ) : (
-        <div style={{ color: '#888' }}>Loading debug info...</div>
+        <div className="text-stone-400">Loading debug info...</div>
       )}
 
-      <div style={{ marginTop: '8px', color: '#666', fontSize: '10px' }}>
+      <div className="mt-2 text-[10px] text-stone-500">
         Triple-tap anywhere to hide. Match ID: {matchId}
       </div>
     </div>
