@@ -13,19 +13,20 @@ export default function UpdateBanner() {
   const { needRefresh, updateServiceWorker, dismissUpdate } = useServiceWorker()
   const [newVersion, setNewVersion] = useState(null)
 
-  // Fetch the new version from server when update is detected
+  // Fetch the new version from server when update is detected (label only).
+  // Relative to the app's base: sub-apps are served under /referee/, /bench/...
   useEffect(() => {
     if (needRefresh) {
-      fetch(`/version.json?t=${Date.now()}`)
+      fetch(`${import.meta.env.BASE_URL}version.json?t=${Date.now()}`)
         .then(res => res.json())
         .then(data => setNewVersion(data.version))
         .catch(() => setNewVersion(null))
     }
   }, [needRefresh])
 
-  // Don't show if no refresh needed or if versions are the same
+  // The waiting service worker decides whether an update exists; version.json
+  // is only the label (a deploy without a version bump still needs activating).
   if (!needRefresh) return null
-  if (newVersion && newVersion === currentVersion) return null
 
   return (
     <div
@@ -85,7 +86,7 @@ export default function UpdateBanner() {
         </h3>
 
         {/* Version info */}
-        <div style={{
+        {newVersion && newVersion !== currentVersion && <div style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
@@ -99,8 +100,8 @@ export default function UpdateBanner() {
         }}>
           <span>{currentVersion}</span>
           <span style={{ color: '#3b82f6' }}>→</span>
-          <span style={{ color: '#22c55e', fontWeight: 600 }}>{newVersion || '?'}</span>
-        </div>
+          <span style={{ color: '#22c55e', fontWeight: 600 }}>{newVersion}</span>
+        </div>}
 
         {/* Description */}
         <p style={{
