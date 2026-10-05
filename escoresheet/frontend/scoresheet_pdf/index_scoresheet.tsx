@@ -70,30 +70,32 @@ interface ScoresheetItem {
   uploadedAt?: string;
 }
 
-// Fetch scoresheet data from Supabase storage
+// Fetch scoresheet data from backend storage (/api/storage).
+// Needs a signed-in session on this origin: apiClient sends the stored Bearer
+// token, and the backend refuses storage reads without one.
 const fetchFromStorage = async (date: string, game: string): Promise<any | null> => {
   try {
-    // Import supabase client dynamically to avoid circular dependencies
-    const { supabase } = await import('../src/lib/supabaseClient');
-    if (!supabase) {
-      console.error('Supabase client not available');
-      return null;
+    // Import the backend storage client dynamically to avoid circular dependencies
+    const { apiStorage } = await import('../src/lib/apiClient');
+
+    // The app writes game{n}_final.json (approved) and, from older versions, game{n}.json:
+    // prefer the final one.
+    for (const storagePath of [`${date}/game${game}_final.json`, `${date}/game${game}.json`]) {
+      console.log('[Scoresheet] Fetching from storage:', storagePath);
+
+      const { data, error } = await apiStorage
+        .from('scoresheets')
+        .download(storagePath);
+
+      if (error || !data) {
+        console.warn('[Scoresheet] Storage fetch error:', storagePath, error);
+        continue;
+      }
+
+      const text = await data.text();
+      return JSON.parse(text);
     }
-
-    const storagePath = `${date}/game${game}.json`;
-    console.log('[Scoresheet] Fetching from storage:', storagePath);
-
-    const { data, error } = await supabase.storage
-      .from('scoresheets')
-      .download(storagePath);
-
-    if (error) {
-      console.error('[Scoresheet] Storage fetch error:', error);
-      return null;
-    }
-
-    const text = await data.text();
-    return JSON.parse(text);
+    return null;
   } catch (error) {
     console.error('[Scoresheet] Error fetching from storage:', error);
     return null;
@@ -103,14 +105,10 @@ const fetchFromStorage = async (date: string, game: string): Promise<any | null>
 // Fetch all scoresheets from storage
 const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
   try {
-    const { supabase } = await import('../src/lib/supabaseClient');
-    if (!supabase) {
-      console.error('Supabase client not available');
-      return [];
-    }
+    const { apiStorage } = await import('../src/lib/apiClient');
 
     // List all folders (dates) in the scoresheets bucket
-    const { data: folders, error: foldersError } = await supabase.storage
+    const { data: folders, error: foldersError } = await apiStorage
       .from('scoresheets')
       .list('', { limit: 100, sortBy: { column: 'name', order: 'desc' } });
 
@@ -125,7 +123,7 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
     for (const folder of folders || []) {
       if (!folder.name || folder.name.startsWith('.')) continue;
 
-      const { data: files, error: filesError } = await supabase.storage
+      const { data: files, error: filesError } = await apiStorage
         .from('scoresheets')
         .list(folder.name, { limit: 50 });
 
@@ -134,18 +132,20 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
         continue;
       }
 
+      // One entry per game; game{n}_final.json wins over game{n}.json.
+      const byGame = new Map<string, { path: string; final: boolean }>();
       for (const file of files || []) {
-        if (!file.name.endsWith('.json')) continue;
-
-        // Extract game number from filename (game123.json -> 123)
-        const gameMatch = file.name.match(/game(\d+)\.json/);
+        // game123_final.json / game123.json -> 123 (the app may also use an external id)
+        const gameMatch = file.name.match(/^game([^/]+?)(_final)?\.json$/);
         if (!gameMatch) continue;
 
-        scoresheets.push({
-          date: folder.name,
-          game: gameMatch[1],
-          path: `${folder.name}/${file.name}`
-        });
+        const final = Boolean(gameMatch[2]);
+        const prev = byGame.get(gameMatch[1]);
+        if (prev && prev.final && !final) continue;
+        byGame.set(gameMatch[1], { path: `${folder.name}/${file.name}`, final });
+      }
+      for (const [game, { path }] of byGame) {
+        scoresheets.push({ date: folder.name, game, path });
       }
     }
 
@@ -154,7 +154,7 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
     const enrichedScoresheets = await Promise.all(
       scoresheets.slice(0, 50).map(async (item) => {
         try {
-          const { data, error } = await supabase.storage
+          const { data, error } = await apiStorage
             .from('scoresheets')
             .download(item.path);
 
@@ -352,7 +352,7 @@ const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'pri
   return <LiveScoresheet initialMatchData={initialData} action={action} />;
 };
 
-// Storage scoresheet component - fetches from Supabase storage
+// Storage scoresheet component - fetches from backend storage (apiStorage)
 const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ date, game, action }) => {
   const [matchData, setMatchData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
@@ -849,7 +849,7 @@ if (urlMatchId) {
     </React.StrictMode>
   );
 } else if (storageParams) {
-  // Load from Supabase storage
+  // Load from backend storage (apiStorage)
   root.render(
     <React.StrictMode>
       <ErrorBoundary>

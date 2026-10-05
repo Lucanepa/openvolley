@@ -1,27 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
-
 /**
- * Supabase client — REALTIME ONLY.
+ * Realtime client — REALTIME ONLY, no Supabase any more.
  *
- * All database, storage, and auth operations go through the backend proxy
- * (see apiClient.js). This client exists solely for Realtime channel
- * subscriptions (postgres_changes) which require a direct WebSocket
- * connection to Supabase.
+ * Every database, storage and auth call goes through the backend (apiClient.js).
+ * This module keeps its old name and export so the realtime call sites
+ * (`supabase.channel(...).on('postgres_changes', ...).subscribe()`,
+ * `supabase.removeChannel(ch)`) work unchanged: `supabase` is the
+ * relayRealtime shim, which speaks the same channel API over one `?purpose=live`
+ * WebSocket to the OpenVolley backend (lib/realtimeHub.js). No VITE_SUPABASE_*
+ * variables and no keys are needed.
  *
- * The anon key is used here (read-only listeners).
- * The service_role key stays server-side in the backend.
+ * It is never null. Against a backend without live support (the LAN relays)
+ * the shim reports CHANNEL_ERROR once and the callers' relay paths take over.
  */
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-export const supabase = (url && key) ? createClient(url, key, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  }
-}) : null
+export { relayRealtime as supabase } from './relayRealtime'

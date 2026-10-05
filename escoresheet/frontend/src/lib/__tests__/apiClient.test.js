@@ -4,7 +4,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
+import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -232,5 +232,79 @@ describe('storage upload encoding', () => {
     const result = await apiStorage.from('backup').upload('logs/x.txt', 'ü 🏐', { contentType: 'text/plain' })
     expect(result.error).toBeNull()
     expect(decode(sentBody().fileBase64)).toBe('ü 🏐')
+  })
+})
+
+describe('self-hosted backend contract', () => {
+  const session = { access_token: 'tok', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'u1' } }
+  const sentHeaders = (n = 0) => globalThis.fetch.mock.calls[n][1].headers
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('sends X-OV-Proto: 2 on /api/db and /api/storage requests', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: [], error: null }))
+    await apiFrom('matches').select('id')
+    await apiStorage.from('backup').list('x')
+    expect(sentHeaders(0)['X-OV-Proto']).toBe('2')
+    expect(sentHeaders(0).Authorization).toBe('Bearer tok')
+    expect(sentHeaders(1)['X-OV-Proto']).toBe('2')
+  })
+
+  it('apiMatchRestore posts the whole match to /api/match/restore with the session', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'uuid', counts: { sets: 1, events: 2, liveState: 0 } }, error: null }))
+    const r = await apiMatchRestore({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}] })
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/restore')
+    expect(sentHeaders()['X-OV-Proto']).toBe('2')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
+    expect(sentBody()).toEqual({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}], liveState: null })
+    expect(r.error).toBeNull()
+    expect(r.data.counts.events).toBe(2)
+  })
+
+  it('apiMatchRestore reports 426 with its status (retry later, not fatal)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'too old', code: 'OV_CLIENT_TOO_OLD' } }, 426))
+    const r = await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect(r.error.status).toBe(426)
+    expect(r.error.code).toBe('OV_CLIENT_TOO_OLD')
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    const offline = await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect(offline.error.network).toBe(true)
+  })
+
+  it('apiMatchRestoreByPin is anonymous and maps 404 to an error object', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Match not found with this ID and PIN', code: 'OV_NOT_FOUND' } }, 404))
+    const r = await apiMatchRestoreByPin(12, '123456')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/restore-by-pin')
+    expect(sentHeaders().Authorization).toBeUndefined()
+    expect(sentBody()).toEqual({ gameN: 12, pin: '123456' })
+    expect(r.error.code).toBe('OV_NOT_FOUND')
+    expect(r.status).toBe(404)
+  })
+
+  it('signOut revokes the session on the server, then clears it locally (even offline)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+    await apiAuth.signOut()
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/auth/sign-out')
+    expect(sentBody()).toEqual({ access_token: 'tok' })
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    await apiAuth.signOut()
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+  })
+
+  it('getSession keeps the server-slid expires_at', async () => {
+    const later = session.expires_at + 30 * 24 * 3600
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user: { id: 'u1' }, session: { expires_at: later, expires_in: 99 } }, error: null }))
+    const { data } = await apiAuth.getSession()
+    expect(data.session.expires_at).toBe(later)
+    expect(JSON.parse(localStorage.getItem('api_auth_token')).expires_at).toBe(later)
   })
 })

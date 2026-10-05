@@ -6,7 +6,7 @@
  */
 
 import { db } from '../db/db'
-import { apiFrom, apiStorage } from '../lib/apiClient'
+import { apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getApiUrl } from './backendConfig'
 import { filterMatchPayload } from '../db/matchRepository'
@@ -708,36 +708,34 @@ export async function restoreMatchInPlace(matchId, jsonData) {
 }
 
 /**
- * Fetch match from Supabase by Game N and Game PIN
+ * Fetch a match from the cloud by Game N and Game PIN.
+ * POST /api/match/restore-by-pin: exact match on both, attempt-limited on the
+ * server (game_pin can no longer be used as a /api/db filter). Returns the
+ * match (secrets stripped), its sets (by index), events (by seq) and live state.
  * Uses JSONB columns for team/player data (teams/players tables were dropped)
  */
 export async function fetchMatchByPin(gamePin, gameN) {
-  // Find match by game_n and game_pin
-  let query = apiFrom('matches')
-    .select('*')
-    .eq('game_pin', gamePin)
+  const pin = String(gamePin ?? '').trim()
+  const n = parseInt(gameN, 10)
+  if (!pin || !Number.isInteger(n)) throw new Error('Game number and game PIN are required')
 
-  // If gameN provided, also filter by game_n
-  if (gameN) {
-    query = query.eq('game_n', parseInt(gameN, 10))
+  const { data, error } = await apiMatchRestoreByPin(n, pin)
+  if (error) {
+    if (error.code === 'OV_NOT_FOUND' || error.status === 404) throw new Error('Match not found with this ID and PIN')
+    if (error.code === 'OV_TOO_MANY_ATTEMPTS' || error.status === 429) {
+      throw new Error('Too many attempts. Please wait a few minutes before trying again.')
+    }
+    throw Object.assign(new Error(error.message || 'Match lookup failed'), { code: error.code, status: error.status })
   }
+  if (!data?.match) throw new Error('Match not found with this ID and PIN')
 
-  const { data: matchData, error: matchError } = await query.maybeSingle()
+  // The server never returns the PINs; the caller just proved the game PIN.
+  const matchData = { ...data.match, game_pin: pin }
+  const setsResult = { data: data.sets || [] }
+  let events = data.events || []
+  const liveState = data.liveState || null
 
-  if (matchError) throw matchError
-  if (!matchData) throw new Error('Match not found with this ID and PIN')
-
-  // Fetch sets, events, and live state using the UUID match id
-  const [setsResult, eventsResult, liveStateResult] = await Promise.all([
-    apiFrom('sets').select('*').eq('match_id', matchData.id),
-    apiFrom('events').select('*').eq('match_id', matchData.id),
-    apiFrom('match_live_state').select('*').eq('match_id', matchData.id).maybeSingle()
-  ])
-
-  let events = eventsResult.data || []
-  const liveState = liveStateResult.data
-
-  console.log('[Restore] Fetched from Supabase:', {
+  console.log('[Restore] Fetched from the cloud:', {
     matchId: matchData.id,
     matchStatus: matchData.status,
     setsCount: setsResult.data?.length || 0,

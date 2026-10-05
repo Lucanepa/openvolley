@@ -42,7 +42,6 @@ import {
   getTestHomeTeamShortName,
   getTestAwayTeamShortName
 } from './constants/testSeeds'
-import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
@@ -101,7 +100,6 @@ export default function App() {
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
   const backup = useAutoBackup(matchId)
-  const canUseSupabase = Boolean(supabase)
 
   // Compute current page for contextual help
   const currentPage = useMemo(() => {
@@ -498,16 +496,9 @@ export default function App() {
       updateStatus('match', 'no_match', { status: 'no_match', message: 'No match found. Create a new match to start.' })
     }
 
-    // --- Check Supabase status (instant — based on existing syncStatus state) ---
-    if (!canUseSupabase) {
-      const envUrl = import.meta.env.VITE_SUPABASE_URL
-      const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      updateStatus('supabase', 'not_configured', {
-        status: 'not_configured',
-        message: 'Supabase is not configured',
-        details: `Environment variables missing: ${!envUrl ? 'VITE_SUPABASE_URL' : ''}${!envUrl && !envKey ? ' and ' : ''}${!envKey ? 'VITE_SUPABASE_ANON_KEY' : ''}. Set these in your .env file to enable Supabase sync.`
-      })
-    } else if (syncStatus === 'synced' || syncStatus === 'syncing') {
+    // --- Check cloud sync status (instant — based on existing syncStatus state) ---
+    // (status key 'supabase' kept for the UI; the cloud is the OpenVolley backend now)
+    if (syncStatus === 'synced' || syncStatus === 'syncing') {
       updateStatus('supabase', 'connected', { status: 'connected', message: 'Supabase is connected and syncing' })
     } else if (syncStatus === 'online_no_supabase') {
       updateStatus('supabase', 'not_configured', {
@@ -3068,8 +3059,10 @@ export default function App() {
               const trigger = new Date().toISOString()
               setScorerAttentionTrigger(trigger)
               try {
+                // updated_at too: the realtime hub orders match_live_state by
+                // updated_at and drops a row older than the last relayed one.
                 const { error } = await apiFrom('match_live_state')
-                  .update({ scorer_attention_trigger: trigger })
+                  .update({ scorer_attention_trigger: trigger, updated_at: trigger })
                   .eq('match_id', supabaseMatchId)
                 if (error) throw error
                 if (typeof navigator !== 'undefined' && navigator.vibrate) {

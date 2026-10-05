@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { db } from '../db/db'
-import { apiFrom } from '../lib/apiClient'
+import { apiFrom, apiMatchRestore } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey } from '../utils/syncIds'
@@ -486,9 +486,10 @@ export async function processJob(job) {
     }
 
     // ==================== MATCH RESTORE ====================
-    // Special action for backup restore: UPSERT match, DELETE its children, re-UPSERT them
-    // SAFETY: Only deletes data for THIS SPECIFIC MATCH by external_id
-    // Any failed step fails the job (it is retried; local IndexedDB stays the source).
+    // Backup restore: POST /api/match/restore runs it server-side in ONE
+    // transaction (upsert the match BY external_id, replace THIS match's sets,
+    // events and live state). Nothing half-restored is ever left behind; a
+    // failure rolls back and the job is retried (local IndexedDB stays the source).
     if (job.resource === 'match' && job.action === 'restore') {
       const { match, sets, events, liveState } = job.payload
 
@@ -502,98 +503,24 @@ export async function processJob(job) {
       console.log('[SyncQueue] Processing restore job for match:', externalId)
 
       try {
-        // Step 1: UPSERT match (creates or updates BY external_id)
-        // Filter to valid columns only - handles old backup formats with invalid fields
-        const filteredMatch = filterMatchPayload(match)
-        const { data: upserted, error: matchError } = await apiFrom('matches')
-          .upsert(filteredMatch, { onConflict: 'external_id' })
-          .select('id')
-
-        if (matchError) {
-          console.error('[SyncQueue] Match upsert failed:', matchError)
-          return failureResult(matchError)
+        // Old backup formats carry fields that are not columns; the server drops
+        // unknown keys too, this keeps the payload small.
+        const { data, error } = await apiMatchRestore({
+          match: filterMatchPayload(match),
+          sets: Array.isArray(sets) ? sets : [],
+          events: Array.isArray(events) ? events : [],
+          liveState: liveState || null
+        })
+        if (error) {
+          console.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
+          // 426 (old bundle), 429, 5xx and network errors: retry later
+          return failureResult(error)
         }
-
-        // The proxy may not return written rows: look the UUID up (THIS MATCH ONLY)
-        let matchUuid = Array.isArray(upserted) ? upserted[0]?.id : upserted?.id
-        if (!matchUuid) {
-          const { data: existingMatch, error: lookupError } = await apiFrom('matches')
-            .select('id')
-            .eq('external_id', externalId)
-            .maybeSingle()
-          if (lookupError) {
-            console.error('[SyncQueue] Restore lookup error:', lookupError)
-            return failureResult(lookupError)
-          }
-          matchUuid = existingMatch?.id
+        console.log('[SyncQueue] Restore complete for match:', externalId, data?.counts || '')
+        if (data?.dropped && Object.keys(data.dropped).length) {
+          console.warn('[SyncQueue] Restore: server dropped unknown keys:', data.dropped)
         }
-        if (!matchUuid) {
-          console.error('[SyncQueue] Restore: match row not found after upsert:', externalId)
-          return null
-        }
-        console.log('[SyncQueue] Match upserted, UUID:', matchUuid)
-
-        // Step 2: DELETE existing children for THIS MATCH ONLY
-        for (const table of ['events', 'sets']) {
-          const { error: delErr } = await apiFrom(table).delete().eq('match_id', matchUuid)
-          if (delErr) {
-            console.error(`[SyncQueue] Restore: ${table} delete failed:`, delErr)
-            return failureResult(delErr)
-          }
-        }
-        console.log('[SyncQueue] Deleted existing sets/events for match:', externalId)
-
-        // Step 3: UPSERT all sets (with resolved match_id)
-        if (sets?.length > 0) {
-          for (const set of sets) {
-            const setPayload = { ...set, match_id: matchUuid, sport_type: 'indoor' }
-            const { error: setErr } = await apiFrom('sets')
-              .upsert(setPayload, { onConflict: 'external_id' })
-            if (setErr) {
-              console.error('[SyncQueue] Restore: set upsert failed:', setErr, set.external_id)
-              return failureResult(setErr)
-            }
-          }
-          console.log('[SyncQueue] Upserted', sets.length, 'sets')
-        }
-
-        // Step 4: UPSERT all events (with resolved match_id)
-        if (events?.length > 0) {
-          // Batch upsert events for efficiency
-          const eventsWithMatchId = events.map(e => ({ ...e, match_id: matchUuid, sport_type: 'indoor' }))
-          const { error: eventsErr } = await apiFrom('events')
-            .upsert(eventsWithMatchId, { onConflict: 'external_id' })
-          if (eventsErr) {
-            if (isStopError(eventsErr)) return failureResult(eventsErr)
-            console.warn('[SyncQueue] Events batch upsert failed, trying one by one:', eventsErr)
-            for (const event of eventsWithMatchId) {
-              const { error: oneErr } = await apiFrom('events').upsert(event, { onConflict: 'external_id' })
-              if (oneErr) {
-                console.error('[SyncQueue] Restore: event upsert failed:', oneErr, event.external_id)
-                return failureResult(oneErr)
-              }
-            }
-          }
-          console.log('[SyncQueue] Upserted', events.length, 'events')
-        }
-
-        // Step 5: UPSERT match_live_state (keyed by match_id). Live state is
-        // ephemeral and rewritten by the next scoreboard update, so a failure
-        // here does not fail the restore.
-        if (liveState) {
-          const liveStatePayload = { ...liveState, match_id: matchUuid }
-          const { error: liveStateErr } = await apiFrom('match_live_state')
-            .upsert(liveStatePayload, { onConflict: 'match_id' })
-          if (liveStateErr) {
-            console.warn('[SyncQueue] match_live_state upsert warning:', liveStateErr)
-          } else {
-            console.log('[SyncQueue] match_live_state upserted')
-          }
-        }
-
-        console.log('[SyncQueue] Restore complete for match:', externalId)
         return true
-
       } catch (restoreErr) {
         console.error('[SyncQueue] Restore exception:', restoreErr)
         return isNetworkException(restoreErr) ? STOP_NETWORK : false
