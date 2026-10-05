@@ -31,6 +31,7 @@ function fakeTable(rows = []) {
       anyOf: (...values) => collection(r => values.flat().includes(r[field]))
     }),
     filter: (fn) => collection(fn),
+    bulkDelete: async (ids) => { for (const id of ids) map.delete(id) },
     hook: () => {}
   }
 }
@@ -93,6 +94,9 @@ import {
   redactForLog,
   getSyncQueueStats,
   clearAuthBlock,
+  resetQueueHousekeeping,
+  pruneSyncQueue,
+  hasApplicationErrorCode,
   useSyncQueue,
   STOP_PASS
 } from '../useSyncQueue'
@@ -114,6 +118,7 @@ beforeEach(() => {
   api.calls = []
   api.respond = defaultRespond
   clearAuthBlock()
+  resetQueueHousekeeping()
 })
 
 describe('runQueuePass', () => {
@@ -164,7 +169,7 @@ describe('runQueuePass', () => {
       { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', finished: true } }
     ])
     api.respond = (call) => (call.table === 'sets' && call.action === 'upsert'
-      ? { data: null, error: { message: 'Database operation failed', status: 400 } }
+      ? { data: null, error: { message: 'Database operation failed', code: 'OV_INVALID_DATA', status: 400 } }
       : defaultRespond(call))
 
     const outcome = await runQueuePass()
@@ -453,15 +458,60 @@ describe('legacy coin toss jobs', () => {
 })
 
 describe('failure classes', () => {
-  it('classifies 401 as sign-in required and other 4xx as permanent', () => {
+  it('classifies 401 as sign-in required and 4xx with a backend error code as permanent', () => {
     expect(isAuthError({ status: 401, code: 'missing_token' })).toBe(true)
     expect(isAuthError({ status: 0, network: true })).toBe(false)
     expect(isPermanentError({ status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' })).toBe(true)
-    expect(isPermanentError({ status: 403 })).toBe(true)
-    for (const status of [401, 408, 426, 429, 500, 503, 0]) expect(isPermanentError({ status }), String(status)).toBe(false)
+    expect(isPermanentError({ status: 406, code: 'PGRST116' })).toBe(true)
+    expect(isPermanentError({ status: 400, code: '23505' })).toBe(true)
+    // a proxy/WAF page or misrouted URL: no application code (non-JSON body)
+    expect(isPermanentError({ status: 403 })).toBe(false)
+    expect(isPermanentError({ status: 404, message: 'Request failed (404)' })).toBe(false)
+    expect(isPermanentError({ status: 400, code: 'bad_request' })).toBe(false)
+    for (const status of [401, 408, 426, 429, 500, 503, 0]) expect(isPermanentError({ status, code: 'OV_X' }), String(status)).toBe(false)
+    expect(hasApplicationErrorCode({ code: 'OV_BODY_TOO_LARGE' })).toBe(true)
+    expect(hasApplicationErrorCode({ code: 'Forbidden' })).toBe(false)
   })
 
-  it('a 400 (OV_UNSCOPED_EXTERNAL_ID) is marked failed with its reason and not auto-retried', async () => {
+  it('a 403 page without a backend error code backs off the job and stops the pass', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:2', match_id: 'match_100_aaa' } },
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_200_bbb:e:3', match_id: 'match_200_bbb' } }
+    ])
+    // apiClient's result for a non-JSON (HTML) 403 body
+    api.respond = (call) => (call.action === 'upsert'
+      ? { data: null, error: { message: 'Database operation failed (403)', status: 403 } }
+      : defaultRespond(call))
+
+    const outcome = await runQueuePass()
+    expect(outcome).toMatchObject({ stopped: true, hasError: true, hasFailed: false })
+    const job = fakeDb.sync_queue.map.get(1)
+    expect(job).toMatchObject({ status: 'error', attempts: 1, last_error: { status: 403, code: null } })
+    expect(job.next_attempt_at).toBeGreaterThan(Date.now())
+    // the rest of the queue was not burnt on the same page
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('queued')
+    expect(api.calls.filter(c => c.action === 'upsert')).toHaveLength(1)
+  })
+
+  it('a refused job comes back once an hour on its own, at most 24 times', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'failed', failed_at: Date.now() - 10 * 60 * 1000, payload: { external_id: 'match_100_aaa:e:1' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'failed', failed_at: Date.now() - 61 * 60 * 1000, payload: { external_id: 'match_100_aaa:e:2' } },
+      { id: 3, resource: 'event', action: 'insert', status: 'failed', failed_at: Date.now() - 61 * 60 * 1000, failed_auto_retries: 24, payload: { external_id: 'match_100_aaa:e:3' } }
+    ])
+    expect(await retryErrorsInternal()).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed') // refused 10 min ago
+    expect(fakeDb.sync_queue.map.get(2)).toMatchObject({ status: 'queued', failed_auto_retries: 1 })
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('failed') // cap reached: manual retry only
+
+    // a manual retry (or a sign-in, or the app start) takes them all and resets the cap
+    await retryErrorsInternal({ force: true, includeFailed: true })
+    expect(fakeDb.sync_queue.map.get(3)).toMatchObject({ status: 'queued', failed_auto_retries: 0 })
+  })
+
+  it('a 400 (OV_UNSCOPED_EXTERNAL_ID) is marked failed with its reason and not retried with the error backoff', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } }
     ])
@@ -472,9 +522,9 @@ describe('failure classes', () => {
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'failed', attempts: 1, last_error: { status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID' } })
 
-    // the backoff-driven auto retry leaves it alone, even long after
+    // the error backoff (30 s ...) and the back-online retry leave it alone
     vi.useFakeTimers()
-    vi.setSystemTime(Date.now() + 24 * 3600 * 1000)
+    vi.setSystemTime(Date.now() + 5 * 60 * 1000)
     try {
       expect(await retryErrorsInternal()).toBe(false)
       expect(await retryErrorsInternal({ force: true })).toBe(false)
@@ -508,6 +558,24 @@ describe('failure classes', () => {
   it('logs match payloads without PINs', () => {
     expect(redactForLog({ external_id: 'm', game_pin: '123456', connection_pins: { referee: '1' }, home_team: { name: 'A' } }))
       .toEqual({ external_id: 'm', home_team: { name: 'A' } })
+  })
+})
+
+describe('pruneSyncQueue', () => {
+  it('removes old sent/superseded/dropped rows, but none newer than a pending job', async () => {
+    const now = Date.now()
+    const old = now - 8 * 24 * 3600 * 1000
+    fakeDb.sync_queue.reset([
+      { id: 1, status: 'sent', ts: old },
+      { id: 2, status: 'superseded', ts: new Date(old).toISOString() },
+      { id: 3, status: 'dropped', ts: old },
+      { id: 4, status: 'sent', ts: now - 3600 * 1000 }, // recent
+      { id: 5, status: 'error', ts: old }, // still pending: kept, and so is what follows
+      { id: 6, status: 'sent', ts: old },
+      { id: 7, status: 'failed', ts: old }
+    ])
+    expect(await pruneSyncQueue({ now })).toBe(3)
+    expect([...fakeDb.sync_queue.map.keys()]).toEqual([4, 5, 6, 7])
   })
 })
 
