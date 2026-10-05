@@ -177,6 +177,9 @@ const SVRZ_GAMES_COLUMNS = Object.freeze(Object.fromEntries([
 export const ANON_DB_COLUMNS = Object.freeze({
   referee_database: REFEREE_DATABASE_COLUMNS,
   svrz_games: SVRZ_GAMES_COLUMNS,
+  // Event payloads (players, sanctions, lineups) need a session; no
+  // anonymous page reads events.
+  events: LIVE_COLUMNS.events,
   matches: Object.freeze({
     ...MATCHES_LIVE_COLUMNS,
     connections: CONNECTION_FLAG_KEYS,
@@ -201,6 +204,7 @@ export const ANON_DB_FILTER_COLUMNS = Object.freeze({
   // nothing hidden); never dob.
   referee_database: Object.freeze(Object.keys(REFEREE_DATABASE_COLUMNS)),
   svrz_games: Object.freeze(Object.keys(SVRZ_GAMES_COLUMNS)),
+  events: Object.freeze(Object.keys(LIVE_COLUMNS.events)),
   matches: Object.freeze(['id', 'external_id', 'sport_type', 'game_n', 'status', 'test', 'scheduled_at',
     'created_at', 'updated_at', 'current_set', 'final_score', 'winner'])
 })
@@ -237,6 +241,32 @@ export function projectRow(policy, table, row) {
     out[k] = rule === true ? v : pickKeys(v, rule)
   }
   return out
+}
+
+/**
+ * matches columns holding a team roster (names, numbers): an anonymous reader
+ * sees them only for the match its PIN proved (a match access token, see
+ * lib/matchAccess.js), i.e. the referee/bench fallback after the PIN step.
+ */
+export const MATCH_ROSTER_COLUMNS = Object.freeze(['players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2'])
+
+/**
+ * The anonymous /api/db answer: ANON_DB_COLUMNS, and for matches the roster
+ * columns only on the row whose external_id is `grantedExternalId`.
+ * @param {string} table
+ * @param {object|object[]|null} rows
+ * @param {{ grantedExternalId?: string|null }} [opts]
+ */
+export function projectAnonDbRows(table, rows, { grantedExternalId = null } = {}) {
+  const projected = projectRows(ANON_DB_COLUMNS, table, rows)
+  if (table !== 'matches') return projected
+  const strip = (row) => {
+    if (row == null || typeof row !== 'object') return row
+    if (grantedExternalId && row.external_id === grantedExternalId) return row
+    for (const c of MATCH_ROSTER_COLUMNS) delete row[c]
+    return row
+  }
+  return Array.isArray(projected) ? projected.map(strip) : strip(projected)
 }
 
 /** projectRow for every row of an array (or one row). */
@@ -323,6 +353,59 @@ function publicPerson(p) {
       delete out[k]
     }
   }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Before the PIN: the public summary of a relayed match
+// ---------------------------------------------------------------------------
+//
+// A relay socket or HTTP caller that has not proved one of the match's PINs
+// (referee, home/away bench, or the game PIN) gets this instead of the bundle:
+// teams, status, set scores and the live state (what Livescore and the LedBox
+// bridge show anyway). No rosters, no events, no officials. Allowlists; the
+// same lists are in frontend/electron/lanRelayCore.cjs and
+// frontend/src-tauri/src/relay.rs.
+
+/** Match keys a summary keeps. */
+export const SUMMARY_MATCH_FIELDS = Object.freeze([
+  'id', 'status', 'gameNumber', 'gameN', 'game_n', 'seed_key', 'seedKey', 'external_id', 'externalId',
+  'scheduledAt', 'scheduled_at', 'sport_type', 'sportType', 'test', 'league', 'best_of', 'bestOf',
+  'coinTossTeamA', 'coinTossTeamB', 'homeShortName', 'awayShortName', 'homeTeamName', 'awayTeamName',
+  'refereeConnectionEnabled', 'homeTeamConnectionEnabled', 'awayTeamConnectionEnabled',
+  '_syncedAt', '_syncedSeq', '_syncSession'
+])
+/** Team keys a summary keeps. */
+export const SUMMARY_TEAM_FIELDS = Object.freeze(['name', 'shortName', 'short_name', 'color'])
+/** Set keys a summary keeps (scores only). */
+export const SUMMARY_SET_FIELDS = Object.freeze([
+  'id', 'index', 'homePoints', 'awayPoints', 'home_points', 'away_points', 'finished', 'startTime', 'endTime'
+])
+
+function pickFields(obj, keys) {
+  if (obj == null || typeof obj !== 'object' || Array.isArray(obj)) return obj ?? null
+  const out = {}
+  for (const k of keys) if (has(obj, k)) out[k] = obj[k]
+  return out
+}
+
+/**
+ * The PIN-free public summary of a relay bundle ({ match, homeTeam, awayTeam,
+ * homePlayers, awayPlayers, sets, events, liveState? }): same shape, rosters
+ * and events empty, `access: 'summary'`.
+ */
+export function relaySummaryBundle(entry) {
+  const out = {
+    access: 'summary',
+    match: pickFields(entry?.match, SUMMARY_MATCH_FIELDS),
+    homeTeam: typeof entry?.homeTeam === 'string' ? entry.homeTeam : pickFields(entry?.homeTeam, SUMMARY_TEAM_FIELDS),
+    awayTeam: typeof entry?.awayTeam === 'string' ? entry.awayTeam : pickFields(entry?.awayTeam, SUMMARY_TEAM_FIELDS),
+    homePlayers: [],
+    awayPlayers: [],
+    sets: Array.isArray(entry?.sets) ? entry.sets.map((s) => pickFields(s, SUMMARY_SET_FIELDS)) : [],
+    events: []
+  }
+  if (entry?.liveState !== undefined) out.liveState = entry.liveState
   return out
 }
 

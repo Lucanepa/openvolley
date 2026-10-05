@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { apiFrom, apiMatchRestore, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
+import { apiFrom, apiMatchRestore, apiMatchClaim, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
@@ -934,6 +934,32 @@ export function pendingEntityBlocks(pendingJobs) {
 }
 
 /**
+ * Take-over after a 403 OV_NOT_MATCH_OWNER: the cloud copy of this match was
+ * created by another account (another account signed in on this device, a
+ * match restored here, a second scoring device). This device holds the
+ * match's game PIN, which the backend accepts as proof (POST /api/match/claim):
+ * the signed-in account becomes an editor and the write can be retried.
+ * @returns {Promise<boolean>} true when the backend granted access
+ */
+export async function claimMatchWithLocalPin(seedKey, { findLocal = findLocalMatchBySeed, claim = apiMatchClaim } = {}) {
+  if (!seedKey) return false
+  const local = await findLocal(seedKey)
+  const pin = local?.gamePin ?? local?.game_pin
+  if (pin === undefined || pin === null || String(pin).trim() === '') return false
+  try {
+    const { error, status } = await claim(seedKey, String(pin).trim())
+    if (error) {
+      safeLog.warn('[SyncQueue] Take-over of the cloud match refused:', error.code || status)
+      return false
+    }
+    safeLog.log('[SyncQueue] This account may now write the cloud copy of', seedKey)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * One pass over the queued jobs, in dependency order.
  * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean }>}
  */
@@ -965,6 +991,8 @@ export async function runQueuePass() {
     safeLog.warn('[SyncQueue] Could not read pending jobs for ordering:', err?.message)
   }
   const isHeldBack = (key, jobId) => blocked.has(key) || (pendingBlocks.has(key) && pendingBlocks.get(key) < jobId)
+  // Matches a take-over was tried for in this pass (one claim per match and pass)
+  const claimTried = new Set()
 
   // Process in dependency order
   for (const resource of RESOURCE_ORDER) {
@@ -979,8 +1007,15 @@ export async function runQueuePass() {
         continue
       }
 
-      const result = await processJob(job)
-      const jobError = takeJobError(job.id)
+      let result = await processJob(job)
+      let jobError = takeJobError(job.id)
+      if (result === PERMANENT_FAILURE && jobError?.code === 'OV_NOT_MATCH_OWNER' && matchKey && !claimTried.has(matchKey)) {
+        claimTried.add(matchKey)
+        if (await claimMatchWithLocalPin(matchKey)) {
+          result = await processJob(job)
+          jobError = takeJobError(job.id)
+        }
+      }
 
       if (result === true) {
         await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })

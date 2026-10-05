@@ -520,11 +520,18 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
       }
       assert.equal(leaks(spy.raw.join('\n')), false, 'personal data reached an anonymous live socket')
 
-      // Anonymous /api/db: rosters without dob (referee/bench fallback), no officials/signatures
+      // Anonymous /api/db: no rosters before the PIN step; with the match token
+      // of the PIN check (referee/bench fallback) rosters without dob; never
+      // officials/signatures
       const anon = await api(srv.base, '/api/db', { proto: null, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
       assert.equal(anon.status, 200, anon.text)
       assert.equal(leaks(anon.text), false, anon.text.slice(0, 300))
-      assert.deepEqual(anon.json.data.players_home, [{ number: 4, first_name: 'Ana', last_name: 'Muster', is_captain: true }])
+      assert.equal('players_home' in anon.json.data, false, 'rosters need the PIN step')
+      const pinCheck = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, body: { pin: PINS.referee, type: 'referee' } })
+      assert.equal(pinCheck.status, 200, pinCheck.text)
+      const withToken = await api(srv.base, '/api/db', { proto: null, headers: { 'X-OV-Match-Token': pinCheck.json.token }, body: { table: 'matches', action: 'select', params: { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], maybeSingle: true } } })
+      assert.equal(leaks(withToken.text), false, withToken.text.slice(0, 300))
+      assert.deepEqual(withToken.json.data.players_home, [{ number: 4, first_name: 'Ana', last_name: 'Muster', is_captain: true }])
       assert.equal(anon.json.data.connections.referee_enabled, true)
       assert.equal('pending_home_roster' in anon.json.data.connections, false)
       for (const col of ['officials', 'signatures', 'approval']) assert.equal(col in anon.json.data, false, col)

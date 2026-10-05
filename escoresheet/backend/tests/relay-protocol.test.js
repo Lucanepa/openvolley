@@ -125,11 +125,12 @@ describe('backend WebSocket relay protocol', () => {
     await scoreboard.waitFor((m) => m.type === 'pong')
 
     // String subscriber id and numeric scoreboard id share one room, and a late
-    // subscriber gets a PIN-free snapshot.
-    referee.send({ type: 'subscribe-match', matchId: '7' })
+    // subscriber gets a PIN-free snapshot: the bundle with the referee PIN.
+    referee.send({ type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
     const full = await referee.waitFor((m) => m.type === 'match-full-data')
     assert.equal(full.matchId, '7')
     assert.equal(full.match.id, 7)
+    assert.equal(full.access, 'full')
 
     scoreboard.send(syncMessage(makeMatch(), { events: [{ id: 1 }] }))
     const update = await referee.waitFor((m) => m.type === 'match-data-update')
@@ -214,7 +215,7 @@ describe('backend WebSocket relay protocol', () => {
     assert.equal(courtB.messages.some((m) => m.type === 'error'), false)
 
     // The tablet knows the seed key (cloud PIN check / QR code)
-    referee.send({ type: 'subscribe-match', matchId: seedA, device: 'referee' })
+    referee.send({ type: 'subscribe-match', matchId: seedA, device: 'referee', pin: PINS.refereePin })
     const full = await referee.waitFor((m) => m.type === 'match-full-data')
     assert.equal(full.matchId, seedA)
     assert.equal(full.match.seed_key, seedA)
@@ -307,11 +308,15 @@ describe('backend WebSocket relay protocol', () => {
     scoreboard.send({ type: 'ping' })
     await scoreboard.waitFor((m) => m.type === 'pong')
 
-    // Neither role needs a PIN: both are public viewers
+    // Without a PIN (livescore): the public summary. With the referee PIN: the
+    // bundle, still without personal data.
     livescore.send({ type: 'subscribe-match', matchId: seed, role: 'livescore' })
-    subscriber.send({ type: 'subscribe-match', matchId: seed })
+    subscriber.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
     const full = await subscriber.waitFor((m) => m.type === 'match-full-data')
-    await livescore.waitFor((m) => m.type === 'match-full-data')
+    const summary = await livescore.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(summary.access, 'summary')
+    assert.deepEqual(summary.homePlayers, [])
+    assert.equal(summary.match.bench_home, undefined)
     // What the tablets render stays
     assert.deepEqual(full.homePlayers[0], { id: 1, number: 7, lastName: 'Player', isCaptain: true })
     assert.deepEqual(full.match.bench_home[0], { role: 'Coach', firstName: 'Cora', lastName: 'Coach' })
@@ -321,7 +326,7 @@ describe('backend WebSocket relay protocol', () => {
     await subscriber.waitFor((m) => m.type === 'match-data-update')
     await livescore.waitFor((m) => m.type === 'match-data-update')
 
-    const viaHttp = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`)).text()
+    const viaHttp = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`, { headers: { 'X-OV-Match-Pin': PINS.refereePin } })).text()
     const validate = await (await fetch(`http://127.0.0.1:${port}/api/match/validate-pin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

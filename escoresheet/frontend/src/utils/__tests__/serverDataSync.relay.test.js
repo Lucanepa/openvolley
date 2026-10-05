@@ -14,7 +14,14 @@ import {
   fetchRelayConnections,
   setRelayDevice,
   subscribeMessage,
-  subscribeToMatchData
+  subscribeToMatchData,
+  rememberMatchAccess,
+  forgetMatchAccess,
+  matchAccessFor,
+  matchAccessHeaders,
+  validatePinSupabase,
+  getMatchData,
+  uploadRosterToCloud
 } from '../serverDataSync'
 
 const SEED = 'match_1791215210058_yxkc82'
@@ -233,7 +240,39 @@ describe('relay subscription (tablets)', () => {
   afterEach(() => {
     globalThis.WebSocket = realWs
     setRelayDevice(null)
+    forgetMatchAccess()
     vi.useRealTimers()
+  })
+
+  it('subscribes with the PIN and match token of the PIN check, so the relay hands out the bundle', () => {
+    setRelayDevice('referee')
+    rememberMatchAccess(SEED, { pin: '314159', token: 'v1.payload.sig' })
+    expect(subscribeMessage(SEED)).toEqual({ type: 'subscribe-match', matchId: SEED, device: 'referee', pin: '314159', token: 'v1.payload.sig' })
+    // Another match: nothing
+    expect(subscribeMessage('match_other')).toEqual({ type: 'subscribe-match', matchId: 'match_other', device: 'referee' })
+    forgetMatchAccess(SEED)
+    expect(subscribeMessage(SEED)).toEqual({ type: 'subscribe-match', matchId: SEED, device: 'referee' })
+  })
+
+  it('a summary (no PIN proved) never replaces the bundle; its live state still counts', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_summary', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    // Before any bundle: a summary shows nothing
+    ws.receive({ type: 'match-full-data', matchId: 'match_summary', access: 'summary', match: { id: 1, status: 'live' }, homePlayers: [], sets: [], events: [] })
+    expect(updates).toHaveLength(0)
+    ws.receive({ type: 'match-full-data', matchId: 'match_summary', access: 'full', match: { id: 1, status: 'live' }, homePlayers: [{ number: 7 }], sets: [], events: [{ id: 1 }] })
+    expect(updates.at(-1).homePlayers).toEqual([{ number: 7 }])
+    ws.receive({
+      type: 'match-data-update', matchId: 'match_summary', access: 'summary',
+      match: { id: 1, status: 'live' }, homePlayers: [], sets: [], events: [],
+      liveState: { current_set: 1, points_a: 3, points_b: 1, updated_at: new Date().toISOString() }
+    })
+    expect(updates.at(-1).homePlayers).toEqual([{ number: 7 }])
+    expect(updates.at(-1).events).toEqual([{ id: 1 }])
+    expect(updates.at(-1).liveState.points_a).toBe(3)
+    unsubscribe()
   })
 
   it('labels the subscription with the device and team', () => {
@@ -312,6 +351,67 @@ describe('relay subscription (tablets)', () => {
     })
     expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 0, awayPoints: 1 })
     unsubscribe()
+  })
+})
+
+describe('match access after the PIN step', () => {
+  let realFetch
+  beforeEach(() => { realFetch = globalThis.fetch })
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    forgetMatchAccess()
+  })
+  const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body), headers: { get: () => 'application/json' } })
+
+  it('a successful cloud PIN check remembers the PIN and the match token', async () => {
+    globalThis.fetch = vi.fn(async () => json({ success: true, token: 'v1.tok.sig', match: { id: SEED, gameNumber: 12 } }))
+    const r = await validatePinSupabase('314159', 'referee')
+    expect(r).toMatchObject({ success: true, token: 'v1.tok.sig' })
+    expect(matchAccessFor(SEED)).toEqual({ pin: '314159', token: 'v1.tok.sig' })
+    expect(matchAccessHeaders(SEED)).toEqual({ 'X-OV-Match-Token': 'v1.tok.sig', 'X-OV-Match-Pin': '314159' })
+    // A failed one remembers nothing
+    forgetMatchAccess()
+    globalThis.fetch = vi.fn(async () => json({ success: false, error: 'Invalid PIN code' }, 404))
+    await validatePinSupabase('000000', 'referee')
+    expect(matchAccessFor(SEED)).toBeNull()
+  })
+
+  it('getMatchData sends the access headers; a summary after the PIN step falls back to the API with the token', async () => {
+    rememberMatchAccess(SEED, { pin: '314159', token: 'v1.tok.sig' })
+    const calls = []
+    globalThis.fetch = vi.fn(async (url, init) => {
+      calls.push({ url: String(url), init })
+      if (String(url).includes('/api/match/')) return json({ success: true, access: 'summary', match: { id: 1 }, homePlayers: [], sets: [], events: [] })
+      return json({ data: null, error: null })
+    })
+    await getMatchData(SEED)
+    expect(calls[0].init.headers['X-OV-Match-Pin']).toBe('314159')
+    expect(calls[0].init.headers['X-OV-Match-Token']).toBe('v1.tok.sig')
+    const dbCall = calls.find((c) => c.url.endsWith('/api/db'))
+    expect(dbCall).toBeTruthy()
+    expect(dbCall.init.headers['X-OV-Match-Token']).toBe('v1.tok.sig')
+  })
+
+  it('before the PIN step the summary is the answer (match link: game number only)', async () => {
+    globalThis.fetch = vi.fn(async () => json({ success: true, access: 'summary', match: { id: 1, gameNumber: 12 }, homePlayers: [], sets: [], events: [] }))
+    const r = await getMatchData('match_nolink')
+    expect(r).toMatchObject({ success: true, access: 'summary' })
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('uploadRosterToCloud sends the upload PIN, roster and signatures to the PIN-authorised endpoint', async () => {
+    const fetchImpl = vi.fn(async () => json({ success: true }))
+    const r = await uploadRosterToCloud(SEED, 'home', ' 975310 ', { players: [{ number: 1 }], bench: [], coachSignature: 'sig-c', captainSignature: null, timestamp: 't' }, { fetchImpl })
+    expect(r.success).toBe(true)
+    const [url, init] = fetchImpl.mock.calls[0]
+    expect(String(url)).toMatch(/\/api\/match\/upload-roster$/)
+    expect(init.headers.Authorization).toBeUndefined()
+    expect(JSON.parse(init.body)).toEqual({
+      matchExternalId: SEED, team: 'home', pin: '975310',
+      roster: { players: [{ number: 1 }], bench: [], timestamp: 't' }, coachSignature: 'sig-c', captainSignature: null
+    })
+    const refused = await uploadRosterToCloud(SEED, 'home', '000000', { players: [] }, { fetchImpl: vi.fn(async () => json({ success: false, error: 'Invalid upload PIN' }, 403)) })
+    expect(refused).toEqual({ success: false, status: 403, error: 'Invalid upload PIN' })
   })
 })
 
