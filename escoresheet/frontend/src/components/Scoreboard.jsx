@@ -32,6 +32,7 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../doma
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
+import { validateReopenedRoster, referencedPlayerNumbers } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
@@ -3987,6 +3988,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       ? (data?.homeTeam?.name || 'Home')
       : (data?.awayTeam?.name || 'Away')
 
+    // Numbers are how the event log refers to players: refuse invalid / duplicate
+    // numbers, a third libero, a second captain, and removing or renumbering a
+    // player the record already uses (domain/roster, tested). The editor stays open.
+    const { valid, errors } = validateReopenedRoster(editedPlayers, snapshotPlayers, referencedPlayerNumbers(data?.events, teamKey))
+    if (!valid) {
+      showAlert(errors.join('\n'), 'error')
+      return
+    }
+
     const { changes, remarkLines } = diffRosters(snapshotPlayers, editedPlayers, snapshotBench, editedBench, teamLabel)
 
     if (changes.length === 0) {
@@ -4007,9 +4017,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const header = `${t('scoreboard.reopenRoster.remarkPrefix', 'Roster change after coin toss')} (${teamLabel}, Set ${setIndex}, ${timeStr}):`
     const remarkBlock = [header, ...remarkLines].join('\n')
 
-    const currentRemarks = data?.match?.remarks || ''
-    const newRemarks = currentRemarks ? `${currentRemarks}\n${remarkBlock}` : remarkBlock
-
     // Persist player changes to IndexedDB
     const existingPlayerIds = new Set(snapshotPlayers.map(p => p.id))
     const editedPlayerIds = new Set(editedPlayers.filter(p => p.id).map(p => p.id))
@@ -4027,6 +4034,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Update existing
         await db.players.update(player.id, {
           number: player.number,
+          name: `${player.lastName || ''} ${player.firstName || ''}`.trim(),
           firstName: player.firstName,
           lastName: player.lastName,
           dob: player.dob,
@@ -4034,10 +4042,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           isCaptain: player.isCaptain
         })
       } else {
-        // Add new player
+        // Add new player. Rosters are read by teamId (db.players index), so the
+        // row must carry the team's id or it never appears on the team.
         await db.players.add({
+          teamId: teamKey === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId,
           matchId,
           team: teamKey,
+          name: `${player.lastName || ''} ${player.firstName || ''}`.trim(),
           number: player.number || 0,
           firstName: player.firstName || '',
           lastName: player.lastName || '',
@@ -4051,14 +4062,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Persist bench officials
     const benchField = teamKey === 'home' ? 'bench_home' : 'bench_away'
+    const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
       [benchField]: editedBench,
-      remarks: newRemarks
+      remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
     })
 
     showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
     setReopenRosterTeam(null)
-  }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.remarks, logManualChange, diffRosters, showAlert, t])
+  }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, logManualChange, diffRosters, showAlert, t])
 
   const logEvent = useCallback(
     async (type, payload = {}, options = {}) => {
@@ -30291,7 +30303,7 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
 
   const addPlayer = () => {
     setEditingPlayers(prev => [...prev, {
-      number: 0,
+      number: '', // must be entered (validated 1-99, unique) before saving
       firstName: '',
       lastName: '',
       dob: '',
@@ -30361,7 +30373,7 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                   <input
                     type="number"
                     value={player.number || ''}
-                    onChange={(e) => updatePlayer(idx, 'number', parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => updatePlayer(idx, 'number', e.target.value === '' ? '' : (parseInt(e.target.value, 10) || 0))}
                     placeholder="#"
                     style={{ ...inputStyle, textAlign: 'center', padding: '6px' }}
                   />
@@ -30388,12 +30400,20 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={player.libero === 'libero1' || player.libero === 'libero2' || player.libero === true}
-                      onChange={(e) => updatePlayer(idx, 'libero', e.target.checked ? 'libero1' : '')}
-                    />
                     {t('scoreboard.reopenRoster.libero', 'Libero')}
+                    {/* L1 / L2 / none (as in roster setup); a re-designated or unable
+                        libero keeps that state unless changed explicitly */}
+                    <select
+                      value={player.libero === true ? 'libero1' : (player.libero || '')}
+                      onChange={(e) => updatePlayer(idx, 'libero', e.target.value)}
+                      style={{ ...inputStyle, padding: '2px 4px', fontSize: '11px' }}
+                    >
+                      <option value="">-</option>
+                      <option value="libero1">L1</option>
+                      <option value="libero2">L2</option>
+                      {player.libero === 'redesignated' && <option value="redesignated">LR</option>}
+                      {player.libero === 'unable' && <option value="unable">{t('scoreboard.reopenRoster.liberoUnable', 'Unable')}</option>}
+                    </select>
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer' }}>
                     <input
