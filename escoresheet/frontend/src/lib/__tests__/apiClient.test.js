@@ -1,0 +1,203 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+vi.mock('../../utils/backendConfig', () => ({
+  getApiUrl: (path) => `http://backend.test${path}`
+}))
+
+import { apiFrom, apiAuth, apiStorage, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
+
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body
+  }
+}
+
+// Returns the parsed JSON body of the n-th fetch call
+const sentBody = (n = 0) => JSON.parse(globalThis.fetch.mock.calls[n][1].body)
+
+describe('apiClient QueryBuilder', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('upsert().select("id").single() keeps the upsert and asks for returning', async () => {
+    await apiFrom('matches').upsert({ external_id: 'm1' }, { onConflict: 'external_id' }).select('id').single()
+    const body = sentBody()
+    expect(body.action).toBe('upsert')
+    expect(body.params.returning).toBe('id')
+    expect(body.params.single).toBe(true)
+    expect(body.params.onConflict).toBe('external_id')
+    expect(body.params.data).toEqual({ external_id: 'm1' })
+  })
+
+  it('delete().eq().select("*", {count, head}) stays a delete', async () => {
+    await apiFrom('events').delete().eq('match_id', 'u1').select('*', { count: 'exact', head: true })
+    const body = sentBody()
+    expect(body.action).toBe('delete')
+    expect(body.params.returning).toBe('*')
+    expect(body.params.count).toBe('exact')
+    expect(body.params.head).toBe(true)
+    expect(body.params.filters).toEqual([{ type: 'eq', column: 'match_id', value: 'u1' }])
+  })
+
+  it('update().eq().select("a,b") keeps the update and its data', async () => {
+    await apiFrom('matches').update({ manual_changes: [1] }).eq('external_id', 'm1').select('a,b')
+    const body = sentBody()
+    expect(body.action).toBe('update')
+    expect(body.params.data).toEqual({ manual_changes: [1] })
+    expect(body.params.returning).toBe('a,b')
+  })
+
+  it('select() with no column list after a write returns all columns', async () => {
+    await apiFrom('profiles').update({ first_name: 'A' }).eq('user_id', 'x').select().single()
+    const body = sentBody()
+    expect(body.action).toBe('update')
+    expect(body.params.returning).toBe('*')
+  })
+
+  it('a plain select is unchanged', async () => {
+    await apiFrom('matches').select('id, status', { count: 'exact' }).eq('external_id', 'm1').limit(1)
+    const body = sentBody()
+    expect(body.action).toBe('select')
+    expect(body.params.columns).toBe('id, status')
+    expect(body.params.count).toBe('exact')
+    expect(body.params.limit).toBe(1)
+    expect(body.params).not.toHaveProperty('returning')
+  })
+
+  it('carries the HTTP status and normalises string errors', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Too many requests' }, 429))
+    const result = await apiFrom('matches').select('id')
+    expect(result.status).toBe(429)
+    expect(result.error).toEqual({ message: 'Too many requests', status: 429 })
+  })
+
+  it('keeps { message } errors and adds the status', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Database operation failed' } }, 400))
+    const result = await apiFrom('matches').select('id')
+    expect(result.error).toEqual({ message: 'Database operation failed', status: 400 })
+  })
+})
+
+describe('normalizeError', () => {
+  it('wraps strings, keeps objects, fills a fallback', () => {
+    expect(normalizeError('Authentication required', 401)).toEqual({ message: 'Authentication required', status: 401 })
+    expect(normalizeError({ message: 'x', code: 'c' }, 400)).toEqual({ message: 'x', code: 'c', status: 400 })
+    expect(normalizeError(null, 503, 'Auth request failed')).toEqual({ message: 'Auth request failed (503)', status: 503 })
+  })
+})
+
+describe('apiAuth.getSession session-clearing rule', () => {
+  const session = { access_token: 'tok', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'u1' } }
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('keeps the session when offline (network error) and returns it unverified', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    const { data } = await apiAuth.getSession()
+    expect(data.session.access_token).toBe('tok')
+    expect(data.session.unverified).toBe(true)
+    expect(localStorage.getItem('api_auth_token')).not.toBeNull()
+  })
+
+  it('keeps the session on 429', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Too many requests' }, 429))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).not.toBeNull()
+    expect(localStorage.getItem('api_auth_token')).not.toBeNull()
+  })
+
+  it('keeps the session on 503', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Supabase not configured on server' }, 503))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).not.toBeNull()
+    expect(localStorage.getItem('api_auth_token')).not.toBeNull()
+  })
+
+  it('clears the session on 401', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Invalid or expired token' }, 401))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).toBeNull()
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+  })
+
+  it('clears the session when the auth server rejects the JWT (200 + error)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'invalid JWT: token is expired' } }, 200))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).toBeNull()
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+  })
+
+  it('returns the verified user on success', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user: { id: 'u1', email: 'a@b.c' } }, error: null }))
+    const { data } = await apiAuth.getSession()
+    expect(data.session.user).toEqual({ id: 'u1', email: 'a@b.c' })
+    expect(data.session.unverified).toBeUndefined()
+  })
+
+  it('signals SIGNED_OUT in the same tab when the token is cleared', async () => {
+    const cb = vi.fn()
+    const { data: { subscription } } = apiAuth.onAuthStateChange(cb)
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Invalid or expired token' }, 401))
+    await apiAuth.getSession()
+    expect(cb).toHaveBeenCalledWith('SIGNED_OUT', null)
+    subscription.unsubscribe()
+  })
+})
+
+describe('isSessionRejected', () => {
+  it('only treats an explicit rejection as fatal', () => {
+    expect(isSessionRejected({ error: { message: 'x', status: 401 } })).toBe(true)
+    expect(isSessionRejected({ error: { message: 'x', code: 'invalid_token', status: 400 } })).toBe(true)
+    expect(isSessionRejected({ error: { message: 'Failed to fetch', status: 0, network: true } })).toBe(false)
+    expect(isSessionRejected({ error: { message: 'Too many requests', status: 429 } })).toBe(false)
+    expect(isSessionRejected({ error: { message: 'Authentication error', status: 500 } })).toBe(false)
+    expect(isSessionRejected({ error: { message: 'fetch failed', status: 200 } })).toBe(false)
+    expect(isSessionRejected({ error: null })).toBe(false)
+  })
+})
+
+describe('storage upload encoding', () => {
+  const decode = (b64) => Buffer.from(b64, 'base64').toString('utf8')
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('encodes non-Latin-1 text as UTF-8', async () => {
+    const text = 'Čech Müller 🏐 — “quoted”'
+    expect(decode(await toBase64(text))).toBe(text)
+  })
+
+  it('encodes large binary payloads without overflowing the stack', async () => {
+    const bytes = new Uint8Array(600000)
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251
+    const b64 = await toBase64(bytes)
+    const back = Buffer.from(b64, 'base64')
+    expect(back.length).toBe(bytes.length)
+    expect(back[12345]).toBe(12345 % 251)
+  })
+
+  it('encodes Blobs and objects', async () => {
+    expect(decode(await toBase64(new Blob(['Zürich'])))).toBe('Zürich')
+    expect(JSON.parse(decode(await toBase64({ a: 'é' })))).toEqual({ a: 'é' })
+  })
+
+  it('upload sends the UTF-8 base64 body', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { path: 'p' }, error: null }))
+    const result = await apiStorage.from('backup').upload('logs/x.txt', 'ü 🏐', { contentType: 'text/plain' })
+    expect(result.error).toBeNull()
+    expect(decode(sentBody().fileBase64)).toBe('ü 🏐')
+  })
+})
