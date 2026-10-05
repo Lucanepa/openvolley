@@ -3972,7 +3972,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                   {match?.pendingHomeRoster && (
                     <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3">
-                      <h4 className="mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
+                      <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
                       <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
                         <div>
                           {t('matchSetup.playersCount')}: {match.pendingHomeRoster.players?.length || 0}
@@ -5128,7 +5128,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                   {match?.pendingAwayRoster && (
                     <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3">
-                      <h4 className="mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
+                      <h4 className="mt-0 mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
                       <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
                         <div>
                           {t('matchSetup.playersCount')}: {match.pendingAwayRoster.players?.length || 0}
@@ -7608,22 +7608,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 const setupViewStyle = {
   // No maxWidth restriction - allow content to fill available space
 }
-// Two legacy leaks fenced off for the kit inside these views (styles.css is
-// not this package's file): `.text-sm` / `.text-xs` there add 0.2px tracking
-// to every kit text-sm/text-xs, and the UA `font` reset on form controls drops the
-// Inter Display cut (opsz 32, cv features). Swatch buttons (the frozen shirt
-// previews) are excluded so the colour picker renders exactly as before.
-// Legacy h2-h4 margins are dropped too: kit headings own their spacing.
+// Legacy leaks fenced off for the kit inside these views (styles.css is not
+// this package's file): `.text-sm` / `.text-xs` there add 0.2px tracking to
+// every kit text-sm/text-xs, and the UA `font` reset on form controls drops the
+// Inter Display cut (opsz 32, cv features).
+// The button and heading fences reach KIT elements only, never the legacy
+// children rendered inside these views (SignaturePad, Modal, RefereeSelector):
+//  - a kit button is recognised by the kit focus ring (FOCUS_RING /
+//    FOCUS_RING_INSET, `ring-red-400`), which no legacy button carries, so
+//    SignaturePad's plain Save/Close keep the default fill and the frozen
+//    swatch buttons (no kit ring) keep their face exactly as before;
+//  - a kit heading is recognised by its `text-stone-*` colour and no own margin.
+// (Full literal class strings: Tailwind only generates what it finds verbatim.)
 const SETUP_VIEW = cn(
   'setup content-start',
   // legacy `button { background: var(--accent) }` (scoring green) shows through
   // kit buttons that carry no fill of their own (ghost, outline, segments)
-  "[&_:where(button:not([class^='bg-']):not([class*='_bg-']))]:bg-transparent",
-  '[&_:where(h2,h3,h4)]:m-0',
+  "[&_:where(button[class*='ring-red-400']:not([class^='bg-']):not([class*='_bg-']))]:bg-transparent",
+  "[&_:where(h2,h3,h4)[class*='text-stone-']:not([class*='mb-']):not([class*='mt-'])]:m-0",
   '[&_:where(.text-xs,.text-sm):not([class*=tracking-])]:tracking-normal',
-  '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-variation-settings:inherit]',
-  '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-feature-settings:inherit]',
-  '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-optical-sizing:inherit]'
+  "[&_:is(button[class*='ring-red-400'],input,select,textarea)]:[font-variation-settings:inherit]",
+  "[&_:is(button[class*='ring-red-400'],input,select,textarea)]:[font-feature-settings:inherit]",
+  "[&_:is(button[class*='ring-red-400'],input,select,textarea)]:[font-optical-sizing:inherit]"
 )
 
 function MatchSetupMainView({ children, kitScale }) {
