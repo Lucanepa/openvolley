@@ -481,11 +481,13 @@ select {
   line-height: 1.2;
 }
 
+/* Coin toss "Sign A/B": the kit's outline button (was white text on white).
+   A completed signature is a success state: emerald, not blue. Size unchanged. */
 button.sign {
-  background: transparent;
-  color: #ffffff;
-  border: calc(2px * var(--scale-factor)) solid rgb(95, 95, 95);
-  border-radius: calc(10px * var(--scale-factor));
+  background: var(--ov-card);
+  color: #44403c; /* stone-700 */
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
   padding: calc(8px * var(--scale-factor)) calc(12px * var(--scale-factor));
   font-weight: 600;
   cursor: pointer;
@@ -496,12 +498,18 @@ button.sign {
   transition: all 0.2s ease;
 }
 
-button.sign.signed {
-  background: rgba(59, 130, 246, 0.2);
-  border: calc(2px * var(--scale-factor)) solid rgb(59, 130, 246);
-  color: #ffffff;
+button.sign:hover:not(:disabled) {
+  background: var(--ov-sunken);
 }
 
+button.sign.signed {
+  background: var(--ov-success-soft);
+  border: 1px solid #6ee7b7; /* emerald-300 */
+  color: var(--ov-success-text);
+}
+
+/* Default <button>: the scoring green stays (Point A/B and other court
+   buttons rely on it). Chrome buttons get kit classes, which now win. */
 button {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -516,9 +524,30 @@ button {
   font-size: calc(13px * var(--scale-factor));
 }
 
+/* Outside the rally controls and the court: kit radius (rounded-lg) and the
+   app's Inter instead of the browser's control font. The rally controls keep
+   their exact shape and face (frozen, muscle memory). */
+button:where(:not(.rally-controls button, .court button)) {
+  border-radius: var(--ov-radius);
+  font-family: inherit;
+}
+
+/* Secondary = the kit's outline button: white, stone-300 hairline, stone-700. */
 button.secondary {
-  background: var(--panel-2);
-  color: var(--text);
+  background: var(--ov-card);
+  color: #44403c; /* stone-700 */
+  border: 1px solid var(--ov-hairline-strong);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--ov-sunken);
+}
+
+/* Start Rally / Replay: the same outline look, drawn inside the box so the
+   frozen rally buttons keep their exact size and position. */
+.rally-controls button.secondary {
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--ov-hairline-strong);
 }
 
 button.danger {
