@@ -23,6 +23,7 @@ import { fileURLToPath } from 'url'
 import os from 'os'
 import QRCode from 'qrcode'
 import PocketBase from 'pocketbase'
+import { redactSecrets } from './lib/secrets.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -128,14 +129,8 @@ const ALLOWED_COLUMNS = {
   beach_competition_matches: ['id', 'scheduled_at', 'status']
 }
 
-// Columns/JSONB keys that must NEVER be returned to a client. Match PINs are the
-// only access-control gate for referee/bench, so they are stripped from every
-// select response (validation happens server-side via /api/match/validate-connection-pin).
-const SECRET_COLUMNS = {
-  matches: ['game_pin', 'connection_pins'],
-  events: ['game_pin'],
-  match_live_state: ['game_pin', 'connection_pins']
-}
+// Columns/JSONB keys that must NEVER be returned to a client (SECRET_COLUMNS,
+// redactSecrets) live in lib/secrets.js, shared with lib/realtimeHub.js.
 
 // Tables that are per-user private: every action requires a valid token AND is
 // constrained to rows the caller owns (user_id === auth user id).
@@ -204,18 +199,6 @@ function matchDataMessage(type, matchId, entry, scoreboardTs) {
   const msg = { type, matchId, ...wireBundle(entry), _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
   if (entry.liveState !== undefined) msg.data = { liveState: entry.liveState }
   return msg
-}
-
-function redactSecrets(table, rows) {
-  const secrets = SECRET_COLUMNS[table]
-  if (!secrets || rows == null) return rows
-  const scrub = (row) => {
-    if (row && typeof row === 'object') {
-      for (const k of secrets) delete row[k]
-    }
-    return row
-  }
-  return Array.isArray(rows) ? rows.map(scrub) : scrub(rows)
 }
 
 

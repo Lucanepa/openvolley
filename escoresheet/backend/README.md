@@ -428,6 +428,83 @@ docker stop ov-test-auth
 }
 ```
 
+### Live sockets (`?purpose=live`, realtime database changes)
+
+Replacement for Supabase Realtime, implemented in `lib/realtimeHub.js` (server)
+and `frontend/src/lib/relayRealtime.js` (supabase-js style client). A socket
+opened with `?purpose=live` is a separate pool (500 per IP, 3000 in total by
+default) and may only send these three message types; anything else closes it
+with 1008, a binary frame with 1003.
+
+Live sockets are upgraded by the hub's own `WebSocketServer({ noServer: true,
+maxPayload: 16384, perMessageDeflate: false })` (`hub.handleUpgrade`), not by the
+role-socket server (10 MB frames, deflate). `ws` therefore refuses a frame above
+16 KB while parsing it (close 1009) and no compression is negotiated, so an
+anonymous client cannot make the server buffer or inflate megabytes per socket.
+server.js must route upgrades itself (role wss as `noServer: true`):
+
+```js
+server.on('upgrade', (req, socket, head) => {
+  if (isLiveRequest(req)) return realtimeHub.handleUpgrade(req, socket, head, { ip: getClientIp(req) })
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+})
+```
+
+```jsonc
+// client -> server
+{ "type": "subscribe-db", "id": "7:livescore-all-games",
+  "subs": [{ "table": "match_live_state", "event": "*", "column": "sport_type", "value": "indoor" }] }
+{ "type": "unsubscribe-db", "id": "7:livescore-all-games" }
+{ "type": "ping" }
+
+// server -> client
+{ "type": "connected", "mode": "live", "protocol": 1 }
+{ "type": "subscribe-db-ack", "id": "7:livescore-all-games" }
+{ "type": "subscribe-db-error", "id": "...", "code": "invalid_sub", "message": "..." }
+{ "type": "db-change", "id": "7:livescore-all-games", "schema": "public",
+  "table": "match_live_state", "eventType": "UPDATE", "new": { ... }, "old": {},
+  "commit_timestamp": "2026-10-05T12:00:00.000Z" }
+{ "type": "pong", "timestamp": 1234567890 }
+```
+
+- Tables: `matches`, `sets`, `events`, `match_live_state`. Filter columns:
+  `match_id`, `external_id`, `sport_type` (equality only). Both lists are hub
+  options. At most 10 channels per socket and 10 subs per channel.
+- A row is sent once per socket. When several channels of that socket match,
+  `db-change` carries `ids: [...]` (all of them; `id` is the first).
+- The `connected` hello with `mode: "live"` is the capability flag: the client
+  treats any other first frame (LAN relays answer `mode: "local"`) as "no
+  realtime here" and stops trying that URL.
+- Changes are published by the server after successful `/api/db` writes and
+  for accepted `live-state-update` relay messages. Rows pass through
+  `lib/secrets.js` `redactSecrets` (the same function `/api/db` uses) before
+  filters are evaluated, so PIN columns are never sent and cannot be used as
+  filters.
+- Write-through needs the written rows: `RETURNING *` (pgQuery) and, for
+  upserts, `(xmax = 0) AS __inserted` so INSERT and UPDATE can be told apart.
+  supabase-js writes without `.select()` return no rows and publish nothing;
+  with `.select()` every upsert is published as UPDATE.
+- `match_live_state` is ordered by `updated_at` per `match_id`: a row strictly
+  older than the newest one published is dropped, so the HTTP copy and the
+  relay copy of the same point cannot roll the score back.
+- A `matches` DELETE also publishes a `match_live_state` DELETE with
+  `old = { match_id, sport_type }`, because the database cascade is not
+  returned by `RETURNING`.
+- `live-state-update` messages: `matchId` is the relay room key (the
+  scoreboard's local Dexie id), never a database key. The relay takes the
+  scoreboard's last `sync-match-data` match for that room and resolves it the
+  way Scoreboard.jsx does (UUID `externalId` -> `matches.id`, else `seed_key`
+  -> `matches.external_id`; no seed key -> refused). Only the socket that
+  currently owns the synced match may publish. This is NOT authentication:
+  anyone can still become the scoreboard of an unowned match until owner/PIN
+  binding lands.
+- The server pings every socket every 30 s and terminates sockets that do not
+  answer (Cloudflare drops idle WebSockets after 100 s). Sockets with more than
+  256 KB unsent are terminated when the next change is published.
+
+Tests: `npm test` runs `tests/realtimeHub.test.js` with real `ws` sockets on a
+random port; it needs no database.
+
 ## Monitoring
 
 ### Local
