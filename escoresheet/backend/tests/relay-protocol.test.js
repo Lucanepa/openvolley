@@ -256,6 +256,23 @@ describe('backend WebSocket relay protocol', () => {
     await referee.waitFor((m) => m.type === 'match-deleted' && m.matchId === seedA)
     assert.equal((await fetch(`http://127.0.0.1:${port}/api/match/${seedB}`)).status, 200)
 
+    // The relay lost the match while courtA's socket stayed open: its usual
+    // PIN-less sync must not recreate it without PINs (claimable by anyone)
+    courtA.send(syncMessage({ ...noPins }))
+    await courtA.waitFor((m) => m.type === 'error' && m.code === 'pins-required' && m.matchId === seedA)
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/match/${seedA}`)).status, 404)
+    // Resent with the PINs, the room is back and PIN-protected
+    courtA.send(syncMessage(makeMatch({ id: 1, seed_key: seedA, gamePin: '111111' })))
+    courtA.send({ type: 'ping' })
+    await courtA.waitFor((m) => m.type === 'pong' && courtA.messages.filter((x) => x.type === 'pong').length >= 1)
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/match/${seedA}`)).status, 200)
+    const revalidate = await fetch(`http://127.0.0.1:${port}/api/match/validate-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: PINS.refereePin, type: 'referee' })
+    })
+    assert.equal(revalidate.status, 200)
+
     for (const c of [courtA, courtB, referee, intruder]) c.ws.close()
   })
 

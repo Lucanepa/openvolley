@@ -112,6 +112,8 @@ struct ConnMeta {
     team: Option<String>,
     /// id this connection synced under (its Dexie id) -> room key (seed_key)
     aliases: HashMap<String, String>,
+    /// room keys this connection sent PINs for, oldest first (see 'pins-required')
+    pin_keys: Vec<String>,
     connected_at: String,
 }
 
@@ -308,6 +310,11 @@ fn relay_key_of(raw: Option<String>, m: Option<&Value>) -> Option<String> {
 /// True when the match object carries a game PIN field at all (even empty).
 fn has_game_pin_field(m: Option<&Value>) -> bool {
     m.and_then(|m| m.as_object()).map_or(false, |o| o.contains_key("gamePin") || o.contains_key("game_pin"))
+}
+
+/// True when the match object carries any PIN field at all (even empty).
+fn has_any_pin_field(m: Option<&Value>) -> bool {
+    m.and_then(|m| m.as_object()).map_or(false, |o| MATCH_SECRET_FIELDS.iter().any(|k| o.contains_key(*k)))
 }
 
 /// A scoreboard that already proved the match sends its PINs only when they
@@ -1026,7 +1033,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
     state.clients.lock().await.insert(conn_id, tx.clone());
     state.conn_meta.lock().await.insert(
         conn_id,
-        ConnMeta { ip, role: "subscriber".to_string(), team: None, aliases: HashMap::new(), connected_at: iso_now() },
+        ConnMeta { ip, role: "subscriber".to_string(), team: None, aliases: HashMap::new(), pin_keys: Vec::new(), connected_at: iso_now() },
     );
 
     let send_task = tokio::spawn(async move {
@@ -1123,6 +1130,7 @@ fn claim_error_message(code: &str) -> &'static str {
         "not-match-owner" => "Match is owned by another scoreboard (game PIN mismatch)",
         "rate-limited" => "Too many failed scoreboard claims. Wait a minute.",
         "too-many-matches" => "This device already drives the maximum number of matches",
+        "pins-required" => "The relay no longer holds this match: send it again with its PINs",
         _ => "Refused",
     }
 }
@@ -1284,6 +1292,30 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 send_error(tx, "bad-request", "sync-match-data needs matchId and match", None);
                 return;
             };
+            // A scoreboard leaves its PINs out once the relay holds them. If the
+            // relay lost the match meanwhile, a PIN-less sync would recreate it
+            // without PINs (claimable by anyone): ask for them instead.
+            let sent_pins = has_any_pin_field(bundle.get("match"));
+            let held = state.matches.lock().await.contains_key(&match_id);
+            let pins_required = {
+                let mut meta = state.conn_meta.lock().await;
+                match meta.get_mut(&conn_id) {
+                    Some(m) if sent_pins => {
+                        m.pin_keys.retain(|k| *k != match_id);
+                        if m.pin_keys.len() >= MAX_ALIASES {
+                            m.pin_keys.remove(0);
+                        }
+                        m.pin_keys.push(match_id.clone());
+                        false
+                    }
+                    Some(m) => !held && m.pin_keys.contains(&match_id),
+                    None => false,
+                }
+            };
+            if pins_required {
+                send_error(tx, "pins-required", claim_error_message("pins-required"), Some(&match_id));
+                return;
+            }
             let kind = match claim(state, conn_id, &match_id, bundle.get("match")).await {
                 Ok(kind) => kind,
                 Err(code) => {
@@ -1446,10 +1478,15 @@ async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: 
             }
         } else {
             // match-data-response (App.jsx sends `matchData`, Scoreboard.jsx `data`)
-            // and match-update-response carry a full bundle.
+            // and match-update-response carry a full bundle. Stored only under its
+            // room key (seed_key), and only when that is the id asked for: a Dexie
+            // id must not open a second, frozen room.
             let payload = data.get("data").or_else(|| data.get("matchData")).cloned().unwrap_or(Value::Null);
             match (bundle_from(&payload), &match_id) {
-                (Some(bundle), Some(id)) if Some(id) == expected_match.as_ref() => {
+                (Some(bundle), Some(id))
+                    if Some(id) == expected_match.as_ref()
+                        && relay_key_of(Some(id.clone()), bundle.get("match")).as_deref() == Some(id.as_str()) =>
+                {
                     if let Ok(kind) = claim(state, conn_id, id, bundle.get("match")).await {
                         let stored = store_bundle(state, id, bundle, kind).await;
                         if msg_type == "match-update-response" {
@@ -1534,7 +1571,7 @@ mod tests {
     async fn connect(state: &Arc<AppState>, id: u64, ip: &str) {
         state.conn_meta.lock().await.insert(
             id,
-            ConnMeta { ip: ip.parse().unwrap(), role: "subscriber".into(), team: None, aliases: HashMap::new(), connected_at: iso_now() },
+            ConnMeta { ip: ip.parse().unwrap(), role: "subscriber".into(), team: None, aliases: HashMap::new(), pin_keys: Vec::new(), connected_at: iso_now() },
         );
     }
 
@@ -1669,6 +1706,69 @@ mod tests {
         assert_eq!(game_pin_of(stored.get("match")).as_deref(), Some("111111"));
         // ...but a connection that never proved the match must bring the game PIN
         assert_eq!(claim(&state, 2, seed, Some(&no_pins)).await.err(), Some("not-match-owner"));
+    }
+
+    #[tokio::test]
+    async fn a_pinless_sync_of_a_lost_match_asks_for_the_pins() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        let seed = "match_1791215210058_bbbbbb";
+        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["seed_key"] = json!(seed);
+        handle_ws_message(&state, 1, &tx, &json!({ "type": "sync-match-data", "matchId": 1, "match": m.clone() }).to_string()).await;
+        assert!(state.matches.lock().await.contains_key(seed));
+        // The relay loses the match (deleted / expired) while the socket stays
+        delete_match(&state, seed).await;
+        while rx.try_recv().is_ok() {}
+        let mut no_pins = m.clone();
+        for k in MATCH_SECRET_FIELDS {
+            no_pins.as_object_mut().unwrap().remove(*k);
+        }
+        handle_ws_message(&state, 1, &tx, &json!({ "type": "sync-match-data", "matchId": 1, "match": no_pins }).to_string()).await;
+        assert!(!state.matches.lock().await.contains_key(seed), "no PIN-less room");
+        let Ok(Message::Text(err)) = rx.try_recv() else { panic!("expected an error") };
+        let err: Value = serde_json::from_str(&err).unwrap();
+        assert_eq!(err["code"], json!("pins-required"));
+        assert_eq!(err["matchId"], json!(seed));
+        // With the PINs it is accepted again
+        handle_ws_message(&state, 1, &tx, &json!({ "type": "sync-match-data", "matchId": 1, "match": m }).to_string()).await;
+        let stored = state.matches.lock().await.get(seed).cloned().unwrap();
+        assert_eq!(game_pin_of(stored.get("match")).as_deref(), Some("111111"));
+    }
+
+    #[tokio::test]
+    async fn a_match_asked_for_by_its_dexie_id_opens_no_second_room() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        let seed = "match_1791215210058_cccccc";
+        let mut b = bundle(1, "111111", "live");
+        b["match"]["seed_key"] = json!(seed);
+        let ask = |rid: &str, id: &str| {
+            let (tx, rx) = oneshot::channel::<Value>();
+            let p = Pending {
+                tx,
+                response_type: "match-data-response".into(),
+                match_id: Some(id.into()),
+                targets: HashSet::from([1u64]),
+            };
+            (rid.to_string(), p, rx)
+        };
+        // GET /api/match/1: the scoreboard answers with its seed-keyed match
+        let (rid, p, mut rx) = ask("r1", "1");
+        state.pending.lock().await.insert(rid, p);
+        on_response(&state, 1, "match-data-response",
+            &json!({ "requestId": "r1", "matchId": "1", "success": true, "data": b.clone() })).await;
+        assert!(!state.matches.lock().await.contains_key("1"), "no room under the Dexie id");
+        assert!(!state.pending.lock().await.contains_key("r1"), "declined, request settled");
+        assert!(rx.try_recv().is_err());
+        // Asked by the seed key it is stored there
+        let (rid, p, mut rx) = ask("r2", seed);
+        state.pending.lock().await.insert(rid, p);
+        on_response(&state, 1, "match-data-response",
+            &json!({ "requestId": "r2", "matchId": seed, "success": true, "data": b })).await;
+        assert!(state.matches.lock().await.contains_key(seed));
+        assert!(rx.try_recv().is_ok());
     }
 
     #[test]
