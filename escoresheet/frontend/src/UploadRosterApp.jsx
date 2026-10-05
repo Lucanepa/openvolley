@@ -10,6 +10,21 @@ import UpdateBanner from './components/UpdateBanner'
 import SignaturePad from './components/SignaturePad'
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
+import { CalendarX2, Check, ChevronRight, FileUp, Loader2, Plus } from 'lucide-react'
+import { cn } from './ui/cn.js'
+import { Button } from './ui/Button.jsx'
+import { Card } from './ui/Card.jsx'
+import { Field, FormError } from './ui/Field.jsx'
+import { EmptyState } from './ui/EmptyState.jsx'
+import { RowList } from './ui/Row.jsx'
+import { SectionHeader } from './ui/SectionHeader.jsx'
+import { SkeletonRows } from './ui/Skeleton.jsx'
+import { PinInput, ListLabel, GameRow } from './components/dashboards/EntryKit.jsx'
+
+// Roster editor grid (a dense desktop form: h-9 fields are allowed here).
+const FIELD = 'h-9 w-full px-2.5 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500'
+const ROSTER_HEAD = 'grid items-center gap-3 px-1 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500 border-b border-stone-200'
+const ROSTER_ROW = 'grid items-center gap-3 px-1 py-2'
 
 // Connection modes
 const CONNECTION_MODES = {
@@ -60,7 +75,7 @@ function formatDateToDDMMYYYY(dateStr) {
 }
 
 export default function UploadRosterApp() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [gameNumber, setGameNumber] = useState('')
   const [team, setTeam] = useState('home') // 'home' or 'away'
   const [uploadPin, setUploadPin] = useState('')
@@ -1025,110 +1040,40 @@ export default function UploadRosterApp() {
         backLabel={t('uploadRoster.changeGame', 'Change Game')}
       />
 
-      <div style={{
-        flex: 1,
-        padding: '20px'
-      }}>
-      <div style={{
-        margin: '0 auto',
-        background: 'var(--bg-secondary)',
-        borderRadius: '12px',
-        padding: '40px',
-      width: 'auto'
-      }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '32px', textAlign: 'center' }}>
+      <div className="ov-kit flex-1 bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6 sm:py-8">
+      <Card className="mx-auto">
+        <h1 className="mb-6 text-center text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">
           {t('uploadRoster.title')}
         </h1>
 
         {/* Game Selection - Step 1 */}
         {!parsedData && !selectedMatch && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-            marginBottom: '32px',
-            alignItems: 'center',
-            maxWidth: '100%',
-            width: 'auto'
-          }}>
-            <p style={{
-              fontSize: '16px',
-              color: 'var(--muted)',
-              marginBottom: '16px',
-              textAlign: 'center'
-            }}>
-              {t('uploadRoster.selectGame')}
-            </p>
+          <div className="mx-auto mb-6 w-full max-w-lg">
+            <ListLabel>{t('uploadRoster.selectGame')}</ListLabel>
 
             {loadingMatches ? (
-              <div style={{
-                padding: '20px',
-                color: 'var(--muted)',
-                fontSize: '16px'
-              }}>
-                {t('uploadRoster.loadingGames')}
+              <div role="status">
+                <span className="sr-only">{t('uploadRoster.loadingGames')}</span>
+                <SkeletonRows rows={3} pill={false} />
               </div>
             ) : availableMatches.length > 0 ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                width: '100%',
-                maxWidth: '500px'
-              }}>
+              <RowList soft>
                 {availableMatches.map((match) => (
-                  <button
+                  <GameRow
                     key={match.id}
-                    onClick={() => handleMatchSelect(match)}
-                    style={{
-                      padding: '16px 20px',
-                      background: 'var(--panel)',
-                      border: '2px solid var(--border)',
-                      borderRadius: '12px',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textAlign: 'left'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--panel-2)'
-                      e.currentTarget.style.borderColor = 'var(--border)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'var(--panel)'
-                      e.currentTarget.style.borderColor = 'var(--border)'
-                    }}
-                  >
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      color: 'var(--accent)',
-                      marginBottom: '4px'
-                    }}>
-                      {t('uploadRoster.game')} {match.gameNumber || match.id}
-                    </div>
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: 500
-                    }}>
-                      {match.homeTeamName || t('common.home')} {t('uploadRoster.vs')} {match.awayTeamName || t('common.away')}
-                    </div>
-                  </button>
+                    match={match}
+                    lang={i18n.language}
+                    home={match.homeTeamName || t('common.home')}
+                    away={match.awayTeamName || t('common.away')}
+                    gameLabel={`${t('uploadRoster.game')} ${match.gameNumber || match.id}`}
+                    onOpen={() => handleMatchSelect(match)}
+                    status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
+                  />
                 ))}
-              </div>
+              </RowList>
             ) : (
-              <div
-                onClick={handleTestModeClick}
-                style={{
-                  padding: '20px',
-                  color: 'var(--muted)',
-                  fontSize: '14px',
-                  textAlign: 'center',
-                  cursor: 'default',
-                  userSelect: 'none'
-                }}
-              >
-                {t('uploadRoster.noActiveGames')}
+              <div onClick={handleTestModeClick} className="cursor-default select-none">
+                <EmptyState icon={CalendarX2}>{t('uploadRoster.noActiveGames')}</EmptyState>
               </div>
             )}
           </div>
@@ -1136,107 +1081,56 @@ export default function UploadRosterApp() {
 
         {/* Team and PIN Selection - Step 2 */}
         {!parsedData && selectedMatch && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
-              marginBottom: '32px',
-              alignItems: 'center',
-              maxWidth: '100%',
-              width: 'auto'
-            }}
-          >
+          <div className="mx-auto mb-6 flex w-full max-w-sm flex-col items-stretch gap-5">
             {/* Match info */}
-            <div style={{
-              padding: '16px 24px',
-              background: 'var(--panel-2)',
-              borderRadius: '8px',
-              textAlign: 'center',
-              marginBottom: '8px'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 600 }}>
-                {homeTeam?.name || t('common.home')} {t('uploadRoster.vs')} {awayTeam?.name || t('common.away')}
-              </div>
+            <div className="text-center">
+              <p className="text-base font-semibold text-stone-900">{homeTeam?.name || t('common.home')}</p>
+              <p className="text-xs text-stone-500">{t('uploadRoster.vs')}</p>
+              <p className="text-base font-semibold text-stone-900">{awayTeam?.name || t('common.away')}</p>
             </div>
 
             {matchStatusCheck === 'checking' && (
-              <p style={{ color: 'var(--accent)', fontSize: '14px', margin: 0, textAlign: 'center' }}>
+              <p role="status" className="flex items-center justify-center gap-2 text-sm text-stone-500">
+                <Loader2 size={15} className="animate-spin" aria-hidden />
                 {t('uploadRoster.validating')}
               </p>
             )}
 
             {matchStatusCheck === 'invalid' && validationError && (
-              <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', maxWidth: '300px' }}>
-                {validationError}
-              </p>
+              <FormError size="md" className="text-center">{validationError}</FormError>
             )}
 
             {matchStatusCheck === 'valid' && (
               <>
-                <div style={{ width: 320, maxWidth: '100%' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                    {t('uploadRoster.selectTeam')}
-                  </label>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTeam('home')
-                        setValidationError('')
-                        setUploadPin('')
-                        setManuallyValidated(false)
-                        setServerPinValidated(false)
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: '12px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: team === 'home' ? 'var(--accent)' : 'var(--panel)',
-                        color: team === 'home' ? '#000' : 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        width: 'auto',
-                      }}
-                    >
-                      {t('uploadRoster.home')} {homeTeam?.name && `(${homeTeam.name})`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTeam('away')
-                        setValidationError('')
-                        setUploadPin('')
-                        setManuallyValidated(false)
-                        setServerPinValidated(false)
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: '12px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: team === 'away' ? 'var(--accent)' : 'var(--panel)',
-                        color: team === 'away' ? '#000' : 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        width: 'auto',
-                      }}
-                    >
-                      {t('uploadRoster.away')} {awayTeam?.name && `(${awayTeam.name})`}
-                    </button>
+                <div>
+                  <p className="mb-1.5 text-sm font-medium text-stone-700">{t('uploadRoster.selectTeam')}</p>
+                  <div role="group" aria-label={t('uploadRoster.selectTeam')} className="flex gap-2">
+                    {['home', 'away'].map((side) => (
+                      <Button
+                        key={side}
+                        variant={team === side ? 'dark' : 'secondary'}
+                        size="xl"
+                        aria-pressed={team === side}
+                        className="h-auto min-h-11 flex-1 py-2 font-medium whitespace-normal"
+                        onClick={() => {
+                          setTeam(side)
+                          setValidationError('')
+                          setUploadPin('')
+                          setManuallyValidated(false)
+                          setServerPinValidated(false)
+                        }}
+                      >
+                        {side === 'home'
+                          ? <>{t('uploadRoster.home')} {homeTeam?.name && `(${homeTeam.name})`}</>
+                          : <>{t('uploadRoster.away')} {awayTeam?.name && `(${awayTeam.name})`}</>}
+                      </Button>
+                    ))}
                   </div>
                 </div>
 
                 {isPinRequired ? (
-                  <div style={{ width: 320, maxWidth: '100%' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, textAlign: 'center' }}>
-                      {t('uploadRoster.uploadPin')}
-                    </label>
-                    <input
-                      type="text"
+                  <Field label={t('uploadRoster.uploadPin')}>
+                    <PinInput
                       value={uploadPin}
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, '').slice(0, 6)
@@ -1244,64 +1138,38 @@ export default function UploadRosterApp() {
                       }}
                       placeholder={t('uploadRoster.enterPin')}
                       aria-label={t('uploadRoster.uploadPin')}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        fontSize: '18px',
-                        fontFamily: 'monospace',
-                        textAlign: 'center',
-                        background: 'var(--panel)',
-                        border: isValid
-                          ? '1px solid #10b981'
-                          : validationError && uploadPin.length === 6
-                          ? '1px solid #ef4444'
-                          : '1px solid var(--border)',
-                        borderRadius: '6px',
-                        color: 'var(--text)'
-                      }}
                       maxLength={6}
+                      invalid={!!(validationError && uploadPin.length === 6)}
+                      className={cn('placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:tracking-normal', isValid && 'border-emerald-500')}
                     />
-                    {isValid && (
-                      <p style={{ color: '#10b981', fontSize: '12px', margin: '4px 0 0 0', textAlign: 'center' }}>
-                        ✓ {t('uploadRoster.validate')}
-                      </p>
-                    )}
-                  </div>
+                  </Field>
                 ) : (
-                  <div style={{ width: 320, maxWidth: '100%', textAlign: 'center' }}>
+                  <div className="text-center">
                     {manuallyValidated ? (
-                      <p style={{ color: '#10b981', fontSize: '14px', margin: 0 }}>
+                      <p role="status" className="text-sm font-medium text-emerald-700">
                         ✓ {t('uploadRoster.validated', 'Validated')}
                       </p>
                     ) : (
                       <>
-                        <p style={{ color: 'var(--muted)', fontSize: '13px', margin: '0 0 12px 0' }}>
+                        <p className="mb-3 text-sm text-stone-500">
                           {t('uploadRoster.noPinRequired', 'No PIN required')}
                         </p>
-                        <button
-                          onClick={() => setManuallyValidated(true)}
-                          style={{
-                            padding: '10px 24px',
-                            fontSize: '14px',
-                            fontWeight: 600,
-                            background: '#10b981',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer'
-                          }}
-                        >
+                        <Button variant="positive" size="xl" onClick={() => setManuallyValidated(true)}>
                           {t('uploadRoster.validate', 'Validate')}
-                        </button>
+                        </Button>
                       </>
                     )}
                   </div>
                 )}
 
-                {validationError && uploadPin.length === 6 && isPinRequired && (
-                  <p style={{ color: '#ef4444', fontSize: '14px', margin: 0, textAlign: 'center', width: 320, maxWidth: '100%' }}>
-                    {validationError}
+                {isPinRequired && isValid && (
+                  <p role="status" className="-mt-3 text-center text-xs font-medium text-emerald-700">
+                    ✓ {t('uploadRoster.validate')}
                   </p>
+                )}
+
+                {validationError && uploadPin.length === 6 && isPinRequired && (
+                  <FormError size="md" className="text-center">{validationError}</FormError>
                 )}
               </>
             )}
@@ -1310,7 +1178,7 @@ export default function UploadRosterApp() {
 
         {/* Upload Section */}
         {isValid && !parsedData && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '32px', alignItems: 'center' }}>
+          <div className="mx-auto mb-6 flex w-full max-w-sm flex-col items-stretch gap-3">
             <input
               ref={fileInputRef}
               type="file"
@@ -1319,527 +1187,249 @@ export default function UploadRosterApp() {
               aria-label={t('uploadRoster.selectPdfFile')}
               style={{ display: 'none' }}
             />
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="xl"
+              block
+              icon={FileUp}
               onClick={() => fileInputRef.current?.click()}
               disabled={pdfLoading}
-              style={{
-                padding: '12px 24px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: 'var(--panel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                cursor: pdfLoading ? 'not-allowed' : 'pointer'
-              }}
             >
               {t('uploadRoster.selectPdfFile')}
-            </button>
+            </Button>
 
             {pdfFile && (
               <>
-                <div style={{
-                  padding: '12px',
-                  background: 'var(--panel-2)',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  textAlign: 'center'
-                }}>
+                <p className="truncate rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-center text-sm text-stone-700">
                   Selected: {pdfFile.name}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleUpload}
-                  disabled={pdfLoading}
-                  style={{
-                    padding: '12px 24px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: 'var(--accent)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: pdfLoading ? 'not-allowed' : 'pointer'
-                  }}
-                >
+                </p>
+                <Button size="xl" block onClick={handleUpload} disabled={pdfLoading} loading={pdfLoading}>
                   {pdfLoading ? t('uploadRoster.parsing') : t('uploadRoster.confirm')}
-                </button>
+                </Button>
               </>
             )}
 
             {pdfLoading && (
-              <p style={{ fontSize: '14px', color: 'var(--accent)', margin: 0, textAlign: 'center' }}>
+              <p role="status" className="text-center text-sm text-stone-500">
                 {t('uploadRoster.parsing')}
               </p>
             )}
 
-            {pdfError && (
-              <p style={{ fontSize: '14px', color: '#ef4444', margin: 0, textAlign: 'center' }}>
-                {pdfError}
-              </p>
-            )}
+            <FormError size="md" className="text-center">{pdfError}</FormError>
           </div>
         )}
 
         {/* Editable Roster */}
         {parsedData && (
-          <div style={{ marginBottom: '32px', maxWidth: '60%', margin: '0 auto' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>{t('uploadRoster.parsedPlayers')}</h2>
+          <div className="mx-auto w-full max-w-5xl space-y-6">
+            <section>
+              <SectionHeader as="h2" title={t('uploadRoster.parsedPlayers')} count={parsedData.players.length} />
+              <div className="overflow-x-auto">
+                <div className="min-w-[760px]">
+                  {/* Column headers for players */}
+                  <div className={cn(ROSTER_HEAD, 'grid-cols-[60px_1fr_1fr_140px_100px_100px_70px]')}>
+                    <span>{t('rosterSetup.number', '#')}</span>
+                    <span>{t('rosterSetup.lastName', 'Last Name')}</span>
+                    <span>{t('rosterSetup.firstName', 'First Name')}</span>
+                    <span>{t('rosterSetup.dob', 'DOB')}</span>
+                    <span>{t('rosterSetup.libero', 'Libero')}</span>
+                    <span className="text-center">C</span>
+                    <span></span>
+                  </div>
 
-            {/* Column headers for players */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '60px 1fr 1fr 140px 100px 100px 70px',
-              gap: '12px',
-              alignItems: 'center',
-              padding: '8px 16px',
-              marginBottom: '4px',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--muted)'
-            }}>
-              <span>{t('rosterSetup.number', '#')}</span>
-              <span>{t('rosterSetup.lastName', 'Last Name')}</span>
-              <span>{t('rosterSetup.firstName', 'First Name')}</span>
-              <span>{t('rosterSetup.dob', 'DOB')}</span>
-              <span>{t('rosterSetup.libero', 'Libero')}</span>
-              <span>C</span>
-              <span></span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
-              {parsedData.players.map((player, index) => (
-                <div key={index} style={{
-                  padding: '12px 16px',
-                  background: 'var(--panel-2)',
-                  borderRadius: '8px',
-                  display: 'grid',
-                  gridTemplateColumns: '60px 1fr 1fr 140px 100px 100px 70px',
-                  gap: '12px',
-                  alignItems: 'center'
-                }}>
-                  <input
-                    type="number"
-                    value={player.number || ''}
-                    onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
-                    placeholder="#"
-                    aria-label={t('rosterSetup.number', 'Number')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      textAlign: 'center'
-                    }}
-                  />
-                  <input
-                    type="text"
-                    value={player.lastName}
-                    onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
-                    placeholder={t('rosterSetup.lastName', 'Last Name')}
-                    aria-label={t('rosterSetup.lastName', 'Last Name')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                  <input
-                    type="text"
-                    value={player.firstName}
-                    onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
-                    placeholder={t('rosterSetup.firstName', 'First Name')}
-                    aria-label={t('rosterSetup.firstName', 'First Name')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                  <input
-                    type="date"
-                    value={player.dob ? formatDateToISO(player.dob) : ''}
-                    onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
-                    aria-label={t('rosterSetup.dob', 'DOB')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                  <select
-                    value={player.libero}
-                    onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
-                    aria-label={t('rosterSetup.libero', 'Libero')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <option value=""></option>
-                    <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
-                    <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
-                  </select>
-                  <div
-                    onClick={() => handlePlayerChange(index, 'isCaptain', !player.isCaptain)}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      border: player.isCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
-                      background: player.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: player.isCaptain ? '#22c55e' : 'var(--muted)',
-                      userSelect: 'none',
-                      margin: '0 auto'
-                    }}
-                  >C</div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeletePlayer(index)}
-                    style={{
-                      padding: '6px 10px',
-                      fontSize: '12px',
-                      background: '#ef4444',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    {t('common.delete')}
-                  </button>
+                  <div className="divide-y divide-stone-100">
+                    {parsedData.players.map((player, index) => (
+                      <div key={index} className={cn(ROSTER_ROW, 'grid-cols-[60px_1fr_1fr_140px_100px_100px_70px]')}>
+                        <input
+                          type="number"
+                          value={player.number || ''}
+                          onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
+                          placeholder="#"
+                          aria-label={t('rosterSetup.number', 'Number')}
+                          className={cn(FIELD, 'text-center tabular-nums')}
+                        />
+                        <input
+                          type="text"
+                          value={player.lastName}
+                          onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
+                          placeholder={t('rosterSetup.lastName', 'Last Name')}
+                          aria-label={t('rosterSetup.lastName', 'Last Name')}
+                          className={FIELD}
+                        />
+                        <input
+                          type="text"
+                          value={player.firstName}
+                          onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
+                          placeholder={t('rosterSetup.firstName', 'First Name')}
+                          aria-label={t('rosterSetup.firstName', 'First Name')}
+                          className={FIELD}
+                        />
+                        <input
+                          type="date"
+                          value={player.dob ? formatDateToISO(player.dob) : ''}
+                          onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                          aria-label={t('rosterSetup.dob', 'DOB')}
+                          className={FIELD}
+                        />
+                        <select
+                          value={player.libero}
+                          onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
+                          aria-label={t('rosterSetup.libero', 'Libero')}
+                          className={FIELD}
+                        >
+                          <option value=""></option>
+                          <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
+                          <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
+                        </select>
+                        <div
+                          onClick={() => handlePlayerChange(index, 'isCaptain', !player.isCaptain)}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '4px',
+                            border: player.isCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
+                            background: player.isCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            color: player.isCaptain ? '#22c55e' : 'var(--muted)',
+                            userSelect: 'none',
+                            margin: '0 auto'
+                          }}
+                        >C</div>
+                        <Button variant="danger-outline" size="sm" block onClick={() => handleDeletePlayer(index)}>
+                          {t('common.delete')}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={handleAddPlayer}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: 600,
-                background: 'var(--panel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                marginBottom: '24px'
-              }}
-            >
-              {t('roster.addPlayer')}
-            </button>
+              </div>
+              <Button variant="secondary" className="mt-3" onClick={handleAddPlayer}>
+                {t('roster.addPlayer')}
+              </Button>
+            </section>
 
-            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>{t('uploadRoster.parsedBench')}</h2>
+            <section>
+              <SectionHeader as="h2" title={t('uploadRoster.parsedBench')} count={parsedData.bench.length} />
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px]">
+                  {/* Column headers for bench officials */}
+                  <div className={cn(ROSTER_HEAD, 'grid-cols-[180px_1fr_1fr_140px_70px]')}>
+                    <span>{t('rosterSetup.role', 'Role')}</span>
+                    <span>{t('rosterSetup.lastName', 'Last Name')}</span>
+                    <span>{t('rosterSetup.firstName', 'First Name')}</span>
+                    <span>{t('rosterSetup.dob', 'DOB')}</span>
+                    <span></span>
+                  </div>
 
-            {/* Column headers for bench officials */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '180px 1fr 1fr 140px 70px',
-              gap: '12px',
-              alignItems: 'center',
-              padding: '8px 16px',
-              marginBottom: '4px',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--muted)'
-            }}>
-              <span>{t('rosterSetup.role', 'Role')}</span>
-              <span>{t('rosterSetup.lastName', 'Last Name')}</span>
-              <span>{t('rosterSetup.firstName', 'First Name')}</span>
-              <span>{t('rosterSetup.dob', 'DOB')}</span>
-              <span></span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
-              {parsedData.bench.map((official, index) => (
-                <div key={index} style={{
-                  padding: '12px 16px',
-                  background: 'var(--panel-2)',
-                  borderRadius: '8px',
-                  display: 'grid',
-                  gridTemplateColumns: '180px 1fr 1fr 140px 70px',
-                  gap: '12px',
-                  alignItems: 'center'
-                }}>
-                  <select
-                    value={official.role}
-                    onChange={(e) => handleBenchChange(index, 'role', e.target.value)}
-                    aria-label={t('rosterSetup.role', 'Role')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <option value="Coach">{t('benchRoles.coach', 'Coach')}</option>
-                    <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1', 'Assistant Coach 1')}</option>
-                    <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2', 'Assistant Coach 2')}</option>
-                    <option value="Physiotherapist">{t('benchRoles.physiotherapist', 'Physiotherapist')}</option>
-                    <option value="Medic">{t('benchRoles.medic', 'Medic')}</option>
-                  </select>
-                  <input
-                    type="text"
-                    value={official.lastName}
-                    onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
-                    placeholder={t('rosterSetup.lastName', 'Last Name')}
-                    aria-label={t('rosterSetup.lastName', 'Last Name')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                  <input
-                    type="text"
-                    value={official.firstName}
-                    onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
-                    placeholder={t('rosterSetup.firstName', 'First Name')}
-                    aria-label={t('rosterSetup.firstName', 'First Name')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                  <input
-                    type="date"
-                    value={official.dob ? formatDateToISO(official.dob) : ''}
-                    onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
-                    aria-label={t('rosterSetup.dob', 'DOB')}
-                    style={{
-                      padding: '8px',
-                      fontSize: '14px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      color: 'var(--text)',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteBench(index)}
-                    style={{
-                      padding: '6px 10px',
-                      fontSize: '12px',
-                      background: '#ef4444',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    {t('common.delete')}
-                  </button>
+                  <div className="divide-y divide-stone-100">
+                    {parsedData.bench.map((official, index) => (
+                      <div key={index} className={cn(ROSTER_ROW, 'grid-cols-[180px_1fr_1fr_140px_70px]')}>
+                        <select
+                          value={official.role}
+                          onChange={(e) => handleBenchChange(index, 'role', e.target.value)}
+                          aria-label={t('rosterSetup.role', 'Role')}
+                          className={FIELD}
+                        >
+                          <option value="Coach">{t('benchRoles.coach', 'Coach')}</option>
+                          <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1', 'Assistant Coach 1')}</option>
+                          <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2', 'Assistant Coach 2')}</option>
+                          <option value="Physiotherapist">{t('benchRoles.physiotherapist', 'Physiotherapist')}</option>
+                          <option value="Medic">{t('benchRoles.medic', 'Medic')}</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={official.lastName}
+                          onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
+                          placeholder={t('rosterSetup.lastName', 'Last Name')}
+                          aria-label={t('rosterSetup.lastName', 'Last Name')}
+                          className={FIELD}
+                        />
+                        <input
+                          type="text"
+                          value={official.firstName}
+                          onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
+                          placeholder={t('rosterSetup.firstName', 'First Name')}
+                          aria-label={t('rosterSetup.firstName', 'First Name')}
+                          className={FIELD}
+                        />
+                        <input
+                          type="date"
+                          value={official.dob ? formatDateToISO(official.dob) : ''}
+                          onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                          aria-label={t('rosterSetup.dob', 'DOB')}
+                          className={FIELD}
+                        />
+                        <Button variant="danger-outline" size="sm" block onClick={() => handleDeleteBench(index)}>
+                          {t('common.delete')}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={handleAddBench}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                fontWeight: 600,
-                background: 'var(--panel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                marginBottom: '24px'
-              }}
-            >
-              + {t('roster.benchOfficials')}
-            </button>
+              </div>
+              <Button variant="secondary" icon={Plus} className="mt-3" onClick={handleAddBench}>
+                {t('roster.benchOfficials')}
+              </Button>
+            </section>
 
             {/* Signatures Section */}
-            <div style={{
-              marginTop: '32px',
-              padding: '20px',
-              background: 'var(--panel-2)',
-              borderRadius: '8px',
-              border: '1px solid var(--border)'
-            }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px' }}>
-                {t('rosterSetup.signatures', 'Signatures')}
-              </h2>
-              <p style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '20px' }}>
+            <section>
+              <SectionHeader as="h2" title={t('rosterSetup.signatures', 'Signatures')} />
+              <p className="mt-1.5 mb-4 text-xs text-stone-500">
                 {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
               </p>
-              <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                {/* Coach Signature */}
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>
-                    {t('rosterSetup.coachSignature', 'Coach Signature')}
-                  </div>
-                  <div
-                    onClick={() => setOpenSignature('coach')}
-                    style={{
-                      width: '100%',
-                      height: '100px',
-                      background: coachSignature ? 'white' : 'var(--panel-2)',
-                      border: coachSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    {coachSignature ? (
-                      <img src={coachSignature} alt="Coach signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                    ) : (
-                      <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
-                        {t('rosterSetup.tapToSign', 'Tap to sign')}
-                      </span>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {[
+                  { key: 'coach', label: t('rosterSetup.coachSignature', 'Coach Signature'), value: coachSignature, clear: () => setCoachSignature(null), alt: 'Coach signature' },
+                  { key: 'captain', label: t('rosterSetup.captainSignature', 'Captain Signature'), value: captainSignature, clear: () => setCaptainSignature(null), alt: 'Captain signature' }
+                ].map((sig) => (
+                  <div key={sig.key} className="min-w-0">
+                    <p className="mb-1.5 text-sm font-medium text-stone-700">{sig.label}</p>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setOpenSignature(sig.key)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenSignature(sig.key) } }}
+                      className={cn(
+                        'flex h-[100px] w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60',
+                        sig.value ? 'border-2 border-emerald-500 bg-white' : 'border-2 border-dashed border-stone-300 bg-stone-50 text-stone-500 hover:bg-stone-100'
+                      )}
+                    >
+                      {sig.value ? (
+                        <img src={sig.value} alt={sig.alt} className="max-h-full max-w-full" />
+                      ) : (
+                        <span className="text-sm">{t('rosterSetup.tapToSign', 'Tap to sign')}</span>
+                      )}
+                    </div>
+                    {sig.value && (
+                      <Button
+                        variant="danger-outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={(e) => { e.stopPropagation(); sig.clear() }}
+                      >
+                        {t('common.clear', 'Clear')}
+                      </Button>
                     )}
                   </div>
-                  {coachSignature && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setCoachSignature(null); }}
-                      style={{
-                        marginTop: '8px',
-                        padding: '4px 12px',
-                        fontSize: '12px',
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        color: '#ef4444',
-                        border: '1px solid #ef4444',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {t('common.clear', 'Clear')}
-                    </button>
-                  )}
-                </div>
-
-                {/* Captain Signature */}
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '8px' }}>
-                    {t('rosterSetup.captainSignature', 'Captain Signature')}
-                  </div>
-                  <div
-                    onClick={() => setOpenSignature('captain')}
-                    style={{
-                      width: '100%',
-                      height: '100px',
-                      background: captainSignature ? 'white' : 'var(--panel-2)',
-                      border: captainSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    {captainSignature ? (
-                      <img src={captainSignature} alt="Captain signature" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                    ) : (
-                      <span style={{ color: 'var(--muted)', fontSize: '13px' }}>
-                        {t('rosterSetup.tapToSign', 'Tap to sign')}
-                      </span>
-                    )}
-                  </div>
-                  {captainSignature && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setCaptainSignature(null); }}
-                      style={{
-                        marginTop: '8px',
-                        padding: '4px 12px',
-                        fontSize: '12px',
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        color: '#ef4444',
-                        border: '1px solid #ef4444',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {t('common.clear', 'Clear')}
-                    </button>
-                  )}
-                </div>
+                ))}
               </div>
-            </div>
+            </section>
 
-            {saveError && (
-              <div role="alert" style={{ marginTop: '24px', padding: '12px 16px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', color: '#ef4444', textAlign: 'center' }}>
-                {saveError}
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                style={{
-                  padding: '14px 32px',
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
+            <FormError size="md" className="text-center">{saveError}</FormError>
+            <div className="flex justify-center pt-2">
+              <Button size="xl" className="min-w-48" onClick={handleConfirm}>
                 {t('common.confirm')}
-              </button>
+              </Button>
             </div>
           </div>
         )}
+      </Card>
 
         {/* Confirmation Modal */}
         {showConfirmModal && (
@@ -1849,58 +1439,26 @@ export default function UploadRosterApp() {
             onClose={() => !uploading && setShowConfirmModal(false)}
             width={400}
           >
-            <div style={{ padding: '24px' }}>
+            <div className="ov-kit p-2 sm:p-4">
               {uploading ? (
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    border: '4px solid var(--border)',
-                    borderTop: '4px solid var(--accent)',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                    margin: '0 auto 16px'
-                  }} />
-                  <p style={{ fontSize: '16px', color: 'var(--text)' }}>
+                <div role="status" className="flex flex-col items-center gap-3 py-4 text-center">
+                  <Loader2 size={32} className="animate-spin text-stone-400" aria-hidden />
+                  <p className="text-sm text-stone-600">
                     {t('uploadRoster.uploadingMessage')}
                   </p>
                 </div>
               ) : (
                 <>
-                  <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
+                  <p className="mb-6 text-center text-sm text-stone-600">
                     {t('uploadRoster.confirmMessage')}
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
-                      onClick={() => setShowConfirmModal(false)}
-                      style={{
-                        padding: '12px 32px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: 'var(--panel)',
-                        color: 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                  <div className="flex gap-2">
+                    <Button variant="secondary" size="xl" className="flex-1" onClick={() => setShowConfirmModal(false)}>
                       {t('common.no')}
-                    </button>
-                    <button
-                      onClick={handleFinalConfirm}
-                      style={{
-                        padding: '12px 32px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: 'var(--accent)',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                    </Button>
+                    <Button variant="positive" size="xl" className="flex-1" onClick={handleFinalConfirm}>
                       {t('common.yes')}
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -1916,38 +1474,16 @@ export default function UploadRosterApp() {
             onClose={handleSuccessClose}
             width={400}
           >
-            <div style={{ padding: '24px', textAlign: 'center' }}>
-              <div style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                background: 'rgba(34, 197, 94, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 16px',
-                fontSize: '32px'
-              }}>
-                ✓
+            <div className="ov-kit p-2 text-center sm:p-4">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                <Check size={28} aria-hidden />
               </div>
-              <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)' }}>
+              <p className="mb-6 text-sm text-stone-600">
                 {t('uploadRoster.rosterSentToScoresheet')}
               </p>
-              <button
-                onClick={handleSuccessClose}
-                style={{
-                  padding: '12px 32px',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
+              <Button variant="dark" size="xl" block onClick={handleSuccessClose}>
                 {t('common.ok')}
-              </button>
+              </Button>
             </div>
           </Modal>
         )}
@@ -1968,7 +1504,6 @@ export default function UploadRosterApp() {
             ? t('rosterSetup.coachSignature', 'Coach Signature')
             : t('rosterSetup.captainSignature', 'Captain Signature')}
         />
-      </div>
       </div>
     </div>
   )

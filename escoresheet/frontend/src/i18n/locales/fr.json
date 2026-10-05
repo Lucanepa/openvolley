@@ -1357,6 +1357,7 @@
     "selectGame": "Sélectionner un match",
     "gamesAvailable": "{{count}} match(s) dispo.",
     "gameNumber": "Match N°{{number}}",
+    "selected": "Sélectionné",
     "vs": "vs",
     "tbd": "À définir",
     "connectionPin": "PIN de connexion",

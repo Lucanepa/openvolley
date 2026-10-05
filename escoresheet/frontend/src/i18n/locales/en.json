@@ -1360,6 +1360,7 @@
     "selectGame": "Select game",
     "gamesAvailable": "{{count}} available",
     "gameNumber": "Game #{{number}}",
+    "selected": "Selected",
     "vs": "vs",
     "tbd": "TBD",
     "connectionPin": "Connection PIN",

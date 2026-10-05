@@ -20,7 +20,13 @@ import DonutCountdown from './DonutCountdown'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { useSyncQueue } from '../hooks/useSyncQueue'
-import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, PhoneIcon, VolleyballIcon, BellIcon } from './icons'
+import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, SettingsIcon, VolleyballIcon, BellIcon } from './icons'
+import { Loader2 } from 'lucide-react'
+import { cn } from '../ui/cn.js'
+import { Button, FOCUS_RING } from '../ui/Button.jsx'
+import { Card } from '../ui/Card.jsx'
+import { StatusPill } from '../ui/StatusPill.jsx'
+import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -1999,9 +2005,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 padding: '2px 8px',
                 fontSize: '9px',
                 fontWeight: 600,
-                background: wakeLockActive ? 'rgba(34, 197, 94, 0.3)' : 'var(--panel)',
-                color: wakeLockActive ? '#22c55e' : 'var(--text)',
-                border: wakeLockActive ? '1px solid rgba(34, 197, 94, 0.5)' : '1px solid var(--border)',
+                background: wakeLockActive ? 'var(--ov-selected)' : 'var(--panel)',
+                color: wakeLockActive ? 'var(--ov-on-dark)' : 'var(--text)',
+                border: wakeLockActive ? '1px solid var(--ov-selected)' : '1px solid var(--border)',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 height: '25px',
@@ -2042,9 +2048,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 fontWeight: 600,
                 height: '25px',
                 justifyContent: 'center',
-                background: 'rgba(59, 130, 246, 0.2)',
-                color: '#3b82f6',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
+                background: 'var(--ov-card)',
+                color: 'var(--ov-text-body)',
+                border: '1px solid var(--ov-hairline-strong)',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -2111,7 +2117,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     overflow: 'hidden',
                     zIndex: 1000,
                     minWidth: '100px',
-                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+                    boxShadow: 'var(--ov-shadow-card-lg)'
                   }}>
                     {languages.map((lang) => (
                       <button
@@ -2129,8 +2135,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                           padding: '10px 12px',
                           fontSize: '12px',
                           fontWeight: i18n.language === lang.code ? 600 : 400,
-                          background: i18n.language === lang.code ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
-                          color: i18n.language === lang.code ? '#4ade80' : 'var(--text)',
+                          background: i18n.language === lang.code ? 'var(--ov-sunken-strong)' : 'transparent',
+                          color: 'var(--text)',
                           border: 'none',
                           cursor: 'pointer',
                           textAlign: 'left',
@@ -2172,9 +2178,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 justifyContent: 'center',
                 display: 'flex',
                 fontWeight: 600,
-                background: 'rgba(239, 68, 68, 0.2)',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
+                background: 'var(--ov-card)',
+                color: 'var(--ov-danger-text)',
+                border: '1px solid var(--ov-danger-border)',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 lineHeight: 1
@@ -2187,57 +2193,29 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
 
         {/* Content */}
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '24px',
-          padding: '20px'
-        }}>
-          {/* Team names if available */}
-          {data?.homeTeam?.name && data?.awayTeam?.name && (
-            <div style={{
-              fontSize: 'clamp(18px, 4vw, 28px)',
-              fontWeight: 700,
-              textAlign: 'center',
-              marginBottom: '16px'
-            }}>
-              {data.homeTeam.name} vs {data.awayTeam.name}
+        <div className="ov-kit flex flex-1 flex-col items-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6">
+          <Card stack={false} className="my-auto w-full max-w-md rounded-3xl p-6 text-center shadow-card-lg sm:p-8">
+            {/* Team names if available */}
+            {data?.homeTeam?.name && data?.awayTeam?.name && (
+              <p className="mb-5 text-lg font-bold tracking-tight text-stone-900 sm:text-xl">
+                {data.homeTeam.name} <span className="font-medium text-stone-400">vs</span> {data.awayTeam.name}
+              </p>
+            )}
+
+            {/* Awaiting Coin Toss Message */}
+            <div className="flex justify-center">
+              <StatusPill tone="todo" className="px-3 py-1 text-xs">
+                {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
+              </StatusPill>
             </div>
-          )}
 
-          {/* Awaiting Coin Toss Message */}
-          <div style={{
-            fontSize: 'clamp(20px, 5vw, 32px)',
-            fontWeight: 600,
-            color: '#fbbf24',
-            textAlign: 'center',
-            textTransform: 'uppercase',
-            letterSpacing: '2px'
-          }}>
-            {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
-          </div>
+            <p className="mx-auto mt-4 max-w-sm text-sm text-stone-600">
+              {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
+            </p>
 
-          <div style={{
-            fontSize: 'clamp(14px, 3vw, 18px)',
-            color: 'var(--muted)',
-            textAlign: 'center',
-            maxWidth: '400px'
-          }}>
-            {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
-          </div>
-
-          {/* Loading indicator */}
-          <div style={{
-            width: '40px',
-            height: '40px',
-            border: '3px solid var(--border)',
-            borderTopColor: '#fbbf24',
-            borderRadius: '50%',
-            animation: 'awaiting-spin 1s linear infinite'
-          }} />
+            {/* Loading indicator */}
+            <Loader2 size={28} className="mx-auto mt-6 animate-spin text-stone-400" aria-hidden />
+          </Card>
         </div>
 
         <style>{`
@@ -2613,52 +2591,32 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         padding: '20px',
         overflow: 'hidden'
       }}>
-        {/* Match Ended Banner */}
-        <div style={{
-          fontSize: '18px',
-          fontWeight: 500,
-          color: 'var(--muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '2px'
-        }}>
-          {t('refereeDashboard.matchHasEnded', 'The match has ended')}
-        </div>
+        <div className="ov-kit w-full max-w-sm">
+          <Card stack={false} className="rounded-3xl p-6 text-center shadow-card-lg sm:p-8">
+            {/* Match Ended Banner */}
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">
+              {t('refereeDashboard.matchHasEnded', 'The match has ended')}
+            </p>
 
-        {/* Winner and Result */}
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            fontSize: '32px',
-            fontWeight: 700,
-            marginBottom: '8px'
-          }}>
-            {matchWinner}
-          </div>
-          <div style={{
-            fontSize: '48px',
-            fontWeight: 800,
-            color: 'var(--accent)'
-          }}>
-            {matchResult}
-          </div>
-        </div>
+            {/* Winner and Result */}
+            <div className="mt-4 text-center">
+              <div className="text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl" style={{ marginBottom: '8px' }}>
+                {matchWinner}
+              </div>
+              <div style={{
+                fontSize: '48px',
+                fontWeight: 800,
+                color: 'var(--accent)'
+              }} className="tabular-nums">
+                {matchResult}
+              </div>
+            </div>
 
-        <button
-          onClick={onExit}
-          style={{
-            padding: '12px 24px',
-            fontSize: '16px',
-            fontWeight: 600,
-            background: 'var(--panel)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-            marginTop: '16px'
-          }}
-        >
-          Exit
-        </button>
+            <Button variant="secondary" size="xl" block className="mt-6" onClick={onExit}>
+              Exit
+            </Button>
+          </Card>
+        </div>
       </div>
     )
   }
@@ -2678,72 +2636,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       overflow: 'hidden'
     }}>
       {/* Narrow screen blocking overlay */}
-      {(viewportWidth < 357 || viewportHeight < 650) && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.5)',
-          zIndex: 99999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          textAlign: 'center'
-        }}>
-          <div style={{ marginBottom: '24px', color: '#ffffff' }}><PhoneIcon size={64} /></div>
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            color: '#ffffff',
-            marginBottom: '16px'
-          }}>
-            {t('common.screenTooSmall', 'Screen Too Small')}
-          </h2>
-          <p style={{
-            fontSize: '16px',
-            color: '#9ca3af',
-            maxWidth: '300px',
-            lineHeight: 1.5,
-            marginBottom: '24px'
-          }}>
-            {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
-          </p>
-          <button
-            onClick={() => {
-              if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen().catch(() => { })
-              }
-            }}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'var(--accent, #3b82f6)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span>⛶</span>
-            <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
-          </button>
-          <p style={{
-            fontSize: '12px',
-            color: '#6b7280',
-            marginTop: '12px'
-          }}>
-            {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
-          </p>
-        </div>
-      )}
+      {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
 
       {/* Debug overlay - triple-tap to show */}
       {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
@@ -2754,138 +2647,76 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {setterSelectionModal && (
         <div
           onClick={() => setSetterSelectionModal(null)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(15, 23, 42, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            cursor: 'pointer'
-          }}
+          className="ov-kit fixed inset-0 flex cursor-pointer items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+          style={{ zIndex: 9999 }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="setter-modal-title"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--panel)',
-              borderRadius: '24px',
-              padding: '32px',
-              textAlign: 'center',
-              border: '2px solid rgba(139, 92, 246, 0.5)',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-              minWidth: '320px',
-              maxWidth: '90vw',
-              maxHeight: '80vh',
-              overflow: 'auto'
-            }}
+            className="w-full max-w-sm max-h-[85vh] cursor-default overflow-y-auto rounded-2xl border border-stone-200/70 bg-white p-6 text-center shadow-2xl"
+            style={{ minWidth: 'min(320px, 90vw)' }}
           >
-            <div style={{
-              fontSize: '18px',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '2px',
-              color: '#8b5cf6',
-              marginBottom: '8px'
-            }}>
-              <VolleyballIcon size={18} /> Select Setter
-            </div>
-            <div style={{
-              fontSize: '14px',
-              color: 'var(--muted)',
-              marginBottom: '24px'
-            }}>
+            <h2 id="setter-modal-title" className="flex items-center justify-center gap-2 text-lg font-bold text-stone-900">
+              <VolleyballIcon size={18} /> Select setter
+            </h2>
+            <p className="mt-1 mb-5 text-sm text-stone-500">
               {setterSelectionModal === 'left' ? leftTeamData?.name : rightTeamData?.name}
-            </div>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '12px',
-              marginBottom: '20px'
-            }}>
+            </p>
+            <div className="mb-6 grid grid-cols-3 gap-2">
               {(() => {
                 const teamLineup = setterSelectionModal === 'left' ? leftLineup : rightLineup
                 const currentSetter = setterSelectionModal === 'left' ? setterNumber.left : setterNumber.right
-                if (!teamLineup) return <div style={{ gridColumn: '1/-1', color: 'var(--muted)' }}>No lineup available</div>
+                if (!teamLineup) return <div className="col-span-full text-sm text-stone-500">No lineup available</div>
 
                 return Object.entries(teamLineup).map(([position, posData]) => {
                   // Handle both rich format (posData is object with number) and legacy format (posData is number)
                   const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
+                  const chosen = String(playerNum) === String(currentSetter)
                   return (
                     <button
                       key={position}
+                      type="button"
+                      aria-pressed={chosen}
                       onClick={() => {
                         const side = setterSelectionModal
                         setSetterNumber(prev => ({ ...prev, [side]: playerNum }))
                         setAdvancedMode(prev => ({ ...prev, [side]: true }))
                         setSetterSelectionModal(null)
                       }}
-                      style={{
-                        padding: '16px 12px',
-                        fontSize: '20px',
-                        fontWeight: 700,
-                        background: String(playerNum) === String(currentSetter)
-                          ? 'rgba(139, 92, 246, 0.4)'
-                          : 'var(--panel)',
-                        color: String(playerNum) === String(currentSetter) ? '#a78bfa' : 'var(--text)',
-                        border: String(playerNum) === String(currentSetter)
-                          ? '2px solid #8b5cf6'
-                          : '1px solid var(--border)',
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '4px',
-                        transition: 'all 0.2s'
-                      }}
+                      className={cn(
+                        'flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl border text-xl font-bold tabular-nums transition-colors',
+                        FOCUS_RING,
+                        chosen
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-stone-300 bg-white text-stone-900 hover:bg-stone-50'
+                      )}
                     >
-                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{position}</span>
+                      <span className={cn('text-[10px] font-semibold', chosen ? 'text-white/70' : 'text-stone-500')}>{position}</span>
                       <span>#{playerNum}</span>
                     </button>
                   )
                 })
               })()}
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+            <div className="flex gap-2">
+              <Button variant="secondary" size="xl" className="flex-1 font-medium" onClick={() => setSetterSelectionModal(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger-outline"
+                size="xl"
+                className="flex-1 font-medium"
                 onClick={() => {
                   const side = setterSelectionModal
                   setAdvancedMode(prev => ({ ...prev, [side]: false }))
                   setSetterNumber(prev => ({ ...prev, [side]: null }))
                   setSetterSelectionModal(null)
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
-                Exit Advanced
-              </button>
-              <button
-                onClick={() => setSetterSelectionModal(null)}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
+                Exit advanced
+              </Button>
             </div>
           </div>
         </div>
@@ -3201,13 +3032,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {refereeView === '2nd' && !leftServing && leftLineup && (
                 <button
                   onClick={() => setSetterSelectionModal('left')}
+                  // Hit-slop only: the box stays 22px so the court below does not move;
+                  // where the slop overlaps the court, the court (painted later) still wins.
+                  className="relative before:absolute before:-inset-x-3 before:-inset-y-3 before:content-['']"
                   style={{
                     padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: advancedMode.left ? 'rgba(139, 92, 246, 0.3)' : 'var(--panel)',
-                    color: advancedMode.left ? '#a78bfa' : 'var(--muted)',
-                    border: advancedMode.left ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid var(--border)',
+                    background: advancedMode.left ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
+                    color: advancedMode.left ? '#6d28d9' : 'var(--ov-text-secondary)',
+                    border: advancedMode.left ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -3231,13 +3065,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {refereeView === '2nd' && !rightServing && rightLineup && (
                 <button
                   onClick={() => setSetterSelectionModal('right')}
+                  // Hit-slop only: the box stays 22px so the court below does not move;
+                  // where the slop overlaps the court, the court (painted later) still wins.
+                  className="relative before:absolute before:-inset-x-3 before:-inset-y-3 before:content-['']"
                   style={{
                     padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: advancedMode.right ? 'rgba(139, 92, 246, 0.3)' : 'var(--panel)',
-                    color: advancedMode.right ? '#a78bfa' : 'var(--muted)',
-                    border: advancedMode.right ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid var(--border)',
+                    background: advancedMode.right ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
+                    color: advancedMode.right ? '#6d28d9' : 'var(--ov-text-secondary)',
+                    border: advancedMode.right ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -4217,27 +4054,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             width={400}
             hideCloseButton={true}
           >
-            <div style={{ padding: '24px', textAlign: 'center' }}>
-              <div style={{ marginBottom: '16px', color: '#ef4444' }}><BellIcon size={48} /></div>
-              <p style={{ marginBottom: '20px', fontSize: vmin(3), fontWeight: 700, color: '#ef4444' }}>
-                Scorer Needs Attention!
+            <div className="ov-kit p-2 text-center sm:p-4">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600"><BellIcon size={36} /></div>
+              <p role="alert" className="mb-5 font-bold text-red-700" style={{ fontSize: vmin(3) }}>
+                Scorer needs attention
               </p>
-              <button
-                onClick={() => setAttentionModalOpen(false)}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  background: '#ef4444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
+              <Button variant="dark" size="xl" block className="h-14 text-base" onClick={() => setAttentionModalOpen(false)}>
                 Acknowledge
-              </button>
+              </Button>
             </div>
           </Modal>
         )
