@@ -46,10 +46,14 @@ import { buildConnectionPins } from '../utils/connectionPins'
  * - Retries: dependency waits retry up to MAX_DEPENDENCY_RETRIES per cycle;
  *   errored jobs come back with exponential backoff (capped at 10 min, never
  *   dropped). The due ones are requeued at the start of every flush.
- * - Refused by the backend (4xx: validation, scoping, permission) -> 'failed':
- *   resending the same payload cannot succeed, so it is not auto-retried. It is
- *   counted in the sync indicator and retried by hand ("Retry All") or after a
- *   sign-in.
+ * - Refused by the backend (a 4xx carrying an application error code: OV_*,
+ *   PGRST*, a Postgres SQLSTATE) -> 'failed': resending the same payload cannot
+ *   succeed, so it is retried only at app start, once an hour (at most
+ *   FAILED_AUTO_RETRY_MAX times), by hand ("Retry All") or after a sign-in.
+ * - A 4xx WITHOUT such a code did not come from the backend's own checks (a
+ *   proxy/WAF page during a deploy, a misrouted URL): the job is parked as
+ *   'error' with backoff and the pass stops, as for a network failure.
+ * - Sent/superseded/dropped rows are pruned after SENT_RETENTION_MS.
  * - 401 (no or expired session): every cloud write needs an account. The job
  *   stays queued without counting an attempt, the status becomes
  *   'auth_required' and the queue waits for a sign-in (re-probed every 5 min).
@@ -88,6 +92,22 @@ const PROBE_BACKOFF_MAX = 60000
 // abandoned (tab closed mid-request) and handed back to the queue.
 const SENDING_STALE_MS = 2 * 60 * 1000
 
+// Jobs the backend refused ('failed') come back on their own once an hour, at
+// most this many times (and at every app start): a refusal can be temporary
+// (wrong account, a backend fix deployed), and the cloud copy must not depend
+// on someone clicking "Retry All".
+const FAILED_RETRY_MS = 60 * 60 * 1000
+const FAILED_AUTO_RETRY_MAX = 24
+
+// The requeue step of flush (errored jobs whose backoff passed, abandoned
+// 'sending' jobs) runs at most this often; flush itself runs on every write.
+const REQUEUE_INTERVAL_MS = 30000
+
+// Sent, superseded and dropped rows are kept this long (for debugging), then
+// pruned; the per-rally set score adds one row per point.
+const SENT_RETENTION_MS = 7 * 24 * 3600 * 1000
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000
+
 // processJob result: stop this pass, leave the job queued untouched (rate limited)
 export const STOP_PASS = 'stop'
 // processJob result: the request itself failed (backend unreachable). Stops the
@@ -101,8 +121,12 @@ export const DROP_JOB = 'drop'
 // untouched and the pass stops: every other write would get the same answer.
 export const AUTH_REQUIRED = 'auth_required'
 // processJob result: the backend refused the request itself (4xx validation,
-// scoping, permission). Parked as 'failed', never retried automatically.
+// scoping, permission). Parked as 'failed' (see FAILED_RETRY_MS).
 export const PERMANENT_FAILURE = 'permanent'
+// processJob result: a 4xx that did not come from the backend's own checks (no
+// application error code: proxy/WAF page, misrouted URL). Parked as 'error'
+// with backoff, and the pass stops: the next job would most likely get the same.
+export const STOP_ERROR = 'stop_error'
 
 // VALID_MATCH_COLUMNS + filterMatchPayload now live in ../db/matchRepository
 // (imported above) so useSyncQueue, useSequentialSync, and backupManager share
@@ -139,20 +163,51 @@ export function isAuthError(error) {
   return (error.status ?? 0) === 401 || AUTH_ERROR_CODES.has(error.code)
 }
 
-/**
- * The backend refused the request itself (400 validation such as
- * OV_UNSCOPED_EXTERNAL_ID, 403, 404, 406, 409, 413, 422 ...). Sending the same
- * payload again gives the same answer.
- */
-export function isPermanentError(error) {
+// Error codes only the OpenVolley backend answers with: its own checks (OV_*),
+// the PostgREST-shaped ones (PGRST116 ...) and Postgres SQLSTATEs (23505 ...).
+// apiClient sets no code when the error body was not JSON.
+const APPLICATION_ERROR_CODE = /^(OV_[A-Z0-9_]+|PGRST\d+|[0-9A-Z]{5})$/
+
+/** The error came from the backend's own checks (it carries an application code). */
+export function hasApplicationErrorCode(error) {
+  return typeof error?.code === 'string' && APPLICATION_ERROR_CODE.test(error.code)
+}
+
+/** A 4xx other than the transient/auth ones (401, 408, 426, 429). */
+function isRefusalStatus(error) {
   if (!error || error.network) return false
   const status = error.status ?? 0
   return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 426 && status !== 429
 }
 
-// The reason of the last failure inside processJob, stored on the job so a
-// parked job can be explained. Never carries the payload (PINs).
-let lastJobError = null
+/**
+ * The backend refused the request itself (400 validation such as
+ * OV_UNSCOPED_EXTERNAL_ID, 406 PGRST116, a SQLSTATE ...). Sending the same
+ * payload again gives the same answer. A 4xx without an application code (a
+ * proxy or WAF page, a misrouted URL) is not one: see isForeignClientError.
+ */
+export function isPermanentError(error) {
+  return isRefusalStatus(error) && hasApplicationErrorCode(error)
+}
+
+/** A 4xx that did not come from the backend's checks (no application code). */
+export function isForeignClientError(error) {
+  return isRefusalStatus(error) && !hasApplicationErrorCode(error)
+}
+
+// Reason of a job's last failure (by job id), stored on the job so a parked job
+// can be explained. Never carries the payload (PINs). Kept per job, not in one
+// shared variable: a direct send (useSequentialSync) can run while a queue pass
+// is in flight.
+const jobErrors = new Map()
+
+/** The failure reason processJob recorded for this job (read once). */
+export function takeJobError(jobId) {
+  const error = jobErrors.get(jobId) ?? null
+  jobErrors.delete(jobId)
+  return error
+}
+
 function summarizeError(error) {
   if (!error) return null
   return {
@@ -175,14 +230,15 @@ function isNetworkException(err) {
   return NETWORK_ERROR_MESSAGE.test(err?.message || '')
 }
 
-// Map an apiFrom error to a processJob result
-function failureResult(error) {
-  lastJobError = summarizeError(error)
+// Map an apiFrom error to a processJob result; the reason goes on `ctx`
+function failureResult(error, ctx) {
+  if (ctx) ctx.error = summarizeError(error)
   if (error?.network) return STOP_NETWORK
   if (isStopError(error)) return STOP_PASS
   if (isAuthError(error)) return AUTH_REQUIRED
   if (isTransientError(error)) return null
   if (isPermanentError(error)) return PERMANENT_FAILURE
+  if (isForeignClientError(error)) return STOP_ERROR
   return false
 }
 
@@ -292,12 +348,19 @@ export async function supersedeStaleUpdates(errorJobs) {
   return superseded
 }
 
+/** A 'failed' job (refused by the backend) due for its hourly automatic retry. */
+function isFailedJobDue(job, now) {
+  if ((job.failed_auto_retries || 0) >= FAILED_AUTO_RETRY_MAX) return false
+  return !job.failed_at || now - job.failed_at >= FAILED_RETRY_MS || now < job.failed_at
+}
+
 /**
  * Internal helper: Reset errored jobs to queued (non-hook function)
  * This can be called from within useEffect without dependency issues.
  * Automatic retries respect each job's backoff; `force` (manual retry, back
- * online) requeues every errored job now. `includeFailed` (manual retry,
- * sign-in) also requeues jobs the backend refused ('failed').
+ * online) requeues every errored job now. Jobs the backend refused ('failed')
+ * come back once an hour (at most FAILED_AUTO_RETRY_MAX times), or at once with
+ * `includeFailed` (manual retry, sign-in, app start).
  */
 export async function retryErrorsInternal({ force = false, includeFailed = false } = {}) {
   try {
@@ -313,22 +376,59 @@ export async function retryErrorsInternal({ force = false, includeFailed = false
       }
     }
 
-    const errorJobs = await db.sync_queue.where('status').anyOf(includeFailed ? ['error', 'failed'] : ['error']).toArray()
+    const errorJobs = await db.sync_queue.where('status').anyOf(['error', 'failed']).toArray()
     if (errorJobs.length === 0) return reclaimed > 0
 
-    const superseded = await supersedeStaleUpdates(errorJobs)
-    const due = errorJobs.filter(job => !superseded.has(job.id) &&
-      (job.status === 'failed' || force || !job.next_attempt_at || job.next_attempt_at <= now))
+    // Only the due jobs are trimmed against newer sent updates (that scan grows
+    // with the queue history; jobs still waiting out a backoff skip it)
+    const due = errorJobs.filter(job => job.status === 'failed'
+      ? includeFailed || isFailedJobDue(job, now)
+      : force || !job.next_attempt_at || job.next_attempt_at <= now)
     if (due.length === 0) return reclaimed > 0
 
-    console.log(`[SyncQueue] ${force ? 'Retrying' : 'Auto-retrying'} ${due.length} errored jobs${superseded.size ? ` (${superseded.size} superseded)` : ''}`)
-    for (const job of due) {
-      await db.sync_queue.update(job.id, { status: 'queued', retry_count: 0 })
+    const superseded = await supersedeStaleUpdates(due)
+    const requeue = due.filter(job => !superseded.has(job.id))
+    if (requeue.length === 0) return reclaimed > 0 || superseded.size > 0
+
+    console.log(`[SyncQueue] ${force || includeFailed ? 'Retrying' : 'Auto-retrying'} ${requeue.length} errored jobs${superseded.size ? ` (${superseded.size} superseded)` : ''}`)
+    for (const job of requeue) {
+      const changes = { status: 'queued', retry_count: 0 }
+      if (job.status === 'failed') {
+        changes.failed_auto_retries = includeFailed ? 0 : (job.failed_auto_retries || 0) + 1
+      }
+      await db.sync_queue.update(job.id, changes)
     }
     return true
   } catch (err) {
     console.error('[SyncQueue] Auto-retry errors failed:', err)
     return false
+  }
+}
+
+/**
+ * Remove sent, superseded and dropped rows older than `retentionMs`. Rows newer
+ * than the oldest job still pending are kept whatever their age: the supersede
+ * step of a retried job compares it with the updates sent after it.
+ * @returns {Promise<number>} rows removed
+ */
+export async function pruneSyncQueue({ retentionMs = SENT_RETENTION_MS, now = Date.now() } = {}) {
+  try {
+    const pending = await db.sync_queue.where('status').anyOf(['queued', 'sending', 'error', 'failed']).toArray()
+    const oldestPendingId = pending.reduce((min, j) => Math.min(min, j.id), Infinity)
+    const done = await db.sync_queue.where('status').anyOf(['sent', 'superseded', 'dropped']).toArray()
+    const ids = done
+      .filter(j => {
+        if (j.id >= oldestPendingId) return false
+        // ts is a number (Date.now()) or an ISO string, depending on the writer
+        const ts = typeof j.ts === 'number' ? j.ts : Date.parse(j.ts)
+        return Number.isFinite(ts) && now - ts > retentionMs
+      })
+      .map(j => j.id)
+    if (ids.length > 0) await db.sync_queue.bulkDelete(ids)
+    return ids.length
+  } catch (err) {
+    console.warn('[SyncQueue] Could not prune the sync queue:', err?.message)
+    return 0
   }
 }
 
@@ -385,10 +485,19 @@ installAuthListener()
 
 /**
  * Process a single job.
- * Returns true (sent), false (error), null (retry later), STOP_PASS or DROP_JOB.
+ * Returns true (sent), false (error), null (retry later), STOP_PASS,
+ * STOP_NETWORK, STOP_ERROR, AUTH_REQUIRED, PERMANENT_FAILURE or DROP_JOB. The
+ * failure reason is available once through takeJobError(job.id).
  */
 export async function processJob(job) {
-  lastJobError = null
+  const ctx = { error: null }
+  const result = await processJobInner(job, ctx)
+  if (ctx.error && job?.id != null) jobErrors.set(job.id, ctx.error)
+  else if (job?.id != null) jobErrors.delete(job.id)
+  return result
+}
+
+async function processJobInner(job, ctx) {
   try {
     // Jobs queued before set/event ids were namespaced (or by a call site that
     // still sends the bare Dexie id) are rewritten before they reach the cloud.
@@ -415,7 +524,7 @@ export async function processJob(job) {
         .upsert(matchPayload, { onConflict: 'external_id' })
       if (error) {
         console.error('[SyncQueue] Match insert error:', error, redactForLog(matchPayload))
-        return failureResult(error)
+        return failureResult(error, ctx)
       }
       console.log('[SyncQueue] Match insert successful')
       return true
@@ -444,7 +553,7 @@ export async function processJob(job) {
         if (fetchError) {
           console.error('[SyncQueue] Match fetch for merge error:', fetchError)
           // Do not overwrite JSON columns blind when the backend is struggling
-          if (isStopError(fetchError) || isTransientError(fetchError)) return failureResult(fetchError)
+          if (isStopError(fetchError) || isTransientError(fetchError)) return failureResult(fetchError, ctx)
           // Otherwise continue with update anyway - worst case we overwrite
         }
 
@@ -467,7 +576,7 @@ export async function processJob(job) {
         .eq('external_id', id)
       if (error) {
         console.error('[SyncQueue] Match update error:', error, redactForLog(job.payload))
-        return failureResult(error)
+        return failureResult(error, ctx)
       }
       console.log('[SyncQueue] Match update successful')
       return true
@@ -485,7 +594,7 @@ export async function processJob(job) {
 
       if (lookupError) {
         console.error('[SyncQueue] Match lookup error:', lookupError, job.payload)
-        return failureResult(lookupError)
+        return failureResult(lookupError, ctx)
       }
 
       if (!matchData) {
@@ -575,7 +684,7 @@ export async function processJob(job) {
         .eq('id', matchUuid)
       if (matchError) {
         console.error('[SyncQueue] Match delete error:', matchError, job.payload)
-        return failureResult(matchError)
+        return failureResult(matchError, ctx)
       }
 
       console.log('[SyncQueue] ✅ Deleted match and related records from Supabase:', id)
@@ -611,7 +720,7 @@ export async function processJob(job) {
         if (error) {
           console.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
           // 426 (old bundle), 429, 5xx and network errors: retry later
-          return failureResult(error)
+          return failureResult(error, ctx)
         }
         console.log('[SyncQueue] Restore complete for match:', externalId, data?.counts || '')
         if (data?.dropped && Object.keys(data.dropped).length) {
@@ -620,7 +729,7 @@ export async function processJob(job) {
         return true
       } catch (restoreErr) {
         console.error('[SyncQueue] Restore exception:', restoreErr)
-        lastJobError = summarizeError(restoreErr)
+        ctx.error = summarizeError(restoreErr)
         return isNetworkException(restoreErr) ? STOP_NETWORK : false
       }
     }
@@ -636,7 +745,7 @@ export async function processJob(job) {
           .eq('external_id', setPayload.match_id)
           .maybeSingle()
 
-        if (lookupError) return failureResult(lookupError)
+        if (lookupError) return failureResult(lookupError, ctx)
         if (!matchData) {
           // Match not yet synced - keep job queued for retry
           return null // null means "retry later"
@@ -648,7 +757,7 @@ export async function processJob(job) {
         .upsert(setPayload, { onConflict: 'external_id' })
       if (error) {
         console.error('[SyncQueue] Set insert error:', error, setPayload)
-        return failureResult(error)
+        return failureResult(error, ctx)
       }
       return true
     }
@@ -665,7 +774,7 @@ export async function processJob(job) {
           .select('id')
           .eq('external_id', parsed.seedKey)
           .maybeSingle()
-        if (lookupError) return failureResult(lookupError)
+        if (lookupError) return failureResult(lookupError, ctx)
         if (!matchData) return null // match not in the cloud yet - retry later
         // Also match the row a set insert created before ids were namespaced;
         // the match scope keeps that bare id from touching other matches.
@@ -679,7 +788,7 @@ export async function processJob(job) {
       const { error } = await query
       if (error) {
         console.error('[SyncQueue] Set update error:', error, job.payload)
-        return failureResult(error)
+        return failureResult(error, ctx)
       }
       return true
     }
@@ -695,7 +804,7 @@ export async function processJob(job) {
           .eq('external_id', eventPayload.match_id)
           .maybeSingle()
 
-        if (lookupError) return failureResult(lookupError)
+        if (lookupError) return failureResult(lookupError, ctx)
         if (!matchData) {
           // Match not yet synced - keep job queued for retry (will be limited by MAX_DEPENDENCY_RETRIES)
           return null // null means "retry later"
@@ -708,7 +817,7 @@ export async function processJob(job) {
         .upsert(eventPayload, { onConflict: 'external_id' })
       if (error) {
         console.error('[SyncQueue] Event insert error:', error, eventPayload)
-        return failureResult(error)
+        return failureResult(error, ctx)
       }
       return true
     }
@@ -719,7 +828,7 @@ export async function processJob(job) {
 
   } catch (err) {
     console.error('[SyncQueue] Job processing error:', err, job.resource, job.action)
-    lastJobError = summarizeError(err)
+    ctx.error = summarizeError(err)
     return isNetworkException(err) ? STOP_NETWORK : false
   }
 }
@@ -814,6 +923,7 @@ export async function runQueuePass() {
       }
 
       const result = await processJob(job)
+      const jobError = takeJobError(job.id)
 
       if (result === true) {
         await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })
@@ -860,14 +970,31 @@ export async function runQueuePass() {
         return outcome
       }
 
+      if (result === STOP_ERROR) {
+        // A 4xx from something in front of the backend (proxy/WAF page, no
+        // application code): back off this job and stop the pass, the next job
+        // would most likely get the same page.
+        const attempts = (job.attempts || 0) + 1
+        console.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) got a ${jobError?.status} without a backend error code; retrying later`)
+        await db.sync_queue.update(job.id, {
+          status: 'error',
+          attempts,
+          next_attempt_at: Date.now() + errorBackoffMs(attempts),
+          last_error: jobError
+        })
+        outcome.stopped = true
+        outcome.hasError = true
+        return outcome
+      }
+
       if (result === PERMANENT_FAILURE) {
         // Refused by the backend: the same payload would be refused again
-        console.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend, not retried automatically:`, lastJobError?.code || lastJobError?.status)
+        console.warn(`[SyncQueue] Job ${job.id} (${job.resource} ${job.action}) refused by the backend, retried only hourly or by hand:`, jobError?.code || jobError?.status)
         await db.sync_queue.update(job.id, {
           status: 'failed',
           attempts: (job.attempts || 0) + 1,
           failed_at: Date.now(),
-          last_error: lastJobError
+          last_error: jobError
         })
         outcome.hasError = true
         outcome.hasFailed = true
@@ -877,7 +1004,7 @@ export async function runQueuePass() {
           status: 'error',
           attempts,
           next_attempt_at: Date.now() + errorBackoffMs(attempts),
-          last_error: lastJobError
+          last_error: jobError
         })
         outcome.hasError = true
       } else {
@@ -909,6 +1036,21 @@ export async function runQueuePass() {
 // per-instance flag let two instances process the same queued rows at once
 // (restore/delete are not idempotent).
 let flushInProgress = false
+
+// Last run of flush's throttled housekeeping (requeue of errored jobs, prune)
+let lastRequeueAt = 0
+let lastPruneAt = 0
+// 'failed' jobs are requeued once per page load (the first connected mount)
+let startupFailedRetryDone = false
+// A clock that went backwards (device time corrected) counts as due
+function isDue(last, interval, now) {
+  return !last || now - last >= interval || now < last
+}
+/** Forget the housekeeping timestamps (tests; also a sign-in retries at once). */
+export function resetQueueHousekeeping() {
+  lastRequeueAt = 0
+  lastPruneAt = 0
+}
 
 // Sync status is shared by every mounted instance: whichever instance runs the
 // flush publishes it, so the Scoreboard indicator stays current even when the
@@ -1023,7 +1165,16 @@ export function useSyncQueue() {
       // Errored jobs whose backoff has passed go back into this pass. Done here,
       // inside the flush claim: a separate timer always found a flush running
       // (its 30 s period was a multiple of the 5 s poll) and never retried.
-      await retryErrorsInternal()
+      // Throttled: flush runs 200 ms after every queued write (every rally).
+      const now = Date.now()
+      if (isDue(lastRequeueAt, REQUEUE_INTERVAL_MS, now)) {
+        lastRequeueAt = now
+        await retryErrorsInternal()
+      }
+      if (isDue(lastPruneAt, PRUNE_INTERVAL_MS, now)) {
+        lastPruneAt = now
+        await pruneSyncQueue({ now })
+      }
 
       const outcome = await runQueuePass()
 
@@ -1102,8 +1253,11 @@ export function useSyncQueue() {
       if (hasBackend()) {
         checkSupabaseConnection(true).then(async (connected) => {
           if (connected) {
-            // On initial load, retry errored jobs if any
-            await retryErrorsInternal({ force: true })
+            // On initial load, retry errored jobs if any; once per page load
+            // also the ones the backend refused (a fix may have been deployed)
+            const includeFailed = !startupFailedRetryDone
+            startupFailedRetryDone = true
+            await retryErrorsInternal({ force: true, includeFailed })
             flush()
           }
         })
