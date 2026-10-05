@@ -1309,7 +1309,7 @@ export default function UploadRosterApp() {
                   </div>
                 </div>
               </div>
-              <Button variant="secondary" icon={Plus} className="mt-3" onClick={handleAddPlayer}>
+              <Button variant="secondary" className="mt-3" onClick={handleAddPlayer}>
                 {t('roster.addPlayer')}
               </Button>
             </section>
