@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, MonitorIcon, ClipboardIcon, TrashIcon } from './icons'
+import { clearCachesAndReload } from '../hooks/useServiceWorker'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -94,15 +95,15 @@ export default function DashboardHeader({
   const [confirmingClearCache, setConfirmingClearCache] = useState(false)
 
   const handleClearCache = async () => {
-    if ('caches' in window) {
-      const cacheNames = await caches.keys()
-      await Promise.all(cacheNames.map(name => caches.delete(name)))
+    try {
+      // Keeps ?match=&team= on reload; refuses when the server is unreachable
+      if (!(await clearCachesAndReload())) {
+        window.alert(t('options.alerts.clearCacheNeedsServer', 'Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.'))
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error)
+      window.alert(t('options.alerts.failedToClearCache', { error: error.message }))
     }
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations()
-      await Promise.all(registrations.map(reg => reg.unregister()))
-    }
-    window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
   }
 
   // Close menu on outside click

@@ -48,10 +48,13 @@ export const offlineNavigationRoute = {
     }
     if (shell) {
       try {
-        // Prefer the precache (keys carry ?__WB_REVISION__, hence ignoreSearch)
+        // Prefer THIS worker's precache (keys carry ?__WB_REVISION__, hence
+        // ignoreSearch). Workbox names it workbox-precache-v2-<scope>; several
+        // sub-apps (/referee/, /bench/, /roster/) share one origin in the
+        // release server, so "the first workbox-precache*" may be another app's.
+        const precacheName = 'workbox-precache-v2-' + self.registration.scope
         const names = await caches.keys()
-        const precacheName = names.find((n) => n.startsWith('workbox-precache'))
-        const cached = (precacheName && await (await caches.open(precacheName)).match(shell, { ignoreSearch: true })) ||
+        const cached = (names.includes(precacheName) && await (await caches.open(precacheName)).match(shell, { ignoreSearch: true })) ||
           await caches.match(shell, { ignoreSearch: true })
         if (cached) return cached
       } catch {

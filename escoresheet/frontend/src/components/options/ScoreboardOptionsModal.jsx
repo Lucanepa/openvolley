@@ -6,6 +6,7 @@ import { db } from '../../db/db'
 import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup } from '../../utils/backupManager'
 import BackupTable from '../BackupTable'
 import { SatelliteDishIcon } from '../icons'
+import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 
 function InfoDot({ title }) {
   const [showTooltip, setShowTooltip] = useState(false)
@@ -235,32 +236,13 @@ export default function ScoreboardOptionsModal({
     }
   }
 
-  // Clear cache functions
-  const clearServiceWorkerCaches = async () => {
-    if ('caches' in window) {
-      const cacheNames = await caches.keys()
-      await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)))
-    }
-  }
-
-  const unregisterServiceWorkers = async () => {
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations()
-      await Promise.all(registrations.map(registration => registration.unregister()))
-    }
-  }
-
   const executeClearCache = async (includeLocalStorage) => {
     try {
-      await clearServiceWorkerCaches()
-      await unregisterServiceWorkers()
-
-      if (includeLocalStorage) {
-        localStorage.clear()
+      // Reachable mid-match: refuse when the server is unreachable, since with
+      // the precache and service worker gone the reload could not load the app.
+      if (!(await clearCachesAndReload({ includeLocalStorage }))) {
+        showAlert(t('options.alerts.clearCacheNeedsServer', 'Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.'), 'error')
       }
-
-      // Force reload bypassing browser HTTP cache
-      window.location.href = window.location.pathname + '?cache_bust=' + Date.now()
     } catch (error) {
       console.error('Error clearing cache:', error)
       showAlert(t('options.alerts.failedToClearCache', { error: error.message }), 'error')

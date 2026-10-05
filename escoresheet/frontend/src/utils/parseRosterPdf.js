@@ -3,23 +3,19 @@
  * Supports Italian, French, English, and German formats
  */
 
+// The pdf.js worker is bundled with the app (emitted as a hashed .mjs asset and
+// precached by the service worker), NOT loaded from a CDN: roster import must
+// work offline and on a LAN-only venue box, and the backend CSP is script-src 'self'.
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+export const PDF_WORKER_URL = pdfWorkerUrl
+
 export async function parseRosterPdf(file) {
   try {
     // Dynamic import of pdfjs-dist
     const pdfjsLib = await import('pdfjs-dist')
 
-    // Set worker source - use unpkg which has reliable file structure for all versions
-    // Try multiple CDN sources for better reliability
-    const version = pdfjsLib.version
-    const cdnUrls = [
-      `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`,
-      `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.js`,
-      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`,
-      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.js`,
-    ]
-
-    // Use the first URL (unpkg with .mjs extension for v5.x)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = cdnUrls[0]
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL
 
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
@@ -56,7 +52,8 @@ export async function parseRosterPdf(file) {
     return result
   } catch (error) {
     console.error('Error parsing PDF:', error)
-    throw new Error(`Failed to parse PDF: ${error.message}. Please ensure pdfjs-dist is installed.`)
+    // Callers prefix "Failed to parse PDF:" themselves
+    throw error
   }
 }
 
