@@ -8,21 +8,53 @@
 # real remedy, so the only real control is not committing the secret.
 #
 # Enable in a fresh clone with:  git config core.hooksPath .githooks
-# (where a package.json exists, its "prepare" script does this on npm install)
+# Nothing sets this automatically (no package.json "prepare" script does it);
+# run the command once per clone. Check with: git config --get core.hooksPath
+#
+# Fails CLOSED when gitleaks is missing: this hook only runs where someone
+# opted in via core.hooksPath, so a silent skip would defeat the point. On a
+# machine without gitleaks (e.g. a venue box), set SKIP_GITLEAKS=1 for that
+# commit; it is printed as a warning, never silent.
 #
 # Bypass with --no-verify only if you are certain the match is a placeholder,
 # and add it to the allowlist in .gitleaks.toml so the next commit is clean.
 set -euo pipefail
 
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "pre-commit: gitleaks not found on PATH — secret scan SKIPPED." >&2
-  echo "  install: https://github.com/gitleaks/gitleaks/releases" >&2
-  exit 0
+  if [[ "${SKIP_GITLEAKS:-}" == "1" ]]; then
+    echo "pre-commit: WARNING — gitleaks not installed and SKIP_GITLEAKS=1: this commit was NOT scanned for secrets." >&2
+    exit 0
+  fi
+  echo "pre-commit: BLOCKED — gitleaks not found on PATH, so staged changes cannot be scanned for secrets." >&2
+  echo "  install: https://github.com/gitleaks/gitleaks/releases (single static binary, works offline)" >&2
+  echo "  or, for this one commit only: SKIP_GITLEAKS=1 git commit ..." >&2
+  exit 1
 fi
 
-if ! gitleaks protect --staged --redact --no-banner --config .gitleaks.toml; then
+# core.hooksPath may be absolute and shared by several worktrees/branches, so
+# resolve the config from the checkout being committed, not the hook's own dir.
+top="$(git rev-parse --show-toplevel)"
+args=(--redact --no-banner)
+if [[ -f "$top/.gitleaks.toml" ]]; then
+  args+=(--config "$top/.gitleaks.toml")
+else
+  echo "pre-commit: no .gitleaks.toml in this checkout — scanning with gitleaks' default rules only." >&2
+fi
+# Look inside staged zips/tarballs too (vendor firmware archives carried a wifi.conf).
+if gitleaks --help 2>&1 | grep -q -- '--max-archive-depth'; then
+  args+=(--max-archive-depth 3)
+fi
+
+# "gitleaks git --pre-commit" replaced "protect" in 8.19; keep the old form for older installs.
+if gitleaks --help 2>&1 | grep -qE '^[[:space:]]+git[[:space:]]'; then
+  scan=(gitleaks git --pre-commit --staged "${args[@]}" "$top")
+else
+  scan=(gitleaks protect --staged "${args[@]}" --source "$top")
+fi
+
+if ! "${scan[@]}"; then
   echo >&2
-  echo "pre-commit: BLOCKED — a staged change looks like a credential." >&2
+  echo "pre-commit: BLOCKED — a staged change looks like a credential (or gitleaks failed to run)." >&2
   echo "  Remove it and use an env var / secret store instead." >&2
   echo "  False positive? Add an allowlist entry to .gitleaks.toml." >&2
   exit 1
