@@ -1,17 +1,50 @@
 :root {
-  /* LIGHT MODE palette (dark mode removed). Surfaces are light, text is dark;
-     accent/danger stay semantic. Kept in sync with the shadcn tokens in tailwind.css. */
-  --bg: #f1f5f9;        /* app background (slate-100) */
-  --panel: #ffffff;     /* cards / panels */
-  --panel-2: #f8fafc;   /* subtle raised surface (slate-50) */
-  --text: #0f172a;      /* primary text (slate-900) */
-  --muted: #64748b;     /* secondary text (slate-500) */
-  --border: #e2e8f0;    /* hairline borders (slate-200) */
+  /* Legacy names, re-pointed at the volleyui --ov-* tokens (src/tailwind.css,
+     RESTYLE-SPEC 1.4). About 2,200 inline style={{}} objects read these, so the
+     cool slate greys become warm stone without touching the JSX. */
+  --bg: var(--ov-page);           /* stone-100 page   (was slate-100 #f1f5f9) */
+  --panel: var(--ov-card);        /* white cards and panels */
+  --panel-2: var(--ov-sunken);    /* stone-50 sunken  (was slate-50 #f8fafc) */
+  --text: var(--ov-text);         /* stone-900        (was slate-900 #0f172a) */
+  --muted: var(--ov-text-muted);  /* stone-500        (was slate-500 #64748b) */
+  --border: var(--ov-hairline);   /* stone-200        (was slate-200 #e2e8f0) */
+  /* Was never defined: 16 inline backgrounds read it without a fallback (and
+     drew nothing), TimeInput24 with a dark #1f2937 fallback, which made the
+     set start/end time fields black slabs. White, like --panel. */
+  --bg-secondary: var(--ov-card);
+  /* Unchanged on purpose. --accent is the scoring green (serve badge, colon
+     dots, TO counters, interval timer, captain "C"). --danger is the red of the
+     offline/error status dots (frozen hues) and of the rally controls' Undo
+     button (frozen, and no brand red on the scoreboard: R4). */
   --accent: #22c55e;
   --danger: #ef4444;
   /* Scale factor for dynamic sizing - set by JavaScript */
   --scale-factor: 1;
   --vmin-base: 768px;
+}
+
+/* Frozen scoring readouts keep the exact pre-restyle palette (RESTYLE-SPEC 4).
+   The aliases above turn the app from slate to stone. In the scoring centre
+   column (.court-wrapper: big rally score, serve box, referee names, game
+   captain chips, the court with its discs, position tags I-VI and captain
+   marks, the rally controls, the per-set tables), the compact score, the
+   toolbar set-score boxes, the TO/SUB counters and the set-end / match-end
+   readouts the old values are pinned instead, so they stay pixel-identical.
+   The side columns' own buttons (Improper Request / Delay Warning / Delay
+   Penalty chips, IR & Delays, TO/SUB, bench and libero buttons) are pinned
+   too; the side-column surfaces around them take the stone hairlines.
+   This only sets custom properties (and re-resolves the inherited text
+   colour, which the `button` rule overrides as before); the frozen rules
+   themselves are not edited. */
+:where(.court-wrapper, .court, .set-score-display, [data-help-id="scoreboard-set-display"],
+       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button) {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --panel-2: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  color: var(--text);
 }
 
 html,
@@ -48,10 +81,21 @@ body {
    inline `outline: none` styles. Interactive elements only. Not inside .ov-kit:
    the kit draws its own ring (FOCUS_RING), and this !important outline in the
    lower legacy layer would still beat its focus-visible:outline-none. */
-:where(button, a, input, select, textarea, [role="button"], [tabindex]):not(.ov-kit *):focus-visible {
+:where(button, a, input:is([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+       [role="button"], [tabindex]):not(.ov-kit *):focus-visible {
   outline: 2px solid var(--ring, #3b82f6) !important;
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* Text fields, selects and textareas: the kit's `focus:ring-2 focus:ring-red-500`
+   (RESTYLE-SPEC 2.4), on any focus, hugging the field's own radius. Drawn as an
+   outline so it still beats the many inline `outline: none` styles. --ring is
+   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4). */
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+       select, textarea):not(.ov-kit *):focus {
+  outline: 2px solid var(--ring, #ef4444) !important;
+  outline-offset: 0;
 }
 
 .app-root {
@@ -90,27 +134,28 @@ body.no-scroll {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ov-hairline-strong); /* stone-300 */
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--ov-text-faint); /* stone-400 */
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* standard scrollbar properties for Firefox */
+/* standard scrollbar properties (Firefox, and Chromium 121+ where they win
+   over the ::-webkit-scrollbar rules): thin stone-300 thumb, as the kit base */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+  scrollbar-color: var(--ov-hairline-strong) transparent;
 }
 
 /* Allow text selection in form elements */
@@ -199,10 +244,13 @@ p {
   }
 }
 
+/* Page card: the kit Card (white, rounded-2xl, stone-200/70 hairline,
+   shadow-card). Paddings keep the scale-factor steps. */
 .card {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: calc(12px * var(--scale-factor));
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
   padding: calc(16px * var(--scale-factor));
   display: flex;
   flex-direction: column;
@@ -223,6 +271,16 @@ p {
     padding: calc(24px * var(--scale-factor));
     gap: calc(14px * var(--scale-factor));
   }
+}
+
+/* Never a card in a card: inside the .setup page card (match setup, match end)
+   a .card is the kit inner bordered box: white, stone-200 hairline, one radius
+   step down, no shadow. White (not the tinted Block) because MatchEnd's frozen
+   readouts (3:0, the paper-sheet Results) sit on these and keep their ground. */
+.setup .card {
+  border-color: var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+  box-shadow: none;
 }
 
 .card h3 {
@@ -372,15 +430,81 @@ label {
   margin: calc(8px * var(--scale-factor)) 0;
 }
 
+/* Form fields: the kit's standard input (white, stone-300 hairline, stone-800
+   text, rounded-lg; RESTYLE-SPEC 3.2). This replaces the dark-theme
+   #0f172a fill, which left dark text on a dark slab. Sizing is unchanged. */
+/* Box metrics stay on every input exactly as before (checkbox and file-input
+   rows were laid out against them; moving them is a layout change). */
 input {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
-  background: #0f172a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: calc(8px * var(--scale-factor));
-  color: var(--text);
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
+}
+
+/* The field look only on text-like fields, not on checkboxes, radios,
+   sliders, colour pickers or file pickers (RESTYLE-SPEC 2.4), matching the
+   focus rules above. :where keeps the old `input` specificity so every
+   class-level override still wins as before. */
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])) {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  font-family: inherit;
+}
+
+/* TimeInput24 (set start/end time, match times) still carries a dark-theme
+   inline border (white at 20 %), invisible on white. Give it the field
+   hairline until its owner (RESTYLE-SPEC P3b) converts the inline style.
+   The selector matches only TimeInput24's dark-fallback signature, never the
+   Scoreboard inputs that read var(--bg-secondary) with their own borders
+   (the lineup grid paints errors red there).
+   TODO(P3b): delete this selector when TimeInput24's defaultInputStyle loses
+   its background and border keys; it stops matching silently once that
+   inline style string changes. */
+input[style*="var(--bg-secondary, #1f2937)"] {
+  border-color: var(--ov-hairline-strong) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ov-text-faint);
+  opacity: 1;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--ov-sunken);
+  color: var(--ov-text-muted);
+}
+
+/* Checkboxes and radios take the brand red (kit `accent-red-600`); on the
+   scoreboard they stay neutral slate-900 (R4: no brand red next to the court). */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ov-brand);
+}
+
+.match-record input[type="checkbox"],
+.match-record input[type="radio"] {
+  accent-color: var(--ov-selected);
+}
+
+/* R4 as well for focus: the scoreboard's own fields (lineup-modal positions,
+   Manual Changes scores, remarks) ring slate-900, not red-500, next to the
+   court. Its modals render inside .match-record (no portal). */
+.match-record {
+  --ring: var(--ov-selected);
+}
+
+textarea {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  font-family: inherit;
 }
 
 /* Remove number spinners */
@@ -399,20 +523,23 @@ input[type=number] {
 select {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
-  background: #0f172a;
-  color: var(--text);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: calc(8px * var(--scale-factor));
+  background: var(--ov-card);
+  color: var(--ov-text-body);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  font-family: inherit;
   text-transform: capitalize;
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
 }
 
+/* Coin toss "Sign A/B": the kit's outline button (was white text on white).
+   A completed signature is a success state: emerald, not blue. Size unchanged. */
 button.sign {
-  background: transparent;
-  color: #ffffff;
-  border: calc(2px * var(--scale-factor)) solid rgb(95, 95, 95);
-  border-radius: calc(10px * var(--scale-factor));
+  background: var(--ov-card);
+  color: #44403c; /* stone-700 */
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
   padding: calc(8px * var(--scale-factor)) calc(12px * var(--scale-factor));
   font-weight: 600;
   cursor: pointer;
@@ -423,12 +550,18 @@ button.sign {
   transition: all 0.2s ease;
 }
 
-button.sign.signed {
-  background: rgba(59, 130, 246, 0.2);
-  border: calc(2px * var(--scale-factor)) solid rgb(59, 130, 246);
-  color: #ffffff;
+button.sign:hover:not(:disabled) {
+  background: var(--ov-sunken);
 }
 
+button.sign.signed {
+  background: var(--ov-success-soft);
+  border: 1px solid #6ee7b7; /* emerald-300 */
+  color: var(--ov-success-text);
+}
+
+/* Default <button>: the scoring green stays (Point A/B and other court
+   buttons rely on it). Chrome buttons get kit classes, which now win. */
 button {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -443,9 +576,34 @@ button {
   font-size: calc(13px * var(--scale-factor));
 }
 
+/* Outside the scoring areas: kit radius (rounded-lg) and the app's Inter
+   instead of the browser's control font. Every frozen scoring scope keeps its
+   buttons' exact shape, face and height (muscle memory): the centre column
+   (.court-wrapper, .rally-controls), the side columns (.team-controls: TO/SUB,
+   sanction chips, IR & Delays, bench, liberos) and the phone scoring block
+   (.smartphone-layout: Start Rally, Point L/R, TO). */
+button:where(:not(:is(.court-wrapper, .team-controls, .smartphone-layout, .rally-controls) button)) {
+  border-radius: var(--ov-radius);
+  font-family: inherit;
+}
+
+/* Secondary = the kit's outline button: white, stone-300 hairline, stone-700. */
 button.secondary {
-  background: var(--panel-2);
-  color: var(--text);
+  background: var(--ov-card);
+  color: #44403c; /* stone-700 */
+  border: 1px solid var(--ov-hairline-strong);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--ov-sunken);
+}
+
+/* Start Rally / Replay: the same outline look, drawn inside the box so the
+   frozen rally buttons keep their exact size and position. */
+.rally-controls button.secondary {
+  color: var(--ov-text-body); /* stone-800: the most-used courtside action reads full strength */
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--ov-hairline-strong);
 }
 
 button.danger {
@@ -464,9 +622,11 @@ button:disabled {
   max-width: 100%;
   overflow: auto;
   box-sizing: border-box;
-  border: 1px solid var(--panel);
-  border-radius: calc(12px * var(--scale-factor));
-  background: var(--panel);
+  /* the page card around setup, coin toss and match end */
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  background: var(--ov-card);
+  box-shadow: var(--ov-shadow-card);
   padding: calc(16px * var(--scale-factor));
   margin: 0 auto;
   flex: 1 1 0;
@@ -575,8 +735,8 @@ button:disabled {
 /* Section divider heading (e.g. "Bench Officials — Home") */
 .section-divider {
   text-align: center;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--ov-sunken-strong); /* stone-100 band (was white text on white) */
+  color: #44403c; /* stone-700 */
   margin: calc(16px * var(--scale-factor)) 0 calc(8px * var(--scale-factor));
   padding: calc(6px * var(--scale-factor)) calc(12px * var(--scale-factor));
   border-radius: calc(6px * var(--scale-factor));
@@ -589,7 +749,7 @@ button:disabled {
 .bench-grid-row.grid-header {
   font-weight: 600;
   font-size: calc(12px * var(--scale-factor));
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ov-text-muted); /* stone-500 table-head tone (was white on white) */
 }
 
 /* === END ROSTER / BENCH GRID === */
@@ -885,7 +1045,7 @@ button:disabled {
   gap: 0.76cqw;
   padding: 0.6cqw 0.85cqw;
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ov-hairline-soft);
   border-radius: calc(12px * var(--scale-factor));
   position: sticky;
   top: 0;
@@ -983,7 +1143,7 @@ button:disabled {
 .toolbar-divider {
   width: 1px;
   height: 1cqw;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ov-hairline);
 }
 
 .toolbar-clock {
@@ -1050,7 +1210,7 @@ button:disabled {
   background: var(--panel);
   padding: 0.6cqw 1.3cqw;
   border-radius: 0.6cqw;
-  border: 0.1cqw solid rgba(255, 255, 255, 0.1);
+  border: 0.1cqw solid var(--ov-hairline);
   min-width: 7.2cqw;
   text-align: center;
 }
@@ -1065,7 +1225,7 @@ button:disabled {
 .roster-panel {
   padding: calc(20px * var(--scale-factor));
   background: var(--panel-2);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ov-hairline);
   border-radius: calc(12px * var(--scale-factor));
 }
 
@@ -1087,34 +1247,36 @@ button:disabled {
   color: var(--text);
 }
 
+/* Roster tables: the kit table (white body, stone-50 head with 11px uppercase
+   stone-500 labels, stone-200 row rules, stone-50 row hover). */
 .roster-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--panel-2);
+  background: var(--ov-card);
   border-radius: calc(8px * var(--scale-factor));
   overflow: hidden;
 }
 
 .roster-table thead {
-  background: var(--panel);
-  border-bottom: calc(2px * var(--scale-factor)) solid rgba(255, 255, 255, 0.1);
+  background: var(--ov-sunken);
+  border-bottom: 1px solid var(--ov-hairline);
 }
 
 .roster-table th {
   padding: calc(12px * var(--scale-factor)) calc(8px * var(--scale-factor));
   text-align: left;
-  font-size: calc(14px * var(--scale-factor));
-  font-weight: 600;
-  color: var(--muted);
+  font-size: calc(11px * var(--scale-factor));
+  font-weight: 700;
+  color: var(--ov-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.025em;
 }
 
 .roster-table td {
   padding: calc(10px * var(--scale-factor)) calc(8px * var(--scale-factor));
   font-size: calc(15px * var(--scale-factor));
   color: var(--text);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--ov-hairline);
 }
 
 .coin-toss-number,
@@ -1195,7 +1357,7 @@ button:disabled {
 }
 
 .roster-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ov-sunken);
 }
 
 .roster-table tbody tr:last-child td {
@@ -1282,7 +1444,7 @@ button:disabled {
   flex-direction: column;
   gap: calc(10px * var(--scale-factor));
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ov-hairline-soft);
   border-radius: calc(12px * var(--scale-factor));
   padding: calc(10px * var(--scale-factor));
   width: 100%;
@@ -1299,17 +1461,17 @@ button:disabled {
 }
 
 .team-controls::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border-radius: calc(2px * var(--scale-factor));
 }
 
 .team-controls::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ov-hairline-strong);
   border-radius: calc(2px * var(--scale-factor));
 }
 
 .team-controls::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--ov-text-faint);
 }
 
 .team-header {
@@ -1317,7 +1479,7 @@ button:disabled {
   align-items: center;
   gap: calc(10px * var(--scale-factor));
   padding-bottom: calc(8px * var(--scale-factor));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--ov-hairline);
 }
 
 .team-info {
@@ -1694,7 +1856,7 @@ button.start-rally-button {
   justify-content: center;
   padding: 12px 16px;
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ov-hairline-soft);
   border-radius: 12px;
 }
 
@@ -1717,10 +1879,10 @@ button.start-rally-button {
 .remarks-area {
   width: 100%;
   min-height: 120px;
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  color: var(--text);
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
   padding: 10px;
   font-size: 13px;
   resize: vertical;
@@ -1752,7 +1914,7 @@ button.start-rally-button {
   justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1.5px solid var(--ov-rule); /* kit section head: name on a dark rule */
 }
 
 .game-league-header h3 {
@@ -1773,10 +1935,12 @@ button.start-rally-button {
   gap: 16px;
 }
 
+/* Game card: the kit page card; hover lifts to shadow-card-lg (no jump). */
 .game-card {
-  background: var(--panel-2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -1785,10 +1949,9 @@ button.start-rally-button {
 }
 
 .game-card:hover {
-  background: var(--panel);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--ov-card);
+  border-color: var(--ov-hairline);
+  box-shadow: var(--ov-shadow-card-lg);
 }
 
 .game-card-content {
@@ -1802,7 +1965,7 @@ button.start-rally-button {
   flex-direction: column;
   gap: 4px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--ov-sunken-strong); /* divide-stone-100 inside a card */
 }
 
 .game-card-day {
@@ -1816,7 +1979,8 @@ button.start-rally-button {
 .game-card-time {
   font-size: 17px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ov-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .game-card-teams {
@@ -1846,7 +2010,7 @@ button.start-rally-button {
   color: var(--muted);
   margin-top: 4px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--ov-sunken-strong);
 }
 
 .game-card-status {
@@ -1855,7 +2019,7 @@ button.start-rally-button {
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ov-sunken-strong);
 }
 
 .game-card-status-label {
@@ -1891,9 +2055,9 @@ button.start-rally-button {
 
 /* Match Status Banner */
 .connection-status-banner {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
   padding: 12px 20px;
   margin-bottom: 16px;
 }
@@ -1911,10 +2075,11 @@ button.start-rally-button {
   font-weight: 500;
 }
 
+/* Test-match notice: kit amber notice (amber-50, amber-200 border, amber-800). */
 .test-match-banner {
-  background: rgba(234, 179, 8, 0.1);
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  border-radius: 12px;
+  background: var(--ov-warning-soft);
+  border: 1px solid #fde68a; /* amber-200 */
+  border-radius: var(--ov-radius-lg);
   padding: 12px 20px;
   margin-bottom: 16px;
   display: flex;
@@ -1930,13 +2095,13 @@ button.start-rally-button {
 .test-match-label {
   font-size: 15px;
   font-weight: 600;
-  color: #fbbf24;
+  color: var(--ov-warning-text);
 }
 
 .match-status-banner {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
   padding: 16px 20px;
   margin-bottom: 16px;
 }
@@ -1963,13 +2128,13 @@ button.start-rally-button {
 .match-status-value {
   font-size: 15px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--ov-success-text); /* kit emerald status pill */
   text-transform: capitalize;
   margin-left: auto;
   padding: 4px 12px;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  border-radius: 6px;
+  background: var(--ov-success-soft);
+  border: 1px solid #a7f3d0; /* emerald-200 */
+  border-radius: var(--ov-radius-pill);
 }
 
 /* Home View */
@@ -2099,10 +2264,12 @@ button.start-rally-button {
   min-height: 320px;
 }
 
+/* Home card: the kit page card. */
 .home-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
   padding: 32px;
   display: flex;
   width: 100%;
@@ -2117,10 +2284,10 @@ button.start-rally-button {
 }
 
 .home-card--clickable:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ov-card);
   width: auto;
-  border-color: rgba(255, 255, 255, 0.12);
-  transform: translateY(-2px);
+  border-color: var(--ov-hairline);
+  box-shadow: var(--ov-shadow-card-lg);
 }
 
 .home-card h2 {
@@ -2166,26 +2333,28 @@ button.start-rally-button {
   cursor: not-allowed;
 }
 
+/* Test button: the kit outline button; --danger is the kit danger-soft. */
 .test-button {
-  background: transparent !important;
-  border: 2px solid #22c55e !important;
-  color: #22c55e !important;
+  background: var(--ov-card) !important;
+  border: 1px solid var(--ov-hairline-strong) !important;
+  color: #44403c !important; /* stone-700 */
   width: auto;
 }
 
 .test-button:hover:not(:disabled) {
-  background: rgba(34, 197, 94, 0.1) !important;
+  background: var(--ov-sunken) !important;
   width: auto;
 }
 
 .test-button--danger {
-  border-color: #ef4444 !important;
+  background: var(--ov-danger-soft) !important;
+  border-color: var(--ov-danger-border) !important;
   width: auto;
-  color: #ef4444 !important;
+  color: var(--ov-brand) !important; /* red-600 = brand */
 }
 
 .test-button--danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1) !important;
+  background: var(--ov-danger-border) !important; /* red-100 */
 }
 
 
@@ -2201,7 +2370,7 @@ button.start-rally-button {
 .home-card-hint {
   font-size: 13px;
   font-weight: 600;
-  color: #f59e0b;
+  color: var(--ov-warning-text); /* amber-800: amber-500 on white failed contrast */
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
