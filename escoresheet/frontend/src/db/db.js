@@ -298,14 +298,20 @@ db.version(16).stores({
 // new jobs are written as `${seed}:s:${id}` / `${seed}:e:${id}` (utils/syncIds),
 // and this rewrites jobs that were already waiting in the queue. Jobs that cannot
 // be attributed to a match are marked 'dropped'. No schema change.
-db.version(17).stores({}).upgrade(tx => {
-  return rewriteQueuedSyncJobs({
-    queue: tx.table('sync_queue'),
-    sets: tx.table('sets'),
-    matches: tx.table('matches')
-  }).then(({ rewritten, dropped }) => {
-    if (rewritten || dropped) console.log(`[db] v17: namespaced ${rewritten} queued set/event jobs, dropped ${dropped}`)
-  })
+// The upgrade must never reject: a failed upgrade leaves the database unopenable.
+db.version(17).stores({}).upgrade(async tx => {
+  try {
+    const { rewritten, dropped, failed } = await rewriteQueuedSyncJobs({
+      queue: tx.table('sync_queue'),
+      sets: tx.table('sets'),
+      matches: tx.table('matches')
+    })
+    if (rewritten || dropped || failed) {
+      console.log(`[db] v17: namespaced ${rewritten} queued set/event jobs, dropped ${dropped}, failed ${failed}`)
+    }
+  } catch (e) {
+    console.warn('[db] v17 queue id rewrite skipped:', e?.message)
+  }
 })
 
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;

@@ -54,7 +54,9 @@ export async function resolveJobExternalId(job, { sets, matches }) {
   let seed = typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id) ? p.match_id : null
   if (!seed && job.resource === 'set') {
     const localSet = await sets.get(Number(p.external_id))
-    const localMatch = localSet ? await matches.get(localSet.matchId) : null
+    // Table.get(null/undefined) throws in Dexie; a set row without a matchId
+    // simply cannot be attributed.
+    const localMatch = localSet?.matchId != null ? await matches.get(localSet.matchId) : null
     seed = localMatch?.seed_key || null
   }
   if (!seed) return { drop: true }
@@ -85,21 +87,44 @@ export function jobMatchKey(job) {
  * Rewrite every pending (queued or errored) set/event job to a namespaced
  * external_id. Used by the Dexie v17 upgrade; jobs that cannot be attributed to a
  * match are marked 'dropped' (kept for inspection, never sent).
+ *
+ * Never rejects: this runs inside a Dexie upgrade, and a rejected upgrade leaves
+ * IndexedDB unopenable (the whole scorer app dead, possibly mid-match). A job
+ * that throws while being resolved is dropped (sending it with a bare id would
+ * overwrite another match's row); one that cannot even be marked is left as is.
  */
 export async function rewriteQueuedSyncJobs({ queue, sets, matches }) {
-  const jobs = await queue.where('status').anyOf('queued', 'error').toArray()
   let rewritten = 0
   let dropped = 0
-  for (const job of jobs) {
-    const result = await resolveJobExternalId(job, { sets, matches })
-    if (!result) continue
-    if (result.drop) {
-      await queue.update(job.id, { status: 'dropped' })
-      dropped++
-      continue
-    }
-    await queue.update(job.id, { payload: { ...job.payload, external_id: result.external_id } })
-    rewritten++
+  let failed = 0
+  let jobs = []
+  try {
+    jobs = await queue.where('status').anyOf('queued', 'error').toArray()
+  } catch (e) {
+    console.warn('[syncIds] could not read the sync queue for the id rewrite:', e?.message)
+    return { rewritten, dropped, failed: 1 }
   }
-  return { rewritten, dropped }
+  for (const job of jobs) {
+    try {
+      let result
+      try {
+        result = await resolveJobExternalId(job, { sets, matches })
+      } catch (e) {
+        console.warn(`[syncIds] job ${job?.id}: could not resolve external_id, dropping:`, e?.message)
+        result = { drop: true }
+      }
+      if (!result) continue
+      if (result.drop) {
+        await queue.update(job.id, { status: 'dropped' })
+        dropped++
+        continue
+      }
+      await queue.update(job.id, { payload: { ...job.payload, external_id: result.external_id } })
+      rewritten++
+    } catch (e) {
+      failed++
+      console.warn(`[syncIds] job ${job?.id}: rewrite failed, left untouched:`, e?.message)
+    }
+  }
+  return { rewritten, dropped, failed }
 }
