@@ -208,3 +208,122 @@
 .border-r-0.border-black.mr-1.h-full .text-xs {
   font-size: calc(13px * var(--scale-factor));
 }
+
+/* ---------------------------------------------------------------------------
+   .ov-kit: the volleyui kit's own preflight, scoped.
+   Tailwind's preflight stays off (the legacy views rely on the browser
+   defaults plus styles.css), but the kit components were written against it.
+   Without this, the legacy element rules (`button { background: var(--accent) }`,
+   `p { color: var(--muted) }`, `h3 { margin; font-size }`, `label`, `input`,
+   `select`) reach every kit element that does not set those properties
+   itself: the confirm dialog's Cancel rendered as a green button.
+   This layer sits above `legacy` and below `utilities`, so it beats the legacy
+   rules and every kit class still beats it. Mount the kit host inside
+   `.ov-kit`; later packages wrap each converted view in the same class.
+   (The subset of Tailwind's preflight that the kit relies on.)
+   --------------------------------------------------------------------------- */
+@layer components {
+  .ov-kit {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: normal;
+    color: var(--color-stone-800);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ov-kit,
+  .ov-kit :where(*, ::before, ::after, ::backdrop) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+
+  .ov-kit :where(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .ov-kit :where(p, h1, h2, h3, h4, h5, h6, label) {
+    color: inherit;
+  }
+
+  .ov-kit :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  .ov-kit :where(ol, ul, menu) {
+    list-style: none;
+  }
+
+  .ov-kit :where(img, svg, video, canvas) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  .ov-kit :where(label) {
+    display: revert;
+  }
+
+  .ov-kit :where(button, input, select, optgroup, textarea) {
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+    width: auto;
+    text-transform: none;
+    box-shadow: none;
+  }
+
+  .ov-kit :where(button) {
+    appearance: button;
+    cursor: pointer;
+  }
+
+  .ov-kit :where(button:disabled) {
+    cursor: default;
+  }
+
+  .ov-kit :where(textarea) {
+    resize: vertical;
+  }
+
+  .ov-kit :where(::placeholder) {
+    opacity: 1;
+    color: color-mix(in oklab, currentcolor 50%, transparent);
+  }
+
+  /* The legacy .text-sm / .text-xs add letter-spacing: .2px (and size by
+     --scale-factor); inside the kit the Tailwind utility alone applies. */
+  .ov-kit :where(.text-sm, .text-xs) {
+    letter-spacing: normal;
+  }
+
+  /* RESTYLE-SPEC R12: the confirm dialog is opened from scoring screens, so its
+     two buttons keep the 44px courtside minimum (the kit draws them ~38px). */
+  .ov-kit :where([data-testid="confirm-cancel"], [data-testid="confirm-accept"]) {
+    min-height: 44px;
+  }
+}
+
+/* The host for <UiHost /> in every *-main.jsx: <div className="ov-kit ov-kit-host">.
+   The kit's dialog is z-50 and its toasts z-[60]; the legacy overlays go to
+   z-index 1000 (Modal, MenuList), 9999, 99999 and 100000 (AlertContext). This
+   box is its own stacking context above all of them, so a confirmDialog() or
+   toast fired from inside a legacy modal shows on top of it. It is 0x0 and
+   fixed, so it takes no space and catches no taps; the dialog and toasts are
+   position: fixed to the viewport, as before. */
+.ov-kit-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 100001;
+}

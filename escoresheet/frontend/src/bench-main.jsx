@@ -21,7 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <BenchApp />
         </AlertProvider>
       </AuthProvider>
-      <UiHost />
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
     </ErrorBoundary>
   </React.StrictMode>,
 )

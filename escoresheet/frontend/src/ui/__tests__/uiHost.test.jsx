@@ -42,9 +42,11 @@ describe('volleyui kit wiring (P0)', () => {
     'livescore-main.jsx',
     'scoresheet-main.jsx',
     'upload-roster-main.jsx'
-  ])('%s mounts <UiHost /> inside ErrorBoundary', (file) => {
+  ])('%s mounts <UiHost /> inside ErrorBoundary, in the .ov-kit host', (file) => {
     const src = read('src/' + file)
-    expect(src).toMatch(/<ErrorBoundary[^>]*>[\s\S]*<UiHost \/>\s*<\/ErrorBoundary>/)
+    // .ov-kit scopes the kit's preflight; .ov-kit-host stacks it above the
+    // legacy overlays (z-index 1000-100000).
+    expect(src).toMatch(/<ErrorBoundary[^>]*>[\s\S]*<div className="ov-kit ov-kit-host"><UiHost \/><\/div>\s*<\/ErrorBoundary>/)
     expect(src.match(/<UiHost \/>/g)).toHaveLength(1)
     expect(src).toMatch(/import '\.\/tailwind\.css'/)
     expect(src).not.toMatch(/import '\.\/styles\.css'/)
@@ -60,6 +62,8 @@ describe('volleyui kit wiring (P0)', () => {
     // preflight stays off
     expect(css).not.toMatch(/tailwindcss\/preflight|@import ['"]tailwindcss['"]/)
     expect(read('src/ui/tokens.css')).not.toMatch(/^@import "tailwindcss";/m)
+    // the kit host sits above every legacy overlay (AlertContext is 100000)
+    expect(css).toMatch(/\.ov-kit-host \{[^}]*z-index: 100001;/)
   })
 
   it.each([
@@ -75,4 +79,5 @@ describe('volleyui kit wiring (P0)', () => {
     expect(html).toMatch(/<meta name="theme-color" content="#ffffff" \/>/)
     expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
   })
+
 })
