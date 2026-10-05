@@ -74,6 +74,17 @@ allowlists = [
   # Values that are references, not literals: env.X, process.env.X, secrets.X, a ternary/expression.
   { regexes = ['''(?i)^(?:process\.|import\.meta|env\.|secrets\.|vars\.|os\.environ|getenv|req\.|config\.)'''] },
   { regexes = ['''(?i)(your[_\- ]|example|placeholder|xxx+|change[_\- ]?me|replace[_\- ]?me|redacted|\.\.\.|\*\*\*)'''] },
+  # JS/TS object properties whose value is code, not a literal (an unquoted JS
+  # literal cannot exist): `SMTP_PASS: smtpPass,` and
+  # `SERVICE_ROLE_KEY: z.string().min(1),`. Only an identifier/dotted path that
+  # ends in , or ; or continues into a call, so a bare dotenv value
+  # (SMTP_PASS=Abc123xyz) is still reported.
+  { regexes = [
+    '''^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*[,;]$''',
+    '''^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(''',
+  ] },
+  # Well-known dev defaults in compose files (POSTGRES_PASSWORD: postgres).
+  { regexes = ['''(?i)^(?:postgres|password|passwort|changeme)$'''] },
 ]
 
 [[rules]]
@@ -94,10 +105,11 @@ keywords = ["ls0tls1crudjtib"]
 
 # Wi-Fi: openvolley once shipped the LedBox AP passphrase inside a WIFI: QR
 # payload. Field order in that format is free (S/T/P), so do not anchor on T.
+# Values may contain spaces and backslash-escaped ; , : \ " (the QR escaping).
 [[rules]]
 id = "wifi-wpa-passphrase"
 description = "WIFI: QR payload embedding a WPA passphrase (openvolley shipped one as a PNG)"
-regex = '''WIFI:(?:[^;\s]*;)*?P:([^;"'\s]{8,63});'''
+regex = '''WIFI:(?:(?:\\.|[^;\\\n])*;)*?P:((?:\\.|[^;\\"'\n]){8,63});'''
 secretGroup = 1
 keywords = ["wifi:"]
 allowlists = [
@@ -106,12 +118,44 @@ allowlists = [
 
 [[rules]]
 id = "wifi-config-psk"
-description = "hostapd wpa_passphrase= / wpa_supplicant or NetworkManager psk= with a literal value"
-regex = '''(?im)^[ \t]*(?:wpa_passphrase|psk)[ \t]*=[ \t]*"?([^"\s#]{8,64})"?'''
+description = "hostapd wpa_passphrase= / wpa_psk= (raw hex PSK) / wpa_supplicant or NetworkManager psk= with a literal value"
+regex = '''(?im)^[ \t]*(?:wpa_passphrase|wpa_psk|psk)[ \t]*=[ \t]*"?([^"\s#]{8,64})"?'''
 secretGroup = 1
-keywords = ["wpa_passphrase", "psk"]
+keywords = ["wpa_passphrase", "wpa_psk", "psk"]
 allowlists = [
   { regexes = ['''(?i)(<[^>]*>?|\{[^}]*\}?|\$|xxx+|your|example|placeholder|changeme|redacted|^pass(word|phrase)?$)'''] },
+]
+
+# The form that actually leaked the second AP passphrase: printed hall-guide
+# prose "<SSID> / <passphrase>" or "<SSID> · <passphrase>", no key=value at all.
+# The slash needs spaces around it so file paths (ledbox_api/handlers.py) and
+# URLs do not match; the ssid branch cannot cross a slash for the same reason.
+[[rules]]
+id = "wifi-ssid-passphrase-prose"
+description = "Wi-Fi SSID followed by its passphrase in prose/HTML (\"ledbox_XXXX / passphrase\", \"SSID: net · passphrase\")"
+regex = '''(?i)(?:\bledbox_[A-Za-z0-9]+|\bssid\b[^\n/]{0,40}?)(?:[ \t]+/[ \t]+|[ \t]*(?:·|&middot;|&#183;|&#xb7;)[ \t]*)(?:<[^>\n]{1,20}>[ \t]*)*([^\s<"'/]{8,63})'''
+secretGroup = 1
+keywords = ["ledbox_", "ssid"]
+allowlists = [
+  { regexes = ['''(?i)(<[^>]*>?|&lt;|\{[^}]*\}?|\$|xxx+|your|example|placeholder|changeme|redacted|\.\.\.|\*\*\*)'''] },
+  # Column headers such as "SSID / Passwort".
+  { regexes = ['''(?i)^(?:pass(?:word|wort|phrase)?|kennwort|schl(?:ü|ue)ssel|key|psk)\W*$'''] },
+]
+
+[[rules]]
+id = "wifi-passphrase-label"
+description = "Prose label \"WLAN-Passwort: …\" / \"Wi-Fi password: …\" followed by a literal"
+regex = '''(?i)\b(?:wlan|wi-?fi)[- _]?(?:passwort|password|passphrase|kennwort|schl(?:ü|ue)ssel|key|pw|pass)\b[^\n:=]{0,10}[:=][ \t]*(?:<[^>\n]{1,20}>[ \t]*)*["']?([^\s<"']{8,63})'''
+secretGroup = 1
+keywords = ["wlan", "wifi", "wi-fi"]
+allowlists = [
+  { regexes = ['''(?i)(<[^>]*>?|&lt;|\{[^}]*\}?|\$|xxx+|your|example|placeholder|changeme|redacted|\.\.\.|\*\*\*)'''] },
+  # Code, not a literal: wifiPassword: cfg.pass, / wifi_key = getKey().
+  { regexes = [
+    '''^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*[,;]$''',
+    '''^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(''',
+    '''(?i)^(?:process\.|import\.meta|env\.|os\.environ|getenv|config\.)''',
+  ] },
 ]
 
 [[rules]]
@@ -132,6 +176,10 @@ allowlists = [
   # i18n labels: "password": "Passwort".
   { regexes = ['''(?i)^(?:password|passwort|passphrase|kennwort|secret|token|api[_ -]?key)$'''] },
   { regexTarget = "match", regexes = ['''(?i)(process\.env|import\.meta\.env|secrets\.)'''] },
+  # Test fixtures (password: 'pw…' in backend/tests/auth.test.js) are fake by
+  # construction. Only this broad sweep skips them; every specific rule above
+  # (service_role JWT, sb_secret_, Resend, psk, …) still scans test files.
+  { paths = ['''(^|/)(?:tests?|__tests__|spec)/''', '''\.(?:test|spec)\.[cm]?[jt]sx?$'''] },
 ]
 
 # The anon key is meant to be public (see supabase-service-role-jwt above), so
