@@ -502,7 +502,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             e.preventDefault()
             setActiveWarningPopover(isOpen ? null : id)
           }}
-          className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-sm font-bold text-amber-800 hover:bg-amber-200 transition-colors"
+          className="relative inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full border before:absolute before:-inset-2.5 before:content-[''] before:rounded-full border-amber-300 bg-amber-100 text-sm font-bold text-amber-800 hover:bg-amber-200 transition-colors"
           title={t('warnings.clickForDetails')}
         >
           !
@@ -3489,7 +3489,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div className="mb-4 flex items-center gap-3">
                   {/* Trikot container */}
                   <div
-                    className="m-4 flex cursor-pointer items-center justify-center"
+                    className="m-[16px] flex cursor-pointer items-center justify-center"
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect()
                       setColorPickerModal({
@@ -3578,7 +3578,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                   {/* Trikot container */}
                   <div
-                    className="m-4 flex cursor-pointer items-center justify-center"
+                    className="m-[16px] flex cursor-pointer items-center justify-center"
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect()
                       setColorPickerModal({
@@ -3735,7 +3735,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
         <div className="flex items-center justify-end">
           <Button
-            variant="primary"
+            variant="positive"
             size="xl"
             className="disabled:cursor-not-allowed"
             onClick={(e) => {
@@ -3762,13 +3762,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {/* Color Picker Modal for Match Info view */}
         {colorPickerModal && (
           <>
+            {/* No backdrop-blur here: it re-rasterises the frozen swatch shirts
+                (sleeve edges differ by up to 33/255 from the before-shot). */}
             <div
-              className="fixed inset-0 z-[999] bg-stone-900/50 backdrop-blur-sm"
+              className="fixed inset-0 z-[999] bg-stone-900/50"
               onClick={() => setColorPickerModal(null)}
             />
             <div
               role="dialog"
-              aria-modal="true"
               className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
               style={{ transform: 'translate(-50%, -50%)' }}
               onClick={(e) => e.stopPropagation()}
@@ -4950,6 +4951,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {t('roster.confirmLoadTestRosterMessage', { team: TEST_HOME_TEAM.name })}
               </p>
               <div className="flex justify-center gap-3">
+                <Button variant="secondary" size="xl" onClick={() => setTestRosterConfirm(null)}>
+                  {t('common.cancel')}
+                </Button>
                 <Button
                   variant="dark"
                   size="xl"
@@ -4960,12 +4964,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     if (!homeShortName) setHomeShortName(TEST_HOME_TEAM.shortName)
                     setTestRosterConfirm(null)
                   }}
-                  >
-                    {t('roster.loadTestRoster')}
-                  </Button>
-                  <Button variant="secondary" size="xl" onClick={() => setTestRosterConfirm(null)}>
-                    {t('common.cancel')}
-                  </Button>
+                >
+                  {t('roster.loadTestRoster')}
+                </Button>
               </div>
             </div>
           </Modal>
@@ -6110,6 +6111,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {t('roster.confirmLoadTestRosterMessage', { team: TEST_AWAY_TEAM.name })}
               </p>
               <div className="flex justify-center gap-3">
+                <Button variant="secondary" size="xl" onClick={() => setTestRosterConfirm(null)}>
+                  {t('common.cancel')}
+                </Button>
                 <Button
                   variant="dark"
                   size="xl"
@@ -6120,12 +6124,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     if (!awayShortName) setAwayShortName(TEST_AWAY_TEAM.shortName)
                     setTestRosterConfirm(null)
                   }}
-                  >
-                    {t('roster.loadTestRoster')}
-                  </Button>
-                  <Button variant="secondary" size="xl" onClick={() => setTestRosterConfirm(null)}>
-                    {t('common.cancel')}
-                  </Button>
+                >
+                  {t('roster.loadTestRoster')}
+                </Button>
               </div>
             </div>
           </Modal>
@@ -6184,7 +6185,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <div
         onClick={retry ? onRetry : undefined}
         className={cn(
-          'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium whitespace-nowrap transition-colors',
+          'relative inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium whitespace-nowrap transition-colors',
+          retry && "before:absolute before:-inset-y-2.5 before:inset-x-0 before:content-['']",
           c.pill,
           retry ? 'cursor-pointer hover:brightness-95' : 'cursor-default'
         )}
@@ -6652,13 +6654,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
           {/* Row 2: Stats */}
           <div className="flex flex-wrap items-center gap-2">
-            <CountBadge className="bg-stone-900 text-white">
+            <CountBadge className="bg-stone-900 px-2.5 py-1 text-white">
               {t('matchSetup.players')}: {homeCounts.players}
             </CountBadge>
-            <CountBadge tone="stone">
+            <CountBadge tone="stone" className="px-2.5 py-1">
               {t('matchSetup.liberos')}: {homeCounts.liberos}
             </CountBadge>
-            <CountBadge tone="stone">
+            <CountBadge tone="stone" className="px-2.5 py-1">
               {t('matchSetup.bench')}: {homeCounts.bench}
             </CountBadge>
           </div>
@@ -6708,13 +6710,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
           {/* Row 2: Stats */}
           <div className="flex flex-wrap items-center gap-2">
-            <CountBadge className="bg-stone-900 text-white">
+            <CountBadge className="bg-stone-900 px-2.5 py-1 text-white">
               {t('matchSetup.players')}: {awayCounts.players}
             </CountBadge>
-            <CountBadge tone="stone">
+            <CountBadge tone="stone" className="px-2.5 py-1">
               {t('matchSetup.liberos')}: {awayCounts.liberos}
             </CountBadge>
-            <CountBadge tone="stone">
+            <CountBadge tone="stone" className="px-2.5 py-1">
               {t('matchSetup.bench')}: {awayCounts.bench}
             </CountBadge>
           </div>
@@ -7222,14 +7224,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       {colorPickerModal && (
         <>
           {/* Backdrop to close on click outside */}
+          {/* No backdrop-blur: it re-rasterises the frozen swatch shirts. */}
           <div
-            className="fixed inset-0 z-[999] flex items-center justify-center bg-stone-900/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[999] flex items-center justify-center bg-stone-900/50"
             onClick={() => setColorPickerModal(null)}
           />
           {/* Bubble modal */}
           <div
             role="dialog"
-            aria-modal="true"
             className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
               style={{ transform: 'translate(-50%, -50%)' }}
             onClick={(e) => e.stopPropagation()}
