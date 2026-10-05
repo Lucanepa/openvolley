@@ -1085,6 +1085,7 @@
       "failedToLoadBackupData": "Impossibile caricare i dati di backup",
       "failedToRestoreBackup": "Non è stato possibile ripristinare il backup: {{error}}",
       "failedToClearCache": "Cancellazione della cache fallita: {{error}}",
+      "clearCacheNeedsServer": "Impossibile svuotare la cache mentre il server non è raggiungibile: l'app non potrebbe più essere ricaricata.",
       "someItemsFailedToClear": "Alcuni elementi non sono stati cancellati: {{errors}}"
     }
   },

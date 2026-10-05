@@ -1084,6 +1084,7 @@
       "failedToLoadBackupData": "Backup-Date händ nöd chönne glade werde",
       "failedToRestoreBackup": "Backup hät nöd chönne wiederhergstellt werde: {{error}}",
       "failedToClearCache": "Cache hät nöd chönne gleert werde: {{error}}",
+      "clearCacheNeedsServer": "Dr Cache cha nöd gleert werde, solang dr Server nöd erreichbar isch: d App chönnti nachher nöd neu glade werde.",
       "someItemsFailedToClear": "Einigi Element händ nöd chönne glöscht werde: {{errors}}"
     }
   },

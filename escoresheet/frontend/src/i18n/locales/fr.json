@@ -1083,6 +1083,7 @@
       "failedToLoadBackupData": "Échec du chargement des données de sauvegarde",
       "failedToRestoreBackup": "Échec de la restauration de la sauvegarde : {{error}}",
       "failedToClearCache": "Échec de l'effacement du cache : {{error}}",
+      "clearCacheNeedsServer": "Impossible de vider le cache tant que le serveur est injoignable : l'application ne pourrait plus être rechargée.",
       "someItemsFailedToClear": "Certains éléments n'ont pas pu être effacés : {{errors}}"
     }
   },
