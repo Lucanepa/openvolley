@@ -1,0 +1,220 @@
+# OpenVolley self-hosted backend: plain docker compose project.
+#
+#   cd /opt/openvolley && docker compose up -d          # project name is fixed below
+#
+# Three services, two private networks, zero published ports:
+#
+#   Cloudflare edge ──(outbound QUIC/HTTP2 from ov-tunnel)──> ov-tunnel
+#        ov-tunnel ──ov-edge──> ov-backend:8080 (HTTP + WS upgrade)
+#       ov-backend ──ov-internal (internal: true, no egress)──> ov-postgres:5432
+#
+# Nothing here is a Coolify resource and nothing joins Coolify's networks or
+# carries Traefik routing labels, so Coolify/Traefik can neither route to it
+# nor redeploy it. Data lives on bind mounts whose host paths come from .env;
+# the bind mounts use create_host_path: false so a missing path is an error,
+# never a silently created empty directory.
+
+name: openvolley
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  ov-postgres:
+    image: ${OV_POSTGRES_IMAGE:-postgres:17.11-alpine}
+    restart: unless-stopped
+    # Run as the image's postgres user (uid 70) from the start: no root, no
+    # chown, no capabilities. host-prep.sh creates ${OV_PG_HOST_DIR}/data
+    # owned 70:70 mode 0700.
+    user: "70:70"
+    # Refuse to start unless the sentinel written by host-prep.sh is present,
+    # i.e. unless the dedicated pg filesystem is really mounted. Without it,
+    # PGDATA would be initialised fresh on the bare mountpoint (which is
+    # chattr +i, so that would fail anyway) and the backend would serve an
+    # empty database. The container exits and `restart: unless-stopped` keeps
+    # retrying until the mount appears.
+    # Second guard: once a cluster has existed on this filesystem
+    # (/ovpg/state/initialized, written by this guard or the healthcheck),
+    # a PGDATA without PG_VERSION means the data was lost or emptied. The
+    # image's entrypoint would silently initdb a new, empty database; refuse
+    # instead. A deliberate re-init: remove /data/openvolley/pg/state/initialized.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /ovpg/.ovdata ]; then
+          echo "FATAL: /ovpg/.ovdata missing: the OpenVolley pg filesystem is not mounted at the host path. Refusing to start." >&2
+          exit 78
+        fi
+        if [ -s /ovpg/data/PG_VERSION ]; then
+          if [ -d /ovpg/state ] && [ ! -f /ovpg/state/initialized ]; then touch /ovpg/state/initialized; fi
+        elif [ -f /ovpg/state/initialized ]; then
+          echo "FATAL: /ovpg/data has no PG_VERSION, but a cluster existed on this filesystem (/ovpg/state/initialized). Refusing to initdb an empty database over lost data; restore deliberately (RUNBOOK-hetzner.md, Restore the database)." >&2
+          exit 78
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - ov-postgres-guard
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=20
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - timezone=UTC
+      - -c
+      - log_timezone=UTC
+    environment:
+      POSTGRES_DB: openvolley
+      POSTGRES_USER: ov_owner
+      POSTGRES_PASSWORD: ${OV_OWNER_PW:?set OV_OWNER_PW in .env}
+      PGDATA: /ovpg/data
+    volumes:
+      - type: bind
+        source: ${OV_PG_HOST_DIR:?set OV_PG_HOST_DIR in .env}
+        target: /ovpg
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=8m,uid=70,gid=70,mode=0775
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    shm_size: 64m
+    oom_score_adj: 500
+    healthcheck:
+      # Also records the first successful start (marker for the guard above).
+      test: ["CMD-SHELL", "test -f /ovpg/.ovdata && pg_isready -q -h 127.0.0.1 -U ov_owner -d openvolley && { [ ! -d /ovpg/state ] || [ -f /ovpg/state/initialized ] || touch /ovpg/state/initialized; true; }"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks: [ov-internal]
+    logging: *logging
+    labels:
+      traefik.enable: "false"
+      diun.enable: "true"
+
+  ov-backend:
+    image: ${OV_BACKEND_IMAGE:?set OV_BACKEND_IMAGE in .env (e.g. openvolley-backend:abc1234)}
+    # Images are built elsewhere (build-image.sh) and loaded here; never pull
+    # or build on the production host.
+    pull_policy: never
+    restart: unless-stopped
+    user: node
+    # Same mount guard as ov-postgres, for the storage filesystem. Docker
+    # resolves a bind mount when the container starts: a backend started while
+    # the loop fs was missing would keep the bare (immutable) mountpoint even
+    # after the fs is mounted, and every storage write would fail. Exiting
+    # here makes `restart: unless-stopped` retry until the mount is back, and
+    # each retry binds afresh.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /data/storage/.ovdata ]; then
+          echo "FATAL: /data/storage/.ovdata missing: the OpenVolley storage filesystem is not mounted at the host path. Refusing to start." >&2
+          exit 78
+        fi
+        exec "$$@"
+      - ov-backend-guard
+    command: ["node", "server.js"]
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://ov_app:${OV_APP_PW:?set OV_APP_PW in .env}@ov-postgres:5432/openvolley
+      STORAGE_ROOT: /data/storage
+      STATUS_DIR: /var/lib/openvolley-status
+      PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:?set PUBLIC_ORIGINS in .env}
+      TRUST_PROXY: cloudflare
+      IS_CLOUD: "1"
+      OV_MIN_MATCHES: ${OV_MIN_MATCHES:-0}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      REOPEN_PASSWORD_HASH: ${REOPEN_PASSWORD_HASH:-}
+    volumes:
+      - type: bind
+        source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}
+        target: /data/storage
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OV_STATUS_HOST_DIR:?set OV_STATUS_HOST_DIR in .env}
+        target: /var/lib/openvolley-status
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    pids_limit: 256
+    oom_score_adj: 500
+    # Healthcheck (GET /health/live, no DB, plus the storage sentinel) comes
+    # from the image; it has no fallback, so a pre-wiring image never turns
+    # healthy and ov-tunnel never starts in front of it.
+    depends_on:
+      ov-postgres:
+        condition: service_healthy
+    networks: [ov-edge, ov-internal]
+    logging: *logging
+    labels:
+      traefik.enable: "false"
+
+  ov-tunnel:
+    image: ${OV_CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.5.2}
+    restart: unless-stopped
+    command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    volumes:
+      - type: bind
+        source: ./cloudflared/config.yml
+        target: /etc/cloudflared/config.yml
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    oom_score_adj: 500
+    depends_on:
+      ov-backend:
+        condition: service_healthy
+    networks: [ov-edge]
+    logging: *logging
+    labels:
+      traefik.enable: "false"
+      diun.enable: "true"
+
+networks:
+  # Backend <-> Postgres only. internal: no route out, no published ports.
+  ov-internal:
+    internal: true
+  # Tunnel <-> backend, plus outbound egress (Cloudflare edge for the tunnel,
+  # Resend/SMTP for the backend). Nothing listens on the host.
+  ov-edge: {}
