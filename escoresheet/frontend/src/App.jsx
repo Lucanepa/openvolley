@@ -17,7 +17,7 @@ import BackupTable from './components/BackupTable'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectionSetupModal from './components/options/ConnectionSetupModal'
-import { useSyncQueue } from './hooks/useSyncQueue'
+import { useSyncQueue, useUserMatchLink } from './hooks/useSyncQueue'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
@@ -108,6 +108,8 @@ export default function App() {
   // whether the cloud is waiting for a sign-in.
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
+  // My Matches: link the signed-in account to the match open here (sync queue)
+  useUserMatchLink(matchId)
 
   // Compute current page for contextual help
   const currentPage = useMemo(() => {

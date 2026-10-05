@@ -20,6 +20,11 @@ function fakeTable(rows = []) {
       for (const r of newRows) map.set(r.id, { ...r })
     },
     get: async (id) => map.get(id),
+    add: async (row) => {
+      const id = Math.max(0, ...map.keys()) + 1
+      map.set(id, { ...row, id })
+      return id
+    },
     update: async (id, changes) => {
       const row = map.get(id)
       if (!row) return 0
@@ -98,6 +103,8 @@ import {
   pruneSyncQueue,
   hasApplicationErrorCode,
   useSyncQueue,
+  queueUserMatchLinks,
+  storedSessionUserId,
   STOP_PASS
 } from '../useSyncQueue'
 
@@ -586,6 +593,89 @@ describe('getSyncQueueStats', () => {
       { id: 4, status: 'failed' }, { id: 5, status: 'sent' }, { id: 6, status: 'dropped' }
     ])
     expect(await getSyncQueueStats()).toEqual({ pending: 2, error: 1, failed: 1 })
+  })
+})
+
+describe('My Matches links (user_matches)', () => {
+  const ALICE = 'aaaaaaaa-0000-4000-8000-000000000001'
+  const BOB = 'bbbbbbbb-0000-4000-8000-000000000002'
+  const signIn = (id) => localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: Date.now() / 1000 + 3600, user: { id } }))
+  afterEach(() => {
+    localStorage.removeItem('api_auth_token')
+    localStorage.removeItem('cachedProfile')
+  })
+
+  it('reads the signed-in account from the stored session, ignoring an expired one', () => {
+    expect(storedSessionUserId()).toBe(null)
+    signIn(ALICE)
+    expect(storedSessionUserId()).toBe(ALICE)
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: 1, user: { id: ALICE } }))
+    expect(storedSessionUserId()).toBe(null)
+  })
+
+  it('queues a scorer link keyed by the seed key, once, only when signed in and never for test matches', async () => {
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa' })).toBe(0) // nobody signed in
+    signIn(ALICE)
+    expect(await queueUserMatchLinks({ seed_key: null })).toBe(0) // no seed key yet: no Dexie-id link
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa', test: true })).toBe(0)
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa' })).toBe(1)
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa' })).toBe(0) // already queued
+    const jobs = [...fakeDb.sync_queue.map.values()]
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({
+      resource: 'user_match',
+      action: 'upsert',
+      status: 'queued',
+      payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer', sport_type: 'indoor' }
+    })
+  })
+
+  it('adds the officials role carrying the account name', async () => {
+    signIn(ALICE)
+    localStorage.setItem('cachedProfile', JSON.stringify({ user_id: ALICE, first_name: 'Anna', last_name: 'Müller' }))
+    await queueUserMatchLinks({
+      seed_key: 'match_100_aaa',
+      officials: [
+        { role: '1st referee', firstName: 'anna', lastName: 'MULLER' },
+        { role: 'scorer', firstName: 'Other', lastName: 'Person' }
+      ]
+    })
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.payload.role)).toEqual(['scorer', '1st referee'])
+  })
+
+  it('sends the link after the match, as an owner-scoped upsert without user_id', async () => {
+    signIn(ALICE)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'user_match', action: 'upsert', status: 'queued', payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer', sport_type: 'indoor' } },
+      { id: 2, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    await runQueuePass()
+    expect(api.calls.map(c => c.table)).toEqual(['matches', 'user_matches'])
+    const link = api.calls[1]
+    expect(link).toMatchObject({ action: 'upsert', onConflict: 'user_id,match_external_id,role', data: { match_external_id: 'match_100_aaa', role: 'scorer', sport_type: 'indoor' } })
+    expect(link.data).not.toHaveProperty('user_id')
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+
+  it('waits behind a failed match insert of the same match', async () => {
+    signIn(ALICE)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'error', attempts: 1, next_attempt_at: Date.now() + 60000, payload: { external_id: 'match_100_aaa' } },
+      { id: 2, resource: 'user_match', action: 'upsert', status: 'queued', payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer' } }
+    ])
+    await runQueuePass()
+    expect(api.calls).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+  })
+
+  it('never links the match to another account signed in meanwhile', async () => {
+    signIn(BOB)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'user_match', action: 'upsert', status: 'queued', payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer' } }
+    ])
+    await runQueuePass()
+    expect(api.calls).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
   })
 })
 
