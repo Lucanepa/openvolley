@@ -4,6 +4,22 @@ import swissvolleyLogo from './swissvolleylogo.jpg';
 const openvolleyLogo = '/openvolley_no_bg.png';
 import { formatTimeLocal } from '../../src/utils/timeUtils';
 
+// The scoresheet window also loads the scorer app's styles.css, whose global
+// (unlayered) `input { background: #0f172a; border-radius; padding; color }`
+// beats the Tailwind utilities and printed the empty 'other' fields as dark
+// filled boxes. Inline styles win over it: a plain white field as on the form.
+export const OTHER_FIELD_STYLE: React.CSSProperties = {
+  background: '#fff',
+  color: '#000',
+  border: 0,
+  borderRadius: 0,
+  boxShadow: 'none',
+  height: 'auto',
+  padding: '0 2px',
+  fontSize: '8px',
+  lineHeight: 1.2
+};
+
 interface HeaderProps {
   match?: any;
   homeTeam?: any;
@@ -115,6 +131,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                         <input
                             type="text"
                             className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
+                            style={OTHER_FIELD_STYLE}
                             value={match?.championshipTypeOther || ''}
                             onChange={e => {
                                 if (typeof match === 'object' && match !== null && typeof match.setChampionshipTypeOther === 'function') {
@@ -180,6 +197,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
                          <input
                              type="text"
                              className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
+                             style={OTHER_FIELD_STYLE}
                              value={match?.match_type_3_other || ''}
                              onChange={e => {
                                  if (typeof match === 'object' && match !== null && typeof match.setMatchType3Other === 'function') {

@@ -32,6 +32,7 @@ import { setExtId, eventExtId } from '../utils/syncIds'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
+import { defaultSetStartTime } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
@@ -5159,26 +5160,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
-      // Show set start time confirmation
-      // For set 1, use scheduled time, for set 2+, use 3 minutes after previous set end
-      let defaultTime = roundToMinute(new Date().toISOString())
-
-      if (data?.set?.index === 1) {
-        // Use scheduled time from match
-        if (data?.match?.scheduledAt) {
-          defaultTime = roundToMinute(data.match.scheduledAt)
-        }
-      } else {
-        // Get previous set's end time
-        const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-        const previousSet = allSets.find(s => s.index === (data.set.index - 1))
-        if (previousSet?.endTime) {
-          // Add 3 minutes to previous set end time
-          const prevEndTime = new Date(previousSet.endTime)
-          prevEndTime.setMinutes(prevEndTime.getMinutes() + 3)
-          defaultTime = prevEndTime.toISOString()
-        }
-      }
+      // Show set start time confirmation: the set starts now (its first rally)
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets })
 
       setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
       return
@@ -27707,25 +27691,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={async () => {
                   setLiberoReminder(null)
 
-                  // Show set start time confirmation
-                  let defaultTime = roundToMinute(new Date().toISOString())
-
-                  if (data?.set?.index === 1) {
-                    // Use scheduled time from match
-                    if (data?.match?.scheduledAt) {
-                      defaultTime = roundToMinute(data.match.scheduledAt)
-                    }
-                  } else {
-                    // Get previous set's end time
-                    const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                    const previousSet = allSets.find(s => s.index === (data.set.index - 1))
-                    if (previousSet?.endTime) {
-                      // Add 3 minutes to previous set end time
-                      const prevEndTime = new Date(previousSet.endTime)
-                      prevEndTime.setMinutes(prevEndTime.getMinutes() + 3)
-                      defaultTime = prevEndTime.toISOString()
-                    }
-                  }
+                  // Show set start time confirmation: the set starts now (its first rally)
+                  const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+                  const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets })
 
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
                 }}

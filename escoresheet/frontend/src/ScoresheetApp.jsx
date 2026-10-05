@@ -2,29 +2,38 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
+import './i18n' // the scoresheet components call useTranslation (own entry, own i18n init)
 import App from '../scoresheet_pdf/App_Scoresheet'
 import { ClipboardIcon } from './components/icons'
+import { describeScoresheetLoadError, findOwnScoresheet, redactScoresheetPath } from '../scoresheet_pdf/utils/scoresheetStorage'
 
-// Fetch scoresheet data from Supabase storage (only _final files)
+// Fetch an approved scoresheet (_final file) from cloud storage. Only the
+// account that uploaded it may list or read it (backend README "Who can read a
+// scoresheet"), and its name has a random part, so it is found by listing the
+// date folder. Returns { data } or { error } with the storage error (status,
+// code) so the viewer can tell sign-in / not yours / not found apart.
 const fetchFromStorage = async (date, game) => {
   try {
-    const storagePath = `${date}/game${game}_final.json`
-    console.log('[Scoresheet] Fetching from storage:', storagePath)
+    const bucket = apiStorage.from('scoresheets')
+    const found = await findOwnScoresheet(bucket, date, game)
+    if (found.error) {
+      console.warn('[Scoresheet] Storage lookup:', found.error.code || found.error.status, found.error.message)
+      return { data: null, error: found.error }
+    }
+    console.log('[Scoresheet] Fetching from storage:', redactScoresheetPath(found.path))
 
-    const { data, error } = await apiStorage
-      .from('scoresheets')
-      .download(storagePath)
+    const { data, error } = await bucket.download(found.path)
 
     if (error) {
-      console.error('[Scoresheet] Storage fetch error:', error)
-      return null
+      console.warn('[Scoresheet] Storage fetch error:', error.code || error.status, error.message)
+      return { data: null, error }
     }
 
     const text = await data.text()
-    return JSON.parse(text)
+    return { data: JSON.parse(text), error: null }
   } catch (error) {
     console.error('[Scoresheet] Error fetching from storage:', error)
-    return null
+    return { data: null, error: { message: error instanceof Error ? error.message : 'Failed to load scoresheet' } }
   }
 }
 
@@ -280,14 +289,14 @@ const ScoresheetViewer = ({ date, game, action }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await fetchFromStorage(date, game)
+        const { data, error: loadError } = await fetchFromStorage(date, game)
         if (data) {
           setMatchData(data)
         } else {
-          setError(`Scoresheet not found: ${date}/game${game}_final.json`)
+          setError(describeScoresheetLoadError(loadError, `${date}, game ${game}`))
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load scoresheet')
+        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`))
       } finally {
         setLoading(false)
       }
@@ -306,8 +315,8 @@ const ScoresheetViewer = ({ date, game, action }) => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-5">
-        <div className="text-2xl font-bold text-red-500">Scoresheet Not Found</div>
-        <div className="text-gray-600">{error}</div>
+        <div className="text-2xl font-bold text-red-500">{error.title}</div>
+        <div className="text-gray-600">{error.message}</div>
         <button
           onClick={() => window.location.href = '/'}
           className="px-5 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"

@@ -123,7 +123,66 @@ export function jobMatchKey(job) {
     if (typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id)) return p.match_id
     return parseExtId(p.external_id)?.seedKey || null
   }
+  if (job?.resource === USER_MATCH_RESOURCE) return p.match_external_id || null
   return null
+}
+
+// ---------------------------------------------------------------------------
+// user_matches ("My Matches"): which account scored / officiated which match
+// ---------------------------------------------------------------------------
+
+/** sync_queue resource of a user_matches link (action 'upsert'). */
+export const USER_MATCH_RESOURCE = 'user_match'
+
+/** Role of the account that runs the scorer app for a match. */
+export const SCORER_ROLE = 'scorer'
+
+const normName = (s) => String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * Roles the signed-in account holds in a match: always 'scorer' (it runs the
+ * scoresheet), plus every officials entry that carries the account's own name
+ * (first + last name from its profile, either order, case and accents
+ * ignored), e.g. '1st referee' when the referee signed in on the scorer's
+ * device. Role strings are the officials' own ('1st referee', 'assistant
+ * scorer', 'line judge 1', ...), shown as such in My Matches.
+ *
+ * @param {object} match - local match (officials with firstName/lastName or first_name/last_name, line judges with name)
+ * @param {object|null} profile - the account's profile row (first_name, last_name)
+ * @returns {string[]} distinct roles, 'scorer' first
+ */
+export function userMatchRoles(match, profile) {
+  const roles = [SCORER_ROLE]
+  const first = normName(profile?.first_name ?? profile?.firstName)
+  const last = normName(profile?.last_name ?? profile?.lastName)
+  if (!first || !last || !Array.isArray(match?.officials)) return roles
+  const own = new Set([`${first} ${last}`, `${last} ${first}`])
+  for (const o of match.officials) {
+    if (!o || typeof o.role !== 'string' || !o.role.trim()) continue
+    const full = o.name != null
+      ? normName(o.name)
+      : normName(`${o.firstName ?? o.first_name ?? ''} ${o.lastName ?? o.last_name ?? ''}`)
+    const role = o.role.trim().toLowerCase()
+    if (own.has(full) && !roles.includes(role)) roles.push(role)
+  }
+  return roles
+}
+
+/**
+ * sync_queue row linking an account to a match (POST /api/db user_matches
+ * upsert, onConflict user_id,match_external_id,role). Keyed by the match's
+ * seed_key: never queued for a match without one (a Dexie id is not unique
+ * across devices). user_id records whose link it is; the backend forces the
+ * caller's own id, so the queue sends it only while that account is signed in.
+ */
+export function userMatchJob({ userId, seedKey, role, ts = new Date().toISOString() }) {
+  return {
+    resource: USER_MATCH_RESOURCE,
+    action: 'upsert',
+    payload: { user_id: userId, match_external_id: seedKey, role, sport_type: 'indoor' },
+    ts,
+    status: 'queued'
+  }
 }
 
 /**

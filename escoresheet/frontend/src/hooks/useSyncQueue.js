@@ -4,7 +4,7 @@ import { db } from '../db/db'
 import { apiFrom, apiMatchRestore, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
-import { parseExtId, resolveJobExternalId, jobMatchKey } from '../utils/syncIds'
+import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
 
 /**
@@ -69,8 +69,9 @@ import { buildConnectionPins } from '../utils/connectionPins'
 
 // Sync status types: 'offline' | 'online_no_supabase' | 'connecting' | 'syncing' | 'synced' | 'error' | 'auth_required'
 
-// Resource processing order - matches must be synced before sets/events (FK dependency)
-const RESOURCE_ORDER = ['match', 'set', 'event']
+// Resource processing order - matches must be synced before sets/events (FK
+// dependency); the account links ("My Matches") come last
+const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE]
 
 // Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
@@ -857,6 +858,26 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    // ==================== USER MATCH (My Matches) ====================
+    if (job.resource === USER_MATCH_RESOURCE && job.action === 'upsert') {
+      const { user_id: owner, match_external_id: matchKey, role, sport_type: sportType } = job.payload || {}
+      if (!matchKey || !role) return DROP_JOB
+      // The backend links the row to whoever is signed in: never attach this
+      // match to another account that signed in on this device meanwhile.
+      const current = storedSessionUserId()
+      if (owner && current && current !== owner) {
+        console.warn('[SyncQueue] Dropping a My Matches link queued for another account')
+        return DROP_JOB
+      }
+      const { error } = await apiFrom('user_matches')
+        .upsert({ match_external_id: matchKey, role, sport_type: sportType || 'indoor' }, { onConflict: 'user_id,match_external_id,role' })
+      if (error) {
+        console.warn('[SyncQueue] My Matches link error:', error.code || error.status || error.message)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // Unknown resource/action - mark as done to avoid infinite loop
     safeLog.warn('[SyncQueue] Unknown job type:', job.resource, job.action)
     return true
@@ -873,6 +894,7 @@ async function processJobInner(job, ctx) {
 // only blocks later updates of the same entity.
 function entityKey(job) {
   if (job.resource === 'match') return `match:${jobMatchKey(job)}`
+  if (job.resource === USER_MATCH_RESOURCE) return `${job.resource}:${jobMatchKey(job)}:${job.payload?.role}`
   return `${job.resource}:${job.payload?.external_id}`
 }
 
@@ -1378,4 +1400,105 @@ const EMPTY_STATS = { pending: 0, error: 0, failed: 0 }
 /** Live sync queue counts (see getSyncQueueStats); zeros until the first read. */
 export function useSyncQueueStats() {
   return useLiveQuery(() => getSyncQueueStats().catch(() => EMPTY_STATS), [], EMPTY_STATS)
+}
+
+// ---------------------------------------------------------------------------
+// My Matches: link the signed-in account to the match it scores
+// ---------------------------------------------------------------------------
+
+function readStoredJson(key) {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Id of the account whose session is stored on this device (unexpired), or
+ * null. Read from storage, not from the auth context: it also works offline
+ * and outside React, and it is the session the queue's requests carry.
+ */
+export function storedSessionUserId() {
+  const session = readStoredJson(AUTH_TOKEN_STORAGE_KEY)
+  if (!session?.access_token) return null
+  if (session.expires_at && Date.now() / 1000 > session.expires_at) return null
+  return session.user?.id || null
+}
+
+/**
+ * Queue the user_matches links of the signed-in account for a match (role
+ * 'scorer', plus the officials roles carrying the account's name, see
+ * userMatchRoles). Through the sync queue, so it works offline and is sent
+ * after the match itself. Only official matches with a seed_key; nothing when
+ * nobody is signed in (no backfill). A link already queued or sent for the
+ * same account, match and role is not queued again.
+ *
+ * @returns {Promise<number>} links queued
+ */
+export async function queueUserMatchLinks(match) {
+  const seedKey = match?.seed_key
+  if (!seedKey || match.test === true) return 0
+  const userId = storedSessionUserId()
+  if (!userId) return 0
+  const cached = readStoredJson('cachedProfile')
+  const profile = cached && (!cached.user_id || cached.user_id === userId) ? cached : null
+  const roles = userMatchRoles(match, profile)
+
+  const existing = await db.sync_queue.where('resource').equals(USER_MATCH_RESOURCE).toArray()
+  const known = new Set(existing
+    .filter(j => j.status !== 'dropped' && j.payload?.user_id === userId && j.payload?.match_external_id === seedKey)
+    .map(j => j.payload.role))
+  let queued = 0
+  for (const role of roles) {
+    if (known.has(role)) continue
+    await db.sync_queue.add(userMatchJob({ userId, seedKey, role }))
+    queued++
+  }
+  if (queued) console.log(`[SyncQueue] Queued ${queued} My Matches link(s) for ${seedKey}`)
+  return queued
+}
+
+/**
+ * Keep the signed-in account linked to the match open in the scorer app
+ * (created, set up or scored here). Re-checked when the match gets its
+ * seed_key, when its officials change and when someone signs in.
+ */
+export function useUserMatchLink(matchId) {
+  // A primitive key: the app does not re-render on every rally
+  const key = useLiveQuery(async () => {
+    if (matchId == null) return ''
+    try {
+      const m = await db.matches.get(matchId)
+      if (!m?.seed_key || m.test === true) return ''
+      return JSON.stringify([m.seed_key, m.officials || null])
+    } catch {
+      return ''
+    }
+  }, [matchId], '')
+
+  const [authTick, setAuthTick] = useState(0)
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const bump = () => setAuthTick(t => t + 1)
+    const onStorage = (e) => { if (e.key === AUTH_TOKEN_STORAGE_KEY || e.key === 'cachedProfile') bump() }
+    window.addEventListener(AUTH_TOKEN_CHANGE_EVENT, bump)
+    // AuthContext PROFILE_CACHED_EVENT: the profile (name) arrives after the sign-in
+    window.addEventListener('ov-profile-cached', bump)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(AUTH_TOKEN_CHANGE_EVENT, bump)
+      window.removeEventListener('ov-profile-cached', bump)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!key) return
+    const [seedKey, officials] = JSON.parse(key)
+    queueUserMatchLinks({ seed_key: seedKey, officials }).catch(err => {
+      console.warn('[SyncQueue] Could not queue the My Matches link:', err?.message)
+    })
+  }, [key, authTick])
 }
