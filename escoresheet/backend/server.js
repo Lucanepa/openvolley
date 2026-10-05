@@ -3508,6 +3508,25 @@ if (DB_MODE) {
     }
     setTimeout(runSweep, 5 * 60 * 1000).unref()
     setInterval(runSweep, 24 * 60 * 60 * 1000).unref()
+    // VolleyManager -> svrz_games, daily at 06:00 Zurich (replaces the Supabase
+    // vm-sync Edge Function). Cloud only; needs VM credentials; VM_SYNC=off disables.
+    if (!IS_LOCAL && process.env.VM_USERNAME && process.env.VM_PASSWORD && process.env.VM_SYNC !== 'off') {
+      import('./lib/vmSync.js').then(({ runVmSync, scheduleVmSync, windowFromEnv }) => {
+        const vmWindow = windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
+        const schedule = scheduleVmSync({
+          hourLocal: 6,
+          tz: 'Europe/Zurich',
+          run: () => runVmSync({
+            pool: layer.db.pool,
+            window: vmWindow,
+            credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD }
+          }).catch((err) => console.error('[VM sync] run failed:', err.message))
+        })
+        console.log('[VM sync] scheduled, next run ' + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
+      }).catch((err) => {
+        console.error('❌ [VM sync] not started:', err.message)
+      })
+    }
   }, (err) => {
     console.error('❌ [DB] could not initialise the data layer:', err.message)
     process.exit(1)
