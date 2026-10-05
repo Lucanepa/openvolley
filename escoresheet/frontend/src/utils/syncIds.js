@@ -65,6 +65,23 @@ export async function resolveJobExternalId(job, { sets, matches }) {
 }
 
 /**
+ * The match (seed_key / cloud external_id) a sync_queue job belongs to, or null.
+ * Used for per-match ordering in the queue and to scope queue clean-ups.
+ */
+export function jobMatchKey(job) {
+  const p = job?.payload || {}
+  if (job?.resource === 'match') {
+    if (job.action === 'restore') return p.match?.external_id || null
+    return p.external_id || p.id || null
+  }
+  if (job?.resource === 'set' || job?.resource === 'event') {
+    if (typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id)) return p.match_id
+    return parseExtId(p.external_id)?.seedKey || null
+  }
+  return null
+}
+
+/**
  * Rewrite every pending (queued or errored) set/event job to a namespaced
  * external_id. Used by the Dexie v17 upgrade; jobs that cannot be attributed to a
  * match are marked 'dropped' (kept for inspection, never sent).

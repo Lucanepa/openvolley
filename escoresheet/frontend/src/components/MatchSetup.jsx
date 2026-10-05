@@ -23,6 +23,7 @@ import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../consta
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
 import { setExtId } from '../utils/syncIds'
+import { buildConnectionPins } from '../utils/connectionPins'
 import { FileTextIcon, ClipboardIcon } from './icons'
 
 // Date formatting helpers (outside component to avoid recreation)
@@ -1319,25 +1320,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           const awayUploadPin = updates.awayTeamUploadPin || match.awayTeamUploadPin
           if (homeUploadPin || awayUploadPin) {
             try {
-              // Fetch existing connection_pins to merge (use maybeSingle to avoid 406 if match not synced yet)
-              const { data: existingMatch } = await apiFrom('matches')
-                .select('connection_pins')
+              // Send the FULL connection_pins built from the local match: the proxy
+              // never returns connection_pins, so a read-merge-write started from {}
+              // and erased the referee/bench PINs. (No-op if the match is not in
+              // the cloud yet: the update matches no row.)
+              const connectionPinsUpdate = buildConnectionPins({ ...match, ...updates })
+              const { error: pinsError } = await apiFrom('matches')
+                .update({ connection_pins: connectionPinsUpdate })
                 .eq('external_id', match.seed_key)
-                .maybeSingle()
-
-              // Only update if match exists in Supabase
-              if (existingMatch) {
-                const connectionPinsUpdate = {
-                  ...(existingMatch.connection_pins || {}),
-                  ...(homeUploadPin ? { upload_home: homeUploadPin } : {}),
-                  ...(awayUploadPin ? { upload_away: awayUploadPin } : {})
-                }
-
-                await apiFrom('matches')
-                  .update({ connection_pins: connectionPinsUpdate })
-                  .eq('external_id', match.seed_key)
-                console.log('[MatchSetup] Synced upload PINs to Supabase connection_pins:', connectionPinsUpdate)
-              }
+              if (pinsError) throw pinsError
+              console.log('[MatchSetup] Synced connection PINs to Supabase:', Object.keys(connectionPinsUpdate))
             } catch (err) {
               console.warn('[MatchSetup] Failed to sync upload PINs to Supabase:', err)
             }
