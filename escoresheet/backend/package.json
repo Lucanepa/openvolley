@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "node-ical": "^0.22.1",
     "nodemailer": "^9.0.3",
