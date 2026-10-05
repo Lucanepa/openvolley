@@ -202,6 +202,36 @@ export function getWebSocketUrl() {
 }
 
 /**
+ * WebSocket URL of the match relay (sync-match-data / subscribe-match). Every
+ * relay client (scorer, referee, bench, livescore, tablet status) resolves it
+ * here, so the scorer publishes where its tablets listen.
+ *
+ * Same precedence as getBackendUrl: the ?server= / connection-screen override,
+ * VITE_BACKEND_URL, the cloud relay on *.openvolley.app — those relays take the
+ * WebSocket on their HTTP port. A page served by a LAN relay (Pi, desktop app)
+ * or the dev server reaches it on the relay's own WS port: `wsPort` when the
+ * caller knows it (Electron server status), else 8080 — except behind a proxy
+ * on the default port, where the WebSocket shares the page's origin.
+ * Returns null when there is no relay to reach (a page opened from file://).
+ * @param {{ wsPort?: number|string|null }} [options]
+ * @returns {string|null}
+ */
+export function getRelayWebSocketUrl({ wsPort = null } = {}) {
+  const override = getBackendOverride()
+  if (override) return httpToWsUrl(override)
+  if (import.meta.env.VITE_BACKEND_URL) return httpToWsUrl(import.meta.env.VITE_BACKEND_URL)
+  if (typeof window === 'undefined' || !window.location) return null
+  if (isStaticDeployment()) return httpToWsUrl(CLOUD_RELAY_URL)
+  const { protocol: pageProtocol, hostname, port, origin } = window.location
+  if (pageProtocol !== 'http:' && pageProtocol !== 'https:') return null
+  const protocol = pageProtocol === 'https:' ? 'wss' : 'ws'
+  if (wsPort) return `${protocol}://${hostname}:${wsPort}`
+  if (import.meta.env.DEV) return `${protocol}://${hostname}:${import.meta.env.VITE_WS_PORT || 8080}`
+  if (!port) return httpToWsUrl(origin)
+  return `${protocol}://${hostname}:8080`
+}
+
+/**
  * Convert an HTTP(S) URL to a WS(S) URL
  * @param {string} httpUrl
  * @returns {string}

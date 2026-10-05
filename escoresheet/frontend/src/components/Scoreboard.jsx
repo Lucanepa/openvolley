@@ -25,6 +25,8 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
+import { createRelayPinTracker, createLiveStateOrder, isRelayErrorFor, relayReconnectDelay } from '../utils/relayPublisher'
+import { getRelayWebSocketUrl } from '../utils/backendConfig'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -377,9 +379,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Relay room key of this match (its seed_key; the Dexie id when it has none)
   const relayKeyRef = useRef(null)
   // PINs go to the relay with the first sync on a socket and when they change
-  const relayPinsSentRef = useRef({ ws: null, signature: null })
-  // match_live_state upserts run one at a time, never older over newer
-  const liveStateWritesRef = useRef({ chain: Promise.resolve(), lastWrittenTs: 0, lastRelayTs: 0 })
+  const relayPinsRef = useRef(null)
+  if (relayPinsRef.current === null) relayPinsRef.current = createRelayPinTracker()
+  // Live-state pushes and match_live_state upserts: never older over newer
+  const liveStateOrderRef = useRef(null)
+  if (liveStateOrderRef.current === null) liveStateOrderRef.current = createLiveStateOrder()
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -1320,34 +1324,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
+    // The relay the tablets use too (?server= / connection-screen override,
+    // VITE_BACKEND_URL, cloud relay, LAN relay WS port): see backendConfig.
+    // None (page opened from disk): nothing to publish to.
+    const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+    if (!wsUrl) return
+
     let ws = null
     let reconnectTimeout = null
+    let reconnectAttempt = 0
+    let disposed = false
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimeout) return
+      reconnectTimeout = setTimeout(() => {
+        reconnectTimeout = null
+        connectWebSocket()
+      }, relayReconnectDelay(reconnectAttempt))
+      reconnectAttempt += 1
+    }
+
+    // Back online / tab visible again: reconnect now instead of after the backoff
+    const reconnectNow = () => {
+      if (disposed || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
+      const current = wsRef.current
+      if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout)
+        reconnectTimeout = null
+      }
+      connectWebSocket()
+    }
 
     const connectWebSocket = () => {
+      if (disposed) return
       try {
-        // Check if we have a configured backend URL (Render/cloud backend)
-        const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-        let wsUrl
-        if (backendUrl) {
-          // Use configured backend (Render cloud)
-          const url = new URL(backendUrl)
-          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-          wsUrl = `${protocol}//${url.host}`
-        } else {
-          // Fallback to local WebSocket server (development/Electron)
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-          const hostname = window.location.hostname
-          let wsPort = 8080
-          // Check if we have server status (from Electron or previous API call)
-          const currentServerStatus = serverStatus
-          if (currentServerStatus?.wsPort) {
-            wsPort = currentServerStatus.wsPort
-          }
-          wsUrl = `${protocol}://${hostname}:${wsPort}`
-        }
-
-        ws = new WebSocket(wsUrl)
+        const socket = new WebSocket(wsUrl)
+        ws = socket
         wsRef.current = ws // Store in ref for use in callbacks
 
         // Set error handler first to catch any immediate errors
@@ -1356,6 +1369,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         ws.onopen = () => {
+          reconnectAttempt = 0
           setRelayRejection(null)
           // Send initial match data sync (this will overwrite/add the current match)
           // No periodic sync - data is synced only when actions occur.
@@ -1383,15 +1397,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               handleGameNumberRequest(message)
             } else if (message.type === 'pong') {
               // Heartbeat response
-            } else if (message.type === 'error' && ['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code) &&
-              (message.matchId === undefined || String(message.matchId) === String(matchId) || String(message.matchId) === relayKeyRef.current)) {
-              // Refused: the next sync carries the PINs again (the relay may
-              // have lost or replaced what it stored for this socket)
-              relayPinsSentRef.current = { ws: null, signature: null }
-              // The relay refused our scoreboard role: referee/bench/livescore
-              // get no updates from this device until it is resolved.
-              // Refused again on every sync; the banner expires when that stops.
-              setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
+            } else if (isRelayErrorFor(message, [matchId, relayKeyRef.current])) {
+              // Any error about this match: the next sync carries the PINs
+              // again (the relay may have lost or replaced what it stored)
+              relayPinsRef.current.reset()
+              if (message.code === 'pins-required') {
+                // The relay lost the match while this socket left the PINs out
+                if (syncFunctionRef.current) syncFunctionRef.current()
+              } else if (['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code)) {
+                // The relay refused our scoreboard role: referee/bench/livescore
+                // get no updates from this device until it is resolved.
+                // Refused again on every sync; the banner expires when that stops.
+                setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
+              }
             }
           } catch (err) {
             console.error('[WebSocket] Error parsing message:', err)
@@ -1400,15 +1418,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
         ws.onclose = (event) => {
+          // A socket already replaced (reconnectNow) schedules nothing
+          if (wsRef.current !== socket) return
           // Don't reconnect on normal closure (code 1000)
           if (event.code === 1000) {
             return
           }
-          // Reconnect after 5 seconds
-          reconnectTimeout = setTimeout(connectWebSocket, 5000)
+          // Back off while the relay is unreachable (5 s doubling to 60 s)
+          scheduleReconnect()
         }
       } catch (err) {
         console.error('[WebSocket] Connection error:', err)
+        scheduleReconnect()
       }
     }
 
@@ -1437,8 +1458,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // The relay keys the room by the seed_key: the id the tablets know.
         // PINs only on this socket's first sync and when one changed.
         relayKeyRef.current = relayMatchKey(freshMatch, matchId)
-        const sent = relayPinsSentRef.current
-        const { match: relayMatch, pinSignature } = relayMatchPayload(freshMatch, sent.ws === currentWs ? sent.signature : null)
+        const { match: relayMatch, commit: commitPins } = relayPinsRef.current.payloadFor(currentWs, freshMatch)
         const sendTimestamp = Date.now()
         const syncPayload = {
           type: 'sync-match-data',
@@ -1454,7 +1474,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         currentWs.send(JSON.stringify(syncPayload))
-        relayPinsSentRef.current = { ws: currentWs, signature: pinSignature }
+        commitPins()
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
       }
@@ -1550,9 +1570,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       try {
         const { requestId, matchId: requestedMatchId } = request
 
-        // Tablets ask by the seed_key (the relay room key); older ones by the Dexie id
+        // Only by the relay room key (the seed_key; the Dexie id only for a match
+        // without one). A Dexie id is not unique across scorers: answering it
+        // would open a second, frozen room under that id.
         const keyMatch = await db.matches.get(matchId)
-        if (String(requestedMatchId) !== String(matchId) && String(requestedMatchId) !== relayMatchKey(keyMatch, matchId)) {
+        if (String(requestedMatchId) !== relayMatchKey(keyMatch, matchId)) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
             requestId,
@@ -1591,7 +1613,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           matchId: requestedMatchId,
           success: true,
           data: {
-            match: freshMatch,
+            // Never game_pin / connection_pins (the relay needs only its PIN fields)
+            match: relayMatchPayload(freshMatch).match,
             homeTeam: freshHomeTeam || null,
             awayTeam: freshAwayTeam || null,
             homePlayers: freshHomePlayers || [],
@@ -1691,8 +1714,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Connect to WebSocket
     connectWebSocket()
+    window.addEventListener('online', reconnectNow)
+    document.addEventListener('visibilitychange', reconnectNow)
 
     return () => {
+      disposed = true
+      window.removeEventListener('online', reconnectNow)
+      document.removeEventListener('visibilitychange', reconnectNow)
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
 
       // Close the socket cleanly on unmount, but DO NOT broadcast
@@ -1806,6 +1834,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const _tl = performance.now()
     console.log(`[PERF:liveState] START: ${eventType}, cachedSnapshot: ${!!cachedSnapshot}`)
     if (!matchId) return
+    // Call order decides which snapshot is newer (never the wall clock: an NTP
+    // step back at the venue would freeze the referee and the livescore)
+    const liveOrder = liveStateOrderRef.current
+    const liveSeq = liveOrder.next()
 
     try {
       // Get match to check if it's a test match
@@ -2036,10 +2068,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
       // Never an older state after a newer one: on a side-out the 'point' push
       // (snapshot from before the rotation) and the 'rotation' push race.
-      const liveTs = Date.parse(liveStateData.updated_at)
-      const writes = liveStateWritesRef.current
-      if (liveTs >= writes.lastRelayTs) {
-        writes.lastRelayTs = liveTs
+      if (liveOrder.shouldPush(liveSeq)) {
         sendRelayMessage({ type: 'live-state-update', matchId: relayKeyRef.current || matchId, liveState: { ...liveStateData } })
       }
 
@@ -2076,14 +2105,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // One upsert at a time, and one older than the last written is dropped:
       // concurrent upserts are last-write-wins on match_id, so the stale
       // 'point' row of a side-out could overwrite the 'rotation' row.
-      const writeLiveState = async () => {
-        if (liveTs < writes.lastWrittenTs) return { skipped: true }
-        writes.lastWrittenTs = liveTs
-        return apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' })
-      }
-      const pendingWrite = writes.chain.then(writeLiveState, writeLiveState)
-      writes.chain = pendingWrite.catch(() => {})
-      const liveStateResult = await pendingWrite
+      const liveStateResult = await liveOrder.write(liveSeq,
+        () => apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }))
       if (liveStateResult?.skipped) return
 
       if (liveStateResult.error) {

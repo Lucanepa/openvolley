@@ -50,6 +50,9 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
+import { getRelayWebSocketUrl } from './utils/backendConfig'
+import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
+import { createRelayPinTracker, isRelayErrorFor, relayReconnectDelay } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -596,108 +599,25 @@ export default function App() {
 
     // WebSocket check
     const checkWebSocket = async () => {
-      if (isStaticDeployment && !hasBackendUrl) {
+      const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+      if (!wsUrl) {
         updateStatus('websocket', 'not_available', {
           status: 'not_available',
-          message: 'WebSocket not available in static deployment (using local database only)'
+          message: 'No WebSocket relay for this page (using local database only)'
         })
-      } else if (typeof wsRef !== 'undefined' && wsRef.current?.readyState === WebSocket.OPEN) {
-        updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable (active connection)' })
       } else {
-        try {
-          const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-          let wsUrl
-          if (backendUrl) {
-            const url = new URL(backendUrl)
-            const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-            wsUrl = `${protocol}//${url.host}`
-          } else {
-            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-            const hostname = window.location.hostname
-            const wsPort = serverStatus?.wsPort || 8080
-            wsUrl = `${protocol}://${hostname}:${wsPort}`
-          }
-
-          const wsTest = new WebSocket(wsUrl)
-          let resolved = false
-
-          const connectionTimeout = backendUrl ? 5000 : 2000
-
-          await new Promise((resolve) => {
-            const timeout = setTimeout(() => {
-              if (!resolved) {
-                resolved = true
-                console.log(`⏱️  WebSocket connection timeout after ${connectionTimeout / 1000}s, readyState:`, wsTest.readyState)
-                try {
-                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                    wsTest.close()
-                  }
-                } catch (e) {
-                  // Ignore errors when closing
-                }
-                updateStatus('websocket', 'disconnected', {
-                  status: 'disconnected',
-                  message: `Connection timeout after ${connectionTimeout / 1000} seconds. WebSocket server may not be available.`,
-                  details: `Attempted to connect to ${wsUrl}, readyState: ${wsTest.readyState}`
-                })
-                resolve()
-              }
-            }, connectionTimeout)
-
-            wsTest.onopen = () => {
-              if (!resolved) {
-                resolved = true
-                clearTimeout(timeout)
-                try {
-                  wsTest.close()
-                } catch (e) {
-                  // Ignore errors when closing
-                }
-                updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable' })
-                resolve()
-              }
-            }
-
-            wsTest.onerror = () => {
-              if (!resolved) {
-                resolved = true
-                clearTimeout(timeout)
-                try {
-                  if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                    wsTest.close()
-                  }
-                } catch (e) {
-                  // Ignore errors when closing
-                }
-                updateStatus('websocket', 'disconnected', {
-                  status: 'disconnected',
-                  message: `WebSocket connection error. Server may not be available.`,
-                  details: `Failed to connect to ${wsUrl}`
-                })
-                console.log('❌ WebSocket test error - server may not be available')
-                resolve()
-              }
-            }
-
-            wsTest.onclose = (event) => {
-              if (!resolved) {
-                resolved = true
-                clearTimeout(timeout)
-                updateStatus('websocket', 'disconnected', {
-                  status: 'disconnected',
-                  message: `Connection closed unexpectedly (code: ${event.code}).`,
-                  details: `WebSocket server may not be running`
-                })
-                resolve()
-              }
-            }
-          })
-        } catch (err) {
+        // State of the app's own relay socket. No throwaway probe socket: this
+        // check runs every 30 s and on every match write.
+        const ws = typeof wsRef !== 'undefined' ? wsRef.current : null
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable (active connection)' })
+        } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+          updateStatus('websocket', 'connecting', { status: 'connecting', message: 'Connecting to the WebSocket server...' })
+        } else {
           updateStatus('websocket', 'disconnected', {
             status: 'disconnected',
-            message: `Error creating WebSocket connection: ${err.message || 'Unknown error'}`,
-            details: 'Check if WebSocket server is running'
+            message: 'Not connected to the WebSocket server (retrying in the background)',
+            details: `Relay: ${wsUrl}`
           })
         }
       }
@@ -1019,6 +939,10 @@ export default function App() {
   const currentMatchIdRef = useRef(null)
   const currentMatchRef = useRef(null)
   const isIntentionallyClosedRef = useRef(false)
+  // PINs go to the relay with a socket's first sync and when one changed
+  const relayPinsRef = useRef(null)
+  if (relayPinsRef.current === null) relayPinsRef.current = createRelayPinTracker()
+  const reconnectAttemptRef = useRef(0)
 
   // Update currentMatch ref whenever it changes
   useEffect(() => {
@@ -1123,29 +1047,19 @@ export default function App() {
         wsRef.current = null
       }
 
+      // The relay the Scoreboard and the tablets use (backendConfig)
+      const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+      if (!wsUrl) return // page opened from disk: no relay
+
+      // Back off while the relay is unreachable (5 s doubling to 60 s)
+      const scheduleReconnect = () => {
+        if (isIntentionallyClosedRef.current || currentMatchIdRef.current !== activeMatchId) return
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, relayReconnectDelay(reconnectAttemptRef.current))
+        reconnectAttemptRef.current += 1
+      }
+
       try {
-        // Check if we have a configured backend URL (Render/cloud backend)
-        const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-        let wsUrl
-        if (backendUrl) {
-          // Use configured backend (Render cloud)
-          const url = new URL(backendUrl)
-          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-          wsUrl = `${protocol}//${url.host}`
-          console.log('🌐 App connecting to cloud WebSocket backend:', wsUrl)
-        } else {
-          // Fallback to local WebSocket server
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-          const hostname = window.location.hostname
-          let wsPort = 8080
-          if (serverStatus?.wsPort) {
-            wsPort = serverStatus.wsPort
-          }
-          wsUrl = `${protocol}://${hostname}:${wsPort}`
-          console.log('💻 App connecting to local WebSocket server:', wsUrl)
-        }
-
         wsRef.current = new WebSocket(wsUrl)
 
         // Set error handler first to catch any immediate errors
@@ -1162,19 +1076,13 @@ export default function App() {
             return
           }
 
-          // Clear all other matches first (scoreboard is source of truth - only current match should exist)
-          try {
-            wsRef.current.send(JSON.stringify({
-              type: 'clear-all-matches',
-              keepMatchId: String(activeMatchId) // Keep only the current match
-            }))
-          } catch (err) {
-            console.error('[App WebSocket] Error clearing other matches:', err)
-          }
-
+          reconnectAttemptRef.current = 0
+          // (No 'clear-all-matches' here: a fresh socket owns nothing, so the
+          // relay always refused it.)
           syncMatchData()
-          // Periodic sync as backup only (every 30 seconds)
-          // Primary sync happens via data change detection in Scoreboard component
+          // Periodic sync as backup only (every 30 seconds), without PINs
+          // unless one changed. Primary sync happens in the Scoreboard.
+          if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
           syncIntervalRef.current = setInterval(syncMatchData, 30000)
         }
 
@@ -1188,6 +1096,10 @@ export default function App() {
               handleMatchDataRequest(message)
             } else if (message.type === 'game-number-request') {
               handleGameNumberRequest(message)
+            } else if (isRelayErrorFor(message, [activeMatchId, relayKeyOfCurrent()])) {
+              // The relay refused or lost this match: the next sync carries the PINs
+              relayPinsRef.current.reset()
+              if (message.code === 'pins-required') syncMatchData()
             }
             // Removed match-update-request handling - using sync-match-data instead
           } catch (err) {
@@ -1211,16 +1123,34 @@ export default function App() {
             syncIntervalRef.current = null
           }
 
-          // Reconnect after 5 seconds
-          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000)
+          scheduleReconnect()
         }
       } catch (err) {
         console.error('[App WebSocket] Connection error:', err)
-        if (!isIntentionallyClosedRef.current && currentMatchIdRef.current === activeMatchId) {
-          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000)
-        }
+        scheduleReconnect()
       }
     }
+
+    // Relay room key of the current match (its seed_key, else the Dexie id)
+    const relayKeyOfCurrent = () => relayMatchKey(currentMatchRef.current, currentMatchIdRef.current)
+
+    // The match for the relay: never game_pin / connection_pins
+    const relayMatchOf = (match) => relayMatchPayload(match).match
+
+    // What an unauthenticated caller may learn about the match (no PINs)
+    const publicMatchSummary = (m) => ({
+      id: m.id,
+      seed_key: m.seed_key,
+      gameNumber: m.gameNumber,
+      game_n: m.game_n,
+      status: m.status,
+      scheduledAt: m.scheduledAt,
+      homeTeamId: m.homeTeamId,
+      awayTeamId: m.awayTeamId,
+      refereeConnectionEnabled: m.refereeConnectionEnabled,
+      homeTeamConnectionEnabled: m.homeTeamConnectionEnabled,
+      awayTeamConnectionEnabled: m.awayTeamConnectionEnabled
+    })
 
     const syncMatchData = async () => {
       // Use current values from refs
@@ -1243,28 +1173,16 @@ export default function App() {
           currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
         ])
 
-        // Prepare full match object - scoreboard is source of truth, always overwrite
-        const fullMatch = {
-          ...currentMatchData,
-          id: currentMatchData.id,
-          // Ensure all fields are included for complete overwrite
-          refereePin: currentMatchData.refereePin,
-          homeTeamPin: currentMatchData.homeTeamPin,
-          awayTeamPin: currentMatchData.awayTeamPin,
-          refereeConnectionEnabled: currentMatchData.refereeConnectionEnabled,
-          homeTeamConnectionEnabled: currentMatchData.homeTeamConnectionEnabled,
-          awayTeamConnectionEnabled: currentMatchData.awayTeamConnectionEnabled,
-          status: currentMatchData.status,
-          gameNumber: currentMatchData.gameNumber,
-          game_n: currentMatchData.game_n,
-          externalId: currentMatchData.externalId,
-          scheduledAt: currentMatchData.scheduledAt
-        }
+        // Full match object - scoreboard is source of truth, always overwrite.
+        // PINs only on this socket's first sync and when one changed; never
+        // game_pin / connection_pins (see relayMatchPayload).
+        const { match: fullMatch, commit: commitPins } = relayPinsRef.current.payloadFor(ws, currentMatchData)
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
+        // The relay keys the room by the seed_key (what the tablets know).
         const syncPayload = {
           type: 'sync-match-data',
-          matchId: currentActiveMatchId,
+          matchId: relayMatchKey(currentMatchData, currentActiveMatchId),
           match: fullMatch,
           homeTeam,
           awayTeam,
@@ -1277,6 +1195,7 @@ export default function App() {
         // Periodic sync - don't log every time to reduce noise
 
         ws.send(JSON.stringify(syncPayload))
+        commitPins()
       } catch (err) {
         console.error('[App WebSocket] Error syncing match data:', err)
       }
@@ -1308,30 +1227,13 @@ export default function App() {
         }
 
         if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && currentMatchData.status !== 'final') {
-          // Load full data for response
-          const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
-            currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
-            currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
-            db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
-            db.events.where('matchId').equals(currentActiveMatchId).toArray(),
-            currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
-            currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
-          ])
-
+          // Current relays validate PINs themselves and never ask. An older one
+          // relays this to whoever typed ONE PIN: a PIN-free summary only.
           ws.send(JSON.stringify({
             type: 'pin-validation-response',
             requestId,
             success: true,
-            match: currentMatchData,
-            fullData: {
-              match: currentMatchData,
-              homeTeam,
-              awayTeam,
-              homePlayers,
-              awayPlayers,
-              sets,
-              events
-            }
+            match: publicMatchSummary(currentMatchData)
           }))
         } else {
           ws.send(JSON.stringify({
@@ -1356,10 +1258,14 @@ export default function App() {
       try {
         const { requestId, matchId: requestedMatchId } = request
 
-        if (String(requestedMatchId) !== String(currentActiveMatchId)) {
+        // Only by the relay room key (seed_key): a Dexie id is not unique
+        // across scorers, answering it would open a second, frozen room.
+        const relayKey = relayMatchKey(currentMatchData, currentActiveMatchId)
+        if (String(requestedMatchId) !== relayKey) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
             requestId,
+            matchId: requestedMatchId,
             success: false,
             error: 'Match ID mismatch'
           }))
@@ -1378,10 +1284,10 @@ export default function App() {
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
-          matchId: currentActiveMatchId,
+          matchId: relayKey,
           success: true,
           matchData: {
-            match: currentMatchData,
+            match: relayMatchOf(currentMatchData),
             homeTeam,
             awayTeam,
             homePlayers,
@@ -1410,12 +1316,14 @@ export default function App() {
         const matchIdStr = String(currentMatchData.id || '')
 
         if (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr) {
+          // PIN-free summary: the relay hands this to an unauthenticated caller.
+          // matchId is the room key the relay stores the match under.
           ws.send(JSON.stringify({
             type: 'game-number-response',
             requestId,
             success: true,
-            match: currentMatchData,
-            matchId: currentActiveMatchId
+            match: publicMatchSummary(currentMatchData),
+            matchId: relayMatchKey(currentMatchData, currentActiveMatchId)
           }))
         } else {
           ws.send(JSON.stringify({
