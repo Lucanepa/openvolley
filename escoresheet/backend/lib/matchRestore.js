@@ -5,11 +5,21 @@
  *     One transaction: upsert the match by external_id, delete its events,
  *     sets and live state, insert the sets and events (the pgQuery id scope
  *     guard applies) and the live state. Any failure rolls everything back.
- *     -> 200 { data: { id, counts: { sets, events, liveState } }, error: null }
+ *     Keys that are not columns are dropped (and reported), not fatal: old
+ *     backups and bundles send extra keys (backupManager's live state `status`
+ *     is renamed to `match_status`). Sets/events without sport_type get the
+ *     match's, else 'indoor'. Null/empty game_pin or connection_pins keep the
+ *     stored value; connection_pins is merged into the stored object. A
+ *     non-empty game_pin replaces the stored PIN (accepted until ownership
+ *     checks exist, see README).
+ *     -> 200 { data: { id, counts: { sets, events, liveState }, dropped: { match?, sets?, events?, liveState? } }, error: null }
  *
  *   POST /api/match/restore-by-pin { gameN, pin }                        (anonymous, attempt-limited)
  *     Exact match on game number AND game PIN. Returns the match with its
  *     secret columns stripped, plus its sets, events and live state.
+ *     Limits: 20 attempts per caller in 10 min across all game numbers and 5
+ *     per caller and game number; a successful lookup does not count.
+ *     The server MUST pass the client IP as `limitKey` (default: one shared bucket).
  *     -> 200 { data: { match, sets, events, liveState }, error: null }
  *     -> 404 { data: null, error: { code: 'OV_NOT_FOUND' } }  (wrong PIN or game number)
  *     -> 429 { data: null, error: { code: 'OV_TOO_MANY_ATTEMPTS' } }
@@ -38,31 +48,56 @@ export const RESTORE_DEFAULTS = Object.freeze({
   maxSets: 20,
   maxEvents: 20000,
   childRowCap: 100000,
-  pinAttempts: { max: 5, windowMs: 10 * 60 * 1000 }
+  // Restored sets/events without sport_type get the match's, else this (the old client flow stamped 'indoor').
+  defaultSportType: 'indoor',
+  // Keys older clients still send, renamed when the table has the new column but not the old one.
+  // backupManager.js builds the restore-in-place live state with `status`.
+  legacyAliases: { match_live_state: { status: 'match_status' } },
+  // Only the key columns travel in the DELETE changes of a restore.
+  deleteChangeColumns: ['id', 'external_id', 'match_id'],
+  // restore-by-pin: per caller and game number, and per caller across all game numbers.
+  pinAttempts: { max: 5, windowMs: 10 * 60 * 1000, maxKeys: 50000 },
+  callerAttempts: { max: 20, windowMs: 10 * 60 * 1000, maxKeys: 50000 }
 })
 
 const PIN_RE = /^[A-Za-z0-9]{1,32}$/
 
 /**
- * Fixed-window attempt limiter. `isLimited(key)` counts one attempt and says
- * whether the caller is over the limit.
+ * Fixed-window attempt limiter with a bounded key map.
+ * - `isLimited(key)` counts one attempt and says whether the key is over the limit.
+ * - `refund(key)` takes one attempt back (a successful lookup), `reset(key)` forgets the key.
+ * Expired windows are pruned at most once a minute (or once per window, if shorter).
+ * When the map is full the oldest windows are evicted first (Map insertion order),
+ * so memory stays bounded and a request never walks the whole map.
  */
 export function createAttemptLimiter ({ max = 5, windowMs = 600000, maxKeys = 50000 } = {}) {
   const hits = new Map()
+  const pruneEveryMs = Math.min(windowMs, 60000)
+  let lastPrune = Date.now()
   function prune (now) {
-    for (const [k, e] of hits) if (now - e.start > windowMs) hits.delete(k)
+    lastPrune = now
+    for (const [k, e] of hits) {
+      if (now - e.start <= windowMs) break // insertion order = window start order
+      hits.delete(k)
+    }
   }
   return {
     isLimited (key) {
       const now = Date.now()
+      if (now - lastPrune >= pruneEveryMs) prune(now)
       let e = hits.get(key)
-      if (!e || now - e.start > windowMs) {
+      if (e && now - e.start > windowMs) { hits.delete(key); e = undefined }
+      if (!e) {
+        while (hits.size >= maxKeys) hits.delete(hits.keys().next().value)
         e = { count: 0, start: now }
         hits.set(key, e)
       }
       e.count++
-      if (hits.size > maxKeys) prune(now)
       return e.count > max
+    },
+    refund (key) {
+      const e = hits.get(key)
+      if (e && e.count > 0) e.count--
     },
     reset (key) { hits.delete(key) },
     get size () { return hits.size }
@@ -93,11 +128,35 @@ export function createMatchRestore (db, options = {}) {
   const cfg = { ...RESTORE_DEFAULTS, ...options }
   const log = options.logger || console
   const pinLimiter = createAttemptLimiter(cfg.pinAttempts)
+  const callerLimiter = createAttemptLimiter(cfg.callerAttempts)
 
-  // Server-generated keys are dropped from restored rows; children get the new match id.
-  function childRow (row, matchUuid) {
-    const { id, ...rest } = row
-    return { ...rest, [cfg.childFk]: matchUuid }
+  /**
+   * Keep only the keys that are columns of `table` (renaming legacy keys first)
+   * and record the dropped ones. Old backups and old bundles send extra keys;
+   * one of them must not roll back the whole restore.
+   */
+  function cleanRow (cat, table, row, dropped, label) {
+    const t = cat.tables.get(table)
+    const aliases = cfg.legacyAliases?.[table] || {}
+    const out = {}
+    for (const [key, value] of Object.entries(row)) {
+      let k = key
+      if (!t.columns.has(k) && aliases[k] && t.columns.has(aliases[k]) && !(aliases[k] in row)) k = aliases[k]
+      if (t.columns.has(k)) out[k] = value
+      else (dropped[label] ||= new Set()).add(key)
+    }
+    return out
+  }
+
+  function duplicateExternalId (rows, ext) {
+    const seen = new Set()
+    for (const r of rows) {
+      const v = r[ext]
+      if (v == null) continue
+      if (seen.has(v)) return String(v).slice(0, 120)
+      seen.add(v)
+    }
+    return null
   }
 
   async function restoreMatch (payload, { proto } = {}) {
@@ -123,42 +182,79 @@ export function createMatchRestore (db, options = {}) {
     try {
       const cat = await db.ensureCatalog()
       const has = (t) => cat.tables.has(t) && db.config.allowedTables.includes(t)
+      for (const t of [cfg.matchTable, ...(sets.length ? [cfg.setsTable] : []), ...(events.length ? [cfg.eventsTable] : []), ...(liveState ? [cfg.liveStateTable] : [])]) {
+        if (!has(t)) return errorBody(400, '42P01', 'Database operation failed', `${t} is not available`)
+      }
+
+      // Rows as they will be written: unknown keys dropped, server keys replaced.
+      const dropped = {}
+      const { id: _ignored, ...matchIn } = match
+      const matchRow = cleanRow(cat, cfg.matchTable, matchIn, dropped, 'match')
+      // A backup without the PINs (or with them nulled) keeps the stored ones;
+      // JSON secrets (connection_pins) are merged into the stored object below.
+      const matchSecrets = db.secretColumnsOf(cfg.matchTable)
+      for (const k of matchSecrets) {
+        if (k in matchRow && (matchRow[k] == null || matchRow[k] === '')) delete matchRow[k]
+      }
+      const sportType = typeof matchRow.sport_type === 'string' && matchRow.sport_type ? matchRow.sport_type : cfg.defaultSportType
+      const childRows = (table, rows, label) => {
+        const hasSport = cat.tables.get(table).columns.has('sport_type')
+        return rows.map(r => {
+          const { id: _id, ...rest } = r
+          const row = cleanRow(cat, table, rest, dropped, label)
+          if (hasSport && row.sport_type == null && sportType) row.sport_type = sportType
+          return row
+        })
+      }
+      const setRows = sets.length ? childRows(cfg.setsTable, sets, 'sets') : []
+      const eventRows = events.length ? childRows(cfg.eventsTable, events, 'events') : []
+      const liveRow = liveState ? childRows(cfg.liveStateTable, [liveState], 'liveState')[0] : null
+      for (const [label, rows] of [['sets', setRows], ['events', eventRows]]) {
+        const dup = duplicateExternalId(rows, 'external_id')
+        if (dup) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request', `${label}: duplicate external_id "${dup}"`)
+      }
+      const droppedOut = Object.fromEntries(Object.entries(dropped).map(([k, v]) => [k, [...v].sort()]))
+      if (Object.keys(droppedOut).length) {
+        log.warn?.(`[matchRestore] ${match[cfg.matchKey].slice(0, 80)}: dropped unknown keys ${JSON.stringify(droppedOut).slice(0, 300)}`)
+      }
+
       const changes = []
       const out = await db.withTransaction(async (client) => {
-        const run = async (step, request, collectChanges = true) => {
-          const r = await db.runQuery(request, { client, proto, collectChanges })
+        const run = async (step, request, extra = {}) => {
+          const r = await db.runQuery(request, { client, proto, collectChanges: true, ...extra })
           if (r.body.error) throw new RestoreAbort(step, r)
           if (r.changes) changes.push(...r.changes)
           return r
         }
-        const { id: _ignored, ...matchRow } = match
         const up = await run('match', {
           table: cfg.matchTable,
           action: 'upsert',
           params: { data: matchRow, onConflict: cfg.matchKey, returning: cfg.matchId, single: true }
-        })
+        }, { mergeOnUpsert: matchSecrets })
         const matchUuid = up.body.data[cfg.matchId]
+        const withFk = (row) => ({ ...row, [cfg.childFk]: matchUuid })
+        // DELETE changes carry only the keys, so subscribers drop the old rows.
         const del = (table) => run(`delete ${table}`, {
           table, action: 'delete', params: { filters: [{ type: 'eq', column: cfg.childFk, value: matchUuid }] }
-        }, false)
+        }, { changeColumns: cfg.deleteChangeColumns })
         if (has(cfg.eventsTable)) await del(cfg.eventsTable)
         if (has(cfg.setsTable)) await del(cfg.setsTable)
         if (has(cfg.liveStateTable)) await del(cfg.liveStateTable)
 
         const counts = { sets: 0, events: 0, liveState: 0 }
-        if (sets.length) {
-          const r = await run('sets', { table: cfg.setsTable, action: 'insert', params: { data: sets.map(s => childRow(s, matchUuid)), count: 'exact' } })
+        if (setRows.length) {
+          const r = await run('sets', { table: cfg.setsTable, action: 'insert', params: { data: setRows.map(withFk), count: 'exact' } })
           counts.sets = r.body.count
         }
-        if (events.length) {
-          const r = await run('events', { table: cfg.eventsTable, action: 'insert', params: { data: events.map(e => childRow(e, matchUuid)), count: 'exact' } })
+        if (eventRows.length) {
+          const r = await run('events', { table: cfg.eventsTable, action: 'insert', params: { data: eventRows.map(withFk), count: 'exact' } })
           counts.events = r.body.count
         }
-        if (liveState) {
-          const r = await run('liveState', { table: cfg.liveStateTable, action: 'insert', params: { data: childRow(liveState, matchUuid), count: 'exact' } })
+        if (liveRow) {
+          const r = await run('liveState', { table: cfg.liveStateTable, action: 'insert', params: { data: withFk(liveRow), count: 'exact' } })
           counts.liveState = r.body.count
         }
-        return { id: matchUuid, counts }
+        return { id: matchUuid, counts, dropped: droppedOut }
       }, { statementTimeoutMs: cfg.statementTimeoutMs })
       return { status: 200, body: { data: out, error: null }, changes }
     } catch (err) {
@@ -168,9 +264,9 @@ export function createMatchRestore (db, options = {}) {
         log.warn?.(`[matchRestore] rolled back at ${err.step}: ${body.error.code}`)
         return { status, body: { data: null, error } }
       }
-      if (err?.status && err?.code) return errorBody(err.status, err.code, err.message)
-      log.error?.('[matchRestore] restore failed:', err?.message)
-      return errorBody(500, 'OV_INTERNAL', 'Database operation failed')
+      // Catalog not loaded, BEGIN/COMMIT failing (serialization, connection) ...
+      const r = db.toErrorResult(err, { action: 'restore', table: cfg.matchTable })
+      return { status: r.status, body: r.body }
     }
   }
 
@@ -181,7 +277,11 @@ export function createMatchRestore (db, options = {}) {
     if (!Number.isInteger(gameN) || gameN < 0 || gameN > 2147483647 || !PIN_RE.test(pin)) {
       return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request', 'gameN (integer) and pin are required')
     }
-    if (pinLimiter.isLimited(`${limitKey}|${gameN}`)) {
+    // Per caller across all game numbers first (one guessed PIN cannot be tried
+    // against every match), then per caller and game number.
+    const callerKey = String(limitKey)
+    const gameKey = `${callerKey}|${gameN}`
+    if (callerLimiter.isLimited(callerKey) || pinLimiter.isLimited(gameKey)) {
       return errorBody(429, 'OV_TOO_MANY_ATTEMPTS', 'Too many attempts. Please wait a few minutes before trying again.')
     }
     try {
@@ -207,6 +307,9 @@ export function createMatchRestore (db, options = {}) {
       if (found.body.error) return { status: found.status, body: found.body }
       const row = found.body.data[0]
       if (!row) return errorBody(404, 'OV_NOT_FOUND', 'Match not found with this ID and PIN')
+      // Only failed guesses count against the caller.
+      pinLimiter.reset(gameKey)
+      callerLimiter.refund(callerKey)
       const match = { ...row }
       for (const k of db.secretColumnsOf(cfg.matchTable)) {
         for (const key of Object.keys(match)) if (key.toLowerCase() === k) delete match[key]
@@ -232,10 +335,10 @@ export function createMatchRestore (db, options = {}) {
       return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }
-      log.error?.('[matchRestore] restore-by-pin failed:', err?.message)
-      return errorBody(500, 'OV_INTERNAL', 'Database operation failed')
+      const r = db.toErrorResult(err, { action: 'restore-by-pin', table: cfg.matchTable })
+      return { status: r.status, body: r.body }
     }
   }
 
-  return { restoreMatch, restoreByPin, pinLimiter }
+  return { restoreMatch, restoreByPin, pinLimiter, callerLimiter }
 }
