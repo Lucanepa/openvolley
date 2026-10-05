@@ -39,7 +39,7 @@ describe('StartupConnectivityModal while offline', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('no cloud and no local server but a working database: it can be dismissed and goes away by itself', () => {
+  it('online, no cloud and no local server but a working database: the scorer chooses (Dismiss or Go Offline), no auto-dismiss', () => {
     vi.useFakeTimers()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     const onDismiss = vi.fn()
@@ -50,8 +50,19 @@ describe('StartupConnectivityModal while offline', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1)
     expect(onGoOffline).not.toHaveBeenCalled()
     expect(screen.getByText('Go Offline')).toBeInTheDocument() // still offered, not the only way out
+    expect(screen.queryByText(/\(\d+s\)/)).toBeNull() // no countdown
     act(() => { vi.advanceTimersByTime(6000) })
-    expect(onDismiss).toHaveBeenCalledTimes(2)
+    expect(onDismiss).toHaveBeenCalledTimes(1) // only the click: it never closes by itself
+  })
+
+  it('synced: closes by itself after the countdown', () => {
+    vi.useFakeTimers()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const onDismiss = vi.fn()
+    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'disconnected' }} onDismiss={onDismiss} onGoOffline={() => {}} />)
+    expect(screen.getByText('(5s)')).toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(6000) })
+    expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 })
 
