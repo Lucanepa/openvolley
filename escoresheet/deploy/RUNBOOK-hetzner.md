@@ -163,7 +163,15 @@ hetzner# ls /data/openvolley/pg/state                   # "initialized": from no
 Follow the migration plan, Phase 4a step 6 and §6, with these adaptations:
 - Import directory: `/data/openvolley/pg/import` (inside the capped filesystem, mode 700).
 - Container argument for `scripts/migrate/restore.sh`: the compose container,
-  `$(docker compose -f /opt/openvolley/compose.yaml ps -q ov-postgres)`.
+  `$(docker compose -f /opt/openvolley/compose.yaml ps -q ov-postgres)`. Copy
+  `escoresheet/backend/db/*.sql` and `escoresheet/backend/scripts/migrate/restore.sh` into the
+  import directory next to `public.dump` and `auth_users.csv`, then:
+  ```bash
+  hetzner# bash /data/openvolley/pg/import/restore.sh --env-file /opt/openvolley/.env \
+             "$(docker compose -f /opt/openvolley/compose.yaml ps -q ov-postgres)" /data/openvolley/pg/import
+  ```
+  It ends with the row counts and `OV_MIN_MATCHES=<90%>`; it refuses a database that already
+  holds data (`--force` replaces it).
 - `roles.sql` with the app password from `.env` (read by the script, never exported):
   ```bash
   hetzner# /opt/openvolley/apply-roles.sh < /data/openvolley/pg/import/roles.sql   # "ok: ov_app logs in and sees N matches"
