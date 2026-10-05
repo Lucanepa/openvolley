@@ -3820,64 +3820,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'home') {
     return (
       <MatchSetupHomeTeamView kitScale={kitScale}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button className="secondary" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'var(--panel)' }}>{home || t('matchSetup.homeTeam')}</h2>
-          <div style={{ width: 80 }}></div>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div>
+            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</Button>
+          </div>
+          <h2 className="m-0 text-base font-semibold text-stone-700">{home || t('matchSetup.homeTeam')}</h2>
+          <div />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h1 style={{ margin: 0 }}>{t('roster.title')}</h1>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('roster.title')}</h1>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="danger-soft"
+              size="xl"
               onClick={() => {
                 setHomeRoster([])
                 setBenchHome([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
                 setHomeCoachSignature(null)
                 setHomeCaptainSignature(null)
-              }}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: '#dc2626',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('roster.deleteRoster')}
-            </button>
-            <button
-              onClick={() => setTestRosterConfirm('home')}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: '#000',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('roster.loadTestRoster')}
-            </button>
+                  }}
+                >
+                  {t('roster.deleteRoster')}
+                </Button>
+                <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
+                  {t('roster.loadTestRoster')}
+                </Button>
           </div>
         </div>
         {/* Upload Methods for Home Team + Player Stats */}
-        <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
+        <div className="flex gap-3">
           {/* Left: Upload section */}
-          <div style={{
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
-            background: 'var(--panel-2)',
-            flex: 1
-          }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+            <div className="flex flex-col gap-2">
               {/* Upload button row with Local/Remote toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="flex items-center gap-2">
                 <input
                   ref={homeFileInputRef}
                   type="file"
@@ -3885,10 +3861,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onChange={handleHomeFileSelect}
                   style={{ display: 'none' }}
                 />
-                <button
+                <Button
+                  variant="secondary"
+                  size="xl"
                   data-help-id="setup-pdf-import"
-                  type="button"
-                  className="secondary"
                   onClick={() => {
                     if (homeUploadMode === 'local') {
                       homeFileInputRef.current?.click()
@@ -3897,100 +3873,64 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                   disabled={homePdfLoading || homeRosterSearching}
-                  style={{
-                    padding: '8px 16px',
-                    fontSize: '14px',
-                    flex: 1
-                  }}
-                >
+                    className="flex-1"
+                  >
                   {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
-                </button>
+                  </Button>
                 {/* Local/Remote Toggle */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'var(--panel)',
-                  borderRadius: '6px',
-                  padding: '2px',
-                  gap: '2px'
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setHomeUploadMode('local')}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: homeUploadMode === 'local' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: homeUploadMode === 'local' ? '#60a5fa' : 'var(--muted)',
-                      border: homeUploadMode === 'local' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {t('matchSetup.local')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHomeUploadMode('remote')}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: homeUploadMode === 'remote' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: homeUploadMode === 'remote' ? '#60a5fa' : 'var(--muted)',
-                      border: homeUploadMode === 'remote' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {t('matchSetup.remote')}
-                  </button>
-                </div>
+                <SegmentedControl
+                  ariaLabel={t('matchSetup.uploadPdf')}
+                  className="w-44 shrink-0 [&_button]:p-0"
+                  value={homeUploadMode}
+                  onChange={setHomeUploadMode}
+                  options={[
+                    { value: 'local', label: t('matchSetup.local') },
+                    { value: 'remote', label: t('matchSetup.remote') }
+                  ]}
+                />
               </div>
               {/* Local upload - file selected */}
               {homeUploadMode === 'local' && homePdfFile && (
                 <>
-                  <span style={{ fontSize: '12px', color: 'var(--text)' }}>
+                  <span className="truncate text-xs text-stone-700">
                     {homePdfFile.name}
                   </span>
-                  <button
-                    type="button"
-                    className="secondary"
+                  <Button
+                    variant="primary"
+                    size="xl"
+                    block
                     onClick={handleHomeImportClick}
-                    disabled={homePdfLoading}
-                    style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
+                    loading={homePdfLoading}
                   >
                     {homePdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
-                  </button>
+                  </Button>
                 </>
               )}
               {homeUploadMode === 'local' && homePdfError && (
-                <span style={{ color: '#ef4444', fontSize: '12px' }}>
+                <span className="text-xs font-medium text-red-600">
                   {homePdfError}
                 </span>
               )}
               {/* Remote Upload */}
               {homeUploadMode === 'remote' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
-                    <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
+                    <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
                       {match?.game_n || match?.gameNumber || gameN || 'N/A'}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.uploadPin')}:</span>
                     {match?.homeTeamUploadPin ? (
                       <>
-                        <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
+                        <span className="font-mono text-base font-bold tracking-[0.3em] text-stone-900">
                           {match.homeTeamUploadPin}
                         </span>
-                        <button
-                          type="button"
-                          className="secondary"
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="bg-white"
                           onClick={async () => {
                             if (!matchId) return
                             const match = await db.matches.get(matchId)
@@ -4003,15 +3943,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             const newPin = generateSecurePin(existingPins)
                             await db.matches.update(matchId, { homeTeamUploadPin: newPin })
                           }}
-                          style={{ padding: '4px 8px', fontSize: '11px' }}
-                        >
-                          {t('matchSetup.regenerate')}
-                        </button>
+                          >
+                            {t('matchSetup.regenerate')}
+                          </Button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        className="secondary"
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="bg-white"
                         onClick={async () => {
                           if (!matchId) return
                           const match = await db.matches.get(matchId)
@@ -4024,43 +3964,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           const newPin = generateSecurePin(existingPins)
                           await db.matches.update(matchId, { homeTeamUploadPin: newPin })
                         }}
-                        style={{ padding: '4px 8px', fontSize: '11px' }}
-                      >
-                        {t('matchSetup.generatePin')}
-                      </button>
+                        >
+                          {t('matchSetup.generatePin')}
+                        </Button>
                     )}
                   </div>
                   {match?.pendingHomeRoster && (
-                    <div style={{
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      background: 'var(--panel-2)',
-                      marginTop: '12px'
-                    }}>
-                      <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                        <div style={{ fontSize: '12px' }}>
+                    <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3">
+                      <h4 className="mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
+                      <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
+                        <div>
                           {t('matchSetup.playersCount')}: {match.pendingHomeRoster.players?.length || 0}
                         </div>
-                        <div style={{ fontSize: '12px' }}>
+                        <div>
                           {t('matchSetup.benchOfficialsCount')}: {match.pendingHomeRoster.bench?.length || 0}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setRosterPreview('home')}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
-                        >
+                      <div className="mb-2 flex gap-2">
+                        <Button variant="secondary" size="xl" className="flex-1" onClick={() => setRosterPreview('home')}>
                           {t('matchSetup.previewRoster')}
-                        </button>
+                        </Button>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          type="button"
-                          className="secondary"
+                      <div className="flex gap-2">
+                        <Button
+                          variant="positive"
+                          size="xl"
+                          className="flex-1"
                           onClick={async () => {
                             if (!matchId || !match?.pendingHomeRoster) return
                             const pending = match.pendingHomeRoster
@@ -4121,21 +4050,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               await db.matches.update(matchId, { pendingHomeRoster: null })
                             }
                           }}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
-                        >
-                          {t('matchSetup.acceptRoster')}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={async () => {
-                            if (!matchId) return
-                            await db.matches.update(matchId, { pendingHomeRoster: null })
-                          }}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: 'var(--panel)', color: 'var(--text)', flex: 1 }}
-                        >
-                          {t('matchSetup.rejectRoster')}
-                        </button>
+                          >
+                            {t('matchSetup.acceptRoster')}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="xl"
+                            className="flex-1"
+                            onClick={async () => {
+                              if (!matchId) return
+                              await db.matches.update(matchId, { pendingHomeRoster: null })
+                            }}
+                          >
+                            {t('matchSetup.rejectRoster')}
+                          </Button>
                       </div>
                     </div>
                   )}
@@ -4149,26 +4077,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const homeNonLiberoCount = homeRoster.filter(p => !p.libero).length
             const homeHasError = !homeCaptain || homeNonLiberoCount < 6
             return (
-              <div style={{
-                border: homeHasError ? '1px solid #ef4444' : '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px',
-                background: homeHasError ? 'rgba(239, 68, 68, 0.15)' : 'var(--panel-2)',
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '16px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.players')}:</span>
-                  <span style={{ fontSize: '18px', fontWeight: 700, color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{homeRoster.length}</span>
-                  <span style={{ fontSize: '16px', color: homeNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>
+              <div className={cn(
+                'flex flex-1 items-center justify-center gap-4 rounded-xl border p-3',
+                homeHasError ? 'border-red-200 bg-red-50' : 'border-stone-200 bg-stone-50/60'
+              )}>
+                <div className="flex items-baseline gap-1.5">
+                  <span className={cn('text-sm font-medium', homeNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>{t('matchSetup.players')}:</span>
+                  <span className={cn('text-lg font-bold tabular-nums', homeNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-900')}>{homeRoster.length}</span>
+                  <span className={cn('text-sm tabular-nums', homeNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>
                     ({homeNonLiberoCount} + {homeRoster.filter(p => p.libero).length} {homeRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: !homeCaptain ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.captain')}:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn('text-sm font-medium', !homeCaptain ? 'text-red-700' : 'text-stone-500')}>{t('matchSetup.captain')}:</span>
                   {homeCaptain ? (
                     <span style={{
                       display: 'inline-flex',
@@ -4183,7 +4104,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       color: '#22c55e'
                     }}>{homeCaptain.number || '?'}</span>
                   ) : (
-                    <span style={{ fontSize: '14px', fontStyle: 'italic', color: '#ef4444' }}>—</span>
+                    <span className="text-sm text-red-700">—</span>
                   )}
                 </div>
               </div>
@@ -4192,16 +4113,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {/* Add new player section */}
         {homeRoster.length < 14 && (
-          <div style={{
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
-            background: 'var(--panel-2)',
-            marginBottom: '8px',
-            width: 'max-content',
-            margin: '0 auto 8px',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>{t('matchSetup.addNewPlayer')}</div>
+          <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+            <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-stone-500">{t('matchSetup.addNewPlayer')}</div>
             <div data-help-id="setup-add-player" className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
@@ -4267,7 +4180,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <button type="button" className="secondary" onClick={() => {
+                  <Button variant="secondary" size="md" onClick={() => {
                     if (!homeLast || !homeFirst) return
                     const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain, isLfp: homeLfp }
                     setHomeRoster(list => {
@@ -4280,7 +4193,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       return next
                     })
                     setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false); setHomeLfp(false)
-                  }}>{t('common.add')}</button>
+                  }}>{t('common.add')}</Button>
                 </div>
               </div>
             </div>
@@ -4341,11 +4254,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  style={isDuplicate ? {
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    border: '2px solid #ef4444',
-                    color: '#ef4444'
-                  } : undefined}
+                  className={isDuplicate ? 'border-red-400 bg-red-50 text-red-700' : undefined}
+                  aria-invalid={isDuplicate || undefined}
                   title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
@@ -4499,20 +4409,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}
-                  >
+                  <Button variant="danger-outline" size="md" onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
                     {t('common.delete')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )
             })
           })()}
         </div>
-        <h4 className="section-divider" data-help-id="setup-bench-officials">{t('matchSetup.benchOfficials')} — {t('common.home')}</h4>
+        <div data-help-id="setup-bench-officials" className="mt-4">
+          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.home')}`} />
+        </div>
         <div className="bench-grid">
           {/* Bench Header Row */}
           <div className="bench-grid-row grid-header">
@@ -4549,21 +4457,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
-                  <button type="button" className="secondary" onClick={() => {
+                  <Button variant="danger-outline" size="md" onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
                     setBenchHome(updated)
                     setTimeout(() => saveDraft(true), 100)
-                  }}>
-                    {t('common.delete')}
-                  </button>
+                    }}>
+                      {t('common.delete')}
+                    </Button>
                 </div>
               </div>
             )
           })}
           <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              type="button"
-              className="secondary"
+            <Button
+              variant="ghost"
+              size="md"
+              className="bg-white"
               disabled={benchHome.length >= 5}
               onClick={() => {
                 const takenRoles = new Set(benchHome.map(b => b.role))
@@ -4572,10 +4481,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   setBenchHome([...benchHome, initBench(availableRole.value)])
                 }
               }}
-              style={{ padding: '4px 8px', fontSize: '12px' }}
-            >
-              {t('matchSetup.addBenchOfficial')}
-            </button>
+              >
+                {t('matchSetup.addBenchOfficial')}
+              </Button>
             {benchHome.length >= 5 && (
               <WarningIndicator id="addBenchHome" missingItems={[t('warnings.maxBenchOfficials')]} />
             )}
@@ -4583,118 +4491,82 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
 
         {/* Signatures Section */}
-        <div style={{
-          marginTop: '24px',
-          padding: '16px',
-          background: 'var(--panel-2)',
-          borderRadius: '8px',
-          border: '1px solid var(--border)'
-        }}>
-          <h4 style={{ margin: 0, marginBottom: '12px' }}>
+        <div className="mt-2 rounded-xl border border-stone-200 bg-stone-50/60 p-4">
+          <h4 className="text-sm font-semibold text-stone-800">
             {t('rosterSetup.signatures', 'Signatures')}
           </h4>
-          <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
+          <p className="mt-1 mb-4 text-xs text-stone-500">
             {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          <div className="flex flex-wrap gap-4">
             {/* Coach Signature */}
-            <div style={{ flex: 1, minWidth: '150px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+            <div className="min-w-[150px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-stone-600">
                 {t('rosterSetup.coachSignature', 'Coach Signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('home-coach')}
-                style={{
-                  width: '100%',
-                  height: '80px',
-                  background: homeCoachSignature ? 'white' : 'var(--panel-2)',
-                  border: homeCoachSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden'
-                }}
+                className={cn(
+                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
+                  homeCoachSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
+                )}
               >
                 {homeCoachSignature ? (
                   <img src={homeCoachSignature} alt={t('matchSetup.coachSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
-                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                  <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
                   </span>
                 )}
               </div>
               {homeCoachSignature && (
-                <button
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  className="mt-1.5"
                   onClick={(e) => { e.stopPropagation(); setHomeCoachSignature(null); }}
-                  style={{
-                    marginTop: '6px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: '#ef4444',
-                    border: '1px solid #ef4444',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
                 >
                   {t('common.clear', 'Clear')}
-                </button>
+                </Button>
               )}
             </div>
 
             {/* Captain Signature */}
-            <div style={{ flex: 1, minWidth: '150px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+            <div className="min-w-[150px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-stone-600">
                 {t('rosterSetup.captainSignature', 'Captain Signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('home-captain')}
-                style={{
-                  width: '100%',
-                  height: '80px',
-                  background: homeCaptainSignature ? 'white' : 'var(--panel-2)',
-                  border: homeCaptainSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden'
-                }}
+                className={cn(
+                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
+                  homeCaptainSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
+                )}
               >
                 {homeCaptainSignature ? (
                   <img src={homeCaptainSignature} alt={t('matchSetup.captainSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
-                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                  <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
                   </span>
                 )}
               </div>
               {homeCaptainSignature && (
-                <button
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  className="mt-1.5"
                   onClick={(e) => { e.stopPropagation(); setHomeCaptainSignature(null); }}
-                  style={{
-                    marginTop: '6px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: '#ef4444',
-                    border: '1px solid #ef4444',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
                 >
                   {t('common.clear', 'Clear')}
-                </button>
+                </Button>
               )}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={async () => {
+        <div className="flex justify-end">
+          <Button variant="positive" size="xl" onClick={async () => {
 
             // Check if any changes were made (skip sync if no changes)
             const hasChanges = hasRosterChanged(
@@ -4900,7 +4772,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               checkSyncStatus()
             }
             setCurrentView('main')
-          }}>{t('common.confirm')}</button>
+            }}>{t('common.confirm')}</Button>
         </div>
         {/* PDF Import Summary Modal - shown immediately after import */}
         {importSummaryModal && importSummaryModal.team === 'home' && (
@@ -5105,64 +4977,40 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'away') {
     return (
       <MatchSetupAwayTeamView kitScale={kitScale}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button className="secondary" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text)', padding: '10px', border: '0.5px solid white', borderRadius: '10px', background: 'var(--panel)' }}>{away || t('matchSetup.awayTeam')}</h2>
-          <div style={{ width: 80 }}></div>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div>
+            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</Button>
+          </div>
+          <h2 className="m-0 text-base font-semibold text-stone-700">{away || t('matchSetup.awayTeam')}</h2>
+          <div />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <h1 style={{ margin: 0 }}>{t('roster.title')}</h1>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('roster.title')}</h1>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="danger-soft"
+              size="xl"
               onClick={() => {
                 setAwayRoster([])
                 setBenchAway([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
                 setAwayCoachSignature(null)
                 setAwayCaptainSignature(null)
-              }}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: '#dc2626',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('roster.deleteRoster')}
-            </button>
-            <button
-              onClick={() => setTestRosterConfirm('away')}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: '#000',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('roster.loadTestRoster')}
-            </button>
+                  }}
+                >
+                  {t('roster.deleteRoster')}
+                </Button>
+                <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
+                  {t('roster.loadTestRoster')}
+                </Button>
           </div>
         </div>
         {/* Upload Methods for Away Team + Player Stats */}
-        <div style={{ marginBottom: '12px', display: 'flex', gap: '12px' }}>
+        <div className="flex gap-3">
           {/* Left: Upload section */}
-          <div style={{
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
-            background: 'var(--panel-2)',
-            flex: 1
-          }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+            <div className="flex flex-col gap-2">
               {/* Upload button row with Local/Remote toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="flex items-center gap-2">
                 <input
                   ref={awayFileInputRef}
                   type="file"
@@ -5170,9 +5018,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onChange={handleAwayFileSelect}
                   style={{ display: 'none' }}
                 />
-                <button
-                  type="button"
-                  className="secondary"
+                <Button
+                  variant="secondary"
+                  size="xl"
                   onClick={() => {
                     if (awayUploadMode === 'local') {
                       awayFileInputRef.current?.click()
@@ -5181,100 +5029,64 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                   disabled={awayPdfLoading || awayRosterSearching}
-                  style={{
-                    padding: '8px 16px',
-                    fontSize: '14px',
-                    flex: 1
-                  }}
-                >
+                    className="flex-1"
+                  >
                   {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
-                </button>
+                  </Button>
                 {/* Local/Remote Toggle */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'var(--panel)',
-                  borderRadius: '6px',
-                  padding: '2px',
-                  gap: '2px'
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => setAwayUploadMode('local')}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: awayUploadMode === 'local' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: awayUploadMode === 'local' ? '#60a5fa' : 'var(--muted)',
-                      border: awayUploadMode === 'local' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {t('matchSetup.local')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAwayUploadMode('remote')}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: awayUploadMode === 'remote' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                      color: awayUploadMode === 'remote' ? '#60a5fa' : 'var(--muted)',
-                      border: awayUploadMode === 'remote' ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {t('matchSetup.remote')}
-                  </button>
-                </div>
+                <SegmentedControl
+                  ariaLabel={t('matchSetup.uploadPdf')}
+                  className="w-44 shrink-0 [&_button]:p-0"
+                  value={awayUploadMode}
+                  onChange={setAwayUploadMode}
+                  options={[
+                    { value: 'local', label: t('matchSetup.local') },
+                    { value: 'remote', label: t('matchSetup.remote') }
+                  ]}
+                />
               </div>
               {/* Local upload - file selected */}
               {awayUploadMode === 'local' && awayPdfFile && (
                 <>
-                  <span style={{ fontSize: '12px', color: 'var(--text)' }}>
+                  <span className="truncate text-xs text-stone-700">
                     {awayPdfFile.name}
                   </span>
-                  <button
-                    type="button"
-                    className="secondary"
+                  <Button
+                    variant="primary"
+                    size="xl"
+                    block
                     onClick={handleAwayImportClick}
-                    disabled={awayPdfLoading}
-                    style={{ padding: '8px 16px', fontSize: '14px', width: '100%' }}
+                    loading={awayPdfLoading}
                   >
                     {awayPdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
-                  </button>
+                  </Button>
                 </>
               )}
               {awayUploadMode === 'local' && awayPdfError && (
-                <span style={{ color: '#ef4444', fontSize: '12px' }}>
+                <span className="text-xs font-medium text-red-600">
                   {awayPdfError}
                 </span>
               )}
               {/* Remote Upload */}
               {awayUploadMode === 'remote' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.gameNumber')}:</span>
-                    <span style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
+                    <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
                       {match?.game_n || match?.gameNumber || gameN || 'N/A'}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{t('matchSetup.uploadPin')}:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.uploadPin')}:</span>
                     {match?.awayTeamUploadPin ? (
                       <>
-                        <span style={{ fontSize: '16px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>
+                        <span className="font-mono text-base font-bold tracking-[0.3em] text-stone-900">
                           {match.awayTeamUploadPin}
                         </span>
-                        <button
-                          type="button"
-                          className="secondary"
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="bg-white"
                           onClick={async () => {
                             if (!matchId) return
                             const match = await db.matches.get(matchId)
@@ -5287,15 +5099,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             const newPin = generateSecurePin(existingPins)
                             await db.matches.update(matchId, { awayTeamUploadPin: newPin })
                           }}
-                          style={{ padding: '4px 8px', fontSize: '11px' }}
-                        >
-                          {t('matchSetup.regenerate')}
-                        </button>
+                          >
+                            {t('matchSetup.regenerate')}
+                          </Button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        className="secondary"
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="bg-white"
                         onClick={async () => {
                           if (!matchId) return
                           const match = await db.matches.get(matchId)
@@ -5308,43 +5120,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           const newPin = generateSecurePin(existingPins)
                           await db.matches.update(matchId, { awayTeamUploadPin: newPin })
                         }}
-                        style={{ padding: '4px 8px', fontSize: '11px' }}
-                      >
-                        {t('matchSetup.generatePin')}
-                      </button>
+                        >
+                          {t('matchSetup.generatePin')}
+                        </Button>
                     )}
                   </div>
                   {match?.pendingAwayRoster && (
-                    <div style={{
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      background: 'var(--panel-2)',
-                      marginTop: '12px'
-                    }}>
-                      <h4 style={{ marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchSetup.rosterUploaded')}</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                        <div style={{ fontSize: '12px' }}>
+                    <div className="mt-3 rounded-xl border border-sky-200 bg-white p-3">
+                      <h4 className="mb-2 text-sm font-semibold text-stone-800">{t('matchSetup.rosterUploaded')}</h4>
+                      <div className="mb-3 flex flex-col gap-1 text-xs text-stone-600">
+                        <div>
                           {t('matchSetup.playersCount')}: {match.pendingAwayRoster.players?.length || 0}
                         </div>
-                        <div style={{ fontSize: '12px' }}>
+                        <div>
                           {t('matchSetup.benchOfficialsCount')}: {match.pendingAwayRoster.bench?.length || 0}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setRosterPreview('away')}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: 'rgba(59, 130, 246, 0.3)', color: 'var(--text)', flex: 1 }}
-                        >
+                      <div className="mb-2 flex gap-2">
+                        <Button variant="secondary" size="xl" className="flex-1" onClick={() => setRosterPreview('away')}>
                           {t('matchSetup.previewRoster')}
-                        </button>
+                        </Button>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          type="button"
-                          className="secondary"
+                      <div className="flex gap-2">
+                        <Button
+                          variant="positive"
+                          size="xl"
+                          className="flex-1"
                           onClick={async () => {
                             if (!matchId || !match?.pendingAwayRoster) return
                             const pending = match.pendingAwayRoster
@@ -5405,21 +5206,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               await db.matches.update(matchId, { pendingAwayRoster: null })
                             }
                           }}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: '#22c55e', color: '#000', flex: 1 }}
-                        >
-                          {t('matchSetup.acceptRoster')}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={async () => {
-                            if (!matchId) return
-                            await db.matches.update(matchId, { pendingAwayRoster: null })
-                          }}
-                          style={{ padding: '8px 16px', fontSize: '12px', background: 'var(--panel)', color: 'var(--text)', flex: 1 }}
-                        >
-                          {t('matchSetup.rejectRoster')}
-                        </button>
+                          >
+                            {t('matchSetup.acceptRoster')}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="xl"
+                            className="flex-1"
+                            onClick={async () => {
+                              if (!matchId) return
+                              await db.matches.update(matchId, { pendingAwayRoster: null })
+                            }}
+                          >
+                            {t('matchSetup.rejectRoster')}
+                          </Button>
                       </div>
                     </div>
                   )}
@@ -5433,26 +5233,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const awayNonLiberoCount = awayRoster.filter(p => !p.libero).length
             const awayHasError = !awayCaptain || awayNonLiberoCount < 6
             return (
-              <div style={{
-                border: awayHasError ? '1px solid #ef4444' : '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '12px',
-                background: awayHasError ? 'rgba(239, 68, 68, 0.15)' : 'var(--panel-2)',
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '16px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.players')}:</span>
-                  <span style={{ fontSize: '18px', fontWeight: 700, color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--text)' }}>{awayRoster.length}</span>
-                  <span style={{ fontSize: '16px', color: awayNonLiberoCount < 6 ? '#ef4444' : 'var(--muted)' }}>
+              <div className={cn(
+                'flex flex-1 items-center justify-center gap-4 rounded-xl border p-3',
+                awayHasError ? 'border-red-200 bg-red-50' : 'border-stone-200 bg-stone-50/60'
+              )}>
+                <div className="flex items-baseline gap-1.5">
+                  <span className={cn('text-sm font-medium', awayNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>{t('matchSetup.players')}:</span>
+                  <span className={cn('text-lg font-bold tabular-nums', awayNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-900')}>{awayRoster.length}</span>
+                  <span className={cn('text-sm tabular-nums', awayNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>
                     ({awayNonLiberoCount} + {awayRoster.filter(p => p.libero).length} {awayRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: !awayCaptain ? '#ef4444' : 'var(--muted)' }}>{t('matchSetup.captain')}:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn('text-sm font-medium', !awayCaptain ? 'text-red-700' : 'text-stone-500')}>{t('matchSetup.captain')}:</span>
                   {awayCaptain ? (
                     <span style={{
                       display: 'inline-flex',
@@ -5467,7 +5260,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       color: '#22c55e'
                     }}>{awayCaptain.number || '?'}</span>
                   ) : (
-                    <span style={{ fontSize: '14px', fontStyle: 'italic', color: '#ef4444' }}>—</span>
+                    <span className="text-sm text-red-700">—</span>
                   )}
                 </div>
               </div>
@@ -5476,15 +5269,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {/* Add new player section */}
         {awayRoster.length < 14 && (
-          <div style={{
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
-            background: 'var(--panel-2)',
-            width: 'max-content',
-            margin: '0 auto 8px',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>{t('matchSetup.addNewPlayer')}</div>
+          <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+            <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-stone-500">{t('matchSetup.addNewPlayer')}</div>
             <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
@@ -5560,7 +5346,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <button type="button" className="secondary" onClick={() => {
+                  <Button variant="secondary" size="md" onClick={() => {
                     if (!awayLast || !awayFirst) return
                     const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain, isLfp: awayLfp }
                     setAwayRoster(list => {
@@ -5573,7 +5359,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       return next
                     })
                     setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false); setAwayLfp(false)
-                  }}>{t('common.add')}</button>
+                  }}>{t('common.add')}</Button>
                 </div>
               </div>
             </div>
@@ -5632,11 +5418,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  style={isDuplicate ? {
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    border: '2px solid #ef4444',
-                    color: '#ef4444'
-                  } : undefined}
+                  className={isDuplicate ? 'border-red-400 bg-red-50 text-red-700' : undefined}
+                  aria-invalid={isDuplicate || undefined}
                   title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
@@ -5785,20 +5568,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}
-                  >
+                  <Button variant="danger-outline" size="md" onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
                     {t('common.delete')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )
             })
           })()}
         </div>
-        <h4 className="section-divider">{t('matchSetup.benchOfficials')} — {t('common.away')}</h4>
+        <div className="mt-4">
+          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.away')}`} />
+        </div>
         <div className="bench-grid">
           {/* Bench Header Row */}
           <div className="bench-grid-row grid-header">
@@ -5835,21 +5616,22 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
-                  <button type="button" className="secondary" onClick={() => {
+                  <Button variant="danger-outline" size="md" onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)
                     setBenchAway(updated)
                     setTimeout(() => saveDraft(true), 100)
-                  }}>
-                    {t('common.delete')}
-                  </button>
+                    }}>
+                      {t('common.delete')}
+                    </Button>
                 </div>
               </div>
             )
           })}
           <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              type="button"
-              className="secondary"
+            <Button
+              variant="ghost"
+              size="md"
+              className="bg-white"
               disabled={benchAway.length >= 5}
               onClick={() => {
                 const takenRoles = new Set(benchAway.map(b => b.role))
@@ -5858,10 +5640,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   setBenchAway([...benchAway, initBench(availableRole.value)])
                 }
               }}
-              style={{ padding: '4px 8px', fontSize: '12px' }}
-            >
-              {t('matchSetup.addBenchOfficial')}
-            </button>
+              >
+                {t('matchSetup.addBenchOfficial')}
+              </Button>
             {benchAway.length >= 5 && (
               <WarningIndicator id="addBenchAway" missingItems={[t('warnings.maxBenchOfficials')]} />
             )}
@@ -5869,118 +5650,82 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
 
         {/* Signatures Section */}
-        <div style={{
-          marginTop: '24px',
-          padding: '16px',
-          background: 'var(--panel-2)',
-          borderRadius: '8px',
-          border: '1px solid var(--border)'
-        }}>
-          <h4 style={{ margin: 0, marginBottom: '12px' }}>
+        <div className="mt-2 rounded-xl border border-stone-200 bg-stone-50/60 p-4">
+          <h4 className="text-sm font-semibold text-stone-800">
             {t('rosterSetup.signatures', 'Signatures')}
           </h4>
-          <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '16px' }}>
+          <p className="mt-1 mb-4 text-xs text-stone-500">
             {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          <div className="flex flex-wrap gap-4">
             {/* Coach Signature */}
-            <div style={{ flex: 1, minWidth: '150px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+            <div className="min-w-[150px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-stone-600">
                 {t('rosterSetup.coachSignature', 'Coach Signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('away-coach')}
-                style={{
-                  width: '100%',
-                  height: '80px',
-                  background: awayCoachSignature ? 'white' : 'var(--panel-2)',
-                  border: awayCoachSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden'
-                }}
+                className={cn(
+                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
+                  awayCoachSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
+                )}
               >
                 {awayCoachSignature ? (
                   <img src={awayCoachSignature} alt={t('matchSetup.coachSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
-                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                  <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
                   </span>
                 )}
               </div>
               {awayCoachSignature && (
-                <button
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  className="mt-1.5"
                   onClick={(e) => { e.stopPropagation(); setAwayCoachSignature(null); }}
-                  style={{
-                    marginTop: '6px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: '#ef4444',
-                    border: '1px solid #ef4444',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
                 >
                   {t('common.clear', 'Clear')}
-                </button>
+                </Button>
               )}
             </div>
 
             {/* Captain Signature */}
-            <div style={{ flex: 1, minWidth: '150px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '6px' }}>
+            <div className="min-w-[150px] flex-1">
+              <div className="mb-1.5 text-xs font-medium text-stone-600">
                 {t('rosterSetup.captainSignature', 'Captain Signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('away-captain')}
-                style={{
-                  width: '100%',
-                  height: '80px',
-                  background: awayCaptainSignature ? 'white' : 'var(--panel-2)',
-                  border: awayCaptainSignature ? '2px solid #22c55e' : '2px dashed var(--border)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden'
-                }}
+                className={cn(
+                  'flex h-20 w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 transition-colors',
+                  awayCaptainSignature ? 'border-emerald-400 bg-white' : 'border-dashed border-stone-300 bg-stone-50 hover:bg-stone-100'
+                )}
               >
                 {awayCaptainSignature ? (
                   <img src={awayCaptainSignature} alt={t('matchSetup.captainSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
-                  <span style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                  <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
                   </span>
                 )}
               </div>
               {awayCaptainSignature && (
-                <button
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  className="mt-1.5"
                   onClick={(e) => { e.stopPropagation(); setAwayCaptainSignature(null); }}
-                  style={{
-                    marginTop: '6px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: '#ef4444',
-                    border: '1px solid #ef4444',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
                 >
                   {t('common.clear', 'Clear')}
-                </button>
+                </Button>
               )}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={async () => {
+        <div className="flex justify-end">
+          <Button variant="positive" size="xl" onClick={async () => {
 
             // Check if any changes were made (skip sync if no changes)
             const hasChanges = hasRosterChanged(
@@ -6187,7 +5932,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               checkSyncStatus()
             }
             setCurrentView('main')
-          }}>{t('common.confirm')}</button>
+            }}>{t('common.confirm')}</Button>
         </div>
         {/* PDF Import Summary Modal - shown immediately after import */}
         {importSummaryModal && importSummaryModal.team === 'away' && (
@@ -7869,6 +7614,9 @@ const setupViewStyle = {
 // Legacy h2-h4 margins are dropped too: kit headings own their spacing.
 const SETUP_VIEW = cn(
   'setup content-start',
+  // legacy `button { background: var(--accent) }` (scoring green) shows through
+  // kit buttons that carry no fill of their own (ghost, outline, segments)
+  "[&_:where(button:not([class^='bg-']):not([class*='_bg-']))]:bg-transparent",
   '[&_:where(h2,h3,h4)]:m-0',
   '[&_:where(.text-xs,.text-sm):not([class*=tracking-])]:tracking-normal',
   '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-variation-settings:inherit]',
