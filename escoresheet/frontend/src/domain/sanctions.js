@@ -64,3 +64,27 @@ export function isDelaySanction(type) {
 export function awardsPoint(type) {
   return type === 'delay_penalty' || type === 'penalty'
 }
+
+/**
+ * The team-sanction flags shown on the scoreboard (match.sanctions), derived
+ * from the sanction events — the single source of truth. The flags used to be
+ * set once when the sanction was given and never cleared, so an undone or
+ * deleted warning left the Improper Request button hidden and the Delay button
+ * on "penalty".
+ *  - improperRequest{Home,Away}: the team has an improper request on record
+ *  - delayWarning{Home,Away}: the team has a delay sanction on record (its next
+ *    delay is a penalty)
+ * @param {Array} events
+ * @returns {{improperRequestHome:boolean, improperRequestAway:boolean, delayWarningHome:boolean, delayWarningAway:boolean}}
+ */
+export function deriveTeamSanctionFlags(events) {
+  const has = (team, pred) => (events || []).some(e =>
+    e.type === 'sanction' && e.payload?.team === team && pred(e.payload?.type)
+  )
+  return {
+    improperRequestHome: has('home', t => t === 'improper_request'),
+    improperRequestAway: has('away', t => t === 'improper_request'),
+    delayWarningHome: has('home', isDelaySanction),
+    delayWarningAway: has('away', isDelaySanction)
+  }
+}

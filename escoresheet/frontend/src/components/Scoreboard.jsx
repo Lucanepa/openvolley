@@ -29,9 +29,10 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet } from '../domain/rules'
-import { resolveSanction, isDelaySanction } from '../domain/sanctions'
+import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
+import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { TimeInput24 } from './TimeInput24'
@@ -6498,6 +6499,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Instead of complex per-event-type logic, we simply:
   // 1. Delete all events with the same base seq
   // 2. Restore state from the previous event's snapshot
+  // Recompute the team-sanction flags (match.sanctions: improper request / delay
+  // warning given) from the sanction events, after an undo or a manual edit
+  const resyncTeamSanctionFlags = useCallback(async () => {
+    const events = await db.events.where('matchId').equals(matchId).toArray()
+    const match = await db.matches.get(matchId)
+    await db.matches.update(matchId, { sanctions: { ...(match?.sanctions || {}), ...deriveTeamSanctionFlags(events) } })
+  }, [matchId])
+
+  // Undo writes outside the event log done by the forward handlers of the
+  // removed events: automatic remarks, libero re-designation flags on the
+  // players, the court captain designation and the team-sanction flags.
+  const reverseEventSideEffects = useCallback(async (removedEvents) => {
+    const removed = removedEvents || []
+    const match = await db.matches.get(matchId)
+    const matchUpdate = {}
+
+    let remarks = match?.remarks || ''
+    for (const e of [...removed].sort((a, b) => (b.seq || 0) - (a.seq || 0))) {
+      if (e.payload?.autoRemark) remarks = removeRemarkLine(remarks, e.payload.autoRemark)
+    }
+    if (remarks !== (match?.remarks || '')) matchUpdate.remarks = remarks
+
+    for (const e of removed) {
+      if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
+        matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
+      }
+      if (e.type === 'libero_redesignation' && e.payload?.previousLiberoFlags) {
+        const { unableLibero, newLibero } = e.payload.previousLiberoFlags
+        if (unableLibero?.id != null) await db.players.update(unableLibero.id, { libero: unableLibero.libero })
+        if (newLibero?.id != null) await db.players.update(newLibero.id, { libero: newLibero.libero })
+      }
+    }
+
+    if (Object.keys(matchUpdate).length > 0) await db.matches.update(matchId, matchUpdate)
+    if (removed.some(e => e.type === 'sanction')) await resyncTeamSanctionFlags()
+  }, [matchId, resyncTeamSanctionFlags])
+
   const handleUndo = useCallback(async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
@@ -6537,9 +6575,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // 2. Find the previous event's snapshot
+      // 1b. Reverse what the undone events wrote OUTSIDE the event log
+      await reverseEventSideEffects(eventsToDelete)
+
+      // 2. Find the previous event's snapshot: the newest REMAINING event of the
+      // same set that actually carries one (rally_start / raw rotation lineups
+      // have none, and the deleted events must not be picked)
+      const deletedIds = new Set(eventsToDelete.map(e => e.id))
+      const undoneSetIndex = lastEvent.setIndex ?? data.set.index
       const remainingEvents = allEvents
-        .filter(e => Math.floor(e.seq || 0) < baseSeq)
+        .filter(e =>
+          !deletedIds.has(e.id) &&
+          Math.floor(e.seq || 0) < baseSeq &&
+          e.stateSnapshot &&
+          e.setIndex === undoneSetIndex &&
+          e.stateSnapshot.currentSetIndex === undoneSetIndex
+        )
         .sort((a, b) => (b.seq || 0) - (a.seq || 0))
 
       const previousEvent = remainingEvents[0]
@@ -6554,7 +6605,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Re-query remaining events (after deletion)
         const remainingAllEvents = await db.events.where({ matchId }).toArray()
-        const currentSetIndex = data.set.index
+        const currentSetIndex = undoneSetIndex
         const remainingPointEvents = remainingAllEvents.filter(e =>
           e.type === 'point' && e.setIndex === currentSetIndex
         )
@@ -6575,15 +6626,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           await db.sets.update(currentSet.id, { homePoints, awayPoints, finished: false })
         }
 
-        // Reset match status to live
-        await db.matches.update(matchId, { status: 'live' })
+        // Reset match status to live; in set 5 the court switch (at 8 points) is
+        // undone too when the score falls back below 8
+        await db.matches.update(matchId, {
+          status: 'live',
+          ...(currentSetIndex === 5 && Math.max(homePoints, awayPoints) < 8 ? { set5CourtSwitched: false } : {})
+        })
       }
 
       // Handle special cases for set_end undo
       if (lastEvent.type === 'set_end') {
-        // Delete the next set if it was created
+        // Delete the next set if it was created: the first set after the ended
+        // one (best-of-3 jumps 2 -> 5, so it is not always index + 1)
+        const endedSetIndex = lastEvent.payload?.setIndex ?? lastEvent.setIndex ?? data.set.index
         const allSets = await db.sets.where({ matchId }).toArray()
-        const nextSet = allSets.find(s => s.index === data.set.index + 1)
+        const nextSet = allSets
+          .filter(s => s.index > endedSetIndex && !s.finished)
+          .sort((a, b) => a.index - b.index)[0]
         if (nextSet) {
           await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).delete()
           await db.sets.delete(nextSet.id)
@@ -6600,7 +6659,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, reverseEventSideEffects, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -9534,6 +9593,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Preserve liberoSubstitution from the previous lineup event (if libero is on court)
       const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution || null
 
+      // Automatic remark for an injury / exceptional substitution. Built before
+      // logging so the event records it (autoRemark) and undo can remove it.
+      let autoRemark = ''
+      if ((isInjury || isExceptional) && data?.set) {
+        const setIndex = data.set.index
+        const teamLabel = team === teamAKey ? 'A' : 'B'
+
+        // Current time (HHhMMm format) - use UTC for consistency
+        const now = new Date()
+        const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+
+        // Get current score - always put the interested team's score first
+        const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
+        const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
+        const scoreStr = `${teamScore}:${opponentScore}`
+
+        if (isInjury) {
+          autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} substituted due to injury`
+        } else if (isExceptional) {
+          autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} exceptionally substituted by Player #${playerIn}`
+        }
+      }
+
       // Log the substitution event FIRST to get the main sequence number
       // (skipMutex: true because we already hold the mutex)
       const subSeq = await logEvent('substitution', {
@@ -9543,7 +9625,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerIn,
         isExceptional: isExceptional || false,
         isExpelled: isExpelled || false,
-        isDisqualified: isDisqualified || false
+        isDisqualified: isDisqualified || false,
+        ...(autoRemark ? { autoRemark } : {})
       }, { skipMutex: true })
 
       // Save the updated lineup as a SUB-EVENT (decimal sequence)
@@ -9576,32 +9659,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         newLineup: finalLineup
       }, getStateSnapshot())
 
-      // If injury or exceptional substitution, add automatic remarks
-      if ((isInjury || isExceptional) && data?.set) {
-        const setIndex = data.set.index
-        const teamLabel = team === teamAKey ? 'A' : 'B'
-
-        // Current time (HHhMMm format) - use UTC for consistency
-        const now = new Date()
-        const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-        // Get current score - always put the interested team's score first
-        const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
-        const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-        const scoreStr = `${teamScore}:${opponentScore}`
-
-        let remark = ''
-        if (isInjury) {
-          remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} substituted due to injury`
-        } else if (isExceptional) {
-          remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} exceptionally substituted by Player #${playerIn}`
-        }
-
-        if (remark) {
-          const currentRemarks = data?.match?.remarks || ''
-          const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-          await db.matches.update(matchId, { remarks: newRemarks })
-        }
+      // If injury or exceptional substitution, add the automatic remark
+      if (autoRemark) {
+        const freshMatch = await db.matches.get(matchId)
+        await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
       }
 
       setSubstitutionConfirm(null)
@@ -11305,36 +11366,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       })
     }
 
-    // Log the re-designation event
-    await logEvent('libero_redesignation', {
-      team,
-      unableLiberoNumber,
-      unableLiberoType,
-      newLiberoNumber,
-      reason
-    })
-
     // Update the player records: remove libero status from old player, add to new player
     const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
     const teamId = team === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId
+    // Find the old libero and new player
+    const oldLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(unableLiberoNumber))
+    const newLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(newLiberoNumber))
 
-    if (teamId) {
-      // Find the old libero and new player
-      const oldLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(unableLiberoNumber))
-      const newLiberoPlayer = teamPlayers?.find(p => Number(p.number) === Number(newLiberoNumber))
-
-      // Update old libero - mark as unable (out for rest of game)
-      if (oldLiberoPlayer?.id) {
-        await db.players.update(oldLiberoPlayer.id, { libero: 'unable' })
-      }
-
-      // Update new player - mark as redesignated libero (only one allowed per team)
-      if (newLiberoPlayer?.id) {
-        await db.players.update(newLiberoPlayer.id, { libero: 'redesignated' })
-      }
-    }
-
-    // Record in remarks
+    // Record in remarks (built before logging so the event carries it for undo)
     const teamLabel = team === teamAKey ? 'A' : 'B'
     const setIndex = data.set.index
 
@@ -11350,9 +11389,38 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const timeStr = `${hours}h${minutes}m`
 
     const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
-    const currentRemarks = data?.match?.remarks || ''
-    const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-    await db.matches.update(matchId, { remarks: newRemarks })
+
+    // Log the re-designation event. It records the player flags it changes and
+    // the remark it writes, so undo can put both back.
+    await logEvent('libero_redesignation', {
+      team,
+      unableLiberoNumber,
+      unableLiberoType,
+      newLiberoNumber,
+      reason,
+      autoRemark: remark,
+      previousLiberoFlags: {
+        unableLibero: oldLiberoPlayer?.id != null ? { id: oldLiberoPlayer.id, libero: oldLiberoPlayer.libero || '' } : null,
+        newLibero: newLiberoPlayer?.id != null ? { id: newLiberoPlayer.id, libero: newLiberoPlayer.libero || '' } : null
+      }
+    })
+
+    if (teamId) {
+      // Update old libero - mark as unable (out for rest of game)
+      if (oldLiberoPlayer?.id) {
+        await db.players.update(oldLiberoPlayer.id, { libero: 'unable' })
+      }
+
+      // Update new player - mark as redesignated libero (only one allowed per team)
+      if (newLiberoPlayer?.id) {
+        await db.players.update(newLiberoPlayer.id, { libero: 'redesignated' })
+      }
+    }
+
+    {
+      const freshMatch = await db.matches.get(matchId)
+      await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', remark) })
+    }
 
     logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
       `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
@@ -11415,34 +11483,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // Automatic remark for libero unable, recorded on the event (autoRemark) so
+      // undo can take it out again
+      const setIndex = data.set.index
+      const teamLabel = team === teamAKey ? 'A' : 'B'
+
+      // Current time (HHhMMm format) - use UTC for consistency
+      const now = new Date()
+      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+
+      // Get current score - always put the interested team's score first
+      const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
+      const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
+      const scoreStr = `${teamScore}:${opponentScore}`
+
+      const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
+      const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Libero #${liberoNumber} ${reasonText}`
+
       // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
         team,
         liberoNumber,
         liberoType,
-        reason
+        reason,
+        autoRemark: remark
       })
 
       // Add automatic remark for libero unable
-      if (data?.set) {
-        const setIndex = data.set.index
-        const teamLabel = team === teamAKey ? 'A' : 'B'
-
-        // Current time (HHhMMm format) - use UTC for consistency
-        const now = new Date()
-        const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-        // Get current score - always put the interested team's score first
-        const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
-        const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-        const scoreStr = `${teamScore}:${opponentScore}`
-
-        const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
-        const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Libero #${liberoNumber} ${reasonText}`
-
-        const currentRemarks = data?.match?.remarks || ''
-        const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-        await db.matches.update(matchId, { remarks: newRemarks })
+      {
+        const freshMatch = await db.matches.get(matchId)
+        await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', remark) })
 
         logManualChange('Libero', 'Unable', `#${liberoNumber} active`, `#${liberoNumber} unable`,
           `Libero #${liberoNumber} ${reasonText} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
@@ -21383,6 +21453,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     await db.events.update(event.id, {
                                       payload: { ...event.payload, team: newTeam }
                                     })
+                                    await resyncTeamSanctionFlags()
                                     logManualChangeWithRemark('Sanction', 'Team', oldTeam, newTeam,
                                       `Sanction team changed from ${oldTeam} to ${newTeam} (${sanctionType}, #${playerNumber ?? '?'})`,
                                       { setIndex, scoreStr: `${homeScore}-${awayScore}` })
@@ -21408,6 +21479,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     await db.events.update(event.id, {
                                       payload: { ...event.payload, type: newType }
                                     })
+                                    await resyncTeamSanctionFlags()
                                     logManualChangeWithRemark('Sanction', 'Type', oldType, newType,
                                       `Sanction type changed from ${oldType} to ${newType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
                                       { setIndex, scoreStr: `${homeScore}-${awayScore}` })
@@ -21524,6 +21596,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteSanctionEvent'))) {
                                       await db.events.delete(event.id)
+                                      await resyncTeamSanctionFlags()
                                       logManualChangeWithRemark('Sanction', 'Delete',
                                         `${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`, null,
                                         `Deleted sanction ${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
