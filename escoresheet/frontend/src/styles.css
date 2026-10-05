@@ -71,10 +71,21 @@ body {
    inline `outline: none` styles. Interactive elements only. Not inside .ov-kit:
    the kit draws its own ring (FOCUS_RING), and this !important outline in the
    lower legacy layer would still beat its focus-visible:outline-none. */
-:where(button, a, input, select, textarea, [role="button"], [tabindex]):not(.ov-kit *):focus-visible {
+:where(button, a, input:is([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+       [role="button"], [tabindex]):not(.ov-kit *):focus-visible {
   outline: 2px solid var(--ring, #3b82f6) !important;
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* Text fields, selects and textareas: the kit's `focus:ring-2 focus:ring-red-500`
+   (RESTYLE-SPEC 2.4), on any focus, hugging the field's own radius. Drawn as an
+   outline so it still beats the many inline `outline: none` styles. --ring is
+   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4). */
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+       select, textarea):not(.ov-kit *):focus {
+  outline: 2px solid var(--ring, #ef4444) !important;
+  outline-offset: 0;
 }
 
 .app-root {
@@ -396,15 +407,52 @@ label {
   margin: calc(8px * var(--scale-factor)) 0;
 }
 
+/* Form fields: the kit's standard input (white, stone-300 hairline, stone-800
+   text, rounded-lg; RESTYLE-SPEC 3.2). This replaces the dark-theme
+   #0f172a fill, which left dark text on a dark slab. Sizing is unchanged. */
 input {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
-  background: #0f172a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: calc(8px * var(--scale-factor));
-  color: var(--text);
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  font-family: inherit;
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ov-text-faint);
+  opacity: 1;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--ov-sunken);
+  color: var(--ov-text-muted);
+}
+
+/* Checkboxes and radios take the brand red (kit `accent-red-600`); on the
+   scoreboard they stay neutral slate-900 (R4: no brand red next to the court). */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ov-brand);
+}
+
+.match-record input[type="checkbox"],
+.match-record input[type="radio"] {
+  accent-color: var(--ov-selected);
+}
+
+textarea {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  font-family: inherit;
 }
 
 /* Remove number spinners */
@@ -423,10 +471,11 @@ input[type=number] {
 select {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
-  background: #0f172a;
-  color: var(--text);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: calc(8px * var(--scale-factor));
+  background: var(--ov-card);
+  color: var(--ov-text-body);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  font-family: inherit;
   text-transform: capitalize;
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
@@ -1741,10 +1790,10 @@ button.start-rally-button {
 .remarks-area {
   width: 100%;
   min-height: 120px;
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  color: var(--text);
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
   padding: 10px;
   font-size: 13px;
   resize: vertical;
