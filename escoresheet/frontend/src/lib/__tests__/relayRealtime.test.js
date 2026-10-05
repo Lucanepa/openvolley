@@ -441,7 +441,7 @@ describe('reconnect', () => {
     client.disconnect()
   })
 
-  it('pings every 25 s and drops a silent (half-open) socket', () => {
+  it('pings every 25 s and drops the socket only when a ping gets no answer in time', () => {
     const client = makeClient()
     const status = vi.fn()
     client.channel('x').on('postgres_changes', { event: '*', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe(status)
@@ -452,12 +452,124 @@ describe('reconnect', () => {
     ws.serverSend({ type: 'pong' })
     vi.advanceTimersByTime(25000)
     expect(ws.ofType('ping')).toHaveLength(2)
-    // No pong this time: the next tick finds lastSeen too old.
-    vi.advanceTimersByTime(25000)
+    // No answer to the second ping: dropped pongTimeoutMs (10 s) later.
+    vi.advanceTimersByTime(9999)
+    expect(ws.closedWith).toBeNull()
+    vi.advanceTimersByTime(1)
     expect(ws.closedWith?.code).toBe(4000)
     expect(status).toHaveBeenLastCalledWith('CHANNEL_ERROR', expect.objectContaining({ message: expect.stringMatching(/heartbeat/) }))
     vi.advanceTimersByTime(1000)
     expect(FakeWebSocket.instances).toHaveLength(2)
+    client.disconnect()
+  })
+
+  it('any frame counts as the answer (a db-change while the ping is out)', () => {
+    const client = makeClient()
+    client.channel('x').on('postgres_changes', { event: '*', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe()
+    const ws = last()
+    ws.serverOpen(); ws.ackAll()
+    vi.advanceTimersByTime(25000)
+    ws.change(ws.ofType('subscribe-db')[0].id, 'events', 'INSERT', { match_id: UUID })
+    vi.advanceTimersByTime(20000)
+    expect(ws.closedWith).toBeNull()
+    client.disconnect()
+  })
+
+  it('background-tab throttling does not drop a healthy socket', () => {
+    const client = makeClient()
+    const status = vi.fn()
+    client.channel('x').on('postgres_changes', { event: '*', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe(status)
+    const ws = last()
+    ws.serverOpen(); ws.ackAll()
+    // Intensive throttling: the clock moves a minute between ticks and nothing
+    // arrives in between (no traffic on a quiet match).
+    for (let i = 0; i < 5; i++) {
+      vi.setSystemTime(Date.now() + 60000)
+      vi.advanceTimersByTime(25000) // the (late) tick sends a ping
+      ws.serverSend({ type: 'pong', timestamp: Date.now() })
+    }
+    expect(ws.ofType('ping')).toHaveLength(5)
+    expect(ws.closedWith).toBeNull()
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(status.mock.calls.map(c => c[0])).toEqual(['SUBSCRIBED'])
+    client.disconnect()
+  })
+
+  it('probes at once when the tab becomes visible with a socket open', () => {
+    const client = makeClient()
+    client.channel('x').on('postgres_changes', { event: '*', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe()
+    const ws = last()
+    ws.serverOpen(); ws.ackAll()
+    vi.advanceTimersByTime(5000)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(ws.ofType('ping')).toHaveLength(1)
+    // A second visibility event while the probe is out sends nothing more.
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(ws.ofType('ping')).toHaveLength(1)
+    vi.advanceTimersByTime(10000)
+    expect(ws.closedWith?.code).toBe(4000) // half-open socket found without waiting for the tick
+    client.disconnect()
+  })
+})
+
+describe('server ids and capability check', () => {
+  it('dispatches a db-change to every channel listed in ids, once each', () => {
+    const client = makeClient()
+    const a = vi.fn()
+    const b = vi.fn()
+    const c = vi.fn()
+    const filter = { event: '*', schema: 'public', table: 'match_live_state', filter: 'sport_type=eq.indoor' }
+    client.channel('a').on('postgres_changes', filter, a).subscribe()
+    client.channel('b').on('postgres_changes', filter, b).subscribe()
+    client.channel('c').on('postgres_changes', filter, c).subscribe()
+    const ws = last()
+    ws.serverOpen(); ws.ackAll()
+    const [idA, idB] = ws.ofType('subscribe-db').map(m => m.id)
+    ws.change(idA, 'match_live_state', 'UPDATE', { match_id: UUID, sport_type: 'indoor' }, { ids: [idA, idB, idB, 'gone'] })
+    expect(a).toHaveBeenCalledTimes(1)
+    expect(b).toHaveBeenCalledTimes(1)
+    expect(c).not.toHaveBeenCalled()
+    client.disconnect()
+  })
+
+  it('treats a relay without live support (LAN relay hello) as unsupported and stops retrying', () => {
+    let url = 'ws://192.168.1.10:8080'
+    const client = makeClient({ getUrl: () => url })
+    const status = vi.fn()
+    client.channel('x').on('postgres_changes', { event: '*', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe(status)
+    const ws = last()
+    ws.readyState = 1
+    ws.onopen?.({})
+    ws.serverSend({ type: 'connected', clientId: 'abc', mode: 'local' })
+    expect(ws.closedWith?.code).toBe(1000)
+    expect(status).toHaveBeenCalledTimes(1)
+    expect(status).toHaveBeenCalledWith('CHANNEL_ERROR', expect.objectContaining({ code: 'unsupported' }))
+    expect(client.connectionState).toBe('unsupported')
+    vi.advanceTimersByTime(120000)
+    window.dispatchEvent(new Event('online'))
+    client.channel('y').on('postgres_changes', { event: '*', table: 'sets', filter: `match_id=eq.${UUID}` }, () => {}).subscribe()
+    expect(FakeWebSocket.instances).toHaveLength(1) // no new socket to that URL, no TIMED_OUT
+    expect(status.mock.calls.map(c => c[0])).toEqual(['CHANNEL_ERROR'])
+    // A different backend URL is tried again.
+    url = 'wss://backend.openvolley.app'
+    window.dispatchEvent(new Event('online'))
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    last().serverOpen(); last().ackAll()
+    expect(status).toHaveBeenLastCalledWith('SUBSCRIBED', undefined)
+    client.disconnect()
+  })
+
+  it('treats the role-socket hello of an old cloud relay the same way', () => {
+    const client = makeClient()
+    const status = vi.fn()
+    client.channel('x').on('postgres_changes', { event: '*', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe(status)
+    const ws = last()
+    ws.readyState = 1
+    ws.onopen?.({})
+    ws.serverSend({ type: 'connected', clientId: 'abc', mode: 'cloud', timestamp: 'now' })
+    expect(status).toHaveBeenCalledWith('CHANNEL_ERROR', expect.objectContaining({ code: 'unsupported' }))
+    vi.advanceTimersByTime(60000)
+    expect(FakeWebSocket.instances).toHaveLength(1)
     client.disconnect()
   })
 })
