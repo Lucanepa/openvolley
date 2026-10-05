@@ -33,7 +33,7 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
   const closeLabel = t('modal.close', 'Close')
   const header = (title || !hideCloseButton) && (
     <div className="flex items-start justify-between gap-3 mb-3">
-      <h3 className="m-0 min-w-0 pt-1.5 text-lg font-bold leading-snug tracking-tight text-stone-900">{title}</h3>
+      <h3 className="m-0 min-w-0 pt-1.5 text-lg font-bold leading-snug text-stone-900">{title}</h3>
       {!hideCloseButton && (
         <span className="ov-kit -mr-2 -mt-1 shrink-0">
           <IconButton variant="close" label={closeLabel} icon={X} onClick={onClose} />

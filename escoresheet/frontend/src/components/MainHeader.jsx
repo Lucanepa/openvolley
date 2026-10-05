@@ -323,7 +323,7 @@ export default function MainHeader({
         style={{ zIndex: 1000 }}
       >
         {/* Match Number */}
-        <div className="text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t('header.notSynced')}</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t('header.notSynced')}</div>
         <div className="text-sm font-bold text-stone-900 tabular-nums">
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
