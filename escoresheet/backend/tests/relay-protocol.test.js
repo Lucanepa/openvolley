@@ -179,10 +179,50 @@ describe('backend WebSocket relay protocol', () => {
     assert.equal(containsPin(referee.raw.join('') + attacker.raw.join('')), false)
     assert.equal(referee.messages.filter((m) => m.type === 'match-action').length, 1)
 
+    // The live-state rides along with later syncs (also as data.liveState for
+    // the LedBox bridge) and reaches a subscriber that joins mid-match
+    scoreboard.send(syncMessage(makeMatch(), { events: [{ id: 1 }, { id: 2 }] }))
+    const withLive = await referee.waitFor((m) => m.type === 'match-data-update' && m.events.length === 2)
+    assert.deepEqual(withLive.liveState, { points_a: 5 })
+    assert.deepEqual(withLive.data, { liveState: { points_a: 5 } })
+    const bridge = await openClient(wsUrl)
+    bridge.send({ type: 'subscribe-match', matchId: '7' })
+    const bridgeFull = await bridge.waitFor((m) => m.type === 'match-full-data')
+    assert.deepEqual(bridgeFull.data, { liveState: { points_a: 5 } })
+    assert.equal(containsPin(bridge.raw.join('')), false)
+
     // The real scoreboard can delete; the room is told before it goes away
     scoreboard.send({ type: 'delete-match', matchId: 7 })
     await referee.waitFor((m) => m.type === 'match-deleted' && m.matchId === '7')
 
-    for (const c of [scoreboard, referee, attacker, intruder]) c.ws.close()
+    for (const c of [scoreboard, referee, attacker, intruder, bridge]) c.ws.close()
+  })
+
+  it('stops game-PIN guessing without revealing a hit', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const scoreboard = await openClient(wsUrl)
+    scoreboard.send(syncMessage(makeMatch({ id: 31, gamePin: '313131' })))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+
+    const guesser = await openClient(wsUrl)
+    for (let i = 0; i < 5; i++) guesser.send(syncMessage(makeMatch({ id: 31, gamePin: String(100000 + i) })))
+    guesser.send(syncMessage(makeMatch({ id: 31, gamePin: '313131' }))) // the right one
+    guesser.send({ type: 'ping' })
+    await guesser.waitFor((m) => m.type === 'pong')
+    const errors = guesser.messages.filter((m) => m.type === 'error')
+    assert.equal(errors.length, 6)
+    // (an earlier test's failure from this IP may count toward the limit too)
+    assert.ok(errors.filter((m) => m.code === 'not-match-owner').length <= 5)
+    // The right PIN is refused exactly like a wrong one once over the limit
+    assert.deepEqual(errors.at(-1), { type: 'error', code: 'rate-limited', message: errors.at(-1).message, matchId: '31' })
+
+    // The proven scoreboard keeps syncing
+    scoreboard.send(syncMessage(makeMatch({ id: 31, gamePin: '313131' })))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong' && scoreboard.messages.length > 2)
+    assert.equal(scoreboard.messages.some((m) => m.type === 'error'), false)
+
+    for (const c of [scoreboard, guesser]) c.ws.close()
   })
 })
