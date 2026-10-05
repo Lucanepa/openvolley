@@ -1,6 +1,8 @@
--- svrz_games + svrz_sync_log exactly as in the production schema (schema-only
--- pg_dump of public, 2026-10): tables, sequences, defaults, constraints,
--- indexes. Used by tests/vmSync.pg.test.js. No data.
+-- svrz_games + svrz_sync_log as in the production schema (schema-only pg_dump
+-- of public, 2026-10): tables, sequences, defaults, constraints, indexes and
+-- ROW LEVEL SECURITY (enabled; the dump has no policies for these tables, so
+-- on Supabase only service_role, which bypasses RLS, could write them).
+-- Grants, ownership and Supabase's own roles are left out. Used by tests/vmSync.pg.test.js. No data.
 
 
 CREATE TABLE public.svrz_games (
@@ -103,3 +105,7 @@ CREATE INDEX idx_svrz_referee1 ON public.svrz_games USING btree (referee_1);
 CREATE INDEX idx_svrz_team_away ON public.svrz_games USING btree (team_away);
 
 CREATE INDEX idx_svrz_team_home ON public.svrz_games USING btree (team_home);
+
+ALTER TABLE public.svrz_games ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.svrz_sync_log ENABLE ROW LEVEL SECURITY;

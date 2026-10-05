@@ -37,6 +37,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
   let dbUrl
   let appUrl
   let appRole
+  let noRlsRole
   let pool
   let ownerPool
 
@@ -51,14 +52,22 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     dbUrl = u.toString()
     const c = new pg.Client({ connectionString: dbUrl })
     await c.connect()
-    // A DML-only login role like the production ov_app: the sync must not need more
+    // A DML-only login role like the production ov_app: the sync must not need
+    // more. svrz_games / svrz_sync_log have RLS enabled and no policies (as in
+    // production), so the role needs BYPASSRLS, as Supabase's service_role had;
+    // roles.sql has to give ov_app the same (or policies). See the
+    // 'without BYPASSRLS' test below for what happens otherwise.
     appRole = `${dbName}_app`
+    noRlsRole = `${dbName}_norls`
     try {
       await c.query(SCHEMA_SQL)
-      await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE`)
-      await c.query(`GRANT USAGE ON SCHEMA public TO "${appRole}";
-        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${appRole}";
-        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${appRole}";`)
+      await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS`)
+      await admin.query(`CREATE ROLE "${noRlsRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`)
+      for (const r of [appRole, noRlsRole]) {
+        await c.query(`GRANT USAGE ON SCHEMA public TO "${r}";
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${r}";
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${r}";`)
+      }
     } finally { await c.end() }
     const a = new URL(dbUrl)
     a.username = appRole
@@ -75,6 +84,7 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
       try {
         await admin.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`)
         await admin.query(`DROP ROLE IF EXISTS "${appRole}"`)
+        await admin.query(`DROP ROLE IF EXISTS "${noRlsRole}"`)
       } finally { await admin.end() }
     }
   })
@@ -202,7 +212,11 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
       ('7004', '2026-10-10T18:00:00+02:00',     '10/10/2026', '16:00'),
       ('7005', '2026-01-17T19:30:00',           '17/01/2026', '19:30'),
       ('7006', 'garbage',                       'x',          'y'),
-      ('7007', NULL,                            NULL,         NULL)`)
+      ('7007', NULL,                            NULL,         NULL),
+      ('7008', '2026-02-30T10:00:00Z',          'a',          'b'),
+      ('7009', '2026-10-10 18:00:00',           'c',          'd'),
+      ('7010', '2026-10-10T24:00:00Z',          'e',          'f'),
+      ('7011', '',                              '',           '')`)
     await q(`INSERT INTO public.svrz_sync_log (status, started_at, message) VALUES
       ('running', now() - interval '2 days', NULL),
       ('running', now() - interval '10 minutes', 'fresh'),
@@ -220,9 +234,13 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
         ['7002', '25/10/2026', '19:00'],
         ['7003', '01/07/2026', '00:15'],
         ['7004', '10/10/2026', '18:00'],
-        ['7005', '17/01/2026', '20:30'],
+        ['7005', '17/01/2026', '19:30'], // no zone: Zurich wall clock, already right
         ['7006', 'x', 'y'],
-        ['7007', null, null]
+        ['7007', null, null],
+        ['7008', 'a', 'b'], // out of range: the cast fails, the row is skipped, nothing aborts
+        ['7009', 'c', 'd'],
+        ['7010', 'e', 'f'],
+        ['7011', '', '']
       ])
       const { rows: log } = await q('SELECT status, finished_at, message FROM public.svrz_sync_log ORDER BY id')
       assert.equal(log[0].status, 'failed')
@@ -244,11 +262,69 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
       await owner.end()
     }
 
-    // The migration and the sync agree: re-syncing the same game changes nothing
-    const vm = createFakeVolleyManager({ games: [makeGame(7001, { startingDateTime: '2026-03-29T18:00:00Z' })] })
+    // The migration and the sync agree: re-syncing the same games keeps date/time
+    const vm = createFakeVolleyManager({ games: [
+      makeGame(7001, { startingDateTime: '2026-03-29T18:00:00Z' }),
+      makeGame(7005, { startingDateTime: '2026-01-17T19:30:00' })
+    ] })
     const r = await sync(vm)
     assert.equal(r.status, 'success')
-    const { rows: [g] } = await q(`SELECT date, "time" FROM public.svrz_games WHERE game_number = '7001'`)
-    assert.deepEqual([g.date, g.time], ['29/03/2026', '20:00'])
+    assert.equal(r.offsetlessDatetimes, 1)
+    const { rows: g } = await q(`SELECT game_number, date, "time" FROM public.svrz_games WHERE game_number IN ('7001', '7005') ORDER BY 1`)
+    assert.deepEqual(g.map((x) => [x.game_number, x.date, x.time]), [['7001', '29/03/2026', '20:00'], ['7005', '17/01/2026', '19:30']])
+  })
+
+  it('without BYPASSRLS (RLS on, no policies) the run fails cleanly and releases the lock', async () => {
+    await reset()
+    const u = new URL(dbUrl)
+    u.username = noRlsRole
+    u.password = 'app'
+    const noRlsPool = new pg.Pool({ connectionString: u.toString(), max: 2 })
+    try {
+      const vm = createFakeVolleyManager({ games: [makeGame(8001)] })
+      const r = await runVmSync({ pool: noRlsPool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: quiet, pageDelayMs: 0 })
+      assert.equal(r.status, 'failed')
+      assert.equal(r.logId, null)
+      assert.match(r.error, /row-level security/)
+      assert.equal(vm.calls.length, 0, 'no VM traffic')
+    } finally {
+      await noRlsPool.end()
+    }
+    const { rows: [{ held }] } = await q(`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted`)
+    assert.equal(held, 0)
+  })
+
+  it('a connection killed during the VM phase does not crash the process; the row is closed on a fresh connection', async () => {
+    await reset()
+    const lines = []
+    const logger = { log() {}, warn: (m) => lines.push(m), error: (m) => lines.push(m) }
+    let releaseVm
+    const gate = new Promise((r) => { releaseVm = r })
+    let enteredVm
+    const entered = new Promise((r) => { enteredVm = r })
+    const vm = createFakeVolleyManager({ games: [makeGame(9001)] })
+    const slowFetch = async (url, init) => { enteredVm(); await gate; return vm.fetch(url, init) }
+    const run = sync(vm, { fetch: slowFetch, logger })
+    try {
+      await entered
+      // The run's connection is idle (checked out, holding the lock): kill it
+      const { rows: [{ pid }] } = await q(`SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted`)
+      await q('SELECT pg_terminate_backend($1)', [pid])
+      for (let i = 0; i < 100 && !lines.some((l) => /database connection lost/.test(l)); i++) {
+        await new Promise((r) => setTimeout(r, 20))
+      }
+      assert.ok(lines.some((l) => /database connection lost/.test(l)), 'the error event was handled')
+    } finally {
+      releaseVm()
+    }
+    const r = await run
+    assert.equal(r.status, 'failed')
+    const { rows: [row] } = await q('SELECT status, finished_at FROM public.svrz_sync_log WHERE id = $1', [r.logId])
+    assert.equal(row.status, 'failed')
+    assert.ok(row.finished_at, 'closed on a fresh connection')
+
+    // The dead client was discarded: the pool still works and the next run succeeds
+    const next = await sync(createFakeVolleyManager({ games: [makeGame(9002)] }))
+    assert.equal(next.status, 'success')
   })
 })

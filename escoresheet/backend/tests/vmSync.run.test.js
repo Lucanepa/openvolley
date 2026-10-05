@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { runVmSync, scheduleVmSync, ADVISORY_LOCK_KEY } from '../lib/vmSync.js'
 import { main as cliMain, parseArgs, EXIT } from '../scripts/vm-sync.mjs'
 import {
@@ -20,16 +21,29 @@ function memLogger() {
  * pg Pool stand-in: one shared advisory-lock table, a log table and a
  * recorder. `failUpsert` makes the upsert statement throw.
  */
-function fakePool({ failUpsert = null, failLogInsert = false } = {}) {
-  const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0 }
+function fakePool({ failUpsert = null, failLogInsert = false, failClose = false } = {}) {
+  const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0, clients: [] }
   let clientSeq = 0
+  const closeRow = (params) => {
+    const [id, fetched, created, updated, unchanged, errors, status, message] = params
+    Object.assign(state.log.get(id), { fetched, created, updated, unchanged, errors, status, message, finished: true })
+    return { rowCount: 1 }
+  }
   return {
     state,
+    // pool.query: a fresh connection (used to close the log row when the run's one died)
+    async query(text, params = []) {
+      state.queries.push({ client: 'pool', text, params })
+      if (/UPDATE public\.svrz_sync_log\s+SET finished_at/.test(text)) return closeRow(params)
+      throw new Error(`fakePool.query: unexpected query ${text.slice(0, 60)}`)
+    },
     async connect() {
       const id = ++clientSeq
-      return {
+      const client = Object.assign(new EventEmitter(), {
+        dead: false,
         async query(text, params = []) {
           state.queries.push({ client: id, text, params })
+          if (client.dead) throw new Error('Client was closed and is not queryable')
           if (/pg_try_advisory_lock/.test(text)) {
             assert.equal(params[0], ADVISORY_LOCK_KEY)
             if (state.lockHeldBy == null) { state.lockHeldBy = id; return { rows: [{ ok: true }] } }
@@ -54,14 +68,15 @@ function fakePool({ failUpsert = null, failLogInsert = false } = {}) {
             return { rows: [{ created: n, updated: 0, unchanged: 0 }] }
           }
           if (/UPDATE public\.svrz_sync_log\s+SET finished_at/.test(text)) {
-            const [id, fetched, created, updated, unchanged, errors, status, message] = params
-            Object.assign(state.log.get(id), { fetched, created, updated, unchanged, errors, status, message, finished: true })
-            return { rowCount: 1 }
+            if (failClose) throw new Error('close failed')
+            return closeRow(params)
           }
           throw new Error(`fakePool: unexpected query ${text.slice(0, 60)}`)
         },
-        release(err) { state.released.push({ client: id, err: err ?? null }) }
-      }
+        release(err) { state.released.push({ client: id, err: err ?? null, listeners: client.listenerCount('error') }) }
+      })
+      state.clients.push(client)
+      return client
     }
   }
 }
@@ -166,6 +181,63 @@ describe('runVmSync (fake pool, fake VolleyManager)', () => {
     assert.equal(r.logId, null)
     assert.equal(pool.state.lockHeldBy, null)
     assert.equal(vm.calls.length, 0)
+  })
+
+  it('a database connection dropping mid-run is handled: no uncaught error, client discarded, row closed on a fresh connection', async () => {
+    const pool = fakePool()
+    const logger = memLogger()
+    const vm = createFakeVolleyManager({ games: [makeGame(1)] })
+    let killed = false
+    // The connection dies while the run is busy with VolleyManager
+    const fetch = async (url, init) => {
+      if (!killed) {
+        killed = true
+        const c = pool.state.clients[0]
+        c.dead = true
+        // With no 'error' listener this would throw (EventEmitter semantics = uncaught in pg)
+        c.emit('error', Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' }))
+      }
+      return vm.fetch(url, init)
+    }
+    const r = await runVmSync({ pool, fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger, pageDelayMs: 0 })
+    assert.equal(r.status, 'failed', 'the upsert on the dead connection failed')
+    assert.ok(logger.lines.some((l) => /database connection lost: terminating connection/.test(l)))
+    const row = pool.state.log.get(r.logId)
+    assert.equal(row.finished, true)
+    assert.equal(row.status, 'failed')
+    assert.ok(pool.state.queries.some((q) => q.client === 'pool' && /SET finished_at/.test(q.text)), 'closed via pool.query')
+    assert.ok(!pool.state.queries.some((q) => /pg_advisory_unlock/.test(q.text)), 'no unlock on a dead session')
+    assert.equal(pool.state.released.length, 1)
+    assert.match(pool.state.released[0].err?.message ?? '', /terminating connection/, 'released with the error: discarded')
+    assert.equal(pool.state.clients[0].listenerCount('error'), 0, 'listener removed')
+  })
+
+  it('a failing close on the run connection is retried once on a fresh connection', async () => {
+    const vm = createFakeVolleyManager({ games: [makeGame(1)] })
+    const pool = fakePool({ failClose: true })
+    const r = await runVmSync({ pool, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger: memLogger(), pageDelayMs: 0 })
+    assert.equal(r.status, 'success')
+    assert.equal(pool.state.log.get(r.logId).status, 'success')
+    assert.ok(pool.state.queries.some((q) => q.client === 'pool' && /SET finished_at/.test(q.text)))
+    assert.equal(pool.state.lockHeldBy, null, 'the run connection is still fine: unlocked normally')
+    assert.equal(pool.state.released[0].err, null)
+    assert.equal(pool.state.released[0].listeners, 1, 'our listener is still attached at release time (pg-pool re-adds its own)')
+    assert.equal(pool.state.clients[0].listenerCount('error'), 0)
+  })
+
+  it('dry run reports raw datetime samples and warns about offset-less values', async () => {
+    const vm = createFakeVolleyManager({ games: [
+      makeGame(1, { startingDateTime: '2026-10-10T16:00:00Z' }),
+      makeGame(2, { startingDateTime: '2026-10-10T18:00:00' }),
+      makeGame(3, { startingDateTime: '2026-10-10 18:00:00' })
+    ] })
+    const logger = memLogger()
+    const r = await runVmSync({ dryRun: true, fetch: vm.fetch, baseUrl: vm.baseUrl, http, now: NOW, credentials: creds, logger, pageDelayMs: 0 })
+    assert.deepEqual(r.datetimeSamples, ['2026-10-10T16:00:00Z', '2026-10-10T18:00:00', '2026-10-10 18:00:00'])
+    assert.equal(r.offsetlessDatetimes, 1)
+    assert.equal(r.unparsedDatetimes, 1)
+    assert.ok(logger.lines.some((l) => /^warn .*1 startingDateTime value\(s\) without Z\/offset/.test(l)))
+    assert.ok(logger.lines.some((l) => /^warn .*not ISO 8601/.test(l)))
   })
 
   it('dry run needs no pool', async () => {

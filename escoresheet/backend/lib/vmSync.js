@@ -12,7 +12,9 @@
  *  - a failure after the 'running' log row is written closes the row as
  *    'failed' (with a redacted message); rows left 'running' by a killed process
  *    are closed by the next run (and once by db/003_svrz_games_local_time.sql)
- *  - date/time are formatted in Europe/Zurich, not UTC (kick-offs were 1-2 h early)
+ *  - date/time are formatted in Europe/Zurich, not UTC (kick-offs were 1-2 h early);
+ *    a startingDateTime without Z/offset is a Zurich wall-clock time (as the
+ *    frontend reads it); a non-ISO one gives '' instead of the host's reading
  *  - "today" is the Europe/Zurich calendar day, not the UTC one
  *  - the window is configurable; default Zurich today -1 .. today +14 days
  *  - created / updated / unchanged are counted (xmax + a pre-image CTE)
@@ -22,7 +24,10 @@
  *    from every log line and error message)
  *
  * Nothing here imports `pg`: runVmSync takes a pg Pool (or anything with
- * connect() -> client { query, release }), so it can share the backend's pool.
+ * connect() -> client { query, release, on/removeListener } and, optionally,
+ * query() for a fresh connection), so it can share the backend's pool. The
+ * checked-out client gets its own 'error' listener for the whole run, so a
+ * dropped database connection cannot become an uncaught exception.
  */
 
 export const VM_BASE = 'https://volleymanager.volleyball.ch'
@@ -206,16 +211,47 @@ export function resolveWindow(window = {}, { now = new Date(), tz = ZURICH_TZ } 
 }
 
 /**
- * Parses VM's startingDateTime. A string without a zone designator is read as
- * UTC: that is how the Edge Function (Deno on UTC hosts) read it, independent
- * of this server's TZ.
+ * The ISO 8601 shapes VM's startingDateTime is accepted in, with field ranges
+ * checked (db/003 uses the same pattern). Anything else is rejected rather than
+ * handed to Date's legacy parser, which would read it in the host's time zone.
  */
-export function parseVmDateTime(raw) {
-  if (typeof raw !== 'string' || !raw.trim()) return null
-  let s = raw.trim()
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) s += 'Z'
-  const d = new Date(s)
-  return Number.isNaN(d.getTime()) ? null : d
+export const VM_DATETIME_RE =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.(\d+))?)?(Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)?$/
+
+/** True when a VM datetime string carries no zone designator (Z / ±hh[:mm]). */
+export function isOffsetlessVmDateTime(raw) {
+  const m = typeof raw === 'string' && raw.trim().match(VM_DATETIME_RE)
+  return !!m && !m[8]
+}
+
+/**
+ * Parses VM's startingDateTime into an instant, or null.
+ *
+ *  - With Z or an offset: that instant.
+ *  - Without a zone designator: a Europe/Zurich wall-clock time. That is how
+ *    the only consumer (LoadOfficialMatchModal, `new Date(row.datetime)` in a
+ *    Swiss browser) reads it, and the Edge Function's date/time for such a
+ *    value were its literal digits, so this keeps them unchanged.
+ *  - Anything else (space separator, other formats, 2026-02-30, 25:00): null.
+ */
+export function parseVmDateTime(raw, tz = ZURICH_TZ) {
+  if (typeof raw !== 'string') return null
+  const m = raw.trim().match(VM_DATETIME_RE)
+  if (!m) return null
+  const [, y, mo, d, h, mi, s = '0', frac = '', zone] = m
+  const ymd = `${y}-${mo}-${d}`
+  if (!isYmd(ymd)) return null
+  const ms = Number((frac + '000').slice(0, 3))
+  if (!zone) {
+    const base = zonedTimeToUtc(ymd, Number(h), Number(mi), tz).getTime()
+    return new Date(base + Number(s) * 1000 + ms)
+  }
+  let offsetMin = 0
+  if (zone !== 'Z') {
+    const digits = zone.slice(1).replace(':', '')
+    offsetMin = (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2, 4) || 0)) * (zone[0] === '-' ? -1 : 1)
+  }
+  return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s, ms) - offsetMin * 60000)
 }
 
 /** dd/mm/yyyy and HH:MM of an instant, in Europe/Zurich (the app's formats). */
@@ -530,12 +566,13 @@ export const SEARCH_PATH = '/api/indoorvolleyball.refadmin/api%5celasticsearchre
 
 async function searchPage(jar, csrfToken, offset, dateFrom, dateTo, { fetch: fetchImpl, baseUrl, http, batchSize }) {
   const label = `search offset ${offset}`
+  // Headers as the Edge Function sent them (no Accept). Unlike it, redirects
+  // are not followed: a redirect here means the session is not authenticated.
   const resp = await fetchWithRetry(fetchImpl, `${baseUrl}${SEARCH_PATH}`, {
     method: 'POST',
     headers: {
       'User-Agent': USER_AGENT,
       'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
       Cookie: jar.header()
     },
     body: buildSearchBody(csrfToken, offset, batchSize, dateFrom, dateTo),
@@ -571,7 +608,10 @@ export async function fetchAllGames(jar, csrfToken, dateFrom, dateTo, {
   logger?.log?.(`VM: ${total} game(s) in window, ${items.length} in the first page`)
   let incomplete = false
   let pageError = null
-  const maxPages = Math.ceil(total / Math.max(1, batchSize)) + 2
+  // Page count from the page size VM actually returned (it may cap `limit`
+  // below what we asked for), plus slack; an empty page also stops the loop.
+  const pageSize = Math.max(1, Math.min(items.length || batchSize, batchSize))
+  const maxPages = Math.ceil(total / pageSize) + 2
   for (let page = 1; items.length < total && page < maxPages; page++) {
     if (pageDelayMs > 0) await sleep(pageDelayMs)
     let batch
@@ -661,7 +701,7 @@ export function transformGame(item, { syncedAt = new Date(), tz = ZURICH_TZ } = 
   const matchFormat = league.numberOfWinSets === 'two_win_sets' ? 3 : 5
 
   const rawDt = typeof g.startingDateTime === 'string' ? g.startingDateTime : ''
-  const kickoff = parseVmDateTime(rawDt)
+  const kickoff = parseVmDateTime(rawDt, tz)
   const { date: gameDate, time: gameTime } = kickoff ? formatZurichDateTime(kickoff, tz) : { date: '', time: '' }
 
   const convocations = []
@@ -864,9 +904,20 @@ export async function runVmSync({
 
   let client = null
   let locked = false
+  // The client stays checked out (holding the session lock) through about a
+  // minute of VolleyManager I/O with no query running. pg-pool drops its own
+  // 'error' listener while a client is checked out, so without this one a
+  // dropped connection (Postgres restart, pg_terminate_backend, network) would
+  // be an unhandled 'error' event and take the whole server down.
+  let clientErr = null
+  const onClientError = (err) => {
+    if (!clientErr) log.error(`vm-sync: database connection lost: ${redact(err)}`)
+    clientErr = clientErr || err || new Error('connection error')
+  }
   try {
     if (!dryRun) {
       client = await pool.connect()
+      client.on?.('error', onClientError)
       const { rows: [lk] } = await client.query('SELECT pg_try_advisory_lock($1::bigint) AS ok', [ADVISORY_LOCK_KEY])
       locked = !!lk?.ok
       if (!locked) {
@@ -892,6 +943,19 @@ export async function runVmSync({
     })
     result.fetched = fetched.items.length
     result.total = fetched.total
+
+    // Raw startingDateTime shapes (no secrets in them), so a dry run shows
+    // whether VM sends Z/offsets or Zurich wall-clock times.
+    const rawTimes = fetched.items.map((it) => it?.game?.startingDateTime).filter((v) => typeof v === 'string' && v.trim())
+    result.datetimeSamples = [...new Set(rawTimes)].slice(0, 5)
+    result.offsetlessDatetimes = rawTimes.filter(isOffsetlessVmDateTime).length
+    result.unparsedDatetimes = rawTimes.filter((v) => !parseVmDateTime(v)).length
+    if (result.offsetlessDatetimes) {
+      log.warn(`vm-sync: ${result.offsetlessDatetimes} startingDateTime value(s) without Z/offset, read as Europe/Zurich wall-clock time (e.g. ${rawTimes.find(isOffsetlessVmDateTime)})`)
+    }
+    if (result.unparsedDatetimes) {
+      log.warn(`vm-sync: ${result.unparsedDatetimes} startingDateTime value(s) not ISO 8601, stored with empty date/time`)
+    }
 
     const prepared = prepareRows(fetched.items, { syncedAt: clock() })
     result.kept = prepared.rows.length
@@ -934,29 +998,47 @@ export async function runVmSync({
   } finally {
     result.elapsedMs = clock().getTime() - startedAt.getTime()
     if (client) {
-      try {
-        if (result.logId != null) {
-          await client.query(
-            `UPDATE public.svrz_sync_log
+      if (result.logId != null) {
+        const closeSql = `UPDATE public.svrz_sync_log
                 SET finished_at = now(), games_fetched = $2, games_created = $3, games_updated = $4,
                     games_unchanged = $5, errors = $6, status = $7, message = $8
-              WHERE id = $1`,
-            [result.logId, result.fetched, result.created, result.updated, result.unchanged,
-              result.errors, result.status, result.message]
-          )
+              WHERE id = $1`
+        const closeParams = [result.logId, result.fetched, result.created, result.updated, result.unchanged,
+          result.errors, result.status, result.message]
+        let closed = false
+        if (!clientErr) {
+          try {
+            await client.query(closeSql, closeParams)
+            closed = true
+          } catch (err) {
+            log.warn(`vm-sync: closing log row ${result.logId} on the run's connection failed: ${redact(err)}`)
+          }
         }
-      } catch (err) {
-        // The next run (or db/003) closes the row once it is older than an hour
-        log.error(`vm-sync: could not close log row ${result.logId}: ${redact(err)}`)
+        // The run's connection is dead: close the row on a fresh one (no lock needed)
+        if (!closed && typeof pool.query === 'function') {
+          try {
+            await pool.query(closeSql, closeParams)
+            closed = true
+          } catch (err) {
+            log.warn(`vm-sync: closing log row ${result.logId} on a fresh connection failed: ${redact(err)}`)
+          }
+        }
+        // Otherwise the next run (or db/003) closes it once it is older than an hour
+        if (!closed) log.error(`vm-sync: could not close log row ${result.logId}`)
       }
-      let releaseErr
-      try {
-        if (locked) await client.query('SELECT pg_advisory_unlock($1::bigint)', [ADVISORY_LOCK_KEY])
-      } catch (err) {
-        // Destroy the connection so the session (and its lock) cannot leak into the pool
-        releaseErr = err
+      let releaseErr = clientErr
+      if (locked && !clientErr) {
+        try {
+          await client.query('SELECT pg_advisory_unlock($1::bigint)', [ADVISORY_LOCK_KEY])
+        } catch (err) {
+          // Destroy the connection so the session (and its lock) cannot leak into the pool
+          releaseErr = err
+        }
       }
-      try { client.release(releaseErr) } catch { /* ignore */ }
+      // A truthy argument makes pg-pool discard the connection instead of reusing it.
+      // release() re-attaches the pool's idle listener synchronously, so ours can go after it.
+      try { client.release(releaseErr || undefined) } catch { /* ignore */ }
+      client.removeListener?.('error', onClientError)
     }
   }
   if (result.status !== 'skipped') {
@@ -1060,14 +1142,23 @@ export function scheduleVmSync({
   }
 }
 
-/** Reads the sync window from env (VM_SYNC_DAYS_BACK / VM_SYNC_DAYS_AHEAD). */
+/**
+ * Reads the sync window from env (VM_SYNC_DAYS_BACK / VM_SYNC_DAYS_AHEAD) and
+ * validates it in full (including MAX_WINDOW_DAYS), so a bad value fails when
+ * the schedule is wired up instead of making every scheduled run throw.
+ */
 export function windowFromEnv(env = process.env) {
   const w = {}
   for (const [key, prop] of [['VM_SYNC_DAYS_BACK', 'daysBack'], ['VM_SYNC_DAYS_AHEAD', 'daysAhead']]) {
     const raw = env[key]
     if (raw == null || raw === '') continue
     if (!/^\d+$/.test(String(raw).trim())) throw new RangeError(`${key} must be a non-negative integer`)
-    w[prop] = Number(raw)
+    w[prop] = Number(String(raw).trim())
+  }
+  try {
+    resolveWindow(w)
+  } catch (err) {
+    throw new RangeError(`VM_SYNC_DAYS_BACK / VM_SYNC_DAYS_AHEAD: ${err.message}`)
   }
   return w
 }
