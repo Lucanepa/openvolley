@@ -7,6 +7,7 @@ import { validateManualSubstitution, validateManualTimeout } from '../domain/sub
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
 import { mergeOfficialsEdits } from '../domain/officials'
 import { apiFrom } from '../lib/apiClient'
+import { Button } from '../ui/Button.jsx'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -828,72 +829,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     marginBottom: '16px'
   }
 
-  // Secondary (outline) button: white, stone-300 hairline, stone-700.
-  const buttonStyle = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '36px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    background: 'var(--ov-card)',
-    color: '#44403c',
-    border: '1px solid var(--ov-hairline-strong)',
-    borderRadius: 'var(--ov-radius)',
-    cursor: 'pointer'
-  }
-
-  // Dark neutral action ("+ Add timeout", "+ Add substitution").
-  const addButtonStyle = {
-    ...buttonStyle,
-    minHeight: '44px',
-    padding: '8px 16px',
-    fontSize: '14px',
-    background: 'var(--ov-selected)',
-    color: '#fff',
-    border: '1px solid var(--ov-selected)'
-  }
-
-  // Row delete: soft red.
-  const deleteButtonStyle = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '32px',
-    padding: '6px 12px',
-    fontSize: '14px',
-    fontWeight: 600,
-    background: 'var(--ov-danger-soft)',
-    color: 'var(--ov-danger)',
-    border: '1px solid var(--ov-danger-border)',
-    borderRadius: 'var(--ov-radius)',
-    cursor: 'pointer'
-  }
-
-  // Dialog footer: Cancel (outline) and the commit (emerald = saving), h-11.
-  const modalCancelStyle = {
-    minHeight: '44px',
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 500,
-    background: 'var(--ov-card)',
-    color: '#44403c',
-    border: '1px solid var(--ov-hairline-strong)',
-    borderRadius: 'var(--ov-radius-lg)',
-    cursor: 'pointer'
-  }
-  const modalCommitStyle = {
-    minHeight: '44px',
-    padding: '10px 20px',
-    fontSize: '14px',
-    fontWeight: 600,
-    background: 'var(--ov-success)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 'var(--ov-radius-lg)',
-    cursor: 'pointer'
-  }
+  // Kit buttons. Each group sits in an `.ov-kit` scope (`contents` where it
+  // must stay layout-neutral) so the legacy `button` rule stays out.
+  // Row tools are h-8 with a 44px hit area.
+  const KIT_SCOPE = 'ov-kit contents'
+  const ROW_TOOL = 'relative after:absolute after:-inset-1.5'
   // Dialog shell: stone-900/60 + blur overlay, white rounded-2xl panel.
   const OVERLAY_CLASS = 'bg-stone-900/60 backdrop-blur-sm'
   const PANEL_CLASS = 'bg-white rounded-2xl shadow-2xl border border-stone-200/70'
@@ -925,27 +865,21 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         <h1 className="text-xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>
           {t('manualAdjustmentsEditor.title', 'Manual Adjustments')}
         </h1>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={onClose}
-            style={modalCancelStyle}
-          >
+        <div className="ov-kit" style={{ display: 'flex', gap: '12px' }}>
+          <Button variant="secondary" size="xl" className="px-5 font-medium" onClick={onClose}>
             {t('common.cancel', 'Cancel')}
-          </button>
-          <button
+          </Button>
+          {/* Nothing to save yet: the kit disabled fill (stone-300), not white on white. */}
+          <Button
+            variant="positive"
+            size="xl"
+            className="px-5 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:opacity-100"
             onClick={handleSave}
             disabled={saving || changes.length === 0}
             data-help-id="manual-save-button"
-            style={{
-              ...modalCommitStyle,
-              // Nothing to save yet: the kit disabled fill (stone-300), not white on white.
-              background: changes.length > 0 ? 'var(--ov-success)' : 'var(--ov-hairline-strong)',
-              cursor: changes.length > 0 ? 'pointer' : 'not-allowed',
-              opacity: saving ? 0.7 : 1
-            }}
           >
             {saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')} {changes.length > 0 && `(${changes.length})`}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -964,7 +898,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             onClick={() => setActiveTab(tab.id)}
             {...(tab.helpId ? { 'data-help-id': tab.helpId } : {})}
             aria-pressed={activeTab === tab.id}
-            className={`h-10 px-4 rounded-lg text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-white text-stone-900 shadow-sm' : 'bg-transparent text-stone-600 hover:bg-stone-200/60'}`}
+            className={`h-11 px-4 rounded-lg text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-white text-stone-900 shadow-sm' : 'bg-transparent text-stone-600 hover:bg-stone-200/60'}`}
             style={{ border: 'none' }}
           >
             {tab.label}
@@ -1102,7 +1036,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     </div>
                     <div>
                       <label style={labelStyle}>{t('manualAdjustmentsEditor.swapTeams', 'Swap Teams')}</label>
-                      <button onClick={swapTeamDesignation} style={buttonStyle}>{t('manualAdjustmentsEditor.swapAB', 'Swap A/B')}</button>
+                      <span className={KIT_SCOPE}><Button variant="secondary" size="lg" className={ROW_TOOL} onClick={swapTeamDesignation}>{t('manualAdjustmentsEditor.swapAB', 'Swap A/B')}</Button></span>
                     </div>
                   </div>
                 </div>
@@ -1182,14 +1116,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
-                    <button onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
+                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" className={`${ROW_TOOL} w-8 px-0 text-sm font-semibold`} onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')}>×</Button></span>
                   </div>
                 ))}
               </div>
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
-                <button onClick={() => setShowAddTimeout(true)} style={addButtonStyle}>
+                <span className={KIT_SCOPE}><Button variant="dark" size="xl" onClick={() => setShowAddTimeout(true)}>
                   {t('manualAdjustmentsEditor.addTimeout', '+ Add Timeout')}
-                </button>
+                </Button></span>
               </div>
             </div>
 
@@ -1213,15 +1147,15 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, minHeight: '32px', padding: '4px 10px', fontSize: '12px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
+                    <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
+                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" className={`${ROW_TOOL} w-8 px-0 text-sm font-semibold`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')}>×</Button></span>
                   </div>
                 ))}
               </div>
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
-                <button onClick={() => setShowAddSub(true)} style={addButtonStyle}>
+                <span className={KIT_SCOPE}><Button variant="dark" size="xl" onClick={() => setShowAddSub(true)}>
                   {t('manualAdjustmentsEditor.addSubstitution', '+ Add Substitution')}
-                </button>
+                </Button></span>
               </div>
             </div>
 
@@ -1249,8 +1183,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       Score: {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <span />
-                    <button onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, minHeight: '32px', padding: '4px 10px', fontSize: '12px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
+                    <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
+                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" className={`${ROW_TOOL} w-8 px-0 text-sm font-semibold`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')}>×</Button></span>
                   </div>
                 ))}
               </div>
@@ -1506,13 +1440,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
         {/* Changes Log */}
         {changes.length > 0 && (
-          <div style={{ marginTop: '32px', padding: '12px 16px', background: 'var(--ov-warning-soft)', borderRadius: 'var(--ov-radius)', border: '1px solid #fde68a' }}>
+          <div style={{ marginTop: '32px', padding: '12px 16px', background: 'var(--ov-warning-soft)', borderRadius: 'var(--ov-radius)', border: '1px solid var(--ov-warning-border)' }}>
             <h3 style={{ fontSize: '13px', fontWeight: 600, margin: '0 0 8px', color: 'var(--ov-warning-text)' }}>
               {t('manualAdjustmentsEditor.pendingChanges', 'Pending Changes')} ({changes.length})
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
               {changes.map((change, i) => (
-                <div key={i} style={{ fontSize: '12px', color: '#78350f' }}>
+                <div key={i} style={{ fontSize: '12px', color: 'var(--ov-warning-text)' }}>
                   • {change.description}
                 </div>
               ))}
@@ -1604,22 +1538,26 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="px-5 font-medium"
                 onClick={() => {
                   setShowAddSanction(null)
                   setNewSanctionData({ type: 'warning', setIndex: 1, scoreA: 0, scoreB: 0 })
                 }}
-                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
+                className="px-5"
                 onClick={handleAddSanctionSubmit}
-                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1701,19 +1639,23 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="px-5 font-medium"
                 onClick={() => setEditingSanction(null)}
-                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
+                className="px-5"
                 onClick={handleEditSanctionSubmit}
-                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.saveChanges', 'Save Changes')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1793,22 +1735,26 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="px-5 font-medium"
                 onClick={() => {
                   setShowAddTimeout(false)
                   setNewTimeoutData({ team: 'home', setIndex: 1, scoreA: 0, scoreB: 0 })
                 }}
-                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
+                className="px-5"
                 onClick={handleAddTimeoutSubmit}
-                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1916,27 +1862,27 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="px-5 font-medium"
                 onClick={() => {
                   setShowAddSub(false)
                   setNewSubData({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
                 }}
-                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
+                className="px-5 disabled:cursor-not-allowed"
                 onClick={handleAddSubSubmit}
                 disabled={!newSubData.playerOut || !newSubData.playerIn}
-                style={{
-                  ...modalCommitStyle,
-                  cursor: !newSubData.playerOut || !newSubData.playerIn ? 'not-allowed' : 'pointer',
-                  opacity: !newSubData.playerOut || !newSubData.playerIn ? 0.5 : 1
-                }}
               >
                 {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -2038,19 +1984,23 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="px-5 font-medium"
                 onClick={() => setEditingSub(null)}
-                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
+                className="px-5"
                 onClick={handleEditSubSubmit}
-                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.saveChanges', 'Save Changes')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
