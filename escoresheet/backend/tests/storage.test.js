@@ -751,6 +751,20 @@ describe('sweep', () => {
     assert.equal(await exists(path.join(root, 'backup/backups')), true)
   })
 
+  it('maxAgeMs Infinity (server.js while the host backup is stale) deletes no file but still clears temp files', async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = make({ now: () => now })
+    const old = new Date(now - 365 * 24 * 3600 * 1000)
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}') })
+    await fs.utimes(path.join(root, 'backup/backups/backup_g1/old.json'), old, old)
+    await fs.writeFile(path.join(root, TMP_DIR_NAME, 'stale.part'), 'x')
+    await fs.utimes(path.join(root, TMP_DIR_NAME, 'stale.part'), old, old)
+    const r = await s.sweep({ maxAgeMs: Infinity })
+    assert.equal(r.deletedFiles, 0)
+    assert.equal(r.tmpRemoved, 1)
+    assert.equal(await exists(path.join(root, 'backup/backups/backup_g1/old.json')), true)
+  })
+
   it('keeps a freshly created empty folder (an upload may be about to rename into it)', async () => {
     const s = make() // real clock
     await fs.mkdir(path.join(root, 'backup/backups/backup_g7'), { recursive: true })
