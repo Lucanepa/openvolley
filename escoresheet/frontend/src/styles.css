@@ -1869,7 +1869,7 @@ button.start-rally-button {
   justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1.5px solid var(--ov-rule); /* kit section head: name on a dark rule */
 }
 
 .game-league-header h3 {
@@ -1890,10 +1890,12 @@ button.start-rally-button {
   gap: 16px;
 }
 
+/* Game card: the kit page card; hover lifts to shadow-card-lg (no jump). */
 .game-card {
-  background: var(--panel-2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -1902,10 +1904,9 @@ button.start-rally-button {
 }
 
 .game-card:hover {
-  background: var(--panel);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--ov-card);
+  border-color: var(--ov-hairline);
+  box-shadow: var(--ov-shadow-card-lg);
 }
 
 .game-card-content {
@@ -1919,7 +1920,7 @@ button.start-rally-button {
   flex-direction: column;
   gap: 4px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--ov-sunken-strong); /* divide-stone-100 inside a card */
 }
 
 .game-card-day {
@@ -1933,7 +1934,8 @@ button.start-rally-button {
 .game-card-time {
   font-size: 17px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ov-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .game-card-teams {
@@ -1963,7 +1965,7 @@ button.start-rally-button {
   color: var(--muted);
   margin-top: 4px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--ov-sunken-strong);
 }
 
 .game-card-status {
@@ -1972,7 +1974,7 @@ button.start-rally-button {
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ov-sunken-strong);
 }
 
 .game-card-status-label {
@@ -2008,9 +2010,9 @@ button.start-rally-button {
 
 /* Match Status Banner */
 .connection-status-banner {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
   padding: 12px 20px;
   margin-bottom: 16px;
 }
@@ -2028,10 +2030,11 @@ button.start-rally-button {
   font-weight: 500;
 }
 
+/* Test-match notice: kit amber notice (amber-50, amber-200 border, amber-800). */
 .test-match-banner {
-  background: rgba(234, 179, 8, 0.1);
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  border-radius: 12px;
+  background: var(--ov-warning-soft);
+  border: 1px solid #fde68a; /* amber-200 */
+  border-radius: var(--ov-radius-lg);
   padding: 12px 20px;
   margin-bottom: 16px;
   display: flex;
@@ -2047,13 +2050,13 @@ button.start-rally-button {
 .test-match-label {
   font-size: 15px;
   font-weight: 600;
-  color: #fbbf24;
+  color: var(--ov-warning-text);
 }
 
 .match-status-banner {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
   padding: 16px 20px;
   margin-bottom: 16px;
 }
@@ -2080,13 +2083,13 @@ button.start-rally-button {
 .match-status-value {
   font-size: 15px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--ov-success-text); /* kit emerald status pill */
   text-transform: capitalize;
   margin-left: auto;
   padding: 4px 12px;
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  border-radius: 6px;
+  background: var(--ov-success-soft);
+  border: 1px solid #a7f3d0; /* emerald-200 */
+  border-radius: var(--ov-radius-pill);
 }
 
 /* Home View */
@@ -2216,10 +2219,12 @@ button.start-rally-button {
   min-height: 320px;
 }
 
+/* Home card: the kit page card. */
 .home-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
   padding: 32px;
   display: flex;
   width: 100%;
@@ -2234,10 +2239,10 @@ button.start-rally-button {
 }
 
 .home-card--clickable:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ov-card);
   width: auto;
-  border-color: rgba(255, 255, 255, 0.12);
-  transform: translateY(-2px);
+  border-color: var(--ov-hairline);
+  box-shadow: var(--ov-shadow-card-lg);
 }
 
 .home-card h2 {
@@ -2283,26 +2288,28 @@ button.start-rally-button {
   cursor: not-allowed;
 }
 
+/* Test button: the kit outline button; --danger is the kit danger-soft. */
 .test-button {
-  background: transparent !important;
-  border: 2px solid #22c55e !important;
-  color: #22c55e !important;
+  background: var(--ov-card) !important;
+  border: 1px solid var(--ov-hairline-strong) !important;
+  color: #44403c !important; /* stone-700 */
   width: auto;
 }
 
 .test-button:hover:not(:disabled) {
-  background: rgba(34, 197, 94, 0.1) !important;
+  background: var(--ov-sunken) !important;
   width: auto;
 }
 
 .test-button--danger {
-  border-color: #ef4444 !important;
+  background: var(--ov-danger-soft) !important;
+  border-color: var(--ov-danger-border) !important;
   width: auto;
-  color: #ef4444 !important;
+  color: var(--ov-brand) !important; /* red-600 = brand */
 }
 
 .test-button--danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1) !important;
+  background: var(--ov-danger-border) !important; /* red-100 */
 }
 
 
@@ -2318,7 +2325,7 @@ button.start-rally-button {
 .home-card-hint {
   font-size: 13px;
   font-weight: 600;
-  color: #f59e0b;
+  color: var(--ov-warning-text); /* amber-800: amber-500 on white failed contrast */
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
