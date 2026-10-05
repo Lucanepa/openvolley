@@ -1494,28 +1494,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && freshMatch.status !== 'final') {
-          // Fetch all related data fresh from IndexedDB
-          const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
-            db.teams.get(freshMatch?.homeTeamId),
-            db.teams.get(freshMatch?.awayTeamId),
-            db.sets.where('matchId').equals(matchId).toArray(),
-            db.events.where('matchId').equals(matchId).toArray(),
-            freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
-            freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
-          ])
-
-          // Send match data with full data
+          // Current relays validate PINs themselves and never send this request.
+          // If an older relay does, answer with a PIN-free summary only: the
+          // response is relayed to whoever typed ONE PIN, who must not learn the
+          // other roles' PINs (the relay already has the full data from sync).
           ws.send(JSON.stringify({
             type: 'pin-validation-response',
             requestId,
             success: true,
             match: {
               id: freshMatch.id,
-              refereePin: freshMatch.refereePin,
-              homeTeamPin: freshMatch.homeTeamPin,
-              awayTeamPin: freshMatch.awayTeamPin,
-              homeTeamUploadPin: freshMatch.homeTeamUploadPin,
-              awayTeamUploadPin: freshMatch.awayTeamUploadPin,
               refereeConnectionEnabled: freshMatch.refereeConnectionEnabled,
               homeTeamConnectionEnabled: freshMatch.homeTeamConnectionEnabled,
               awayTeamConnectionEnabled: freshMatch.awayTeamConnectionEnabled,
@@ -1526,16 +1514,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               game_n: freshMatch.game_n,
               createdAt: freshMatch.createdAt,
               updatedAt: freshMatch.updatedAt
-            },
-            fullData: {
-              matchId: matchId,
-              match: freshMatch,
-              homeTeam: freshHomeTeam || null,
-              awayTeam: freshAwayTeam || null,
-              homePlayers: freshHomePlayers || [],
-              awayPlayers: freshAwayPlayers || [],
-              sets: freshSets || [],
-              events: freshEvents || []
             }
           }))
         } else {
@@ -1631,22 +1609,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const handleGameNumberRequest = async (request) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN || !data?.match) return
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
 
       try {
         const { requestId, gameNumber } = request
         const gameNumStr = String(gameNumber).trim()
 
-        const matchGameNumber = String(data.match.gameNumber || '')
-        const matchGameN = String(data.match.game_n || '')
-        const matchIdStr = String(data.match.id || '')
+        // Read fresh from IndexedDB like the sibling handlers (the effect closure's
+        // `data` is stale: this effect only re-runs on matchId/wsPort changes).
+        const freshMatch = await db.matches.get(matchId)
+        const matchGameNumber = String(freshMatch?.gameNumber || '')
+        const matchGameN = String(freshMatch?.game_n || '')
+        const matchIdStr = String(freshMatch?.id || '')
 
-        if (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr) {
+        if (freshMatch && (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr)) {
+          // PIN-free summary only: the relay hands this to an unauthenticated caller.
           ws.send(JSON.stringify({
             type: 'game-number-response',
             requestId,
             success: true,
-            match: data.match,
+            match: {
+              id: freshMatch.id,
+              gameNumber: freshMatch.gameNumber,
+              game_n: freshMatch.game_n,
+              status: freshMatch.status,
+              scheduledAt: freshMatch.scheduledAt,
+              homeTeamId: freshMatch.homeTeamId,
+              awayTeamId: freshMatch.awayTeamId,
+              refereeConnectionEnabled: freshMatch.refereeConnectionEnabled,
+              homeTeamConnectionEnabled: freshMatch.homeTeamConnectionEnabled,
+              awayTeamConnectionEnabled: freshMatch.awayTeamConnectionEnabled
+            },
             matchId: matchId
           }))
         } else {
