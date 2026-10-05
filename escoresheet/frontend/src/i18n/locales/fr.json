@@ -1418,6 +1418,7 @@
     "switchToReception": "Passer à la formation de réception"
   },
   "connection": {
+    "changeServer": "Changer de serveur",
     "title": "Configuration de connexion",
     "chooseConnection": "Comment connecter les appareils :",
     "sameWifi": "Même réseau WiFi",
@@ -1476,6 +1477,7 @@
     "failedToLoadLeagues": "Échec du chargement des ligues"
   },
   "livescore": {
+    "staleData": "Problème de connexion : derniers scores connus affichés",
     "title": "Score en direct",
     "loadingGames": "Chargement des matchs disponibles...",
     "selectGame": "Sélectionnez un match pour voir le score en direct",

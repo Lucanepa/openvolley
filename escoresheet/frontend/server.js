@@ -365,6 +365,21 @@ const wsListener = createNetServer((socket) => {
 })
 wsListener.listen(WS_PORT, '0.0.0.0') // Bind to all interfaces for LAN access
 
+// Socket churn: connectivity checks open and close a socket every few
+// seconds, so per-socket lines (with the client IP) would flood the log. One
+// summary line a minute instead, like backend/server.js; OV_LOG_CONNECTIONS=1
+// brings back per-socket lines (without IPs) for debugging.
+const LOG_EACH_CONNECTION = process.env.OV_LOG_CONNECTIONS === '1'
+const wsChurn = { opened: 0, closed: 0, since: Date.now() }
+setInterval(() => {
+  if (wsChurn.opened === 0 && wsChurn.closed === 0) { wsChurn.since = Date.now(); return }
+  const secs = Math.max(1, Math.round((Date.now() - wsChurn.since) / 1000))
+  console.log(`[WebSocket] last ${secs}s: ${wsChurn.opened} sockets opened, ${wsChurn.closed} sockets closed, open now ${wsClients.size}`)
+  wsChurn.opened = 0
+  wsChurn.closed = 0
+  wsChurn.since = Date.now()
+}, 60_000).unref()
+
 wss.on('connection', (ws, req) => {
   // Connection limit for LAN server
   if (wsClients.size >= 20) {
@@ -374,7 +389,8 @@ wss.on('connection', (ws, req) => {
   }
 
   const clientIp = req.socket.remoteAddress
-  console.log(`[WebSocket] New client connected from ${clientIp}`)
+  wsChurn.opened++
+  if (LOG_EACH_CONNECTION) console.log(`[WebSocket] Client connected (total ${wsClients.size + 1})`)
 
   wsClients.add(ws)
   // Sends the 'connected' welcome message
@@ -386,14 +402,15 @@ wss.on('connection', (ws, req) => {
 
   // Handle client disconnect - remove from subscriptions
   ws.on('close', () => {
-    console.log(`[WebSocket] Client disconnected from ${clientIp}`)
     wsClients.delete(ws)
+    wsChurn.closed++
+    if (LOG_EACH_CONNECTION) console.log(`[WebSocket] Client disconnected (total ${wsClients.size})`)
     relay.removeClient(ws)
   })
 
   // Handle errors
   ws.on('error', (error) => {
-    console.error(`[WebSocket] Error from ${clientIp}:`, error)
+    console.error('[WebSocket] Socket error:', error?.message || error)
     wsClients.delete(ws)
     relay.removeClient(ws)
   })
