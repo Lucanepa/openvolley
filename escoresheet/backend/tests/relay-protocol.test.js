@@ -247,10 +247,11 @@ describe('backend WebSocket relay protocol', () => {
     assert.equal(conns.clients[0].role, 'referee')
     assert.equal(conns.matchSubscriptions[seedA], 1) // the scoreboard is not a watcher
 
-    // A socket that never proved the match cannot leave the game PIN out
+    // A socket that never proved the match cannot leave the game PIN out: it
+    // is asked for it (nothing compared, nothing counted)
     const intruder = await openClient(wsUrl)
     intruder.send(syncMessage({ ...noPins }))
-    await intruder.waitFor((m) => m.type === 'error' && m.code === 'not-match-owner' && m.matchId === seedA)
+    await intruder.waitFor((m) => m.type === 'error' && m.code === 'pins-required' && m.matchId === seedA)
 
     courtA.send({ type: 'delete-match', matchId: 1 })
     await referee.waitFor((m) => m.type === 'match-deleted' && m.matchId === seedA)
@@ -274,6 +275,55 @@ describe('backend WebSocket relay protocol', () => {
     assert.equal(revalidate.status, 200)
 
     for (const c of [courtA, courtB, referee, intruder]) c.ws.close()
+  })
+
+  it('a scorer\'s PIN-less syncs are never failures: asked for the PINs, a venue NAT is not locked out', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210077_cccccc'
+    const strip = (m) => {
+      const { refereePin, homeTeamPin, awayTeamPin, homeTeamUploadPin, awayTeamUploadPin, gamePin, ...rest } = m
+      return rest
+    }
+    const full = makeMatch({ id: 1, seed_key: seed, gamePin: '777777' })
+
+    const fresh = await openClient(wsUrl)
+    fresh.send(syncMessage(full))
+    fresh.send({ type: 'ping' })
+    await fresh.waitFor((m) => m.type === 'pong')
+    assert.equal(fresh.messages.some((m) => m.type === 'error'), false)
+
+    // A second socket of the same scorer (reconnect, another view) syncing
+    // without PINs, over and over: asked for them each time, never refused
+    // as an owner mismatch nor rate limited (more than the failure limit)
+    const second = await openClient(wsUrl)
+    for (let i = 0; i < 8; i++) second.send(syncMessage(strip(full)))
+    second.send({ type: 'ping' })
+    await second.waitFor((m) => m.type === 'pong')
+    const errors = second.messages.filter((m) => m.type === 'error')
+    assert.equal(errors.length, 8)
+    assert.ok(errors.every((m) => m.code === 'pins-required'))
+    // With its PINs it proves the match at once
+    second.send(syncMessage(full, { events: [{ id: 9 }] }))
+    second.send({ type: 'ping' })
+    await second.waitFor((m) => m.type === 'pong' && second.messages.filter((x) => x.type === 'pong').length === 2)
+    assert.equal(second.messages.filter((m) => m.type === 'error').length, 8)
+
+    // Wrong PINs from other sockets behind the same address use up their own
+    // socket's limit, not the whole venue's: another scorer still proves its match
+    for (let s = 0; s < 2; s++) {
+      const guesser = await openClient(wsUrl)
+      for (let i = 0; i < 5; i++) guesser.send(syncMessage({ ...full, gamePin: String(200000 + s * 10 + i) }))
+      guesser.send({ type: 'ping' })
+      await guesser.waitFor((m) => m.type === 'pong')
+      guesser.ws.close()
+    }
+    const third = await openClient(wsUrl)
+    third.send(syncMessage(full))
+    third.send({ type: 'ping' })
+    await third.waitFor((m) => m.type === 'pong')
+    assert.equal(third.messages.some((m) => m.type === 'error'), false)
+
+    for (const c of [fresh, second, third]) c.ws.close()
   })
 
   it('stops game-PIN guessing without revealing a hit', async () => {

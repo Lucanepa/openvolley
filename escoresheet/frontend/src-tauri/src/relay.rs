@@ -1144,7 +1144,9 @@ fn claim_error_message(code: &str) -> &'static str {
 /// - a match nobody has owned for ORPHAN_TAKEOVER (finished) / STALE_TAKEOVER
 ///   (in play) may be taken over; an unfinished one taken over with another
 ///   PIN may be reclaimed once by its own PIN.
-/// Wrong-PIN claims are limited per IP and per connection: over the limit a
+/// A connection that never proved the match and leaves the game PIN out is
+/// asked for it ('pins-required'), not counted. Wrong-PIN claims (only claims
+/// carrying a PIN) are limited per IP and per connection: over the limit a
 /// claim needing proof is refused BEFORE the PIN is compared (no oracle).
 async fn claim(
     state: &Arc<AppState>,
@@ -1195,6 +1197,11 @@ async fn claim(
     if was_owner && stored_pin.is_some() && (incoming_pin == stored_pin || !has_game_pin_field(incoming)) {
         return grant(&mut owners, &mut orphaned, ClaimKind::Owner);
     }
+    // Proof takes the game PIN. A connection that leaves it out (the scorer
+    // after a reconnect) is asked for it: nothing compared, nothing counted.
+    if stored_pin.is_some() && !has_game_pin_field(incoming) {
+        return Err("pins-required");
+    }
     let mut keys = vec![format!("fail:ws:{conn_id}")];
     if let Some(ip) = ip {
         keys.push(format!("fail:ip:{ip}"));
@@ -1231,8 +1238,11 @@ async fn claim(
         }
         return grant(&mut owners, &mut orphaned, ClaimKind::Takeover);
     }
-    for k in &keys {
-        window_bump(&mut limits, k);
+    // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
+    if incoming_pin.is_some() {
+        for k in &keys {
+            window_bump(&mut limits, k);
+        }
     }
     Err("not-match-owner")
 }
@@ -1704,8 +1714,29 @@ mod tests {
         let stored = state.matches.lock().await.get(seed).cloned().unwrap();
         assert_eq!(stored["match"]["refereePin"], json!("314159"));
         assert_eq!(game_pin_of(stored.get("match")).as_deref(), Some("111111"));
-        // ...but a connection that never proved the match must bring the game PIN
-        assert_eq!(claim(&state, 2, seed, Some(&no_pins)).await.err(), Some("not-match-owner"));
+        // ...but a connection that never proved the match must bring the game
+        // PIN: it is asked for it, never counted as a failed claim
+        for _ in 0..(CLAIM_FAILURE_LIMIT + 2) {
+            assert_eq!(claim(&state, 2, seed, Some(&no_pins)).await.err(), Some("pins-required"));
+        }
+        assert!(matches!(claim(&state, 2, seed, m.get("match")).await, Ok(ClaimKind::Proved)));
+    }
+
+    #[tokio::test]
+    async fn a_claim_without_a_pin_is_no_guess() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.50").await;
+        let full = bundle(1, "111111", "live")["match"].clone();
+        assert!(claim(&state, 1, "1", Some(&full)).await.is_ok());
+        store_bundle(&state, "1", bundle(1, "111111", "live"), ClaimKind::New).await;
+        let mut null_pin = full.clone();
+        null_pin["gamePin"] = Value::Null;
+        for _ in 0..(CLAIM_FAILURE_LIMIT + 1) {
+            assert_eq!(claim(&state, 2, "1", Some(&null_pin)).await.err(), Some("not-match-owner"));
+        }
+        // Not rate limited: the right PIN still proves the match
+        assert!(matches!(claim(&state, 2, "1", Some(&full)).await, Ok(ClaimKind::Proved)));
     }
 
     #[tokio::test]
