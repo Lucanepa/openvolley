@@ -798,48 +798,108 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     { id: 'info', label: t('manualAdjustmentsEditor.tabInfo', 'Match Info') }
   ]
 
+  // volleyui (RESTYLE-SPEC P3b). This editor is almost all shared inline
+  // style objects, so the kit recipes are applied here, through the --ov-*
+  // tokens, and every field/button picks them up.
+  // Fields: box metrics only; the shared `input`/`select` rule in styles.css
+  // draws the kit field (white, stone-300 hairline, rounded-lg, focus ring).
   const inputStyle = {
     padding: '8px 12px',
     fontSize: '14px',
-    background: 'var(--panel-2)',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    color: 'var(--text)'
+    minHeight: '40px'
   }
 
+  // Form label: text-xs font-medium text-stone-500.
   const labelStyle = {
     display: 'block',
-    marginBottom: '6px',
-    fontSize: '13px',
-    color: 'var(--muted)'
+    margin: '0 0 4px',
+    fontSize: '12px',
+    fontWeight: 500,
+    color: 'var(--ov-text-muted)'
   }
 
+  // Page card: white, rounded-2xl, stone-200/70 hairline, shadow-card.
   const cardStyle = {
     padding: '16px',
-    background: 'var(--panel-2)',
-    borderRadius: '8px',
+    background: 'var(--ov-card)',
+    border: '1px solid var(--ov-hairline-soft)',
+    borderRadius: 'var(--ov-radius-xl)',
+    boxShadow: 'var(--ov-shadow-card)',
     marginBottom: '16px'
   }
 
+  // Secondary (outline) button: white, stone-300 hairline, stone-700.
   const buttonStyle = {
-    padding: '8px 16px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '36px',
+    padding: '6px 14px',
     fontSize: '13px',
-    background: 'rgba(59, 130, 246, 0.2)',
-    color: '#60a5fa',
-    border: '1px solid rgba(59, 130, 246, 0.3)',
-    borderRadius: '6px',
+    fontWeight: 500,
+    background: 'var(--ov-card)',
+    color: '#44403c',
+    border: '1px solid var(--ov-hairline-strong)',
+    borderRadius: 'var(--ov-radius)',
     cursor: 'pointer'
   }
 
+  // Dark neutral action ("+ Add timeout", "+ Add substitution").
+  const addButtonStyle = {
+    ...buttonStyle,
+    minHeight: '44px',
+    padding: '8px 16px',
+    fontSize: '14px',
+    background: 'var(--ov-selected)',
+    color: '#fff',
+    border: '1px solid var(--ov-selected)'
+  }
+
+  // Row delete: soft red.
   const deleteButtonStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '32px',
     padding: '6px 12px',
-    fontSize: '12px',
-    background: 'rgba(239, 68, 68, 0.2)',
-    color: '#ef4444',
-    border: '1px solid rgba(239, 68, 68, 0.3)',
-    borderRadius: '4px',
+    fontSize: '14px',
+    fontWeight: 600,
+    background: 'var(--ov-danger-soft)',
+    color: 'var(--ov-danger)',
+    border: '1px solid var(--ov-danger-border)',
+    borderRadius: 'var(--ov-radius)',
     cursor: 'pointer'
   }
+
+  // Dialog footer: Cancel (outline) and the commit (emerald = saving), h-11.
+  const modalCancelStyle = {
+    minHeight: '44px',
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: 500,
+    background: 'var(--ov-card)',
+    color: '#44403c',
+    border: '1px solid var(--ov-hairline-strong)',
+    borderRadius: 'var(--ov-radius-lg)',
+    cursor: 'pointer'
+  }
+  const modalCommitStyle = {
+    minHeight: '44px',
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: 600,
+    background: 'var(--ov-success)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 'var(--ov-radius-lg)',
+    cursor: 'pointer'
+  }
+  // Dialog shell: stone-900/60 + blur overlay, white rounded-2xl panel.
+  const OVERLAY_CLASS = 'bg-stone-900/60 backdrop-blur-sm'
+  const PANEL_CLASS = 'bg-white rounded-2xl shadow-2xl border border-stone-200/70'
+  const DIALOG_TITLE_CLASS = 'text-lg font-bold text-stone-900'
+  // Section titles inside the cards: kit card heading (text-sm semibold).
+  const cardTitleStyle = { fontSize: '15px', fontWeight: 600, margin: '0 0 16px', color: 'var(--ov-text)' }
 
   return (
     <div style={{
@@ -848,8 +908,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'var(--panel)',
-      color: 'var(--text)',
+      backgroundColor: 'var(--ov-page)',
+      color: 'var(--ov-text-body)',
       overflow: 'auto',
       zIndex: 1000
     }}>
@@ -858,26 +918,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '16px 24px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--panel-2)'
+        padding: '12px 24px',
+        borderBottom: '1px solid var(--ov-hairline-soft)',
+        background: 'var(--ov-card)'
       }}>
-        <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>
+        <h1 className="text-xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>
           {t('manualAdjustmentsEditor.title', 'Manual Adjustments')}
         </h1>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button
             onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
+            style={modalCancelStyle}
           >
             {t('common.cancel', 'Cancel')}
           </button>
@@ -886,13 +937,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             disabled={saving || changes.length === 0}
             data-help-id="manual-save-button"
             style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: changes.length > 0 ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' : 'var(--panel)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
+              ...modalCommitStyle,
+              // Nothing to save yet: the kit disabled fill (stone-300), not white on white.
+              background: changes.length > 0 ? 'var(--ov-success)' : 'var(--ov-hairline-strong)',
               cursor: changes.length > 0 ? 'pointer' : 'not-allowed',
               opacity: saving ? 0.7 : 1
             }}
@@ -903,34 +950,27 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       </div>
 
       {/* Tabs */}
+      {/* Section switch: the kit track segmented control (white raised
+          segment on a stone track; selection is never red or blue). */}
       <div style={{
-        display: 'flex',
-        gap: '4px',
         padding: '12px 24px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--panel-2)',
-        flexWrap: 'wrap'
+        borderBottom: '1px solid var(--ov-hairline-soft)',
+        background: 'var(--ov-card)'
       }}>
+      <div role="group" aria-label={t('manualAdjustmentsEditor.title', 'Manual Adjustments')} className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             {...(tab.helpId ? { 'data-help-id': tab.helpId } : {})}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: activeTab === tab.id ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-              color: activeTab === tab.id ? '#60a5fa' : 'var(--muted)',
-              border: activeTab === tab.id ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
+            aria-pressed={activeTab === tab.id}
+            className={`h-10 px-4 rounded-lg text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-white text-stone-900 shadow-sm' : 'bg-transparent text-stone-600 hover:bg-stone-200/60'}`}
+            style={{ border: 'none' }}
           >
             {tab.label}
           </button>
         ))}
+      </div>
       </div>
 
       {/* Content */}
@@ -938,7 +978,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         {/* ==================== SCORES TAB ==================== */}
         {activeTab === 'scores' && (
           <div>
-            <h2 style={{ fontSize: '18px', marginBottom: '20px', color: 'var(--text)' }}>
+            <h2 style={{ ...cardTitleStyle, fontSize: '17px' }}>
               {t('manualAdjustmentsEditor.setScores', 'Set Scores')}
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -963,7 +1003,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       value={set.homePoints}
                       onChange={(e) => updateSetScore(set.id, 'homePoints', e.target.value)}
                       aria-label={`${editedHomeTeam?.name || t('common.home')} ${t('manualAdjustmentsEditor.points', 'points')}`}
-                      style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600 }}
+                      style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
                     />
                   </div>
                   <div style={{ textAlign: 'center', color: 'var(--muted)' }}>vs</div>
@@ -976,7 +1016,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       value={set.awayPoints}
                       onChange={(e) => updateSetScore(set.id, 'awayPoints', e.target.value)}
                       aria-label={`${editedAwayTeam?.name || t('common.away')} ${t('manualAdjustmentsEditor.points', 'points')}`}
-                      style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600 }}
+                      style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
                     />
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -997,7 +1037,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       }}
                       style={{ width: '18px', height: '18px' }}
                     />
-                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--ov-text-secondary)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
                   </label>
                 </div>
               ))}
@@ -1013,7 +1053,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div>
                 {/* Team Info */}
                 <div style={cardStyle}>
-                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
                     {editedMatch?.coinTossTeamA === 'away'
                       ? t('manualAdjustmentsEditor.teamBHome', 'Team B (Home)')
@@ -1072,7 +1112,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div>
                 {/* Team Info */}
                 <div style={cardStyle}>
-                  <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
                     {editedMatch?.coinTossTeamA === 'away'
                       ? t('manualAdjustmentsEditor.teamAAway', 'Team A (Away)')
@@ -1131,23 +1171,23 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             {/* Timeouts Section */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
+              <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.timeouts', 'Timeouts')} ({timeoutEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
                 {timeoutEvents.map(event => (
-                  <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '4px' }}>
+                  <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-warning-soft)', border: '1px solid var(--ov-warning-border)', borderRadius: 'var(--ov-radius)' }}>
                     <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
                     <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <button onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-                <button onClick={() => setShowAddTimeout(true)} style={{ ...buttonStyle, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
+                <button onClick={() => setShowAddTimeout(true)} style={addButtonStyle}>
                   {t('manualAdjustmentsEditor.addTimeout', '+ Add Timeout')}
                 </button>
               </div>
@@ -1155,14 +1195,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Substitutions Section */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
+              <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.substitutions', 'Substitutions')} ({substitutionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
                 {substitutionEvents.map(event => (
                   <div
                     key={event.id}
-                    style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 80px 40px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '4px', cursor: 'pointer' }}
+                    style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 80px 40px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-info-soft)', border: '1px solid var(--ov-info-border)', borderRadius: 'var(--ov-radius)', cursor: 'pointer' }}
                     onClick={() => setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
                   >
                     <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
@@ -1170,16 +1210,16 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '13px' }}>
                       #{event.payload?.playerOut} → #{event.payload?.playerIn}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, padding: '4px 8px', fontSize: '10px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, minHeight: '32px', padding: '4px 10px', fontSize: '12px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
                     <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-                <button onClick={() => setShowAddSub(true)} style={{ ...buttonStyle, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none' }}>
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
+                <button onClick={() => setShowAddSub(true)} style={addButtonStyle}>
                   {t('manualAdjustmentsEditor.addSubstitution', '+ Add Substitution')}
                 </button>
               </div>
@@ -1187,19 +1227,19 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Sanctions Section */}
             <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
+              <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.allSanctions', 'All Sanctions')} ({sanctionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
                 {sanctionEvents.map(event => (
                   <div
                     key={event.id}
-                    style={{ display: 'grid', gridTemplateColumns: '80px 80px 120px 100px 100px 1fr 40px 40px', gap: '8px', alignItems: 'center', padding: '8px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px', cursor: 'pointer' }}
+                    style={{ display: 'grid', gridTemplateColumns: '80px 80px 120px 100px 100px 1fr 40px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-danger-soft)', border: '1px solid var(--ov-danger-border)', borderRadius: 'var(--ov-radius)', cursor: 'pointer' }}
                     onClick={() => setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
                   >
                     <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
                     <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '13px', textTransform: 'capitalize', color: '#ef4444' }}>
+                    <span style={{ fontSize: '13px', textTransform: 'capitalize', color: 'var(--ov-danger-text)', fontWeight: 500 }}>
                       {event.payload?.sanctionType || event.payload?.type}
                     </span>
                     <span style={{ fontSize: '13px' }}>
@@ -1209,7 +1249,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       Score: {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <span />
-                    <button onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, padding: '4px 8px', fontSize: '10px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }} style={{ ...buttonStyle, minHeight: '32px', padding: '4px 10px', fontSize: '12px' }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</button>
                     <button onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')} style={{ ...deleteButtonStyle, padding: '4px 8px' }}>×</button>
                   </div>
                 ))}
@@ -1223,7 +1263,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             {/* Match Details */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
+              <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.matchDetails', 'Match Details')}
               </h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1320,13 +1360,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
             {/* Match Officials */}
             <div style={cardStyle}>
-              <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)' }}>
+              <h2 style={cardTitleStyle}>
                 {t('manualAdjustmentsEditor.matchOfficials', 'Match Officials')}
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* 1st Referee */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1364,7 +1404,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* 2nd Referee */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1402,7 +1442,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Scorer */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1432,7 +1472,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Assistant Scorer */}
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
@@ -1466,13 +1506,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
         {/* Changes Log */}
         {changes.length > 0 && (
-          <div style={{ marginTop: '32px', padding: '16px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '8px', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: '#fbbf24' }}>
+          <div style={{ marginTop: '32px', padding: '12px 16px', background: 'var(--ov-warning-soft)', borderRadius: 'var(--ov-radius)', border: '1px solid #fde68a' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, margin: '0 0 8px', color: 'var(--ov-warning-text)' }}>
               {t('manualAdjustmentsEditor.pendingChanges', 'Pending Changes')} ({changes.length})
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
               {changes.map((change, i) => (
-                <div key={i} style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                <div key={i} style={{ fontSize: '12px', color: '#78350f' }}>
                   • {change.description}
                 </div>
               ))}
@@ -1483,30 +1523,29 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       {/* Add Sanction Modal */}
       {showAddSanction && (
-        <div style={{
+        <div className={OVERLAY_CLASS} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
+          padding: '16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
-          <div style={{
-            background: 'var(--panel)',
-            borderRadius: '12px',
+          <div className={PANEL_CLASS} style={{
             padding: '24px',
-            minWidth: '400px',
-            border: '1px solid var(--border)'
+            minWidth: 'min(400px, 100%)',
+            maxHeight: '85vh',
+            overflowY: 'auto'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
+            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
               {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
             </h3>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '4px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--ov-text-secondary)', marginBottom: '4px' }}>
                 {t('manualAdjustmentsEditor.target', 'Target')}: {showAddSanction.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
                 {showAddSanction.playerType === 'player' && ` - ${t('manualAdjustmentsEditor.player', 'Player')} #${showAddSanction.playerNumber}`}
                 {showAddSanction.playerType === 'bench_official' && ` - ${showAddSanction.role}`}
@@ -1571,29 +1610,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   setShowAddSanction(null)
                   setNewSanctionData({ type: 'warning', setIndex: 1, scoreA: 0, scoreB: 0 })
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
               </button>
               <button
                 onClick={handleAddSanctionSubmit}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
               </button>
@@ -1604,26 +1627,25 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       {/* Edit Sanction Modal */}
       {editingSanction && (
-        <div style={{
+        <div className={OVERLAY_CLASS} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
+          padding: '16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
-          <div style={{
-            background: 'var(--panel)',
-            borderRadius: '12px',
+          <div className={PANEL_CLASS} style={{
             padding: '24px',
-            minWidth: '400px',
-            border: '1px solid var(--border)'
+            minWidth: 'min(400px, 100%)',
+            maxHeight: '85vh',
+            overflowY: 'auto'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
+            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
               {t('manualAdjustmentsEditor.editSanction', 'Edit Sanction')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1682,29 +1704,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setEditingSanction(null)}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
               </button>
               <button
                 onClick={handleEditSanctionSubmit}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.saveChanges', 'Save Changes')}
               </button>
@@ -1715,26 +1721,25 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       {/* Add Timeout Modal */}
       {showAddTimeout && (
-        <div style={{
+        <div className={OVERLAY_CLASS} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
+          padding: '16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
-          <div style={{
-            background: 'var(--panel)',
-            borderRadius: '12px',
+          <div className={PANEL_CLASS} style={{
             padding: '24px',
-            minWidth: '400px',
-            border: '1px solid var(--border)'
+            minWidth: 'min(400px, 100%)',
+            maxHeight: '85vh',
+            overflowY: 'auto'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
+            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
               {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1794,29 +1799,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   setShowAddTimeout(false)
                   setNewTimeoutData({ team: 'home', setIndex: 1, scoreA: 0, scoreB: 0 })
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
               </button>
               <button
                 onClick={handleAddTimeoutSubmit}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
               </button>
@@ -1827,26 +1816,25 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       {/* Add Substitution Modal */}
       {showAddSub && (
-        <div style={{
+        <div className={OVERLAY_CLASS} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
+          padding: '16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
-          <div style={{
-            background: 'var(--panel)',
-            borderRadius: '12px',
+          <div className={PANEL_CLASS} style={{
             padding: '24px',
-            minWidth: '450px',
-            border: '1px solid var(--border)'
+            minWidth: 'min(450px, 100%)',
+            maxHeight: '85vh',
+            overflowY: 'auto'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
+            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
               {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -1934,15 +1922,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   setShowAddSub(false)
                   setNewSubData({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
               </button>
@@ -1950,16 +1930,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 onClick={handleAddSubSubmit}
                 disabled={!newSubData.playerOut || !newSubData.playerIn}
                 style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: !newSubData.playerOut || !newSubData.playerIn
-                    ? 'rgba(34, 197, 94, 0.3)'
-                    : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
+                  ...modalCommitStyle,
                   cursor: !newSubData.playerOut || !newSubData.playerIn ? 'not-allowed' : 'pointer',
-                  opacity: !newSubData.playerOut || !newSubData.playerIn ? 0.6 : 1
+                  opacity: !newSubData.playerOut || !newSubData.playerIn ? 0.5 : 1
                 }}
               >
                 {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
@@ -1971,32 +1944,31 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       {/* Edit Substitution Modal */}
       {editingSub && (
-        <div style={{
+        <div className={OVERLAY_CLASS} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
+          padding: '16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 2000
         }}>
-          <div style={{
-            background: 'var(--panel)',
-            borderRadius: '12px',
+          <div className={PANEL_CLASS} style={{
             padding: '24px',
-            minWidth: '450px',
-            border: '1px solid var(--border)'
+            minWidth: 'min(450px, 100%)',
+            maxHeight: '85vh',
+            overflowY: 'auto'
           }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: 'var(--text)' }}>
+            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
               {t('manualAdjustmentsEditor.editSubstitutionTitle', 'Edit Substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
                 <label style={labelStyle}>{t('manualAdjustmentsEditor.team', 'Team')}</label>
-                <div style={{ ...inputStyle, padding: '8px 12px', background: 'var(--panel-2)' }}>
+                <div style={{ ...inputStyle, padding: '8px 12px', background: 'var(--ov-sunken)', border: '1px solid var(--ov-hairline)', borderRadius: 'var(--ov-radius)', color: 'var(--ov-text-body)', display: 'flex', alignItems: 'center' }}>
                   {editingSub.payload?.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
                 </div>
               </div>
@@ -2069,29 +2041,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setEditingSub(null)}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCancelStyle}
               >
                 {t('common.cancel', 'Cancel')}
               </button>
               <button
                 onClick={handleEditSubSubmit}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={modalCommitStyle}
               >
                 {t('manualAdjustmentsEditor.saveChanges', 'Save Changes')}
               </button>
