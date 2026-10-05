@@ -22,6 +22,22 @@ import { formatTimeLocal } from '../utils/timeUtils'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
+import { X } from 'lucide-react'
+import { Button } from '../ui/Button.jsx'
+import { NOTICE } from '../ui/tones.js'
+
+// volleyui recipes for this page (RESTYLE-SPEC P3b). The paper-sheet blocks
+// (ResultsTable, SanctionsTable, RemarksBox and their black frames), the
+// winner bar and the big set score are frozen and keep their inline styles.
+// Section head: a name on the dark 1.5px rule (kit SectionHeader).
+const SECTION_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5 mb-3'
+const SECTION_TITLE = 'text-[11px] font-bold uppercase tracking-wider text-stone-800'
+// The Scoresheet menu trigger: kit toolbar button, courtside height.
+const TOOLBAR_TRIGGER = 'inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-stone-200 bg-white text-sm font-medium text-stone-700 shadow-sm hover:bg-stone-50 transition-colors'
+// Decision dialogs: stone-900/60 + blur, white rounded-2xl panel, shadow-2xl.
+const DIALOG_OVERLAY = 'bg-stone-900/60 backdrop-blur-sm'
+const DIALOG_PANEL = 'ov-kit bg-white rounded-2xl shadow-2xl border border-stone-200/70'
+const DIALOG_TITLE = 'text-lg font-bold text-stone-900'
 
 // Helper to format duration as hh:mm
 const formatDurationHHMM = (durationStr) => {
@@ -685,15 +701,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         minWidth: '140px',
         opacity: disabled ? 0.5 : 1
       }}>
-        <div style={{ fontSize: '12px', fontWeight: 600 }}>
+        <div className="text-xs font-medium text-stone-500">
           {getSignatureLabel(role)}
         </div>
+        {/* Unsigned: the kit's dashed "tap to sign" well. Signed: emerald done
+            state with the signature image. Size and tap behaviour unchanged. */}
         <div
           onClick={() => !disabled && !isSigned && setOpenSignature(role)}
+          className={isSigned
+            ? 'rounded-xl border-2 border-solid border-emerald-300 bg-emerald-50'
+            : `rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 text-stone-500${disabled ? '' : ' hover:bg-stone-100 hover:border-stone-400'} transition-colors`}
           style={{
-            border: isSigned ? '2px solid #22c55e' : '2px solid #333',
-            borderRadius: '8px',
-            background: isSigned ? 'rgba(34, 197, 94, 0.1)' : 'white',
             height: '60px',
             minHeight: '60px',
             maxHeight: '60px',
@@ -716,7 +734,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               }}
             />
           ) : (
-            <div style={{ color: '#333', fontSize: '14px' }}>
+            <div className="text-sm font-medium text-stone-500">
               {disabled ? t('matchEnd.waiting', 'Waiting...') : t('matchEnd.tapToSign', 'Tap to sign')}
             </div>
           )}
@@ -1269,7 +1287,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
           <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
-          <h1 style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h1>
           <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
         </div>
 
@@ -1279,7 +1297,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
         {/* Winner Card */}
         <div className="card" style={{ flex: '1 1 280px', minWidth: '260px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ margin: 0, textAlign: 'center' }}>{t('matchEnd.winner', 'Winner')}</h3>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.winner', 'Winner')}</h3></div>
           {/* Team Name with background */}
           <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>
             {winner}
@@ -1318,7 +1336,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('results')}
         >
-          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.results', 'Results')}</h3>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.results', 'Results')}</h3></div>
           <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <ResultsTable
               teamAName={homeLabel === 'A' ? (homeTeam?.name || 'Team A') : (awayTeam?.name || 'Team A')}
@@ -1337,7 +1355,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
           onClick={() => setZoomedSection('sanctions')}
         >
-          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.sanctions', 'Sanctions')}</h3></div>
           <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
             <SanctionsTable
               items={sanctionsInBox}
@@ -1350,7 +1368,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Captain Signatures */}
       {!isApproved && (
         <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3></div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <SignatureBox role="captain-a" />
             <SignatureBox role="captain-b" />
@@ -1360,25 +1378,20 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       {/* Remarks Card */}
       <div className="card" style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h3 style={{ margin: 0 }}>{t('matchEnd.remarks', 'Remarks')}</h3>
+        <div className={`ov-kit ${SECTION_HEAD}`}>
+          <h3 className={SECTION_TITLE}>{t('matchEnd.remarks', 'Remarks')}</h3>
           {!isApproved && (
-            <button
+            <Button
+              variant="secondary"
+              size="md"
+              className="relative font-medium after:absolute after:-inset-1 after:content-['']"
               onClick={() => {
                 setRemarksText(match?.remarks || '')
                 setShowRemarksModal(true)
               }}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                background: '#fff',
-                cursor: 'pointer'
-              }}
             >
               {t('matchEnd.editRemarks', 'Edit Remarks')}
-            </button>
+            </Button>
           )}
         </div>
         <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
@@ -1389,10 +1402,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Other Signatures - At the bottom */}
       {!isApproved && captainsDone && (
         <div className="card" style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div>
-              <h3 style={{ margin: 0, display: 'inline' }}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
-              <span className="text-sm" style={{ marginLeft: '12px' }}>
+          <div className={SECTION_HEAD}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h3 className={SECTION_TITLE} style={{ margin: 0, fontSize: '11px' }}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
+              {/* Whose turn it is: a state, so a round pill (sky = pending,
+                  emerald once every signature is in). */}
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${currentStep === 'complete' ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'}`}>
                 {currentStep === 'asst-scorer' && t('matchEnd.assistantScorer', 'Assistant Scorer')}
                 {currentStep === 'scorer' && t('matchEnd.scorer', 'Scorer')}
                 {currentStep === 'ref2' && t('matchEnd.referee2', '2nd Referee')}
@@ -1423,36 +1438,26 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       )}
 
       {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+      {/* Page actions: the emerald commit fills the line; the destructive
+          reopen is the soft red; the rest are outline / toolbar. All h-11
+          (courtside, >= 44px). */}
+      <div className="ov-kit" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
         {isApproved ? (
           // Post-approval buttons: Close Match and Reopen Match
           <>
-            <button
+            <Button
+              variant="positive"
+              size="xl"
               onClick={handleCloseMatch}
-              className="primary"
-              style={{
-                flex: 1,
-                minWidth: '150px',
-                padding: '14px',
-                fontSize: '15px',
-                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-              }}
+              style={{ flex: 1, minWidth: '150px' }}
             >
               {t('matchEnd.closeMatch', 'Close Match')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="danger-soft"
+              size="xl"
               onClick={handleReopenMatchClick}
-              className="secondary"
-              style={{
-                padding: '14px 20px',
-                fontSize: '15px',
-                background: '#ea0808ff',
-                color: '#000',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-              }}
+              className="px-5"
             >
               {reopenPasswordHash && (
                 reopenUnlocked ? (
@@ -1468,55 +1473,44 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 )
               )}
               {t('matchEnd.reopenMatch', 'Reopen Match')}
-            </button>
+            </Button>
           </>
         ) : !showReopenConfirm && (
           // Pre-approval buttons: Confirm and Approve, Reopen Last Set, Manual Adjustments, Scoresheet
           <>
-            <button
+            <Button
+              variant="positive"
+              size="xl"
               onClick={handleApprove}
               disabled={isSaving || (!match.test && !allSignaturesDone)}
-              className="primary"
+              loading={isSaving}
               data-help-id="matchend-export-json"
-              style={{
-                flex: 1,
-                minWidth: '150px',
-                padding: '14px',
-                fontSize: '15px',
-                opacity: (isSaving || (!match.test && !allSignaturesDone)) ? 0.5 : 1,
-                cursor: (isSaving || (!match.test && !allSignaturesDone)) ? 'not-allowed' : 'pointer'
-              }}
+              className="disabled:cursor-not-allowed"
+              style={{ flex: 1, minWidth: '150px' }}
             >
               {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and Approve')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="danger-soft"
+              size="xl"
               onClick={() => setShowReopenConfirm(true)}
-              className="secondary"
               data-help-id="matchend-reopen-set"
-              style={{
-                padding: '14px 20px',
-                fontSize: '15px',
-                background: '#ea0808ff',
-                color: '#000',
-              }}
+              className="px-5"
             >
               {t('matchEnd.reopenLastSet', 'Reopen Last Set')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="xl"
               onClick={onManualAdjustments}
-              className="secondary"
-              style={{
-                padding: '14px 20px',
-                fontSize: '15px',
-              }}
+              className="px-5 font-medium"
             >
               {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
-            </button>
+            </Button>
             <div data-help-id="matchend-export-pdf">
               <MenuList
                 buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={15} />{t('matchEnd.scoresheet')}</span>}
-                buttonClassName="secondary"
-                buttonStyle={{ padding: '14px 20px', fontSize: '15px' }}
+                buttonClassName={`${TOOLBAR_TRIGGER} px-5`}
                 showArrow={true}
                 position="right"
                 vertical="top"
@@ -1534,38 +1528,35 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       {/* Download Progress Modal */}
       {downloadProgress && (
-        <div style={{
+        <div className={DIALOG_OVERLAY} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
-          <div style={{
-            background: 'var(--panel)',
-            borderRadius: '12px',
+          <div className={DIALOG_PANEL} style={{
             padding: '24px',
             maxWidth: '400px',
             width: '90%',
             textAlign: 'center'
           }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing Match Export...')}</h3>
+            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing Match Export...')}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                <span style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
-                <span style={{ color: downloadProgress.json ? '#22c55e' : 'var(--muted)' }}>Match Data (JSON)</span>
+              <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
+                <span className={downloadProgress.json ? 'font-medium text-emerald-700' : 'text-stone-500'}>Match Data (JSON)</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                <span style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
-                <span style={{ color: downloadProgress.pdf ? '#22c55e' : 'var(--muted)' }}>{t('matchEnd.generatingPdf', 'Generating Scoresheet (PDF)')}</span>
+              <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                <span className={downloadProgress.pdf ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
+                <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating Scoresheet (PDF)')}</span>
               </div>
             </div>
-            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
+            <p className="text-xs text-stone-500" style={{ margin: 0 }}>
               {downloadProgress.json && downloadProgress.pdf
                 ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
                 : t('matchEnd.waitCheck', 'Please wait while files are being prepared...')}
@@ -1576,48 +1567,48 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       {/* Reopen Last Set Confirmation Modal */}
       {showReopenConfirm && (
-        <div style={{
+        <div className={DIALOG_OVERLAY} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
-          <div style={{
-            background: 'var(--bg-secondary)',
-            borderRadius: '12px',
+          <div role="dialog" aria-modal="true" className={DIALOG_PANEL} style={{
             padding: '24px',
             maxWidth: '450px',
-            width: '90%',
-            textAlign: 'center'
+            width: '90%'
           }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen Last Set?')}</h3>
-            <p style={{ margin: '0 0 16px 0', color: 'var(--muted)' }}>
+            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 8px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen Last Set?')}</h3>
+            <p className="text-sm text-stone-600" style={{ margin: '0 0 12px 0' }}>
               {t('matchEnd.reopenSetConfirmBody', 'This will reopen the last set for corrections and allow you to continue scoring.')}
             </p>
-            <p style={{ margin: '0 0 24px 0', color: 'var(--warning)', fontSize: '14px' }}>
+            <p className={NOTICE.warning} style={{ margin: '0 0 24px 0' }}>
               {t('matchEnd.reopenSetWarning', 'Warning: All collected signatures will be cleared and must be collected again after approval.')}
             </p>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={handleReopenLastSet}
-                className="primary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('matchEnd.yesReopen', 'Yes, Reopen Set')}
-              </button>
-              <button
+            {/* Footer: Cancel left, the destructive commit right (red). */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button
+                variant="secondary"
+                size="xl"
                 onClick={() => setShowReopenConfirm(false)}
-                className="secondary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+                className="font-medium"
+                style={{ flex: 1 }}
               >
                 {t('matchEnd.cancel', 'Cancel')}
-              </button>
+              </Button>
+              <Button
+                variant="danger"
+                size="xl"
+                onClick={handleReopenLastSet}
+                style={{ flex: 1 }}
+              >
+                {t('matchEnd.yesReopen', 'Yes, Reopen Set')}
+              </Button>
             </div>
           </div>
         </div>
@@ -1626,13 +1617,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Zoom Modal for Results/Sanctions */}
       {zoomedSection && (
         <div
+          className="bg-stone-900/50 backdrop-blur-sm"
           style={{
             position: 'fixed',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(15, 23, 42, 0.5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1671,27 +1662,21 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               />
             )}
           </div>
+          {/* Round icon close: white on the dimmed page, 44px. */}
           <button
             onClick={() => setZoomedSection(null)}
             aria-label={t('common.close', 'Close')}
+            title={t('common.close', 'Close')}
+            className="h-11 w-11 inline-flex items-center justify-center rounded-full bg-white text-stone-700 shadow-lg hover:bg-stone-100 transition-colors"
             style={{
               position: 'absolute',
               top: '20px',
               right: '20px',
-              background: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              fontSize: '24px',
-              color: '#fff',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              padding: 0,
+              border: 'none'
             }}
           >
-            ×
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
       )}
@@ -1716,61 +1701,43 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           }}
           width={600}
         >
-          <div style={{ padding: '20px' }}>
+          <div className="ov-kit" style={{ padding: '8px 0 0' }}>
             <textarea
               ref={remarksTextareaRef}
               placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
               aria-label={t('matchEnd.remarks', 'Remarks')}
               value={remarksText}
               onChange={e => setRemarksText(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"
               style={{
-                width: '100%',
                 minHeight: '200px',
-                padding: '12px',
-                fontSize: '14px',
-                border: '1px solid #ccc',
-                borderRadius: '6px',
-                resize: 'vertical',
-                fontFamily: 'inherit',
-                boxSizing: 'border-box'
+                fontSize: '14px'
               }}
               autoFocus
             />
-            <div style={{ marginTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
+            <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="font-medium"
                 onClick={() => {
                   setShowRemarksModal(false)
                   setRemarksText('')
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  border: '1px solid #ccc',
-                  borderRadius: '6px',
-                  background: '#fff',
-                  cursor: 'pointer'
-                }}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
                 onClick={async () => {
                   await db.matches.update(matchId, { remarks: remarksText.trim() })
                   setShowRemarksModal(false)
                   setRemarksText('')
                 }}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  border: 'none',
-                  borderRadius: '6px',
-                  background: '#007bff',
-                  color: '#fff',
-                  cursor: 'pointer'
-                }}
               >
                 {t('common.save', 'Save')}
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
@@ -1778,36 +1745,33 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       {/* Unlock Reopen Match Password Modal */}
       {showUnlockModal && (
-        <div style={{
+        <div className={DIALOG_OVERLAY} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.5)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999
         }}>
-          <div style={{
-            background: 'var(--bg-secondary, var(--panel))',
-            borderRadius: '12px',
+          <div role="dialog" aria-modal="true" className={DIALOG_PANEL} style={{
             padding: '24px',
             maxWidth: '400px',
             width: '90%',
             textAlign: 'center'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '16px' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="text-stone-900" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block' }}>
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
-              <h3 style={{ margin: 0 }}>
+              <h3 className={DIALOG_TITLE} style={{ margin: 0 }}>
                 {t('matchEnd.unlockReopen', 'Unlock Reopen')}
               </h3>
             </div>
-            <p style={{ margin: '0 0 16px 0', color: 'var(--muted, #9ca3af)', fontSize: '14px' }}>
+            <p className="text-sm text-stone-600" style={{ margin: '0 0 16px 0' }}>
               {t('matchEnd.unlockReopenDescription', 'Enter the reopen password to unlock this action.')}
             </p>
             <input
@@ -1824,44 +1788,38 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               placeholder={t('matchEnd.unlockPasswordPlaceholder', 'Password')}
               autoComplete="off"
               autoFocus
-              style={{
-                width: '100%',
-                padding: '12px',
-                fontSize: '16px',
-                borderRadius: '6px',
-                border: unlockPasswordError
-                  ? '2px solid #ef4444'
-                  : '1px solid var(--border)',
-                background: 'var(--panel-2)',
-                color: 'var(--text)',
-                boxSizing: 'border-box',
-                marginBottom: '8px'
-              }}
+              aria-invalid={unlockPasswordError ? true : undefined}
+              className={`w-full h-11 px-3 rounded-xl border text-base tracking-wide text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40 ${unlockPasswordError ? 'border-red-400 bg-red-50' : 'border-stone-200 bg-white'}`}
+              style={{ marginBottom: '8px' }}
             />
             {unlockPasswordError && (
-              <p style={{ margin: '0 0 12px 0', color: '#ef4444', fontSize: '13px' }}>
+              <p className="text-xs font-medium text-red-600" style={{ margin: '0 0 12px 0', textAlign: 'left' }}>
                 {unlockPasswordError}
               </p>
             )}
-            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-              <button
-                onClick={handleUnlockSubmit}
-                className="primary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
-              >
-                {t('common.confirm', 'Confirm')}
-              </button>
-              <button
+            {/* Footer: Cancel left, the neutral commit (unlock) right. */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="font-medium"
                 onClick={() => {
                   setShowUnlockModal(false)
                   setUnlockPasswordInput('')
                   setUnlockPasswordError('')
                 }}
-                className="secondary"
-                style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+                style={{ flex: 1 }}
               >
                 {t('common.cancel', 'Cancel')}
-              </button>
+              </Button>
+              <Button
+                variant="dark"
+                size="xl"
+                onClick={handleUnlockSubmit}
+                style={{ flex: 1 }}
+              >
+                {t('common.confirm', 'Confirm')}
+              </Button>
             </div>
           </div>
         </div>
