@@ -12,6 +12,11 @@ livescore pauses.
 Hosts: `old` = hetzner (`ssh hetzner`), `new` = the new VM (`ssh ov-new`, root), lenovoserver
 for building and the private key.
 
+Never `source` the `.env` file into a shell (RUNBOOK-hetzner.md, Shell hygiene): compose would
+prefer the exported values over later edits. `apply-roles.sh` reads the one value it needs.
+Run `set -o pipefail` in the lenovoserver shell before the `ssh ... | ssh ...` pipes below, so a
+failing `pg_dump` or a dropped ssh fails the whole command.
+
 The same procedure, with lenovoserver as `new`, is the cold-standby recovery when hetzner is lost
 (then skip every step that reads from `old` and restore from the newest NAS dump instead).
 
@@ -28,23 +33,44 @@ Hetzner Cloud, same project, location near the old VM (e.g. `fsn1`/`nbg1`):
 - **Image:** Ubuntu 24.04 LTS. **SSH key:** the owner's key. **Backups:** optional (Hetzner
   snapshots are a bonus, the NAS copies are the real backups).
 - **Firewall:** a Hetzner Cloud Firewall with **no inbound rules** (Tailscale and the tunnel
-  are outbound-only). SSH arrives over Tailscale.
+  are outbound-only). Public SSH is closed from the first boot, so Tailscale must come up
+  **without** an SSH session: cloud-init installs it with a one-time auth key.
+
+Tailscale admin console -> Settings -> Keys -> Generate auth key: **not reusable**, expiry 1 hour,
+pre-approved, tag as the other servers. The key also stays readable in the VM's metadata
+(user data), which is why it must be single-use and short-lived.
 
 ```bash
-lenovo$ hcloud server create --name openvolley-1 --type cx22 --image ubuntu-24.04 --location fsn1 --ssh-key <key-name> --firewall ov-no-inbound
+lenovo$ install -m 600 /dev/null /dev/shm/ov-ci.yaml && cat > /dev/shm/ov-ci.yaml <<'EOF'
+#cloud-config
+package_update: true
+package_upgrade: true
+packages: [rsync, jq, unattended-upgrades, e2fsprogs]
+runcmd:
+  - [sh, -c, "curl -fsSL https://tailscale.com/install.sh | sh"]
+  - [tailscale, up, --auth-key=TSKEY, --hostname=openvolley-1]
+  - [sh, -c, "curl -fsSL https://get.docker.com | sh"]
+EOF
+lenovo$ read -rs TSKEY && sed -i "s|TSKEY|$TSKEY|" /dev/shm/ov-ci.yaml; unset TSKEY     # paste the key
+lenovo$ hcloud server create --name openvolley-1 --type cx22 --image ubuntu-24.04 --location fsn1 \
+          --ssh-key <key-name> --firewall ov-no-inbound --user-data-from-file /dev/shm/ov-ci.yaml
+lenovo$ shred -u /dev/shm/ov-ci.yaml
 ```
 
 ### 2. Base system
 
+Wait for `openvolley-1` to appear in `tailscale status` (2-4 minutes), add `ov-new` to
+`~/.ssh/config` on lenovoserver (tailnet IP, user root), then:
+
 ```bash
-new# apt-get update && apt-get -y full-upgrade && apt-get -y install rsync jq unattended-upgrades e2fsprogs
-new# curl -fsSL https://get.docker.com | sh                       # Docker Engine + compose plugin
-new# curl -fsSL https://tailscale.com/install.sh | sh && tailscale up
-new# docker version --format '{{.Server.Version}}' && docker compose version
+new# cloud-init status --wait && tail -n 20 /var/log/cloud-init-output.log
+new# docker version --format '{{.Server.Version}}' && docker compose version && tailscale status --self
 ```
 
-Add `ov-new` to `~/.ssh/config` on lenovoserver (tailnet IP, user root). Optionally close public
-SSH afterwards (the cloud firewall already has no inbound rule).
+If the VM never joins the tailnet (typo in the key, expired key): Hetzner Console -> the server ->
+Rescue -> **Reset root password**, log in on the web console, read
+`/var/log/cloud-init-output.log`, and run `tailscale up --auth-key=<new key>` there. Do not
+open port 22 in the cloud firewall.
 
 ### 3. Kit, host prep, image
 
@@ -77,24 +103,36 @@ new# cd /opt/openvolley && docker compose up -d ov-postgres && docker compose ps
 Dry run (live system, no downtime; proves the pipe and gives a timing):
 
 ```bash
+lenovo$ set -o pipefail
 lenovo$ time (ssh hetzner 'docker compose --project-directory /opt/openvolley exec -T ov-postgres pg_dump -U ov_owner -d openvolley -Fc' \
-          | ssh ov-new 'docker compose --project-directory /opt/openvolley exec -T ov-postgres pg_restore -U ov_owner -d openvolley --clean --if-exists --no-owner --no-privileges')
-lenovo$ ssh ov-new 'set -a; . /opt/openvolley/.env; set +a; docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 -v ov_app_pw="$OV_APP_PW"' < escoresheet/backend/db/roles.sql
+          | ssh ov-new '/opt/openvolley/restore-db.sh --drop-previous -')
+lenovo$ ssh ov-new /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
 ```
 
-The first `--clean` run prints "does not exist" notices; that is expected on an empty database.
+`restore-db.sh` restores into a fresh database in one transaction (`--exit-on-error
+--single-transaction`): a truncated stream or any error leaves the previous state untouched and
+the command fails. `--drop-previous` drops the database it replaced (on `new` that is only the
+empty initial one or an earlier dry run).
 
 ### 6. Pre-sync storage (live, repeatable)
 
 Give the new VM a temporary pull key to the old one (removed in step 13):
 
 ```bash
-new#    ssh-keygen -t ed25519 -N '' -C ov-move -f /root/.ssh/ov-move
+new#    ssh-keygen -t ed25519 -N '' -C "ov-move-$(date +%F)-REMOVE-AFTER-MOVE" -f /root/.ssh/ov-move
+hetzner# cp -p /root/.ssh/authorized_keys /root/.ssh/authorized_keys.ov-move-bak
 hetzner# echo 'from="<new-tailnet-ip>",restrict,command="/usr/bin/rrsync -ro /data/openvolley/storage" <contents of new:/root/.ssh/ov-move.pub>' >> /root/.ssh/authorized_keys
+hetzner# grep -c 'REMOVE-AFTER-MOVE' /root/.ssh/authorized_keys          # 1
 new#    rsync -aH --numeric-ids --delete --exclude=.ovdata --exclude=lost+found -e 'ssh -i /root/.ssh/ov-move' root@<old-tailnet-ip>:./ /data/openvolley/storage/
 ```
 
 `.ovdata` is excluded because each filesystem keeps its own immutable sentinel.
+
+This is a root key on KSCW's production host, so it is as narrow as sshd allows (`from=` the new
+VM's tailnet IP only, `restrict`, forced `rrsync -ro` limited to the storage directory), carries
+a dated `REMOVE-AFTER-MOVE` marker, and step 13 removes it with a check. (The `ovbackup` user
+cannot be used instead without changing ownership or ACLs of the live storage files.) If the
+move is postponed by more than a few days, remove the line now and re-add it before step 6.
 
 ---
 
@@ -115,13 +153,15 @@ From here `backend.openvolley.app` returns Cloudflare 1033 (no connector). Clien
 ### 8. Final data move (T+2)
 
 ```bash
+lenovo$ set -o pipefail
 lenovo$ ssh hetzner 'docker compose --project-directory /opt/openvolley exec -T ov-postgres pg_dump -U ov_owner -d openvolley -Fc' \
-          | ssh ov-new 'docker compose --project-directory /opt/openvolley exec -T ov-postgres pg_restore -U ov_owner -d openvolley --clean --if-exists --no-owner --no-privileges'
-lenovo$ ssh ov-new 'set -a; . /opt/openvolley/.env; set +a; docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 -v ov_app_pw="$OV_APP_PW"' < escoresheet/backend/db/roles.sql
+          | ssh ov-new '/opt/openvolley/restore-db.sh --drop-previous -' && echo RESTORE-OK
+lenovo$ ssh ov-new /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
 new#    rsync -aH --numeric-ids --delete --exclude=.ovdata --exclude=lost+found -e 'ssh -i /root/.ssh/ov-move' root@<old-tailnet-ip>:./ /data/openvolley/storage/
 ```
 
-Counts must match exactly (nothing writes any more):
+No `RESTORE-OK`: stop here, nothing on `new` changed; fix and repeat step 8 (or abort: `docker
+compose up -d` on old). Counts must match exactly (nothing writes any more):
 
 ```bash
 Q="select (select count(*) from public.matches),(select count(*) from public.events),(select count(*) from auth.users),(select count(*) from auth.app_sessions)"
@@ -170,7 +210,9 @@ Keep the old pulled files on the NAS (no `--delete`).
 ### 12. Monitoring
 
 Update Beszel (add the new VM's agent; alerts on the two loop filesystems and container
-limits), and the restore-test source if it changed. The Kuma HTTP monitor needs no change
+limits), the restore-test source if it changed, and its image: in
+`~/.config/openvolley/restore-test.env` set `RT_TAG_FILE=/home/lucanepa/ov-ops/shipped-ov-new` (written by
+`build-image.sh --ship ov-new`). The Kuma HTTP monitor needs no change
 (same hostname).
 
 ### 13. Decommission old (after 7 days and one passing weekly restore test from the new VM's backups)
@@ -179,8 +221,14 @@ Until then the stopped stack on hetzner is the fallback: to go back, stop `new` 
 reverse-copy anything written since the cutover (step 8 in the other direction), and
 `docker compose up -d` on hetzner.
 
-Then on hetzner, follow "Uninstall" in RUNBOOK-hetzner.md, remove the `ov-move` line from
-`/root/.ssh/authorized_keys`, and on the new VM delete `/root/.ssh/ov-move*`. Remove the
+Then on hetzner, follow "Uninstall" in RUNBOOK-hetzner.md and remove the temporary root key:
+
+```bash
+hetzner# sed -i '/REMOVE-AFTER-MOVE/d' /root/.ssh/authorized_keys && ! grep -n 'ov-move\|REMOVE-AFTER-MOVE' /root/.ssh/authorized_keys && echo removed
+hetzner# rm -f /root/.ssh/authorized_keys.ov-move-bak
+new#     rm -f /root/.ssh/ov-move /root/.ssh/ov-move.pub
+```
+ Remove the
 `postgres-autopatch.sh` / `backup-postgres.sh` exclusions and the sshd drop-in if they were added.
 
 ---

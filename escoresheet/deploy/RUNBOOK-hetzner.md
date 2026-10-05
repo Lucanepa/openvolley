@@ -7,10 +7,24 @@ Hosts: `lenovoserver` (build machine, tunnel admin, private backup key), `hetzne
 
 Prompts: `lenovo$` is lenovoserver in the repo checkout, `hetzner#` is root on the VM.
 
+**Shell hygiene: never `source` / `set -a; . .env`.** Docker Compose gives variables exported
+in the calling shell priority over `.env`. In such a shell every later `docker compose up`
+silently keeps the exported values: an `OV_BACKEND_IMAGE` changed for an update or rollback,
+or a raised `OV_MIN_MATCHES`, would be ignored. The one place that needs a value from `.env`
+(the app password for `roles.sql`) uses `apply-roles.sh`, which reads just that value. Before
+any `docker compose up`, this must print nothing:
+
+```bash
+hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN|PUBLIC_ORIGINS|RESEND_|SMTP_|CONTACT_EMAIL|REOPEN_PASSWORD_HASH)='
+```
+
 **Preconditions**
 - The self-host wiring (Phases 1-3 of the migration plan) is merged: `/health/live`, `/health`
   with `db`, `DATABASE_URL`, `STORAGE_ROOT`, `STATUS_DIR`, `TRUST_PROXY`. Check:
-  `lenovo$ grep -c "health/live" escoresheet/backend/server.js` is non-zero.
+  `lenovo$ grep -c "health/live" escoresheet/backend/server.js` is non-zero. `build-image.sh`
+  enforces this too: it refuses to build a tree without `/health/live`, `DATABASE_URL`,
+  `STORAGE_ROOT` and `STATUS_DIR`, and the image's healthcheck has no fallback, so a pre-wiring
+  image never turns healthy and the tunnel never starts in front of it.
 - The Phase-0 archives exist and `scripts/migrate/restore.sh` + `escoresheet/backend/db/*.sql`
   are in the tree (data load, step 8).
 - The `openvolley-backup` GPG key exists on lenovoserver; its public part is in
@@ -141,6 +155,7 @@ hetzner# docker compose logs --tail 3 ov-postgres      # "FATAL: /ovpg/.ovdata m
 hetzner# ls -A /data/openvolley/pg                      # empty: nothing was created on the bare mountpoint
 hetzner# docker compose stop ov-postgres && mount /data/openvolley/pg && docker compose up -d ov-postgres
 hetzner# docker compose ps ov-postgres                  # healthy
+hetzner# ls /data/openvolley/pg/state                   # "initialized": from now on an empty data/ refuses to start
 ```
 
 ## 8. Load the data (hetzner + lenovoserver)
@@ -149,10 +164,9 @@ Follow the migration plan, Phase 4a step 6 and §6, with these adaptations:
 - Import directory: `/data/openvolley/pg/import` (inside the capped filesystem, mode 700).
 - Container argument for `scripts/migrate/restore.sh`: the compose container,
   `$(docker compose -f /opt/openvolley/compose.yaml ps -q ov-postgres)`.
-- `roles.sql` with the app password from `.env`:
+- `roles.sql` with the app password from `.env` (read by the script, never exported):
   ```bash
-  hetzner# set -a; . /opt/openvolley/.env; set +a
-  hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 -v ov_app_pw="$OV_APP_PW" < /data/openvolley/pg/import/roles.sql
+  hetzner# /opt/openvolley/apply-roles.sh < /data/openvolley/pg/import/roles.sql   # "ok: ov_app logs in and sees N matches"
   ```
 - Storage: rsync the unpacked scoresheets (and the last 30 days of `backup/`) into
   `/data/openvolley/storage/`, then `chown -R 1000:1000 /data/openvolley/storage/{scoresheets,backup}`.
@@ -163,6 +177,7 @@ Follow the migration plan, Phase 4a step 6 and §6, with these adaptations:
 
 ```bash
 hetzner# cd /opt/openvolley && docker compose up -d && docker compose ps     # 3 services, backend healthy
+# (ov-backend exits with "FATAL: /data/storage/.ovdata missing" if the storage fs is not mounted)
 hetzner# docker compose exec ov-backend node -e 'for (const p of ["/health/live","/health"]) fetch("http://127.0.0.1:8080"+p).then(async r=>console.log(p, r.status, await r.text()))'
 hetzner# docker compose logs --tail 20 ov-tunnel                              # "Registered tunnel connection" (x4)
 hetzner# ss -Htlnup | sort | diff /root/ov-ss-before.txt - && echo "no new listeners"
@@ -213,7 +228,9 @@ hetzner# ls -la /data/openvolley/backups && cat /var/lib/openvolley-status/last_
 hetzner# systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer && systemctl list-timers 'openvolley-*'
 ```
 
-Restore test of that first dump (lenovoserver, private key):
+Restore test of that first dump (lenovoserver, private key). It boots the image recorded in
+`~/ov-ops/shipped-hetzner` by step 3 and needs `escoresheet/backend/db/roles.sql` (a missing
+file is a failure):
 
 ```bash
 lenovo$ scp 'hetzner:/data/openvolley/backups/db-*' /dev/shm/ && escoresheet/deploy/restore-test.sh /dev/shm/db-<UTC>.dump.gpg
@@ -276,6 +293,7 @@ hetzner# cd /opt/openvolley
 hetzner# grep ^OV_BACKEND_IMAGE= .env | tee -a DEPLOYED.log                  # remember the current tag
 hetzner# systemctl start openvolley-backup.service                            # fresh dump before the change
 hetzner# sed -i 's|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=openvolley-backend:<NEW>|' .env
+hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; docker compose config --images | grep backend   # nothing exported; shows <NEW>
 hetzner# docker compose up -d ov-backend && docker compose ps
 hetzner# docker compose exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
 hetzner# echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" >> DEPLOYED.log
@@ -294,10 +312,51 @@ restore test.
 | Situation | Action |
 |---|---|
 | Before go-live (step 10) | `docker compose down`. Nothing public changed. |
-| Bad backend release | Put the previous tag (from `DEPLOYED.log`) back into `OV_BACKEND_IMAGE` and `docker compose up -d ov-backend`. If the image was pruned: `gunzip -c images/openvolley-backend-<sha>.tar.gz \| docker load` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. |
-| Data corruption | On lenovoserver decrypt the newest good `db-*.dump.gpg`, copy it to `/data/openvolley/pg/import/` (mode 700), then `docker compose stop ov-tunnel ov-backend`, `docker compose exec -T ov-postgres pg_restore -U ov_owner -d openvolley --clean --if-exists --no-owner --no-privileges < /data/openvolley/pg/import/db.dump`, re-run `roles.sql`, `docker compose up -d`, shred the import. Devices re-sync what they still have queued. |
+| Bad backend release | Put the previous tag (from `DEPLOYED.log`) back into `OV_BACKEND_IMAGE`, check `docker compose config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `docker compose up -d ov-backend`. If the image was pruned: `gunzip -c images/openvolley-backend-<sha>.tar.gz \| docker load` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. |
+| Data corruption | "Restore the database" below. |
 | VM lost or KSCW under pressure | Same compose on lenovoserver with the **same `TUNNEL_TOKEN`** and the newest NAS dump (RUNBOOK-move-to-own-vm.md, steps 3-9, with lenovoserver as the target). No DNS change. Make sure the hetzner `ov-tunnel` is stopped, or Cloudflare splits traffic between both. |
 | Anything on a match day | LAN mode / Pi / desktop build from `pre-selfhost`. Scoring never depends on the cloud. |
+
+## Restore the database (data corruption)
+
+A restore goes into a **fresh** database (`restore-db.sh`), never over the live one with
+`pg_restore --clean`: that keeps going after errors (a half-restored database looks fine) and
+does not remove objects or rows missing from the dump. The script runs `pg_restore
+--exit-on-error --single-transaction`, keeps the current database as
+`openvolley_pre_restore_<UTC>`, and on any error or count mismatch puts everything back as it was.
+
+```bash
+# 1. stop writes and the backup timers (a restored, smaller DB must not trip or feed the count guard)
+hetzner# systemctl stop openvolley-backup.timer openvolley-backup-files.timer
+hetzner# cd /opt/openvolley && docker compose stop ov-tunnel ov-backend
+# 2. newest GOOD dump + its .counts, decrypted on lenovoserver (private key), sent to the pg fs
+lenovo$  set -o pipefail; D=db-<UTC>                                # from the NAS: /volume1/backups/openvolley/hetzner
+lenovo$  scp "nas:/volume1/backups/openvolley/hetzner/$D.*" /dev/shm/ && gpg -o /dev/shm/db.dump -d /dev/shm/$D.dump.gpg
+lenovo$  ssh hetzner 'install -d -m 700 /data/openvolley/pg/import' && scp /dev/shm/db.dump /dev/shm/$D.counts hetzner:/data/openvolley/pg/import/
+lenovo$  shred -u /dev/shm/db.dump && rm -f /dev/shm/$D.*
+# 3. restore (refuses while backend/tunnel/timers run; checks the .counts file)
+hetzner# ./restore-db.sh --counts /data/openvolley/pg/import/db-<UTC>.counts /data/openvolley/pg/import/db.dump
+# 4. roles, then the backend
+lenovo$  ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
+hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; docker compose up -d && docker compose ps
+hetzner# docker compose exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
+# 5. backups back on (restore-db.sh touched counts.reset: the first run takes the restored counts as baseline)
+hetzner# systemctl start openvolley-backup.service && journalctl -u openvolley-backup -n 5 --no-pager
+hetzner# systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer
+# 6. clean up once satisfied (the old database stays for comparison until then)
+hetzner# shred -u /data/openvolley/pg/import/* && rmdir /data/openvolley/pg/import
+hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d postgres -c 'DROP DATABASE "openvolley_pre_restore_<UTC>"'
+```
+
+If `/health` reports the floor below `OV_MIN_MATCHES` because the dump is older, lower it in
+`.env` and `docker compose up -d ov-backend`. Devices re-sync what they still have queued. If
+the restore-test floor (`~/ov-ops/restore-floor` on lenovoserver) is above the restored counts,
+delete that file after the next good backup.
+
+If `ov-postgres` itself refuses to start with "no PG_VERSION, but a cluster existed", PGDATA was
+lost: stop it, move `/data/openvolley/pg/data` aside (`install -d -o 70 -g 70 -m 700` a new
+one), remove `/data/openvolley/pg/state/initialized`, start `ov-postgres` (fresh initdb), then
+follow the steps above.
 
 ## Uninstall (removes every trace from the VM)
 

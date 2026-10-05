@@ -36,12 +36,23 @@ services:
     # chattr +i, so that would fail anyway) and the backend would serve an
     # empty database. The container exits and `restart: unless-stopped` keeps
     # retrying until the mount appears.
+    # Second guard: once a cluster has existed on this filesystem
+    # (/ovpg/state/initialized, written by this guard or the healthcheck),
+    # a PGDATA without PG_VERSION means the data was lost or emptied. The
+    # image's entrypoint would silently initdb a new, empty database; refuse
+    # instead. A deliberate re-init: remove /data/openvolley/pg/state/initialized.
     entrypoint:
       - /bin/sh
       - -c
       - |
         if [ ! -f /ovpg/.ovdata ]; then
           echo "FATAL: /ovpg/.ovdata missing: the OpenVolley pg filesystem is not mounted at the host path. Refusing to start." >&2
+          exit 78
+        fi
+        if [ -s /ovpg/data/PG_VERSION ]; then
+          if [ -d /ovpg/state ] && [ ! -f /ovpg/state/initialized ]; then touch /ovpg/state/initialized; fi
+        elif [ -f /ovpg/state/initialized ]; then
+          echo "FATAL: /ovpg/data has no PG_VERSION, but a cluster existed on this filesystem (/ovpg/state/initialized). Refusing to initdb an empty database over lost data; restore deliberately (RUNBOOK-hetzner.md, Restore the database)." >&2
           exit 78
         fi
         exec docker-entrypoint.sh "$$@"
@@ -82,7 +93,8 @@ services:
     shm_size: 64m
     oom_score_adj: 500
     healthcheck:
-      test: ["CMD-SHELL", "test -f /ovpg/.ovdata && pg_isready -h 127.0.0.1 -U ov_owner -d openvolley"]
+      # Also records the first successful start (marker for the guard above).
+      test: ["CMD-SHELL", "test -f /ovpg/.ovdata && pg_isready -q -h 127.0.0.1 -U ov_owner -d openvolley && { [ ! -d /ovpg/state ] || [ -f /ovpg/state/initialized ] || touch /ovpg/state/initialized; true; }"]
       interval: 10s
       timeout: 5s
       start_period: 30s
@@ -100,6 +112,23 @@ services:
     pull_policy: never
     restart: unless-stopped
     user: node
+    # Same mount guard as ov-postgres, for the storage filesystem. Docker
+    # resolves a bind mount when the container starts: a backend started while
+    # the loop fs was missing would keep the bare (immutable) mountpoint even
+    # after the fs is mounted, and every storage write would fail. Exiting
+    # here makes `restart: unless-stopped` retry until the mount is back, and
+    # each retry binds afresh.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /data/storage/.ovdata ]; then
+          echo "FATAL: /data/storage/.ovdata missing: the OpenVolley storage filesystem is not mounted at the host path. Refusing to start." >&2
+          exit 78
+        fi
+        exec "$$@"
+      - ov-backend-guard
+    command: ["node", "server.js"]
     environment:
       PORT: "8080"
       DATABASE_URL: postgres://ov_app:${OV_APP_PW:?set OV_APP_PW in .env}@ov-postgres:5432/openvolley
@@ -139,7 +168,9 @@ services:
     cpus: 1.0
     pids_limit: 256
     oom_score_adj: 500
-    # Healthcheck (GET /health/live, no DB) comes from the image.
+    # Healthcheck (GET /health/live, no DB, plus the storage sentinel) comes
+    # from the image; it has no fallback, so a pre-wiring image never turns
+    # healthy and ov-tunnel never starts in front of it.
     depends_on:
       ov-postgres:
         condition: service_healthy

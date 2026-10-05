@@ -285,6 +285,10 @@ ensure_fs() {  # name label size
     pg)
       chown root:root "$mp"; chmod 0755 "$mp"
       install -d -o "$PG_UID" -g "$PG_UID" -m 0700 "${mp}/data"
+      # state/initialized is written by the ov-postgres guard/healthcheck once
+      # a cluster exists; afterwards an empty data/ refuses to start (no
+      # silent initdb over lost data).
+      install -d -o "$PG_UID" -g "$PG_UID" -m 0700 "${mp}/state"
       ;;
     storage)
       chown "${NODE_UID}:${NODE_UID}" "$mp"; chmod 0750 "$mp"
@@ -328,8 +332,12 @@ OV_STORAGE_MOUNT=${OV_BASE}/storage
 OV_BACKUP_DIR=${OV_BACKUP_DIR}
 OV_STATUS_DIR=${OV_STATUS_DIR}
 OV_GPG_PUBKEY=${OV_ETC_DIR}/openvolley-backup.pub.asc
-# Fingerprint of the openvolley-backup key; the script refuses any other key.
+# Fingerprint of the openvolley-backup key (required: the script refuses to
+# run while it is empty, and refuses any other key).
 OV_GPG_FPR=
+# Cap on the total size of ${OV_BACKUP_DIR} in MB (it lives on the shared root
+# filesystem); each output is checked against it and against OV_MIN_FREE_MB.
+#OV_BACKUP_MAX_MB=20480
 # Uptime Kuma push URL (…/api/push/<token>), empty = no push.
 OV_KUMA_PUSH_URL=
 EOF
