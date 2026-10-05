@@ -6,18 +6,24 @@
  * with slightly different rules (winner on a sets tie, which statuses mean "over",
  * which signature fields to clear).
  *
- * FORFEIT (FIVB 2025-2028 Rule 6.4): a team declared INCOMPLETE / in default loses
- * the match. The opponent is given the points needed to win the current set and
- * the sets needed to win the match; the forfeiting team keeps the points and sets
- * it already has. Sets are created lazily in this app, so the sets still needed
- * must be CREATED, following the same index sequence as a played match (best-of-3
- * at 1-1 jumps 2 -> 5, see matchFormat.getNextSetIndex).
+ * FORFEIT (FIVB 2025-2028 Rules 6.4.3, 7.3.1, 15.8): a team declared
+ * INCOMPLETE for the SET loses the set; a team in default or INCOMPLETE for the
+ * MATCH loses the match. The opponent is given the points (and the sets) needed
+ * to win; the forfeiting team keeps the points and sets it already has.
+ *  - incomplete for the SET: an injured or expelled player who cannot be
+ *    substituted legally or exceptionally (the player may be back next set),
+ *    or a disqualified player when the team can still field six next set;
+ *  - incomplete for the MATCH / default: the manual "Stop the match" forfeit,
+ *    or a team that cannot field six players for the next set.
+ * Sets are created lazily in this app, so the sets still needed for a match
+ * forfeit must be CREATED, following the same index sequence as a played match
+ * (best-of-3 at 1-1 jumps 2 -> 5, see matchFormat.getNextSetIndex).
  *
  * STATUS LIFECYCLE: live -> ended (scoreboard, match over) -> approved (MatchEnd
  * signatures) -> final (closed). Any of the last three means the match is over.
  */
 import { setsToWin, getNextSetIndex } from '../utils/matchFormat'
-import { isDecidingSet } from './rules'
+import { isDecidingSet, scoreFromPointEvents } from './rules'
 
 /** Match statuses that mean "no more rallies will be played". */
 export const MATCH_OVER_STATUSES = Object.freeze(['ended', 'approved', 'final'])
@@ -112,12 +118,14 @@ export function forfeitSetPoints(forfeitingTeamPoints, opponentPoints, setIndex)
  * @param {'home'|'away'} args.forfeitingTeam
  * @param {number} args.currentSetIndex index of the set in progress
  * @param {number} [args.bestOf=5]
+ * @param {boolean} [args.setOnly=false] incomplete for the set only: award the
+ *   set in progress and nothing else
  * @returns {{winner:'home'|'away', sets:Array<{index:number, id:any, homePoints:number,
  *   awayPoints:number, awardedPoints:number, isCurrent:boolean}>}}
  *   `id` is the existing row id or null for a set that must be created;
  *   `awardedPoints` is how many points the opponent gains in that set.
  */
-export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5 }) {
+export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5, setOnly = false }) {
   const opponent = otherTeam(forfeitingTeam)
   const needed = setsToWin(bestOf)
   const byIndex = new Map((sets || []).map(s => [s.index, s]))
@@ -141,6 +149,12 @@ export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5 
 
   let lastIndex = currentSetIndex
   const current = byIndex.get(currentSetIndex)
+  if (setOnly) {
+    // Incomplete for the SET only: the opponent wins the set in progress and
+    // the match goes on (the set-end path decides whether it is over).
+    if (current && !current.finished) award(currentSetIndex, current, true)
+    return { winner: opponent, sets: planned }
+  }
   if (current && !current.finished && won[opponent] < needed) {
     award(currentSetIndex, current, true)
   } else if (!current || current.finished) {
@@ -159,4 +173,116 @@ export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5 
   }
 
   return { winner: opponent, sets: planned }
+}
+
+const isLiberoPlayer = (p) => !!p?.libero && p.libero !== ''
+
+/**
+ * Players of a team who may still take part in the NEXT set: non-liberos who
+ * are not disqualified and were not taken out by an exceptional substitution
+ * or a disqualification substitution (FIVB 15.7, 15.8 — they cannot re-enter
+ * for the rest of the match). Expelled players are back next set, so they
+ * count.
+ * @param {Array} players the team roster
+ * @param {Array} events
+ * @param {'home'|'away'} teamKey
+ * @param {{exclude?: Array}} [opts] numbers to treat as out as well (e.g. a
+ *   player being disqualified right now, before the sanction is logged)
+ * @returns {Array} the eligible players
+ */
+export function playersAvailableForNextSet(players, events, teamKey, { exclude = [] } = {}) {
+  const out = new Set((exclude || []).map(String))
+  for (const e of events || []) {
+    const p = e.payload
+    if (!p || p.team !== teamKey) continue
+    if (e.type === 'sanction' && p.type === 'disqualification' && p.playerNumber != null &&
+      (p.playerType === undefined || p.playerType === 'player')) {
+      out.add(String(p.playerNumber))
+    }
+    if (e.type === 'substitution' && (p.isExceptional || p.isDisqualified) && p.playerOut != null) {
+      out.add(String(p.playerOut))
+    }
+  }
+  return (players || []).filter(p => !isLiberoPlayer(p) && !out.has(String(p.number)))
+}
+
+/**
+ * Whether a forfeit ends the set or the match (see the header).
+ * @param {'forfeit'|'injury'|'expulsion'|'disqualification'|string} reason
+ *   'forfeit' is the manual "Stop the match" forfeit (default / match)
+ * @param {{playersAvailableNextSet?: number}} [opts]
+ * @returns {'set'|'match'}
+ */
+export function forfeitScope(reason, { playersAvailableNextSet = Infinity } = {}) {
+  if (reason === 'forfeit') return 'match'
+  return playersAvailableNextSet < 6 ? 'match' : 'set'
+}
+
+/**
+ * Plan the reversal of a forfeit when its set is reopened for correction.
+ * A forfeit tags what it writes: awarded point events carry
+ * payload.forfeitAwarded, set rows it created carry forfeitCreated, its
+ * set_end events have payload.reason 'forfait', and the 'forfait' event keeps
+ * payload.setsBefore (the score of the sets it touched, before the forfeit).
+ *
+ * Everything the forfeit wrote at or after `fromSetIndex` is removed; a set
+ * it finished but did not create goes back to unfinished with its pre-forfeit
+ * score (from setsBefore, else counted from the remaining point events).
+ * @param {object} args
+ * @param {Array} args.events all events of the match
+ * @param {Array} args.sets all set rows of the match
+ * @param {number} [args.fromSetIndex] only reverse forfeit artefacts in this
+ *   set or later (default: all)
+ * @returns {{hasForfeit:boolean, deleteEventIds:Array, deleteSetIds:Array,
+ *   restoreSets:Array<{id:any, index:number, homePoints:number, awayPoints:number}>,
+ *   reopenSetIndex:number|null}}
+ */
+export function planForfeitReversal({ events, sets, fromSetIndex = -Infinity }) {
+  const allEvents = events || []
+  const allSets = sets || []
+  const inScope = (idx) => (idx ?? 0) >= fromSetIndex
+
+  const createdSets = allSets.filter(s => s.forfeitCreated && inScope(s.index))
+  const createdIdx = new Set(createdSets.map(s => s.index))
+
+  const isForfeitArtefact = (e) =>
+    e.type === 'forfait' ||
+    (e.type === 'point' && e.payload?.forfeitAwarded === true) ||
+    (e.type === 'set_end' && e.payload?.reason === 'forfait')
+  const removed = allEvents.filter(e =>
+    inScope(e.setIndex) && (isForfeitArtefact(e) || createdIdx.has(e.setIndex))
+  )
+  const removedIds = new Set(removed.map(e => e.id))
+  const remaining = allEvents.filter(e => !removedIds.has(e.id))
+
+  const setsBefore = new Map()
+  for (const e of removed) {
+    if (e.type !== 'forfait') continue
+    for (const b of e.payload?.setsBefore || []) setsBefore.set(b.index, b)
+  }
+
+  // Sets the forfeit finished (or scored in) but did not create
+  const touchedIdx = new Set(
+    removed
+      .filter(e => e.type !== 'forfait' && !createdIdx.has(e.setIndex))
+      .map(e => e.setIndex)
+  )
+  const restoreSets = allSets
+    .filter(s => touchedIdx.has(s.index) && !s.forfeitCreated)
+    .sort((a, b) => a.index - b.index)
+    .map(s => {
+      const before = setsBefore.get(s.index)
+      const score = before
+        ? { homePoints: before.homePoints || 0, awayPoints: before.awayPoints || 0 }
+        : scoreFromPointEvents(remaining, s.index)
+      return { id: s.id, index: s.index, ...score }
+    })
+
+  return {
+    hasForfeit: removed.length > 0 || createdSets.length > 0,
+    deleteEventIds: removed.map(e => e.id),
+    deleteSetIds: createdSets.map(s => s.id),
+    restoreSets,
+    reopenSetIndex: restoreSets.length > 0 ? restoreSets[0].index : null
+  }
 }
