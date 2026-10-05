@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
-import { Check, Lock, Mail, X } from 'lucide-react'
-import { Button, cn, FOCUS_RING, IconButton } from '../../ui'
+import { Check, X } from 'lucide-react'
+import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 
 export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const { t } = useTranslation()
@@ -52,9 +52,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
     setLoading(false)
   }
 
-  // Kit auth recipes (svrz AuthGate): sunken field with a leading icon, hero submit.
-  const fieldCls = 'w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 text-base text-stone-800 bg-stone-50 placeholder:text-stone-400 focus:bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/70 focus:border-red-500'
-  const iconCls = 'absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none'
+  // Same auth recipe as SignUpModal: labelled kit Field + lg Input, hero submit.
   const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
 
   return (
@@ -108,19 +106,16 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
               <p className="text-sm text-stone-600">
                 {t('auth.resetInstructions', 'Enter your email and we\'ll send you a reset link')}
               </p>
-              <div className="relative">
-                <Mail className={iconCls} aria-hidden="true" />
-                <input
+              <Field label={t('auth.email', 'Email')}>
+                <Input
+                  size="lg"
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder={t('auth.email', 'Email')}
-                  aria-label={t('auth.email', 'Email')}
                   autoComplete="email"
-                  className={fieldCls}
                   required
                 />
-              </div>
+              </Field>
               <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
                 {loading ? t('auth.sending', 'Sending...') : t('auth.sendResetLink', 'Send Reset Link')}
               </Button>
@@ -135,32 +130,26 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
           ) : (
             <>
               <form onSubmit={handleSubmit} className="space-y-3">
-                <div className="relative">
-                  <Mail className={iconCls} aria-hidden="true" />
-                  <input
+                <Field label={t('auth.email', 'Email')}>
+                  <Input
+                    size="lg"
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder={t('auth.email', 'Email')}
-                    aria-label={t('auth.email', 'Email')}
                     autoComplete="email"
-                    className={fieldCls}
                     required
                   />
-                </div>
-                <div className="relative">
-                  <Lock className={iconCls} aria-hidden="true" />
-                  <input
+                </Field>
+                <Field label={t('auth.password', 'Password')}>
+                  <Input
+                    size="lg"
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder={t('auth.password', 'Password')}
-                    aria-label={t('auth.password', 'Password')}
                     autoComplete="current-password"
-                    className={fieldCls}
                     required
                   />
-                </div>
+                </Field>
                 <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
                   {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign In')}
                 </Button>
