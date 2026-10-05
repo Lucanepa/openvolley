@@ -399,20 +399,49 @@ Error codes in `body.error.code`:
 | `OV_CLIENT_TOO_OLD` | 426 | write without `X-OV-Proto: 2` |
 | `OV_SECRET_FILTER` | 400 | filter, order or onConflict on a secret column (also through an alias, cast or JSON path) |
 | `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not start with its match's `external_id` plus `:` or `_` |
-| `OV_UNSCOPED_WRITE` | 400 | set/event update/delete without `eq` on `match_id` or on a non-numeric `external_id` |
+| `OV_UNSCOPED_WRITE` | 400 | set/event update/delete without `eq` on `match_id` or on a non-numeric `external_id`; set/event upsert whose conflicting row belongs to another match (nothing is written) |
 | `OV_UNFILTERED_WRITE` | 400 | update/delete without a filter |
 | `OV_TABLE_NOT_ALLOWED`, `OV_INVALID_*` | 400 | request outside the contract |
 | `PGRST204` | 400 | unknown column |
 | `PGRST116` | 406 | `single`/`maybeSingle` row-count mismatch (writes are rolled back) |
-| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 5 attempts per caller and game in 10 min |
-| `OV_DB_UNAVAILABLE` | 503 | database down or catalog not loaded yet |
-| SQLSTATE (`22P02`, `23505`, `42P01`, ...) | 400 | Postgres error; the text stays in the server log |
+| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 20 failed attempts per caller in 10 min, or 5 per caller and game |
+| `OV_DB_UNAVAILABLE` | 503 | database down or catalog not loaded yet (`retryable: true`) |
+| `40001`, `40P01`, `55P03`, `57P0x`, `53300`, `08xxx` | 503 | serialization failure, deadlock, lock timeout, shutdown, connection trouble (`retryable: true`) |
+| `57014` | 504 | statement timeout (`retryable: true`) |
+| other SQLSTATEs (`22P02`, `23505`, `42P01`, ...) | 400 | Postgres error; the text stays in the server log |
+
+5xx answers carry `error.retryable: true`; the sync queue keeps those jobs
+queued. `23505` stays a 400: in a restore it means the payload collides with a
+row of another match (or repeats an id), which a retry does not fix.
+
+`POST /api/match/restore` drops keys that are not columns and lists them in
+`data.dropped` (old backups and bundles send extra keys; backupManager's live
+state `status` is renamed to `match_status`). Sets and events without
+`sport_type` get the match's, else `indoor`. A null or empty `game_pin` /
+`connection_pins` keeps the stored value, and `connection_pins` is merged into
+the stored object. `changes` lists the old children as `DELETE` (keys only)
+before the new rows.
+
+### Wiring notes for `server.js`
+
+- `restoreByPin(body, { limitKey })`: pass the client IP (the Cloudflare /
+  Traefik client address, not the socket peer). Without it every caller shares
+  one bucket of 20 failed attempts per 10 min.
+- Internal PIN validation that scans matches (`status` in setup/live) must pass
+  `maxRows` (e.g. 20000) or order by `scheduled_at` desc, or better filter by the
+  match id the client sends: the default cap is 1000 rows, as on Supabase.
+- Accepted until match ownership (plan Phase 7): any signed-in session can
+  restore any match by `external_id`, and a non-empty `game_pin` in the backup
+  replaces the stored PIN. Record this next to the other §9 trade-offs.
 
 ### Running the Postgres tests
 
-The suites in `tests/pgQuery.test.js` and `tests/matchRestore.test.js` need a
-throwaway Postgres. Without `PG_TEST_URL` they are skipped. Each test file
-creates its own database from `tests/fixtures/synthetic_schema.sql` and drops it.
+The suites in `tests/pgQuery.test.js`, `tests/matchRestore.test.js` and
+`tests/pgQuery.leastPrivilege.test.js` need a throwaway Postgres. Without
+`PG_TEST_URL` they are skipped; the `Backend tests` workflow sets it with a
+`postgres:17-alpine` service. Each test file creates its own database from
+`tests/fixtures/synthetic_schema.sql` and drops it. The least-privilege suite
+also creates (and drops) a role with only DML grants.
 
 ```bash
 docker run -d --rm --name ov-test-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:0:5432 postgres:17-alpine
