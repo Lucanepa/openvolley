@@ -51,6 +51,8 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
+import { Maximize } from 'lucide-react'
+import { Button, cn, FormError, Input } from './ui'
 import { getRelayWebSocketUrl } from './utils/backendConfig'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { createRelayPinTracker, isRelayErrorFor, relayReconnectDelay, relayConnectionStatus } from './utils/relayPublisher'
@@ -2851,67 +2853,27 @@ export default function App() {
       {/* Allow if at least one dimension >= 800 (tablet in any orientation), but enforce min 500 on both */}
       {/* Skip warning in fullscreen mode - trust user has adequate screen space */}
       {!isFullscreen && ((viewportSize.width < 800 && viewportSize.height < 800) || viewportSize.width < 600 || viewportSize.height < 600) ? (
-        <div style={{
-          flex: '1 1 auto',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '40px 20px',
-          textAlign: 'center',
-          color: 'var(--text)',
-          gap: '20px'
-        }}>
-          <div style={{ marginBottom: '10px' }}>
-            <PhoneIcon size={48} />
-          </div>
-          <div style={{
-            fontSize: '18px',
-            fontWeight: 600,
-            maxWidth: '400px',
-            lineHeight: '1.5'
-          }}>
-            To use this application, please use a tablet or larger screen (minimum 800×600).
-          </div>
-          <div style={{
-            fontSize: '14px',
-            color: 'var(--muted)'
-          }}>
-            Current: {viewportSize.width} × {viewportSize.height}px
-          </div>
-          <div style={{
-            fontSize: '13px',
-            color: 'var(--muted)',
-            marginTop: '10px'
-          }}>
-            Try rotating your device or entering fullscreen mode.
-          </div>
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              marginTop: '20px',
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span>⛶</span>
-            <span>Enter Fullscreen</span>
-          </button>
-          <div style={{
-            fontSize: '12px',
-            color: 'var(--muted)',
-            marginTop: '12px'
-          }}>
-            Fullscreen removes browser headers to maximize screen space.
+        <div className="ov-kit flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-500">
+              <PhoneIcon size={28} />
+            </div>
+            <p className="text-lg font-bold leading-snug text-stone-900">
+              To use this application, please use a tablet or larger screen (minimum 800×600).
+            </p>
+            <p className="mt-2 text-sm tabular-nums text-stone-500">
+              Current: {viewportSize.width} × {viewportSize.height}px
+            </p>
+            <p className="mt-3 text-sm text-stone-600">
+              Try rotating your device or entering fullscreen mode.
+            </p>
+            <Button variant="dark" size="xl" block icon={Maximize} onClick={toggleFullscreen} className="mt-6">
+              Enter Fullscreen
+            </Button>
+            <p className="mt-3 text-xs text-stone-500">
+              Fullscreen removes browser headers to maximize screen space.
+            </p>
           </div>
         </div>
       ) : (
@@ -3142,21 +3104,23 @@ export default function App() {
                 onClose={cancelDeleteMatch}
                 width={420}
               >
-                <div style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-                    Are you sure you want to delete all data for: <strong>{deleteMatchModal.matchName}</strong>?
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-800">
+                    Are you sure you want to delete all data for: <strong className="font-semibold text-stone-900">{deleteMatchModal.matchName}</strong>?
                   </p>
-                  <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--muted)' }}>
+                  <p className="mt-2 text-sm text-stone-600">
                     This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.
                   </p>
 
                   {/* PIN confirmation for matches with gamePin */}
                   {deleteMatchModal.gamePin && (
-                    <div style={{ marginBottom: '20px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#ef4444' }}>
+                    <div className="mt-5">
+                      <label htmlFor="delete-match-pin" className="mb-1.5 block text-sm font-medium text-stone-700">
                         Enter Game PIN to confirm deletion:
                       </label>
-                      <input
+                      <Input
+                        id="delete-match-pin"
+                        size="lg"
                         type="text"
                         value={deletePinInput}
                         onChange={(e) => {
@@ -3165,59 +3129,24 @@ export default function App() {
                         }}
                         placeholder="Game PIN"
                         aria-label="Game PIN"
-                        style={{
-                          width: '100%',
-                          maxWidth: '200px',
-                          padding: '12px',
-                          fontSize: '18px',
-                          fontWeight: 600,
-                          textAlign: 'center',
-                          letterSpacing: '4px',
-                          background: 'var(--panel)',
-                          border: deletePinError ? '2px solid #ef4444' : '1px solid var(--border)',
-                          borderRadius: '8px',
-                          color: 'var(--text)'
-                        }}
+                        invalid={!!deletePinError}
+                        className="max-w-[200px] text-center font-mono text-lg font-semibold tracking-[0.3em]"
                       />
                       {deletePinError && (
-                        <p style={{ marginTop: '8px', fontSize: '13px', color: '#ef4444' }}>
+                        <p role="alert" className="mt-1.5 text-xs font-medium text-red-600">
                           {deletePinError}
                         </p>
                       )}
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
-                      onClick={confirmDeleteMatch}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: '#ef4444',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {t('deleteMatch.delete')}
-                    </button>
-                    <button
-                      onClick={cancelDeleteMatch}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: 'var(--panel)',
-                        color: 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" size="xl" onClick={cancelDeleteMatch} className="rounded-lg font-medium">
                       {t('deleteMatch.cancel')}
-                    </button>
+                    </Button>
+                    <Button variant="danger" size="xl" onClick={confirmDeleteMatch} className="rounded-lg">
+                      {t('deleteMatch.delete')}
+                    </Button>
                   </div>
                 </div>
               </Modal>
@@ -3240,22 +3169,23 @@ export default function App() {
                 }}
                 width={500}
               >
-                <div style={{ padding: '24px' }}>
+                <div className="ov-kit p-2 sm:p-4">
                   {/* Restore from Cloud Backup */}
                   {!offlineMode && (
-                    <div style={{ marginBottom: '24px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                    <div className="mb-6">
+                      <h3 className="text-sm font-semibold text-stone-800">
                         {t('settings.backup.restoreFromCloudBackup')}
                       </h3>
-                      <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>
+                      <p className="mt-1 mb-3 text-xs text-stone-500">
                         {t('settings.backup.restoreFromCloudDesc')}
                       </p>
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
+                      <div className="mb-3 flex gap-3">
+                        <div className="flex-1 min-w-0">
+                          <label htmlFor="restore-cloud-gamen" className="mb-1.5 block text-sm font-medium text-stone-700">
                             {t('settings.backup.gameN')}:
                           </label>
                           <input
+                            id="restore-cloud-gamen"
                             type="text"
                             inputMode="numeric"
                             pattern="[0-9]*"
@@ -3266,26 +3196,15 @@ export default function App() {
                             }}
                             placeholder="123456"
                             aria-label={t('settings.backup.gameN')}
-                            style={{
-                              width: '100%',
-                              padding: '12px',
-                              fontSize: '20px',
-                              fontWeight: 700,
-                              textAlign: 'center',
-                              fontFamily: 'monospace',
-                              background: 'var(--bg)',
-                              border: '2px solid var(--border)',
-                              borderRadius: '8px',
-                              color: 'var(--text)',
-                              outline: 'none'
-                            }}
+                            className="w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-lg font-bold tabular-nums text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
                           />
                         </div>
-                        <div style={{ flex: 1.5 }}>
-                          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--muted)' }}>
+                        <div className="flex-[1.5] min-w-0">
+                          <label htmlFor="restore-cloud-pin" className="mb-1.5 block text-sm font-medium text-stone-700">
                             {t('settings.backup.gamePin')}:
                           </label>
                           <input
+                            id="restore-cloud-pin"
                             type="text"
                             inputMode="numeric"
                             pattern="[0-9]*"
@@ -3299,20 +3218,7 @@ export default function App() {
                             placeholder="000000"
                             maxLength={6}
                             aria-label={t('settings.backup.gamePin')}
-                            style={{
-                              width: '100%',
-                              padding: '12px',
-                              fontSize: '20px',
-                              fontWeight: 700,
-                              textAlign: 'center',
-                              letterSpacing: '4px',
-                              fontFamily: 'monospace',
-                              background: 'var(--bg)',
-                              border: '2px solid var(--border)',
-                              borderRadius: '8px',
-                              color: 'var(--text)',
-                              outline: 'none'
-                            }}
+                            className="w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-lg font-bold tracking-[0.3em] tabular-nums text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
                           />
                         </div>
                       </div>
@@ -3350,31 +3256,16 @@ export default function App() {
                           }
                         }}
                         disabled={cloudBackupLoading || cloudBackupPin.length !== 6}
-                        style={{
-                          width: '100%',
-                          padding: '12px 24px',
-                          fontSize: '14px',
-                          fontWeight: 600,
-                          background: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'rgba(139, 92, 246, 0.3)' : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '8px',
-                          cursor: cloudBackupLoading || cloudBackupPin.length !== 6 ? 'not-allowed' : 'pointer'
-                        }}
+                        aria-busy={cloudBackupLoading || undefined}
+                        className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                       >
                         {cloudBackupLoading ? t('common.loading') : t('settings.backup.searchCloudBackups')}
                       </button>
                       {cloudBackupError && (
-                        <p style={{ color: '#ef4444', fontSize: '13px', marginTop: '8px', marginBottom: '0' }}>{cloudBackupError}</p>
+                        <FormError className="mt-2">{cloudBackupError}</FormError>
                       )}
                       {cloudBackups.length > 0 && (
-                        <div style={{
-                          border: '1px solid var(--border)',
-                          borderRadius: '8px',
-                          marginTop: '8px',
-                          maxHeight: '300px',
-                          overflowY: 'auto'
-                        }}>
+                        <div className="mt-2 max-h-[300px] overflow-y-auto rounded-lg border border-stone-200">
                           <BackupTable
                             backups={cloudBackups}
                             onBackupSelect={async (backup) => {
@@ -3408,20 +3299,15 @@ export default function App() {
                   )}
 
                   {/* Divider before local backup */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    marginBottom: '24px'
-                  }}>
-                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-                    <span style={{ fontSize: '13px', color: 'var(--muted)' }}>{t('settings.backup.or')}</span>
-                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                  <div className="mb-6 flex items-center gap-4">
+                    <div className="h-px flex-1 bg-stone-200" />
+                    <span className="text-xs text-stone-500">{t('settings.backup.or')}</span>
+                    <div className="h-px flex-1 bg-stone-200" />
                   </div>
 
                   {/* Offline/File restore */}
                   <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--text)' }}>
+                    <h3 className="mb-3 text-sm font-semibold text-stone-800">
                       {t('settings.backup.restoreFromLocal')}
                     </h3>
                     <button
@@ -3443,17 +3329,8 @@ export default function App() {
                         }
                       }}
                       disabled={restoreLoading}
-                      style={{
-                        width: '100%',
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: restoreLoading ? 'rgba(249, 115, 22, 0.3)' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: restoreLoading ? 'not-allowed' : 'pointer'
-                      }}
+                      aria-busy={restoreLoading || undefined}
+                      className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                     >
                       {restoreLoading ? t('common.loading') : t('settings.backup.selectBackupFile')}
                     </button>
@@ -3470,7 +3347,7 @@ export default function App() {
                 onClose={() => setRestorePreviewData(null)}
                 width={700}
               >
-                <div style={{ padding: '24px', maxHeight: '80vh', overflowY: 'auto' }}>
+                <div className="ov-kit max-h-[80vh] overflow-y-auto p-2 sm:p-4 text-sm text-stone-800">
                   {(() => {
                     // Normalize data from different sources
                     const d = restorePreviewData.data
@@ -3519,26 +3396,23 @@ export default function App() {
 
                     // Helper to render lineup
                     const renderLineup = (lineup, teamName) => {
-                      if (!lineup) return <span style={{ color: 'var(--muted)' }}>No lineup data</span>
+                      if (!lineup) return <span className="text-xs text-stone-500">No lineup data</span>
                       const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
                       return (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                        <div className="grid grid-cols-3 gap-1">
                           {positions.map(pos => {
                             const posData = lineup[pos]
                             const num = typeof posData === 'object' ? posData?.number : posData
                             const isServing = typeof posData === 'object' && posData?.isServing
                             const isLibero = typeof posData === 'object' && posData?.isLibero
                             return (
-                              <div key={pos} style={{
-                                padding: '6px 8px',
-                                background: isServing ? 'rgba(34, 197, 94, 0.2)' : isLibero ? 'rgba(249, 115, 22, 0.2)' : 'var(--panel-2)',
-                                borderRadius: '4px',
-                                textAlign: 'center',
-                                fontSize: '13px'
-                              }}>
-                                <span style={{ color: 'var(--muted)', fontSize: '11px' }}>{pos}</span>
+                              <div key={pos} className={cn(
+                                'rounded-md border px-2 py-1.5 text-center text-[13px]',
+                                isServing ? 'border-green-200 bg-green-50' : isLibero ? 'border-orange-200 bg-orange-50' : 'border-stone-200/70 bg-stone-50'
+                              )}>
+                                <span className="text-[11px] text-stone-500">{pos}</span>
                                 <br />
-                                <span style={{ fontWeight: 600 }}>{num || '-'}</span>
+                                <span className="font-semibold tabular-nums text-stone-900">{num || '-'}</span>
                                 {isServing && <span style={{ color: '#22c55e', marginLeft: '4px' }}>●</span>}
                               </div>
                             )
@@ -3550,87 +3424,56 @@ export default function App() {
                     return (
                       <>
                         {/* Source indicator */}
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'center',
-                          marginBottom: '16px',
-                          gap: '8px'
-                        }}>
-                          <span style={{
-                            padding: '4px 12px',
-                            background: restorePreviewData.source === 'database' ? '#3b82f6' :
-                              restorePreviewData.source === 'pocketbase' ? '#22c55e' :
-                              restorePreviewData.source === 'cloud' ? '#8b5cf6' : '#f97316',
-                            borderRadius: '12px',
-                            fontSize: '12px',
-                            fontWeight: 600
-                          }}>
+                        <div className="mb-4 flex flex-wrap justify-center gap-2">
+                          <span className={cn(
+                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium',
+                            restorePreviewData.source === 'database' ? 'bg-sky-100 text-sky-800' :
+                              restorePreviewData.source === 'pocketbase' ? 'bg-emerald-100 text-emerald-800' :
+                              restorePreviewData.source === 'cloud' ? 'bg-violet-100 text-violet-800' : 'bg-orange-100 text-orange-800'
+                          )}>
                             {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From Database') :
                               restorePreviewData.source === 'pocketbase' ? 'PocketBase Backup' :
                               restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
                           </span>
                           {restorePreviewData.backupName && (
-                            <span style={{
-                              padding: '4px 12px',
-                              background: 'var(--panel)',
-                              borderRadius: '12px',
-                              fontSize: '12px',
-                              fontFamily: 'monospace'
-                            }}>
+                            <span className="inline-flex items-center rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px] text-stone-600">
                               {restorePreviewData.backupName.replace('.json', '')}
                             </span>
                           )}
                         </div>
 
                         {/* Teams header */}
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '16px',
-                          background: 'var(--panel-2)',
-                          borderRadius: '8px',
-                          marginBottom: '16px'
-                        }}>
-                          <div style={{ textAlign: 'center', flex: 1 }}>
-                            <div style={{ fontSize: '18px', fontWeight: 700 }}>{homeTeamName}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Home</div>
+                        <div className="mb-4 flex items-center justify-between rounded-xl border border-stone-200/70 bg-stone-50/60 p-4">
+                          <div className="flex-1 text-center">
+                            <div className="text-base font-bold text-stone-900">{homeTeamName}</div>
+                            <div className="text-xs text-stone-500">Home</div>
                           </div>
-                          <div style={{ textAlign: 'center', padding: '0 16px' }}>
-                            <div style={{ fontSize: '24px', fontWeight: 700 }}>{homePoints} - {awayPoints}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Set {currentSetIndex}</div>
+                          <div className="px-4 text-center">
+                            <div className="text-2xl font-bold tabular-nums text-stone-900">{homePoints} - {awayPoints}</div>
+                            <div className="text-xs text-stone-500">Set {currentSetIndex}</div>
                           </div>
-                          <div style={{ textAlign: 'center', flex: 1 }}>
-                            <div style={{ fontSize: '18px', fontWeight: 700 }}>{awayTeamName}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Away</div>
+                          <div className="flex-1 text-center">
+                            <div className="text-base font-bold text-stone-900">{awayTeamName}</div>
+                            <div className="text-xs text-stone-500">Away</div>
                           </div>
                         </div>
 
                         {/* Serving indicator */}
-                        <div style={{
-                          textAlign: 'center',
-                          marginBottom: '16px',
-                          fontSize: '14px'
-                        }}>
+                        <div className="mb-4 text-center text-sm text-stone-700">
                           <span style={{ color: '#22c55e' }}>● </span>
                           Serving: <strong>{servingTeam === 'home' ? homeTeamName : awayTeamName}</strong>
                         </div>
 
                         {/* Lineups */}
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr',
-                          gap: '16px',
-                          marginBottom: '16px'
-                        }}>
+                        <div className="mb-4 grid grid-cols-2 gap-4">
                           <div>
-                            <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
+                            <h4 className="mb-2 text-sm font-semibold text-stone-700">
                               {homeTeamName} Lineup
                             </h4>
                             {renderLineup(homeLineup)}
                           </div>
                           <div>
-                            <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
+                            <h4 className="mb-2 text-sm font-semibold text-stone-700">
                               {awayTeamName} Lineup
                             </h4>
                             {renderLineup(awayLineup)}
@@ -3638,57 +3481,31 @@ export default function App() {
                         </div>
 
                         {/* Timeouts */}
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr',
-                          gap: '16px',
-                          marginBottom: '16px'
-                        }}>
-                          <div style={{
-                            padding: '12px',
-                            background: 'var(--panel-2)',
-                            borderRadius: '8px',
-                            textAlign: 'center'
-                          }}>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Timeouts</div>
-                            <div style={{ fontSize: '20px', fontWeight: 700 }}>{homeTimeouts}/2</div>
+                        <div className="mb-4 grid grid-cols-2 gap-4">
+                          <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-center">
+                            <div className="mb-1 text-xs text-stone-500">Timeouts</div>
+                            <div className="text-xl font-bold tabular-nums text-stone-900">{homeTimeouts}/2</div>
                           </div>
-                          <div style={{
-                            padding: '12px',
-                            background: 'var(--panel-2)',
-                            borderRadius: '8px',
-                            textAlign: 'center'
-                          }}>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>Timeouts</div>
-                            <div style={{ fontSize: '20px', fontWeight: 700 }}>{awayTimeouts}/2</div>
+                          <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-center">
+                            <div className="mb-1 text-xs text-stone-500">Timeouts</div>
+                            <div className="text-xl font-bold tabular-nums text-stone-900">{awayTimeouts}/2</div>
                           </div>
                         </div>
 
                         {/* Substitutions */}
                         {(homeSubs.length > 0 || awaySubs.length > 0) && (
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: '16px',
-                            marginBottom: '16px'
-                          }}>
+                          <div className="mb-4 grid grid-cols-2 gap-4">
                             <div>
-                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
+                              <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
                                 Substitutions ({homeSubs.length})
                               </h4>
                               {homeSubs.length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--muted)' }}>None</span>
+                                <span className="text-xs text-stone-500">None</span>
                               ) : (
                                 homeSubs.map((sub, i) => (
-                                  <div key={i} style={{
-                                    fontSize: '12px',
-                                    padding: '4px 8px',
-                                    background: 'var(--panel-2)',
-                                    borderRadius: '4px',
-                                    marginBottom: '4px'
-                                  }}>
+                                  <div key={i} className="mb-1 rounded-md border border-stone-200/70 bg-stone-50 px-2 py-1 text-xs tabular-nums text-stone-700">
                                     #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
-                                    <span style={{ color: 'var(--muted)', marginLeft: '8px' }}>
+                                    <span className="ml-2 text-stone-500">
                                       @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
                                     </span>
                                   </div>
@@ -3696,22 +3513,16 @@ export default function App() {
                               )}
                             </div>
                             <div>
-                              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
+                              <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
                                 Substitutions ({awaySubs.length})
                               </h4>
                               {awaySubs.length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--muted)' }}>None</span>
+                                <span className="text-xs text-stone-500">None</span>
                               ) : (
                                 awaySubs.map((sub, i) => (
-                                  <div key={i} style={{
-                                    fontSize: '12px',
-                                    padding: '4px 8px',
-                                    background: 'var(--panel-2)',
-                                    borderRadius: '4px',
-                                    marginBottom: '4px'
-                                  }}>
+                                  <div key={i} className="mb-1 rounded-md border border-stone-200/70 bg-stone-50 px-2 py-1 text-xs tabular-nums text-stone-700">
                                     #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
-                                    <span style={{ color: 'var(--muted)', marginLeft: '8px' }}>
+                                    <span className="ml-2 text-stone-500">
                                       @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
                                     </span>
                                   </div>
@@ -3723,19 +3534,17 @@ export default function App() {
 
                         {/* Sanctions */}
                         {sanctionEvents.length > 0 && (
-                          <div style={{ marginBottom: '16px' }}>
-                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
+                          <div className="mb-4">
+                            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
                               Sanctions ({sanctionEvents.length})
                             </h4>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            <div className="flex flex-wrap gap-2">
                               {sanctionEvents.map((s, i) => (
-                                <div key={i} style={{
-                                  padding: '4px 8px',
-                                  background: s.payload?.type === 'red' ? 'rgba(239, 68, 68, 0.2)' :
-                                    s.payload?.type === 'yellow' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel)',
-                                  borderRadius: '4px',
-                                  fontSize: '12px'
-                                }}>
+                                <div key={i} className={cn(
+                                  'rounded border px-1.5 py-1 text-xs',
+                                  s.payload?.type === 'red' ? 'border-red-200 bg-red-100 text-red-800' :
+                                    s.payload?.type === 'yellow' ? 'border-yellow-200 bg-yellow-100 text-yellow-900' : 'border-stone-200 bg-white text-stone-700'
+                                )}>
                                   {s.payload?.team === 'home' ? homeTeamName : awayTeamName}{s.payload?.playerNumber ? ` #${s.payload.playerNumber}` : ''} - {s.payload?.type || 'sanction'}
                                 </div>
                               ))}
@@ -3745,20 +3554,18 @@ export default function App() {
 
                         {/* Set scores summary */}
                         {sets.length > 0 && (
-                          <div style={{ marginBottom: '24px' }}>
-                            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--muted)' }}>
+                          <div className="mb-6">
+                            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
                               Set Scores
                             </h4>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <div className="flex flex-wrap gap-2">
                               {[...sets].sort((a, b) => (a.index || 0) - (b.index || 0)).map(s => (
-                                <div key={s.index} style={{
-                                  padding: '8px 12px',
-                                  background: s.finished ? 'var(--panel)' : 'rgba(59, 130, 246, 0.2)',
-                                  borderRadius: '6px',
-                                  textAlign: 'center'
-                                }}>
-                                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Set {s.index}</div>
-                                  <div style={{ fontSize: '14px', fontWeight: 600 }}>
+                                <div key={s.index} className={cn(
+                                  'rounded-lg border px-3 py-2 text-center',
+                                  s.finished ? 'border-stone-200 bg-white' : 'border-sky-200 bg-sky-50'
+                                )}>
+                                  <div className="text-[11px] text-stone-500">Set {s.index}</div>
+                                  <div className="text-sm font-semibold tabular-nums text-stone-900">
                                     {s.homePoints ?? s.home_points ?? 0} - {s.awayPoints ?? s.away_points ?? 0}
                                   </div>
                                 </div>
@@ -3768,13 +3575,7 @@ export default function App() {
                         )}
 
                         {/* Actions */}
-                        <div style={{
-                          display: 'flex',
-                          gap: '12px',
-                          justifyContent: 'center',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}>
+                        <div className="flex flex-wrap justify-end gap-2 border-t border-stone-100 pt-4">
                           <button
                             onClick={async () => {
                               setRestoreLoading(true)
@@ -3827,32 +3628,15 @@ export default function App() {
                               }
                             }}
                             disabled={restoreLoading}
-                            style={{
-                              padding: '12px 32px',
-                              fontSize: '15px',
-                              fontWeight: 600,
-                              background: restoreLoading ? 'rgba(34, 197, 94, 0.3)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '8px',
-                              cursor: restoreLoading ? 'not-allowed' : 'pointer'
-                            }}
+                            aria-busy={restoreLoading || undefined}
+                            className="order-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                           >
                             {restoreLoading ? 'Restoring...' : 'Confirm Restore'}
                           </button>
                           <button
                             onClick={() => setRestorePreviewData(null)}
                             disabled={restoreLoading}
-                            style={{
-                              padding: '12px 24px',
-                              fontSize: '14px',
-                              fontWeight: 600,
-                              background: 'var(--panel)',
-                              color: 'var(--text)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '8px',
-                              cursor: restoreLoading ? 'not-allowed' : 'pointer'
-                            }}
+                            className="order-2 inline-flex h-11 items-center justify-center rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                           >
                             Select Another
                           </button>
@@ -3868,16 +3652,7 @@ export default function App() {
                               setCloudBackupError('')
                             }}
                             disabled={restoreLoading}
-                            style={{
-                              padding: '12px 24px',
-                              fontSize: '14px',
-                              fontWeight: 600,
-                              background: 'rgba(239, 68, 68, 0.2)',
-                              color: '#ef4444',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              borderRadius: '8px',
-                              cursor: restoreLoading ? 'not-allowed' : 'pointer'
-                            }}
+                            className="order-1 mr-auto inline-flex h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                           >
                             Cancel
                           </button>
@@ -3897,41 +3672,17 @@ export default function App() {
                 onClose={cancelNewMatch}
                 width={400}
               >
-                <div style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-700">
                     {newMatchModal.message}
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
-                      onClick={confirmNewMatch}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: 'var(--accent)',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={cancelNewMatch}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: 'var(--panel)',
-                        color: 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" size="xl" onClick={cancelNewMatch} className="rounded-lg font-medium">
                       Cancel
-                    </button>
+                    </Button>
+                    <Button variant="dark" size="xl" onClick={confirmNewMatch} className="rounded-lg">
+                      Yes
+                    </Button>
                   </div>
                 </div>
               </Modal>
@@ -3946,26 +3697,14 @@ export default function App() {
                 width={400}
                 hideCloseButton={true}
               >
-                <div style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-700">
                     {alertModal}
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
-                      onClick={() => setAlertModal(null)}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: 'var(--accent)',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="dark" size="xl" onClick={() => setAlertModal(null)} className="min-w-24 rounded-lg">
                       {t('common.ok', 'OK')}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </Modal>
@@ -3980,41 +3719,17 @@ export default function App() {
                 width={400}
                 hideCloseButton={true}
               >
-                <div style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-700">
                     {confirmModal.message}
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
-                      onClick={confirmModal.onConfirm}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: 'var(--accent)',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {t('common.yes', 'Yes')}
-                    </button>
-                    <button
-                      onClick={confirmModal.onCancel}
-                      style={{
-                        padding: '12px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: 'var(--panel)',
-                        color: 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" size="xl" onClick={confirmModal.onCancel} className="rounded-lg font-medium">
                       {t('common.cancel', 'Cancel')}
-                    </button>
+                    </Button>
+                    <Button variant="dark" size="xl" onClick={confirmModal.onConfirm} className="rounded-lg">
+                      {t('common.yes', 'Yes')}
+                    </Button>
                   </div>
                 </div>
               </Modal>
