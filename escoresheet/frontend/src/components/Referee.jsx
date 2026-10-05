@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import i18n from '../i18n'
-import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect } from '../utils/serverDataSync'
+import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import mikasaVolleyball from '../mikasa_v200w.png'
@@ -340,9 +340,27 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const debounceTimerRef = useRef(null)
   const DATA_UPDATE_DEBOUNCE_MS = 150 // Wait 150ms before applying new data
 
+  // Where the shown data came from: 'live_state' when it was built from the
+  // match_live_state row (the relay did not have the match), else a relay bundle.
+  const dataSourceRef = useRef(null)
+  // The matches row behind a 'live_state' view, to apply pushed rows directly
+  const liveStateBaseRef = useRef(null)
+  // updated_at of the newest live_state row shown (pushes can arrive out of order)
+  const lastLiveStateTsRef = useRef(null)
+  // When the last relay push was applied: a refetch started before it is older
+  const lastPushAtRef = useRef(0)
+  const fetchSeqRef = useRef(0)
+
   // Helper function to update match data state (with debounce to reduce flickering)
   const updateMatchDataState = useCallback((result) => {
     if (result && result.success) {
+      dataSourceRef.current = result.source || null
+      if (result.source === 'live_state') {
+        liveStateBaseRef.current = result.match || null
+        if (result.liveState?.updated_at && isNewerLiveState(result.liveState, lastLiveStateTsRef.current)) {
+          lastLiveStateTsRef.current = result.liveState.updated_at
+        }
+      }
       const sets = (result.sets || []).sort((a, b) => a.index - b.index)
       const currentSet = sets.find(s => !s.finished) || null
 
@@ -498,9 +516,20 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       console.log('[Referee] fetchFreshData: Skipping - no matchId')
       return
     }
+    const seq = ++fetchSeqRef.current
+    const startedAt = Date.now()
     try {
       console.log('[Referee] Fetching fresh data from server...')
       const result = await getMatchData(matchId)
+      // A newer fetch was started, or a relay push landed while this one was in
+      // flight: this answer may be older than what is shown.
+      if (seq !== fetchSeqRef.current || lastPushAtRef.current > startedAt) return
+      // An older live_state row than the one already shown (the DB read raced
+      // the scorer's write): keep the newer view.
+      if (result?.success && result.source === 'live_state' && dataSourceRef.current === 'live_state' &&
+          !isNewerLiveState(result.liveState, lastLiveStateTsRef.current, { allowEqual: true })) {
+        return
+      }
       if (result && result.success) {
         fetchFailureCountRef.current = 0 // Reset on success
         updateMatchDataState(result)
@@ -542,6 +571,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     // Only update if data is complete (has teams and sets)
     if (result.homeTeam && result.awayTeam && result.sets?.length > 0) {
+      lastPushAtRef.current = receiveTimestamp
       updateMatchDataState(result)
     } else {
       console.debug('[Referee] Received partial data (missing teams/sets), skipping UI update')
@@ -660,7 +690,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     onData: handleRealtimeData,
     onAction: handleRealtimeAction,
     onDeleted: handleMatchDeleted,
-    enabled: !isMasterMode && !!matchId
+    enabled: !isMasterMode && !!matchId,
+    // This component runs its own match_live_state channel (below)
+    watchDbChanges: false
   })
 
   // Initial data fetch when connection changes or component mounts
@@ -681,8 +713,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       }
     }
 
+    // Back on the network (Wi-Fi drop, airplane mode): catch up now instead of
+    // waiting for the next scoring action
+    const handleOnline = () => {
+      console.log('[Referee] Network is back, fetching fresh data...')
+      fetchFreshData()
+    }
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('online', handleOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('online', handleOnline)
+    }
   }, [matchId, isMasterMode, fetchFreshData])
 
   // Track last processed event to avoid duplicates from Supabase realtime
@@ -888,17 +931,34 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             })
           }
 
-          // ALWAYS refetch data on ANY change - handles points, lineups, subs, libero, sanctions, undoes, replays, etc.
+          // Shown data was built from match_live_state (no relay bundle): apply
+          // the pushed row itself. Re-reading the database here raced the
+          // scorer's write and could show the row from before this push (a
+          // side-out showed the wrong server and the old rotation).
+          if (dataSourceRef.current === 'live_state' && liveStateBaseRef.current) {
+            if (!isNewerLiveState(state, lastLiveStateTsRef.current, { allowEqual: true })) {
+              console.log('[Referee] 📡 Skipping older live state row')
+              return
+            }
+            updateMatchDataState(buildLiveStateMatchData(liveStateBaseRef.current, state, matchId))
+            return
+          }
+
+          // Relay data: refetch the relay's bundle (points, lineups, subs, libero, sanctions, undoes, replays, ...)
           console.log('[Referee] 📡 Realtime change detected, refetching data...')
           fetchFreshData()
         }
       )
-      .subscribe()
+      // The shim reports SUBSCRIBED again after every reconnect: catch up on
+      // whatever changed while the socket was down.
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') fetchFreshData()
+      })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabaseMatchUuid, isMasterMode, data?.match?.coinTossTeamA, fetchFreshData])
+  }, [supabaseMatchUuid, isMasterMode, data?.match?.coinTossTeamA, fetchFreshData, matchId, updateMatchDataState])
 
   // Handle timeout countdown timer
   useEffect(() => {
