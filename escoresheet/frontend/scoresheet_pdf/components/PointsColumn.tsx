@@ -135,7 +135,9 @@ export const PointsColumn5: React.FC<{
     timeouts?: [string, string];
     markedPoints?: number[];
     circledPoints?: number[];
-}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [] }) => {
+    setFinished?: boolean;
+    finalScore?: number;
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0 }) => {
     return (
         <div className="flex flex-col shrink-0 border-t border-black" style={{ width: '15mm', height: '3.5cm' }}>
             <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black border-l" style={{ height: '2.47cm' }}>
@@ -147,7 +149,9 @@ export const PointsColumn5: React.FC<{
                         if (markedPoints.includes(num)) {
                             state = 1;
                         }
-                        return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} />;
+                        // Set-end: void numbers this team never reached (same "T" as sets 1-4)
+                        const voided = setFinished && finalScore > 0 && num > finalScore;
+                        return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} voided={voided} />;
                     })}
                 </div>
                 <div className="h-full"></div>
@@ -193,7 +197,9 @@ export const PointsColumn30: React.FC<{
     circledPoints?: number[];
     preChangePoints?: number;
     maxScore?: number;
-}> = ({ isLast, isPanel3 = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = 0, maxScore = 0 }) => {
+    setFinished?: boolean;
+    finalScore?: number;
+}> = ({ isLast, isPanel3 = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = 0, maxScore = 0, setFinished = false, finalScore = 0 }) => {
     const rowsPerColumn = calculateRowsPerColumn(maxScore);
     const offsets = [0, rowsPerColumn, rowsPerColumn * 2, rowsPerColumn * 3];
     const maxPoints = rowsPerColumn * 4;
@@ -227,7 +233,9 @@ export const PointsColumn30: React.FC<{
                                  }
                              }
                              const isCircled = circledPoints && circledPoints.includes(num);
-                             return <PointBox key={i} num={num} filledState={state} isCircled={isCircled} showNumberOnly={showNumberOnly} />
+                             // Set-end: void unused numbers above this team's final score with a "T"
+                             const voided = setFinished && finalScore > 0 && num > finalScore && num <= maxPoints;
+                             return <PointBox key={i} num={num} filledState={state} isCircled={isCircled} showNumberOnly={showNumberOnly} voided={voided} />
                         })}
                     </div>
                 ))}
