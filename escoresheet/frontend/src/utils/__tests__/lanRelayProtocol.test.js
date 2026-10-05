@@ -164,6 +164,24 @@ describe('lanRelayCore protocol', () => {
     expect(readRelayBundle(referee.last('match-data-update')).events).toHaveLength(1)
   })
 
+  it('lets another scorer reuse a match id only after its scoreboard has been gone a while', () => {
+    // Dexie ids restart at 1 on every device: a second scorer must not be locked out forever.
+    const strict = createLanRelay()
+    const lenient = createLanRelay({ orphanTakeoverMs: 0 })
+    for (const relay of [strict, lenient]) {
+      const deviceA = connect(relay)
+      const deviceB = connect(relay)
+      msg(relay, deviceA, syncMessage(makeMatch({ id: 1, gamePin: '111111' })))
+      // Owner still connected: never displaced
+      msg(relay, deviceB, syncMessage(makeMatch({ id: 1, gamePin: '222222' })))
+      expect(deviceB.last('error').code).toBe('not-match-owner')
+      relay.removeClient(deviceA)
+      deviceB.sent.length = 0
+      msg(relay, deviceB, syncMessage(makeMatch({ id: 1, gamePin: '222222' })))
+      expect(deviceB.sent.some((m) => m.type === 'error')).toBe(relay === strict) // grace period: 60 s by default
+    }
+  })
+
   it('clear-all-matches removes only the matches the sender proved', () => {
     const relay = createLanRelay()
     const courtA = connect(relay)

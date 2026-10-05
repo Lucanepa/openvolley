@@ -336,6 +336,11 @@ const MAX_ROOMS = 500
 const MAX_CONNECTIONS = 2000
 const MAX_CONNECTIONS_PER_IP = 50
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+// A match whose scoreboard left this long ago may be claimed by another
+// scoreboard: Dexie match ids restart at 1 on every device, so ids collide
+// across devices/venues. Far longer than a reconnect, so a live scoreboard is
+// never displaced.
+const ORPHAN_TAKEOVER_MS = 60 * 1000
 
 // --- PocketBase sync (5s trailing-edge debounce) ---
 const PB_SYNC_DEBOUNCE_MS = 5000
@@ -447,7 +452,8 @@ async function loadMatchesFromPocketBase() {
         events: record.events || [],
         gameNumber: record.game_number || record.match_data?.gameN,
         updatedAt: record.updated_at || record.updated,
-        updatedBy: 'pocketbase-recovery'
+        updatedBy: 'pocketbase-recovery',
+        orphanedAt: Date.now() // no scoreboard connected yet
       })
       rooms.set(matchId, {
         matchId,
@@ -2990,6 +2996,12 @@ function handleAction(clientInfo, message) {
 
 // Handle client disconnect
 function handleClientDisconnect(clientInfo) {
+  // Matches no other connected socket owns become claimable after a grace period
+  for (const matchId of clientInfo.ownedMatches) {
+    const entry = activeMatches.get(matchId)
+    const stillOwned = [...connections.values()].some(c => c !== clientInfo && c.ownedMatches.has(matchId))
+    if (entry && !stillOwned) entry.orphanedAt = Date.now()
+  }
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   wsRateLimitMap.delete(clientInfo.id)
@@ -3001,11 +3013,14 @@ function handleClientDisconnect(clientInfo) {
  * self-declared. A match new to the relay is claimed by its first scoreboard;
  * a stored match with a game PIN requires the same PIN; a stored match without
  * one (test match) may be written by anyone, but only an existing owner may
- * attach a game PIN to it.
+ * attach a game PIN to it. A match nobody has owned for ORPHAN_TAKEOVER_MS may
+ * be taken over by anyone.
  */
 function canClaimMatch(clientInfo, matchId, incomingMatch) {
   const existing = activeMatches.get(matchId)
   if (!existing || !existing.match) return true
+  const owned = [...connections.values()].some(c => c.ownedMatches.has(matchId))
+  if (!owned && existing.orphanedAt && Date.now() - existing.orphanedAt >= ORPHAN_TAKEOVER_MS) return true
   const storedPin = gamePinOf(existing.match)
   const incomingPin = gamePinOf(incomingMatch)
   if (storedPin !== null) return incomingPin !== null && safeEqualStr(incomingPin, storedPin)
