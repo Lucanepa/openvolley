@@ -404,6 +404,25 @@ describe('relay runtimes speak the shared protocol', () => {
     }
   }, 20000)
 
+  // The Rust port can't run in plain CI without building Tauri; point this at a
+  // built binary to check it too:
+  //   OV_TAURI_RELAY_BIN=src-tauri/target/debug/openvolley-escoresheet npx vitest run lanRelayProtocol
+  it.skipIf(!process.env.OV_TAURI_RELAY_BIN)('Tauri Rust relay (OV_TAURI_RELAY_BIN)', async () => {
+    const [port, wsPort] = [await freePort(), await freePort()]
+    const child = spawn(process.env.OV_TAURI_RELAY_BIN, ['--server-only'], {
+      env: { ...process.env, OPENVOLLEY_HTTP_PORT: String(port), OPENVOLLEY_WS_PORT: String(wsPort) },
+      stdio: 'ignore'
+    })
+    try {
+      await waitForHttp(`http://127.0.0.1:${port}/api/health`)
+      await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
+      expect(unknown.status).toBe(404)
+    } finally {
+      child.kill('SIGKILL')
+    }
+  }, 30000)
+
   describe('Vite dev plugin', () => {
     let plugin
     let httpServer
