@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
-import { stripMatchSecrets } from './lanRelayCore.js'
+import { createLanRelay, createRateLimiter, WS_MAX_PAYLOAD } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -25,7 +25,8 @@ const WS_PORT = process.env.WS_PORT || 8080
 const DIST_DIR = join(__dirname, 'dist')
 const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
 
-// stripMatchSecrets now imported from ./lanRelayCore.js (shared with the dev plugin).
+// The WS protocol and /api/match/* endpoints come from ./lanRelayCore.js (shared
+// with the dev plugin and the Electron relay).
 
 // HTTPS configuration - default to true for production
 const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' || process.env.USE_HTTPS === 'true' || process.env.NODE_ENV === 'production')
@@ -76,10 +77,8 @@ let mainInstanceId = null
 const mainInstanceStartTime = null
 const allowedPaths = ['/referee', '/referee.html', '/bench', '/bench.html', '/livescore', '/livescore.html', '/upload_roster', '/upload_roster.html', '/scoresheet', '/scoresheet.html']
 
-// Shared match data store (populated by main scoresheet via WebSocket)
-const matchDataStore = new Map() // key: matchId, value: { match, teams, players, sets, events }
-const pendingPinRequests = new Map() // key: requestId, value: { res, timeout }
-const matchSubscriptions = new Map() // key: matchId, value: Set of WebSocket connections
+// Shared match data store + WS protocol (populated by the scoreboard via WebSocket)
+const relay = createLanRelay()
 
 // MIME types for static files
 const MIME_TYPES = {
@@ -104,45 +103,11 @@ const MIME_TYPES = {
 // WebSocket clients storage
 const wsClients = new Set()
 
-// --- Rate limiting ---
-const RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = 10 // max 10 PIN attempts per minute per IP
-const rateLimitMap = new Map()
-
-function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS) {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-
-  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(ip, { count: 1, windowStart: now })
-    return false
-  }
-
-  entry.count++
-  return entry.count > maxRequests
+// Loopback = a scorer on this machine. Only it may claim/release the single
+// "main instance" slot, so a LAN device cannot lock everyone out of "/".
+function isLoopback(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
 }
-
-// Clean up stale rate limit entries every 5 minutes
-setInterval(() => {
-  const now = Date.now()
-  for (const [ip, entry] of rateLimitMap.entries()) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      rateLimitMap.delete(ip)
-    }
-  }
-}, 5 * 60 * 1000)
-
-const MAX_BODY_SIZE = 1024 * 1024 // 1MB max request body
-
-// Known HTML entry points from vite.config.js
-const HTML_ENTRY_POINTS = [
-  'index.html',
-  'referee.html',
-  'scoresheet.html',
-  'bench.html',
-  'livescore.html',
-  'upload_roster.html'
-]
 
 // Helper to get local IP address
 function getLocalIP() {
@@ -169,12 +134,15 @@ const requestHandler = (req, res) => {
     origin.startsWith('http://127.0.0.1:') ||
     origin.startsWith('https://localhost:') ||
     origin.startsWith('https://127.0.0.1:') ||
-    origin.match(/^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/)
+    origin.match(/^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/) ||
+    origin.match(/^https?:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/) ||
+    origin.match(/^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/)
   )) {
     res.setHeader('Access-Control-Allow-Origin', origin)
   } else {
     res.setHeader('Access-Control-Allow-Origin', 'https://app.openvolley.app')
   }
+  res.setHeader('Vary', 'Origin')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
 
@@ -209,12 +177,12 @@ const requestHandler = (req, res) => {
       urls: {
         main: `${protocol}://${HOSTNAME}:${PORT}/`,
         mainIP: `${protocol}://${localIP}:${PORT}/`,
-        referee: `${protocol}://${HOSTNAME}:${PORT}/referee.html`,
-        refereeIP: `${protocol}://${localIP}:${PORT}/referee.html`,
-        bench: `${protocol}://${HOSTNAME}:${PORT}/bench.html`,
-        benchIP: `${protocol}://${localIP}:${PORT}/bench.html`,
-        livescore: `${protocol}://${HOSTNAME}:${PORT}/livescore.html`,
-        livescoreIP: `${protocol}://${localIP}:${PORT}/livescore.html`,
+        referee: `${protocol}://${HOSTNAME}:${PORT}/referee`,
+        refereeIP: `${protocol}://${localIP}:${PORT}/referee`,
+        bench: `${protocol}://${HOSTNAME}:${PORT}/bench`,
+        benchIP: `${protocol}://${localIP}:${PORT}/bench`,
+        livescore: `${protocol}://${HOSTNAME}:${PORT}/livescore`,
+        livescoreIP: `${protocol}://${localIP}:${PORT}/livescore`,
         websocket: `${wsProtocol}://${HOSTNAME}:${WS_PORT}`,
         websocketIP: `${wsProtocol}://${localIP}:${WS_PORT}`
       }
@@ -230,6 +198,11 @@ const requestHandler = (req, res) => {
   }
   
   if (urlPath === '/api/server/register-main') {
+    if (!isLoopback(req.socket.remoteAddress)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: false, error: 'Only the scoretable machine can register the main instance' }))
+      return
+    }
     const instanceId = req.headers['x-instance-id'] || `instance-${Date.now()}`
     if (mainInstanceId === null) {
       mainInstanceId = instanceId
@@ -248,7 +221,7 @@ const requestHandler = (req, res) => {
   
   if (urlPath === '/api/server/unregister-main') {
     const instanceId = req.headers['x-instance-id']
-    if (instanceId === mainInstanceId) {
+    if (instanceId === mainInstanceId || isLoopback(req.socket.remoteAddress)) {
       mainInstanceId = null
       res.writeHead(200, {
         'Content-Type': 'application/json'
@@ -263,375 +236,19 @@ const requestHandler = (req, res) => {
     return
   }
   
-  // API endpoint to validate PIN and get match data
-  if (urlPath === '/api/match/validate-pin' && req.method === 'POST') {
-    const clientIp = req.socket.remoteAddress || 'unknown'
-    if (isRateLimited(clientIp)) {
-      res.writeHead(429, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
-        success: false,
-        error: 'Too many attempts. Please wait a minute before trying again.'
-      }))
-      return
-    }
-
-    let body = ''
-    let responseSent = false
-    
-    const sendResponse = (statusCode, data) => {
-      if (responseSent) return
-      responseSent = true
-      res.writeHead(statusCode, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify(data))
-    }
-    
-    req.on('data', chunk => {
-      body += chunk.toString()
-      if (body.length > MAX_BODY_SIZE) {
-        req.destroy()
-        return
-      }
-    })
-    req.on('end', () => {
-      try {
-        if (!body || body.trim() === '') {
-          sendResponse(400, { success: false, error: 'Empty request body' })
-          return
-        }
-        
-        const { pin, type = 'referee' } = JSON.parse(body)
-        
-        if (!pin || pin.length !== 6) {
-          sendResponse(400, { success: false, error: 'Invalid PIN format' })
-          return
-        }
-        
-        const pinStr = String(pin).trim()
-        
-        // First, check the match data store
-        let matchFound = null
-        for (const [matchId, matchData] of matchDataStore.entries()) {
-          // matchData structure: { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
-          const match = matchData.match || matchData // Support both structures
-          
-          if (!match) continue
-          
-          let matchPin = null
-          if (type === 'referee') {
-            matchPin = match.refereePin
-          } else if (type === 'homeTeam') {
-            matchPin = match.homeTeamPin
-          } else if (type === 'awayTeam') {
-            matchPin = match.awayTeamPin
-          }
-          
-          if (matchPin && String(matchPin).trim() === pinStr) {
-            // Check if connection is enabled
-            let connectionEnabled = true
-            if (type === 'referee') {
-              connectionEnabled = match.refereeConnectionEnabled === true
-            } else if (type === 'homeTeam') {
-              connectionEnabled = match.homeTeamConnectionEnabled === true
-            } else if (type === 'awayTeam') {
-              connectionEnabled = match.awayTeamConnectionEnabled === true
-            }
-            
-            if (connectionEnabled && match.status !== 'final') {
-              matchFound = { ...match, id: Number(matchId) }
-              break
-            }
-          }
-        }
-        
-        if (matchFound) {
-          sendResponse(200, { 
-            success: true, 
-            match: matchFound 
-          })
-        } else {
-          // Request match data from main instance via WebSocket
-          const requestId = `pin-request-${Date.now()}-${Math.random()}`
-          
-          // Broadcast request to all connected clients (main scoresheet should respond)
-          broadcast({
-            type: 'pin-validation-request',
-            requestId,
-            pin: pinStr,
-            pinType: type,
-            timestamp: Date.now()
-          })
-          
-          // Store the request and wait for response (with timeout)
-          let timeoutCleared = false
-          const sendResponseWrapper = (statusCode, data) => {
-            if (!responseSent && !timeoutCleared) {
-              responseSent = true
-              timeoutCleared = true
-              if (timeout) clearTimeout(timeout)
-              res.writeHead(statusCode, {
-                'Content-Type': 'application/json'
-              })
-              res.end(JSON.stringify(data))
-              pendingPinRequests.delete(requestId)
-            }
-          }
-          
-          const timeout = setTimeout(() => {
-            if (!responseSent) {
-              sendResponseWrapper(404, { 
-                success: false, 
-                error: 'No match found with this PIN. Make sure the main scoresheet is running and connected.' 
-              })
-            }
-          }, 5000) // 5 second timeout
-          
-          pendingPinRequests.set(requestId, { 
-            res, 
-            timeout,
-            sendResponse: sendResponseWrapper
-          })
-        }
-      } catch (err) {
-        console.error('Error validating PIN:', err)
-        sendResponse(400, { success: false, error: err.message || 'Invalid request body' })
-      }
-    })
-    return
-  }
-  
-  // API endpoint to get full match data (match, teams, players, sets, events)
-  if (urlPath.startsWith('/api/match/') && urlPath !== '/api/match/validate-pin' && urlPath !== '/api/match/by-game-number' && req.method === 'GET') {
-    const matchId = urlPath.split('/api/match/')[1]
-    
-    if (!matchId) {
-      res.writeHead(400, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({ success: false, error: 'Match ID required' }))
-      return
-    }
-
-    const matchData = matchDataStore.get(String(matchId))
-
-    if (!matchData) {
-      // Request from main instance via WebSocket
-      const requestId = `match-data-request-${Date.now()}-${Math.random()}`
-
-      broadcast({
-        type: 'match-data-request',
-        requestId,
-        matchId: String(matchId)
-      })
-
-      const timeout = setTimeout(() => {
-        res.writeHead(404, {
-          'Content-Type': 'application/json'
-        })
-        res.end(JSON.stringify({
-          success: false,
-          error: 'Match data not found. Make sure the main scoresheet is running and connected.'
-        }))
-        pendingPinRequests.delete(requestId)
-      }, 5000)
-
-      pendingPinRequests.set(requestId, { res, timeout, type: 'match-data' })
-      return
-    }
-
-    res.writeHead(200, {
-      'Content-Type': 'application/json'
-    })
-    res.end(JSON.stringify({
-      success: true,
-      ...matchData,
-      // Strip PINs — this endpoint is unauthenticated and PINs gate connections.
-      match: stripMatchSecrets(matchData.match)
-    }))
+  // Relay-owned endpoints (validate-pin, match/:id, list, by-game-number,
+  // PATCH, server/connections) — one implementation in lanRelayCore.
+  if (urlPath.startsWith('/api/')) {
+    if (relay.handleApiRequest(req, res, req.url)) return
+    // Unknown API routes get JSON, not the SPA's index.html with a 200.
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ success: false, error: 'Not found' }))
     return
   }
 
-  // API endpoint to list available matches (for game number dropdown)
-  if (urlPath === '/api/match/list' && req.method === 'GET') {
-    const matches = Array.from(matchDataStore.entries()).map(([matchId, matchData]) => {
-      const match = matchData.match || matchData
-      // matchData structure: { match, homeTeam, awayTeam, ... }
-      // So we need to access matchData.homeTeam, not match.homeTeam
-      const homeTeamName = matchData.homeTeam?.name || match.homeTeamName || match.homeTeam?.name || 'Home'
-      const awayTeamName = matchData.awayTeam?.name || match.awayTeamName || match.awayTeam?.name || 'Away'
-      
-      // Format scheduled date/time
-      let dateTime = 'TBD'
-      if (match.scheduledAt) {
-        try {
-          const scheduledDate = new Date(match.scheduledAt)
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-          dateTime = `${dateStr} ${timeStr}`
-        } catch (e) {
-          dateTime = 'TBD'
-        }
-      }
-      
-      return {
-        id: Number(matchId),
-        gameNumber: match.gameNumber || match.game_n || matchId,
-        homeTeam: homeTeamName,
-        awayTeam: awayTeamName,
-        scheduledAt: match.scheduledAt,
-        dateTime,
-        status: match.status,
-        // refereePin intentionally NOT returned — PIN validation is done via /api/match/validate-pin
-        refereeConnectionEnabled: match.refereeConnectionEnabled === true
-      }
-    }).filter(m => {
-      // Only show matches that are:
-      // 1. Referee connection enabled
-      // 2. Not final (status !== 'final')
-      // 3. Status is 'scheduled' or 'live' (open/in progress)
-      return m.refereeConnectionEnabled && 
-             m.status !== 'final' && 
-             (m.status === 'scheduled' || m.status === 'live')
-    })
-    
-    // Sort by scheduledAt (most recent first) and take only the first one
-    // This ensures only 1 match is shown at a time
-    matches.sort((a, b) => {
-      const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0
-      const dateB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0
-      return dateB - dateA // Most recent first
-    })
-    
-    // Only return the most recent open/in-progress match
-    const activeMatch = matches.length > 0 ? [matches[0]] : []
-    
-    res.writeHead(200, {
-      'Content-Type': 'application/json'
-    })
-    res.end(JSON.stringify({
-      success: true,
-      matches: activeMatch
-    }))
-    return
-  }
-  
-  // API endpoint to find match by game number
-  if (urlPath === '/api/match/by-game-number' && req.method === 'GET') {
-    const url = new URL(req.url, `http://${req.headers.host}`)
-    const gameNumber = url.searchParams.get('gameNumber')
-    
-    if (!gameNumber) {
-      res.writeHead(400, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({ success: false, error: 'Game number required' }))
-      return
-    }
-
-    // Search in match data store
-    let matchFound = null
-    for (const [matchId, matchData] of matchDataStore.entries()) {
-      const match = matchData.match
-      if (match && (
-        String(match.gameNumber || '') === String(gameNumber) ||
-        String(match.game_n || '') === String(gameNumber) ||
-        String(match.id) === String(gameNumber)
-      )) {
-        matchFound = { matchId, ...matchData }
-        break
-      }
-    }
-
-    if (matchFound) {
-      res.writeHead(200, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({
-        success: true,
-        match: matchFound.match,
-        matchId: matchFound.matchId
-      }))
-    } else {
-      // Request from main instance
-      const requestId = `game-number-request-${Date.now()}-${Math.random()}`
-
-      broadcast({
-        type: 'game-number-request',
-        requestId,
-        gameNumber: String(gameNumber)
-      })
-
-      const timeout = setTimeout(() => {
-        res.writeHead(404, {
-          'Content-Type': 'application/json'
-        })
-        res.end(JSON.stringify({
-          success: false,
-          error: 'Match not found with this game number'
-        }))
-        pendingPinRequests.delete(requestId)
-      }, 5000)
-
-      pendingPinRequests.set(requestId, { res, timeout, type: 'game-number' })
-    }
-    return
-  }
-  
-  // API endpoint to update match data (PATCH)
-  if (urlPath.startsWith('/api/match/') && urlPath !== '/api/match/validate-pin' && urlPath !== '/api/match/by-game-number' && req.method === 'PATCH') {
-    const matchId = urlPath.split('/api/match/')[1]
-    let body = ''
-    req.on('data', chunk => {
-      body += chunk.toString()
-      if (body.length > MAX_BODY_SIZE) {
-        req.destroy()
-        return
-      }
-    })
-    req.on('end', () => {
-      try {
-        const updates = JSON.parse(body)
-        
-        // Forward update request to main instance via WebSocket
-        const requestId = `match-update-${Date.now()}-${Math.random()}`
-        
-        console.log(`[API] Broadcasting match-update-request for match ${matchId}, requestId: ${requestId}, connected clients: ${wsClients.size}`)
-        
-        broadcast({
-          type: 'match-update-request',
-          requestId,
-          matchId: String(matchId),
-          updates
-        })
-        
-        const timeout = setTimeout(() => {
-          console.warn(`[API] Match update request ${requestId} timed out after 5 seconds`)
-          res.writeHead(500, {
-            'Content-Type': 'application/json'
-          })
-          res.end(JSON.stringify({
-            success: false,
-            error: 'Update request timeout. Make sure the main scoresheet is running.'
-          }))
-          pendingPinRequests.delete(requestId)
-        }, 5000)
-
-        pendingPinRequests.set(requestId, { res, timeout, type: 'match-update' })
-        console.log(`[API] Waiting for response to requestId: ${requestId}`)
-      } catch (err) {
-        res.writeHead(400, {
-          'Content-Type': 'application/json'
-        })
-        res.end(JSON.stringify({ success: false, error: 'Invalid request body' }))
-      }
-    })
-    return
-  }
-  
   // Check if accessing main page and block if another instance exists
   const isMainPage = urlPath === '/' || urlPath === '/index.html'
-  if (isMainPage && mainInstanceId !== null) {
+  if (isMainPage && mainInstanceId !== null && !isLoopback(req.socket.remoteAddress)) {
     const requestingInstanceId = req.headers['x-instance-id']
     if (requestingInstanceId !== mainInstanceId) {
       res.writeHead(403, { 'Content-Type': 'text/html' })
@@ -652,9 +269,9 @@ const requestHandler = (req, res) => {
           <p>Only one main scoresheet instance can run at a time.</p>
           <p>You can still access:</p>
           <ul style="list-style: none; padding: 0;">
-            <li><a href="/referee.html">Referee App</a></li>
-            <li><a href="/bench.html">Bench App</a></li>
-            <li><a href="/livescore.html">Livescore App</a></li>
+            <li><a href="/referee">Referee App</a></li>
+            <li><a href="/bench">Bench App</a></li>
+            <li><a href="/livescore">Livescore App</a></li>
           </ul>
         </body>
         </html>
@@ -682,6 +299,12 @@ const requestHandler = (req, res) => {
       const htmlFilePath = join(DIST_DIR, htmlPath)
       if (existsSync(htmlFilePath)) {
         filePath = htmlFilePath
+      }
+    } else if (urlPath.endsWith('.html')) {
+      // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
+      const folderIndex = join(DIST_DIR, urlPath.slice(0, -'.html'.length), 'index.html')
+      if (folderIndex.startsWith(DIST_DIR + sep) && existsSync(folderIndex)) {
+        filePath = folderIndex
       }
     }
     
@@ -740,12 +363,23 @@ const httpServer = httpsOptions
   ? createHttpsServer(httpsOptions, requestHandler)
   : createHttpServer(requestHandler)
 
-// Create WebSocket server (WSS if HTTPS is enabled)
-const wss = new WebSocketServer({
-  port: WS_PORT,
-  host: '0.0.0.0', // Bind to all interfaces for LAN access
-  perMessageDeflate: false // Disable compression for better performance
-})
+// Create WebSocket server. With HTTPS on, pages are served over https:// and
+// browsers refuse ws:// (mixed content), so the relay listens with the same
+// certificate (WSS) — exactly what /api/server/status advertises.
+let wsHttpsServer = null
+const wss = httpsOptions
+  ? new WebSocketServer({
+      server: (wsHttpsServer = createHttpsServer(httpsOptions)),
+      perMessageDeflate: false,
+      maxPayload: WS_MAX_PAYLOAD
+    })
+  : new WebSocketServer({
+      port: WS_PORT,
+      host: '0.0.0.0', // Bind to all interfaces for LAN access
+      perMessageDeflate: false, // Disable compression for better performance
+      maxPayload: WS_MAX_PAYLOAD
+    })
+if (wsHttpsServer) wsHttpsServer.listen(WS_PORT, '0.0.0.0')
 
 wss.on('connection', (ws, req) => {
   // Connection limit for LAN server
@@ -759,352 +393,25 @@ wss.on('connection', (ws, req) => {
   console.log(`[WebSocket] New client connected from ${clientIp}`)
 
   wsClients.add(ws)
-  
-  // Send welcome message
-  ws.send(JSON.stringify({ 
-    type: 'connected',
-    message: 'Connected to eScoresheet WebSocket server',
-    timestamp: Date.now()
-  }))
-  
-  // Handle messages from client
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message.toString())
-      console.log(`[WebSocket] Received message from ${clientIp}:`, data.type || 'unknown')
-      
-      // Handle different message types
-      if (data.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }))
-      } else if (data.type === 'sync-match-data') {
-        // Main scoresheet is syncing full match data
-        // SCOREBOARD IS SOURCE OF TRUTH - This ALWAYS overwrites existing data
-        // Handle both formats: { matchId, matchData: {...} } and { matchId, match, homeTeam, ... }
-        if (data.matchId) {
-          let matchData
-          
-          if (data.matchData) {
-            // Format 1: Nested in matchData
-            matchData = data.matchData
-          } else if (data.match) {
-            // Format 2: Flat structure (from Scoreboard component)
-            matchData = {
-              match: data.match,
-              homeTeam: data.homeTeam,
-              awayTeam: data.awayTeam,
-              homePlayers: data.homePlayers || [],
-              awayPlayers: data.awayPlayers || [],
-              sets: data.sets || [],
-              events: data.events || []
-            }
-          }
-          
-          if (matchData) {
-            // ALWAYS overwrite - scoreboard data is authoritative
-            matchDataStore.set(String(data.matchId), matchData)
-            console.log(`[WebSocket] Synced full match data for match ${data.matchId} (overwrote existing)`)
-          
-          // Broadcast update to subscribed clients
-          const subscribers = matchSubscriptions.get(String(data.matchId))
-          if (subscribers) {
-            subscribers.forEach(client => {
-              if (client !== ws && client.readyState === 1) {
-                try {
-                  client.send(JSON.stringify({
-                    type: 'match-data-update',
-                    matchId: String(data.matchId),
-                      data: matchData
-                  }))
-                } catch (err) {
-                  console.error('[WebSocket] Error sending update to subscriber:', err)
-                }
-              }
-            })
-            }
-          }
-        }
-      } else if (data.type === 'delete-match') {
-        // Main scoresheet is deleting a match - remove from server store
-        const matchId = String(data.matchId)
-        if (matchDataStore.has(matchId)) {
-          matchDataStore.delete(matchId)
-          console.log(`[WebSocket] Deleted match ${matchId} from server store`)
-          
-          // Remove subscriptions for this match
-          matchSubscriptions.delete(matchId)
-          
-          // Notify subscribed clients that match was deleted
-          const subscribers = matchSubscriptions.get(matchId)
-          if (subscribers) {
-            subscribers.forEach(client => {
-              if (client.readyState === 1) {
-                try {
-                  client.send(JSON.stringify({
-                    type: 'match-deleted',
-                    matchId: matchId
-                  }))
-                } catch (err) {
-                  console.error('[WebSocket] Error notifying subscriber of match deletion:', err)
-                }
-              }
-            })
-          }
-        }
-      } else if (data.type === 'clear-all-matches') {
-        // Scoreboard is clearing all matches (source of truth - no active match)
-        // Optionally keep one match if keepMatchId is specified
-        const keepMatchId = data.keepMatchId ? String(data.keepMatchId) : null
-        
-        const matchesToDelete = []
-        for (const [storedMatchId] of matchDataStore.entries()) {
-          if (!keepMatchId || storedMatchId !== keepMatchId) {
-            matchesToDelete.push(storedMatchId)
-          }
-        }
-        
-        matchesToDelete.forEach(matchIdToDelete => {
-          matchDataStore.delete(matchIdToDelete)
-          matchSubscriptions.delete(matchIdToDelete)
-          
-          // Notify subscribed clients
-          const subscribers = matchSubscriptions.get(matchIdToDelete)
-          if (subscribers) {
-            subscribers.forEach(client => {
-              if (client.readyState === 1) {
-                try {
-                  client.send(JSON.stringify({
-                    type: 'match-deleted',
-                    matchId: matchIdToDelete
-                  }))
-                } catch (err) {
-                  console.error('[WebSocket] Error notifying subscriber of match deletion:', err)
-                }
-              }
-            })
-          }
-        })
-        
-        console.log(`[WebSocket] Cleared ${matchesToDelete.length} match(es) from server store${keepMatchId ? ` (kept match ${keepMatchId})` : ''}`)
-      } else if (data.type === 'subscribe-match') {
-        // Client wants to subscribe to match updates
-        const matchId = String(data.matchId)
-        if (!matchSubscriptions.has(matchId)) {
-          matchSubscriptions.set(matchId, new Set())
-        }
-        matchSubscriptions.get(matchId).add(ws)
-        console.log(`[WebSocket] Client subscribed to match ${matchId}`)
-        
-        // Send current match data if available
-        const matchData = matchDataStore.get(matchId)
-        if (matchData) {
-          ws.send(JSON.stringify({
-            type: 'match-full-data',
-            matchId,
-            data: matchData
-          }))
-        }
-      } else if (data.type === 'live-state-update') {
-        // The Scoreboard's computed live-state (points/sets/timeouts/subs, serving
-        // as left/right, team names+colours). Merge it into the store so late
-        // subscribers get it via match-full-data, and fan it out to subscribers.
-        const matchId = String(data.matchId)
-        if (data.liveState) {
-          const existing = matchDataStore.get(matchId)
-          if (existing) existing.liveState = data.liveState
-          const subscribers = matchSubscriptions.get(matchId)
-          if (subscribers) {
-            subscribers.forEach(client => {
-              if (client !== ws && client.readyState === 1) {
-                try {
-                  client.send(JSON.stringify({ type: 'live-state-update', matchId, liveState: data.liveState }))
-                } catch (err) {
-                  console.error('[WebSocket] Error sending live-state-update:', err)
-                }
-              }
-            })
-          }
-        }
-      } else if (data.type === 'pin-validation-response') {
-        // Main scoresheet responded to a PIN validation request
-        const requestId = data.requestId
-        const pending = pendingPinRequests.get(requestId)
-        if (pending) {
-          // Clear timeout if it exists
-          if (pending.timeout) {
-            clearTimeout(pending.timeout)
-          }
-          
-          if (data.success && data.match) {
-            // Store the match data for future requests
-            if (data.fullData) {
-              matchDataStore.set(String(data.match.id), data.fullData)
-            } else {
-              matchDataStore.set(String(data.match.id), { match: data.match })
-            }
-            
-            // Use sendResponse wrapper to ensure proper cleanup
-            if (pending.sendResponse) {
-              pending.sendResponse(200, { 
-                success: true, 
-                match: data.match 
-              })
-            } else {
-              // Fallback to direct response
-              try {
-                pending.res.writeHead(200, {
-                  'Content-Type': 'application/json'
-                })
-                pending.res.end(JSON.stringify({
-                  success: true,
-                  match: data.match
-                }))
-              } catch (err) {
-                console.error('[WebSocket] Error sending PIN validation response:', err)
-              }
-              pendingPinRequests.delete(requestId)
-            }
-          } else {
-            // Use sendResponse wrapper to ensure proper cleanup
-            if (pending.sendResponse) {
-              pending.sendResponse(404, {
-                success: false,
-                error: data.error || 'No match found with this PIN'
-              })
-            } else {
-              // Fallback to direct response
-              try {
-                pending.res.writeHead(404, {
-                  'Content-Type': 'application/json'
-                })
-                pending.res.end(JSON.stringify({
-                  success: false,
-                  error: data.error || 'No match found with this PIN'
-                }))
-              } catch (err) {
-                console.error('[WebSocket] Error sending PIN validation error:', err)
-              }
-              pendingPinRequests.delete(requestId)
-            }
-          }
-        }
-      } else if (data.type === 'match-data-response') {
-        // Main scoresheet responded to match data request
-        const requestId = data.requestId
-        const pending = pendingPinRequests.get(requestId)
-        if (pending && pending.type === 'match-data') {
-          clearTimeout(pending.timeout)
-          pendingPinRequests.delete(requestId)
-          
-          if (data.success && data.data) {
-            matchDataStore.set(String(data.matchId), data.data)
-            pending.res.writeHead(200, {
-              'Content-Type': 'application/json'
-            })
-            pending.res.end(JSON.stringify({
-              success: true,
-              ...data.data
-            }))
-          } else {
-            pending.res.writeHead(404, {
-              'Content-Type': 'application/json'
-            })
-            pending.res.end(JSON.stringify({
-              success: false,
-              error: data.error || 'Match data not found'
-            }))
-          }
-        }
-      } else if (data.type === 'game-number-response') {
-        // Main scoresheet responded to game number request
-        const requestId = data.requestId
-        const pending = pendingPinRequests.get(requestId)
-        if (pending && pending.type === 'game-number') {
-          clearTimeout(pending.timeout)
-          pendingPinRequests.delete(requestId)
+  // Sends the 'connected' welcome message
+  relay.addClient(ws, { ip: clientIp })
 
-          if (data.success && data.match) {
-            pending.res.writeHead(200, {
-              'Content-Type': 'application/json'
-            })
-            pending.res.end(JSON.stringify({
-              success: true,
-              match: data.match,
-              matchId: data.matchId
-            }))
-          } else {
-            pending.res.writeHead(404, {
-              'Content-Type': 'application/json'
-            })
-            pending.res.end(JSON.stringify({ 
-              success: false, 
-              error: data.error || 'Match not found' 
-            }))
-          }
-        }
-      } else if (data.type === 'match-update-response') {
-        // Main scoresheet responded to match update request
-        const requestId = data.requestId
-        console.log(`[WebSocket] Received match-update-response for requestId: ${requestId}, success: ${data.success}`)
-        const pending = pendingPinRequests.get(requestId)
-        if (pending && pending.type === 'match-update') {
-          console.log(`[WebSocket] Found pending request, responding to HTTP client`)
-          clearTimeout(pending.timeout)
-          pendingPinRequests.delete(requestId)
-          
-          if (data.success) {
-            // Update local store if full data provided
-            if (data.data) {
-              matchDataStore.set(String(data.matchId), data.data)
-            }
+  // All message handling (sync, subscribe, actions, PIN-free fan-out,
+  // scoreboard ownership) lives in lanRelayCore.
+  ws.on('message', (message) => relay.handleMessage(ws, message))
 
-            pending.res.writeHead(200, {
-              'Content-Type': 'application/json'
-            })
-            pending.res.end(JSON.stringify({
-              success: true,
-              ...(data.data || {})
-            }))
-          } else {
-            pending.res.writeHead(500, {
-              'Content-Type': 'application/json'
-            })
-            pending.res.end(JSON.stringify({
-              success: false,
-              error: data.error || 'Update failed'
-            }))
-          }
-        } else {
-          console.warn(`[WebSocket] Received match-update-response but no pending request found for requestId: ${requestId}`)
-          console.log(`[WebSocket] Available pending requests:`, Array.from(pendingPinRequests.keys()))
-        }
-      } else {
-        // Broadcast to all other clients (for other message types)
-        broadcast(data, ws)
-      }
-    } catch (err) {
-      console.error('[WebSocket] Error parsing message:', err)
-    }
-  })
-  
   // Handle client disconnect - remove from subscriptions
   ws.on('close', () => {
     console.log(`[WebSocket] Client disconnected from ${clientIp}`)
     wsClients.delete(ws)
-    
-    // Remove from all match subscriptions
-    matchSubscriptions.forEach((subscribers, matchId) => {
-      subscribers.delete(ws)
-      if (subscribers.size === 0) {
-        matchSubscriptions.delete(matchId)
-      }
-    })
+    relay.removeClient(ws)
   })
-  
-  
+
   // Handle errors
   ws.on('error', (error) => {
     console.error(`[WebSocket] Error from ${clientIp}:`, error)
     wsClients.delete(ws)
+    relay.removeClient(ws)
   })
 })
 
@@ -1155,6 +462,7 @@ process.on('SIGTERM', () => {
   wss.close(() => {
     console.log('WebSocket server closed')
   })
+  if (wsHttpsServer) wsHttpsServer.close()
   process.exit(0)
 })
 
@@ -1166,5 +474,6 @@ process.on('SIGINT', () => {
   wss.close(() => {
     console.log('WebSocket server closed')
   })
+  if (wsHttpsServer) wsHttpsServer.close()
   process.exit(0)
 })
