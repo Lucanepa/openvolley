@@ -7,6 +7,12 @@
  *   docker stop ov-test-pg
  * Each test file gets its own database (created from tests/fixtures/synthetic_schema.sql)
  * and drops it at the end. Without the variable the Postgres suites are skipped.
+ *
+ * PG_TEST_TEMPLATE=<database> (same server): copy that database instead of
+ * loading the synthetic schema, e.g. one loaded by scripts/migrate/restore.sh,
+ * so the suites run against the real production schema. Only the test-only
+ * objects (TEMPLATE_EXTRAS_SQL) are added. Nothing may be connected to the
+ * template while the tests create their copies (stop the backend first).
  */
 
 import pg from 'pg'
@@ -17,14 +23,39 @@ import { dirname, join } from 'node:path'
 export const PG_TEST_URL = process.env.PG_TEST_URL || process.env.TEST_DATABASE_URL || ''
 export const SKIP_PG = PG_TEST_URL ? false : 'PG_TEST_URL not set (see tests/helpers/pgTestDb.js)'
 
+export const PG_TEST_TEMPLATE = process.env.PG_TEST_TEMPLATE || ''
+if (PG_TEST_TEMPLATE && !/^[a-z_][a-z0-9_]{0,62}$/.test(PG_TEST_TEMPLATE)) throw new Error('PG_TEST_TEMPLATE: not a plain database name')
+
 const here = dirname(fileURLToPath(import.meta.url))
-const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
+export const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
+
+// Test-only objects the synthetic schema has and a production copy does not:
+// pgcrypto (crypt() in the auth tests) and a table that is NOT on the allowlist.
+export const TEMPLATE_EXTRAS_SQL = `
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  CREATE TABLE IF NOT EXISTS public.internal_notes (id serial PRIMARY KEY, note text);
+  INSERT INTO public.internal_notes (note) VALUES ('do not leak');`
+
+/** CREATE DATABASE for a test database: a copy of PG_TEST_TEMPLATE when set. */
+export function createDatabaseSql (name, { useTemplate = true } = {}) {
+  return useTemplate && PG_TEST_TEMPLATE
+    ? `CREATE DATABASE "${name}" TEMPLATE "${PG_TEST_TEMPLATE}"`
+    : `CREATE DATABASE "${name}"`
+}
+
+/** The schema SQL to load into a fresh test database (synthetic, or only the extras). */
+export function testSchemaSql ({ useTemplate = true } = {}) {
+  return useTemplate && PG_TEST_TEMPLATE ? TEMPLATE_EXTRAS_SQL : SCHEMA_SQL
+}
 
 export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}) {
   const admin = new pg.Client({ connectionString: PG_TEST_URL })
   await admin.connect()
   const name = `ov_test_${label}_${process.pid}_${Date.now().toString(36)}`.toLowerCase().replace(/[^a-z0-9_]/g, '_')
-  await admin.query(`CREATE DATABASE "${name}"`)
+  // A copy of the template replaces the default synthetic schema only.
+  const fromTemplate = !!PG_TEST_TEMPLATE && schemaSql === SCHEMA_SQL
+  await admin.query(createDatabaseSql(name, { useTemplate: fromTemplate }))
+  if (fromTemplate) schemaSql = TEMPLATE_EXTRAS_SQL
   const url = new URL(PG_TEST_URL)
   url.pathname = '/' + name
   if (schemaSql) {
