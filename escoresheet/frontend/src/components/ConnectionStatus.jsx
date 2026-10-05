@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import { useSyncQueueStats } from '../hooks/useSyncQueue'
 
+// The local server + WebSocket path (LAN relay) works on its own, cloud or not
+function isServerWebsocketViable(serverStatus, websocketStatus) {
+  return serverStatus === 'connected' && (websocketStatus === 'connected' || websocketStatus === 'no_match')
+}
+
 export default function ConnectionStatus({
   connectionStatuses = {},
   connectionDebugInfo = {},
@@ -181,9 +186,7 @@ export default function ConnectionStatus({
     const matchStatus = connectionStatuses.match
 
     // Check if Server+WebSocket path is viable
-    const serverPathOk = serverStatus === 'connected'
-    const websocketPathOk = websocketStatus === 'connected' || websocketStatus === 'no_match'
-    const serverWebsocketViable = serverPathOk && websocketPathOk
+    const serverWebsocketViable = isServerWebsocketViable(serverStatus, websocketStatus)
 
     // Check if Supabase path is viable
     const supabaseViable = supabaseStatus === 'connected'
@@ -211,7 +214,10 @@ export default function ConnectionStatus({
     return 'connected'
   }
 
-  const overallStatus = browserOffline
+  // No network as far as the browser knows, but a local server (offline
+  // desktop / LAN scoretable serving tablets) can still be connected: then the
+  // match runs normally and only the cloud copy waits ('Syncing...' + count).
+  const overallStatus = browserOffline && !isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket)
     ? 'offline'
     : errorCount > 0
       ? 'attention'

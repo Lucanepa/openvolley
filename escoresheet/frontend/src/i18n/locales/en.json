@@ -1624,7 +1624,10 @@
   "syncBanner": {
     "title": "Not signed in: this match is saved on this device only",
     "body": "Scoring keeps working. Sign in to save it to the cloud (referee, livescore, backup); waiting changes are sent right after.",
-    "later": "Later"
+    "later": "Later",
+    "expiredTitle": "Session expired: changes are saved on this device only",
+    "expiredBody": "Scoring keeps working. Sign in again to save it to the cloud; waiting changes are sent right after.",
+    "signInAgain": "Sign in again"
   },
   "connectionStatus": {
     "syncing": "Syncing",

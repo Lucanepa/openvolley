@@ -11,7 +11,7 @@ import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import ConnectionSetupModal from './options/ConnectionSetupModal'
-import { useSyncQueue } from '../hooks/useSyncQueue'
+import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
@@ -2067,6 +2067,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
       sendRelayMessage({ type: 'live-state-update', matchId, liveState: { ...liveStateData } })
+
+      // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
+      // upsert per rally that would only get the same 401. Pushed again once
+      // the queue drains after the sign-in.
+      if (isAuthBlocked()) {
+        setLiveStateDirty(matchId, true)
+        return
+      }
 
       if (!supabaseMatchId) {
         const seedKey = match.seed_key || String(matchId)

@@ -1592,7 +1592,10 @@
   "syncBanner": {
     "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Gerät gspeicheret",
     "body": "S Erfasse funktioniert wiiter. Mälded Sie sich aa, zum es i de Cloud z speichere (Schiri, Livescore, Backup); wartendi Änderige werded dänn sofort gschickt.",
-    "later": "Spöter"
+    "later": "Spöter",
+    "expiredTitle": "Sitzig abglaufe: Änderige sind nur uf däm Gerät gspeicheret",
+    "expiredBody": "S Erfasse funktioniert wiiter. Mälded Sie sich nomal aa, zum i de Cloud z speichere; wartendi Änderige werded dänn sofort gschickt.",
+    "signInAgain": "Nomal aamälde"
   },
   "connectionStatus": {
     "syncing": "Synchronisiere",

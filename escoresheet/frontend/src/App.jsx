@@ -4207,7 +4207,7 @@ export default function App() {
             />
 
             {/* Not signed in while the cloud needs an account: non-blocking */}
-            {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} />}
+            {!offlineMode && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
 
           </div>
         </>

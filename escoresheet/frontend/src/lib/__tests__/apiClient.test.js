@@ -256,14 +256,8 @@ describe('self-hosted backend contract', () => {
     expect(sentHeaders(1)['X-OV-Proto']).toBe('2')
   })
 
-  it('apiAuth.updateProfile writes through /api/db (the auth profile route is read-only)', async () => {
-    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user_id: 'u1', first_name: 'New' }, error: null }))
-    const r = await apiAuth.updateProfile({ first_name: 'New' })
-    const [url, init] = globalThis.fetch.mock.calls[0]
-    expect(url).toBe('http://backend.test/api/db')
-    expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(JSON.parse(init.body)).toMatchObject({ table: 'profiles', action: 'update', params: { data: { first_name: 'New' }, returning: '*', single: true } })
-    expect(r.data).toEqual({ user_id: 'u1', first_name: 'New' })
+  it('has no apiAuth.updateProfile (the auth profile route is read-only; AuthContext writes via /api/db)', () => {
+    expect(apiAuth.updateProfile).toBeUndefined()
   })
 
   it('exports the token event names the sync queue listens to', async () => {
