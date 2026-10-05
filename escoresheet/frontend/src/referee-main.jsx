@@ -6,6 +6,7 @@ import './styles.css'
 import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
 import { AuthProvider } from './contexts/AuthContext'
+import { ScaleProvider } from './contexts/ScaleContext'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow)
 if (window.location.search.includes('cache_bust')) {
@@ -14,11 +15,13 @@ if (window.location.search.includes('cache_bust')) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AuthProvider>
-      <AlertProvider>
-        <RefereeApp />
-      </AlertProvider>
-    </AuthProvider>
+    <ScaleProvider>
+      <AuthProvider>
+        <AlertProvider>
+          <RefereeApp />
+        </AlertProvider>
+      </AuthProvider>
+    </ScaleProvider>
   </React.StrictMode>,
 )
 
