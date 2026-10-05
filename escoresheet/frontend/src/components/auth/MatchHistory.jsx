@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { apiFrom } from '../../lib/apiClient'
 import { ClipboardIcon } from '../icons'
+import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
@@ -52,7 +53,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
       const { data: matchDetails, error: matchError } = await apiFrom('matches')
         // matches has no team_a/team_b/start_time columns (the backend refuses
         // unknown ones): the teams are home_team/away_team, the date scheduled_at
-        .select('external_id, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
+        .select('external_id, game_n, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
         .in('external_id', matchIds)
         .eq('sport_type', 'indoor')
 
@@ -80,6 +81,15 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   }
 
   if (!open) return null
+
+  // A finalized match opens its approved scoresheet, readable only by the
+  // account that uploaded it: opened on this origin, where the session is.
+  const openMatch = (match) => {
+    if (onSelectMatch) return onSelectMatch(match)
+    const url = finalScoresheetUrl(match)
+    if (url) window.open(url, '_blank', 'noopener')
+  }
+  const canOpen = (match) => !!onSelectMatch || !!finalScoresheetUrl(match)
 
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
@@ -193,17 +203,17 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
               {matches.map((match, index) => (
                 <div
                   key={`${match.match_external_id || index}:${match.userRole || ''}`}
-                  onClick={() => onSelectMatch?.(match)}
+                  onClick={() => openMatch(match)}
                   style={{
                     padding: '14px 16px',
                     background: 'var(--panel-2)',
                     border: '1px solid var(--border)',
                     borderRadius: 8,
-                    cursor: onSelectMatch ? 'pointer' : 'default',
+                    cursor: canOpen(match) ? 'pointer' : 'default',
                     transition: 'border-color 0.2s'
                   }}
                   onMouseEnter={e => {
-                    if (onSelectMatch) e.currentTarget.style.borderColor = '#3b82f6'
+                    if (canOpen(match)) e.currentTarget.style.borderColor = '#3b82f6'
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.borderColor = 'var(--border)'

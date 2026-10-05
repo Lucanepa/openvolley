@@ -179,9 +179,11 @@ describe('helpers', () => {
   })
 
   it('storageOptionsFromEnv', () => {
-    assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage' })
+    assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage', uploaderReadBuckets: ['scoresheets'] })
     const o = storageOptionsFromEnv({ STORAGE_DIR: '/x', STORAGE_BACKUP_MIN_FREE_MB: '100', STORAGE_SCORESHEETS_MIN_FREE_MB: '0', STORAGE_MAX_FILE_MB: '2', STORAGE_OWNER_SCOPE: 'Prefix' })
-    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix' })
+    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix', uploaderReadBuckets: ['scoresheets'] })
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: 'None' }).uploaderReadBuckets, [])
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: 'scoresheets, backup' }).uploaderReadBuckets, ['scoresheets', 'backup'])
     assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'off' }).ownerScope, undefined)
     assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: ' ' }).ownerScope, undefined)
   })
@@ -193,6 +195,9 @@ describe('helpers', () => {
     assert.throws(() => storageOptionsFromEnv({ STORAGE_MAX_FILE_MB: '0' }), /STORAGE_MAX_FILE_MB/)
     assert.throws(() => storageOptionsFromEnv({ STORAGE_MAX_FILE_MB: 'lots' }), /STORAGE_MAX_FILE_MB/)
     assert.throws(() => storageOptionsFromEnv({ STORAGE_BACKUP_MIN_FREE_MB: '-1' }), /STORAGE_BACKUP_MIN_FREE_MB/)
+    for (const v of ['off', 'logs', 'scoresheets,nope', ',']) {
+      assert.throws(() => storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: v }), /STORAGE_UPLOADER_READ_BUCKETS/, v)
+    }
   })
 
   it('maxBodyBytes leaves room for base64 of a maxFileBytes upload', () => {
@@ -205,6 +210,10 @@ describe('helpers', () => {
 
   it('createStorage rejects an unknown ownerScope', () => {
     assert.throws(() => createStorage({ root: '/tmp', ownerScope: 'everyone' }), TypeError)
+  })
+
+  it('createStorage rejects an uploader-only bucket it does not serve', () => {
+    assert.throws(() => createStorage({ root: '/tmp', uploaderReadBuckets: ['logs'] }), TypeError)
   })
 })
 
@@ -720,6 +729,59 @@ describe('quota and owner scoping hooks', () => {
   })
 })
 
+describe('uploader-only buckets (final scoresheets)', () => {
+  beforeEach(async () => makeRoot())
+  afterEach(async () => fs.rm(base, { recursive: true, force: true }))
+  const sheet = '2026-10-05/game991404_final.json'
+
+  it('only the accounts that uploaded an object may download it', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await s.upload({ bucket: 'scoresheets', path: sheet, fileBase64: b64('{"a":1}'), contentType: 'application/json', userId: 'alice' })
+    assert.equal((await s.download({ bucket: 'scoresheets', path: sheet, userId: 'alice' })).toString(), '{"a":1}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet }), 403, 'OV_STORAGE_FORBIDDEN')
+    // A second scorer (another device) re-approving the match becomes an owner too
+    await s.upload({ bucket: 'scoresheets', path: sheet, fileBase64: b64('{"a":2}'), contentType: 'application/json', userId: 'bob' })
+    assert.equal((await s.download({ bucket: 'scoresheets', path: sheet, userId: 'alice' })).toString(), '{"a":2}')
+    assert.equal((await s.download({ bucket: 'scoresheets', path: sheet, userId: 'bob' })).toString(), '{"a":2}')
+    // Other buckets are unaffected
+    await s.upload({ bucket: 'backup', path: 'x.json', fileBase64: b64('{}'), userId: 'alice' })
+    assert.equal((await s.download({ bucket: 'backup', path: 'x.json', userId: 'mallory' })).toString(), '{}')
+  })
+
+  it('a missing object stays "not found" (404), an object stored before owners were recorded is readable by nobody', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'alice' }), 404, 'OV_STORAGE_NOT_FOUND')
+    await fs.mkdir(path.join(root, 'scoresheets', '2026-10-05'), { recursive: true })
+    await fs.writeFile(path.join(root, 'scoresheets', sheet), '{"legacy":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'alice' }), 403, 'OV_STORAGE_FORBIDDEN')
+  })
+
+  it('an upload without an account is refused, and owner records stay out of the bucket listing', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await rejectsWith(s.upload({ bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await exists(path.join(root, 'scoresheets', sheet)), false)
+    await Promise.all(['u1', 'u2', 'u3'].map((userId) =>
+      s.upload({ bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json', userId })))
+    for (const userId of ['u1', 'u2', 'u3']) {
+      assert.equal((await s.download({ bucket: 'scoresheets', path: sheet, userId })).toString(), '{}', userId)
+    }
+    assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '' })).map((e) => e.name), ['2026-10-05'])
+    assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '2026-10-05' })).map((e) => e.name), ['game991404_final.json'])
+  })
+
+  it('handle: the HTTP adapter answers 403 to a non-owner and 200 + not-found for a missing object', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await s.handle('upload', { bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }, { userId: 'alice' })
+    assert.equal((await s.handle('download', { bucket: 'scoresheets', path: sheet }, { userId: 'alice' })).status, 200)
+    const other = await s.handle('download', { bucket: 'scoresheets', path: sheet }, { userId: 'mallory' })
+    assert.equal(other.status, 403)
+    assert.equal(other.body.error.code, 'OV_STORAGE_FORBIDDEN')
+    const missing = await s.handle('download', { bucket: 'scoresheets', path: '2026-10-05/game1_final.json' }, { userId: 'alice' })
+    assert.deepEqual(missing, { status: 200, body: { data: null, error: { message: 'Object not found', code: 'OV_STORAGE_NOT_FOUND' } } })
+  })
+})
+
 describe('sweep', () => {
   beforeEach(async () => makeRoot())
   afterEach(async () => fs.rm(base, { recursive: true, force: true }))
@@ -829,8 +891,9 @@ describe('handle (HTTP adapter)', () => {
 
   it('maps errors to {data:null, error:{message,code}} with HTTP status', async () => {
     const s = make()
+    // A missing object is a normal answer (no backup / log file yet): 200 + error
     const r1 = await s.handle('download', { bucket: 'backup', path: 'nope.json' })
-    assert.deepEqual(r1, { status: 404, body: { data: null, error: { message: 'Object not found', code: 'OV_STORAGE_NOT_FOUND' } } })
+    assert.deepEqual(r1, { status: 200, body: { data: null, error: { message: 'Object not found', code: 'OV_STORAGE_NOT_FOUND' } } })
     const r2 = await s.handle('upload', { bucket: 'backup', path: '../x.json', fileBase64: '' })
     assert.equal(r2.status, 400)
     assert.equal(r2.body.error.code, 'OV_STORAGE_INVALID_PATH')
