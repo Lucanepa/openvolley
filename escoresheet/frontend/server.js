@@ -86,6 +86,7 @@ const relay = createLanRelay()
 const MIME_TYPES = {
   '.html': 'text/html',
   '.js': 'application/javascript',
+  '.mjs': 'application/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
   '.png': 'image/png',
