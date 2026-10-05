@@ -70,20 +70,16 @@ interface ScoresheetItem {
   uploadedAt?: string;
 }
 
-// Fetch scoresheet data from Supabase storage
+// Fetch scoresheet data from backend storage (/api/storage)
 const fetchFromStorage = async (date: string, game: string): Promise<any | null> => {
   try {
-    // Import supabase client dynamically to avoid circular dependencies
-    const { supabase } = await import('../src/lib/supabaseClient');
-    if (!supabase) {
-      console.error('Supabase client not available');
-      return null;
-    }
+    // Import the backend storage client dynamically to avoid circular dependencies
+    const { apiStorage } = await import('../src/lib/apiClient');
 
     const storagePath = `${date}/game${game}.json`;
     console.log('[Scoresheet] Fetching from storage:', storagePath);
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await apiStorage
       .from('scoresheets')
       .download(storagePath);
 
@@ -103,14 +99,10 @@ const fetchFromStorage = async (date: string, game: string): Promise<any | null>
 // Fetch all scoresheets from storage
 const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
   try {
-    const { supabase } = await import('../src/lib/supabaseClient');
-    if (!supabase) {
-      console.error('Supabase client not available');
-      return [];
-    }
+    const { apiStorage } = await import('../src/lib/apiClient');
 
     // List all folders (dates) in the scoresheets bucket
-    const { data: folders, error: foldersError } = await supabase.storage
+    const { data: folders, error: foldersError } = await apiStorage
       .from('scoresheets')
       .list('', { limit: 100, sortBy: { column: 'name', order: 'desc' } });
 
@@ -125,7 +117,7 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
     for (const folder of folders || []) {
       if (!folder.name || folder.name.startsWith('.')) continue;
 
-      const { data: files, error: filesError } = await supabase.storage
+      const { data: files, error: filesError } = await apiStorage
         .from('scoresheets')
         .list(folder.name, { limit: 50 });
 
@@ -154,7 +146,7 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
     const enrichedScoresheets = await Promise.all(
       scoresheets.slice(0, 50).map(async (item) => {
         try {
-          const { data, error } = await supabase.storage
+          const { data, error } = await apiStorage
             .from('scoresheets')
             .download(item.path);
 
