@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
+import { PROFILE_NOT_SAVED } from './profileWrite'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -128,7 +129,9 @@ export default function ProfileModal({ open, onClose }) {
     })
 
     if (updateError) {
-      setError(updateError.message)
+      setError(updateError.code === PROFILE_NOT_SAVED
+        ? t('auth.profileNotSaved', 'Your profile was not saved. Please reload the app and try again.')
+        : updateError.message)
     } else {
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
