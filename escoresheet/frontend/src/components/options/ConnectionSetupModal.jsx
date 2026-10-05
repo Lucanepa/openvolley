@@ -14,6 +14,7 @@ import {
 } from '../../utils/networkInfo'
 import { db } from '../../db/db'
 import { useRelayTablets } from '../../hooks/useRealtimeConnection'
+import { getLocalServerStatusUrl } from '../../utils/backendConfig'
 import { relayMatchKey } from '../../utils/serverDataSync'
 import { SignalIcon, GlobeIcon } from '../icons'
 
@@ -47,9 +48,10 @@ export default function ConnectionSetupModal({
     const loadNetworkInfo = async () => {
       setLoading(true)
       try {
+        // A static deployment has no local server to ask (its /api/* is the SPA)
         const [ip, status] = await Promise.all([
           getLocalIP(),
-          getServerStatus()
+          getLocalServerStatusUrl() ? getServerStatus() : Promise.resolve({ running: false })
         ])
         setLocalIP(ip)
         setServerStatus(status)
@@ -104,13 +106,15 @@ export default function ConnectionSetupModal({
   // Current URLs based on mode
   const currentUrls = connectionMode === 'lan' ? lanUrls : cloudUrls
 
-  // Resolve the seed key for QR code URL building
-  const seedKey = matchSeedKey || match?.seed_key || match?.externalId || matchId
+  // The match's relay key (its seed key) for the QR code / link: the tablet
+  // preselects that match and still asks for its PIN. Never the Dexie id,
+  // which every device's first match shares.
+  const relayKey = relayMatchKey(match) || matchSeedKey || null
+  const seedKey = relayKey
 
   // Devices on this match: the relay the tablets use (cloud backend or LAN
   // server), asked by the seed key the tablets subscribe with. It used to ask
   // window.location, which on a static deployment is the SPA, not the relay.
-  const relayKey = match ? relayMatchKey(match, matchId) : (matchSeedKey || null)
   const relayTablets = useRelayTablets(open && relayKey ? String(relayKey) : null, match, { enabled: open, intervalMs: 5000 })
   const devicesOnMatch = relayTablets.connections?.dashboardClients ?? relayTablets.watchers
   const watchingMatch = relayTablets.connections?.matchSubscriptions?.[String(relayKey)] ?? relayTablets.watchers
