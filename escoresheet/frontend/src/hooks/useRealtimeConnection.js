@@ -186,6 +186,10 @@ export function useRealtimeConnection({
           setStatus(CONNECTION_STATUS.CONNECTED)
           setActiveConnection('supabase')
           setError(null)
+          // The relay realtime shim repeats SUBSCRIBED after every reconnect:
+          // refetch so changes missed while the socket was down show up now,
+          // not only after the next write.
+          fetchAndDeliver('subscribed')
 
           // If we connected WITHOUT the UUID, retry the lookup periodically
           // so we can upgrade to full subscriptions once the match is synced
