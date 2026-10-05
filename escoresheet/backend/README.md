@@ -181,6 +181,50 @@ Fetch upcoming matches from Swiss VolleyManager iCal feeds. Cached for 5 minutes
 
 List all available leagues across federations (SV, SVRZ).
 
+## Auth module (`lib/auth.js`, self-hosted Postgres)
+
+Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its own Postgres (`DATABASE_URL`). Users stay in `auth.users` with their Supabase UUIDs and bcrypt hashes (`$2a$`/`$2b$`/`$2y$`), so old passwords keep working. Sessions are opaque 32-byte tokens; only `SHA-256(token)` is stored, in `auth.app_sessions`.
+
+**Database.** Run `db/002_app_sessions.sql` as the owner role after `000_prelude.sql` and before `roles.sql`. It is idempotent.
+
+**Endpoints** (all `POST /api/auth/<action>`, JSON in, `{data, error:{message, code}}` out):
+
+| Action | Behaviour |
+|---|---|
+| `sign-in` `{email, password}` | 200 `{user, session:{access_token, token_type, expires_in, expires_at, user}}`; 400 `invalid_credentials`; 429 `account_locked` / `rate_limited` |
+| `sign-up` `{email, password, metadata}` | Creates `auth.users` + `profiles` in one transaction (the `handle_new_user` mapping; client `roles` are dropped). 200 `{user}`, no session; 422 on duplicates or bad input |
+| `get-user` `{access_token}` | 200 `{user, session:{expires_at, expires_in}}`; **401 `invalid_token`** when unknown, expired or revoked |
+| `sign-out` `{access_token}` | Deletes the session; always 200 |
+| `delete-account` `{access_token}` | Deletes the user, profile, user_matches and sessions |
+| `profile` `{access_token}` | Read-only; `updates` is ignored |
+| `update-user` | 501 (email change returns in Phase 7) |
+| `reset-password` | 503 "temporarily unavailable", until Phase 7 |
+
+Sessions last 30 days, slide forward when fewer than 15 days remain, and never live past `created_at + 90 days`. A database failure is a **503** `auth_unavailable`, never a 401, so clients keep their session.
+
+**Protected routes** call `await auth.requireUser(req, res)` (writes the 401/503 itself) or `await auth.verifyToken(req)` (returns the user or `null`, throws on database errors).
+
+**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, and a lock for 15 min after 10 failures per email; sign-up 5/hour per IP; session checks 300/min per IP. Override with `createAuth({ limits, lockout })`.
+
+**Owner CLI.** Set a password and revoke all sessions (the password comes from a hidden prompt, or from stdin when piped, never from argv):
+
+```bash
+DATABASE_URL=postgres://ov_owner@.../openvolley node scripts/set-password.mjs someone@example.com
+node scripts/set-password.mjs someone@example.com --generate     # prints a random password once
+node scripts/set-password.mjs someone@example.com --revoke-only  # sign out everywhere
+```
+
+**Tests.** `npm test` runs the unit tests; the Postgres suite in `tests/auth.test.js` skips unless `PG_TEST_URL` is set. It creates and drops its own database, so the URL needs a role that may `CREATE DATABASE`:
+
+```bash
+docker run -d --rm --name ov-test-auth -e POSTGRES_PASSWORD=test -p 127.0.0.1:0:5432 postgres:17-alpine
+PORT=$(docker port ov-test-auth 5432/tcp | head -1 | cut -d: -f2)
+PG_TEST_URL=postgres://postgres:test@127.0.0.1:$PORT/postgres npm test
+docker stop ov-test-auth
+```
+
+`tests/fixtures/synthetic_schema.sql` stands in for the real Supabase dump until it is available.
+
 ## WebSocket Protocol
 
 ### Client to Server
