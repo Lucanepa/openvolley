@@ -301,6 +301,7 @@ const HAS_STATIC = HAS_EMBEDDED_ASSETS || HAS_STATIC_ON_DISK
 const MIME_TYPES = {
   '.html': 'text/html',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
   '.png': 'image/png',
