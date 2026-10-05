@@ -1,53 +1,176 @@
 /**
- * Tailwind v4 + shadcn/ui design tokens — LIGHT MODE ONLY.
+ * Tailwind v4 + volleyui tokens: LIGHT MODE ONLY.
  *
- * Preflight (Tailwind's base reset) is intentionally NOT imported so this can
- * coexist with the legacy hand-written styles.css during the incremental
- * migration: legacy CSS is unlayered and therefore overrides Tailwind's layered
- * utilities, so enabling Tailwind does not restyle existing views. New/migrated
- * components use these utilities + tokens; dark mode is deliberately omitted.
+ * Cascade order (lowest to highest):
+ *   theme -> base -> legacy -> components -> utilities -> unlayered -> inline style
+ *
+ * - Preflight (Tailwind's element reset) is still NOT imported: the legacy
+ *   styles.css owns the element rules, and the app relies on them.
+ * - styles.css is imported here, demoted into the `legacy` layer. It sits above
+ *   the kit's `base` (so its body/background/text colours still win while the
+ *   migration runs) and BELOW `utilities`, so a volleyui class on a <button>,
+ *   <input> or <p> now beats the old element rules. Inline style={{}} still
+ *   beats everything.
+ * - src/ui/tokens.css (the volleyui kit) is the base: brand red, red-600/700 =
+ *   Swiss Volley red, shadow-card, Inter Variable at opsz 32, colour-scheme
+ *   light, print and reduced-motion rules.
  */
-@layer theme, base, components, utilities;
+@layer theme, base, legacy, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
-/* shadcn/ui CSS variables — light palette only (no .dark block on purpose). */
-:root {
-  --radius: 0.625rem;
+/* volleyui kit tokens (also pulls in @fontsource-variable/inter/opsz.css). */
+@import './ui/tokens.css';
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.21 0.02 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 260);
+/* User-selectable score fonts (Scoreboard / Referee / Scoreboard options),
+   self-hosted so they render offline. Latin only (digits and the colon), the
+   weights the former Google Fonts link asked for. Family names are unchanged,
+   so getScoreFont() and the options keep working as they are. */
+@import '@fontsource/orbitron/latin-400.css';
+@import '@fontsource/orbitron/latin-500.css';
+@import '@fontsource/orbitron/latin-600.css';
+@import '@fontsource/orbitron/latin-700.css';
+@import '@fontsource/orbitron/latin-800.css';
+@import '@fontsource/orbitron/latin-900.css';
+@import '@fontsource/roboto-mono/latin-400.css';
+@import '@fontsource/roboto-mono/latin-500.css';
+@import '@fontsource/roboto-mono/latin-600.css';
+@import '@fontsource/roboto-mono/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+@import '@fontsource/jetbrains-mono/latin-600.css';
+@import '@fontsource/jetbrains-mono/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-800.css';
+@import '@fontsource/space-mono/latin-400.css';
+@import '@fontsource/space-mono/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-700.css';
 
-  /* primary = blue #3b82f6 */
-  --primary: oklch(0.62 0.19 260);
-  --primary-foreground: oklch(0.98 0.01 260);
+/* The legacy stylesheet, demoted into its layer (was: import './styles.css'
+   in each *-main.jsx). */
+@import './styles.css' layer(legacy);
 
-  --secondary: oklch(0.97 0.01 260);
-  --secondary-foreground: oklch(0.21 0.02 260);
-  --muted: oklch(0.97 0.01 260);
-  --muted-foreground: oklch(0.55 0.02 260);
-  --accent: oklch(0.97 0.01 260);
-  --accent-foreground: oklch(0.21 0.02 260);
+/* RESTYLE-SPEC R2, name collisions. Now that utilities beat the legacy layer,
+   a legacy class that is also a valid Tailwind utility would switch meaning.
+   MatchSetup's match-info editor uses w-80/90/120/140/160 (legacy: N px x
+   --scale-factor) and w-100/w-250 (no legacy rule; they relied on the legacy
+   `input { width: 100% }` beating the utility); App.jsx uses the legacy
+   `container`. Tailwind must not generate these names, so the legacy cascade
+   resolves exactly as before. Reserved until P3a/P2b rename those call sites;
+   new code uses arbitrary widths (w-[320px]) or the kit instead. */
+@source not inline("w-80 w-90 w-100 w-120 w-140 w-160 w-250 container");
 
-  /* success / scoring accent = green #22c55e */
-  --success: oklch(0.72 0.19 149);
-  --success-foreground: oklch(0.98 0.02 149);
-
-  /* destructive = red #ef4444 */
-  --destructive: oklch(0.64 0.24 25);
-  --destructive-foreground: oklch(0.98 0.02 25);
-
-  --border: oklch(0.92 0.01 260);
-  --input: oklch(0.92 0.01 260);
-  --ring: oklch(0.62 0.19 260);
+@theme {
+  /* Hover/pressed brand, for non-class contexts (red-700 is the class form). */
+  --color-brand-hover: #be0014;
+  --color-brand-soft-border: #fee2e2;
 }
 
-/* Expose the tokens to Tailwind's utility engine (bg-background, text-foreground, …). */
+/* --ov-* tokens: the same palette for the inline style={{}} objects that
+   cannot use classes (RESTYLE-SPEC 1.2). The legacy names (--bg, --panel,
+   --text, --muted, --border, --accent ...) are still defined in styles.css and
+   keep their values until P1 re-points them at these. */
+:root {
+  /* ---- surfaces (stone neutrals) ---- */
+  --ov-page: #f5f5f4;            /* stone-100 page background */
+  --ov-page-top: #fafaf9;        /* stone-50  top of the page gradient */
+  --ov-card: #ffffff;            /* cards, modals, top bar */
+  --ov-sunken: #fafaf9;          /* stone-50  table heads, inset panels */
+  --ov-sunken-strong: #f5f5f4;   /* stone-100 hover rows, count pills */
+  --ov-hairline: #e7e5e4;        /* stone-200 card/table borders, dividers */
+  --ov-hairline-soft: rgb(231 229 228 / 0.7); /* stone-200/70 card edge */
+  --ov-hairline-strong: #d6d3d1; /* stone-300 input borders, outline buttons */
+  --ov-rule: #292524;            /* stone-800 1.5px section-head rule */
+
+  /* ---- text ---- */
+  --ov-text: #1c1917;            /* stone-900 headings, numbers */
+  --ov-text-body: #292524;       /* stone-800 body copy */
+  --ov-text-secondary: #57534e;  /* stone-600 secondary copy */
+  --ov-text-muted: #78716c;      /* stone-500 captions, labels (4.6:1 on white) */
+  --ov-text-faint: #a8a29e;      /* stone-400 placeholders, disabled, decorative only */
+  --ov-on-dark: #ffffff;
+
+  /* ---- brand / selection ---- */
+  --ov-brand: #e2001a;
+  --ov-brand-hover: #be0014;
+  --ov-brand-soft: #fef2f2;      /* red-50 */
+  --ov-brand-soft-border: #fee2e2; /* red-100 */
+  --ov-selected: #0f172a;        /* slate-900 active nav, segment on */
+  --ov-selected-hover: #1e293b;  /* slate-800 */
+
+  /* ---- focus ---- */
+  --ov-focus: #ef4444;           /* red-500, 2px ring */
+  --ov-focus-soft: rgb(190 0 20 / 0.20); /* red-700/20, large inputs */
+
+  /* ---- status ---- */
+  --ov-success: #059669;         /* emerald-600 confirm */
+  --ov-success-hover: #047857;   /* emerald-700 */
+  --ov-success-soft: #d1fae5;    /* emerald-100 */
+  --ov-success-text: #065f46;    /* emerald-800 */
+  --ov-warning-soft: #fffbeb;    /* amber-50 */
+  --ov-warning-border: #fef3c7;  /* amber-100 */
+  --ov-warning-strong: #fcd34d;  /* amber-300 */
+  --ov-warning-text: #92400e;    /* amber-800 */
+  --ov-danger: #e2001a;          /* = brand: one red for act and destroy */
+  --ov-danger-hover: #be0014;
+  --ov-danger-text: #b91c1c;     /* red-700 stock, inline errors */
+  --ov-danger-soft: #fef2f2;     /* red-50 */
+  --ov-danger-border: #fee2e2;   /* red-100 */
+  --ov-info-text: #0369a1;       /* sky-700 */
+  --ov-info-soft: #f0f9ff;       /* sky-50 */
+  --ov-info-border: #bae6fd;     /* sky-200 */
+
+  /* ---- overlays & elevation ---- */
+  --ov-overlay: rgb(28 25 23 / 0.60);      /* stone-900/60 + blur, decisions */
+  --ov-overlay-content: rgb(28 25 23 / 0.50); /* stone-900/50 + blur, content dialogs */
+  --ov-overlay-sheet: rgb(15 23 42 / 0.40);   /* slate-900/40, options sheet */
+  --ov-shadow-card: var(--shadow-card);
+  --ov-shadow-card-lg: var(--shadow-card-lg);
+  --ov-shadow-pop: 0 25px 50px -12px rgb(0 0 0 / 0.25); /* = shadow-2xl */
+  --ov-shadow-btn: 0 1px 2px 0 rgb(0 0 0 / 0.05);       /* = shadow-sm */
+
+  /* ---- radii (step down one size per nesting level) ---- */
+  --ov-radius-sm: 0.375rem;  /* rounded-md  chips, micro controls */
+  --ov-radius: 0.5rem;       /* rounded-lg  buttons, inputs, notices */
+  --ov-radius-lg: 0.75rem;   /* rounded-xl  inner blocks, toasts, h-11 controls */
+  --ov-radius-xl: 1rem;      /* rounded-2xl cards, modals */
+  --ov-radius-pill: 9999px;
+
+  /* ---- shadcn variables (src/components/ui/button.jsx and any later shadcn
+     primitive). RESTYLE-SPEC R3: --border, --muted and --accent are NOT
+     defined here. styles.css owns those names with a different meaning
+     (--muted is a TEXT colour, --accent the scoring green), and this unlayered
+     block would beat the layered legacy one. The Tailwind colour aliases below
+     map straight to --ov-* instead.
+     --primary, --foreground and --card keep their former values on purpose:
+     Scoreboard (var(--primary) fills in Manual Changes: no brand red on the
+     scoreboard, R4), MatchEnd (var(--foreground) on the frozen per-set
+     result) and CoinToss read them inline. Their owners convert those sites. */
+  --radius: 0.5rem;          /* rounded-lg/md/sm stay Tailwind's stock 8/6/4px */
+  --background: var(--ov-page);
+  --foreground: oklch(0.21 0.02 260);
+  --card: #ffffff;
+  --card-foreground: var(--ov-text-body);
+  --popover: var(--ov-card);
+  --popover-foreground: var(--ov-text-body);
+  --primary: oklch(0.62 0.19 260);
+  --primary-foreground: #ffffff;
+  --secondary: #ffffff;
+  --secondary-foreground: #44403c; /* stone-700 */
+  --muted-foreground: var(--ov-text-muted);
+  --accent-foreground: var(--ov-text);
+  --success: var(--ov-success);
+  --success-foreground: #ffffff;
+  --destructive: var(--ov-danger);
+  --destructive-foreground: #ffffff;
+  --input: var(--ov-hairline-strong);
+  --ring: var(--ov-focus);   /* legacy :focus-visible outline reads var(--ring) */
+}
+
+/* Expose the tokens to Tailwind's utility engine (bg-background, text-foreground, ...). */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -59,18 +182,223 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
+  /* R3: straight to --ov-*, never through the colliding legacy names. */
+  --color-muted: var(--ov-sunken);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
+  --color-accent: var(--ov-sunken-strong);
   --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
+  --color-border: var(--ov-hairline);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+}
+
+/* RESTYLE-SPEC R5, frozen print block. MatchEntry (bench tablet) renders the
+   scoresheet_pdf `Results` table, whose set rows use Tailwind `text-xs`. Before
+   styles.css was layered, the legacy `.text-xs` (13px x --scale-factor) won
+   there; keep that size inside this one block so the official layout does not
+   move. .ov-legacy-results is the wrapper MatchEntry/MatchEnd put around the
+   block (the scoresheet_pdf files themselves stay untouched). */
+.ov-legacy-results .text-xs {
+  font-size: calc(13px * var(--scale-factor));
+}
+
+/* ---------------------------------------------------------------------------
+   .ov-kit: the volleyui kit's own preflight, scoped.
+   Tailwind's preflight stays off (the legacy views rely on the browser
+   defaults plus styles.css), but the kit components were written against it.
+   Without this, the legacy element rules (`button { background: var(--accent) }`,
+   `p { color: var(--muted) }`, `h3 { margin; font-size }`, `label`, `input`,
+   `select`) reach every kit element that does not set those properties
+   itself: the confirm dialog's Cancel rendered as a green button.
+   This layer sits above `legacy` and below `utilities`, so it beats the legacy
+   rules and every kit class still beats it. Mount the kit host inside
+   `.ov-kit`; later packages wrap each converted view in the same class.
+   (The subset of Tailwind's preflight that the kit relies on.)
+   --------------------------------------------------------------------------- */
+@layer components {
+  .ov-kit {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: normal;
+    color: var(--color-stone-800);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ov-kit,
+  .ov-kit :where(*, ::before, ::after, ::backdrop) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+
+  .ov-kit :where(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .ov-kit :where(p, h1, h2, h3, h4, h5, h6, label) {
+    color: inherit;
+  }
+
+  .ov-kit :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  .ov-kit :where(ol, ul, menu) {
+    list-style: none;
+  }
+
+  .ov-kit :where(img, svg, video, canvas) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  .ov-kit :where(label) {
+    display: revert;
+  }
+
+  .ov-kit :where(button, input, select, optgroup, textarea) {
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+    width: auto;
+    text-transform: none;
+    box-shadow: none;
+  }
+
+  .ov-kit :where(button) {
+    appearance: button;
+    cursor: pointer;
+  }
+
+  .ov-kit :where(button:disabled) {
+    cursor: default;
+  }
+
+  .ov-kit :where(textarea) {
+    resize: vertical;
+  }
+
+  .ov-kit :where(::placeholder) {
+    opacity: 1;
+    color: color-mix(in oklab, currentcolor 50%, transparent);
+  }
+
+  /* The legacy .text-sm / .text-xs add letter-spacing: .2px (and size by
+     --scale-factor); inside the kit the Tailwind utility alone applies. */
+  .ov-kit :where(.text-sm, .text-xs) {
+    letter-spacing: normal;
+  }
+
+  /* RESTYLE-SPEC R12: the confirm dialog is opened from scoring screens, so its
+     two buttons keep the 44px courtside minimum (the kit draws them ~38px). */
+  .ov-kit :where([data-testid="confirm-cancel"], [data-testid="confirm-accept"]) {
+    min-height: 44px;
+  }
+}
+
+/* The host for <UiHost /> in every *-main.jsx: <div className="ov-kit ov-kit-host">.
+   The kit's dialog is z-50 and its toasts z-[60]; the legacy overlays go to
+   z-index 1000 (Modal, MenuList), 9999, 99999 and 100000 (AlertContext). This
+   box is its own stacking context above all of them, so a confirmDialog() or
+   toast fired from inside a legacy modal shows on top of it. It is 0x0 and
+   fixed, so it takes no space and catches no taps; the dialog and toasts are
+   position: fixed to the viewport, as before. */
+.ov-kit-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 100001;
+}
+
+/* ---------------------------------------------------------------------------
+   RESTYLE-SPEC R1 guard: the frozen scoring readouts keep today's type.
+   The body is Inter Variable at opsz 32 (Display cut) with true 500/600/800
+   weights. Before P0 these readouts used the static Inter 4 Text files, which
+   had only 400 and 700, so fontWeight 500 drew 400 and 600/800/900 drew 700.
+   At opsz 32 the 9-11px bench labels and official names came out cramped and
+   lighter, and MatchEnd's big 800-weight "3:0" grew until the colon touched
+   both digits.
+   'OV Readout Inter' is the same bundled variable file (no extra download)
+   declared with exactly two faces, 400 and 700. Font matching then picks
+   400 for 100-500 and 700 for 600-900, and the wght axis is clamped to the
+   face, which reproduces the old static pair. opsz 14 is the Text cut the
+   static files were, and the default glyph set (no cv02-cv11) is theirs too.
+   Score fonts picked in Options set their own family inline and are untouched.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource-variable/inter/files/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource-variable/inter/files/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@layer components {
+  /* .court + .team-controls (the side columns: TO/SUB, bench, liberos, bench
+     officials) + .to-sub-counter + .set-score-display, as R1 lists them, plus
+     .court-wrapper (the big rally score above the court, serve box, referee
+     names, rally controls), the toolbar set-score boxes (selected by their
+     existing data-help-id, so Scoreboard.jsx is not touched),
+     the set-end modal's "A 25 : 3 B" line and winner chip (.set-end-readout),
+     MatchEnd's winner score readout and the paper-sheet Results/Sanctions
+     blocks (.ov-legacy-results, R5; MatchEnd and MatchEntry). Redefining
+     --font-sans here also reaches the legacy rules that set
+     font-family: var(--font-sans) on a descendant. */
+  :where(.court, .court-wrapper, .team-controls, .to-sub-counter, .set-score-display,
+         [data-help-id="scoreboard-set-display"], .set-end-readout, .match-end-score,
+         .ov-legacy-results) {
+    --font-sans: 'OV Readout Inter', 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-sans);
+    font-variation-settings: "opsz" 14;
+    font-feature-settings: normal;
+  }
+
+  /* No brand-red focus outline on the scoring controls (R4): the legacy
+     :focus-visible rule reads var(--ring), which is red-500 elsewhere. */
+  :where(.court, .team-controls, .rally-controls, .set-score-display) {
+    --ring: var(--ov-selected);
+  }
 }

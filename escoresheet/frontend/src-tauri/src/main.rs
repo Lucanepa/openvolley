@@ -84,6 +84,9 @@ fn main() {
             .title("Openvolley eScoresheet")
             .inner_size(1400.0, 900.0)
             .min_inner_size(1200.0, 700.0)
+            // Light only (volleyui): a dark OS theme must not darken the
+            // native title bar, pickers or scrollbars of the scoretable.
+            .theme(Some(tauri::Theme::Light))
             .build()?;
 
             Ok(())

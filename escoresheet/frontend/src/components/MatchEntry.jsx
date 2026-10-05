@@ -829,8 +829,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           </div>
         </div>
 
-        {/* Results Table */}
-        <div style={{
+        {/* Results Table (.ov-legacy-results: frozen print block, RESTYLE-SPEC R5) */}
+        <div className="ov-legacy-results" style={{
           width: '100%',
           maxWidth: '500px',
           background: 'white',

@@ -1,8 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import './tailwind.css'
-import './styles.css'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
 import { initLogger } from './utils/logger'
 import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
@@ -10,6 +9,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
@@ -31,6 +31,7 @@ createRoot(document.getElementById('root')).render(
           </AlertProvider>
         </AuthProvider>
       </ScaleProvider>
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
     </ErrorBoundary>
   </React.StrictMode>
 )
