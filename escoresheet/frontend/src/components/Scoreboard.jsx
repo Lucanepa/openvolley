@@ -351,6 +351,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const previousMatchIdRef = useRef(null) // Track previous matchId to detect changes
   const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
   const syncFunctionRef = useRef(null) // Store sync function for use in action handlers
+  // The relay accepts actions / live-state only from the socket that already
+  // synced (proved) the match: after a (re)connect they wait for that sync.
+  const initialSyncRef = useRef(null)
+  // Relay refused this scoreboard (another device holds the match id, or too
+  // many failed claims): shown to the scorer instead of failing silently.
+  const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
   const noSleepVideoRef = useRef(null) // Video element for NoSleep fallback
   const checkAndRequestCaptainOnCourtRef = useRef(null) // Store latest captain check function
   const logEventRef = useRef(null) // Store latest logEvent function to avoid circular dependencies
@@ -1363,6 +1369,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         ws.onopen = () => {
+          setRelayRejection(null)
           // Clear all other matches first (scoreboard is source of truth - only current match should exist)
           try {
             ws.send(JSON.stringify({
@@ -1374,8 +1381,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
 
           // Send initial match data sync (this will overwrite/add the current match)
-          // No periodic sync - data is synced only when actions occur
-          syncMatchData()
+          // No periodic sync - data is synced only when actions occur.
+          // Actions / live-state sent meanwhile wait for it (see sendRelayMessage):
+          // the relay only accepts them once this socket proved the match.
+          const initialSync = syncMatchData()
+          initialSyncRef.current = initialSync
+          initialSync.finally(() => {
+            if (initialSyncRef.current === initialSync) initialSyncRef.current = null
+          })
         }
 
         ws.onmessage = (event) => {
@@ -1393,6 +1406,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               handleGameNumberRequest(message)
             } else if (message.type === 'pong') {
               // Heartbeat response
+            } else if (message.type === 'error' && ['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code) &&
+              (message.matchId === undefined || String(message.matchId) === String(matchId))) {
+              // The relay refused our scoreboard role: referee/bench/livescore
+              // get no updates from this device until it is resolved.
+              // Refused again on every sync; the banner expires when that stops.
+              setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
             }
           } catch (err) {
             console.error('[WebSocket] Error parsing message:', err)
@@ -1734,7 +1753,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (syncFunctionRef.current && data?.match) {
       syncFunctionRef.current()
     }
-  }, [data?.match?.refereeConnectionEnabled, data?.match?.homeTeamConnectionEnabled, data?.match?.awayTeamConnectionEnabled])
+    // PINs too: the relay validates referee/bench PINs from its last sync, so an
+    // edited PIN must reach it right away (handleSavePin writes Dexie only).
+  }, [data?.match?.refereeConnectionEnabled, data?.match?.homeTeamConnectionEnabled, data?.match?.awayTeamConnectionEnabled,
+    data?.match?.refereePin, data?.match?.homeTeamPin, data?.match?.awayTeamPin])
 
   // Sync data to referee/bench - call this after any action that changes match data
   // If WebSocket isn't ready, retry after a short delay
@@ -1754,6 +1776,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [])
 
+  // Send a message the relay only accepts from the match's proven scoreboard.
+  // Right after a (re)connect it waits for the socket's first sync, so e.g. a
+  // timeout started during a Wi-Fi blip still reaches the referee.
+  const sendRelayMessage = useCallback((payload) => {
+    const send = () => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      try {
+        ws.send(JSON.stringify(payload))
+      } catch { /* ignore relay send errors */ }
+    }
+    const pendingSync = initialSyncRef.current
+    if (pendingSync) pendingSync.then(send)
+    else send()
+  }, [])
+
   // Send action to referee/bench for showing modals/countdowns
   const sendActionToReferee = useCallback((actionType, actionData) => {
     const ws = wsRef.current
@@ -1762,17 +1800,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const sendTimestamp = Date.now()
-    const actionPayload = {
+    sendRelayMessage({
       type: 'match-action',
       matchId: matchId,
       action: actionType,
       data: actionData,
       timestamp: sendTimestamp,
       _timestamp: sendTimestamp // For latency tracking
-    }
-
-    ws.send(JSON.stringify(actionPayload))
-  }, [matchId])
+    })
+  }, [matchId, sendRelayMessage])
 
   // Sync live state to Supabase for referee.openvolley.app
   // SIMPLIFIED: Uses stateSnapshot from events instead of recomputing everything
@@ -1788,22 +1824,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (!match || match.test) return
       console.log(`[PERF:liveState] After match.get: +${(performance.now() - _tl).toFixed(0)}ms`)
 
-      // Get the Supabase match UUID
+      // The Supabase match UUID when the match record already has it. A lookup
+      // (network) is done only after the LAN relay got the live-state, so an
+      // offline hall or a failing lookup never starves the referee/LedBox.
       let supabaseMatchId = null
       const externalId = match.externalId
       if (externalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
         supabaseMatchId = externalId
-      } else {
-        const seedKey = match.seed_key || String(matchId)
-        const { data: matchData, error } = await apiFrom('matches')
-          .select('id')
-          .eq('external_id', seedKey)
-          .maybeSingle()
-        if (error || !matchData) return
-        supabaseMatchId = matchData.id
-        console.log(`[PERF:liveState] After Supabase match lookup: +${(performance.now() - _tl).toFixed(0)}ms`)
       }
-      if (!supabaseMatchId) return
 
       // Use cached snapshot if provided, otherwise fetch/compute
       let snapshot = cachedSnapshot
@@ -2002,12 +2030,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
-      try {
-        const relayWs = wsRef.current
-        if (relayWs && relayWs.readyState === WebSocket.OPEN) {
-          relayWs.send(JSON.stringify({ type: 'live-state-update', matchId, liveState: liveStateData }))
-        }
-      } catch { /* ignore relay send errors */ }
+      sendRelayMessage({ type: 'live-state-update', matchId, liveState: { ...liveStateData } })
+
+      if (!supabaseMatchId) {
+        const seedKey = match.seed_key || String(matchId)
+        const { data: matchData, error } = await apiFrom('matches')
+          .select('id')
+          .eq('external_id', seedKey)
+          .maybeSingle()
+        if (error || !matchData) return
+        supabaseMatchId = matchData.id
+        liveStateData.match_id = supabaseMatchId
+        console.log(`[PERF:liveState] After Supabase match lookup: +${(performance.now() - _tl).toFixed(0)}ms`)
+      }
 
       console.log('[LiveState] Syncing to Supabase:', {
         eventType,
@@ -2042,7 +2077,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } catch (err) {
       console.error('[LiveState] Exception:', err)
     }
-  }, [matchId, captureFullStateSnapshot])
+  }, [matchId, captureFullStateSnapshot, sendRelayMessage])
 
 
 
@@ -12229,6 +12264,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   return (
     <div className="match-record">
+      {relayRejection && now - relayRejection.at < 45000 && (
+        <div role="alert" style={{
+          position: 'fixed',
+          top: 8,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          maxWidth: 'min(560px, calc(100vw - 32px))',
+          padding: '8px 14px',
+          borderRadius: 8,
+          background: '#7f1d1d',
+          color: '#fff',
+          fontSize: 13,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+        }}>
+          {relayRejection.code === 'not-match-owner'
+            ? t('scoreboard.relayRejected.notOwner', 'Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device\'s updates.')
+            : relayRejection.code === 'too-many-matches'
+              ? t('scoreboard.relayRejected.tooMany', 'Referee/bench link: this device already drives too many matches on the server.')
+              : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
+        </div>
+      )}
       {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS) */}
       {!isLandscape && (
         <div style={{

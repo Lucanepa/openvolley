@@ -739,10 +739,10 @@ export function subscribeToMatchData(matchId, onUpdate) {
             // Pass through timestamp fields for latency tracking.
             const payload = readRelayBundle(message)
             if (payload) {
-              // A sync carries no fresh live-state; keep the last one pushed.
-              if (payload.liveState === undefined && connection.lastLiveState !== undefined) {
-                payload.liveState = connection.lastLiveState
-              }
+              // The relay decides whether the last live-state still applies: it
+              // re-sends it with every bundle while the same scoreboard / game PIN
+              // keeps the match, and drops it on a takeover. Re-applying an old
+              // one here would show another match's sides, sets or 'ended' state.
               connection.lastLiveState = payload.liveState
               connection.lastPayload = payload
               notify(payload)
@@ -758,6 +758,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
           } else if (message.type === 'match-deleted' && String(message.matchId) === matchIdStr) {
             // Match removed from the relay (match end / scorer deleted it)
             connection.lastPayload = null
+            connection.lastLiveState = undefined
             notify({ _deleted: true, matchId: matchIdStr })
           } else if (message.type === 'error') {
             // Relay refused something (rate limit, not the match's scoreboard, ...)
@@ -1157,7 +1158,11 @@ export async function listAvailableMatchesForBenchSupabase() {
  * Validate PIN against Supabase database
  * Returns match data if PIN is valid
  */
-export async function validatePinSupabase(pin, type = 'referee') {
+export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000 } = {}) {
+  // Bounded: on a venue network that drops packets to the internet this check
+  // must fail fast so the caller can fall back to the LAN relay.
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller && timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null
   try {
     const pinStr = String(pin).trim()
 
@@ -1174,7 +1179,8 @@ export async function validatePinSupabase(pin, type = 'referee') {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinStr, type })
+      body: JSON.stringify({ pin: pinStr, type }),
+      ...(controller ? { signal: controller.signal } : {})
     })
 
     let result
@@ -1190,8 +1196,11 @@ export async function validatePinSupabase(pin, type = 'referee') {
 
     return { success: true, match: result.match }
   } catch (error) {
+    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out' }
     console.error('[validatePinSupabase] Exception:', error)
     return { success: false, error: error.message }
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
