@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { AlertTriangle, Check, Circle, Loader2, X } from 'lucide-react'
+import { cn, FOCUS_RING } from '../ui'
 
 /**
  * SyncProgressModal - Full-screen overlay showing sync progress steps
@@ -65,36 +67,15 @@ export default function SyncProgressModal({
   const getStatusIcon = (status) => {
     switch (status) {
       case 'pending':
-        return (
-          <span style={{ color: '#6b7280', fontSize: 20 }}>○</span>
-        )
+        return <Circle size={18} className="text-stone-300" aria-hidden="true" />
       case 'in_progress':
-        return (
-          <span
-            className="sync-spinner"
-            style={{
-              display: 'inline-block',
-              width: 20,
-              height: 20,
-              border: '2px solid #3b82f6',
-              borderTopColor: 'transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }}
-          />
-        )
+        return <Loader2 size={18} className="sync-spinner animate-spin text-stone-500" aria-hidden="true" />
       case 'done':
-        return (
-          <span style={{ color: '#22c55e', fontSize: 20 }}>✓</span>
-        )
+        return <Check size={18} strokeWidth={2.5} className="text-green-600" aria-hidden="true" />
       case 'warning':
-        return (
-          <span style={{ color: '#f59e0b', fontSize: 20 }}>⚠</span>
-        )
+        return <AlertTriangle size={18} className="text-amber-500" aria-hidden="true" />
       case 'error':
-        return (
-          <span style={{ color: '#ef4444', fontSize: 20 }}>✗</span>
-        )
+        return <X size={18} strokeWidth={2.5} className="text-red-600" aria-hidden="true" />
       default:
         return null
     }
@@ -107,69 +88,34 @@ export default function SyncProgressModal({
     return translated !== translationKey ? translated : step.label
   }
 
+  // Opened from the scoreboard: neutral and semantic tones only, no brand fill (R4).
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.9)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2000,
-        pointerEvents: 'auto'
-      }}
+      className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+      style={{ zIndex: 2000, pointerEvents: 'auto' }}
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
-      <style>
-        {`
-          @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}
-      </style>
-
-      <div
-        style={{
-          background: '#111827',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 16,
-          padding: 32,
-          minWidth: 320,
-          maxWidth: '90vw'
-        }}
-      >
-        <h3 style={{
-          margin: '0 0 24px 0',
-          textAlign: 'center',
-          color: '#fff',
-          fontSize: 18
-        }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="sync-progress-title" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 id="sync-progress-title" className="mb-3 text-center text-lg font-bold text-stone-900">
           {t('scoreboard.sync.syncing', 'Syncing...')}
         </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="divide-y divide-stone-100">
           {steps.map((step, index) => (
             <div
               key={step.id || index}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                opacity: step.status === 'pending' ? 0.5 : 1
-              }}
+              className={cn('flex min-h-11 items-center gap-3 py-2', step.status === 'pending' && 'opacity-60')}
             >
-              <div style={{ width: 24, display: 'flex', justifyContent: 'center' }}>
+              <div className="flex w-6 justify-center">
                 {getStatusIcon(step.status)}
               </div>
-              <span style={{
-                color: step.status === 'done' ? '#22c55e' :
-                  step.status === 'error' ? '#ef4444' :
-                    step.status === 'warning' ? '#f59e0b' : '#fff',
-                fontSize: 16
-              }}>
+              <span className={cn(
+                'text-sm font-medium',
+                step.status === 'done' ? 'text-green-700' :
+                  step.status === 'error' ? 'text-red-700' :
+                    step.status === 'warning' ? 'text-amber-800' : 'text-stone-800'
+              )}>
                 {getStepLabel(step)}
               </span>
             </div>
@@ -178,51 +124,25 @@ export default function SyncProgressModal({
 
         {/* Warning message for offline */}
         {hasWarning && !hasError && (
-          <div style={{
-            marginTop: 20,
-            padding: 12,
-            background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            borderRadius: 8,
-            color: '#f59e0b',
-            fontSize: 14,
-            textAlign: 'center'
-          }}>
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
             {t('scoreboard.sync.offlineWarning', 'Offline. Data saved locally.')}
           </div>
         )}
 
         {/* Error message */}
         {errorMessage && (
-          <div style={{
-            marginTop: 20,
-            padding: 12,
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: 8,
-            color: '#ef4444',
-            fontSize: 14,
-            textAlign: 'center'
-          }}>
+          <div role="alert" className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
             {errorMessage}
           </div>
         )}
 
         {/* Proceed button - only show if complete with error (user must acknowledge) */}
         {isComplete && hasError && (
-          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
+          <div className="mt-5 flex justify-center">
             <button
+              type="button"
               onClick={onProceed}
-              style={{
-                padding: '12px 24px',
-                background: '#f59e0b',
-                color: '#000',
-                border: 'none',
-                borderRadius: 8,
-                fontSize: 16,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
+              className={cn('inline-flex h-11 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800', FOCUS_RING)}
             >
               {t('scoreboard.sync.proceedAnyway', 'Proceed Anyway')}
             </button>
