@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, nativeTheme } = require('electron')
 const path = require('path')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 const serverManager = require('./serverManager')
@@ -276,6 +276,10 @@ function showTabletInfo() {
 
 // App event handlers
 app.whenReady().then(async () => {
+  // Light only (volleyui): a dark OS theme must not darken native controls,
+  // menus or the window frame of the scoretable.
+  nativeTheme.themeSource = 'light'
+
   // Start the LAN relay before creating the window (production only). In dev the
   // Vite server already owns port 5173 and replicates the relay API. If startup
   // fails (e.g. port in use), the app still opens fully offline from disk — just

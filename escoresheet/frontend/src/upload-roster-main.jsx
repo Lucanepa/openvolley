@@ -1,12 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import UploadRosterApp from './UploadRosterApp'
-import './tailwind.css'
-import './styles.css'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
 import './i18n'  // Initialize i18n for localization
 import { AlertProvider } from './contexts/AlertContext'
 import { AuthProvider } from './contexts/AuthContext'
 import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
@@ -21,6 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <UploadRosterApp />
         </AlertProvider>
       </AuthProvider>
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
     </ErrorBoundary>
   </React.StrictMode>
 )
