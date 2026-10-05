@@ -235,8 +235,8 @@ const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle, label }) {
 // a heading strip, the kit inner box of the setup page card (never a card in a card).
 const OFFICIAL_BOX = 'rounded-xl border border-stone-200 bg-white overflow-hidden transition-colors'
 const OFFICIAL_BOX_COLLAPSED = 'rounded-xl border border-dashed border-stone-200 overflow-hidden transition-colors'
-const OFFICIAL_HEAD = 'flex items-center justify-between gap-3 px-4 py-2.5 border-b border-stone-100 bg-stone-50/60'
-const OFFICIAL_HEAD_COLLAPSED = 'flex items-center justify-between gap-3 px-4 py-2.5'
+const OFFICIAL_HEAD = 'flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-2.5 border-b border-stone-100 bg-stone-50/60'
+const OFFICIAL_HEAD_COLLAPSED = 'flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-2.5'
 const OFFICIAL_TITLE = 'whitespace-nowrap text-sm font-semibold text-stone-700'
 
 const OfficialCard = memo(function OfficialCard({
@@ -3762,7 +3762,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mb-3 text-sm font-semibold text-stone-900">
+              <div className="mb-3 text-sm leading-[normal] font-semibold text-stone-900">
                 {t('matchSetup.chooseTeamColour', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
@@ -7222,7 +7222,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 text-sm font-semibold text-stone-900">
+            <div className="mb-3 text-sm leading-[normal] font-semibold text-stone-900">
               {t('matchSetup.chooseTeamColor', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
             </div>
             <div
