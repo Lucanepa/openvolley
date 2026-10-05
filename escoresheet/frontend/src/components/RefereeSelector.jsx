@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { apiFrom } from '../lib/apiClient'
+import { FOCUS_RING_INSET } from '../ui/Button.jsx'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
@@ -129,17 +130,17 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
         }}
         className="modal-wrapper-roll-down"
       >
+        {/* volleyui (RESTYLE-SPEC P3b): a white floating picker card
+            (rounded-xl, stone-200 hairline, shadow-card-lg), large search
+            field, 44px menu rows. */}
         <div
           data-referee-selector
+          className="rounded-xl border border-stone-200 bg-white shadow-card-lg"
           style={{
-            background: 'var(--panel)',
-            border: '2px solid var(--border)',
-            borderRadius: '8px',
             padding: '8px',
             minWidth: '300px',
             maxWidth: '400px',
             maxHeight: '400px',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
             display: 'flex',
             flexDirection: 'column'
           }}
@@ -154,12 +155,9 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
               width: '100%',
+              minHeight: '44px',
               padding: '8px 12px',
               marginBottom: '8px',
-              background: 'var(--panel)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              color: 'var(--text)',
               fontSize: '14px',
               boxSizing: 'border-box'
             }}
@@ -175,15 +173,15 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
             gap: '4px'
           }}>
             {!isOnline ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)' }}>
+              <div className="text-sm text-stone-500" style={{ padding: '12px', textAlign: 'center' }}>
                 {t('refereeSelector.connectToInternet')}
               </div>
             ) : loading ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)' }}>
+              <div className="text-sm text-stone-500" style={{ padding: '12px', textAlign: 'center' }}>
                 {t('common.loading')}
               </div>
             ) : filteredReferees.length === 0 ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)' }}>
+              <div className="text-sm text-stone-500" style={{ padding: '12px', textAlign: 'center' }}>
                 {searchQuery ? t('refereeSelector.noRefereesFound') : t('refereeSelector.noRefereeHistory')}
               </div>
             ) : (
@@ -195,27 +193,13 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                     setSearchQuery('') // Reset search for next use
                     onClose()
                   }}
+                  className={`w-full min-h-11 rounded-lg bg-transparent px-3 text-left text-sm font-medium text-stone-800 hover:bg-stone-100 transition-colors ${FOCUS_RING_INSET}`}
                   style={{
-                    padding: '8px 12px',
-                    background: 'var(--panel-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '4px',
-                    color: 'var(--text)',
-                    fontSize: '14px',
-                    textAlign: 'left',
+                    border: 'none',
                     cursor: 'pointer',
-                    transition: 'all 0.2s',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--panel)'
-                    e.currentTarget.style.borderColor = 'var(--border)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--panel-2)'
-                    e.currentTarget.style.borderColor = 'var(--border)'
                   }}
                 >
                   <span>{referee.lastName}, {referee.firstName}</span>

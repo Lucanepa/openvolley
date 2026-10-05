@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { db } from '../db/db'
+import { Button } from '../ui/Button.jsx'
 
 /**
  * TestModeControls - Debug buttons for testing match functionality
@@ -360,52 +361,38 @@ export default function TestModeControls({ matchId, onRefresh }) {
     }
   }
 
-  const buttonStyle = {
-    padding: '8px 12px',
-    fontSize: '11px',
-    fontWeight: 600,
-    background: 'rgba(251, 191, 36, 0.2)',
-    color: '#fbbf24',
-    border: '1px solid rgba(251, 191, 36, 0.4)',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap'
-  }
+  // volleyui (RESTYLE-SPEC P3b): the panel's tools are kit outline buttons
+  // (secondary md, h-9) in a dense developer panel scoped by `.ov-kit`.
+  const TOOL_CLASS = 'whitespace-nowrap px-2.5 text-xs'
 
   if (!expanded) {
     return (
+      // The kit TEST badge (amber-800 on amber-100, amber-300 hairline;
+      // was amber text on a pale amber wash at about 2:1).
       <div
         onClick={() => setExpanded(true)}
+        className="no-print inline-flex items-center rounded-full border border-amber-300 bg-amber-100 text-[11px] font-semibold uppercase tracking-wide text-amber-800 shadow-sm"
         style={{
           position: 'fixed',
           bottom: '10px',
           right: '10px',
-          background: 'rgba(251, 191, 36, 0.3)',
-          color: '#fbbf24',
-          padding: '8px 12px',
-          borderRadius: '8px',
-          fontSize: '12px',
-          fontWeight: 600,
+          padding: '6px 12px',
           cursor: 'pointer',
-          zIndex: 9999,
-          border: '1px solid rgba(251, 191, 36, 0.5)'
+          zIndex: 9999
         }}
       >
-        TEST MODE
+        Test mode
       </div>
     )
   }
 
   return (
-    <div style={{
+    <div className="ov-kit no-print rounded-2xl border border-stone-200/70 bg-white shadow-card-lg" style={{
       position: 'fixed',
       bottom: '10px',
       right: '10px',
-      background: 'var(--panel)',
-      borderRadius: '12px',
       padding: '12px',
       zIndex: 9999,
-      border: '1px solid rgba(251, 191, 36, 0.5)',
       maxWidth: '320px'
     }}>
       <div style={{
@@ -414,18 +401,19 @@ export default function TestModeControls({ matchId, onRefresh }) {
         alignItems: 'center',
         marginBottom: '10px'
       }}>
-        <span style={{ color: '#fbbf24', fontWeight: 600, fontSize: '12px' }}>
-          TEST MODE CONTROLS
+        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+          Test mode controls
         </span>
         <button
           onClick={() => setExpanded(false)}
+          aria-label="Close"
+          title="Close"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-transparent text-stone-500 hover:bg-stone-100 transition-colors"
           style={{
-            background: 'none',
             border: 'none',
-            color: '#fbbf24',
             cursor: 'pointer',
-            fontSize: '16px',
-            padding: '0 4px'
+            fontSize: '18px',
+            padding: 0
           }}
         >
           ×
@@ -438,39 +426,39 @@ export default function TestModeControls({ matchId, onRefresh }) {
         gap: '6px',
         marginBottom: '8px'
       }}>
-        <button style={buttonStyle} onClick={handleAddPoint}>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleAddPoint}>
           + Point
-        </button>
-        <button style={buttonStyle} onClick={handleInsertLibero}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleInsertLibero}>
           Libero
-        </button>
-        <button style={buttonStyle} onClick={handleSwitchSide}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleSwitchSide}>
           Side
-        </button>
-        <button style={buttonStyle} onClick={handleSwitchServe}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleSwitchServe}>
           Serve
-        </button>
-        <button style={buttonStyle} onClick={handleTriggerTimeout}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerTimeout}>
           Timeout
-        </button>
-        <button style={buttonStyle} onClick={handleSubstitute}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleSubstitute}>
           Sub
-        </button>
-        <button style={buttonStyle} onClick={handleTriggerSetEnd}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerSetEnd}>
           Set End
-        </button>
-        <button style={buttonStyle} onClick={handleTriggerMatchEnd}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerMatchEnd}>
           Match End
-        </button>
-        <button style={buttonStyle} onClick={handleCallReferee}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleCallReferee}>
           Call Ref
-        </button>
+        </Button>
       </div>
 
       {lastAction && (
         <div style={{
-          fontSize: '10px',
-          color: 'var(--muted)',
+          fontSize: '11px',
+          color: 'var(--ov-text-muted)',
           textAlign: 'center',
           marginTop: '4px'
         }}>

@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+// Box metrics only. The field look (white, stone-300 hairline, rounded-lg,
+// stone-800 text, focus ring) comes from the shared `input` rule in
+// styles.css, the kit's standard input. The old inline dark-theme fill and
+// white-alpha border are gone (RESTYLE-SPEC P3b).
 const defaultInputStyle = {
   width: '5em',
   padding: '6px 8px',
   fontSize: 'inherit',
   textAlign: 'center',
-  background: 'var(--bg-secondary, #1f2937)',
-  border: '1px solid rgba(255,255,255,0.2)',
-  borderRadius: '6px',
-  color: 'var(--text, #e5e7eb)'
+  fontVariantNumeric: 'tabular-nums'
 }
 
 const HHMM_REGEX = /^(\d{1,2}):(\d{2})$/
