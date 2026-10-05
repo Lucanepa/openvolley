@@ -45,6 +45,24 @@ function fakeTable(rows = []) {
 const fakeDb = vi.hoisted(() => ({ sync_queue: { hook: () => {} } }))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
 
+// Dexie's live queries only observe real Dexie tables: run the query once per
+// dependency change against the fakes instead
+vi.mock('dexie-react-hooks', async () => {
+  const { useState, useEffect } = await import('react')
+  return {
+    useLiveQuery: (query, deps = [], initial) => {
+      const [value, setValue] = useState(initial)
+      useEffect(() => {
+        let alive = true
+        Promise.resolve(query()).then(v => { if (alive) setValue(v) })
+        return () => { alive = false }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, deps)
+      return value
+    }
+  }
+})
+
 // Every apiFrom call is recorded; `respond` decides the result.
 // apiMatchRestore (POST /api/match/restore) is recorded as a call on table '__restore'.
 const api = vi.hoisted(() => ({ calls: [], respond: null }))
@@ -105,6 +123,7 @@ import {
   useSyncQueue,
   queueUserMatchLinks,
   storedSessionUserId,
+  useUserMatchLink,
   STOP_PASS
 } from '../useSyncQueue'
 
@@ -666,6 +685,31 @@ describe('My Matches links (user_matches)', () => {
     await runQueuePass()
     expect(api.calls).toHaveLength(0)
     expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+  })
+
+  it('useUserMatchLink links the open match once it has a seed key, and re-checks when the profile arrives', async () => {
+    signIn(ALICE)
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', officials: [{ role: '2nd referee', firstName: 'Anna', lastName: 'Muster' }] }])
+    const { unmount } = renderHook(() => useUserMatchLink(1))
+    await vi.waitFor(() => expect(fakeDb.sync_queue.map.size).toBe(1))
+    expect([...fakeDb.sync_queue.map.values()][0].payload).toMatchObject({ match_external_id: 'match_100_aaa', role: 'scorer' })
+
+    localStorage.setItem('cachedProfile', JSON.stringify({ user_id: ALICE, first_name: 'Anna', last_name: 'Muster' }))
+    await act(async () => { window.dispatchEvent(new Event('ov-profile-cached')) })
+    await vi.waitFor(() => expect(fakeDb.sync_queue.map.size).toBe(2))
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.payload.role)).toEqual(['scorer', '2nd referee'])
+    unmount()
+  })
+
+  it('useUserMatchLink queues nothing for a match without a seed key or a test match', async () => {
+    signIn(ALICE)
+    fakeDb.matches.reset([{ id: 1, seed_key: null }, { id: 2, seed_key: 'match_200_bbb', test: true }])
+    const a = renderHook(() => useUserMatchLink(1))
+    const b = renderHook(() => useUserMatchLink(2))
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+    expect(fakeDb.sync_queue.map.size).toBe(0)
+    a.unmount()
+    b.unmount()
   })
 
   it('never links the match to another account signed in meanwhile', async () => {
