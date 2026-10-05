@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import UserButton from '../auth/UserButton'
-import { useScaledLayout } from '../../hooks/useScaledLayout'
+import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
+import { Button, Card, cn, FOCUS_RING } from '../../ui'
 
 const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
 const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
@@ -40,7 +41,6 @@ export default function HomePage({
 }) {
   const { t } = useTranslation()
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
-  const { scaleFactor } = useScaledLayout()
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
 
@@ -70,364 +70,153 @@ export default function HomePage({
     return () => { cancelled = true }
   }, [desktopOS, inDesktopApp])
 
-  // Scaled dimensions
-  const buttonWidth = `${Math.round(400 * scaleFactor)}px`
-  const largeFontSize = `${Math.round(20 * scaleFactor)}px`
-  const largePadding = `${Math.round(16 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`
-  const mediumPadding = `${Math.round(12 * scaleFactor)}px ${Math.round(20 * scaleFactor)}px`
-  const smallPadding = `${Math.round(10 * scaleFactor)}px ${Math.round(20 * scaleFactor)}px`
-  const borderRadius = `${Math.round(12 * scaleFactor)}px`
-  const smallBorderRadius = `${Math.round(8 * scaleFactor)}px`
-  const gap = `${Math.round(16 * scaleFactor)}px`
-  const smallGap = `${Math.round(12 * scaleFactor)}px`
-  const tinyGap = `${Math.round(8 * scaleFactor)}px`
-
   return (
-    <div className="home-view">
-      <div className="home-content">
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: tinyGap
-        }}>
-          <h1 className="home-title" style={{ width: 'auto', margin: 0 }}>{t('home.title')}</h1>
-        </div>
-        <div className="home-logo" style={{
-          width: `${Math.round(200 * scaleFactor)}px`,
-          margin: `${Math.round(8 * scaleFactor)}px 0`
-        }}>
-          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="Openvolley" />
+    <div className="ov-kit flex w-full flex-1 flex-col items-center justify-center px-4 py-6 sm:py-8">
+      <div className="w-full max-w-md">
+        <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
+        <div className="my-4 flex justify-center">
+          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="Openvolley" className="h-28 w-auto sm:h-32" />
         </div>
 
-        <div className="home-match-section" style={{ margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap }}>
-          {/* New Match Button with Collapsible Menu */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: tinyGap }}>
-            <button
+        <Card className="w-full space-y-3">
+          {/* New Match button with its menu (pushes the stack down) */}
+          <div className="space-y-2">
+            <Button
+              variant="primary"
+              block
               data-help-id="home-new-match-button"
+              aria-expanded={newMatchMenuOpen}
               onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
-              style={{
-                width: buttonWidth,
-                padding: largePadding,
-                fontSize: largeFontSize,
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: `${Math.round(10 * scaleFactor)}px`,
-                transition: 'transform 0.2s, box-shadow 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)'
-                e.currentTarget.style.boxShadow = '0 8px 16px rgba(59, 130, 246, 0.3)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)'
-                e.currentTarget.style.boxShadow = 'none'
-              }}
+              className="h-14 rounded-xl text-base font-semibold"
+              iconRight={<ChevronDown size={18} aria-hidden="true" className={cn('transition-transform', newMatchMenuOpen && 'rotate-180')} />}
             >
-              <span>{t('home.newMatch')}</span>
-              <span style={{ transform: newMatchMenuOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
-            </button>
+              {t('home.newMatch')}
+            </Button>
 
-            {/* Collapsible Menu - Pushes content down */}
             {newMatchMenuOpen && (
-              <div style={{
-                width: buttonWidth,
-                background: 'var(--panel)',
-                borderRadius,
-                padding: `${Math.round(12 * scaleFactor)}px`,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: tinyGap,
-                boxShadow: '0 8px 32px rgba(15, 23, 42, 0.15)',
-                border: '1px solid var(--border)'
-              }}>
+              <div className="rounded-xl border border-stone-200 bg-white p-1.5 shadow-card-lg space-y-1.5">
                 <button
+                  type="button"
                   onClick={() => {
                     setNewMatchMenuOpen(false)
                     createNewOfficialMatch()
                   }}
-                  style={{
-                    width: '100%',
-                    padding: mediumPadding,
-                    fontSize: largeFontSize,
-                    fontWeight: 600,
-                    background: 'rgba(59, 246, 62, 0.1)',
-                    color: 'rgba(59, 246, 62)',
-                    border: '1px solid rgba(59, 246, 62, 0.3)',
-                    borderRadius: smallBorderRadius,
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59, 246, 62, 0.2)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(59, 246, 62, 0.1)' }}
+                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-3 px-4 py-3 rounded-lg border border-stone-200 bg-white text-base font-semibold text-stone-800 hover:bg-stone-50 transition-colors', FOCUS_RING)}
                 >
                   {t('home.officialMatch')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setNewMatchMenuOpen(false)
                     createNewTestMatch()
                   }}
                   disabled={testMatchLoading}
-                  style={{
-                    width: '100%',
-                    padding: mediumPadding,
-                    fontSize: largeFontSize,
-                    fontWeight: 600,
-                    background: testMatchLoading ? 'hsla(52, 100.00%, 50.00%, 0.05)' : 'hsla(52, 100.00%, 50.00%, 0.10)',
-                    color: testMatchLoading ? 'hsla(52, 100.00%, 50.00%, 0.5)' : 'hsla(52, 100.00%, 50.00%, 1.00)',
-                    border: testMatchLoading ? '1px solid hsla(52, 100.00%, 50.00%, 0.15)' : '1px solid hsla(52, 100.00%, 50.00%, 0.3)',
-                    borderRadius: smallBorderRadius,
-                    cursor: testMatchLoading ? 'not-allowed' : 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => { if (!testMatchLoading) e.currentTarget.style.background = 'rgba(168, 85, 247, 0.2)' }}
-                  onMouseLeave={(e) => { if (!testMatchLoading) e.currentTarget.style.background = 'rgba(168, 85, 247, 0.1)' }}
+                  aria-busy={testMatchLoading || undefined}
+                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 text-base font-semibold text-amber-800 hover:bg-amber-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
                 >
+                  {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                   {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
                 </button>
               </div>
             )}
           </div>
 
-          {/* Other buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: smallGap }}>
-            {/* Continue Match Button - only show when there's a match */}
-            {(currentOfficialMatch || currentTestMatch) && (
-              <button
-                data-help-id="home-continue-button"
-                onClick={() => {
-                  if (currentOfficialMatch) {
-                    continueMatch(currentOfficialMatch.id)
-                  } else if (currentTestMatch) {
-                    continueTestMatch()
-                  }
-                }}
-                style={{
-                  width: buttonWidth,
-                  padding: largePadding,
-                  fontSize: largeFontSize,
-                  fontWeight: 600,
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius,
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s, box-shadow 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)'
-                  e.currentTarget.style.boxShadow = '0 8px 16px rgba(16, 185, 129, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)'
-                  e.currentTarget.style.boxShadow = 'none'
-                }}
-              >
-                {t('home.continueMatch')}
-              </button>
-            )}
+          {/* Continue Match - only when there is a match */}
+          {(currentOfficialMatch || currentTestMatch) && (
+            <Button
+              variant="dark"
+              block
+              data-help-id="home-continue-button"
+              onClick={() => {
+                if (currentOfficialMatch) {
+                  continueMatch(currentOfficialMatch.id)
+                } else if (currentTestMatch) {
+                  continueTestMatch()
+                }
+              }}
+              className="h-14 rounded-xl text-base font-semibold"
+            >
+              {t('home.continueMatch')}
+            </Button>
+          )}
 
-            {/* Delete Match Button - only show when there's a match */}
-            {(currentOfficialMatch || currentTestMatch) && (
-              <button
-                data-help-id="home-delete-button"
-                onClick={() => {
-                  if (currentOfficialMatch) {
-                    showDeleteMatchModal()
-                  } else if (currentTestMatch) {
-                    restartTestMatch()
-                  }
-                }}
-                style={{
-                  width: buttonWidth,
-                  padding: largePadding,
-                  fontSize: largeFontSize,
-                  fontWeight: 600,
-                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius,
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s, box-shadow 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-2px)'
-                  e.currentTarget.style.boxShadow = '0 8px 16px rgba(239, 68, 68, 0.3)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)'
-                  e.currentTarget.style.boxShadow = 'none'
-                }}
-              >
-                {t('home.deleteMatch')}
-              </button>
-            )}
+          {/* Delete Match - only when there is a match */}
+          {(currentOfficialMatch || currentTestMatch) && (
+            <Button
+              variant="danger-soft"
+              block
+              data-help-id="home-delete-button"
+              onClick={() => {
+                if (currentOfficialMatch) {
+                  showDeleteMatchModal()
+                } else if (currentTestMatch) {
+                  restartTestMatch()
+                }
+              }}
+              className="h-12 rounded-xl text-base shadow-none"
+            >
+              {t('home.deleteMatch')}
+            </Button>
+          )}
 
-          {/* Restore Match Button */}
-          <button
+          {/* Restore Match */}
+          <Button
+            variant="secondary"
+            block
             data-help-id="home-restore-button"
             onClick={onRestoreMatch}
-            style={{
-              width: buttonWidth,
-              padding: largePadding,
-              fontSize: largeFontSize,
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius,
-              cursor: 'pointer',
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.boxShadow = '0 8px 16px rgba(249, 115, 22, 0.3)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
+            className="h-12 rounded-xl text-base"
           >
             {t('home.restoreMatch')}
-          </button>
+          </Button>
 
-          {/* Game PIN Display (if exists) */}
+          {/* Game PIN (if any) */}
           {currentOfficialMatch?.gamePin && (
-            <div style={{
-              width: buttonWidth,
-              marginTop: tinyGap,
-              padding: `${Math.round(12 * scaleFactor)}px ${Math.round(16 * scaleFactor)}px`,
-              background: 'var(--panel-2)',
-              border: '1px solid var(--border)',
-              borderRadius,
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: largeFontSize, color: 'var(--muted)', marginBottom: `${Math.round(4 * scaleFactor)}px`, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('home.gamePin')}</div>
-              <div style={{ fontSize: largeFontSize, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>
+            <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 px-4 py-3 text-center">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t('home.gamePin')}</div>
+              <div className="mt-0.5 font-mono text-xl font-bold tracking-[0.3em] tabular-nums text-stone-900">
                 {currentOfficialMatch.gamePin}
               </div>
             </div>
           )}
+        </Card>
 
-          </div>
-        </div>
-        <div style={{ marginTop: `${Math.round(50 * scaleFactor)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: smallGap }}>
-
-
-          <button
-            onClick={onOpenSettings}
-            style={{
-              padding: smallPadding,
-              fontSize: largeFontSize,
-              fontWeight: 600,
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: smallBorderRadius,
-              cursor: 'pointer',
-              width: buttonWidth
-            }}
-          >
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="secondary" size="xl" block onClick={onOpenSettings} icon={Settings}>
             {t('home.options')}
-          </button>
-          <button
-            onClick={() => setSupportFeedbackOpen(true)}
-            style={{
-              padding: smallPadding,
-              fontSize: largeFontSize,
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-              color: '#fff',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: smallBorderRadius,
-              cursor: 'pointer',
-              width: buttonWidth,
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.boxShadow = '0 8px 16px rgba(34, 197, 94, 0.3)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-          >
+          </Button>
+          <Button variant="ghost" size="xl" block onClick={() => setSupportFeedbackOpen(true)} icon={LifeBuoy} className="bg-white">
             {t('supportFeedback.button')}
-          </button>
+          </Button>
         </div>
 
         {/* Downloads (desktop app + server) - desktop browsers only, hidden inside the app */}
         {desktopOS && !inDesktopApp && (() => {
-          const downloadLinkStyle = {
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: tinyGap,
-            padding: smallPadding,
-            fontSize: `${Math.round(14 * scaleFactor)}px`,
-            color: 'var(--muted)',
-            background: 'none',
-            border: '1px solid var(--border)',
-            borderRadius: smallBorderRadius,
-            textDecoration: 'none',
-            cursor: 'pointer',
-            transition: 'all 0.2s'
-          }
-          const hoverIn = (e) => {
-            e.currentTarget.style.color = 'var(--text)'
-            e.currentTarget.style.borderColor = 'var(--muted)'
-          }
-          const hoverOut = (e) => {
-            e.currentTarget.style.color = 'var(--muted)'
-            e.currentTarget.style.borderColor = 'var(--border)'
-          }
           const appHref =
             (desktopOS === 'windows' && desktopApp?.exe) ||
             (desktopOS === 'linux' && desktopApp?.appimage) ||
             desktopApp?.page || RELEASES_PAGE
           const appLabel = t('home.downloadApp', 'Download the desktop app — offline scoretable + tablet server') +
             (desktopApp?.version ? ` (v${desktopApp.version})` : '')
+          const quietLink = 'text-xs text-stone-500 underline decoration-stone-300 underline-offset-2 hover:text-stone-800 hover:decoration-stone-500 transition-colors'
           return (
-            <div style={{ marginTop: gap, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: tinyGap }}>
+            <div className="mt-5 flex flex-col items-center gap-2 text-center">
               <a
                 href={appHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={downloadLinkStyle}
-                onMouseEnter={hoverIn}
-                onMouseLeave={hoverOut}
+                className={cn('inline-flex min-h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white/70 px-4 py-2 text-sm text-stone-600 hover:bg-white hover:text-stone-900 transition-colors', FOCUS_RING)}
               >
-                <span>↓</span>
+                <Download size={16} aria-hidden="true" className="shrink-0 text-stone-400" />
                 <span>{appLabel}</span>
               </a>
               {desktopOS === 'linux' && desktopApp?.deb && (
-                <a
-                  href={desktopApp.deb}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ ...downloadLinkStyle, border: 'none', padding: 0, fontSize: `${Math.round(12 * scaleFactor)}px` }}
-                  onMouseEnter={hoverIn}
-                  onMouseLeave={hoverOut}
-                >
+                <a href={desktopApp.deb} target="_blank" rel="noopener noreferrer" className={quietLink}>
                   {t('home.downloadAppDeb', 'or get the .deb package')}
                 </a>
               )}
-              <a
-                href={RELEASES_PAGE}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ ...downloadLinkStyle, border: 'none', padding: 0, fontSize: `${Math.round(12 * scaleFactor)}px` }}
-                onMouseEnter={hoverIn}
-                onMouseLeave={hoverOut}
-              >
+              <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" className={quietLink}>
                 {t('home.downloadServer', 'Download Server — Referee without internet')}
               </a>
             </div>
