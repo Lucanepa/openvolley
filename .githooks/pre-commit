@@ -16,6 +16,11 @@
 # machine without gitleaks (e.g. a venue box), set SKIP_GITLEAKS=1 for that
 # commit; it is printed as a warning, never silent.
 #
+# Needs gitleaks >= 8.25: .gitleaks.toml uses [[allowlists]] targetRules
+# blocks, which older versions refuse to load. core.hooksPath is shared by every
+# worktree of a clone, so every worktree/agent committing here needs it on PATH.
+# A config gitleaks cannot load also blocks (reported separately from a leak).
+#
 # Bypass with --no-verify only if you are certain the match is a placeholder,
 # and add it to the allowlist in .gitleaks.toml so the next commit is clean.
 set -euo pipefail
@@ -34,7 +39,10 @@ fi
 # core.hooksPath may be absolute and shared by several worktrees/branches, so
 # resolve the config from the checkout being committed, not the hook's own dir.
 top="$(git rev-parse --show-toplevel)"
-args=(--redact --no-banner)
+# A distinct exit code for "leaks found", so a crash or an unloadable config
+# (gitleaks exits 1 or 2 for those) is reported as such instead of as a leak.
+LEAKS_FOUND=42
+args=(--redact --no-banner --exit-code "$LEAKS_FOUND")
 if [[ -f "$top/.gitleaks.toml" ]]; then
   args+=(--config "$top/.gitleaks.toml")
 else
@@ -52,10 +60,17 @@ else
   scan=(gitleaks protect --staged "${args[@]}" --source "$top")
 fi
 
-if ! "${scan[@]}"; then
+rc=0
+"${scan[@]}" || rc=$?
+if (( rc == LEAKS_FOUND )); then
   echo >&2
-  echo "pre-commit: BLOCKED — a staged change looks like a credential (or gitleaks failed to run)." >&2
+  echo "pre-commit: BLOCKED — a staged change looks like a credential." >&2
   echo "  Remove it and use an env var / secret store instead." >&2
   echo "  False positive? Add an allowlist entry to .gitleaks.toml." >&2
+  exit 1
+elif (( rc != 0 )); then
+  echo >&2
+  echo "pre-commit: BLOCKED — gitleaks failed to run (exit $rc), so nothing was scanned." >&2
+  echo "  Usually .gitleaks.toml did not load: check the error above, and that gitleaks is >= 8.25 ($(gitleaks version 2>/dev/null || echo unknown) installed)." >&2
   exit 1
 fi
