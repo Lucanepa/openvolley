@@ -8,38 +8,39 @@ import {
   createLiveStateRelay,
   createHeartbeat,
   isLiveRequest,
-  eventTypeForAction
+  eventTypeForAction,
+  matchKeyFromSyncedMatch
 } from '../lib/realtimeHub.js'
-
-// Same shape as server.js SECRET_COLUMNS / redactSecrets (mutates, returns row).
-const SECRET_COLUMNS = {
-  matches: ['game_pin', 'connection_pins'],
-  events: ['game_pin'],
-  match_live_state: ['game_pin', 'connection_pins']
-}
-function redact(table, row) {
-  for (const k of SECRET_COLUMNS[table] || []) delete row[k]
-  return row
-}
+// The real list and function /api/db uses, not a copy.
+import { redactSecrets as redact, SECRET_COLUMNS } from '../lib/secrets.js'
 
 const MATCH_A = '11111111-1111-4111-8111-111111111111'
 const MATCH_B = '22222222-2222-4222-8222-222222222222'
 
 /**
- * Real HTTP + ws server on a random port, routed the way server.js will route:
- * purpose=live -> hub, everything else -> a stand-in "role socket" handler.
+ * Real HTTP + ws server on a random port, routed the way server.js must route:
+ * the role wss is `noServer` with server.js's options (10 MB frames, deflate),
+ * and `server.on('upgrade')` hands purpose=live requests to hub.handleUpgrade.
  */
 async function startServer(hubOptions = {}) {
   const hub = createRealtimeHub({ redact, logger: { log() {}, warn() {} }, ...hubOptions })
   const server = createServer((req, res) => { res.writeHead(404); res.end() })
-  const wss = new WebSocketServer({ server })
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 10 * 1024 * 1024,
+    perMessageDeflate: { clientNoContextTakeover: true, serverNoContextTakeover: true, threshold: 1024 }
+  })
   const roleSockets = new Set()
-  wss.on('connection', (ws, req) => {
-    if (hub.isLiveRequest(req)) {
-      hub.handleConnection(ws, req, { ip: req.headers['x-test-ip'] || '127.0.0.1' })
+  server.on('upgrade', (req, socket, head) => {
+    if (isLiveRequest(req)) {
+      hub.handleUpgrade(req, socket, head, { ip: req.headers['x-test-ip'] || '127.0.0.1' })
       return
     }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+  })
+  wss.on('connection', (ws) => {
     roleSockets.add(ws)
+    ws.on('close', () => roleSockets.delete(ws))
     ws.send(JSON.stringify({ type: 'connected', mode: 'role' }))
   })
   server.listen(0, '127.0.0.1')
@@ -54,6 +55,7 @@ async function startServer(hubOptions = {}) {
       hub.close()
       for (const c of wss.clients) c.terminate()
       await new Promise(resolve => wss.close(resolve))
+      server.closeAllConnections?.()
       await new Promise(resolve => server.close(resolve))
     }
   }
@@ -236,6 +238,8 @@ describe('realtimeHub over real sockets', () => {
     const raw = JSON.stringify(msg)
     assert.equal(raw.includes('654321'), false)
     assert.equal(raw.includes('987123'), false)
+    // Every column of the shared list is covered.
+    for (const col of SECRET_COLUMNS.matches) assert.equal(col in msg.new, false, col)
     // Caller's row untouched (it may still be returned to the HTTP caller).
     assert.equal(row.game_pin, '654321')
     assert.equal(row.connection_pins.referee, '987123')
@@ -316,8 +320,36 @@ describe('realtimeHub over real sockets', () => {
       { table: 'match_live_state', event: 'UPDATE', column: 'sport_type', value: 'indoor' }
     ])
     srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, sport_type: 'indoor' }])
-    assert.equal((await a.next()).id, 'multi')
+    const msg = await a.next()
+    assert.equal(msg.id, 'multi')
+    assert.equal('ids' in msg, false)
     assert.equal(await a.silent(), true)
+  })
+
+  it('sends a row once per socket with every matching channel id in ids', async () => {
+    const a = await open()
+    const b = await open()
+    const sub = [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }]
+    for (let i = 0; i < 9; i++) assert.equal((await subscribe(a, `dup${i}`, sub)).type, 'subscribe-db-ack')
+    await subscribe(a, 'other', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_A }])
+    await subscribe(b, 'solo', sub)
+    const sent = srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [
+      { match_id: MATCH_B, sport_type: 'indoor', points_a: 1 },
+      { match_id: MATCH_A, sport_type: 'beach', points_a: 2 }
+    ])
+    assert.equal(sent, 3) // a: 2 rows (not 10 messages), b: 1 row
+    const first = await a.next()
+    assert.equal(first.new.points_a, 1)
+    assert.deepEqual(first.ids, Array.from({ length: 9 }, (_, i) => `dup${i}`))
+    assert.equal(first.id, 'dup0')
+    const second = await a.next()
+    assert.equal(second.new.points_a, 2)
+    assert.equal(second.id, 'other')
+    assert.equal('ids' in second, false)
+    assert.equal(await a.silent(), true)
+    const onB = await b.next()
+    assert.equal(onB.id, 'solo')
+    assert.equal(await b.silent(), true)
   })
 
   it('coalesces large multi-row writes to the last row', async () => {
@@ -351,6 +383,21 @@ describe('realtimeHub over real sockets', () => {
     assert.equal((await a.closed).code, 1008)
   })
 
+  it('closes on binary frames with 1003', async () => {
+    const a = await open()
+    a.ws.send(Buffer.from(JSON.stringify({ type: 'ping' })), { binary: true })
+    assert.equal((await a.closed).code, 1003)
+  })
+
+  it('negotiates no compression on live sockets (role sockets keep theirs)', async () => {
+    const a = await open()
+    assert.equal(a.ws.extensions, '')
+    const r = connect(srv.url, { live: false })
+    await r.next()
+    assert.match(r.ws.extensions, /permessage-deflate/)
+    r.close(); await r.closed
+  })
+
   it('does not touch role sockets', async () => {
     const r = connect(srv.url, { live: false })
     const hello = await r.next()
@@ -373,6 +420,79 @@ describe('realtimeHub over real sockets', () => {
     assert.equal(s.sockets, 0)
     assert.equal(s.ips, 0)
     assert.deepEqual(s.tables, {})
+  })
+})
+
+describe('realtimeHub ordering and cascades', () => {
+  let srv
+  before(async () => { srv = await startServer() })
+  after(async () => { await srv.stop() })
+
+  it('drops a match_live_state row older than the newest published, passes equal and newer', async () => {
+    const c = await liveClient(srv.url)
+    await subscribe(c, 'l', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_A }])
+    const t = (s) => `2026-10-05T12:00:${s}.000Z`
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 2, updated_at: t('02') }])
+    assert.equal((await c.next()).new.points_a, 2)
+    // Late HTTP copy of the previous point: dropped.
+    assert.equal(srv.hub.broadcastDbChange('match_live_state', 'UPSERT', [{ match_id: MATCH_A, points_a: 1, updated_at: t('01') }]), 0)
+    assert.equal(await c.silent(), true)
+    assert.equal(srv.hub.stats().staleDropped, 1)
+    // Same timestamp (e.g. scorer_attention_trigger update that does not bump updated_at): passes.
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 2, scorer_attention_trigger: 'x', updated_at: new Date(t('02')) }])
+    assert.equal((await c.next()).new.scorer_attention_trigger, 'x')
+    // Rows without the ordering column pass; another match is independent.
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 9 }])
+    assert.equal((await c.next()).new.points_a, 9)
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, updated_at: t('00') }])
+    // A DELETE forgets the key, so a new match_live_state row for the id starts fresh.
+    srv.hub.broadcastDbChange('match_live_state', 'DELETE', [{ match_id: MATCH_A }])
+    assert.equal((await c.next()).eventType, 'DELETE')
+    srv.hub.broadcastDbChange('match_live_state', 'UPSERT', [{ match_id: MATCH_A, points_a: 0, updated_at: t('00'), __inserted: true }])
+    const ins = await c.next()
+    assert.equal(ins.eventType, 'INSERT')
+    assert.equal(ins.new.points_a, 0)
+    c.close(); await c.closed
+  })
+
+  it('tracks ordering even without subscribers', async () => {
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: 'pre', updated_at: '2026-10-05T13:00:00.000Z' }])
+    const c = await liveClient(srv.url)
+    await subscribe(c, 'l', [{ table: 'match_live_state', event: '*', column: 'match_id', value: 'pre' }])
+    assert.equal(srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: 'pre', updated_at: '2026-10-05T12:59:59.000Z' }]), 0)
+    c.close(); await c.closed
+  })
+
+  it('a matches DELETE also publishes a match_live_state DELETE (ON DELETE CASCADE is not RETURNed)', async () => {
+    const livescore = await liveClient(srv.url)
+    await subscribe(livescore, 'all', [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }])
+    const watcher = await liveClient(srv.url)
+    await subscribe(watcher, 'm', [{ table: 'matches', event: '*', column: 'external_id', value: 'seed-c' }])
+    const sent = srv.hub.broadcastDbChange('matches', 'DELETE', [{ id: MATCH_A, external_id: 'seed-c', sport_type: 'indoor', game_pin: '123456' }])
+    assert.equal(sent, 2)
+    const live = await livescore.next()
+    assert.equal(live.table, 'match_live_state')
+    assert.equal(live.eventType, 'DELETE')
+    assert.deepEqual(live.old, { match_id: MATCH_A, sport_type: 'indoor' })
+    assert.deepEqual(live.new, {})
+    const m = await watcher.next()
+    assert.equal(m.table, 'matches')
+    assert.equal('game_pin' in m.old, false)
+    for (const c of [livescore, watcher]) { c.close(); await c.closed }
+  })
+
+  it('cascades and ordering can be switched off', async () => {
+    const local = await startServer({ cascadeDeletes: {}, ordering: {} })
+    try {
+      const c = await liveClient(local.url)
+      await subscribe(c, 'l', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_A }])
+      local.hub.broadcastDbChange('matches', 'DELETE', [{ id: MATCH_A, sport_type: 'indoor' }])
+      assert.equal(await c.silent(), true)
+      local.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, updated_at: '2026-10-05T12:00:02Z' }])
+      local.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, updated_at: '2026-10-05T12:00:01Z' }])
+      await c.next(); await c.next()
+      c.close(); await c.closed
+    } finally { await local.stop() }
   })
 })
 
@@ -422,6 +542,20 @@ describe('realtimeHub limits', () => {
       const a = await liveClient(srv.url)
       a.send({ type: 'ping', pad: 'x'.repeat(200) })
       assert.equal((await a.closed).code, 1009)
+    } finally { await srv.stop() }
+  })
+
+  it('refuses an oversized frame while parsing it, before the hub sees it', async () => {
+    // Default 16 KB limit on the hub's own server; the role wss would accept 10 MB.
+    const srv = await startServer()
+    try {
+      const a = await liveClient(srv.url)
+      await subscribe(a, 's', [{ table: 'events', event: '*', column: 'match_id', value: MATCH_A }])
+      a.send({ type: 'subscribe-db', id: 'big', subs: [{ table: 'events', column: 'match_id', value: 'x' }], pad: 'x'.repeat(1024 * 1024) })
+      assert.equal((await a.closed).code, 1009)
+      await new Promise(r => setTimeout(r, 20))
+      assert.equal(srv.hub.stats().sockets, 0)
+      assert.equal(srv.hub.stats().rejected, 0) // never parsed by the hub
     } finally { await srv.stop() }
   })
 
@@ -484,98 +618,161 @@ describe('realtimeHub limits', () => {
 })
 
 describe('createLiveStateRelay', () => {
+  // What the real Scoreboard sends: matchId is the local Dexie ++id (a number),
+  // liveState.match_id is the Postgres UUID it resolved, sport_type is set.
+  const SEED = 'match_1759665600000_k3j9x2'
+  const scoreboard = { id: 'client-1', role: 'scoreboard', matchId: 7 }
+  const liveState = (extra = {}) => ({ match_id: MATCH_A, sport_type: 'indoor', points_a: 4, points_b: 2, updated_at: '2026-10-05T12:00:00.000Z', ...extra })
+  const message = (extra) => ({ type: 'live-state-update', matchId: 7, liveState: liveState(extra) })
+
   function setup(overrides = {}) {
     const published = []
-    const hub = { broadcastDbChange: (table, type, rows) => { published.push({ table, type, rows }); return 1 } }
+    const hub = overrides.hub || { broadcastDbChange: (table, type, rows) => { published.push({ table, type, rows }); return 1 } }
+    // server.js activeMatches, filled by handleSyncMatchData: key String(dexieId).
+    const activeMatches = new Map([
+      ['7', { matchId: '7', match: { id: 7, seed_key: SEED, externalId: null, refereePin: '111111' }, updatedBy: 'client-1' }]
+    ])
     const lookups = []
-    const lookupMatch = overrides.lookupMatch || (async (ext) => {
-      lookups.push(ext)
-      return ext === 'seed-1' ? { id: MATCH_A, sport_type: 'indoor' } : null
+    const lookupMatch = overrides.lookupMatch || (async (key) => {
+      lookups.push(`${key.column}=${key.value}`)
+      if (key.column === 'external_id' && key.value === SEED) return { id: MATCH_A, sport_type: 'indoor' }
+      if (key.column === 'id' && key.value === MATCH_B) return { id: MATCH_B, sport_type: 'indoor' }
+      return null
     })
-    const relay = createLiveStateRelay({ hub, lookupMatch, ...overrides })
-    return { relay, published, lookups }
+    const relay = createLiveStateRelay({ hub, getSyncedMatch: (id) => activeMatches.get(String(id)), lookupMatch, ...overrides })
+    return { relay, published, lookups, activeMatches }
   }
-  const scoreboard = { role: 'scoreboard', matchId: 'seed-1' }
 
-  it('publishes an UPDATE with the resolved match_id and sport_type', async () => {
-    const { relay, published } = setup()
-    const res = await relay.handle(scoreboard, { matchId: 'seed-1', liveState: { match_id: MATCH_B, sport_type: 'beach', points_a: 4, __x: 1 } })
-    assert.deepEqual(res, { ok: true, sent: 1 })
-    assert.equal(published.length, 1)
-    assert.equal(published[0].table, 'match_live_state')
-    assert.equal(published[0].type, 'UPDATE')
-    assert.deepEqual(published[0].rows, [{ match_id: MATCH_A, sport_type: 'indoor', points_a: 4 }])
+  it('matchKeyFromSyncedMatch mirrors Scoreboard.jsx resolution, without the String(dexieId) fallback', () => {
+    assert.deepEqual(matchKeyFromSyncedMatch({ id: 7, externalId: MATCH_B.toUpperCase(), seed_key: SEED }), { column: 'id', value: MATCH_B })
+    assert.deepEqual(matchKeyFromSyncedMatch({ id: 7, externalId: 'not-a-uuid', seed_key: SEED }), { column: 'external_id', value: SEED })
+    assert.deepEqual(matchKeyFromSyncedMatch({ id: 7, seedKey: SEED }), { column: 'external_id', value: SEED })
+    assert.equal(matchKeyFromSyncedMatch({ id: 7 }), null)
+    assert.equal(matchKeyFromSyncedMatch(null), null)
   })
 
-  it('only accepts the scoreboard of that match', async () => {
-    const { relay, published } = setup()
-    assert.equal((await relay.handle({ role: 'referee', matchId: 'seed-1' }, { matchId: 'seed-1', liveState: {} })).reason, 'forbidden')
-    assert.equal((await relay.handle({ role: 'scoreboard', matchId: 'seed-2' }, { matchId: 'seed-1', liveState: {} })).reason, 'forbidden')
-    assert.equal((await relay.handle({ role: 'scoreboard', matchId: null }, { matchId: 'seed-1', liveState: {} })).reason, 'forbidden')
+  it('resolves the Dexie room id through the synced match seed key and publishes an UPDATE', async () => {
+    const { relay, published, lookups } = setup()
+    const res = await relay.handle(scoreboard, message({ __x: 1 }))
+    assert.deepEqual(res, { ok: true, sent: 1 })
+    assert.deepEqual(lookups, [`external_id=${SEED}`]) // never '7'
+    assert.equal(published[0].table, 'match_live_state')
+    assert.equal(published[0].type, 'UPDATE')
+    assert.deepEqual(published[0].rows, [{ match_id: MATCH_A, sport_type: 'indoor', points_a: 4, points_b: 2, updated_at: '2026-10-05T12:00:00.000Z' }])
+  })
+
+  it('uses matches.id directly when the synced match externalId is a UUID', async () => {
+    const { relay, published, lookups, activeMatches } = setup()
+    activeMatches.get('7').match = { id: 7, externalId: MATCH_B }
+    const res = await relay.handle(scoreboard, message({ match_id: MATCH_B }))
+    assert.equal(res.ok, true)
+    assert.deepEqual(lookups, [`id=${MATCH_B}`])
+    assert.equal(published[0].rows[0].match_id, MATCH_B)
+  })
+
+  it('refuses legacy matches without a seed key instead of looking up String(dexieId)', async () => {
+    const { relay, published, lookups, activeMatches } = setup()
+    activeMatches.get('7').match = { id: 7 }
+    assert.equal((await relay.handle(scoreboard, message())).reason, 'no_match_key')
+    assert.deepEqual(lookups, [])
     assert.equal(published.length, 0)
+  })
+
+  it('refuses a liveState whose match_id disagrees with the synced match', async () => {
+    const { relay, published } = setup()
+    assert.equal((await relay.handle(scoreboard, message({ match_id: MATCH_B }))).reason, 'match_mismatch')
+    assert.equal(published.length, 0)
+    // Missing match_id is filled in from the lookup.
+    const res = await relay.handle(scoreboard, { matchId: 7, liveState: { points_a: 1 } })
+    assert.equal(res.ok, true)
+    assert.equal(published[0].rows[0].match_id, MATCH_A)
+  })
+
+  it('only accepts the room scoreboard that currently owns the synced match', async () => {
+    const { relay, published, activeMatches } = setup()
+    assert.equal((await relay.handle({ id: 'client-1', role: 'referee', matchId: 7 }, message())).reason, 'forbidden')
+    assert.equal((await relay.handle({ id: 'client-1', role: 'scoreboard', matchId: 8 }, message())).reason, 'forbidden')
+    assert.equal((await relay.handle({ id: 'client-1', role: 'scoreboard', matchId: null }, message())).reason, 'forbidden')
+    // A second socket that joined as scoreboard of room 7 but is not the owner.
+    assert.equal((await relay.handle({ id: 'client-2', role: 'scoreboard', matchId: 7 }, message())).reason, 'forbidden')
+    // Room never synced.
+    assert.equal((await relay.handle({ id: 'client-1', role: 'scoreboard', matchId: 9 }, { matchId: 9, liveState: {} })).reason, 'not_synced')
+    // Ownership moves with the latest sync-match-data.
+    activeMatches.get('7').updatedBy = 'client-2'
+    assert.equal((await relay.handle(scoreboard, message())).reason, 'forbidden')
+    assert.equal((await relay.handle({ id: 'client-2', role: 'scoreboard', matchId: '7' }, message())).ok, true)
+    assert.equal(published.length, 1)
   })
 
   it('validates the message', async () => {
     const { relay } = setup({ maxPayloadBytes: 50 })
     assert.equal((await relay.handle(scoreboard, { liveState: {} })).reason, 'missing_match_id')
-    assert.equal((await relay.handle(scoreboard, { matchId: 'seed-1', liveState: [] })).reason, 'invalid_live_state')
-    assert.equal((await relay.handle(scoreboard, { matchId: 'seed-1' })).reason, 'invalid_live_state')
-    assert.equal((await relay.handle(scoreboard, { matchId: 'seed-1', liveState: { pad: 'x'.repeat(100) } })).reason, 'too_large')
+    assert.equal((await relay.handle(scoreboard, { matchId: 7, liveState: [] })).reason, 'invalid_live_state')
+    assert.equal((await relay.handle(scoreboard, { matchId: 7 })).reason, 'invalid_live_state')
+    assert.equal((await relay.handle(scoreboard, { matchId: 7, liveState: { pad: 'x'.repeat(100) } })).reason, 'too_large')
   })
 
   it('caches lookups, coalesces concurrent ones and negative-caches unknown matches', async () => {
-    const { relay, lookups } = setup()
+    const { relay, lookups, activeMatches } = setup()
     await Promise.all([
-      relay.handle(scoreboard, { matchId: 'seed-1', liveState: { a: 1 } }),
-      relay.handle(scoreboard, { matchId: 'seed-1', liveState: { a: 2 } })
+      relay.handle(scoreboard, message({ points_a: 1 })),
+      relay.handle(scoreboard, message({ points_a: 2 }))
     ])
-    await relay.handle(scoreboard, { matchId: 'seed-1', liveState: { a: 3 } })
-    assert.deepEqual(lookups, ['seed-1'])
-    const other = { role: 'scoreboard', matchId: 'seed-x' }
-    assert.equal((await relay.handle(other, { matchId: 'seed-x', liveState: {} })).reason, 'unknown_match')
-    assert.equal((await relay.handle(other, { matchId: 'seed-x', liveState: {} })).reason, 'unknown_match')
-    assert.deepEqual(lookups, ['seed-1', 'seed-x'])
-    relay.invalidate('seed-1')
-    await relay.handle(scoreboard, { matchId: 'seed-1', liveState: {} })
-    assert.deepEqual(lookups, ['seed-1', 'seed-x', 'seed-1'])
+    await relay.handle(scoreboard, message({ points_a: 3 }))
+    assert.deepEqual(lookups, [`external_id=${SEED}`])
+    activeMatches.set('8', { match: { id: 8, seed_key: 'match_unknown' }, updatedBy: 'client-3' })
+    const other = { id: 'client-3', role: 'scoreboard', matchId: 8 }
+    assert.equal((await relay.handle(other, { matchId: 8, liveState: {} })).reason, 'unknown_match')
+    assert.equal((await relay.handle(other, { matchId: 8, liveState: {} })).reason, 'unknown_match')
+    assert.deepEqual(lookups, [`external_id=${SEED}`, 'external_id=match_unknown'])
+    // invalidate by the resolved UUID (what a matches DELETE knows) drops the seed-keyed entry.
+    relay.invalidate(MATCH_A)
+    await relay.handle(scoreboard, message())
+    assert.deepEqual(lookups, [`external_id=${SEED}`, 'external_id=match_unknown', `external_id=${SEED}`])
+    relay.invalidate(SEED)
+    await relay.handle(scoreboard, message())
+    assert.equal(lookups.length, 4)
   })
 
   it('expires positive cache entries after cacheTtlMs', async () => {
     const { relay, lookups } = setup({ cacheTtlMs: 10 })
-    await relay.handle(scoreboard, { matchId: 'seed-1', liveState: {} })
+    await relay.handle(scoreboard, message())
     await new Promise(r => setTimeout(r, 25))
-    await relay.handle(scoreboard, { matchId: 'seed-1', liveState: {} })
-    assert.deepEqual(lookups, ['seed-1', 'seed-1'])
+    await relay.handle(scoreboard, message())
+    assert.equal(lookups.length, 2)
   })
 
   it('reports lookup failures without caching them', async () => {
     let calls = 0
     const { relay } = setup({ lookupMatch: async () => { calls++; throw new Error('db down') } })
-    assert.equal((await relay.handle(scoreboard, { matchId: 'seed-1', liveState: {} })).reason, 'lookup_failed')
-    assert.equal((await relay.handle(scoreboard, { matchId: 'seed-1', liveState: {} })).reason, 'lookup_failed')
+    assert.equal((await relay.handle(scoreboard, message())).reason, 'lookup_failed')
+    assert.equal((await relay.handle(scoreboard, message())).reason, 'lookup_failed')
     assert.equal(calls, 2)
   })
 
   it('drops keys the catalog predicate rejects', async () => {
     const cols = new Set(['match_id', 'sport_type', 'points_a'])
     const { relay, published } = setup({ allowColumn: (t, c) => t === 'match_live_state' && cols.has(c) })
-    await relay.handle(scoreboard, { matchId: 'seed-1', liveState: { points_a: 1, bogus: 2 } })
+    await relay.handle(scoreboard, { matchId: 7, liveState: { points_a: 1, bogus: 2 } })
     assert.deepEqual(published[0].rows[0], { points_a: 1, match_id: MATCH_A, sport_type: 'indoor' })
   })
 
-  it('end to end: live-state-update reaches a sport_type=eq.indoor subscriber, redacted', async () => {
+  it('end to end: real Scoreboard payload reaches a sport_type=eq.indoor subscriber, redacted and ordered', async () => {
     const srv = await startServer()
     try {
-      const relay = createLiveStateRelay({ hub: srv.hub, lookupMatch: async () => ({ id: MATCH_A, sport_type: 'indoor' }) })
+      const { relay } = setup({ hub: srv.hub })
       const c = await liveClient(srv.url)
       await subscribe(c, 'livescore', [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }])
-      const res = await relay.handle(scoreboard, { matchId: 'seed-1', liveState: { points_a: 7, connection_pins: { referee: '999999' } } })
+      const res = await relay.handle(scoreboard, message({ points_a: 7, updated_at: '2026-10-05T12:00:05.000Z', connection_pins: { referee: '999999' } }))
       assert.equal(res.ok, true)
       const msg = await c.next()
       assert.equal(msg.eventType, 'UPDATE')
       assert.equal(msg.new.match_id, MATCH_A)
       assert.equal(msg.new.points_a, 7)
       assert.equal('connection_pins' in msg.new, false)
+      // The HTTP write-through of the previous point arrives late: dropped.
+      srv.hub.broadcastDbChange('match_live_state', 'UPSERT', [{ ...liveState({ points_a: 6, updated_at: '2026-10-05T12:00:04.000Z' }) }])
+      assert.equal(await c.silent(), true)
       c.close(); await c.closed
     } finally { await srv.stop() }
   })
