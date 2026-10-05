@@ -1344,6 +1344,7 @@
     "awaitingCoinTossDesc": "The match will begin once the coin toss has been confirmed."
   },
   "refereeDashboard": {
+    "linkDown": "Offline: no connection to the scoresheet. Score and server may be out of date.",
     "title": "Referee",
     "dashboardTitle": "Referee Dashboard",
     "status": "Status",
