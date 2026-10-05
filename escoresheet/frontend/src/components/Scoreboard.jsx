@@ -1831,7 +1831,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           snapshot = lastEvent?.stateSnapshot
 
           // Fallback: capture fresh snapshot if none exists (e.g., before first event)
-          if (!snapshot) {
+          // or it is partial (events added in Manual Adjustments only carry
+          // {scoreA, scoreB}, not the full state)
+          if (!snapshot || snapshot.currentSetIndex === undefined) {
             const result = await captureFullStateSnapshot()
             snapshot = result?.snapshot || null
           }
