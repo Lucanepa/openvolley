@@ -6,14 +6,16 @@
  * and checked against what the client (serverDataSync.readRelayBundle) reads.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { createServer as createNetServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
-import { createLanRelay } from '../../../lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate } from '../../../lanRelayCore.js'
 import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { readRelayBundle } from '../serverDataSync'
 
@@ -83,11 +85,14 @@ function fakeSocket() {
   }
 }
 
-function connect(relay) {
+function connect(relay, ip = '192.168.1.50') {
   const ws = fakeSocket()
-  relay.addClient(ws, { ip: '192.168.1.50' })
+  relay.addClient(ws, { ip })
   return ws
 }
+
+// What the LedBox bridge (point-hub src/relaySubscriber.js) reads
+const bridgeLiveState = (m) => m.liveState ?? m.data?.liveState
 
 const msg = (relay, ws, m) => relay.handleMessage(ws, JSON.stringify(m))
 
@@ -164,22 +169,97 @@ describe('lanRelayCore protocol', () => {
     expect(readRelayBundle(referee.last('match-data-update')).events).toHaveLength(1)
   })
 
-  it('lets another scorer reuse a match id only after its scoreboard has been gone a while', () => {
+  it('lets another scorer reuse a finished match id after 60 s, an unfinished one only after 10 min', () => {
     // Dexie ids restart at 1 on every device: a second scorer must not be locked out forever.
-    const strict = createLanRelay()
-    const lenient = createLanRelay({ orphanTakeoverMs: 0 })
-    for (const relay of [strict, lenient]) {
-      const deviceA = connect(relay)
-      const deviceB = connect(relay)
-      msg(relay, deviceA, syncMessage(makeMatch({ id: 1, gamePin: '111111' })))
+    const cases = [
+      { opts: {}, status: 'final', allowed: false }, // owner left just now
+      { opts: { orphanTakeoverMs: 0 }, status: 'final', allowed: true },
+      { opts: { orphanTakeoverMs: 0 }, status: 'live', allowed: false }, // a sleeping scorer keeps its match
+      { opts: { orphanTakeoverMs: 0, staleTakeoverMs: 0 }, status: 'live', allowed: true }
+    ]
+    for (const { opts, status, allowed } of cases) {
+      const relay = createLanRelay(opts)
+      const deviceA = connect(relay, '192.168.1.10')
+      const deviceB = connect(relay, '192.168.1.11')
+      msg(relay, deviceA, syncMessage(makeMatch({ id: 1, gamePin: '111111', status })))
       // Owner still connected: never displaced
       msg(relay, deviceB, syncMessage(makeMatch({ id: 1, gamePin: '222222' })))
       expect(deviceB.last('error').code).toBe('not-match-owner')
       relay.removeClient(deviceA)
       deviceB.sent.length = 0
       msg(relay, deviceB, syncMessage(makeMatch({ id: 1, gamePin: '222222' })))
-      expect(deviceB.sent.some((m) => m.type === 'error')).toBe(relay === strict) // grace period: 60 s by default
+      expect(deviceB.sent.some((m) => m.type === 'error'), JSON.stringify({ opts, status })).toBe(!allowed)
     }
+  })
+
+  it('lets the displaced game PIN reclaim an unfinished match once, without the old live-state', () => {
+    const relay = createLanRelay({ orphanTakeoverMs: 0, staleTakeoverMs: 0 })
+    const scorer = connect(relay, '192.168.1.10')
+    const intruder = connect(relay, '192.168.1.66')
+    const referee = connect(relay, '192.168.1.20')
+    msg(relay, scorer, syncMessage(makeMatch({ id: 1, gamePin: '111111' })))
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1' })
+    msg(relay, scorer, { type: 'live-state-update', matchId: 1, liveState: { sets_won_a: 2, match_status: 'live' } })
+    relay.removeClient(scorer) // tablet asleep
+
+    msg(relay, intruder, syncMessage(makeMatch({ id: 1, gamePin: '666666' })))
+    expect(intruder.last('error')).toBeUndefined()
+    // The takeover must not inherit the previous match's live-state
+    expect(referee.last('match-data-update').liveState).toBeUndefined()
+
+    // The scorer wakes up on a new socket: its own game PIN takes the match back
+    const scorer2 = connect(relay, '192.168.1.10')
+    msg(relay, scorer2, syncMessage(makeMatch({ id: 1, gamePin: '111111' })))
+    expect(scorer2.last('error')).toBeUndefined()
+    referee.sent.length = 0
+    msg(relay, intruder, { type: 'match-action', matchId: 1, action: 'timeout', data: {} })
+    expect(intruder.last('error').code).toBe('not-match-owner')
+    expect(referee.sent).toHaveLength(0)
+    // ...and only once: the intruder cannot flip it back while the scorer is connected
+    msg(relay, intruder, syncMessage(makeMatch({ id: 1, gamePin: '666666' })))
+    expect(intruder.last('error').code).toBe('not-match-owner')
+  })
+
+  it('does not hand a finished match back to its old PIN after a legitimate reuse', () => {
+    const relay = createLanRelay({ orphanTakeoverMs: 0 })
+    const morning = connect(relay, '192.168.1.10')
+    const afternoon = connect(relay, '192.168.1.11')
+    msg(relay, morning, syncMessage(makeMatch({ id: 1, gamePin: '111111', status: 'final' })))
+    relay.removeClient(morning)
+    msg(relay, afternoon, syncMessage(makeMatch({ id: 1, gamePin: '222222', status: 'live' })))
+    const morningAgain = connect(relay, '192.168.1.10')
+    msg(relay, morningAgain, syncMessage(makeMatch({ id: 1, gamePin: '111111', status: 'final' })))
+    expect(morningAgain.last('error').code).toBe('not-match-owner')
+  })
+
+  it('stops game-PIN guessing after a few failures, without revealing a hit', () => {
+    const relay = createLanRelay()
+    const scoreboard = connect(relay, '192.168.1.10')
+    const guesser = connect(relay, '192.168.1.66')
+    msg(relay, scoreboard, syncMessage())
+    for (let i = 0; i < 5; i++) msg(relay, guesser, syncMessage(makeMatch({ gamePin: String(100000 + i) })))
+    expect(guesser.sent.filter((m) => m.code === 'not-match-owner')).toHaveLength(5)
+    // The right PIN is now refused exactly like a wrong one
+    msg(relay, guesser, syncMessage(makeMatch({ gamePin: PINS.gamePin })))
+    expect(guesser.last('error').code).toBe('rate-limited')
+    // A fresh socket from the same IP is limited too
+    const again = connect(relay, '192.168.1.66')
+    msg(relay, again, syncMessage(makeMatch({ gamePin: PINS.gamePin })))
+    expect(again.last('error').code).toBe('rate-limited')
+    // The proven scoreboard is unaffected
+    msg(relay, scoreboard, syncMessage())
+    expect(scoreboard.last('error')).toBeUndefined()
+  })
+
+  it('limits how many match ids one LAN device can hold (loopback exempt)', () => {
+    const relay = createLanRelay()
+    const squatter = connect(relay, '192.168.1.66')
+    for (let id = 1; id <= 5; id++) msg(relay, squatter, syncMessage(makeMatch({ id, gamePin: '000000' })))
+    expect(squatter.last('error').code).toBe('too-many-matches')
+    expect(relay.hasMatch(5)).toBe(false)
+    const desktop = connect(relay, '::ffff:127.0.0.1')
+    for (let id = 11; id <= 16; id++) msg(relay, desktop, syncMessage(makeMatch({ id, gamePin: '000000' })))
+    expect(desktop.last('error')).toBeUndefined()
   })
 
   it('clear-all-matches removes only the matches the sender proved', () => {
@@ -222,15 +302,30 @@ describe('lanRelayCore protocol', () => {
     expect(relay.hasMatch(99)).toBe(false)
   })
 
-  it('keeps the scoreboard live-state across syncs and forwards it', () => {
+  it('keeps the scoreboard live-state across syncs and forwards it (also as data.liveState for the LedBox bridge)', () => {
     const relay = createLanRelay()
     const scoreboard = connect(relay)
     const ledbox = connect(relay)
     msg(relay, scoreboard, syncMessage())
     msg(relay, ledbox, { type: 'subscribe-match', matchId: '7' })
+    expect(ledbox.last('match-full-data').data).toBeUndefined() // nothing to mirror yet
     msg(relay, scoreboard, { type: 'live-state-update', matchId: 7, liveState: { points_a: 5, points_b: 3 } })
     expect(ledbox.last('live-state-update')).toEqual({ type: 'live-state-update', matchId: '7', liveState: { points_a: 5, points_b: 3 } })
     msg(relay, scoreboard, syncMessage())
+    const update = ledbox.last('match-data-update')
+    expect(update.liveState).toEqual({ points_a: 5, points_b: 3 })
+    expect(update.data).toEqual({ liveState: { points_a: 5, points_b: 3 } })
+    expect(readRelayBundle(update).match.id).toBe(7) // flat bundle still wins in the app reader
+
+    // A bridge that (re)subscribes mid-match gets the live-state immediately
+    const restarted = connect(relay)
+    msg(relay, restarted, { type: 'subscribe-match', matchId: '7' })
+    expect(bridgeLiveState(restarted.last('match-full-data'))).toEqual({ points_a: 5, points_b: 3 })
+
+    // The scorer reconnecting with the same game PIN keeps it
+    relay.removeClient(scoreboard)
+    const reconnected = connect(relay)
+    msg(relay, reconnected, syncMessage())
     expect(ledbox.last('match-data-update').liveState).toEqual({ points_a: 5, points_b: 3 })
   })
 
@@ -262,6 +357,36 @@ describe('lanRelayCore protocol', () => {
   })
 })
 
+describe('main-instance lock (shared by every relay)', () => {
+  const interfaces = () => ({ lo: [{ address: '127.0.0.1' }], wlan0: [{ address: '192.168.1.5' }] })
+
+  it('treats loopback and the host\'s own LAN IP as local, other devices as remote', () => {
+    const isLocal = createLocalAddressCheck(interfaces)
+    expect(isLocal('::1')).toBe(true)
+    expect(isLocal('::ffff:127.0.0.1')).toBe(true)
+    expect(isLocal('192.168.1.5')).toBe(true) // the scoretable calls the relay on its LAN IP
+    expect(isLocal('::ffff:192.168.1.5')).toBe(true)
+    expect(isLocal('192.168.1.50')).toBe(false)
+    expect(isLocal(undefined)).toBe(false)
+  })
+
+  it('only the relay host can take or release the lock, so no LAN device can lock anyone out', () => {
+    const gate = createMainInstanceGate({ isLocal: createLocalAddressCheck(interfaces) })
+    expect(gate.register('tablet', '192.168.1.50').status).toBe(403)
+    expect(gate.mainInstanceId).toBeNull()
+    expect(gate.register('desk', '192.168.1.5')).toMatchObject({ status: 200, body: { success: true, instanceId: 'desk' } })
+    expect(gate.blocksMainPage('192.168.1.50', undefined)).toBe(true)
+    expect(gate.blocksMainPage('192.168.1.50', 'desk')).toBe(false)
+    expect(gate.blocksMainPage('127.0.0.1', undefined)).toBe(false)
+    // A LAN device cannot release it (even knowing the id from /api/server/status)
+    expect(gate.unregister('desk', '192.168.1.50').status).toBe(403)
+    // The host re-registers after a reload with a new id, and can release it
+    expect(gate.register('desk-2', '127.0.0.1').status).toBe(200)
+    expect(gate.unregister(undefined, '::1').status).toBe(200)
+    expect(gate.mainInstanceId).toBeNull()
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Integration: the same scenario against each real relay runtime
 // ---------------------------------------------------------------------------
@@ -278,9 +403,9 @@ function freePort() {
   })
 }
 
-function openClient(url) {
+function openClient(url, wsOptions) {
   return new Promise((res, rej) => {
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(url, wsOptions)
     const client = { ws, messages: [], raw: [] }
     client.waitFor = (pred, timeoutMs = 3000) => new Promise((ok, fail) => {
       const found = client.messages.find(pred)
@@ -343,6 +468,19 @@ async function relayScenario({ httpBase, wsUrl }) {
   const action = await referee.waitFor((m) => m.type === 'match-action')
   expect(action.data).toEqual({ team: 'home' })
 
+  // Live-state: pushed live, and a LedBox bridge that (re)subscribes mid-match
+  // reads it from match-full-data the way point-hub does (msg.data.liveState)
+  const liveState = { points_a: 12, points_b: 10, side_a: 'left' }
+  scoreboard.send({ type: 'live-state-update', matchId: 7, liveState })
+  expect((await referee.waitFor((m) => m.type === 'live-state-update')).liveState).toEqual(liveState)
+  const bridge = await openClient(wsUrl)
+  bridge.send({ type: 'subscribe-match', matchId: '7' })
+  const bridgeFull = await bridge.waitFor((m) => m.type === 'match-full-data')
+  expect(bridgeFull.data).toEqual({ liveState })
+  expect(readRelayBundle(bridgeFull).liveState).toEqual(liveState)
+  expect(containsPin(bridge.raw.join(''))).toBe(false)
+  bridge.ws.close()
+
   // Unproven sockets cannot destroy or overwrite the match
   attacker.send({ type: 'clear-all-matches' })
   await attacker.waitFor((m) => m.type === 'error' && m.code === 'not-scoreboard')
@@ -379,6 +517,14 @@ async function relayScenario({ httpBase, wsUrl }) {
   expect(conns.headers.get('content-type')).toMatch(/json/)
   expect((await conns.json()).matchSubscriptions).toEqual({ '7': 1 })
 
+  // Main-instance lock: the scoretable on this machine can take it (POST, as
+  // MatchSetup sends it) and release it
+  const register = await fetch(`${httpBase}/api/server/register-main`, { method: 'POST', headers: { 'X-Instance-ID': 'contract-test' } })
+  expect(register.status).toBe(200)
+  expect((await (await fetch(`${httpBase}/api/server/status`)).json()).hasMainInstance).toBe(true)
+  const unregister = await fetch(`${httpBase}/api/server/unregister-main`, { method: 'POST', headers: { 'X-Instance-ID': 'contract-test' } })
+  expect(unregister.status).toBe(200)
+
   // Nothing ever asked a WS client about a PIN, and no PIN reached a subscriber
   for (const c of [scoreboard, referee, attacker]) {
     expect(c.messages.some((m) => m.type === 'pin-validation-request')).toBe(false)
@@ -408,6 +554,50 @@ describe('relay runtimes speak the shared protocol', () => {
       expect(unknown.headers.get('content-type')).toMatch(/json/)
     } finally {
       child.kill('SIGKILL')
+    }
+  }, 20000)
+
+  // With HTTPS on, browsers need wss:// while LAN tools (LedBox bridge:
+  // ws://127.0.0.1:8080) speak plain ws:// — both on the same WS port.
+  const opensslOk = spawnSync('openssl', ['version']).status === 0
+  it.skipIf(!opensslOk)('standalone server.js with HTTPS serves wss:// and ws:// on the WS port', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'ov-relay-cert-'))
+    const cert = resolve(dir, 'cert.pem')
+    const key = resolve(dir, 'key.pem')
+    spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost'])
+    const [port, wsPort] = [await freePort(), await freePort()]
+    const child = spawn(process.execPath, ['server.js'], {
+      cwd: FRONTEND_DIR,
+      env: { ...process.env, PORT: String(port), WS_PORT: String(wsPort), HTTPS: 'true', SSL_CERT_PATH: cert, SSL_KEY_PATH: key, NODE_ENV: 'test' },
+      stdio: 'ignore'
+    })
+    const clients = []
+    try {
+      const start = Date.now()
+      for (;;) {
+        try {
+          clients.push(await openClient(`ws://127.0.0.1:${wsPort}`))
+          break
+        } catch {
+          if (Date.now() - start > 10000) throw new Error('server.js (HTTPS) did not start')
+          await new Promise((r) => setTimeout(r, 100))
+        }
+      }
+      const secure = await openClient(`wss://127.0.0.1:${wsPort}`, { rejectUnauthorized: false })
+      clients.push(secure)
+      const [plain] = clients
+      secure.send(syncMessage())
+      secure.send({ type: 'live-state-update', matchId: 7, liveState: { points_a: 1 } })
+      secure.send({ type: 'ping' })
+      await secure.waitFor((m) => m.type === 'pong')
+      plain.send({ type: 'subscribe-match', matchId: '7' })
+      const full = await plain.waitFor((m) => m.type === 'match-full-data')
+      expect(full.data).toEqual({ liveState: { points_a: 1 } })
+      expect(containsPin(plain.raw.join(''))).toBe(false)
+    } finally {
+      for (const c of clients) c.ws.close()
+      child.kill('SIGKILL')
+      rmSync(dir, { recursive: true, force: true })
     }
   }, 20000)
 

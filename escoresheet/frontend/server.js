@@ -6,12 +6,13 @@
 
 import { createServer as createHttpServer } from 'http'
 import { createServer as createHttpsServer } from 'https'
+import { createServer as createNetServer } from 'net'
 import { readFileSync, existsSync, statSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
-import { createLanRelay, createRateLimiter, WS_MAX_PAYLOAD } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -72,10 +73,11 @@ if (useHttps) {
   }
 }
 
-// Singleton tracking for main scoresheet instance
-let mainInstanceId = null
-const mainInstanceStartTime = null
-const allowedPaths = ['/referee', '/referee.html', '/bench', '/bench.html', '/livescore', '/livescore.html', '/upload_roster', '/upload_roster.html', '/scoresheet', '/scoresheet.html']
+// Single main-scoresheet lock (same rule as the Electron/Tauri relays and the
+// dev plugin): only this machine itself — loopback or its own LAN IP — may
+// register or release it, so a LAN device cannot lock anyone out of "/".
+const isLocalAddress = createLocalAddressCheck(networkInterfaces)
+const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
 // Shared match data store + WS protocol (populated by the scoreboard via WebSocket)
 const relay = createLanRelay()
@@ -102,12 +104,6 @@ const MIME_TYPES = {
 
 // WebSocket clients storage
 const wsClients = new Set()
-
-// Loopback = a scorer on this machine. Only it may claim/release the single
-// "main instance" slot, so a LAN device cannot lock everyone out of "/".
-function isLoopback(addr) {
-  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
-}
 
 // Helper to get local IP address
 function getLocalIP() {
@@ -166,8 +162,8 @@ const requestHandler = (req, res) => {
     })
     res.end(JSON.stringify({
       running: true,
-      mainInstanceId,
-      hasMainInstance: mainInstanceId !== null,
+      mainInstanceId: mainGate.mainInstanceId,
+      hasMainInstance: mainGate.mainInstanceId !== null,
       protocol,
       wsProtocol,
       hostname: HOSTNAME,
@@ -197,45 +193,8 @@ const requestHandler = (req, res) => {
     return
   }
   
-  if (urlPath === '/api/server/register-main') {
-    if (!isLoopback(req.socket.remoteAddress)) {
-      res.writeHead(403, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ success: false, error: 'Only the scoretable machine can register the main instance' }))
-      return
-    }
-    const instanceId = req.headers['x-instance-id'] || `instance-${Date.now()}`
-    if (mainInstanceId === null) {
-      mainInstanceId = instanceId
-      res.writeHead(200, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({ success: true, instanceId }))
-    } else {
-      res.writeHead(409, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({ success: false, error: 'Main instance already registered', existingInstanceId: mainInstanceId }))
-    }
-    return
-  }
-  
-  if (urlPath === '/api/server/unregister-main') {
-    const instanceId = req.headers['x-instance-id']
-    if (instanceId === mainInstanceId || isLoopback(req.socket.remoteAddress)) {
-      mainInstanceId = null
-      res.writeHead(200, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({ success: true }))
-    } else {
-      res.writeHead(403, {
-        'Content-Type': 'application/json'
-      })
-      res.end(JSON.stringify({ success: false, error: 'Not the registered instance' }))
-    }
-    return
-  }
-  
+  if (mainGate.handleRequest(req, res, urlPath)) return
+
   // Relay-owned endpoints (validate-pin, match/:id, list, by-game-number,
   // PATCH, server/connections) — one implementation in lanRelayCore.
   if (urlPath.startsWith('/api/')) {
@@ -248,9 +207,8 @@ const requestHandler = (req, res) => {
 
   // Check if accessing main page and block if another instance exists
   const isMainPage = urlPath === '/' || urlPath === '/index.html'
-  if (isMainPage && mainInstanceId !== null && !isLoopback(req.socket.remoteAddress)) {
-    const requestingInstanceId = req.headers['x-instance-id']
-    if (requestingInstanceId !== mainInstanceId) {
+  if (isMainPage) {
+    if (mainGate.blocksMainPage(req.socket.remoteAddress, req.headers['x-instance-id'])) {
       res.writeHead(403, { 'Content-Type': 'text/html' })
       res.end(`
         <!DOCTYPE html>
@@ -364,22 +322,47 @@ const httpServer = httpsOptions
   : createHttpServer(requestHandler)
 
 // Create WebSocket server. With HTTPS on, pages are served over https:// and
-// browsers refuse ws:// (mixed content), so the relay listens with the same
-// certificate (WSS) — exactly what /api/server/status advertises.
-let wsHttpsServer = null
-const wss = httpsOptions
-  ? new WebSocketServer({
-      server: (wsHttpsServer = createHttpsServer(httpsOptions)),
-      perMessageDeflate: false,
-      maxPayload: WS_MAX_PAYLOAD
-    })
-  : new WebSocketServer({
-      port: WS_PORT,
-      host: '0.0.0.0', // Bind to all interfaces for LAN access
-      perMessageDeflate: false, // Disable compression for better performance
-      maxPayload: WS_MAX_PAYLOAD
-    })
-if (wsHttpsServer) wsHttpsServer.listen(WS_PORT, '0.0.0.0')
+// browsers refuse ws:// (mixed content), so the relay accepts wss:// with the
+// same certificate — exactly what /api/server/status advertises. Plain ws:// is
+// still accepted on the SAME port (the first byte of a TLS handshake is 0x16),
+// so LAN clients that predate HTTPS — the LedBox bridge defaults to
+// ws://127.0.0.1:8080 — keep working with zero setup.
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: false, // Disable compression for better performance
+  maxPayload: WS_MAX_PAYLOAD
+})
+const wsOnly = (req, res) => {
+  res.writeHead(426, { 'Content-Type': 'text/plain' })
+  res.end('WebSocket only')
+}
+const wsPlainServer = createHttpServer(wsOnly)
+const wsTlsServer = httpsOptions ? createHttpsServer(httpsOptions, wsOnly) : null
+for (const server of [wsPlainServer, wsTlsServer]) {
+  server?.on('upgrade', (req, socket, head) => {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+  })
+}
+const wsListener = createNetServer((socket) => {
+  socket.on('error', () => socket.destroy())
+  if (!wsTlsServer) {
+    wsPlainServer.emit('connection', socket)
+    return
+  }
+  // Peek the first byte to route TLS vs plain; the byte is pushed back unread.
+  socket.setTimeout(10000, () => socket.destroy())
+  socket.once('readable', function route() {
+    const first = socket.read(1)
+    if (first === null) {
+      socket.once('readable', route)
+      return
+    }
+    socket.unshift(first)
+    socket.setTimeout(0)
+    ;(first[0] === 0x16 ? wsTlsServer : wsPlainServer).emit('connection', socket)
+  })
+})
+wsListener.listen(WS_PORT, '0.0.0.0') // Bind to all interfaces for LAN access
 
 wss.on('connection', (ws, req) => {
   // Connection limit for LAN server
@@ -446,12 +429,12 @@ httpServer.listen(PORT, '0.0.0.0', () => {
 
 // WebSocket server started
 const wsProtocol = httpsOptions ? 'wss' : 'ws'
-console.log(`🔌 WebSocket Server running`)
+console.log(`🔌 WebSocket Server running${httpsOptions ? ' (wss:// and ws:// on the same port)' : ''}`)
 console.log(`   ${wsProtocol}://${HOSTNAME}:${WS_PORT}`)
 console.log(`   ${wsProtocol}://${localIP}:${WS_PORT}`)
 
 // Export server info and control functions
-export { broadcast, getLocalIP, mainInstanceId }
+export { broadcast, getLocalIP, mainGate }
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
@@ -462,7 +445,7 @@ process.on('SIGTERM', () => {
   wss.close(() => {
     console.log('WebSocket server closed')
   })
-  if (wsHttpsServer) wsHttpsServer.close()
+  wsListener.close()
   process.exit(0)
 })
 
@@ -474,6 +457,6 @@ process.on('SIGINT', () => {
   wss.close(() => {
     console.log('WebSocket server closed')
   })
-  if (wsHttpsServer) wsHttpsServer.close()
+  wsListener.close()
   process.exit(0)
 })

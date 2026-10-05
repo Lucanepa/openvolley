@@ -11,14 +11,15 @@ import { createServer as createHttpServer } from 'http'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
-import { createLanRelay, WS_MAX_PAYLOAD } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 // Shared relay state + WS protocol (same module as server.js and the Electron relay)
 const relay = createLanRelay()
-let mainInstanceId = null
+// Same main-instance rule as every relay: only this machine may take/release it
+const mainGate = createMainInstanceGate({ isLocal: createLocalAddressCheck(networkInterfaces) })
 
 // Get local IP address
 function getLocalIP() {
@@ -149,8 +150,8 @@ export function vitePluginApiRoutes(options = {}) {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             running: true,
-            mainInstanceId,
-            hasMainInstance: mainInstanceId !== null,
+            mainInstanceId: mainGate.mainInstanceId,
+            hasMainInstance: mainGate.mainInstanceId !== null,
             protocol,
             wsProtocol,
             hostname: 'escoresheet.local',
@@ -173,31 +174,8 @@ export function vitePluginApiRoutes(options = {}) {
           return
         }
         
-        // Register main instance
-        if (urlPath === '/server/register-main') {
-          const instanceId = req.headers['x-instance-id'] || `instance-${Date.now()}`
-          if (mainInstanceId === null) {
-            mainInstanceId = instanceId
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: true, instanceId }))
-          } else {
-            res.writeHead(409, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: false, error: 'Main instance already registered', existingInstanceId: mainInstanceId }))
-          }
-          return
-        }
-        
-        // Unregister main instance
-        if (urlPath === '/server/unregister-main') {
-          const instanceId = req.headers['x-instance-id']
-          if (instanceId === mainInstanceId) {
-            mainInstanceId = null
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: true }))
-          } else {
-            res.writeHead(403, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ success: false, error: 'Not the registered instance' }))
-          }
+        // Register / unregister the main instance (shared rule in lanRelayCore)
+        if (mainGate.handleRequest(req, res, '/api' + urlPath)) {
           return
         }
 

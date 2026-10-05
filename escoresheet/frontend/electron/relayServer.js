@@ -23,7 +23,7 @@ const { join, extname, basename, sep } = require('path')
 const { WebSocketServer } = require('ws')
 const { networkInterfaces } = require('os')
 
-const { createLanRelay, WS_MAX_PAYLOAD } = require('./lanRelayCore.cjs')
+const { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } = require('./lanRelayCore.cjs')
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -44,13 +44,9 @@ const MIME_TYPES = {
   '.pdf': 'application/pdf',
 }
 
-// Loopback = the desktop app itself. Tablets connect over the LAN IP, so the
-// loopback check lets the local scoretable reload without tripping the
-// single-main-instance gate, while still gating a second device on the LAN.
-function isLoopback(addr) {
-  if (!addr) return false
-  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
-}
+// The desktop app itself = loopback or this machine's own LAN IP (the app
+// calls the relay on its LAN IP). Shared rule, see createMainInstanceGate.
+const isLocalAddress = createLocalAddressCheck(networkInterfaces)
 
 function getLocalIP() {
   const nets = networkInterfaces()
@@ -88,7 +84,7 @@ function start(opts = {}) {
     // Relay state + WS protocol (shared with ../server.js and the dev plugin)
     const relay = createLanRelay()
     const wsClients = new Set()
-    let mainInstanceId = null
+    const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
     const requestHandler = (req, res) => {
       const urlPath = req.url.split('?')[0]
@@ -134,8 +130,8 @@ function start(opts = {}) {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({
           running: true,
-          mainInstanceId,
-          hasMainInstance: mainInstanceId !== null,
+          mainInstanceId: mainGate.mainInstanceId,
+          hasMainInstance: mainGate.mainInstanceId !== null,
           protocol: 'http',
           wsProtocol: 'ws',
           hostname: HOSTNAME,
@@ -158,32 +154,8 @@ function start(opts = {}) {
         return
       }
 
-      if (urlPath === '/api/server/register-main') {
-        const instanceId = req.headers['x-instance-id'] || `instance-${Date.now()}`
-        // The desktop app (loopback) is always allowed to (re)claim main.
-        if (mainInstanceId === null || isLoopback(remote)) {
-          mainInstanceId = instanceId
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: true, instanceId }))
-        } else {
-          res.writeHead(409, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Main instance already registered', existingInstanceId: mainInstanceId }))
-        }
-        return
-      }
-
-      if (urlPath === '/api/server/unregister-main') {
-        const instanceId = req.headers['x-instance-id']
-        if (instanceId === mainInstanceId || isLoopback(remote)) {
-          mainInstanceId = null
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: true }))
-        } else {
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Not the registered instance' }))
-        }
-        return
-      }
+      // --- Single main-instance lock (only this machine may take or release it) ---
+      if (mainGate.handleRequest(req, res, urlPath)) return
 
       // --- Relay-owned endpoints (validate-pin, match/:id, list, by-game-number,
       // PATCH, server/connections) — one implementation in lanRelayCore ---
@@ -194,11 +166,10 @@ function start(opts = {}) {
         return
       }
 
-      // --- Single main-instance gate (skipped for the loopback desktop app) ---
+      // --- Single main-instance gate (skipped for the desktop app itself) ---
       const isMainPage = urlPath === '/' || urlPath === '/index.html'
-      if (isMainPage && mainInstanceId !== null && !isLoopback(remote)) {
-        const requestingInstanceId = req.headers['x-instance-id']
-        if (requestingInstanceId !== mainInstanceId) {
+      if (isMainPage) {
+        if (mainGate.blocksMainPage(remote, req.headers['x-instance-id'])) {
           res.writeHead(403, { 'Content-Type': 'text/html' })
           res.end(`<!DOCTYPE html><html><head><title>Main Instance Already Running</title>
             <style>body{font-family:Arial,sans-serif;text-align:center;padding:50px}h1{color:#ef4444}p{color:#666}</style>
