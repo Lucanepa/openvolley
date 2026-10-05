@@ -108,6 +108,11 @@ const DEFAULTS = Object.freeze({
     // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
     signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
+    // Sign-up is auto-confirmed (no email flow): per address, so one mailbox
+    // cannot be probed or flooded from many IPs, and all sign-ups together, so
+    // a spread-out burst cannot mass-create accounts (each costs a bcrypt hash).
+    signUpEmail: { max: 3, windowMs: 60 * 60 * 1000 },
+    signUpGlobal: { max: 100, windowMs: 60 * 60 * 1000 },
     sessionIp: { max: 300, windowMs: 60 * 1000 }
   },
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
@@ -451,6 +456,8 @@ export function createAuth(options = {}) {
     signInEmail: resolveLimiter(cfg.limits.signInEmail),
     signInGlobal: resolveLimiter(cfg.limits.signInGlobal),
     signUpIp: resolveLimiter(cfg.limits.signUpIp),
+    signUpEmail: resolveLimiter(cfg.limits.signUpEmail),
+    signUpGlobal: resolveLimiter(cfg.limits.signUpGlobal),
     sessionIp: resolveLimiter(cfg.limits.sessionIp)
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
@@ -852,6 +859,11 @@ export function createAuth(options = {}) {
     }
     const pwProblem = validateNewPassword(body.password)
     if (pwProblem) return fail(422, pwProblem, 'weak_password')
+    const blockedEmail = limit('signUpEmail', email)
+    if (blockedEmail) return blockedEmail
+    // Last, so requests refused above never use up the global budget.
+    const blockedGlobal = limit('signUpGlobal', '*')
+    if (blockedGlobal) return blockedGlobal
 
     const meta = stripMetadata(body.metadata ?? body.data)
     if (utf8Length(JSON.stringify(meta)) > cfg.maxMetadataBytes) {

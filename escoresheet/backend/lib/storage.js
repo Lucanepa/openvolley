@@ -255,7 +255,10 @@ export function createWriteQuota({ windowMs = 60_000, maxWrites = 300, maxBytes 
  *   STORAGE_BACKUP_MIN_FREE_MB       free-space floor for backup/ writes (default 2048)
  *   STORAGE_SCORESHEETS_MIN_FREE_MB  free-space floor for scoresheets/ writes (default 256)
  *   STORAGE_MAX_FILE_MB              per-object size cap (default 5)
- *   STORAGE_OWNER_SCOPE              off | require | prefix (default off; Phase 7 security release)
+ *   STORAGE_OWNER_SCOPE              off | require | prefix (default prefix since the Phase 7
+ *                                    security release)
+ *   STORAGE_OWNER_SCOPE_BUCKETS      buckets the owner scope applies to: a comma list or 'all'
+ *                                    (default 'backup': every account sees only its own backups)
  *   STORAGE_UPLOADER_READ_BUCKETS    comma-separated buckets only an object's uploader may
  *                                    download (default 'scoresheets'; 'none' turns it off)
  * Throws on a value it does not understand, so a typo fails at startup
@@ -280,10 +283,19 @@ export function storageOptionsFromEnv(env = process.env) {
   if (Object.keys(floors).length) opts.minFreeBytes = floors
   const maxFile = megabytes('STORAGE_MAX_FILE_MB', { allowZero: false })
   if (maxFile !== undefined) opts.maxFileBytes = maxFile
-  const scope = (env.STORAGE_OWNER_SCOPE || '').trim().toLowerCase()
-  if (scope === 'require' || scope === 'prefix') opts.ownerScope = scope
-  else if (scope !== '' && scope !== 'off') {
-    throw new TypeError(`storage: STORAGE_OWNER_SCOPE must be off, require or prefix (got ${JSON.stringify(env.STORAGE_OWNER_SCOPE)})`)
+  const rawScope = env.STORAGE_OWNER_SCOPE
+  const scope = rawScope === undefined || String(rawScope).trim() === '' ? 'prefix' : String(rawScope).trim().toLowerCase()
+  if (scope === 'require' || scope === 'prefix') {
+    opts.ownerScope = scope
+    const rawBuckets = env.STORAGE_OWNER_SCOPE_BUCKETS
+    const list = rawBuckets === undefined || String(rawBuckets).trim() === '' ? 'backup' : String(rawBuckets).trim().toLowerCase()
+    const names = list === 'all' ? [...DEFAULT_BUCKETS] : list.split(',').map((b) => b.trim()).filter(Boolean)
+    if (!names.length || names.some((b) => !DEFAULT_BUCKETS.includes(b))) {
+      throw new TypeError(`storage: STORAGE_OWNER_SCOPE_BUCKETS must be all or a list of ${DEFAULT_BUCKETS.join(', ')} (got ${JSON.stringify(rawBuckets)})`)
+    }
+    opts.ownerScopeBuckets = [...new Set(names)]
+  } else if (scope !== 'off') {
+    throw new TypeError(`storage: STORAGE_OWNER_SCOPE must be off, require or prefix (got ${JSON.stringify(rawScope)})`)
   }
   const readRaw = env.STORAGE_UPLOADER_READ_BUCKETS
   const readList = readRaw === undefined || String(readRaw).trim() === '' ? 'scoresheets' : String(readRaw).trim().toLowerCase()
@@ -890,16 +902,35 @@ export function createStorage(options = {}) {
   /**
    * Delete files older than maxAgeMs below bucket/prefix (default backup/backups,
    * 30 days), then remove emptied folders. Symlinks are never followed. Also
-   * removes stale temp files. Needs the sentinel. Returns counts.
+   * removes stale temp files. Needs the sentinel. Returns counts. With the
+   * 'prefix' owner scope on the bucket, every account's {userId}/{prefix} is
+   * swept as well (and the unprefixed one, where older files live).
    */
   async function sweep({ bucket = 'backup', prefix = 'backups', maxAgeMs = DEFAULTS.sweepMaxAgeMs } = {}) {
     assertBucket(bucket)
     const rr = await assertWritable()
     const tmpRemoved = await sweepTemp(rr)
     const segs = parse(prefix, true)
-    const r = await resolve(bucket, segs, { isDir: true })
     const result = { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved, ownerRecordsRemoved: 0 }
-    if (!r) {
+    const roots = [segs]
+    if (ownerScope === 'prefix' && ownerScopeBuckets.has(bucket)) {
+      const b = await resolve(bucket, [], { isDir: true })
+      let dirents = []
+      try {
+        dirents = b ? await fsp.readdir(b.dir, { withFileTypes: true }) : []
+      } catch {
+        dirents = []
+      }
+      for (const d of dirents) {
+        if (d.isDirectory() && d.name !== segs[0] && USER_ID_RE.test(d.name)) roots.push([d.name, ...segs])
+      }
+    }
+    const dirs = []
+    for (const s of roots) {
+      const r = await resolve(bucket, s, { isDir: true })
+      if (r) dirs.push(r.dir)
+    }
+    if (dirs.length === 0) {
       result.ownerRecordsRemoved = await sweepOwners(rr)
       return result
     }
@@ -949,7 +980,7 @@ export function createStorage(options = {}) {
       }
     }
 
-    await walk(r.dir)
+    for (const dir of dirs) await walk(dir)
     result.ownerRecordsRemoved = await sweepOwners(rr)
     return result
   }

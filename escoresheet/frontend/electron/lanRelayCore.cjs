@@ -54,22 +54,33 @@
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
  *   clear-all-matches { keepMatchId? }   removes only matches THIS socket proved
- *   subscribe-match   { matchId, device?, team? }  /  unsubscribe-match { matchId }  /  ping
+ *   subscribe-match   { matchId, device?, team?, pin? }  /  unsubscribe-match { matchId }  /  ping
  *                     device ('referee' | 'bench' | 'livescore') and team ('home' | 'away')
  *                     only label the socket in /api/server/connections (tablet status on
  *                     the scorer); they grant nothing. `role` is accepted as the old name.
+ *                     pin: the referee PIN, a bench PIN (while that connection is on) or
+ *                     the game PIN of the match (pinGrantsAccess). With it the socket gets
+ *                     the bundle (rosters, events) and match-action; without it, or with a
+ *                     wrong one, the public summary only (relaySummaryBundle: teams, status,
+ *                     set scores, live state). A wrong PIN is answered { code:'pin-invalid' }
+ *                     and limited per socket and IP ('rate-limited'); a PIN offered before
+ *                     the scoreboard synced the match is checked once when it arrives.
  *   match-data-response | game-number-response | match-update-response { requestId, ... }
  *                     answers to relay requests; accepted only from the sockets asked.
  * Relay -> client
- *   match-full-data, match-data-update  FLAT bundle: { type, matchId, match, homeTeam, awayTeam,
+ *   match-full-data, match-data-update  FLAT bundle: { type, matchId, access, match, homeTeam, awayTeam,
  *                     homePlayers, awayPlayers, sets, events, liveState?, _timestamp,
- *                     _scoreboardTimestamp }. `match` is always stripped of PINs.
+ *                     _scoreboardTimestamp }. `match` is always stripped of PINs. access is
+ *                     'full' (PIN proved, or the match's own scoreboard) or 'summary'.
+ *   GET /api/match/:id  the same: the bundle with the X-OV-Match-Pin header carrying a PIN
+ *                     that grants the match, the summary otherwise.
  *                     When a liveState is stored it is ALSO sent as `data: { liveState }`
  *                     (and nothing else under `data`) for the LedBox bridge (point-hub
  *                     relaySubscriber reads msg.data.liveState). The liveState is carried
  *                     across syncs only while the same game PIN keeps the match.
  *   match-action      { type, matchId, action, data, timestamp, _timestamp, _scoreboardTimestamp }
- *   live-state-update { type, matchId, liveState }
+ *                     (only to sockets with access)
+ *   live-state-update { type, matchId, liveState }   (every subscriber: public, like Livescore)
  *   match-deleted     { type, matchId }
  *   connected, pong, error { type:'error', code, message, matchId? }
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
@@ -110,6 +121,10 @@ const CLAIM_FAILURE_LIMIT = 5
 const MAX_OWNED_PER_IP = 4
 const NEW_CLAIM_LIMIT = 10
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
+// Wrong PINs offered for a match's bundle (subscribe-match, GET /api/match/:id)
+// per socket and per IP and minute.
+const PIN_FAILURE_LIMIT = 5
+const MAX_ACCESS_KEYS = 16
 
 // PIN types accepted by POST /api/match/validate-pin
 const PIN_TYPES = {
@@ -181,6 +196,74 @@ function publicMatch(match) {
     out[k] = MATCH_ROSTER_FIELDS.includes(k) ? publicPeople(v) : v
   }
   return out
+}
+
+// --- Before the PIN: the public summary (same lists as backend/lib/publicColumns.js) ---
+const SUMMARY_MATCH_FIELDS = [
+  'id', 'status', 'gameNumber', 'gameN', 'game_n', 'seed_key', 'seedKey', 'external_id', 'externalId',
+  'scheduledAt', 'scheduled_at', 'sport_type', 'sportType', 'test', 'league', 'best_of', 'bestOf',
+  'coinTossTeamA', 'coinTossTeamB', 'homeShortName', 'awayShortName', 'homeTeamName', 'awayTeamName',
+  'refereeConnectionEnabled', 'homeTeamConnectionEnabled', 'awayTeamConnectionEnabled',
+  '_syncedAt', '_syncedSeq', '_syncSession',
+]
+const SUMMARY_TEAM_FIELDS = ['name', 'shortName', 'short_name', 'color']
+const SUMMARY_SET_FIELDS = ['id', 'index', 'homePoints', 'awayPoints', 'home_points', 'away_points', 'finished', 'startTime', 'endTime']
+
+function pickFields(obj, keys) {
+  if (obj == null || typeof obj !== 'object' || Array.isArray(obj)) return obj ?? null
+  const out = {}
+  for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k]
+  return out
+}
+
+/**
+ * The public summary of a bundle, for a socket / caller without a PIN: same
+ * shape, rosters and events empty, `access: 'summary'`.
+ */
+function relaySummaryBundle(bundle) {
+  const out = {
+    access: 'summary',
+    match: pickFields(bundle && bundle.match, SUMMARY_MATCH_FIELDS),
+    homeTeam: typeof (bundle && bundle.homeTeam) === 'string' ? bundle.homeTeam : pickFields(bundle && bundle.homeTeam, SUMMARY_TEAM_FIELDS),
+    awayTeam: typeof (bundle && bundle.awayTeam) === 'string' ? bundle.awayTeam : pickFields(bundle && bundle.awayTeam, SUMMARY_TEAM_FIELDS),
+    homePlayers: [],
+    awayPlayers: [],
+    sets: Array.isArray(bundle && bundle.sets) ? bundle.sets.map((s) => pickFields(s, SUMMARY_SET_FIELDS)) : [],
+    events: [],
+  }
+  if (bundle && bundle.liveState !== undefined) out.liveState = bundle.liveState
+  return out
+}
+
+function safeEqualText(a, b) {
+  // Constant time for equal lengths; no Buffer (this file must not require()).
+  const x = String(a)
+  const y = String(b)
+  if (x.length !== y.length) return false
+  let diff = 0
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i)
+  return diff === 0
+}
+
+/**
+ * Does `pin` prove access to the match: the referee PIN (referee connection
+ * on), a bench PIN (that bench connection on) or the game PIN? A match without
+ * any of them grants nothing. Same rule as backend/lib/matchAccess.js.
+ */
+function pinGrantsAccess(match, pin) {
+  const p = pin === undefined || pin === null ? '' : String(pin).trim()
+  if (!p || !match || typeof match !== 'object') return false
+  const candidates = []
+  if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
+  if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
+  if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
+  candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
+  let ok = false
+  for (const c of candidates) {
+    const s = c === undefined || c === null ? '' : String(c).trim()
+    if (s && safeEqualText(s, p)) ok = true
+  }
+  return ok
 }
 
 /**
@@ -294,9 +377,10 @@ function toWireBundle(bundle) {
  * stored liveState is mirrored under `data` for the LedBox bridge, which reads
  * `msg.data.liveState` (`data` never carries anything else, so no PINs).
  */
-function matchDataMessage(type, matchId, bundle, scoreboardTs) {
+function matchDataMessage(type, matchId, bundle, scoreboardTs, access = 'full') {
   const now = Date.now()
-  const msg = { type, matchId, ...toWireBundle(bundle), _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
+  const body = access === 'full' ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)
+  const msg = { type, matchId, ...body, _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
   if (bundle.liveState !== undefined) msg.data = { liveState: bundle.liveState }
   return msg
 }
@@ -453,6 +537,8 @@ function createLanRelay(options = {}) {
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
   const isRateLimited = options.isRateLimited || createRateLimiter()
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
+  // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
+  const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
   const isNewClaimLimited = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT })
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
@@ -478,13 +564,65 @@ function createLanRelay(options = {}) {
     send(ws, matchId ? { type: 'error', code, message, matchId } : { type: 'error', code, message })
   }
 
-  function sendToSubscribers(matchId, msg, excludeWs = null) {
+  // --- PIN-proved access ----------------------------------------------------
+
+  const pinFailureKeys = (meta) => (meta.ip ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
+
+  /** May this socket get the bundle and match actions (not just the summary)? */
+  function hasAccess(ws, matchId, bundle) {
+    const meta = clients.get(ws)
+    if (!meta || !matchId) return false
+    if (meta.owned.has(matchId)) return true
+    const a = meta.access.get(matchId)
+    if (!a || !bundle || !bundle.match) return false
+    if (pinGrantsAccess(bundle.match, a.pin)) {
+      a.verified = true
+      return true
+    }
+    // Offered before the match reached the relay: checked once
+    if (!a.verified) {
+      for (const k of pinFailureKeys(meta)) pinFailures.fail(k)
+      meta.access.delete(matchId)
+    }
+    return false
+  }
+
+  /** match-full-data / match-data-update to a match's subscribers: full or summary each. */
+  function sendMatchData(matchId, type, bundle, scoreboardTs, excludeWs = null) {
+    const subs = subscriptions.get(matchId)
+    if (!subs || !bundle) return 0
+    let full = null
+    let summary = null
+    let sent = 0
+    for (const client of subs) {
+      if (client === excludeWs || client.readyState !== 1) continue
+      let text
+      if (hasAccess(client, matchId, bundle)) {
+        full = full || JSON.stringify(matchDataMessage(type, matchId, bundle, scoreboardTs, 'full'))
+        text = full
+      } else {
+        summary = summary || JSON.stringify(matchDataMessage(type, matchId, bundle, scoreboardTs, 'summary'))
+        text = summary
+      }
+      try {
+        client.send(text)
+        sent++
+      } catch (err) {
+        log.error('[Relay] send to subscriber failed:', err && err.message)
+      }
+    }
+    return sent
+  }
+
+  function sendToSubscribers(matchId, msg, excludeWs = null, accessOnly = false) {
     const subs = subscriptions.get(matchId)
     if (!subs) return 0
     const text = JSON.stringify(msg)
     let sent = 0
+    const bundle = accessOnly ? store.get(matchId) : null
     for (const client of subs) {
       if (client === excludeWs || client.readyState !== 1) continue
+      if (accessOnly && !hasAccess(client, matchId, bundle)) continue
       try {
         client.send(text)
         sent++
@@ -508,6 +646,7 @@ function createLanRelay(options = {}) {
       subscribed: new Set(),
       aliases: new Map(), // id this socket synced under -> room key (seed_key)
       pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
+      access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
     }
     clients.set(ws, meta)
     send(ws, { type: 'connected', message: 'Connected to eScoresheet WebSocket server', timestamp: Date.now() })
@@ -749,7 +888,7 @@ function createLanRelay(options = {}) {
       const claimed = bundle && id === p.matchId && relayKeyOf(id, bundle.match) === id ? claim(ws, id, bundle.match) : null
       if (claimed && claimed.ok) {
         const stored = storeBundle(id, bundle, claimed.kind)
-        sendToSubscribers(id, matchDataMessage('match-data-update', id, stored), ws)
+        sendMatchData(id, 'match-data-update', stored, undefined, ws)
         settle(msg.requestId, { data: stored })
       } else {
         settle(msg.requestId, { data: null })
@@ -796,7 +935,7 @@ function createLanRelay(options = {}) {
       meta.aliases.set(rawId, matchId)
     }
     const stored = storeBundle(matchId, bundle, claimed.kind)
-    sendToSubscribers(matchId, matchDataMessage('match-data-update', matchId, stored, msg._timestamp), ws)
+    sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
   }
 
   function onSubscribe(ws, msg) {
@@ -813,9 +952,29 @@ function createLanRelay(options = {}) {
       const device = msg.device ?? msg.role
       if (DEVICE_ROLES.includes(device)) meta.role = device
       if (DEVICE_TEAMS.includes(msg.team)) meta.team = msg.team
+      offerPin(ws, meta, matchId, msg.pin)
     }
     const stored = store.get(matchId)
-    if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored))
+    if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored, undefined, hasAccess(ws, matchId, stored) ? 'full' : 'summary'))
+  }
+
+  /** The PIN a subscriber offers for a match: checked now if the relay holds it. */
+  function offerPin(ws, meta, matchId, rawPin) {
+    const pin = rawPin === undefined || rawPin === null ? '' : String(rawPin).trim().slice(0, 32)
+    if (!pin) return
+    if (pinFailureKeys(meta).some((k) => pinFailures.blocked(k))) {
+      sendError(ws, 'rate-limited', 'Too many wrong PINs. Wait a minute.', matchId)
+      return
+    }
+    const stored = store.get(matchId)
+    if (stored && stored.match && !pinGrantsAccess(stored.match, pin)) {
+      for (const k of pinFailureKeys(meta)) pinFailures.fail(k)
+      sendError(ws, 'pin-invalid', 'Wrong PIN for this match', matchId)
+      return
+    }
+    meta.access.delete(matchId)
+    if (meta.access.size >= MAX_ACCESS_KEYS) meta.access.delete(meta.access.keys().next().value)
+    meta.access.set(matchId, { pin, verified: !!(stored && stored.match) })
   }
 
   function onUnsubscribe(ws, msg) {
@@ -858,7 +1017,7 @@ function createLanRelay(options = {}) {
       timestamp: msg.timestamp,
       _timestamp: now,
       _scoreboardTimestamp: msg._timestamp || msg.timestamp || now,
-    }, ws)
+    }, ws, true) // only sockets with access: actions carry players and sanctions
   }
 
   function onLiveState(ws, msg) {
@@ -948,14 +1107,26 @@ function createLanRelay(options = {}) {
     }
   }
 
-  async function getMatch(rawId) {
+  /**
+   * The match for GET /api/match/:id: the bundle when `pin` grants it (the
+   * X-OV-Match-Pin header), the public summary otherwise. `ip` keys the
+   * wrong-PIN limit.
+   */
+  async function getMatch(rawId, { pin = null, ip = null } = {}) {
     const matchId = normalizeMatchId(rawId)
     if (!matchId) return { status: 400, body: { success: false, error: 'Match ID required' } }
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    const key = `ip:${ip || 'unknown'}`
+    if (offered && pinFailures.blocked(key)) {
+      return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
+    }
     const bundle = store.get(matchId) || await requestFromScoreboards('match-data-request', { matchId }, matchId)
     if (!bundle) {
       return { status: 404, body: { success: false, error: 'Match data not found. Make sure the main scoresheet is running and connected.' } }
     }
-    return { status: 200, body: { success: true, ...toWireBundle(bundle) } }
+    const full = !!offered && pinGrantsAccess(bundle.match, offered)
+    if (offered && !full) pinFailures.fail(key)
+    return { status: 200, body: { success: true, ...(full ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)) } }
   }
 
   function listMatches() {
@@ -1098,7 +1269,8 @@ function createLanRelay(options = {}) {
       let id
       try { id = decodeURIComponent(m[1]) } catch { id = null }
       if (method === 'GET') {
-        reply(getMatch(id))
+        const pin = req.headers && req.headers['x-ov-match-pin']
+        reply(getMatch(id, { pin: typeof pin === 'string' ? pin : null, ip }))
         return true
       }
       if (method === 'PATCH') {
@@ -1146,6 +1318,11 @@ module.exports = {
   carryMatchSecrets,
   toWireBundle,
   matchDataMessage,
+  relaySummaryBundle,
+  pinGrantsAccess,
+  SUMMARY_MATCH_FIELDS,
+  SUMMARY_TEAM_FIELDS,
+  SUMMARY_SET_FIELDS,
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,

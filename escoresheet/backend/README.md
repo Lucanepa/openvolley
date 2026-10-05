@@ -152,7 +152,9 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `IS_CLOUD` | Strict cloud CORS/HSTS/CSP without a database (relay-only cloud). Implied by `DATABASE_URL`. | - |
 | `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
 | `CONTACT_EMAIL` | Contact form recipient; also named in the "password reset unavailable" message | `volleyball@lucanepa.com` |
-| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE` | See "Self-hosted storage" below | |
+| `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
+| `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | random |
+| `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
 | `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
 | `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
@@ -173,7 +175,11 @@ IP plus the per-user write quota of `lib/storage.js`; `validate-connection-pin`
 `/api/match/restore` 30 per user, at most 2 bodies parsed at once per process
 (4 queued, then 503 `OV_BUSY`); the PIN and `/api/db` buckets key IPv6 by /64; `/api/match/restore-by-pin` 60 per IP plus the
 attempt limiter (20 failed per caller / 5 per caller and game in 10 min); auth
-buckets live in `lib/auth.js`. Role sockets: 200 per IP in cloud mode (50 on
+buckets live in `lib/auth.js`; `/api/match/claim` shares the restore-by-pin
+buckets; `/api/match/upload-roster` shares the validate-connection-pin per-IP
+and failed-guess buckets; a wrong `X-OV-Match-Pin` on `GET /api/match/:id`
+counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
+20 per IP and minute. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
@@ -182,6 +188,131 @@ allows that header.
 CORS in cloud mode trusts `https://*.openvolley.app`, `PUBLIC_ORIGINS`, and the
 native shells: Capacitor (`https://localhost`, `capacitor://localhost`) and
 Tauri (`tauri://localhost`, `http(s)://tauri.localhost`).
+
+## Security model (Phase 7 security release)
+
+What protects what, in cloud mode (`DATABASE_URL`) and on the LAN. Tests:
+`tests/security.e2e.test.js` (the matrix below against a real Postgres and a
+LAN relay), `tests/pgQuery.ownership.test.js`, `tests/matchAccess.test.js`,
+`tests/hashPins.test.js`, the frontend's `lanRelayProtocol.test.js` (every relay
+runtime; the Tauri one with `OV_TAURI_RELAY_BIN`).
+
+### Who may write a match (cloud)
+
+Writes to `matches`, `sets`, `events` and `match_live_state` (through `/api/db`)
+and `/api/match/restore` need one of:
+
+| Caller | How it is recognised |
+|---|---|
+| **Creator** | `matches.created_by`, set by the server to the session's user on the row's first insert (`db/005_match_ownership.sql`). A client value is dropped; an upsert never changes it; an `update` of it is refused. |
+| **Editor** | a `match_editors` row, added only by the server when a signed-in caller proves the match's **game PIN**: `POST /api/match/claim {externalId, pin}`, or `POST /api/match/restore-by-pin` with a session (a new scoring device restoring the match). The scorer app calls `claim` itself when a write comes back `OV_NOT_MATCH_OWNER` (another account signed in on the scoring device), using the game PIN it holds. |
+| **Admin** | `profiles.roles` contains `admin` or `super_admin`, read from the database (cached 30 s), never from the request. Writes any match (legacy ones included); a match an admin creates records it as creator. `roles` cannot be written through `/api/db` (denylist) or sign-up (dropped). |
+
+Everyone else gets **403 `OV_NOT_MATCH_OWNER`** and nothing is written (a batch
+with one foreign row is refused whole); no session is 401 as before. Reads are
+unchanged. `user_matches` ("My Matches") grants nothing: any account can write a
+link for any `external_id`, and the scorer writes it before the match row
+exists, so it proves nothing about who scored a match.
+
+**Rows that existed before `005` have no owner** (`created_by` NULL): nobody
+can tell who scored them, so they are **read-only for everyone except admins**.
+A scorer who still needs to write one proves its game PIN (`claim`, done
+automatically by the app). A deleted account leaves its matches ownerless the
+same way (`ON DELETE SET NULL`).
+
+The **officials' devices** keep working: referee and bench tablets only read
+(relay, live sockets, anonymous `/api/db`); the coaches' roster upload no longer
+writes `matches` with a session but goes through
+`POST /api/match/upload-roster {matchExternalId, team, pin, roster, coachSignature?, captainSignature?}`,
+authorised by that team's upload PIN of that match, which writes only
+`connections.pending_{home|away}_roster` and the team's coach/captain signatures,
+and only while the match is in `setup` (409 after the coin toss). A second
+scorer takes over with the game PIN as above.
+
+### Match data before and after the PIN step (cloud and LAN)
+
+Before a PIN is proved, every relay (this server in both modes,
+`frontend/server.js`, the Electron and Vite relays through
+`electron/lanRelayCore.cjs`, the Tauri `relay.rs`) and `GET /api/match/:id`
+hand out the **public summary** only (`access: "summary"`: match id, status,
+game number, team names/colours, set scores, live state; no rosters, no events,
+no match actions). The bundle (`access: "full"`, still without PINs and personal
+data) needs one of the match's PINs: the referee PIN while the referee
+connection is on, a bench PIN while that bench is on, or the game PIN.
+
+- Relay: `subscribe-match { matchId, pin }`, or `{ token }` on this server. A
+  PIN offered before the scorer synced the match is checked once it arrives.
+  Wrong PINs: `{code:'pin-invalid'}`; over 5 per socket / 20 per IP (LAN: 5)
+  per minute nothing is compared (`rate-limited`). `match-action` goes only to
+  sockets with access; `live-state-update` to every subscriber (it is what
+  Livescore shows anyway), and the summary keeps `data.liveState` for the
+  LedBox bridge.
+- HTTP: `X-OV-Match-Pin` or `X-OV-Match-Token` on `GET /api/match/:id`.
+- Tokens: `validate-pin` and `validate-connection-pin` answer `token`, an HMAC
+  capability for that one match (`lib/matchAccess.js`, 12 h). On anonymous
+  `/api/db` reads `X-OV-Match-Token` unlocks the **rosters of that match only**
+  (the referee/bench fallback when the relay has no copy); without it anonymous
+  `matches` reads have no roster columns, and anonymous `events` reads never
+  carry payloads, lineups or state snapshots.
+- The apps remember the PIN and token of a successful PIN check in memory
+  (`serverDataSync.rememberMatchAccess`) and send them with every subscribe and
+  fetch of that match. On the LAN nothing needs setting up.
+
+The game list stays anonymous and keeps `external_id`: the roster-upload app
+needs it before the PIN step (its PIN check is bound to that match), the live
+sockets publish it anyway, and since the relay no longer hands out the bundle
+for a known key it is an identifier, not a capability.
+
+### PINs at rest
+
+- **Database:** with `OV_PIN_SECRET` set, `game_pin` and every
+  `connection_pins` value written through `/api/db` or `/api/match/restore` is
+  stored as `h1:` + HMAC-SHA256(secret, `kind:pin`) (`lib/pinHash.js`). The PIN
+  checks (validate-connection-pin, upload-roster, restore-by-pin, claim) accept
+  the hashed and the older plaintext form. Rewrite old rows once with
+  `node scripts/hash-pins.mjs --apply` (dry run without `--apply`; idempotent).
+  A plain or salted hash would not do: 6 digits are a million values, cracked in
+  minutes from a dump; the HMAC secret is not in the database or its backups.
+  Losing or changing the secret makes every stored hash unverifiable (referees,
+  benches, roster uploads and restores by PIN fail for those matches until the
+  scorer writes the PINs again), so keep it in the secret store with the
+  database credentials.
+- **What stays plaintext, and why:** the relay's in-memory copy of the
+  scorer's match (it must compare typed PINs, on the LAN with no database at
+  all); the scorer's own IndexedDB (it shows the PINs to hand them out); the
+  optional PocketBase relay snapshot (`match_data`, legacy); and the database
+  values until `OV_PIN_SECRET` is set and `hash-pins.mjs` ran.
+- **Never returned or logged:** PIN columns are redacted from every `/api/db`
+  answer, `db-change` and relay message and can never be filtered on; the PIN
+  checks answer the match, never a PIN; the server logs no PIN (asserted by the
+  e2e suites).
+
+### Backups (`backup/` bucket)
+
+Each account sees only its own backup objects: `STORAGE_OWNER_SCOPE=prefix`
+with `STORAGE_OWNER_SCOPE_BUCKETS=backup` (the defaults) stores them under
+`backup/{user id}/…` transparently, so list, download and restore work for the
+uploader and show nothing to anyone else. Restore by game number + game PIN
+(`/api/match/restore-by-pin`) is the PIN-gated path for everyone else. Files
+stored before this change (`backup/backups/…`, no user folder) are no longer
+reachable through the API; the 30-day sweep still removes them (and sweeps
+every account's `{user id}/backups`).
+
+### Sign-up
+
+Auto-confirmed (no email flow yet). Limits: 5 per hour per IP, 3 per hour per
+email address (across IPs), 100 per hour in total; client `roles` in the
+metadata are dropped and `profiles.roles` is never writable by a client.
+
+### Still open (accepted, with impact)
+
+- **Any signed-in account reads full match rows** through `/api/db` (rosters
+  with dates of birth, officials, signatures) and, since sign-up is open, so
+  can anyone willing to create an account. Owner-scoped reads need the
+  scorer's devices and My Matches checked first.
+- **Any socket can still become the relay scoreboard of a match the relay
+  does not hold yet** (proved by its game PIN from then on), as before.
+- **Session tokens stay in localStorage** (httpOnly cookies are a later change).
 
 ### Cutover: frontend and backend ship together
 
@@ -214,7 +345,8 @@ Replaces Supabase Storage behind `POST /api/storage/upload`, `/download` and `/l
 | `STORAGE_BACKUP_MIN_FREE_MB` | `backup/` writes are refused (507) when free space would drop below this, so the space above the scoresheets floor stays for scoresheets. | `2048` |
 | `STORAGE_SCORESHEETS_MIN_FREE_MB` | Smaller floor for `scoresheets/` writes, so the volume never reaches ENOSPC. | `256` |
 | `STORAGE_MAX_FILE_MB` | Per-object size cap (413 above it). server.js must read the body with `storage.maxBodyBytes` (base64 + 64 KiB) for this to hold. | `5` |
-| `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently). For the Phase 7 security release; leave off until then. Any other value stops the server at startup. | `off` |
+| `STORAGE_OWNER_SCOPE` | `off`, `require` (first path segment must be the caller's user id) or `prefix` (user id prepended transparently), on the buckets of `STORAGE_OWNER_SCOPE_BUCKETS`. Any other value stops the server at startup. | `prefix` |
+| `STORAGE_OWNER_SCOPE_BUCKETS` | Buckets the owner scope applies to: a comma list or `all`. With the default every account sees only its own `backup/` objects (see "Security model"). | `backup` |
 | `STORAGE_UPLOADER_READ_BUCKETS` | Buckets whose objects only the account that created them may read, replace or list (see "Who can read a scoresheet" below); `none` turns it off. Any bucket other than `scoresheets`/`backup` stops the server at startup. | `scoresheets` |
 
 Guarantees: paths are NFC-normalised and validated (no `..`, no absolute paths, no backslashes, no C0/C1 control, bidi, zero-width or line-separator characters, no dot-names, no look-alikes that NFKC-normalise to `.` or `/`, no slash look-alikes such as U+2215; and, so the same data works on the Windows desktop app, no `:` `<` `>` `"` `|` `?` `*`, no trailing dot or space, no device names such as `CON` or `nul.json`); every directory on the way is checked with `lstat`, so symlinks are never followed; writes go to `{STORAGE_DIR}/.tmp` and are renamed into place (`upsert:false` uses `link()` so it is atomic too); only `application/json`, `text/plain` and `application/pdf` are accepted. A per-user write quota hook (`checkQuota`, with a ready-made `createWriteQuota()`) and `sweep()` for the 30-day `backup/backups/` retention are included. The quota is charged only for writes that would otherwise succeed; approved scoresheets (`{YYYY-MM-DD}/game{n}_final.json` in `scoresheets/`) skip the write count but still count against a byte budget. An `ownerScope` function returns `true` (allow as is), a path string (use that path), or anything else (403).
@@ -230,7 +362,7 @@ Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry 
 - **Finding your own file.** `list` in an uploader-only bucket shows the caller only its own files (folders are always shown), so the random part never leaks. The viewer (`/scoresheet/?date=…&game=…`, opened from **My Matches**) lists the date folder and opens the caller's newest approved file of that game.
 - **Clean-up.** `sweep()` (daily) removes owner records whose file is gone (after a few minutes' grace, under the same lock), so a stale record can never hand rights to a file written later at the same path. Uploads only ever record one owner; the list is capped at 16 for operator grants.
 
-Why not a share link: a link is a bearer secret that keeps working for whoever it is forwarded to and ends up in browser history, chat logs and referrers. Why not "the match's owner": `matches` rows have no server-verified owner (any signed-in account can write any row, and any account can write a `user_matches` row for any match), so they cannot prove who scored a match.
+Why not a share link: a link is a bearer secret that keeps working for whoever it is forwarded to and ends up in browser history, chat logs and referrers. Why not "the match's owner": rows written before `db/005_match_ownership.sql` have no server-verified owner, and any account can write a `user_matches` row for any match, so they cannot prove who scored a match.
 
 **Files stored before this change** (`game{n}_final.json`, `game{n}.json`, `game{n}.pdf`) have no owner record and are readable by nobody through the API (nor replaceable). There is no trustworthy source to seed them from (see above), so an operator grants them one by one, after confirming out of band who scored the match:
 
@@ -306,15 +438,30 @@ List active matches with referee connections enabled.
 
 ### `GET /api/match/:matchId`
 
-Get full match data (match, teams, players, sets, events) by ID.
+The relay's copy of the match. Without a PIN: the public summary
+(`access: "summary"`, no rosters or events). With `X-OV-Match-Pin` (a referee,
+enabled bench or game PIN of the match) or `X-OV-Match-Token` (from a PIN
+check): the bundle (`access: "full"`: match, teams, players, sets, events; never
+PINs or personal data).
 
 ### `POST /api/match/validate-pin`
 
-Validate a 6-digit PIN for referee/bench access.
+Validate a 6-digit PIN for referee/bench access against the relay's copy. The
+answer carries the match (no PINs) and `token`, the match access token.
 
 ```json
 { "pin": "123456", "type": "referee|homeTeam|awayTeam" }
 ```
+
+### `POST /api/match/claim` (cloud, session)
+
+`{ "externalId": "match_…", "pin": "<game PIN>" }` -> 200 `{ data: { id, external_id, role: "creator"|"editor" } }`;
+404 `OV_NOT_FOUND`; 429 `OV_TOO_MANY_ATTEMPTS`. The caller may write the match afterwards.
+
+### `POST /api/match/upload-roster` (cloud, upload PIN)
+
+`{ matchExternalId, team: "home"|"away", pin, roster, coachSignature?, captainSignature? }` ->
+200 `{ success: true }`; 403 wrong PIN or match; 409 match no longer in setup.
 
 ### `POST /api/match/send-info`
 
@@ -355,7 +502,7 @@ Sessions last 30 days, slide forward when fewer than 15 days remain, and never l
 
 **Protected routes** call `await auth.requireUser(req, res)` (writes the 401/503 itself) or `await auth.verifyToken(req)` (returns the user or `null`, throws on database errors).
 
-**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, 5/s for all sign-ins together, and a lock for 15 min after 10 failures per email (attempts still being checked count towards it, so parallel requests cannot overshoot); sign-up 5/hour per IP; session checks 300/min per IP. Per-IP buckets key IPv6 clients on their /64 (`ipBucketKey`), so pass the raw client IP. Override with `createAuth({ limits, lockout, ipKey })`.
+**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, 5/s for all sign-ins together, and a lock for 15 min after 10 failures per email (attempts still being checked count towards it, so parallel requests cannot overshoot); sign-up 5/hour per IP, 3/hour per email address, 100/hour in total; session checks 300/min per IP. Per-IP buckets key IPv6 clients on their /64 (`ipBucketKey`), so pass the raw client IP. Override with `createAuth({ limits, lockout, ipKey })`.
 
 **CPU guard.** bcryptjs runs on the main event loop, which also serves the live-scoring relay. At most `bcryptMaxConcurrent` (2) bcrypt operations run at once and `bcryptMaxQueue` (16) wait; beyond that, and when the global sign-in bucket is empty, the answer is **503 `auth_busy`** with `Retry-After`, never a queued request. Existing sessions are unaffected.
 
@@ -394,6 +541,7 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `002_app_sessions.sql` | after 001 | `auth.app_sessions` |
 | `003_svrz_games_local_time.sql` | after 002 | one-off: `svrz_games.date/time` in Zurich time, closes stuck `svrz_sync_log` rows (vm-sync port) |
 | `004_live_state_best_of.sql` | after 003 | `match_live_state.best_of` (written by the scoreboard, missing on Supabase) |
+| `005_match_ownership.sql` | after 004 | `matches.created_by` (FK `auth.users`, `ON DELETE SET NULL`) and `match_editors` (see "Security model"). Existing rows stay without an owner. Without it every guarded write answers 503 `OV_OWNERSHIP_UNAVAILABLE` (retryable), never an unguarded write. |
 | `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 `scripts/migrate/restore.sh [--force] [--expect-counts FILE] [--env-file FILE] [--db-user U] [--scrub-except EMAIL] <container> <export-dir>` loads the Phase-0 export (`public.dump`, `auth_users.csv`) through all of the above (every `db/NNN_*.sql` from 003 on, in order; two files with the same number stop it) with a filtered `pg_restore` list, then verifies (row counts, per table against `--expect-counts` when given, users vs CSV, FKs incl. `match_live_state_match_id_fkey_cascade`, no RLS, sequences, ownership, `ov_app` grants and TCP login). A restore list that leaves out a table's data is refused (`--allow-missing-data` overrides). It replaces the target database only when that is empty or left over from an unfinished run the app never used; otherwise it refuses unless `--force`, which renames the old database to `<db>_pre_restore_<UTC>` instead of dropping it. `--print-toc` shows the restore list. `--help` has the details.
@@ -454,9 +602,14 @@ bash /data/openvolley/pg/import/restore.sh --env-file /opt/openvolley/.env \
 {
   "type": "subscribe-match",
   "matchId": "abc123",
-  "role": "referee|bench|subscriber"
+  "device": "referee|bench|livescore",
+  "pin": "123456",
+  "token": "v1.…"
 }
 ```
+
+`pin` / `token` are optional: without one that grants the match the socket gets
+the public summary and no match actions (see "Security model").
 
 #### Leave Match
 
@@ -703,6 +856,8 @@ Error codes in `body.error.code`:
 | `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not start with its match's `external_id` plus `:` or `_` |
 | `OV_UNSCOPED_WRITE` | 400 | set/event update/delete without `eq` on `match_id` or on a non-numeric `external_id`; set/event upsert whose conflicting row belongs to another match (nothing is written) |
 | `OV_UNFILTERED_WRITE` | 400 | update/delete without a filter |
+| `OV_NOT_MATCH_OWNER` | 403 | write to a match (or its sets/events/live state) the caller neither created nor edits; nothing written |
+| `OV_OWNERSHIP_UNAVAILABLE` | 503 | `db/005_match_ownership.sql` has not run (`retryable: true`) |
 | `OV_TABLE_NOT_ALLOWED`, `OV_INVALID_*` | 400 | request outside the contract |
 | `PGRST204` | 400 | unknown column |
 | `PGRST116` | 406 | `single`/`maybeSingle` row-count mismatch (writes are rolled back) |
@@ -731,9 +886,11 @@ before the new rows.
 - `validate-connection-pin` scans setup/live indoor matches with
   `{ internal: true, maxRows: 20000 }`, newest `scheduled_at` first.
 - Successful writes publish their `changes` to `?purpose=live` subscribers.
-- Accepted until match ownership (plan Phase 7): any signed-in session can
-  restore any match by `external_id`, and a non-empty `game_pin` in the backup
-  replaces the stored PIN.
+- `/api/db` writes on matches/sets/events/match_live_state and
+  `/api/match/restore` pass `matchOwner: { userId }` (omitted for admins):
+  only the creator or an editor may write (see "Security model"). A restore
+  never changes `created_by`, and the PINs it writes are stored hashed when
+  `OV_PIN_SECRET` is set.
 
 ### Running the Postgres tests
 

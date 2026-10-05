@@ -41,6 +41,50 @@ function getWebSocketUrl() {
   return getRelayWebSocketUrl()
 }
 
+// ---------------------------------------------------------------------------
+// Match access after the PIN step
+// ---------------------------------------------------------------------------
+// The relays hand out a match's bundle (rosters, events, actions) only to a
+// tablet that proved one of its PINs; everyone else gets the public summary
+// (teams, status, score). A successful PIN check here remembers, per match
+// key, the PIN and the backend's match token, and every later subscribe /
+// fetch of that match carries them (subscribe-match pin/token, the
+// X-OV-Match-Pin / X-OV-Match-Token headers). In memory only: after a reload
+// the apps re-check their stored PIN, which remembers it again.
+const matchAccess = new Map() // String(match key) -> { pin, token }
+const MAX_MATCH_ACCESS = 16
+
+/** Remember what proves access to a match (after a successful PIN check). */
+export function rememberMatchAccess(matchId, { pin = null, token = null } = {}) {
+  if (matchId === undefined || matchId === null || (!pin && !token)) return
+  const key = String(matchId)
+  const prev = matchAccess.get(key) || {}
+  matchAccess.delete(key)
+  if (matchAccess.size >= MAX_MATCH_ACCESS) matchAccess.delete(matchAccess.keys().next().value)
+  matchAccess.set(key, { pin: pin ? String(pin).trim() : prev.pin || null, token: token || prev.token || null })
+}
+
+/** Forget a match's access (exit, PIN no longer valid). No argument: all. */
+export function forgetMatchAccess(matchId) {
+  if (matchId === undefined) matchAccess.clear()
+  else matchAccess.delete(String(matchId))
+}
+
+/** The remembered access of a match, or null. */
+export function matchAccessFor(matchId) {
+  if (matchId === undefined || matchId === null) return null
+  return matchAccess.get(String(matchId)) || null
+}
+
+/** Request headers proving access to a match (empty without one). */
+export function matchAccessHeaders(matchId) {
+  const a = matchAccessFor(matchId)
+  const h = {}
+  if (a?.token) h['X-OV-Match-Token'] = a.token
+  if (a?.pin) h['X-OV-Match-Pin'] = a.pin
+  return h
+}
+
 /**
  * Validate PIN and get match data from server
  */
@@ -79,6 +123,9 @@ export async function validatePin(pin, type = 'referee') {
 
     try {
       const result = JSON.parse(text)
+      if (result?.success && result.match?.id != null) {
+        rememberMatchAccess(result.match.id, { pin, token: result.token || null })
+      }
       return result
     } catch (e) {
       console.error('Invalid JSON response:', text)
@@ -107,14 +154,22 @@ export async function getMatchData(matchId) {
     const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...matchAccessHeaders(matchId)
       }
     })
 
     if (response.ok) {
       const result = await response.json()
-      // The relay's copy may lag behind the live state it stored with it
-      return result?.success ? applyNewerLiveState(result) : result
+      // Without a proved PIN the relay answers with the public summary (no
+      // rosters, no events): good enough for a match link before the PIN step,
+      // never a replacement for the bundle after it.
+      if (result?.success && result.access === 'summary' && matchAccessFor(matchId)) {
+        console.debug('[getMatchData] relay answered with the summary only, trying the API')
+      } else {
+        // The relay's copy may lag behind the live state it stored with it
+        return result?.success ? applyNewerLiveState(result) : result
+      }
     }
   } catch (error) {
     console.debug('[getMatchData] HTTP fetch failed, trying API fallback:', error.message)
@@ -129,7 +184,10 @@ export async function getMatchData(matchId) {
       let matchError = null
 
       // Try 1: Fetch match by external_id (seed_key)
+      // The match token of the PIN check unlocks this match's rosters on an
+      // anonymous read (other matches: public columns only).
       const { data: matchByExtId, error: extIdError } = await apiFrom('matches')
+        .headers(matchAccessHeaders(matchId))
         .select('*')
         .eq('external_id', matchId)
         .eq('sport_type', 'indoor')
@@ -769,9 +827,19 @@ export function setRelayDevice(device, team = null) {
   relayDevice = device ? { device, ...(team === 'home' || team === 'away' ? { team } : {}) } : null
 }
 
-/** The subscribe-match message for a match key, with this app's device label. */
+/**
+ * The subscribe-match message for a match key, with this app's device label
+ * and what proves access to it (PIN / match token of the PIN check).
+ */
 export function subscribeMessage(matchId) {
-  return { type: 'subscribe-match', matchId: String(matchId), ...(relayDevice || {}) }
+  const access = matchAccessFor(matchId)
+  return {
+    type: 'subscribe-match',
+    matchId: String(matchId),
+    ...(relayDevice || {}),
+    ...(access?.pin ? { pin: access.pin } : {}),
+    ...(access?.token ? { token: access.token } : {})
+  }
 }
 
 /**
@@ -939,7 +1007,19 @@ export function subscribeToMatchData(matchId, onUpdate) {
             })
           }
 
-          if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr) {
+          if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr &&
+              message.access === 'summary') {
+            // The public summary (no PIN proved on this socket): never replaces
+            // the bundle; only its live state is used, like a live-state-update.
+            const liveState = newerLiveState(connection.lastLiveState, message.liveState)
+            if (liveState && liveState === message.liveState) {
+              connection.lastLiveState = liveState
+              if (connection.lastPayload) {
+                connection.lastPayload = applyNewerLiveState({ ...connection.lastPayload, liveState }, liveState)
+                notify(connection.lastPayload)
+              }
+            }
+          } else if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr) {
             // Match data (full snapshot on subscribe, then every scoreboard sync).
             // Pass through timestamp fields for latency tracking.
             const bundle = readRelayBundle(message)
@@ -1431,7 +1511,8 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
       return { success: false, error: result?.error || 'Invalid PIN code' }
     }
 
-    return { success: true, match: result.match }
+    if (result.match?.id != null) rememberMatchAccess(result.match.id, { pin: pinStr, token: result.token || null })
+    return { success: true, match: result.match, token: result.token || null }
   } catch (error) {
     if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out' }
     console.error('[validatePinSupabase] Exception:', error)
@@ -1480,6 +1561,38 @@ export async function validateUploadPinSupabase(team, pin, matchExternalId) {
   } catch (error) {
     console.error('[validateUploadPinSupabase] Exception:', error)
     return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Store a team's roster as the match's pending roster in the cloud (Upload
+ * Roster app). Authorised by the team's upload PIN of that match, not by an
+ * account: POST /api/match/upload-roster writes only the pending roster and the
+ * team's coach/captain signatures.
+ * @param {string} matchExternalId
+ * @param {'home'|'away'} team
+ * @param {string} pin - the team's upload PIN
+ * @param {{players: object[], bench: object[], coachSignature?: string|null, captainSignature?: string|null, timestamp?: string}} rosterData
+ * @returns {Promise<{success: boolean, status?: number, error?: string}>}
+ */
+export async function uploadRosterToCloud(matchExternalId, team, pin, rosterData, { fetchImpl = fetch } = {}) {
+  const apiUrl = getApiUrl('/api/match/upload-roster')
+  if (!apiUrl) return { success: false, error: 'Backend not available' }
+  const { coachSignature = null, captainSignature = null, ...roster } = rosterData || {}
+  try {
+    const response = await fetchImpl(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchExternalId: String(matchExternalId), team, pin: String(pin).trim(), roster, coachSignature, captainSignature })
+    })
+    let result = null
+    try { result = await response.json() } catch { /* not JSON */ }
+    if (!response.ok || !result?.success) {
+      return { success: false, status: response.status, error: result?.error || 'Upload failed' }
+    }
+    return { success: true, status: response.status }
+  } catch (error) {
+    return { success: false, status: 0, error: error.message }
   }
 }
 

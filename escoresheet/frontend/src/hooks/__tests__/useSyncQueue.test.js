@@ -101,6 +101,11 @@ vi.mock('../../lib/apiClient', () => {
       const call = { table: '__restore', action: 'restore', data: payload, filters: [] }
       api.calls.push(call)
       return api.respond(call)
+    },
+    apiMatchClaim: async (externalId, pin) => {
+      const call = { table: '__claim', action: 'claim', data: { externalId, pin }, filters: [] }
+      api.calls.push(call)
+      return api.respond(call)
     }
   }
 })
@@ -148,6 +153,55 @@ beforeEach(() => {
 })
 
 describe('runQueuePass', () => {
+  it('a write refused as OV_NOT_MATCH_OWNER takes the match over with the local game PIN, then is sent', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:2', match_id: 'match_100_aaa' } }
+    ])
+    let claimed = false
+    api.respond = (call) => {
+      if (call.table === '__claim') {
+        claimed = true
+        return { data: { role: 'editor' }, error: null, status: 200 }
+      }
+      if (call.action === 'upsert' && !claimed) return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    const outcome = await runQueuePass()
+    const claims = api.calls.filter(c => c.table === '__claim')
+    expect(claims).toEqual([{ table: '__claim', action: 'claim', data: { externalId: 'match_100_aaa', pin: '864201' }, filters: [] }])
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(outcome.hasFailed).toBe(false)
+  })
+
+  it('without the game PIN, or when the take-over is refused, the job is parked as failed (one claim per pass)', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:2', match_id: 'match_100_aaa' } }
+    ])
+    api.respond = (call) => {
+      if (call.table === '__claim') return { data: null, error: { code: 'OV_NOT_FOUND', status: 404 }, status: 404 }
+      if (call.action === 'upsert') return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+
+    // No local game PIN: no claim at all
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa' }])
+    fakeDb.sync_queue.reset([
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:3', match_id: 'match_100_aaa' } }
+    ])
+    api.calls = []
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('failed')
+  })
+
   it('a 429 leaves the job queued untouched and stops the pass', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },

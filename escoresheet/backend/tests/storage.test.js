@@ -179,13 +179,18 @@ describe('helpers', () => {
   })
 
   it('storageOptionsFromEnv', () => {
-    assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage', uploaderReadBuckets: ['scoresheets'] })
+    // Phase 7 default: every account sees only its own backup/ objects
+    assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage', ownerScope: 'prefix', ownerScopeBuckets: ['backup'], uploaderReadBuckets: ['scoresheets'] })
     const o = storageOptionsFromEnv({ STORAGE_DIR: '/x', STORAGE_BACKUP_MIN_FREE_MB: '100', STORAGE_SCORESHEETS_MIN_FREE_MB: '0', STORAGE_MAX_FILE_MB: '2', STORAGE_OWNER_SCOPE: 'Prefix' })
-    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix', uploaderReadBuckets: ['scoresheets'] })
+    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix', ownerScopeBuckets: ['backup'], uploaderReadBuckets: ['scoresheets'] })
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE_BUCKETS: 'all' }).ownerScopeBuckets, ['scoresheets', 'backup'])
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'require', STORAGE_OWNER_SCOPE_BUCKETS: 'backup, scoresheets' }).ownerScopeBuckets, ['backup', 'scoresheets'])
+    assert.throws(() => storageOptionsFromEnv({ STORAGE_OWNER_SCOPE_BUCKETS: 'logs' }), /STORAGE_OWNER_SCOPE_BUCKETS/)
+    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'off', STORAGE_OWNER_SCOPE_BUCKETS: 'logs' }).ownerScopeBuckets, undefined)
     assert.deepEqual(storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: 'None' }).uploaderReadBuckets, [])
     assert.deepEqual(storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: 'scoresheets, backup' }).uploaderReadBuckets, ['scoresheets', 'backup'])
     assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'off' }).ownerScope, undefined)
-    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: ' ' }).ownerScope, undefined)
+    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: ' ' }).ownerScope, 'prefix')
   })
 
   it('storageOptionsFromEnv throws on values it does not understand', () => {
@@ -955,6 +960,35 @@ describe('sweep', () => {
       await fs.rm(path.join(root, 'backup/backups/backup_g5', `x_${upsert}.json`))
     }
     assert.deepEqual(await fs.readdir(path.join(root, TMP_DIR_NAME)), [])
+  })
+
+  it("with the 'prefix' owner scope every account's backups are swept, and the older unprefixed ones", async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = make({ now: () => now, ownerScope: 'prefix', ownerScopeBuckets: ['backup'] })
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    const u1 = '11111111-2222-4333-8444-555555555555'
+    const u2 = '66666666-2222-4333-8444-555555555555'
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/new.json', fileBase64: b64('{}'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g2/old.json', fileBase64: b64('{}'), userId: u2 })
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs.txt', fileBase64: b64('x'), userId: u2 })
+    // a file stored before the scope (no user folder)
+    await fs.mkdir(path.join(root, 'backup/backups/legacy'), { recursive: true })
+    await fs.writeFile(path.join(root, 'backup/backups/legacy/old.json'), '{}')
+    for (const p of [`${u1}/backups/backup_g1/old.json`, `${u2}/backups/backup_g2/old.json`, `${u2}/logs/game_1/logs.txt`, 'backups/legacy/old.json']) {
+      await fs.utimes(path.join(root, 'backup', p), old, old)
+    }
+    const r = await s.sweep()
+    assert.equal(r.deletedFiles, 3)
+    assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/new.json`)), true)
+    assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/old.json`)), false)
+    assert.equal(await exists(path.join(root, `backup/${u2}/backups/backup_g2/old.json`)), false)
+    assert.equal(await exists(path.join(root, `backup/${u2}/logs/game_1/logs.txt`)), true)
+    assert.equal(await exists(path.join(root, 'backup/backups/legacy/old.json')), false)
+    // the owner still lists and downloads (restore); another account sees nothing
+    assert.deepEqual((await s.list({ bucket: 'backup', path: 'backups/backup_g1', userId: u1 })).map((e) => e.name), ['new.json'])
+    assert.deepEqual(await s.list({ bucket: 'backup', path: 'backups/backup_g1', userId: u2 }), [])
+    await rejectsWith(s.download({ bucket: 'backup', path: 'backups/backup_g1/new.json', userId: u2 }), 404)
   })
 
   it('missing prefix is a no-op', async () => {

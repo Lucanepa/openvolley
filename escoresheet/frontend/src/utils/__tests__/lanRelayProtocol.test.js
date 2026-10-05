@@ -119,10 +119,11 @@ describe('lanRelayCore protocol', () => {
     const relay = createLanRelay()
     const scoreboard = connect(relay)
     const referee = connect(relay)
-    msg(relay, referee, { type: 'subscribe-match', matchId: '7' })
+    msg(relay, referee, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
     msg(relay, scoreboard, syncMessage())
 
     const update = referee.last('match-data-update')
+    expect(update.access).toBe('full')
     expect(update).toBeTruthy()
     expect(update.matchId).toBe('7')
     expect(update.data).toBeUndefined()
@@ -157,7 +158,7 @@ describe('lanRelayCore protocol', () => {
     const scoreboard = connect(relay)
     const referee = connect(relay)
     msg(relay, scoreboard, syncMessage())
-    msg(relay, referee, { type: 'subscribe-match', matchId: '7' })
+    msg(relay, referee, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
     msg(relay, scoreboard, { type: 'match-action', matchId: 7, action: 'timeout', data: { team: 'home', countdown: 30 }, timestamp: 1 })
     const action = referee.last('match-action')
     expect(action).toMatchObject({ matchId: '7', action: 'timeout', data: { team: 'home', countdown: 30 } })
@@ -169,7 +170,7 @@ describe('lanRelayCore protocol', () => {
     const referee = connect(relay)
     const attacker = connect(relay)
     msg(relay, scoreboard, syncMessage())
-    msg(relay, referee, { type: 'subscribe-match', matchId: '7' })
+    msg(relay, referee, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
     referee.sent.length = 0
 
     // Overwrite with a different (or missing) game PIN
@@ -190,6 +191,93 @@ describe('lanRelayCore protocol', () => {
     // The real scoreboard keeps working (it carries the same game PIN)
     msg(relay, scoreboard, syncMessage(makeMatch({ status: 'live' }), { events: [{ id: 1 }] }))
     expect(readRelayBundle(referee.last('match-data-update')).events).toHaveLength(1)
+  })
+
+  it('hands the bundle and match actions only to a socket that proved a PIN of the match', () => {
+    const relay = createLanRelay()
+    const scoreboard = connect(relay, '192.168.1.10')
+    const viewer = connect(relay, '192.168.1.30')
+    const bench = connect(relay, '192.168.1.31')
+    const early = connect(relay, '192.168.1.32')
+    // Subscribed before the scorer synced: the PIN is checked when the match arrives
+    msg(relay, early, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
+    msg(relay, scoreboard, syncMessage(makeMatch(), { events: [{ id: 1, type: 'point' }] }))
+    expect(early.last('match-data-update').access).toBe('full')
+    expect(early.last('match-data-update').homePlayers).toHaveLength(1)
+
+    // No PIN (Livescore, LedBox bridge, anyone who knows the room key): the summary
+    msg(relay, viewer, { type: 'subscribe-match', matchId: '7' })
+    const summary = viewer.last('match-full-data')
+    expect(summary.access).toBe('summary')
+    expect(summary.homePlayers).toEqual([])
+    expect(summary.awayPlayers).toEqual([])
+    expect(summary.events).toEqual([])
+    expect(summary.match).toMatchObject({ id: 7, status: 'live', gameNumber: 4242 })
+    expect(summary.match.bench_home).toBeUndefined()
+    expect(summary.homeTeam).toEqual({ name: 'Home VC' })
+    expect(summary.sets).toEqual([{ id: 1, index: 1, homePoints: 3, awayPoints: 1 }])
+    expect(containsPin(viewer.raw.join(''))).toBe(false)
+
+    // The home bench PIN (bench connection on) is a PIN of the match too
+    msg(relay, bench, { type: 'subscribe-match', matchId: '7', pin: PINS.homeTeamPin })
+    expect(bench.last('match-full-data').access).toBe('full')
+
+    // Actions go to the PIN holders only; the live state goes to everyone
+    msg(relay, scoreboard, { type: 'match-action', matchId: 7, action: 'substitution', data: { playerOut: 7 } })
+    expect(bench.last('match-action')).toBeTruthy()
+    expect(viewer.last('match-action')).toBeUndefined()
+    msg(relay, scoreboard, { type: 'live-state-update', matchId: 7, liveState: { points_a: 4 } })
+    expect(viewer.last('live-state-update').liveState).toEqual({ points_a: 4 })
+    msg(relay, scoreboard, syncMessage())
+    expect(viewer.last('match-data-update')).toMatchObject({ access: 'summary', liveState: { points_a: 4 }, data: { liveState: { points_a: 4 } } })
+    expect(bench.last('match-data-update').access).toBe('full')
+
+    // The away bench PIN grants nothing while that connection is off
+    const away = connect(relay, '192.168.1.33')
+    msg(relay, away, { type: 'subscribe-match', matchId: '7', pin: PINS.awayTeamPin })
+    expect(away.last('error').code).toBe('pin-invalid')
+    expect(away.last('match-full-data').access).toBe('summary')
+  })
+
+  it('stops PIN guessing on subscribe-match without revealing a hit', () => {
+    const relay = createLanRelay()
+    const scoreboard = connect(relay, '192.168.1.10')
+    msg(relay, scoreboard, syncMessage())
+    const guesser = connect(relay, '192.168.1.66')
+    for (let i = 0; i < 5; i++) {
+      msg(relay, guesser, { type: 'subscribe-match', matchId: '7', pin: String(200000 + i) })
+      expect(guesser.last('error').code).toBe('pin-invalid')
+    }
+    guesser.sent.length = 0
+    msg(relay, guesser, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
+    expect(guesser.last('error').code).toBe('rate-limited')
+    expect(guesser.last('match-full-data').access).toBe('summary')
+    // ...also from another socket of the same device
+    const again = connect(relay, '192.168.1.66')
+    msg(relay, again, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
+    expect(again.last('error').code).toBe('rate-limited')
+    // A PIN offered before the match existed and found wrong later is dropped (checked once)
+    const relay2 = createLanRelay()
+    const early = connect(relay2, '192.168.1.70')
+    msg(relay2, early, { type: 'subscribe-match', matchId: '7', pin: '999999' })
+    msg(relay2, connect(relay2, '192.168.1.10'), syncMessage())
+    expect(early.last('match-data-update').access).toBe('summary')
+  })
+
+  it('GET /api/match/:id: the summary, and the bundle with a PIN of the match', async () => {
+    const relay = createLanRelay()
+    msg(relay, connect(relay), syncMessage(makeMatch(), { events: [{ id: 1 }] }))
+    const anon = await relay.getMatch('7')
+    expect(anon.body).toMatchObject({ success: true, access: 'summary', homePlayers: [], events: [] })
+    const wrong = await relay.getMatch('7', { pin: '000000', ip: '192.168.1.80' })
+    expect(wrong.body.access).toBe('summary')
+    const full = await relay.getMatch('7', { pin: PINS.refereePin, ip: '192.168.1.81' })
+    expect(full.body).toMatchObject({ success: true, access: 'full' })
+    expect(full.body.homePlayers[0]).toMatchObject({ number: 7 })
+    expect(full.body.events).toHaveLength(1)
+    expect(containsPin(JSON.stringify(full.body)) || containsPersonal(JSON.stringify(full.body))).toBe(false)
+    for (let i = 0; i < 5; i++) await relay.getMatch('7', { pin: '000000', ip: '192.168.1.82' })
+    expect((await relay.getMatch('7', { pin: PINS.refereePin, ip: '192.168.1.82' })).status).toBe(429)
   })
 
   it('lets another scorer reuse a finished match id after 60 s, an unfinished one only after 10 min', () => {
@@ -380,7 +468,7 @@ describe('lanRelayCore protocol', () => {
     const referee = connect(relay, '192.168.1.60')
     const seedA = 'match_1791215210058_aaaaaa'
     const seedB = 'match_1791215210059_bbbbbb'
-    msg(relay, referee, { type: 'subscribe-match', matchId: seedA, device: 'referee' })
+    msg(relay, referee, { type: 'subscribe-match', matchId: seedA, device: 'referee', pin: PINS.refereePin })
     // Both scorers' first match is Dexie id 1
     msg(relay, courtA, syncMessage(makeMatch({ id: 1, seed_key: seedA, gamePin: '111111' })))
     msg(relay, courtB, syncMessage(makeMatch({ id: 1, seed_key: seedB, gamePin: '222222' })))
@@ -623,9 +711,17 @@ async function relayScenario({ httpBase, wsUrl }) {
   scoreboard.send({ type: 'ping' })
   await scoreboard.waitFor((m) => m.type === 'pong') // sync processed (same socket, in order)
 
-  referee.send({ type: 'subscribe-match', matchId: '7' })
+  referee.send({ type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
   const full = await referee.waitFor((m) => m.type === 'match-full-data')
+  expect(full.access).toBe('full')
   expect(readRelayBundle(full).match.id).toBe(7)
+  // Without a PIN: the public summary, and no match actions
+  const viewer = await openClient(wsUrl)
+  viewer.send({ type: 'subscribe-match', matchId: '7' })
+  const summary = await viewer.waitFor((m) => m.type === 'match-full-data')
+  expect(summary.access).toBe('summary')
+  expect(summary.homePlayers).toEqual([])
+  expect(summary.match.status).toBe('live')
 
   scoreboard.send(syncMessage(makeMatch(), { events: [{ id: 1, type: 'point' }] }))
   const update = await referee.waitFor((m) => m.type === 'match-data-update')
@@ -635,9 +731,15 @@ async function relayScenario({ httpBase, wsUrl }) {
   expect(payload.events).toHaveLength(1)
   expect(payload.homeTeam.name).toBe('Home VC')
 
+  expect((await viewer.waitFor((m) => m.type === 'match-data-update')).events).toEqual([])
+
   scoreboard.send({ type: 'match-action', matchId: 7, action: 'timeout', data: { team: 'home' }, timestamp: Date.now() })
   const action = await referee.waitFor((m) => m.type === 'match-action')
   expect(action.data).toEqual({ team: 'home' })
+  viewer.send({ type: 'ping' })
+  await viewer.waitFor((m) => m.type === 'pong')
+  expect(viewer.messages.some((m) => m.type === 'match-action')).toBe(false)
+  viewer.ws.close()
 
   // Live-state: pushed live, and a LedBox bridge that (re)subscribes mid-match
   // reads it from match-full-data the way point-hub does (msg.data.liveState)
@@ -686,6 +788,14 @@ async function relayScenario({ httpBase, wsUrl }) {
     expect(containsPin(text), path).toBe(false)
     expect(containsPersonal(text), path).toBe(false)
   }
+  // GET /api/match/:id: summary without a PIN, the bundle with one (header)
+  const anonMatch = await (await fetch(`${httpBase}/api/match/7`)).json()
+  expect(anonMatch).toMatchObject({ success: true, access: 'summary', homePlayers: [], events: [] })
+  const pinned = await fetch(`${httpBase}/api/match/7`, { headers: { 'X-OV-Match-Pin': PINS.refereePin } })
+  const pinnedText = await pinned.text()
+  expect(JSON.parse(pinnedText)).toMatchObject({ success: true, access: 'full' })
+  expect(JSON.parse(pinnedText).homePlayers[0]).toMatchObject({ number: 7 })
+  expect(containsPin(pinnedText) || containsPersonal(pinnedText)).toBe(false)
   const conns = await fetch(`${httpBase}/api/server/connections`)
   expect(conns.headers.get('content-type')).toMatch(/json/)
   expect((await conns.json()).matchSubscriptions).toEqual({ '7': 1 })
