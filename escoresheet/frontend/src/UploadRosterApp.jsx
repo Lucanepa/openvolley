@@ -69,6 +69,7 @@ export default function UploadRosterApp() {
   const [homeTeam, setHomeTeam] = useState(null)
   const [awayTeam, setAwayTeam] = useState(null)
   const [validationError, setValidationError] = useState('')
+  const [saveError, setSaveError] = useState('') // final roster save failed
   const [pdfFile, setPdfFile] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState('')
@@ -793,9 +794,12 @@ export default function UploadRosterApp() {
     if (!parsedData || !matchId || uploading) return
 
     setUploading(true)
+    setSaveError('')
+    // Success is only reported if at least one write actually stored the roster
+    let saved = false
+    let cloudError = null
     try {
       // Store pending roster in match
-      const pendingField = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
       const rosterData = {
         players: parsedData.players,
         bench: parsedData.bench,
@@ -812,9 +816,9 @@ export default function UploadRosterApp() {
         const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
         const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
 
-        const supabaseUpdate = {
-          [pendingField]: rosterData
-        }
+        // The pending roster lives in the connections JSON column (matches has no
+        // pending_*_roster column; sending one made the whole update fail)
+        const supabaseUpdate = {}
 
         // Build signatures JSONB partial update
         const signaturesUpdate = {}
@@ -854,33 +858,44 @@ export default function UploadRosterApp() {
           .eq('external_id', selectedMatch.external_id)
 
         if (error) {
+          // Typically 401: cloud writes need a signed-in scorer on this device
           console.error('[Roster] Supabase write error:', error)
+          cloudError = error
           // Fall back to server
         } else {
+          saved = true
           console.log('[Roster] Successfully wrote roster to Supabase with signatures:', signaturesUpdate)
         }
       }
 
       // Also try to update via server (for local sync and WebSocket updates)
-      // This is optional - if Supabase worked, we still show success
+      // Optional when the cloud write worked; otherwise it is the only copy
       try {
         const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
         await updateMatchData(matchId, {
           [serverPendingField]: rosterData
         })
+        saved = true
         console.log('[Roster] Server update also succeeded')
       } catch (serverError) {
-        console.warn('[Roster] Server update failed (non-blocking):', serverError)
-        // Don't fail - Supabase already has the data
+        console.warn(`[Roster] Server update failed${saved ? ' (non-blocking, cloud has the roster)' : ''}:`, serverError)
       }
 
-      // Close confirm modal and show success modal
       setShowConfirmModal(false)
+      if (!saved) {
+        // Nothing stored the roster: say so instead of showing success
+        setSaveError(cloudError?.status === 401
+          ? 'Roster was NOT saved: the cloud rejected the upload (not signed in). Please give the roster to the scorer.'
+          : 'Roster was NOT saved: the scoresheet could not be reached. Please try again or give the roster to the scorer.')
+        return
+      }
+
+      // Show success modal
       setShowSuccessModal(true)
     } catch (error) {
       console.error('Error saving pending roster:', error)
       setShowConfirmModal(false)
-      setValidationError('Failed to save roster. Please try again.')
+      setSaveError('Failed to save roster. Please try again.')
     } finally {
       setUploading(false)
     }
@@ -1800,6 +1815,11 @@ export default function UploadRosterApp() {
               </div>
             </div>
 
+            {saveError && (
+              <div role="alert" style={{ marginTop: '24px', padding: '12px 16px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', color: '#ef4444', textAlign: 'center' }}>
+                {saveError}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
               <button
                 type="button"
