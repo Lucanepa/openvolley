@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import useServiceWorker from '../hooks/useServiceWorker'
+import { Download, RefreshCw } from 'lucide-react'
+import { Button } from '../ui/Button.jsx'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -28,129 +30,56 @@ export default function UpdateBanner() {
   // is only the label (a deploy without a version bump still needs activating).
   if (!needRefresh) return null
 
+  // Kit content dialog (UpdateNotice look): stone scrim with blur, white
+  // rounded-2xl panel, sky info disc, the version change as a mono chip, and
+  // Later (outline) / Refresh (dark: this can open over the scoreboard, where
+  // chrome takes no brand-red fill, RESTYLE-SPEC R4). Both h-11.
+  // Behaviour unchanged: a tap on the scrim still means "Later".
   return (
     <div
       onClick={dismissUpdate}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0, 0, 0, 0.7)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 10000
-      }}
+      className="no-print fixed inset-0 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm"
+      style={{ zIndex: 10000 }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ov-update-title"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#1f2937',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '12px',
-          padding: '32px',
-          maxWidth: '380px',
-          width: '90%',
-          textAlign: 'center',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
-        }}
+        className="ov-kit w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-6 text-center shadow-2xl"
       >
         {/* Icon */}
-        <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '50%',
-          background: 'rgba(59, 130, 246, 0.2)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 16px'
-        }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600" aria-hidden="true">
+          <Download size={22} />
         </div>
 
         {/* Title */}
-        <h3 style={{
-          margin: '0 0 8px 0',
-          fontSize: '18px',
-          fontWeight: 600,
-          color: '#fff'
-        }}>
+        <h3 id="ov-update-title" className="mb-2 text-lg font-bold text-stone-900">
           {t('options.updateAvailable', 'Update Available!')}
         </h3>
 
         {/* Version info */}
-        {newVersion && newVersion !== currentVersion && <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 14px',
-          background: 'rgba(59, 130, 246, 0.15)',
-          borderRadius: '6px',
-          marginBottom: '16px',
-          fontSize: '14px',
-          fontFamily: 'monospace',
-          color: 'rgba(255, 255, 255, 0.8)'
-        }}>
-          <span>{currentVersion}</span>
-          <span style={{ color: '#3b82f6' }}>→</span>
-          <span style={{ color: '#22c55e', fontWeight: 600 }}>{newVersion}</span>
-        </div>}
+        {newVersion && newVersion !== currentVersion && (
+          <div className="mb-4 inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1 font-mono text-sm tabular-nums text-stone-600">
+            <span>{currentVersion}</span>
+            <span className="text-stone-400" aria-hidden="true">→</span>
+            <span className="font-semibold text-emerald-700">{newVersion}</span>
+          </div>
+        )}
 
         {/* Description */}
-        <p style={{
-          margin: '0 0 24px 0',
-          fontSize: '13px',
-          color: 'rgba(255, 255, 255, 0.6)',
-          lineHeight: 1.5
-        }}>
+        <p className="mb-6 text-sm leading-relaxed text-stone-600">
           {t('options.updateDescription', 'A new version is available. Refresh to get the latest features and fixes.')}
         </p>
 
         {/* Buttons */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <button
-            onClick={dismissUpdate}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: 'rgba(255, 255, 255, 0.8)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              transition: 'background 0.15s'
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)' }}
-          >
+        <div className="flex justify-center gap-2">
+          <Button variant="secondary" size="xl" onClick={dismissUpdate}>
             {t('common.later', 'Later')}
-          </button>
-          <button
-            onClick={() => updateServiceWorker()}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: '#3b82f6',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              transition: 'background 0.15s'
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#2563eb' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = '#3b82f6' }}
-          >
+          </Button>
+          <Button variant="dark" size="xl" icon={RefreshCw} onClick={() => updateServiceWorker()}>
             {t('options.refreshToUpdate', 'Refresh to Update')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
