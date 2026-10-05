@@ -19,11 +19,18 @@
 #   0. checks: container up, archive readable, CSV header exact
 #   1. restore list: `pg_restore -l` minus POLICY, ROW SECURITY, PUBLICATION
 #      (TABLE), ACL, the public schema itself, and the foreign keys that point
-#      at auth.users (re-created by 001 once the users are loaded)
+#      at auth.users (re-created by 001 once the users are loaded). Every
+#      TABLE DATA entry of the archive must be on the list (a hand-edited
+#      toc.keep that drops one fails here, unless --allow-missing-data).
 #   2. target database: REFUSES when any table in public or auth holds a row,
-#      unless --force, or unless the rows are left over from a restore.sh run
-#      that did not finish. Refuses while other sessions are connected (stop
-#      ov-backend first). Then drops and re-creates the database (template0).
+#      unless --force. Exception: a database still marked as an unfinished
+#      restore.sh run whose data the app never touched (auth.app_sessions
+#      empty, no matches.updated_at, svrz_sync_log.started_at,
+#      svrz_games.synced_at or auth.users.last_sign_in_at after the mark) is
+#      dropped and loaded again. With --force the old database is RENAMED to
+#      <db>_pre_restore_<UTC> (drop it by hand once the new one is good),
+#      never dropped. Refuses while client sessions are connected (stop
+#      ov-backend first). Then creates the database fresh (template0).
 #   3. db/000_prelude.sql (auth schema, auth.users, staging table)
 #   4. auth_users.csv -> auth.users_import (streamed on stdin, HEADER MATCH)
 #   5. pg_restore --single-transaction --exit-on-error -L <restore list>
@@ -31,13 +38,23 @@
 #      [--scrub-except: rehearsal scrub of every other account]
 #   7. db/002_app_sessions.sql, then every db/NNN_*.sql with NNN >= 003, in order
 #   8. db/roles.sql (with the ov_app password when one was given)
-#   9. ANALYZE and verification: per-table row counts, users vs CSV rows, the
-#      auth foreign keys and match_live_state_match_id_fkey_cascade exist, no
-#      RLS/policies, sequences ahead of their columns, ov_app grants, and an
-#      ov_app login over TCP when the password is known
+#   9. ANALYZE and verification: per-table row counts (compared with
+#      --expect-counts when given), users vs CSV rows, the auth foreign keys and
+#      match_live_state_match_id_fkey_cascade exist, no RLS/policies, sequences
+#      ahead of their columns, ov_app grants (incl. DML on svrz_sync_log for the
+#      in-backend vm-sync), and an ov_app login over TCP when the password is
+#      known
 #
 # Options:
-#   --force                 replace a database whose tables hold data
+#   --force                 replace a database whose tables hold data; the old
+#                           one is renamed to <db>_pre_restore_<UTC>, not dropped
+#   --expect-counts FILE    per-table row counts the restore must reproduce
+#                           (plan §6: the counts from introspect.txt). One table
+#                           per line, "<table> <count>" or psql's aligned
+#                           "<table> | <count>"; other lines are ignored. Every
+#                           public table must be listed and match.
+#   --allow-missing-data    accept a toc.keep that leaves out TABLE DATA entries
+#                           (those tables are restored EMPTY)
 #   --db-name NAME          target database (default openvolley; env OV_DB_NAME)
 #   --db-user USER          superuser to run as inside the container
 #                           (default ov_owner; env OV_DB_USER). A local
@@ -49,8 +66,9 @@
 #                           OV_APP_PW. Without either, ov_app's password is left
 #                           unchanged: run deploy/apply-roles.sh afterwards.
 #   --sql-dir DIR           where 000_prelude.sql ... roles.sql are (default:
-#                           ../../db next to this script, else this script's
-#                           directory, else <export-dir>)
+#                           this script's directory when 000_prelude.sql is
+#                           there, else ../../db from it (the repository
+#                           layout), else <export-dir>; the choice is logged)
 #   --scrub-except EMAIL    rehearsal copies only: every other account gets
 #                           email user-<n>@rehearsal.invalid, the bcrypt hash of
 #                           OV_REHEARSAL_PW (env, required), empty metadata and
@@ -71,6 +89,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 DB_NAME=${OV_DB_NAME:-openvolley}
 DB_USER=${OV_DB_USER:-ov_owner}
 FORCE=0
+ALLOW_MISSING_DATA=0
+EXPECT_COUNTS=""
 PRINT_TOC=0
 ENV_FILE=""
 SQL_DIR=""
@@ -87,6 +107,8 @@ POS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --force) FORCE=1; shift ;;
+    --allow-missing-data) ALLOW_MISSING_DATA=1; shift ;;
+    --expect-counts) EXPECT_COUNTS=${2:?--expect-counts needs a file}; shift 2 ;;
     --print-toc) PRINT_TOC=1; shift ;;
     --db-name) DB_NAME=${2:?--db-name needs a value}; shift 2 ;;
     --db-user) DB_USER=${2:?--db-user needs a value}; shift 2 ;;
@@ -115,14 +137,23 @@ CSV="$EXPORT_DIR/auth_users.csv"
 [[ "$(head -c 5 "$DUMP")" == PGDMP ]] || die "$DUMP is not a pg_dump custom-format archive (still encrypted?)"
 
 if [[ -z "$SQL_DIR" ]]; then
-  for d in "$SCRIPT_DIR/../../db" "$SCRIPT_DIR" "$EXPORT_DIR"; do
+  # The copy next to the script first: on the server that is the set copied
+  # together with it, whatever else lies around.
+  for d in "$SCRIPT_DIR" "$SCRIPT_DIR/../../db" "$EXPORT_DIR"; do
     if [[ -f "$d/000_prelude.sql" ]]; then SQL_DIR=$(cd "$d" && pwd -P); break; fi
   done
 fi
 [[ -n "$SQL_DIR" ]] || die "cannot find 000_prelude.sql (use --sql-dir)"
+SQL_DIR=$(cd "$SQL_DIR" && pwd -P)
 for f in 000_prelude.sql 001_post_restore.sql 002_app_sessions.sql roles.sql; do
   [[ -f "$SQL_DIR/$f" ]] || die "missing $SQL_DIR/$f"
 done
+# Migrations run in name order; two files with the same number would run in an
+# order nobody chose.
+dup_nums=$(cd "$SQL_DIR" && ls -1 | sed -n 's/^\([0-9][0-9][0-9]\)_.*\.sql$/\1/p' | sort | uniq -d | tr '\n' ' ')
+[[ -z "$dup_nums" ]] || die "$SQL_DIR has more than one migration numbered: ${dup_nums}(renumber them)"
+[[ -z "$EXPECT_COUNTS" || -r "$EXPECT_COUNTS" ]] || die "cannot read $EXPECT_COUNTS"
+log "SQL files from ${SQL_DIR}"
 
 # --- passwords (never printed, never on a command line) ----------------------------
 APP_PW=""
@@ -151,6 +182,7 @@ command -v docker >/dev/null || die "docker not found"
 [[ "$(docker inspect -f '{{.State.Running}}' "$C" 2>/dev/null)" == true ]] || die "container ${C} is not running"
 
 CREATED=0
+OLD_DB=""
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/ov-restore.XXXXXX")
 CTOC="/tmp/ov-restore-$$-$RANDOM.toc"
 cleanup() {
@@ -158,7 +190,10 @@ cleanup() {
   rm -rf -- "$WORK"
   docker exec "$C" rm -f "$CTOC" </dev/null >/dev/null 2>&1 || true
   if (( rc != 0 && CREATED )); then
-    log "FAILED (exit ${rc}). ${DB_NAME} is marked '${MARK_RUNNING}': fix the cause and run restore.sh again, it replaces that database without --force."
+    log "FAILED (exit ${rc}). ${DB_NAME} is marked '${MARK_RUNNING}': fix the cause and run restore.sh again, it replaces that database without --force as long as the app has not used it."
+  fi
+  if (( rc != 0 )) && [[ -n "$OLD_DB" ]]; then
+    log "The previous database is kept as \"${OLD_DB}\" (to go back: drop ${DB_NAME}, then ALTER DATABASE \"${OLD_DB}\" RENAME TO ${DB_NAME})."
   fi
   return "$rc"
 }
@@ -222,10 +257,28 @@ if (( PRINT_TOC )); then
   { diff <(grep -v '^;' "$WORK/toc.full") <(grep -v '^;' "$WORK/toc.keep") || true; } | sed -n 's/^< /; /p'
   exit 0
 fi
+# Table data the list leaves out would restore that table empty, and every
+# later check would still pass.
+toc_data() { sed -nE 's/^[0-9]+; [0-9]+ [0-9]+ TABLE DATA public ([^ ]+) .*/\1/p' "$1" | sort -u; }
+missing_data=$(comm -23 <(toc_data "$WORK/toc.full") <(toc_data "$WORK/toc.keep") | tr '\n' ' ')
+if [[ -n "$missing_data" ]]; then
+  if (( ALLOW_MISSING_DATA )); then
+    log "WARNING: --allow-missing-data: these tables are restored EMPTY: ${missing_data}"
+  else
+    die "the restore list leaves out the data of: ${missing_data}(fix toc.keep, or --allow-missing-data if that is intended)"
+  fi
+fi
 dropped=$(( $(grep -vc '^;' "$WORK/toc.full") - $(grep -vc '^;' "$WORK/toc.keep") ))
 log "restore list: $(grep -vc '^;' "$WORK/toc.keep") entries kept, ${dropped} dropped (policies/RLS/publications/ACLs/public schema, $(wc -l <"$WORK/auth_fks") FK(s) to auth re-created by 001)"
 
 # --- 2. target database ---------------------------------------------------------------------
+# A value later than the mark in <schema.table>.<column> means the app ran on
+# the database. Prints true/false, or nothing when that column does not exist.
+newer_than() {  # table column timestamp
+  query_db "select (xpath('/row/x/text()', query_to_xml(format('select exists (select 1 from %s where %I > %L::timestamptz) as x', '$1', '$2', '$3'), false, true, '')))[1]::text
+              from information_schema.columns
+             where table_schema || '.' || table_name = '$1' and column_name = '$2'"
+}
 exists=$(query_admin "select count(*) from pg_database where datname = '${DB_NAME}'")
 if [[ "$exists" == 1 ]]; then
   mark=$(query_admin "select coalesce(shobj_description(oid, 'pg_database'), '') from pg_database where datname = '${DB_NAME}'")
@@ -234,18 +287,44 @@ if [[ "$exists" == 1 ]]; then
      where c.relnamespace in (select oid from pg_namespace where nspname in ('public', 'auth'))
        and c.relkind in ('r', 'p')
        and (xpath('/row/x/text()', query_to_xml(format('select exists (select 1 from %s) as x', c.oid::regclass), false, true, '')))[1]::text = 'true'")
+  replace=drop
   if [[ -n "$with_data" ]]; then
-    if (( FORCE )); then
-      log "WARNING: --force: replacing ${DB_NAME}, whose tables hold data: ${with_data}"
-    elif [[ "$mark" == "$MARK_RUNNING"* ]]; then
-      log "${DB_NAME} holds rows from an unfinished restore.sh run (${mark}); replacing it"
+    # The comment alone is not enough: after a failed verification someone may
+    # have fixed the database by hand and put it into service.
+    used=""
+    if [[ "$mark" =~ ^"${MARK_RUNNING}"\ since\ ([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$ ]]; then
+      since=${BASH_REMATCH[1]}
+      [[ " ${with_data} " != *" auth.app_sessions "* ]] || used+="auth.app_sessions has rows; "
+      for tc in "public.matches updated_at" "public.svrz_sync_log started_at" "public.svrz_games synced_at" "auth.users last_sign_in_at"; do
+        read -r t col <<<"$tc"
+        newer=$(newer_than "$t" "$col" "$since") || die "cannot check ${t}.${col} of ${DB_NAME}"
+        [[ "$newer" != true ]] || used+="${t}.${col} after ${since}; "
+      done
     else
-      die "${DB_NAME} already holds data (${with_data})${mark:+; marked '${mark}'}. Refusing; --force replaces it."
+      used="not marked as an unfinished restore.sh run"
+    fi
+    if [[ -z "$used" ]]; then
+      log "${DB_NAME} holds rows from an unfinished restore.sh run (${mark}) that the app never used; replacing it"
+    elif (( FORCE )); then
+      log "WARNING: --force: replacing ${DB_NAME}, whose tables hold data: ${with_data}"
+      replace=rename
+    else
+      die "${DB_NAME} already holds data (${with_data})${mark:+; marked '${mark}'}; ${used%; }. Refusing; --force keeps it as ${DB_NAME}_pre_restore_<UTC> and loads a fresh one."
     fi
   fi
-  others=$(query_admin "select count(*) from pg_stat_activity where datname = '${DB_NAME}' and pid <> pg_backend_pid()")
-  [[ "$others" == 0 ]] || die "${others} session(s) connected to ${DB_NAME}; stop ov-backend (docker compose stop ov-tunnel ov-backend) first"
-  query_admin "drop database \"${DB_NAME}\"" >/dev/null || die "drop database ${DB_NAME}"
+  # Client sessions only: autovacuum workers and the like do not count (DROP
+  # and RENAME stop those themselves). A client that connects after this check
+  # makes the DROP/RENAME below fail, which stops the script.
+  others=$(query_admin "select count(*) from pg_stat_activity where datname = '${DB_NAME}' and backend_type = 'client backend' and pid <> pg_backend_pid()")
+  [[ "$others" == 0 ]] || die "${others} client session(s) connected to ${DB_NAME}; stop ov-backend (docker compose stop ov-tunnel ov-backend) first"
+  if [[ "$replace" == rename ]]; then
+    # Same name as deploy/restore-db.sh uses (quoted: it has capitals).
+    OLD_DB="${DB_NAME:0:34}_pre_restore_$(date -u +%Y%m%dT%H%M%SZ)"
+    query_admin "alter database \"${DB_NAME}\" rename to \"${OLD_DB}\"" >/dev/null || die "rename ${DB_NAME} -> ${OLD_DB}"
+    log "previous ${DB_NAME} kept as ${OLD_DB}"
+  else
+    query_admin "drop database \"${DB_NAME}\"" >/dev/null || die "drop database ${DB_NAME}"
+  fi
 fi
 query_admin "create database \"${DB_NAME}\" template template0" >/dev/null || die "create database ${DB_NAME}"
 CREATED=1
@@ -277,6 +356,10 @@ if [[ -n "$SCRUB_EMAIL" ]]; then
   cat >"$WORK/scrub.sql" <<'SQL'
 \set ON_ERROR_STOP on
 BEGIN;
+-- The rehearsal password travels in these statements: keep them out of the log.
+SET LOCAL log_statement = 'none';
+SET LOCAL log_min_duration_statement = -1;
+SET LOCAL log_min_error_statement = panic;
 SELECT count(*) = 1 AS keep_ok FROM auth.users WHERE email = lower(:'keep_email') \gset
 \if :keep_ok
 \else
@@ -392,7 +475,9 @@ grants=$(query_db "select concat_ws(' ',
     case when has_column_privilege('ov_app', 'auth.users', 'email', 'UPDATE') then 'can-update-users.email' end,
     case when has_schema_privilege('ov_app', 'public', 'CREATE') or has_schema_privilege('ov_app', 'auth', 'CREATE') then 'can-CREATE' end,
     case when has_table_privilege('ov_app', 'public.matches', 'TRUNCATE') then 'can-TRUNCATE' end,
-    case when to_regclass('public.svrz_sync_log') is not null and has_table_privilege('ov_app', 'public.svrz_sync_log', 'SELECT') then 'reads-svrz_sync_log' end,
+    case when to_regclass('public.svrz_sync_log') is not null and not has_table_privilege('ov_app', 'public.svrz_sync_log', 'SELECT, INSERT, UPDATE') then 'no-DML-on-svrz_sync_log' end,
+    case when to_regclass('public.svrz_sync_log_id_seq') is not null and not has_sequence_privilege('ov_app', 'public.svrz_sync_log_id_seq', 'USAGE') then 'no-USAGE-on-svrz_sync_log_id_seq' end,
+    case when to_regclass('public.svrz_games') is not null and not has_table_privilege('ov_app', 'public.svrz_games', 'SELECT, INSERT, UPDATE') then 'no-DML-on-svrz_games' end,
     case when exists (select 1 from pg_roles where rolname = 'ov_app' and (rolsuper or rolcreaterole or rolcreatedb or rolbypassrls)) then 'privileged-role' end)")
 [[ -z "$grants" ]] || problems+=("ov_app grants wrong: ${grants}")
 
@@ -401,6 +486,25 @@ if [[ -n "$APP_PW" ]]; then
         psql -X -h 127.0.0.1 -U ov_app -d "$DB_NAME" -At -c 'select count(*) from public.matches' </dev/null >/dev/null 2>&1; then
     problems+=("ov_app cannot log in over TCP or read public.matches")
   fi
+fi
+
+if [[ -n "$EXPECT_COUNTS" ]]; then
+  declare -A want=()
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*(public\.)?([a-z_][a-z0-9_]*)([[:space:]]*\|[[:space:]]*|[[:space:]]+)([0-9]+)[[:space:]]*$ ]]; then
+      t=${BASH_REMATCH[2]} v=${BASH_REMATCH[4]}
+      [[ -z "${want[$t]:-}" || "${want[$t]}" == "$v" ]] || problems+=("${EXPECT_COUNTS} lists ${t} twice (${want[$t]} and ${v})")
+      want[$t]=$v
+    fi
+  done <"$EXPECT_COUNTS"
+  actual=$(query_db "select format('%s %s', c.relname, (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from %s', c.oid::regclass), false, true, '')))[1]::text)
+                       from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p') order by 1")
+  while read -r t v; do
+    [[ -n "$t" ]] || continue
+    if [[ -z "${want[$t]:-}" ]]; then problems+=("${EXPECT_COUNTS} has no count for public.${t} (restored ${v})")
+    elif [[ "${want[$t]}" != "$v" ]]; then problems+=("public.${t} has ${v} rows, ${EXPECT_COUNTS} expects ${want[$t]}")
+    fi
+  done <<<"$actual"
 fi
 
 log "row counts (${DB_NAME} in ${C}):"
@@ -415,8 +519,11 @@ if (( ${#problems[@]} )); then
   die "${#problems[@]} verification check(s) failed; the database stays marked '${MARK_RUNNING}'"
 fi
 
-query_admin "comment on database \"${DB_NAME}\" is '${MARK_DONE} $(date -u +%FT%TZ) from $(basename "$DUMP") sha256:$(sha256sum <"$DUMP" | cut -c1-16)'" >/dev/null
+# "(rehearsal, scrubbed)" is what tests/helpers/pgTestDb.js looks for before it
+# copies a database for PG_TEST_TEMPLATE.
+query_admin "comment on database \"${DB_NAME}\" is '${MARK_DONE} $(date -u +%FT%TZ) from $(basename "$DUMP") sha256:$(sha256sum <"$DUMP" | cut -c1-16)${SCRUB_EMAIL:+ (rehearsal, scrubbed)}'" >/dev/null
 matches=$(query_db "select count(*) from public.matches")
 log "OK: ${DB_NAME} restored and verified (matches=${matches}, users=${users})."
 log "    /health floor: OV_MIN_MATCHES=$(( matches * 9 / 10 ))"
+[[ -z "$OLD_DB" ]] || log "    The previous database is kept as \"${OLD_DB}\": DROP DATABASE it once this one is in service."
 [[ -n "$APP_PW" ]] || log "    Next: deploy/apply-roles.sh < roles.sql (sets the ov_app password), then start the backend."

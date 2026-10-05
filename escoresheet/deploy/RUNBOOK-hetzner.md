@@ -170,8 +170,11 @@ Follow the migration plan, Phase 4a step 6 and §6, with these adaptations:
   hetzner# bash /data/openvolley/pg/import/restore.sh --env-file /opt/openvolley/.env \
              "$(docker compose -f /opt/openvolley/compose.yaml ps -q ov-postgres)" /data/openvolley/pg/import
   ```
-  It ends with the row counts and `OV_MIN_MATCHES=<90%>`; it refuses a database that already
-  holds data (`--force` replaces it).
+  Add `--expect-counts <file>` with the per-table counts from `introspect.txt` (one
+  `<table> <count>` per line) to have them compared. It ends with the row counts and
+  `OV_MIN_MATCHES=<90%>`; it refuses a database that already holds data (`--force` keeps
+  it as `openvolley_pre_restore_<UTC>` and loads a fresh one). It logs which SQL directory
+  it uses: the copies next to the script.
 - `roles.sql` with the app password from `.env` (read by the script, never exported):
   ```bash
   hetzner# /opt/openvolley/apply-roles.sh < /data/openvolley/pg/import/roles.sql   # "ok: ov_app logs in and sees N matches"
