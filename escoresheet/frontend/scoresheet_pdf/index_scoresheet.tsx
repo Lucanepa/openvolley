@@ -70,26 +70,32 @@ interface ScoresheetItem {
   uploadedAt?: string;
 }
 
-// Fetch scoresheet data from backend storage (/api/storage)
+// Fetch scoresheet data from backend storage (/api/storage).
+// Needs a signed-in session on this origin: apiClient sends the stored Bearer
+// token, and the backend refuses storage reads without one.
 const fetchFromStorage = async (date: string, game: string): Promise<any | null> => {
   try {
     // Import the backend storage client dynamically to avoid circular dependencies
     const { apiStorage } = await import('../src/lib/apiClient');
 
-    const storagePath = `${date}/game${game}.json`;
-    console.log('[Scoresheet] Fetching from storage:', storagePath);
+    // The app writes game{n}_final.json (approved) and, from older versions, game{n}.json:
+    // prefer the final one.
+    for (const storagePath of [`${date}/game${game}_final.json`, `${date}/game${game}.json`]) {
+      console.log('[Scoresheet] Fetching from storage:', storagePath);
 
-    const { data, error } = await apiStorage
-      .from('scoresheets')
-      .download(storagePath);
+      const { data, error } = await apiStorage
+        .from('scoresheets')
+        .download(storagePath);
 
-    if (error) {
-      console.error('[Scoresheet] Storage fetch error:', error);
-      return null;
+      if (error || !data) {
+        console.warn('[Scoresheet] Storage fetch error:', storagePath, error);
+        continue;
+      }
+
+      const text = await data.text();
+      return JSON.parse(text);
     }
-
-    const text = await data.text();
-    return JSON.parse(text);
+    return null;
   } catch (error) {
     console.error('[Scoresheet] Error fetching from storage:', error);
     return null;
@@ -126,18 +132,20 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
         continue;
       }
 
+      // One entry per game; game{n}_final.json wins over game{n}.json.
+      const byGame = new Map<string, { path: string; final: boolean }>();
       for (const file of files || []) {
-        if (!file.name.endsWith('.json')) continue;
-
-        // Extract game number from filename (game123.json -> 123)
-        const gameMatch = file.name.match(/game(\d+)\.json/);
+        // game123_final.json / game123.json -> 123 (the app may also use an external id)
+        const gameMatch = file.name.match(/^game([^/]+?)(_final)?\.json$/);
         if (!gameMatch) continue;
 
-        scoresheets.push({
-          date: folder.name,
-          game: gameMatch[1],
-          path: `${folder.name}/${file.name}`
-        });
+        const final = Boolean(gameMatch[2]);
+        const prev = byGame.get(gameMatch[1]);
+        if (prev && prev.final && !final) continue;
+        byGame.set(gameMatch[1], { path: `${folder.name}/${file.name}`, final });
+      }
+      for (const [game, { path }] of byGame) {
+        scoresheets.push({ date: folder.name, game, path });
       }
     }
 
