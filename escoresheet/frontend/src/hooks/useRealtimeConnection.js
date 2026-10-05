@@ -2,12 +2,20 @@
  * useRealtimeConnection Hook
  * Manages connection to match data using WebSocket as primary
  * with Supabase Realtime fallback
+ *
+ * AUTO mode subscribes to BOTH: the relay room (instant scorer pushes, the only
+ * path in an offline venue) and, alongside it, the backend's db-change stream
+ * (`?purpose=live`, relayRealtime shim) which refetches on every events / sets /
+ * match_live_state change. The relay socket opening says nothing about whether
+ * the scorer publishes to that room (a scorer on another relay, an old build),
+ * so the db-change path is not only a fallback for a failed socket. On a LAN
+ * relay the shim reports 'unsupported' once and the relay path carries on.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
-import { subscribeToMatchData, getMatchData } from '../utils/serverDataSync'
+import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets } from '../utils/serverDataSync'
 
 // Connection types
 export const CONNECTION_TYPES = {
@@ -26,6 +34,15 @@ export const CONNECTION_STATUS = {
   OFFLINE: 'offline'       // Both WebSocket and Supabase failed, using offline mode
 }
 
+// Looking up a match that is not in the database yet (test match, LAN relay,
+// never synced): 5 s, 10 s, 30 s, then every 60 s for as long as the tablet is
+// open — not an /api/db request every 5 s.
+const DB_WATCH_RETRY_DELAYS_MS = [5000, 10000, 30000]
+export const DB_WATCH_RETRY_MAX_MS = 60000
+export function dbWatchRetryDelay(attempt) {
+  return DB_WATCH_RETRY_DELAYS_MS[attempt] ?? DB_WATCH_RETRY_MAX_MS
+}
+
 /**
  * Hook for managing realtime connection with WebSocket primary + Supabase Realtime fallback
  * @param {Object} options
@@ -42,7 +59,10 @@ export function useRealtimeConnection({
   onData,
   onAction,
   onDeleted,
-  enabled = true
+  enabled = true,
+  // AUTO mode: also follow db changes next to the relay room. The referee
+  // passes false: it runs its own match_live_state channel.
+  watchDbChanges = true
 }) {
   const [connectionType, setConnectionType] = useState(preferredConnection)
   const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket' | null
@@ -75,10 +95,21 @@ export function useRealtimeConnection({
 
   // UUID retry timer ref
   const uuidRetryRef = useRef(null)
+  const secondaryChannelRef = useRef(null)
+  const fetchSeqRef = useRef(0)
+  const refetchTimerRef = useRef(null)
+  const lastPushAtRef = useRef(0) // last relay bundle delivered
 
-  // Helper: fetch data and deliver to callback
+  // Helper: fetch data and deliver to callback. Only the newest request
+  // delivers: overlapping fetches can resolve out of order, and an older answer
+  // would roll the view back.
   const fetchAndDeliver = useCallback((reason) => {
+    const seq = ++fetchSeqRef.current
+    const startedAt = Date.now()
     getMatchData(matchId).then(result => {
+      if (seq !== fetchSeqRef.current || !isMountedRef.current) return
+      // A relay push landed while this fetch was in flight: it is newer
+      if (lastPushAtRef.current > startedAt) return
       if (result.success && onDataRef.current) {
         onDataRef.current(result)
       }
@@ -86,6 +117,15 @@ export function useRealtimeConnection({
       console.error(`[RealtimeConnection] Error fetching data after ${reason}:`, err)
     })
   }, [matchId])
+
+  // Coalesce bursts (one point = live_state + event + set rows) into one refetch
+  const scheduleRefetch = useCallback((reason) => {
+    if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current)
+    refetchTimerRef.current = setTimeout(() => {
+      refetchTimerRef.current = null
+      if (isMountedRef.current) fetchAndDeliver(reason)
+    }, 250)
+  }, [fetchAndDeliver])
 
   // Helper: build a Supabase channel with all subscriptions
   const buildChannel = useCallback((supabaseMatchUuid) => {
@@ -125,6 +165,14 @@ export function useRealtimeConnection({
     if (uuidRetryRef.current) {
       clearTimeout(uuidRetryRef.current)
       uuidRetryRef.current = null
+    }
+    if (refetchTimerRef.current) {
+      clearTimeout(refetchTimerRef.current)
+      refetchTimerRef.current = null
+    }
+    if (secondaryChannelRef.current) {
+      try { supabase?.removeChannel(secondaryChannelRef.current) } catch { /* ignore */ }
+      secondaryChannelRef.current = null
     }
 
     // Cleanup Supabase subscription
@@ -237,6 +285,64 @@ export function useRealtimeConnection({
     }
   }, [matchId, buildChannel, fetchAndDeliver]) // Removed onData from deps - using ref instead
 
+  // AUTO mode: follow db changes next to the relay room. Never changes
+  // status/activeConnection (the relay stays the reported connection); only
+  // refetches. Re-subscribes (after a reconnect) refetch too, so a tablet that
+  // was offline catches up without waiting for the next rally.
+  // `attempt` counts the uuid lookups that found nothing (see dbWatchRetryDelay).
+  const watchDbChangesAlongside = useCallback(async (attempt = 0) => {
+    if (!supabase || !matchId) return
+    let uuid = null
+    try {
+      const { data } = await apiFrom('matches').select('id').eq('external_id', matchId).maybeSingle()
+      uuid = data?.id || null
+    } catch { /* LAN relay without /api/db: the relay path carries on */ }
+    if (!isMountedRef.current) return
+    const onChange = (payload) => {
+      if (!isMountedRef.current) return
+      setLastUpdate(Date.now())
+      if (payload?.table === 'matches' && payload?.eventType === 'DELETE') {
+        if (onDeletedRef.current) onDeletedRef.current()
+        return
+      }
+      scheduleRefetch('db change')
+    }
+    const channel = supabase.channel(`match-db-${matchId}-${Date.now()}`)
+    if (uuid) {
+      for (const table of ['events', 'sets', 'match_live_state']) {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `match_id=eq.${uuid}` }, onChange)
+      }
+    }
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `external_id=eq.${matchId}` }, onChange)
+    let unsupported = false
+    channel.subscribe((s, err) => {
+      if (!isMountedRef.current) return
+      if (s === 'SUBSCRIBED') scheduleRefetch('db subscribed')
+      // This server has no live db stream (a LAN relay): stop looking
+      if (s === 'CHANNEL_ERROR' && err?.code === 'unsupported') {
+        unsupported = true
+        if (uuidRetryRef.current && secondaryChannelRef.current === channel) {
+          clearTimeout(uuidRetryRef.current)
+          uuidRetryRef.current = null
+        }
+      }
+    })
+    if (secondaryChannelRef.current) {
+      try { supabase.removeChannel(secondaryChannelRef.current) } catch { /* ignore */ }
+    }
+    secondaryChannelRef.current = channel
+    // The match may reach the database only after the tablet connected: look
+    // again, backing off (and at the slowest pace while the relay room delivers)
+    if (!uuid && !unsupported) {
+      const relayLive = Date.now() - lastPushAtRef.current < DB_WATCH_RETRY_MAX_MS
+      if (uuidRetryRef.current) clearTimeout(uuidRetryRef.current)
+      uuidRetryRef.current = setTimeout(() => {
+        uuidRetryRef.current = null
+        if (isMountedRef.current && secondaryChannelRef.current === channel && !unsupported) watchDbChangesAlongside(attempt + 1)
+      }, relayLive ? DB_WATCH_RETRY_MAX_MS : dbWatchRetryDelay(attempt))
+    }
+  }, [matchId, scheduleRefetch])
+
   // Connect to WebSocket
   const connectWebSocket = useCallback(() => {
     if (!matchId) return false
@@ -255,6 +361,7 @@ export function useRealtimeConnection({
             onActionRef.current(data._action, data._actionData)
           }
         } else if (data && data.match) {
+          lastPushAtRef.current = Date.now()
           if (onDataRef.current) {
             onDataRef.current({ success: true, ...data })
           }
@@ -313,6 +420,8 @@ export function useRealtimeConnection({
             } else {
               setStatus(CONNECTION_STATUS.ERROR)
             }
+          } else if (watchDbChanges) {
+            watchDbChangesAlongside()
           }
         }
       } finally {
@@ -320,7 +429,7 @@ export function useRealtimeConnection({
       }
     }
     doReconnect()
-  }, [matchId, connectionType, cleanup, connectSupabase, connectWebSocket])
+  }, [matchId, connectionType, cleanup, connectSupabase, connectWebSocket, watchDbChanges, watchDbChangesAlongside])
 
   // Load saved preference on mount
   useEffect(() => {
@@ -364,6 +473,7 @@ export function useRealtimeConnection({
           // 2. If WebSocket fails, fall back to Supabase Realtime
           // 3. If both fail, go offline
           const wsSuccess = connectWebSocket()
+          if (wsSuccess && watchDbChanges) watchDbChangesAlongside()
           if (!wsSuccess) {
             console.log('[RealtimeConnection] WebSocket failed, trying Supabase fallback')
             const supabaseSuccess = await connectSupabase()
@@ -388,7 +498,7 @@ export function useRealtimeConnection({
       isConnectingRef.current = false
       cleanup()
     }
-  }, [matchId, enabled, connectionType]) // Only core dependencies, not callbacks
+  }, [matchId, enabled, connectionType, watchDbChanges]) // Only core dependencies, not callbacks
 
   return {
     // State
@@ -410,6 +520,44 @@ export function useRealtimeConnection({
     reconnect,
     setConnectionType: switchConnection
   }
+}
+
+/**
+ * Which tablets the relay sees watching a match (scorer side): polls
+ * /api/server/connections on the app's backend. The old status read heartbeat
+ * fields nothing on the scorer device writes, so it always said "disconnected".
+ * @param {string|null} matchKey - relay room key (seed_key)
+ * @param {object|null} match - scorer's match (connection flags)
+ * @returns {{ connections: object|null, referee: number, benchHome: number, benchAway: number, watchers: number, reachable: boolean }}
+ */
+export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 10000 } = {}) {
+  const [connections, setConnections] = useState(null)
+
+  useEffect(() => {
+    if (!enabled || !matchKey) {
+      setConnections(null)
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      const result = await fetchRelayConnections(matchKey)
+      if (!cancelled) setConnections(result)
+    }
+    load()
+    const timer = setInterval(load, intervalMs)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [matchKey, enabled, intervalMs])
+
+  const homeEnabled = match?.homeTeamConnectionEnabled === true
+  const awayEnabled = match?.awayTeamConnectionEnabled === true
+  return useMemo(() => ({
+    connections,
+    reachable: !!connections,
+    ...summarizeRelayTablets(connections, matchKey, { homeTeamConnectionEnabled: homeEnabled, awayTeamConnectionEnabled: awayEnabled })
+  }), [connections, matchKey, homeEnabled, awayEnabled])
 }
 
 export default useRealtimeConnection

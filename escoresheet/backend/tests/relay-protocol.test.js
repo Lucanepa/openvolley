@@ -198,6 +198,84 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [scoreboard, referee, attacker, intruder, bridge]) c.ws.close()
   })
 
+  it('keys rooms by the seed_key, keeps PINs a proven scoreboard leaves out and labels tablets', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seedA = 'match_1791215210058_aaaaaa'
+    const seedB = 'match_1791215210059_bbbbbb'
+    const courtA = await openClient(wsUrl)
+    const courtB = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+
+    // Both scorers' first match is Dexie id 1: no clash any more
+    courtA.send(syncMessage(makeMatch({ id: 1, seed_key: seedA, gamePin: '111111' })))
+    courtB.send(syncMessage(makeMatch({ id: 1, seed_key: seedB, gamePin: '222222', refereePin: '424242' })))
+    courtB.send({ type: 'ping' })
+    await courtB.waitFor((m) => m.type === 'pong')
+    assert.equal(courtB.messages.some((m) => m.type === 'error'), false)
+
+    // The tablet knows the seed key (cloud PIN check / QR code)
+    referee.send({ type: 'subscribe-match', matchId: seedA, device: 'referee' })
+    const full = await referee.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(full.matchId, seedA)
+    assert.equal(full.match.seed_key, seedA)
+
+    // The scoreboard's Dexie id stays an alias on its own socket
+    courtA.send({ type: 'live-state-update', matchId: 1, liveState: { points_a: 3 } })
+    const live = await referee.waitFor((m) => m.type === 'live-state-update')
+    assert.equal(live.matchId, seedA)
+    courtB.send({ type: 'live-state-update', matchId: 1, liveState: { points_a: 9 } })
+    courtB.send({ type: 'ping' })
+    await courtB.waitFor((m) => m.type === 'pong' && courtB.messages.filter((x) => x.type === 'pong').length === 2)
+
+    // PINs only when they change: a sync without them keeps the stored ones
+    const { refereePin, homeTeamPin, awayTeamPin, homeTeamUploadPin, awayTeamUploadPin, gamePin, ...noPins } = makeMatch({ id: 1, seed_key: seedA })
+    courtA.send(syncMessage({ ...noPins }, { events: [{ id: 5 }] }))
+    await referee.waitFor((m) => m.type === 'match-data-update' && m.events.length === 1)
+    const validate = await fetch(`http://127.0.0.1:${port}/api/match/validate-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: PINS.refereePin, type: 'referee' })
+    })
+    assert.equal(validate.status, 200)
+    assert.equal((await validate.json()).match.id, seedA)
+    assert.equal(referee.messages.filter((m) => m.type === 'live-state-update').length, 1)
+    assert.equal(containsPin(referee.raw.join('')), false)
+
+    // Tablet status for the scorer: who watches this match, as what
+    const conns = await (await fetch(`http://127.0.0.1:${port}/api/server/connections?matchId=${seedA}`)).json()
+    assert.equal(conns.referees, 1)
+    assert.equal(conns.clients[0].role, 'referee')
+    assert.equal(conns.matchSubscriptions[seedA], 1) // the scoreboard is not a watcher
+
+    // A socket that never proved the match cannot leave the game PIN out
+    const intruder = await openClient(wsUrl)
+    intruder.send(syncMessage({ ...noPins }))
+    await intruder.waitFor((m) => m.type === 'error' && m.code === 'not-match-owner' && m.matchId === seedA)
+
+    courtA.send({ type: 'delete-match', matchId: 1 })
+    await referee.waitFor((m) => m.type === 'match-deleted' && m.matchId === seedA)
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/match/${seedB}`)).status, 200)
+
+    // The relay lost the match while courtA's socket stayed open: its usual
+    // PIN-less sync must not recreate it without PINs (claimable by anyone)
+    courtA.send(syncMessage({ ...noPins }))
+    await courtA.waitFor((m) => m.type === 'error' && m.code === 'pins-required' && m.matchId === seedA)
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/match/${seedA}`)).status, 404)
+    // Resent with the PINs, the room is back and PIN-protected
+    courtA.send(syncMessage(makeMatch({ id: 1, seed_key: seedA, gamePin: '111111' })))
+    courtA.send({ type: 'ping' })
+    await courtA.waitFor((m) => m.type === 'pong' && courtA.messages.filter((x) => x.type === 'pong').length >= 1)
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/match/${seedA}`)).status, 200)
+    const revalidate = await fetch(`http://127.0.0.1:${port}/api/match/validate-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: PINS.refereePin, type: 'referee' })
+    })
+    assert.equal(revalidate.status, 200)
+
+    for (const c of [courtA, courtB, referee, intruder]) c.ws.close()
+  })
+
   it('stops game-PIN guessing without revealing a hit', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const scoreboard = await openClient(wsUrl)
