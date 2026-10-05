@@ -10,6 +10,9 @@ vi.mock('react-i18next', () => ({
 
 // ConnectionStatus imports db (unused by these tests)
 vi.mock('../../db/db', () => ({ db: {} }))
+// Live sync queue counts (a Dexie live query in the app)
+const live = vi.hoisted(() => ({ value: { pending: 0, error: 0, failed: 0 } }))
+vi.mock('../../hooks/useSyncQueue', () => ({ useSyncQueueStats: () => live.value }))
 
 const auth = vi.hoisted(() => ({ value: { user: null, loading: false } }))
 vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
@@ -62,6 +65,18 @@ describe('ConnectionStatus sync indicator', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     render(<ConnectionStatus connectionStatuses={ONLINE_STATUSES} queueStats={{ pending: 3, error: 0, failed: 0, authRequired: true }} />)
     expect(screen.getByText('Sign in to sync')).toBeInTheDocument()
+  })
+
+  it('reads the counts from the local queue when the caller passes none (App, Referee)', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    live.value = { pending: 0, error: 1, failed: 2 }
+    try {
+      render(<ConnectionStatus connectionStatuses={ONLINE_STATUSES} queueStats={{ authRequired: false }} />)
+      expect(screen.getByText('Error')).toBeInTheDocument()
+      expect(screen.getByText('3')).toBeInTheDocument()
+    } finally {
+      live.value = { pending: 0, error: 0, failed: 0 }
+    }
   })
 
   it('still renders when a caller passes the old sync status string', () => {

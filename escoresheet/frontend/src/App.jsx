@@ -17,7 +17,7 @@ import BackupTable from './components/BackupTable'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectionSetupModal from './components/options/ConnectionSetupModal'
-import { useSyncQueue, useSyncQueueStats } from './hooks/useSyncQueue'
+import { useSyncQueue } from './hooks/useSyncQueue'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
@@ -100,13 +100,10 @@ export default function App() {
   const [spotlightTarget, setSpotlightTarget] = useState(null)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
-  // Real queue counts for the sync indicator (it used to get the status string,
-  // so pending/failed jobs were never shown)
-  const queueCounts = useSyncQueueStats()
-  const queueStats = useMemo(
-    () => ({ ...queueCounts, authRequired: syncStatus === 'auth_required' }),
-    [queueCounts, syncStatus]
-  )
+  // The sync indicator reads the queue counts itself (a live query there, so a
+  // queue write does not re-render the whole app); it only needs to know
+  // whether the cloud is waiting for a sign-in.
+  const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
 
   // Compute current page for contextual help

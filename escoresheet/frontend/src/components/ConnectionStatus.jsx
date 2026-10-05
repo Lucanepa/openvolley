@@ -1,24 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
+import { useSyncQueueStats } from '../hooks/useSyncQueue'
 
 export default function ConnectionStatus({
   connectionStatuses = {},
   connectionDebugInfo = {},
   onCheckStatus,
   onRetryErrors,
-  queueStats = { pending: 0, error: 0 },
+  queueStats = null,
   position = 'right', // 'left' | 'right' | 'center'
   size = 'normal' // 'normal' | 'small' | 'large'
 }) {
   const { t } = useTranslation()
 
-  // queueStats: { pending, error, failed, authRequired } from useSyncQueueStats.
-  // Some callers still pass the sync status string; read what it can tell.
-  const stats = queueStats && typeof queueStats === 'object' ? queueStats : {}
-  const pendingCount = stats.pending || 0
-  const errorCount = (stats.error || 0) + (stats.failed || 0)
-  const authRequired = stats.authRequired === true || queueStats === 'auth_required'
+  // Queue counts come from a live query on the local sync queue (callers used
+  // to pass the sync status string here, so pending/failed jobs never showed).
+  // queueStats may still carry counts (tests) and authRequired; a caller that
+  // passes the status string still gets 'auth_required' recognised.
+  const liveCounts = useSyncQueueStats()
+  const given = queueStats && typeof queueStats === 'object' ? queueStats : {}
+  const count = (key) => (typeof given[key] === 'number' ? given[key] : (liveCounts?.[key] || 0))
+  const stats = { pending: count('pending'), error: count('error'), failed: count('failed') }
+  const pendingCount = stats.pending
+  const errorCount = stats.error + stats.failed
+  const authRequired = given.authRequired === true || queueStats === 'auth_required'
 
   // The browser's own view of the network (the 'Online' switch is offline mode)
   const [browserOffline, setBrowserOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
