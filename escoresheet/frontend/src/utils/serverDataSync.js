@@ -4,7 +4,7 @@
  */
 
 import { apiFrom } from '../lib/apiClient'
-import { getApiUrl, getBackendUrl, getWebSocketUrl as getConfiguredWebSocketUrl } from './backendConfig'
+import { getApiUrl, getBackendUrl, getRelayWebSocketUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
 
 /**
@@ -36,16 +36,9 @@ function getServerUrl() {
   return `${protocol}://${hostname}:${port}`
 }
 
+// Relay WebSocket: the same resolver the scorer publishes with (one relay for all)
 function getWebSocketUrl() {
-  const configured = getConfiguredWebSocketUrl()
-  if (configured) return configured
-
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const hostname = window.location.hostname
-  if (window.location.protocol === 'https:') {
-    return `${protocol}://${hostname}`
-  }
-  return `${protocol}://${hostname}:8080`
+  return getRelayWebSocketUrl()
 }
 
 /**
