@@ -19,6 +19,7 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
+import { getMatchWinner, clearedPostMatchSignatures } from '../domain/matchEnd'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
 
 // Helper to format duration as hh:mm
@@ -388,10 +389,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       let duration = ''
       if (isSetFinished && setInfo?.endTime) {
         let start
-        if (setNum === 1 && match?.scheduledAt) {
-          start = new Date(match.scheduledAt)
-        } else if (setInfo?.startTime) {
+        // Use the confirmed set start (as the PDF does); the scheduled time is
+        // only a fallback for set 1, since matches often start late.
+        if (setInfo?.startTime) {
           start = new Date(setInfo.startTime)
+        } else if (setNum === 1 && match?.scheduledAt) {
+          start = new Date(match.scheduledAt)
         } else {
           start = new Date()
         }
@@ -542,25 +545,34 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
   const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-  // Find captains
-  const homeCaptain = homePlayers.find(p => p.captain)
-  const awayCaptain = awayPlayers.find(p => p.captain)
+  // Find captains (rosters store isCaptain; older data used captain)
+  const homeCaptain = homePlayers.find(p => p.isCaptain || p.captain)
+  const awayCaptain = awayPlayers.find(p => p.isCaptain || p.captain)
 
   // Determine team labels (A or B)
   const teamAKey = match.coinTossTeamA || 'home'
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
 
-  // Winner info
-  const winner = homeSetsWon > awaySetsWon ? (homeTeam?.name || t('common.home')) : (awayTeam?.name || t('common.away'))
+  // Winner info: forfeit gives the match to the opponent; a stopped match with
+  // level sets has no winner
+  const winnerKey = getMatchWinner(sets, match?.bestOf, { forfeitTeam: match?.forfeitTeam })
+  const winner = winnerKey === 'home'
+    ? (homeTeam?.name || t('common.home'))
+    : winnerKey === 'away'
+      ? (awayTeam?.name || t('common.away'))
+      : t('matchEnd.noWinner', 'No winner (match stopped)')
 
-  // Match time info - duration is matchEnd - matchStart
-  const matchStartDate = match?.scheduledAt ? new Date(match.scheduledAt) : null
+  // Match time info - duration is matchEnd - matchStart. Start is the confirmed
+  // set 1 start (as on the PDF), falling back to the scheduled time.
+  const set1StartTime = sets.find(s => s.index === 1)?.startTime || null
+  const matchStartIso = set1StartTime || match?.scheduledAt || null
+  const matchStartDate = matchStartIso ? new Date(matchStartIso) : null
   const matchEndDate = finishedSets.length > 0 && finishedSets[finishedSets.length - 1].endTime
     ? new Date(finishedSets[finishedSets.length - 1].endTime)
     : null
 
   // Display times in local timezone
-  const matchStart = match?.scheduledAt ? formatTimeLocal(match.scheduledAt) : ''
+  const matchStart = matchStartIso ? formatTimeLocal(matchStartIso) : ''
   const matchEndTime = finishedSets.length > 0 && finishedSets[finishedSets.length - 1].endTime
     ? formatTimeLocal(finishedSets[finishedSets.length - 1].endTime)
     : ''
@@ -1021,25 +1033,38 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Try server-side verification first (more secure)
       const apiUrl = getApiUrl('/api/verify-reopen-password')
       if (apiUrl) {
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: unlockPasswordInput.trim() })
-        })
-        const result = await response.json()
-        if (result.success) {
-          setShowUnlockModal(false)
-          setReopenUnlocked(true)
-          setUnlockPasswordInput('')
-          setUnlockPasswordError('')
-        } else {
-          setUnlockPasswordError(t('matchEnd.unlockPasswordWrong', 'Incorrect password'))
-          setUnlockPasswordInput('')
+        let response = null
+        try {
+          response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: unlockPasswordInput.trim() })
+          })
+        } catch (networkError) {
+          // Backend configured but unreachable (offline venue): fall through to
+          // the local check below instead of blocking the reopen.
+          console.warn('[MatchEnd] Reopen password server unreachable, using local check:', networkError)
         }
-        return
+        if (response) {
+          if (response.status === 429) {
+            setUnlockPasswordError(t('matchEnd.unlockTooManyAttempts', 'Too many attempts. Please wait and try again.'))
+            return
+          }
+          const result = await response.json().catch(() => ({}))
+          if (result.success) {
+            setShowUnlockModal(false)
+            setReopenUnlocked(true)
+            setUnlockPasswordInput('')
+            setUnlockPasswordError('')
+          } else {
+            setUnlockPasswordError(t('matchEnd.unlockPasswordWrong', 'Incorrect password'))
+            setUnlockPasswordInput('')
+          }
+          return
+        }
       }
 
-      // Fallback to client-side verification (offline mode)
+      // Fallback to client-side verification (no backend, or backend unreachable)
       const inputHash = await hashPassword(unlockPasswordInput.trim())
       if (inputHash === reopenPasswordHash) {
         setShowUnlockModal(false)
@@ -1068,6 +1093,21 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         status: 'ended' // Match is finished but not final
       })
 
+      // Mirror the un-approval to the cloud (approve queued status 'approved')
+      if (!match?.test && match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            status: 'ended',
+            approval: null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
       // Update local state
       setIsApproved(false)
     } catch (error) {
@@ -1093,20 +1133,19 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       console.log('[MatchEnd] Reopening last set:', { id: lastSet.id, index: lastSet.index })
 
       // Mark the last set as not finished
-      await db.sets.update(lastSet.id, { finished: false })
+      await db.sets.update(lastSet.id, { finished: false, endTime: null })
 
       // Set match status back to 'live' and clear all signature fields
       await db.matches.update(matchId, {
         status: 'live',
         approved: false,
         approvedAt: null,
-        // Clear all signature fields - they must be re-collected after changes
-        captainSignatureHomePost: null,
-        captainSignatureAwayPost: null,
-        assistantScorerSignature: null,
-        scorerSignature: null,
-        referee2Signature: null,
-        referee1Signature: null
+        // The match is being played on: it is no longer forfeited or stopped
+        forfeitTeam: null,
+        forfeitReason: null,
+        stoppedReason: null,
+        // Clear all post-match signatures - they must be re-collected after changes
+        ...clearedPostMatchSignatures()
       })
 
       // Delete the set_end event for this set to keep event log clean
@@ -1141,7 +1180,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           action: 'update',
           payload: {
             external_id: String(lastSet.id),
-            finished: false
+            finished: false,
+            end_time: null
           },
           ts: new Date().toISOString(),
           status: 'queued'
