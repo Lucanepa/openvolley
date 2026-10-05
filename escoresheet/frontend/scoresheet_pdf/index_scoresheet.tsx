@@ -3,7 +3,9 @@ import ReactDOM from 'react-dom/client';
 import './scoresheet.css'; // compiled Tailwind (was cdn.tailwindcss.com — broke offline)
 import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
+import '../src/i18n'; // App_Scoresheet calls useTranslation: this entry needs its own i18n init
 import App from './App_Scoresheet';
+import { describeScoresheetLoadError, findOwnScoresheet, parseScoresheetName, redactScoresheetPath, type ScoresheetLoadError } from './utils/scoresheetStorage';
 
 // Initialize Dexie database (same as main app)
 import { db } from '../src/db/db';
@@ -72,33 +74,34 @@ interface ScoresheetItem {
 
 // Fetch scoresheet data from backend storage (/api/storage).
 // Needs a signed-in session on this origin: apiClient sends the stored Bearer
-// token, and the backend refuses storage reads without one.
-const fetchFromStorage = async (date: string, game: string): Promise<any | null> => {
+// token. Only the account that uploaded a scoresheet may list or read it, and
+// its name has a random part, so it is found by listing the date folder
+// (approved game{n}_{key}_final.json first, else the in-match JSON).
+// Returns { data } or { error } (storage error with status / code).
+const fetchFromStorage = async (date: string, game: string): Promise<{ data: any | null, error: any | null }> => {
   try {
     // Import the backend storage client dynamically to avoid circular dependencies
     const { apiStorage } = await import('../src/lib/apiClient');
+    const bucket = apiStorage.from('scoresheets');
 
-    // The app writes game{n}_final.json (approved) and, from older versions, game{n}.json:
-    // prefer the final one.
-    for (const storagePath of [`${date}/game${game}_final.json`, `${date}/game${game}.json`]) {
-      console.log('[Scoresheet] Fetching from storage:', storagePath);
-
-      const { data, error } = await apiStorage
-        .from('scoresheets')
-        .download(storagePath);
-
-      if (error || !data) {
-        console.warn('[Scoresheet] Storage fetch error:', storagePath, error);
-        continue;
-      }
-
-      const text = await data.text();
-      return JSON.parse(text);
+    const found = await findOwnScoresheet(bucket, date, game, { final: false });
+    if (found.error || !found.path) {
+      console.warn('[Scoresheet] Storage lookup:', found.error?.code || found.error?.status, found.error?.message);
+      return { data: null, error: found.error };
     }
-    return null;
+    console.log('[Scoresheet] Fetching from storage:', redactScoresheetPath(found.path));
+
+    const { data, error } = await bucket.download(found.path);
+    if (error || !data) {
+      console.warn('[Scoresheet] Storage fetch error:', error?.code || error?.status, error?.message);
+      return { data: null, error };
+    }
+
+    const text = await data.text();
+    return { data: JSON.parse(text), error: null };
   } catch (error) {
     console.error('[Scoresheet] Error fetching from storage:', error);
-    return null;
+    return { data: null, error: { message: error instanceof Error ? error.message : 'Failed to load scoresheet' } };
   }
 };
 
@@ -132,17 +135,18 @@ const fetchAllScoresheets = async (): Promise<ScoresheetItem[]> => {
         continue;
       }
 
-      // One entry per game; game{n}_final.json wins over game{n}.json.
+      // One entry per game; the approved (_final) JSON wins over the in-match one.
+      // The listing shows only this account's own files.
       const byGame = new Map<string, { path: string; final: boolean }>();
       for (const file of files || []) {
-        // game123_final.json / game123.json -> 123 (the app may also use an external id)
-        const gameMatch = file.name.match(/^game([^/]+?)(_final)?\.json$/);
-        if (!gameMatch) continue;
+        // game123_k…_final.json / game123_k….json (older: game123_final.json) -> 123
+        const parsed = file.id ? parseScoresheetName(file.name) : null;
+        if (!parsed || parsed.ext !== 'json') continue;
 
-        const final = Boolean(gameMatch[2]);
-        const prev = byGame.get(gameMatch[1]);
+        const final = parsed.final;
+        const prev = byGame.get(parsed.game);
         if (prev && prev.final && !final) continue;
-        byGame.set(gameMatch[1], { path: `${folder.name}/${file.name}`, final });
+        byGame.set(parsed.game, { path: `${folder.name}/${file.name}`, final });
       }
       for (const [game, { path }] of byGame) {
         scoresheets.push({ date: folder.name, game, path });
@@ -356,19 +360,19 @@ const UrlMatchIdScoresheet: React.FC<{ matchId: string; action: 'preview' | 'pri
 const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview' | 'print' | 'save' | 'getBlob' }> = ({ date, game, action }) => {
   const [matchData, setMatchData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<ScoresheetLoadError | null>(null);
 
   React.useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await fetchFromStorage(date, game);
+        const { data, error: loadError } = await fetchFromStorage(date, game);
         if (data) {
           setMatchData(data);
         } else {
-          setError(`Scoresheet not found: ${date}/game${game}.json`);
+          setError(describeScoresheetLoadError(loadError, `${date}, game ${game}`));
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load scoresheet');
+        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`));
       } finally {
         setLoading(false);
       }
@@ -402,9 +406,9 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
         fontFamily: 'system-ui, sans-serif'
       }}>
         <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ef4444' }}>
-          Scoresheet Not Found
+          {error.title}
         </div>
-        <div style={{ color: '#666' }}>{error}</div>
+        <div style={{ color: '#666', maxWidth: '32rem', textAlign: 'center', padding: '0 16px' }}>{error.message}</div>
       </div>
     );
   }
