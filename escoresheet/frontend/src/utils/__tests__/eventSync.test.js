@@ -5,6 +5,8 @@ import {
   queueSetScoreSync,
   isScoreOnlySetUpdate,
   buildSetEndMatchPayload,
+  buildSetReopenMatchPayload,
+  queueSetReopenSync,
   setLiveStateDirty,
   isLiveStateDirty,
   isLiveStateErrorWorthAlert
@@ -140,6 +142,55 @@ describe('buildSetEndMatchPayload', () => {
     const sets = [...finishedSets]
     buildSetEndMatchPayload({ seedKey: 'm', finishedSets: sets, isMatchEnd: false, nextSetIndex: 3 })
     expect(sets[0].index).toBe(2)
+  })
+})
+
+describe('undo of a set end', () => {
+  // Set 2 had ended 25:23 (set 3 created); the undo deleted set 3 and put
+  // set 2 back to unfinished at 24:23
+  beforeEach(() => {
+    db.sets.map.set(6, { id: 6, matchId: 1, index: 2, homePoints: 24, awayPoints: 23, finished: false, endTime: null })
+  })
+
+  it('reopens the cloud set and puts current_set / set_results back', async () => {
+    // a running score queued earlier is replaced by the reopen update
+    db.sync_queue.map.set(100, { id: 100, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', home_points: 25, away_points: 23 } })
+
+    expect(await queueSetReopenSync(db, { matchId: 1, setIndex: 2 })).toBe(true)
+
+    const jobs = [...db.sync_queue.map.values()]
+    expect(jobs).toHaveLength(2)
+    expect(jobs[0]).toMatchObject({
+      resource: 'set',
+      action: 'update',
+      status: 'queued',
+      payload: { external_id: 'match_100_aaa:s:6', home_points: 24, away_points: 23, finished: false, end_time: null }
+    })
+    // queued after the set job: livescore reads set_results from the match row
+    expect(jobs[1]).toMatchObject({ resource: 'match', action: 'update', status: 'queued' })
+    expect(jobs[1].payload).toEqual({ id: 'match_100_aaa', current_set: 2, set_results: [{ set: 1, home: 25, away: 20 }] })
+  })
+
+  it('clears the result fields when the undone set end had ended the match', async () => {
+    await queueSetReopenSync(db, { matchId: 1, setIndex: 2, wasMatchEnd: true })
+    const matchJob = [...db.sync_queue.map.values()].find(j => j.resource === 'match')
+    expect(matchJob.payload).toMatchObject({ current_set: 2, status: 'live', winner: null, final_score: null })
+  })
+
+  it('skips test matches and unknown sets, and never throws', async () => {
+    expect(await queueSetReopenSync(db, { matchId: 2, setIndex: 1 })).toBe(false)
+    expect(await queueSetReopenSync(db, { matchId: 1, setIndex: 9 })).toBe(false)
+    expect(await queueSetReopenSync({ matches: { get: async () => { throw new Error('IDB') } } }, { matchId: 1, setIndex: 2 })).toBe(false)
+    expect(db.sync_queue.map.size).toBe(0)
+  })
+
+  it('never lists the reopened set as finished, even if the row still says so', () => {
+    const p = buildSetReopenMatchPayload({
+      seedKey: 'm',
+      finishedSets: [{ index: 2, homePoints: 25, awayPoints: 23 }, { index: 1, homePoints: 25, awayPoints: 20 }],
+      reopenedSetIndex: 2
+    })
+    expect(p).toEqual({ id: 'm', current_set: 2, set_results: [{ set: 1, home: 25, away: 20 }] })
   })
 })
 

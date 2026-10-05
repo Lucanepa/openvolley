@@ -26,7 +26,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
-import { queueEventSync, queueSetScoreSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
+import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
@@ -34,7 +34,7 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../doma
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents } from '../domain/corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
@@ -6734,17 +6734,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Cloud: never send a created set that no longer exists; correct the reopened one
     const match = await db.matches.get(matchId)
-    const deletedSetIds = new Set(plan.deleteSetIds.map(String))
     const queued = await db.sync_queue.where('status').equals('queued').toArray()
-    for (const job of queued) {
-      if (job.resource === 'set' && deletedSetIds.has(String(job.payload?.external_id))) await db.sync_queue.delete(job.id)
-    }
+    const staleSetJobs = syncJobsForSets(queued, plan.deleteSetIds)
+    if (staleSetJobs.length > 0) await db.sync_queue.bulkDelete(staleSetJobs.map(j => j.id))
     if (match && !match.test && match.seed_key) {
       for (const r of plan.restoreSets) {
         await db.sync_queue.add({
           resource: 'set',
           action: 'update',
-          payload: { external_id: String(r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
+          payload: { external_id: setExtId(match.seed_key, r.id), home_points: r.homePoints, away_points: r.awayPoints, finished: false, end_time: null },
           ts: new Date().toISOString(),
           status: 'queued'
         })
@@ -6797,6 +6795,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (lastEvent.type === 'forfait') {
         await applyForfeitReversal(lastEvent.setIndex ?? data.set.index)
         return
+      }
+
+      // Undoing a set end: did that set end also end the match? (read before
+      // the undo changes the sets; the cloud match row is put back accordingly)
+      let undoneSetEndWasMatchEnd = false
+      if (lastEvent.type === 'set_end') {
+        const setsBefore = await db.sets.where({ matchId }).toArray()
+        const finishedBefore = setsBefore.filter(s => s.finished)
+        const matchBefore = await db.matches.get(matchId)
+        undoneSetEndWasMatchEnd = isMatchFinishedUtil(
+          finishedBefore.filter(s => s.homePoints > s.awayPoints).length,
+          finishedBefore.filter(s => s.awayPoints > s.homePoints).length,
+          matchBefore?.bestOf
+        )
       }
 
       // 1. Find and delete ALL events with the same base seq (main + sub-events)
@@ -6874,9 +6886,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
       }
 
-      // The cloud set row follows the restored score
-      queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
-
       // Handle special cases for set_end undo
       if (lastEvent.type === 'set_end') {
         // Delete the next set if it was created: the first set after the ended
@@ -6889,9 +6898,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .filter(s => s.index > endedSetIndex && !s.finished)
           .sort((a, b) => a.index - b.index)[0]
         if (nextSet) {
-          await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).delete()
+          const nextSetEvents = await db.events.where('matchId').equals(matchId).and(e => e.setIndex === nextSet.index).toArray()
+          await db.events.bulkDelete(nextSetEvents.map(e => e.id))
           await db.sets.delete(nextSet.id)
+          // Their cloud jobs not sent yet (set insert, set_start, lineups) go too
+          const queued = await db.sync_queue.where('status').equals('queued').toArray()
+          const staleJobs = [
+            ...syncJobsForEvents(queued, nextSetEvents.map(e => e.id)),
+            ...syncJobsForSets(queued, [nextSet.id])
+          ]
+          if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
         }
+        // The ended set is open again (no end time) ...
+        const endedSet = allSets.find(s => s.index === endedSetIndex)
+        if (endedSet) await db.sets.update(endedSet.id, { finished: false, endTime: null })
+        // ... and so is its cloud row; the match row's current_set and
+        // set_results, written at the set end, go back too
+        await queueSetReopenSync(db, { matchId, setIndex: endedSetIndex, wasMatchEnd: undoneSetEndWasMatchEnd })
+      } else {
+        // The cloud set row follows the restored score
+        queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
       }
 
     } catch (error) {
