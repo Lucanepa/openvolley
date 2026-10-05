@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { SearchX } from 'lucide-react'
+import { cn } from '../../ui/cn.js'
+import { modalPrimaryClass } from '../../ui/Modal.jsx'
 
 export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }) {
   const { t } = useTranslation()
@@ -81,51 +84,30 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
     return () => window.removeEventListener('resize', handleResize)
   }, [onDismiss])
 
+  // volleyui: stone-900 scrim, a white ring around the target (no brand red:
+  // this can point at scoreboard controls, RESTYLE-SPEC R4), the tip as the
+  // dark slate-900 tooltip, and the "not visible" notice as a kit dialog.
   if (notFound) {
     return (
       <div
         onClick={onDismiss}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 1100,
-          background: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          animation: 'fade-in 0.2s ease-out'
-        }}
+        className="no-print fixed inset-0 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm"
+        style={{ zIndex: 1100, animation: 'fade-in 0.2s ease-out' }}
       >
-        <div style={{
-          background: '#1f2937',
-          border: '1px solid rgba(255,255,255,0.15)',
-          borderRadius: 12,
-          padding: '20px 28px',
-          maxWidth: 340,
-          textAlign: 'center',
-          color: 'rgba(255,255,255,0.8)',
-          fontSize: 14,
-          lineHeight: 1.6
-        }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>&#x1F50D;</div>
-          {t('contextHelp.elementNotVisible', 'This element is not currently visible on the screen. Navigate to the relevant section first.')}
-          <div style={{ marginTop: 12 }}>
-            <button
-              onClick={onDismiss}
-              style={{
-                padding: '8px 20px',
-                background: 'rgba(59, 130, 246, 0.3)',
-                border: '1px solid rgba(59, 130, 246, 0.5)',
-                borderRadius: 6,
-                color: '#60a5fa',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              {t('common.ok', 'OK')}
-            </button>
+        <div className="ov-kit w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-2xl">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-stone-100 text-stone-400" aria-hidden="true">
+            <SearchX size={22} />
           </div>
+          <p className="mb-5 text-sm leading-relaxed text-stone-600">
+            {t('contextHelp.elementNotVisible', 'This element is not currently visible on the screen. Navigate to the relevant section first.')}
+          </p>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className={cn(modalPrimaryClass, 'h-11 min-w-24')}
+          >
+            {t('common.ok', 'OK')}
+          </button>
         </div>
       </div>
     )
@@ -134,16 +116,11 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
   if (!rect || !visible) {
     // Loading state - dim screen while searching
     return (
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1100,
-        background: 'rgba(0,0,0,0.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+      <div
+        className="no-print fixed inset-0 flex items-center justify-center bg-stone-900/50"
+        style={{ zIndex: 1100 }}
+      >
+        <div className="text-sm font-medium text-white/80">
           {t('common.loading', 'Loading...')}
         </div>
       </div>
@@ -166,30 +143,23 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
       {/* Dark overlay with cutout */}
       <div
         onClick={onDismiss}
+        className="no-print fixed inset-0 cursor-pointer bg-stone-900/70"
         style={{
-          position: 'fixed',
-          inset: 0,
           zIndex: 1100,
-          background: 'rgba(0,0,0,0.75)',
           clipPath,
-          animation: 'fade-in 0.2s ease-out',
-          cursor: 'pointer'
+          animation: 'fade-in 0.2s ease-out'
         }}
       />
 
-      {/* Glowing border around target */}
+      {/* Ring around target */}
       <div
+        className="no-print pointer-events-none fixed rounded-xl border-2 border-white"
         style={{
-          position: 'fixed',
           top: rect.top,
           left: rect.left,
           width: rect.width,
           height: rect.height,
           zIndex: 1101,
-          borderRadius: 8,
-          border: '2px solid rgba(59, 130, 246, 0.7)',
-          boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2)',
-          pointerEvents: 'none',
           animation: 'spotlight-pulse 2s infinite'
         }}
       />
@@ -197,31 +167,19 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
       {/* Tooltip */}
       {tooltipPos && (
         <div
+          role="tooltip"
+          className="no-print fixed rounded-xl bg-slate-900 px-4 py-3.5 text-sm leading-relaxed text-white shadow-card-lg"
           style={{
-            position: 'fixed',
             top: tooltipPos.above ? undefined : tooltipPos.top,
             bottom: tooltipPos.above ? `${window.innerHeight - rect.top + 12}px` : undefined,
             left: tooltipPos.left,
             width: tooltipPos.width,
             zIndex: 1102,
-            background: '#1f2937',
-            border: '1px solid rgba(59, 130, 246, 0.4)',
-            borderRadius: 10,
-            padding: '14px 18px',
-            color: 'rgba(255,255,255,0.9)',
-            fontSize: 13,
-            lineHeight: 1.6,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
             animation: 'fade-in 0.3s ease-out'
           }}
         >
           {tooltipKey && t(tooltipKey)}
-          <div style={{
-            marginTop: 10,
-            fontSize: 11,
-            opacity: 0.5,
-            textAlign: 'center'
-          }}>
+          <div className="mt-2.5 text-center text-[11px] text-white/60">
             {t('contextHelp.tapToDismiss', 'Tap anywhere to dismiss')}
           </div>
         </div>
@@ -230,8 +188,13 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
       {/* Inline keyframe for spotlight pulse */}
       <style>{`
         @keyframes spotlight-pulse {
-          0%, 100% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2); }
-          50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.5), 0 0 30px rgba(59, 130, 246, 0.4); }
+          0%, 100% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25), 0 0 20px rgba(255, 255, 255, 0.15); }
+          50% { box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.4), 0 0 30px rgba(255, 255, 255, 0.3); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes spotlight-pulse {
+            0%, 100% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3); }
+          }
         }
         @keyframes fade-in {
           from { opacity: 0; }
