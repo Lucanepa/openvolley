@@ -591,6 +591,21 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(down.status, 200)
     assert.equal(Buffer.from(down.json.data, 'base64').toString('utf8'), content)
     assert.equal(readFileSync(join(storageRoot, 'scoresheets', '2026-10-05', 'game4711_final.json'), 'utf8'), content)
+    // Final scoresheets: only the account that uploaded one reads it back
+    const anonDown = await api(srv.base, '/api/storage/download', { body: { bucket: 'scoresheets', path: '2026-10-05/game4711_final.json' } })
+    assert.equal(anonDown.status, 401)
+    const otherEmail = `e2e-other-${randomBytes(4).toString('hex')}@example.ch`
+    assert.equal((await api(srv.base, '/api/auth/sign-up', { body: { email: otherEmail, password } })).status, 200)
+    const other = await api(srv.base, '/api/auth/sign-in', { body: { email: otherEmail, password } })
+    assert.equal(other.status, 200, other.text)
+    const otherDown = await api(srv.base, '/api/storage/download', { token: other.json.data.session.access_token, body: { bucket: 'scoresheets', path: '2026-10-05/game4711_final.json' } })
+    assert.equal(otherDown.status, 403)
+    assert.equal(otherDown.json.error.code, 'OV_STORAGE_FORBIDDEN')
+    // A missing object (no log file / backup yet) is a normal answer, not a 404
+    const missing = await api(srv.base, '/api/storage/download', { token, body: { bucket: 'backup', path: 'logs/game_1/logs.txt' } })
+    assert.equal(missing.status, 200)
+    assert.equal(missing.json.data, null)
+    assert.equal(missing.json.error.code, 'OV_STORAGE_NOT_FOUND')
     const signed = await api(srv.base, '/api/storage/signed-url', { token, body: { bucket: 'scoresheets', path: '2026-10-05/game4711_final.json' } })
     assert.equal(signed.status, 404)
     const escape = await api(srv.base, '/api/storage/download', { token, body: { bucket: 'scoresheets', path: '../.ovdata' } })
