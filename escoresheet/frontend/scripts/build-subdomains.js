@@ -32,7 +32,9 @@ const disablePWA = process.env.DISABLE_PWA === 'true'
 const packageJson = JSON.parse(readFileSync(resolve(frontendDir, 'package.json'), 'utf-8'))
 const appVersion = packageJson.version
 
-// Subdomain configurations
+// Subdomain configurations.
+// themeColor: every app is light only (RESTYLE-SPEC 5), so the browser and
+// installed-PWA status bar is white on all of them, as in the vite-build heads.
 const subdomains = {
   app: {
     name: 'Open eScoresheet',
@@ -40,7 +42,7 @@ const subdomains = {
     description: 'Volleyball match scoring application',
     title: 'Open eScoresheet',
     mainEntry: 'main',
-    themeColor: '#111827'
+    themeColor: '#ffffff'
   },
   referee: {
     name: 'Referee Dashboard',
@@ -48,7 +50,7 @@ const subdomains = {
     description: 'Referee view for volleyball match scoring',
     title: 'Referee Dashboard - OpenVolley',
     mainEntry: 'referee-main',
-    themeColor: '#1e40af'
+    themeColor: '#ffffff'
   },
   bench: {
     name: 'Team Dashboard',
@@ -56,7 +58,7 @@ const subdomains = {
     description: 'Team bench dashboard for volleyball match management',
     title: 'Team Dashboard - OpenVolley',
     mainEntry: 'bench-main',
-    themeColor: '#047857'
+    themeColor: '#ffffff'
   },
   livescore: {
     name: 'Live Scoreboard',
@@ -64,7 +66,7 @@ const subdomains = {
     description: 'Live scoring display for volleyball match',
     title: 'Live Scoreboard - OpenVolley',
     mainEntry: 'livescore-main',
-    themeColor: '#7c3aed'
+    themeColor: '#ffffff'
   },
   roster: {
     name: 'Roster Upload',
@@ -72,7 +74,7 @@ const subdomains = {
     description: 'Upload roster PDF for volleyball match',
     title: 'Roster Upload - OpenVolley',
     mainEntry: 'upload-roster-main',
-    themeColor: '#ea580c'
+    themeColor: '#ffffff'
   },
   scoresheet: {
     name: 'Scoresheet Archive',
@@ -80,7 +82,7 @@ const subdomains = {
     description: 'View and download volleyball match scoresheets',
     title: 'Scoresheet Archive - OpenVolley',
     mainEntry: 'scoresheet-main',
-    themeColor: '#0891b2',
+    themeColor: '#ffffff',
     customHtml: true
   }
 }
@@ -94,6 +96,7 @@ function createIndexHtml(config) {
     <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
     <meta name="theme-color" content="${config.themeColor}" />
     <meta name="description" content="${config.description}" />
     <title>${config.title}</title>
@@ -115,6 +118,7 @@ function createScoresheetHtml(config) {
   <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
   <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
+  <meta name="color-scheme" content="light" />
   <meta name="theme-color" content="${config.themeColor}" />
   <meta name="description" content="${config.description}" />
   <title>${config.title}</title>
