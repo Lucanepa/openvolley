@@ -338,6 +338,44 @@ List all available leagues across federations (SV, SVRZ).
 }
 ```
 
+### Live sockets (`?purpose=live`, realtime database changes)
+
+Replacement for Supabase Realtime, implemented in `lib/realtimeHub.js` (server)
+and `frontend/src/lib/relayRealtime.js` (supabase-js style client). A socket
+opened with `?purpose=live` is a separate pool (500 per IP, 3000 in total by
+default) and may only send these three message types; anything else closes it
+with 1008.
+
+```jsonc
+// client -> server
+{ "type": "subscribe-db", "id": "7:livescore-all-games",
+  "subs": [{ "table": "match_live_state", "event": "*", "column": "sport_type", "value": "indoor" }] }
+{ "type": "unsubscribe-db", "id": "7:livescore-all-games" }
+{ "type": "ping" }
+
+// server -> client
+{ "type": "connected", "mode": "live", "protocol": 1 }
+{ "type": "subscribe-db-ack", "id": "7:livescore-all-games" }
+{ "type": "subscribe-db-error", "id": "...", "code": "invalid_sub", "message": "..." }
+{ "type": "db-change", "id": "7:livescore-all-games", "schema": "public",
+  "table": "match_live_state", "eventType": "UPDATE", "new": { ... }, "old": {},
+  "commit_timestamp": "2026-10-05T12:00:00.000Z" }
+{ "type": "pong", "timestamp": 1234567890 }
+```
+
+- Tables: `matches`, `sets`, `events`, `match_live_state`. Filter columns:
+  `match_id`, `external_id`, `sport_type` (equality only). Both lists are hub
+  options. At most 10 channels per socket and 10 subs per channel.
+- Changes are published by the server after successful `/api/db` writes and
+  for accepted `live-state-update` relay messages. Rows pass through
+  `redactSecrets` before filters are evaluated, so PIN columns are never sent
+  and cannot be used as filters.
+- The server pings every socket every 30 s and terminates sockets that do not
+  answer (Cloudflare drops idle WebSockets after 100 s).
+
+Tests: `npm test` runs `tests/realtimeHub.test.js` with real `ws` sockets on a
+random port; it needs no database.
+
 ## Monitoring
 
 ### Local
