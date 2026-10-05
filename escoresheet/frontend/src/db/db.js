@@ -302,10 +302,14 @@ db.version(16).stores({
 // The upgrade must never reject: a failed upgrade leaves the database unopenable.
 db.version(17).stores({}).upgrade(async tx => {
   try {
+    // events too: a legacy 'coin_toss_<seed>' job must get its local event id
+    // here, not the '<seed>:e:coin_toss' fallback (a later re-confirmed coin
+    // toss would then add a second cloud row)
     const { rewritten, dropped, failed } = await rewriteQueuedSyncJobs({
       queue: tx.table('sync_queue'),
       sets: tx.table('sets'),
-      matches: tx.table('matches')
+      matches: tx.table('matches'),
+      events: tx.table('events')
     })
     if (rewritten || dropped || failed) {
       console.log(`[db] v17: namespaced ${rewritten} queued set/event jobs, dropped ${dropped}, failed ${failed}`)

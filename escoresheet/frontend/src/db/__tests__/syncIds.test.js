@@ -237,4 +237,31 @@ describe('legacy coin toss ids (Dexie v18)', () => {
     expect(queue.map.get(3).payload.external_id).toBe('match_100_aaa:e:31')
     expect(queue.map.get(4).payload.external_id).toBe('coin_toss_match_100_aaa')
   })
+
+  it('without the events table a legacy coin toss job is left for a caller that has it', async () => {
+    const { sets, matches } = tables()
+    const job = { resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa' } }
+    expect(await resolveJobExternalId(job, { sets, matches })).toBeNull()
+  })
+
+  it('upgrading v16 -> v17 -> v18 gives the coin toss job its local event id, not the fallback', async () => {
+    const queue = queryTable([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa', type: 'coin_toss' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: '31', match_id: 'match_100_aaa', type: 'point' } }
+    ])
+    const t = tables()
+    // v17 (db.js passes the events table too)
+    await rewriteQueuedSyncJobs({ queue, ...t })
+    // v18
+    await rewriteQueuedSyncJobs({ queue, ...t }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    expect(queue.map.get(1).payload.external_id).toBe('match_100_aaa:e:30')
+    expect(queue.map.get(2).payload.external_id).toBe('match_100_aaa:e:31')
+
+    // a v17 that ran without the events table leaves it for v18, same result
+    const queue2 = queryTable([{ ...queue.map.get(1), payload: { ...queue.map.get(1).payload, external_id: 'coin_toss_match_100_aaa' } }])
+    await rewriteQueuedSyncJobs({ queue: queue2, sets: t.sets, matches: t.matches })
+    expect(queue2.map.get(1).payload.external_id).toBe('coin_toss_match_100_aaa')
+    await rewriteQueuedSyncJobs({ queue: queue2, ...t }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    expect(queue2.map.get(1).payload.external_id).toBe('match_100_aaa:e:30')
+  })
 })
