@@ -285,7 +285,9 @@ export default defineConfig({
         start_url: '.',
         display: 'standalone',
         background_color: '#ffffff',
-        theme_color: '#111827',
+        // Light only: white status bar (a red one would compete with red team
+        // colours and red cards courtside; RESTYLE-SPEC 5.3 / R4).
+        theme_color: '#ffffff',
         icons: [
           // Real 192/512 renditions (openvolley_no_bg.png itself is 1024x1024)
           { src: 'openvolley_icon_192.png', sizes: '192x192', type: 'image/png' },
