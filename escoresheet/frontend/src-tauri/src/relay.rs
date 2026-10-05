@@ -64,6 +64,10 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
 /// Same cap as the Node relays / cloud relay.
 const WS_MAX_MESSAGE: usize = 10 * 1024 * 1024;
 const MAX_MATCH_ID_LEN: usize = 128;
+/// A match whose scoreboard left this long ago may be claimed by another
+/// scoreboard (Dexie ids restart at 1 on every device). Far longer than a
+/// Wi-Fi blip, so a live scoreboard is never displaced.
+const ORPHAN_TAKEOVER: Duration = Duration::from_secs(60);
 
 type Tx = mpsc::UnboundedSender<Message>;
 
@@ -85,6 +89,8 @@ pub struct AppState {
     subs: Mutex<HashMap<String, HashSet<u64>>>,
     /// connection id -> match ids it proved the scoreboard role for
     owners: Mutex<HashMap<u64, HashSet<String>>>,
+    /// match id -> when its last owning connection left
+    orphaned_since: Mutex<HashMap<String, std::time::Instant>>,
     pending: Mutex<HashMap<String, Pending>>,
     next_id: AtomicU64,
     pub http_port: u16,
@@ -98,6 +104,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         clients: Mutex::new(HashMap::new()),
         subs: Mutex::new(HashMap::new()),
         owners: Mutex::new(HashMap::new()),
+        orphaned_since: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         http_port,
@@ -813,7 +820,18 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     }
 
     state.clients.lock().await.remove(&conn_id);
-    state.owners.lock().await.remove(&conn_id);
+    {
+        let mut owners = state.owners.lock().await;
+        if let Some(owned) = owners.remove(&conn_id) {
+            let now = std::time::Instant::now();
+            let mut orphaned = state.orphaned_since.lock().await;
+            for id in owned {
+                if !owners.values().any(|o| o.contains(&id)) {
+                    orphaned.insert(id, now);
+                }
+            }
+        }
+    }
     {
         let mut subs = state.subs.lock().await;
         subs.retain(|_, set| {
@@ -844,15 +862,19 @@ async fn is_owner(state: &Arc<AppState>, conn_id: u64, match_id: &str) -> bool {
 /// Prove the scoreboard role for `match_id` with the match's own game PIN:
 /// a match new to the relay is claimed by its first scoreboard; a stored match
 /// with a game PIN needs the same PIN; a stored match without one (test match)
-/// may be written by anyone, but only an existing owner may attach a PIN to it.
+/// may be written by anyone, but only an existing owner may attach a PIN to it;
+/// a match nobody has owned for ORPHAN_TAKEOVER may be taken over by anyone.
 async fn claim(state: &Arc<AppState>, conn_id: u64, match_id: &str, incoming: Option<&Value>) -> bool {
     let stored_pin = {
         let matches = state.matches.lock().await;
         matches.get(match_id).map(|b| game_pin_of(b.get("match")))
     };
     let mut owners = state.owners.lock().await;
+    let mut orphaned = state.orphaned_since.lock().await;
+    let abandoned = !owners.values().any(|o| o.contains(match_id))
+        && orphaned.get(match_id).map_or(false, |t| t.elapsed() >= ORPHAN_TAKEOVER);
     let owned = owners.entry(conn_id).or_default();
-    if let Some(stored) = stored_pin {
+    if let (Some(stored), false) = (stored_pin, abandoned) {
         let incoming_pin = game_pin_of(incoming);
         match stored {
             Some(p) => {
@@ -868,6 +890,7 @@ async fn claim(state: &Arc<AppState>, conn_id: u64, match_id: &str, incoming: Op
         }
     }
     owned.insert(match_id.to_string());
+    orphaned.remove(match_id);
     true
 }
 
@@ -888,6 +911,7 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     notify_subscribers(state, match_id, &json!({ "type": "match-deleted", "matchId": match_id }), None).await;
     state.subs.lock().await.remove(match_id);
     state.matches.lock().await.remove(match_id);
+    state.orphaned_since.lock().await.remove(match_id);
     for owned in state.owners.lock().await.values_mut() {
         owned.remove(match_id);
     }

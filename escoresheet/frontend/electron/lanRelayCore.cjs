@@ -19,7 +19,9 @@
  *                       sets, events, _timestamp }  (or { matchId, matchData: {...} })
  *                     Proves the scoreboard role for matchId: accepted when the match is
  *                     new to the relay or its gamePin equals the stored match's gamePin.
- *                     Otherwise { type:'error', code:'not-match-owner' }.
+ *                     Otherwise { type:'error', code:'not-match-owner' } — unless no
+ *                     connected socket has owned that id for ORPHAN_TAKEOVER_MS (Dexie ids
+ *                     restart at 1 on every device, so another scorer may reuse the id).
  *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
@@ -53,6 +55,11 @@ const MATCH_SECRET_FIELDS = [
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
 const MAX_BODY_SIZE = 1024 * 1024
 const MAX_MATCH_ID_LENGTH = 128
+// A match whose scoreboard left this long ago may be claimed by another
+// scoreboard. Covers a second scorer device / reset browser reusing the same
+// Dexie id on a long-running relay; far longer than a Wi-Fi blip (clients
+// reconnect within ~5 s), so a live scoreboard is never displaced.
+const ORPHAN_TAKEOVER_MS = 60 * 1000
 
 // PIN types accepted by POST /api/match/validate-pin
 const PIN_TYPES = {
@@ -176,12 +183,14 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
 function createLanRelay(options = {}) {
   const log = options.log || console
   const requestTimeoutMs = options.requestTimeoutMs || 5000
+  const orphanTakeoverMs = options.orphanTakeoverMs ?? ORPHAN_TAKEOVER_MS
   const isRateLimited = options.isRateLimited || createRateLimiter()
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
   const clients = new Map() // ws -> { id, ip, role, connectedAt, owned:Set, subscribed:Set }
   const pending = new Map() // requestId -> { type, matchId, targets:Set<ws>, resolve, timer }
+  const orphanedSince = new Map() // matchId -> when its last owning socket left
   let nextClientId = 1
 
   function send(ws, msg) {
@@ -243,6 +252,9 @@ function createLanRelay(options = {}) {
       }
     }
     clients.delete(ws)
+    for (const matchId of meta.owned) {
+      if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
+    }
     // A scoreboard that disconnects can no longer answer pending requests.
     for (const [requestId, p] of pending) {
       if (p.targets.delete(ws) && p.targets.size === 0) settle(requestId, null)
@@ -268,18 +280,25 @@ function createLanRelay(options = {}) {
     return out
   }
 
+  /** No connected socket has owned matchId for at least orphanTakeoverMs. */
+  function isAbandoned(matchId) {
+    const since = orphanedSince.get(matchId)
+    return since !== undefined && ownersOf(matchId).length === 0 && Date.now() - since >= orphanTakeoverMs
+  }
+
   /**
    * Prove the scoreboard role for matchId with the match's own game PIN.
    * - match not on the relay yet: the first scoreboard claims it;
    * - stored match has a game PIN: the incoming match must carry the same one;
    * - stored match has none (test match): any socket may write it, but only a
-   *   socket that already owns it may attach a game PIN to it.
+   *   socket that already owns it may attach a game PIN to it;
+   * - an abandoned match (see isAbandoned) may be taken over by anyone.
    */
   function claim(ws, matchId, incomingMatch) {
     const meta = clients.get(ws)
     if (!meta) return false
     const existing = store.get(matchId)
-    if (existing) {
+    if (existing && !isAbandoned(matchId)) {
       const storedPin = gamePinOf(existing.match)
       const incomingPin = gamePinOf(incomingMatch)
       if (storedPin !== null) {
@@ -289,6 +308,7 @@ function createLanRelay(options = {}) {
       }
     }
     meta.owned.add(matchId)
+    orphanedSince.delete(matchId)
     return true
   }
 
@@ -309,6 +329,7 @@ function createLanRelay(options = {}) {
     if (subs) for (const ws of subs) clients.get(ws)?.subscribed.delete(matchId)
     subscriptions.delete(matchId)
     store.delete(matchId)
+    orphanedSince.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
