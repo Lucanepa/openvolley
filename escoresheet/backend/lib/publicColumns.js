@@ -153,7 +153,30 @@ export const LIVE_COLUMNS = Object.freeze({
   })
 })
 
+// The referee picker's suggestions; dates of birth only with a session.
+const REFEREE_DATABASE_COLUMNS = Object.freeze({
+  id: true,
+  first_name: true,
+  last_name: true,
+  country: true,
+  sport_type: true,
+  created_at: true
+})
+
+// The official-match loader (LoadOfficialMatchModal); the referees' dates of
+// birth only with a session.
+const SVRZ_GAMES_COLUMNS = Object.freeze(Object.fromEntries([
+  'id', 'game_number', 'datetime', 'date', 'time', 'team_home', 'team_away', 'league', 'gender',
+  'hall', 'city', 'hall_address', 'hall_postal_code', 'match_type', 'match_level',
+  'championship_type', 'group_display', 'linesman_1', 'linesman_2', 'match_format',
+  'referee_1', 'referee_2', 'referee_1_first_name', 'referee_1_last_name',
+  'referee_2_first_name', 'referee_2_last_name', 'phase_name', 'is_supervised',
+  'has_supervised_referee', 'convocations', 'synced_at', 'created_at'
+].map((c) => [c, true])))
+
 export const ANON_DB_COLUMNS = Object.freeze({
+  referee_database: REFEREE_DATABASE_COLUMNS,
+  svrz_games: SVRZ_GAMES_COLUMNS,
   matches: Object.freeze({
     ...MATCHES_LIVE_COLUMNS,
     connections: CONNECTION_FLAG_KEYS,
@@ -174,6 +197,10 @@ export const ANON_DB_COLUMNS = Object.freeze({
  * (contains, ->>key) could probe a hidden key; set_results is JSON too.
  */
 export const ANON_DB_FILTER_COLUMNS = Object.freeze({
+  // Every public column (sport_type is kept whole, so `contains` on it probes
+  // nothing hidden); never dob.
+  referee_database: Object.freeze(Object.keys(REFEREE_DATABASE_COLUMNS)),
+  svrz_games: Object.freeze(Object.keys(SVRZ_GAMES_COLUMNS)),
   matches: Object.freeze(['id', 'external_id', 'sport_type', 'game_n', 'status', 'test', 'scheduled_at',
     'created_at', 'updated_at', 'current_set', 'final_score', 'winner'])
 })
@@ -254,4 +281,65 @@ export function anonSelectCheck(table, params) {
     }
   }
   return { needsMore, badFilter }
+}
+
+// ---------------------------------------------------------------------------
+// The match relay (subscribe-match rooms, GET /api/match/:id)
+// ---------------------------------------------------------------------------
+//
+// Joining a relay room needs no PIN (the referee/bench tablets check theirs
+// over HTTP and then subscribe like any viewer), and the room key is the
+// match's external_id, which the live projection above hands to every
+// anonymous viewer. So what the relay sends is public: the scorer's Dexie
+// bundle without personal data. The match object is the scorer's free-form
+// Dexie row (the tablets read many of its fields), so this one is a denylist;
+// the same lists are in frontend/electron/lanRelayCore.cjs and
+// frontend/src-tauri/src/relay.rs.
+
+/** Keys of a person (player, bench member, official) never relayed. */
+export const PERSON_PRIVATE_FIELDS = Object.freeze([
+  'dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date',
+  'country', 'nationality', 'email', 'phone', 'address'
+])
+/** Match keys never relayed (besides any key containing "signature"). */
+export const MATCH_PRIVATE_FIELDS = Object.freeze([
+  'officials', 'signatures', 'approval', 'manualChanges', 'manual_changes',
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster'
+])
+/** Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS. */
+export const MATCH_ROSTER_FIELDS = Object.freeze([
+  'players_home', 'players_away', 'bench_home', 'bench_away',
+  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers'
+])
+
+const isSignatureKey = (k) => /signature/i.test(k)
+
+function publicPerson(p) {
+  if (p == null || typeof p !== 'object' || Array.isArray(p)) return p
+  let out = p
+  for (const k of PERSON_PRIVATE_FIELDS) {
+    if (has(out, k)) {
+      if (out === p) out = { ...p }
+      delete out[k]
+    }
+  }
+  return out
+}
+
+/** A roster array (or anything else, returned as is) without personal keys. */
+export const publicPeople = (list) => (Array.isArray(list) ? list.map(publicPerson) : list)
+
+/**
+ * A match object as the relay may hand it out: no MATCH_PRIVATE_FIELDS, no
+ * signature keys, rosters without dates of birth/country. PINs are NOT
+ * handled here (stripMatchSecrets in server.js). Never mutates `match`.
+ */
+export function publicRelayMatch(match) {
+  if (match == null || typeof match !== 'object' || Array.isArray(match)) return match
+  const out = {}
+  for (const [k, v] of Object.entries(match)) {
+    if (MATCH_PRIVATE_FIELDS.includes(k) || isSignatureKey(k)) continue
+    out[k] = MATCH_ROSTER_FIELDS.includes(k) ? publicPeople(v) : v
+  }
+  return out
 }

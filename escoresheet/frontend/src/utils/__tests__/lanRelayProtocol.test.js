@@ -32,6 +32,18 @@ const PINS = {
   gamePin: '987654'
 }
 
+// Personal data the scorer's Dexie bundle carries and no relay hands out
+// (subscribing needs no PIN and the room key is public).
+const PERSONAL = {
+  playerDob: '2001-04-17',
+  benchDob: '1975-08-09',
+  officialDob: '1982-11-23',
+  country: 'NZL',
+  signature: 'data:image/png;base64,SIGNATUREBYTES'
+}
+const containsPersonal = (text) => Object.values(PERSONAL).some((v) => text.includes(v)) ||
+  /"officials"|"signatures"|ignature"|"pendingHomeRoster"|"manualChanges"/.test(text)
+
 function makeMatch(overrides = {}) {
   return {
     id: 7,
@@ -43,6 +55,12 @@ function makeMatch(overrides = {}) {
     awayTeamConnectionEnabled: false,
     homeTeamId: 1,
     awayTeamId: 2,
+    officials: [{ role: '1st referee', firstName: 'Ann', lastName: 'Ref', country: PERSONAL.country, dob: PERSONAL.officialDob }],
+    bench_home: [{ role: 'Coach', firstName: 'Cora', lastName: 'Coach', dob: PERSONAL.benchDob }],
+    homeCoachSignature: PERSONAL.signature,
+    signatures: { home_captain: PERSONAL.signature },
+    pendingHomeRoster: { players: [{ number: 3, dob: PERSONAL.playerDob }] },
+    manualChanges: [{ field: 'score', by: 'scorer' }],
     ...PINS,
     ...overrides
   }
@@ -55,7 +73,7 @@ function syncMessage(match = makeMatch(), extra = {}) {
     match,
     homeTeam: { id: 1, name: 'Home VC' },
     awayTeam: { id: 2, name: 'Away VC' },
-    homePlayers: [{ id: 11, teamId: 1, number: 7 }],
+    homePlayers: [{ id: 11, teamId: 1, number: 7, lastName: 'Player', dob: PERSONAL.playerDob, country: PERSONAL.country }],
     awayPlayers: [{ id: 21, teamId: 2, number: 9 }],
     sets: [{ id: 1, matchId: 7, index: 1, homePoints: 3, awayPoints: 1 }],
     events: [],
@@ -110,9 +128,13 @@ describe('lanRelayCore protocol', () => {
     expect(update.data).toBeUndefined()
     expect(update.match.id).toBe(7)
     expect(containsPin(referee.raw.join(''))).toBe(false)
+    expect(containsPersonal(referee.raw.join(''))).toBe(false)
 
     const payload = readRelayBundle(update)
     expect(payload.match.gameNumber).toBe(4242)
+    // What the tablets render stays: roster numbers/names, bench roles
+    expect(payload.homePlayers[0]).toMatchObject({ number: 7, lastName: 'Player' })
+    expect(payload.match.bench_home[0]).toMatchObject({ role: 'Coach', lastName: 'Coach' })
     expect(payload.homeTeam.name).toBe('Home VC')
     expect(payload.sets).toHaveLength(1)
   })
@@ -127,6 +149,7 @@ describe('lanRelayCore protocol', () => {
     expect(full.matchId).toBe('7')
     expect(readRelayBundle(full).match.status).toBe('live')
     expect(containsPin(late.raw.join(''))).toBe(false)
+    expect(containsPersonal(late.raw.join(''))).toBe(false)
   })
 
   it('forwards match-action with the payload the scoreboard sends as `data`', () => {
@@ -621,6 +644,7 @@ async function relayScenario({ httpBase, wsUrl }) {
   const okText = await ok.text()
   expect(JSON.parse(okText).match.id).toBe(7)
   expect(containsPin(okText)).toBe(false)
+  expect(containsPersonal(okText)).toBe(false)
   expect((await validate('000001', 'referee')).status).toBe(404)
 
   const list = await fetch(`${httpBase}/api/match/list`)
@@ -634,6 +658,7 @@ async function relayScenario({ httpBase, wsUrl }) {
     const text = await r.text()
     expect(r.status, path).toBe(200)
     expect(containsPin(text), path).toBe(false)
+    expect(containsPersonal(text), path).toBe(false)
   }
   const conns = await fetch(`${httpBase}/api/server/connections`)
   expect(conns.headers.get('content-type')).toMatch(/json/)
@@ -652,6 +677,7 @@ async function relayScenario({ httpBase, wsUrl }) {
     expect(c.messages.some((m) => m.type === 'pin-validation-request')).toBe(false)
   }
   expect(containsPin(referee.raw.join('')) || containsPin(attacker.raw.join(''))).toBe(false)
+  expect(containsPersonal(referee.raw.join('')) || containsPersonal(attacker.raw.join(''))).toBe(false)
 
   // The real scoreboard can delete; subscribers are told
   scoreboard.send({ type: 'delete-match', matchId: 7 })
