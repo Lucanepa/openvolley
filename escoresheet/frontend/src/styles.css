@@ -8,6 +8,10 @@
   --text: var(--ov-text);         /* stone-900        (was slate-900 #0f172a) */
   --muted: var(--ov-text-muted);  /* stone-500        (was slate-500 #64748b) */
   --border: var(--ov-hairline);   /* stone-200        (was slate-200 #e2e8f0) */
+  /* Was never defined: 16 inline backgrounds read it without a fallback (and
+     drew nothing), TimeInput24 with a dark #1f2937 fallback, which made the
+     set start/end time fields black slabs. White, like --panel. */
+  --bg-secondary: var(--ov-card);
   /* Unchanged on purpose. --accent is the scoring green (serve badge, colon
      dots, TO counters, interval timer, captain "C"). --danger is the red of the
      offline/error status dots (frozen hues) and of the rally controls' Undo
@@ -433,6 +437,16 @@ input {
   font-family: inherit;
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
+}
+
+/* TimeInput24 (set start/end time, match times) still carries a dark-theme
+   inline border (white at 20 %), invisible on white. Give it the field
+   hairline until its owner (RESTYLE-SPEC P3b) converts the inline style.
+   The selector matches only TimeInput24's dark-fallback signature, never the
+   Scoreboard inputs that read var(--bg-secondary) with their own borders
+   (the lineup grid paints errors red there). */
+input[style*="var(--bg-secondary, #1f2937)"] {
+  border-color: var(--ov-hairline-strong) !important;
 }
 
 input::placeholder,
