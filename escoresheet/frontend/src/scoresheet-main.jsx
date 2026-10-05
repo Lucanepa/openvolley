@@ -14,7 +14,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="scoresheet">
       <ScoresheetApp />
-      <UiHost />
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
     </ErrorBoundary>
   </React.StrictMode>,
 )

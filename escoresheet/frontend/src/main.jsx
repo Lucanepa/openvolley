@@ -31,7 +31,7 @@ createRoot(document.getElementById('root')).render(
           </AlertProvider>
         </AuthProvider>
       </ScaleProvider>
-      <UiHost />
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
     </ErrorBoundary>
   </React.StrictMode>
 )

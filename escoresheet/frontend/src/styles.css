@@ -45,8 +45,10 @@ body {
 
 /* Accessibility: visible keyboard-focus rings. Uses :focus-visible so it only
    shows for keyboard/AT users, not mouse clicks. !important overrides the many
-   inline `outline: none` styles. Interactive elements only. */
-:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+   inline `outline: none` styles. Interactive elements only. Not inside .ov-kit:
+   the kit draws its own ring (FOCUS_RING), and this !important outline in the
+   lower legacy layer would still beat its focus-visible:outline-none. */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):not(.ov-kit *):focus-visible {
   outline: 2px solid var(--ring, #3b82f6) !important;
   outline-offset: 2px;
   border-radius: 4px;
