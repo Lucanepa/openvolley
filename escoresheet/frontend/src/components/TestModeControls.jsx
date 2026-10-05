@@ -360,52 +360,49 @@ export default function TestModeControls({ matchId, onRefresh }) {
     }
   }
 
+  // volleyui (RESTYLE-SPEC P3b): the panel's tools are kit outline buttons
+  // (white, stone-300 hairline, stone-700), 36px in a dense developer panel.
   const buttonStyle = {
-    padding: '8px 12px',
-    fontSize: '11px',
-    fontWeight: 600,
-    background: 'rgba(251, 191, 36, 0.2)',
-    color: '#fbbf24',
-    border: '1px solid rgba(251, 191, 36, 0.4)',
-    borderRadius: '6px',
+    minHeight: '36px',
+    padding: '6px 10px',
+    fontSize: '12px',
+    fontWeight: 500,
+    background: 'var(--ov-card)',
+    color: '#44403c',
+    border: '1px solid var(--ov-hairline-strong)',
+    borderRadius: 'var(--ov-radius)',
     cursor: 'pointer',
     whiteSpace: 'nowrap'
   }
 
   if (!expanded) {
     return (
+      // The kit TEST badge (amber-800 on amber-100, amber-300 hairline;
+      // was amber text on a pale amber wash at about 2:1).
       <div
         onClick={() => setExpanded(true)}
+        className="no-print inline-flex items-center rounded-full border border-amber-300 bg-amber-100 text-[11px] font-semibold uppercase tracking-wide text-amber-800 shadow-sm"
         style={{
           position: 'fixed',
           bottom: '10px',
           right: '10px',
-          background: 'rgba(251, 191, 36, 0.3)',
-          color: '#fbbf24',
-          padding: '8px 12px',
-          borderRadius: '8px',
-          fontSize: '12px',
-          fontWeight: 600,
+          padding: '6px 12px',
           cursor: 'pointer',
-          zIndex: 9999,
-          border: '1px solid rgba(251, 191, 36, 0.5)'
+          zIndex: 9999
         }}
       >
-        TEST MODE
+        Test mode
       </div>
     )
   }
 
   return (
-    <div style={{
+    <div className="no-print rounded-2xl border border-stone-200/70 bg-white shadow-card-lg" style={{
       position: 'fixed',
       bottom: '10px',
       right: '10px',
-      background: 'var(--panel)',
-      borderRadius: '12px',
       padding: '12px',
       zIndex: 9999,
-      border: '1px solid rgba(251, 191, 36, 0.5)',
       maxWidth: '320px'
     }}>
       <div style={{
@@ -414,18 +411,19 @@ export default function TestModeControls({ matchId, onRefresh }) {
         alignItems: 'center',
         marginBottom: '10px'
       }}>
-        <span style={{ color: '#fbbf24', fontWeight: 600, fontSize: '12px' }}>
-          TEST MODE CONTROLS
+        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+          Test mode controls
         </span>
         <button
           onClick={() => setExpanded(false)}
+          aria-label="Close"
+          title="Close"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-transparent text-stone-500 hover:bg-stone-100 transition-colors"
           style={{
-            background: 'none',
             border: 'none',
-            color: '#fbbf24',
             cursor: 'pointer',
-            fontSize: '16px',
-            padding: '0 4px'
+            fontSize: '18px',
+            padding: 0
           }}
         >
           ×
@@ -469,8 +467,8 @@ export default function TestModeControls({ matchId, onRefresh }) {
 
       {lastAction && (
         <div style={{
-          fontSize: '10px',
-          color: 'var(--muted)',
+          fontSize: '11px',
+          color: 'var(--ov-text-muted)',
           textAlign: 'center',
           marginTop: '4px'
         }}>
