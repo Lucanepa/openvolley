@@ -53,6 +53,16 @@
    in each *-main.jsx). */
 @import './styles.css' layer(legacy);
 
+/* RESTYLE-SPEC R2, name collisions. Now that utilities beat the legacy layer,
+   a legacy class that is also a valid Tailwind utility would switch meaning.
+   MatchSetup's match-info editor uses w-80/90/120/140/160 (legacy: N px x
+   --scale-factor) and w-100/w-250 (no legacy rule; they relied on the legacy
+   `input { width: 100% }` beating the utility); App.jsx uses the legacy
+   `container`. Tailwind must not generate these names, so the legacy cascade
+   resolves exactly as before. Reserved until P3a/P2b rename those call sites;
+   new code uses arbitrary widths (w-[320px]) or the kit instead. */
+@source not inline("w-80 w-90 w-100 w-120 w-140 w-160 w-250 container");
+
 @theme {
   /* Hover/pressed brand, for non-class contexts (red-700 is the class form). */
   --color-brand-hover: #be0014;
@@ -187,4 +197,14 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+}
+
+/* RESTYLE-SPEC R5, frozen print block. MatchEntry (bench tablet) renders the
+   scoresheet_pdf `Results` table, whose set rows use Tailwind `text-xs`. Before
+   styles.css was layered, the legacy `.text-xs` (13px x --scale-factor) won
+   there; keep that size inside this one block so the official layout does not
+   move. Selector = the Results root (FooterSection.tsx `Results`). Remove when
+   P3b wraps the block in its own scope. */
+.border-r-0.border-black.mr-1.h-full .text-xs {
+  font-size: calc(13px * var(--scale-factor));
 }
