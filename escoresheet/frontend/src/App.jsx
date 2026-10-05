@@ -49,6 +49,7 @@ import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectB
 import UpdateBanner from './components/UpdateBanner'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
+import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
 
 function parseDateTime(dateTime) {
@@ -1586,7 +1587,7 @@ export default function App() {
         resource: 'set',
         action: 'insert',
         payload: {
-          external_id: String(setId),
+          external_id: setExtId(matchRecord.seed_key, setId),
           match_id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: nextIndex,
           home_points: 0,
