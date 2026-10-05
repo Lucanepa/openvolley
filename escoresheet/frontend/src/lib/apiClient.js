@@ -6,17 +6,40 @@
 
 import { getApiUrl } from '../utils/backendConfig'
 
-// Helper: safely parse JSON response, handling non-ok status codes
-async function safeJsonResponse(response, fallbackError = 'Request failed') {
-  if (!response.ok) {
-    try {
-      const result = await response.json()
-      return { data: null, error: result.error || { message: `${fallbackError} (${response.status})` } }
-    } catch {
-      return { data: null, error: { message: `${fallbackError} (${response.status})` } }
-    }
+// The backend sends errors either as a plain string ('Too many requests') or as
+// { message }. Callers read error.message / error.status, so always hand them an
+// object carrying the HTTP status.
+export function normalizeError(err, status, fallbackError = 'Request failed') {
+  if (!err) return { message: `${fallbackError} (${status})`, status }
+  if (typeof err === 'string') return { message: err, status }
+  if (typeof err === 'object') {
+    return { ...err, message: err.message || `${fallbackError} (${status})`, status: err.status ?? status }
   }
-  return response.json()
+  return { message: String(err), status }
+}
+
+// Helper: safely parse JSON response, handling non-ok status codes.
+// Every result carries the HTTP `status` so callers can tell a rejected request
+// (401) from a transient one (429/5xx).
+async function safeJsonResponse(response, fallbackError = 'Request failed') {
+  const status = response.status
+  if (!response.ok) {
+    let body = null
+    try {
+      body = await response.json()
+    } catch { /* non-JSON error body */ }
+    return { data: null, error: normalizeError(body?.error, status, fallbackError), status }
+  }
+  const result = await response.json()
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    return { ...result, error: result.error ? normalizeError(result.error, status, fallbackError) : (result.error ?? null), status }
+  }
+  return result
+}
+
+// Network failures (fetch rejects) carry no HTTP status.
+function networkError(err) {
+  return { message: err?.message || 'Network unavailable', status: 0, network: true }
 }
 
 // ==================== Database (drop-in for supabase.from()) ====================
@@ -30,6 +53,14 @@ class QueryBuilder {
 
   // --- Actions ---
   select(columns, options) {
+    // supabase-js semantics: .select() after insert/upsert/update/delete asks for
+    // the written rows back. It must not turn the write into a plain SELECT.
+    if (this._action && this._action !== 'select') {
+      this._params.returning = columns || '*'
+      if (options?.count) this._params.count = options.count
+      if (options?.head) this._params.head = options.head
+      return this
+    }
     this._action = 'select'
     if (columns) this._params.columns = columns
     if (options?.count) this._params.count = options.count
@@ -130,7 +161,7 @@ class QueryBuilder {
     })
 
     const result = await safeJsonResponse(response, 'Database operation failed')
-    return { data: result.data ?? null, error: result.error ?? null, count: result.count }
+    return { data: result.data ?? null, error: result.error ?? null, count: result.count, status: result.status }
   }
 }
 
@@ -168,8 +199,36 @@ export async function apiRpc(fn, params = {}) {
     return safeJsonResponse(response, 'RPC operation failed')
   } catch (err) {
     // Offline: reject symmetrically with apiFrom instead of throwing 'Failed to fetch'
-    return { data: null, error: { message: err?.message || 'Network unavailable' } }
+    return { data: null, error: networkError(err) }
   }
+}
+
+// ==================== Base64 (storage uploads) ====================
+
+// btoa() only takes Latin-1 and String.fromCharCode(...bytes) overflows the call
+// stack on large files, so encode raw bytes in chunks. Text is encoded as UTF-8
+// first, which is what download + blob.text() decodes.
+export function bytesToBase64(bytes) {
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+export async function toBase64(fileData) {
+  if (typeof Blob !== 'undefined' && fileData instanceof Blob) {
+    return bytesToBase64(new Uint8Array(await fileData.arrayBuffer()))
+  }
+  if (fileData instanceof ArrayBuffer) return bytesToBase64(new Uint8Array(fileData))
+  if (ArrayBuffer.isView(fileData)) {
+    return bytesToBase64(new Uint8Array(fileData.buffer, fileData.byteOffset, fileData.byteLength))
+  }
+  const text = typeof fileData === 'string'
+    ? fileData
+    : (fileData && typeof fileData === 'object' ? JSON.stringify(fileData) : String(fileData))
+  return bytesToBase64(new TextEncoder().encode(text))
 }
 
 // ==================== Storage ====================
@@ -181,20 +240,13 @@ export const apiStorage = {
         const apiUrl = getApiUrl('/api/storage/upload')
         if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
-        // Convert file data to base64
+        // Convert file data to base64 (inside the try: an encoding failure must
+        // come back as { error }, not throw past the caller)
         let fileBase64
-        if (fileData instanceof Blob) {
-          const arrayBuffer = await fileData.arrayBuffer()
-          fileBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
-        } else if (fileData instanceof ArrayBuffer) {
-          fileBase64 = btoa(String.fromCharCode(...new Uint8Array(fileData)))
-        } else if (typeof fileData === 'string') {
-          fileBase64 = btoa(fileData)
-        } else if (fileData instanceof Uint8Array) {
-          fileBase64 = btoa(String.fromCharCode(...fileData))
-        } else {
-          // Assume it's already base64 or a string
-          fileBase64 = btoa(typeof fileData === 'object' ? JSON.stringify(fileData) : String(fileData))
+        try {
+          fileBase64 = await toBase64(fileData)
+        } catch (err) {
+          return { data: null, error: { message: `Could not encode upload: ${err?.message || err}` } }
         }
 
         try {
@@ -211,7 +263,7 @@ export const apiStorage = {
           })
           return safeJsonResponse(response, 'Storage upload failed')
         } catch (err) {
-          return { data: null, error: { message: err?.message || 'Network unavailable' } }
+          return { data: null, error: networkError(err) }
         }
       },
 
@@ -227,7 +279,7 @@ export const apiStorage = {
             body: JSON.stringify({ bucket, path })
           })
         } catch (err) {
-          return { data: null, error: { message: err?.message || 'Network unavailable' } }
+          return { data: null, error: networkError(err) }
         }
         if (!response.ok) {
           return await safeJsonResponse(response, 'Storage download failed')
@@ -262,7 +314,7 @@ export const apiStorage = {
           })
           return safeJsonResponse(response, 'Storage list failed')
         } catch (err) {
-          return { data: null, error: { message: err?.message || 'Network unavailable' } }
+          return { data: null, error: networkError(err) }
         }
       }
     }
@@ -283,8 +335,19 @@ async function authRequest(action, body = {}) {
     })
     return safeJsonResponse(response, 'Auth request failed')
   } catch (err) {
-    return { data: null, error: { message: err?.message || 'Network unavailable' } }
+    return { data: null, error: networkError(err) }
   }
+}
+
+// Same-tab notification: the 'storage' event only fires in OTHER tabs, so without
+// this AuthContext keeps showing a signed-in user after the token is dropped here.
+const TOKEN_CHANGE_EVENT = 'api-auth-token-change'
+function notifyTokenChange(session) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(TOKEN_CHANGE_EVENT, { detail: session || null }))
+    }
+  } catch { /* ignore */ }
 }
 
 // Session token management
@@ -296,6 +359,7 @@ function getStoredToken() {
     // Check token expiration
     if (session?.expires_at && Date.now() / 1000 > session.expires_at) {
       localStorage.removeItem('api_auth_token')
+      notifyTokenChange(null)
       return null
     }
     return session
@@ -308,6 +372,25 @@ function storeToken(session) {
   } else {
     localStorage.removeItem('api_auth_token')
   }
+  notifyTokenChange(session)
+}
+
+/**
+ * Did the auth server reject the token itself? Only then may the stored login be
+ * cleared. Offline (network error), rate limiting (429) and server errors (5xx)
+ * keep the session: a scorer who opens the app without internet must stay
+ * signed in.
+ */
+export function isSessionRejected(result) {
+  const err = result?.error
+  if (!err) return false
+  if (err.network) return false
+  const status = err.status ?? result.status
+  if (status === 401 || err.code === 'invalid_token') return true
+  // The current proxy answers get-user with HTTP 200 + { error } when Supabase
+  // rejects the JWT (expired, bad signature, deleted user).
+  if (status === 200 && /invalid|expired|jwt|does not exist|not found|malformed/i.test(err.message || '')) return true
+  return false
 }
 
 export const apiAuth = {
@@ -340,10 +423,14 @@ export const apiAuth = {
     // Verify token is still valid
     const result = await authRequest('get-user', { access_token: session.access_token })
     if (result.error) {
-      storeToken(null)
-      return { data: { session: null }, error: null }
+      if (isSessionRejected(result)) {
+        storeToken(null)
+        return { data: { session: null }, error: null }
+      }
+      // Offline / 429 / 5xx: keep the stored login and return it unverified
+      return { data: { session: { ...session, unverified: true } }, error: null }
     }
-    return { data: { session: { ...session, user: result.data.user } }, error: null }
+    return { data: { session: { ...session, user: result.data?.user ?? session.user } }, error: null }
   },
 
   async getUser(token) {
@@ -389,10 +476,20 @@ export const apiAuth = {
     }
     window.addEventListener('storage', handler)
 
+    // Same-tab changes (token expired or rejected, sign-in, sign-out)
+    const localHandler = (e) => {
+      const newSession = e.detail || null
+      callback(newSession ? 'SIGNED_IN' : 'SIGNED_OUT', newSession)
+    }
+    window.addEventListener(TOKEN_CHANGE_EVENT, localHandler)
+
     return {
       data: {
         subscription: {
-          unsubscribe: () => window.removeEventListener('storage', handler)
+          unsubscribe: () => {
+            window.removeEventListener('storage', handler)
+            window.removeEventListener(TOKEN_CHANGE_EVENT, localHandler)
+          }
         }
       }
     }
