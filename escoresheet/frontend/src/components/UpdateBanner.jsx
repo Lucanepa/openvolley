@@ -72,12 +72,13 @@ export default function UpdateBanner() {
           {t('options.updateDescription', 'A new version is available. Refresh to get the latest features and fixes.')}
         </p>
 
-        {/* Buttons */}
-        <div className="flex justify-center gap-2">
-          <Button variant="secondary" size="xl" onClick={dismissUpdate}>
+        {/* Buttons: side by side from sm; on a phone stacked full width, Refresh
+            on top, so long labels (FR "Actualiser pour mettre à jour") stay on one line */}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
+          <Button variant="secondary" size="xl" onClick={dismissUpdate} className="w-full sm:w-auto">
             {t('common.later', 'Later')}
           </Button>
-          <Button variant="dark" size="xl" icon={RefreshCw} onClick={() => updateServiceWorker()}>
+          <Button variant="dark" size="xl" icon={RefreshCw} onClick={() => updateServiceWorker()} className="w-full sm:w-auto">
             {t('options.refreshToUpdate', 'Refresh to Update')}
           </Button>
         </div>
