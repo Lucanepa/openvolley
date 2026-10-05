@@ -1573,6 +1573,8 @@
     "passwordTooShort": "La password deve essere di almeno 6 caratteri",
     "accountCreated": "Account creato con successo!",
     "checkEmail": "Controlla la tua email per confermare l'account",
+    "accountReady": "Il tuo account è pronto. Ora puoi accedere.",
+    "profileNotSaved": "Il profilo non è stato salvato. Ricarica l'app e riprova.",
     "tip": "Suggerimento",
     "autoFillTip": "Le tue informazioni del profilo saranno compilate automaticamente quando avvii una partita ufficiale come segnapunti.",
     "dangerZone": "Zona pericolosa",
@@ -1618,6 +1620,11 @@
       "decisionChange": "Cambio decisione"
     }
   },
+  "syncBanner": {
+    "title": "Non hai effettuato l'accesso: questa partita è salvata solo su questo dispositivo",
+    "body": "Il referto continua a funzionare. Accedi per salvarla nel cloud (arbitro, livescore, backup); le modifiche in attesa vengono inviate subito dopo.",
+    "later": "Più tardi"
+  },
   "connectionStatus": {
     "syncing": "Sincronizzazione",
     "connected": "Connesso",
@@ -1637,7 +1644,12 @@
     "scoreboard": "Tabellone",
     "match": "Partita",
     "database": "Database",
-    "supabase": "Supabase",
+    "supabase": "Sincronizzazione cloud",
+    "cloud": "Sincronizzazione cloud",
+    "signInToSync": "Accedi per sincronizzare",
+    "signInToSyncHint": "Non hai effettuato l'accesso: le modifiche restano su questo dispositivo finché non accedi.",
+    "offlinePending": "Offline ({{count}} in attesa)",
+    "refusedByServer": "Rifiutato dal server:",
     "syncingDots": "Sincronizzazione...",
     "title": "Stato connessione",
     "pendingBackgroundSync": "Sincronizzazione in sospeso:",

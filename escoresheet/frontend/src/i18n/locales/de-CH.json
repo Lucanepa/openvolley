@@ -1542,6 +1542,8 @@
     "passwordTooShort": "Passwort muess mindestens 6 Zeiche ha",
     "accountCreated": "Konto erfolgreich erstellt!",
     "checkEmail": "Prüefed Sie Ihri E-Mails zur Bestätigung",
+    "accountReady": "Ihres Konto isch parat. Sie chönd sich jetzt aamälde.",
+    "profileNotSaved": "Ihres Profil isch nöd gspeicheret worde. Bitte lad d App neu und probiered Sie es nomal.",
     "tip": "Tipp",
     "autoFillTip": "Ihri Profildate werdet automatisch usgfüllt, wenn Sie als Schreiber es offiziells Spiil startet.",
     "dangerZone": "Gfahrzone",
@@ -1587,6 +1589,11 @@
       "decisionChange": "Entscheidsänderig"
     }
   },
+  "syncBanner": {
+    "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Gerät gspeicheret",
+    "body": "S Erfasse funktioniert wiiter. Mälded Sie sich aa, zum es i de Cloud z speichere (Schiri, Livescore, Backup); wartendi Änderige werded dänn sofort gschickt.",
+    "later": "Spöter"
+  },
   "connectionStatus": {
     "syncing": "Synchronisiere",
     "connected": "Verbunde",
@@ -1606,7 +1613,12 @@
     "scoreboard": "Aazeigetafle",
     "match": "Spiil",
     "database": "Datebank",
-    "supabase": "Supabase",
+    "supabase": "Cloud-Synchronisierig",
+    "cloud": "Cloud-Synchronisierig",
+    "signInToSync": "Zum Synchronisiere aamälde",
+    "signInToSyncHint": "Nöd aagmäldet: Änderige bliibed uf däm Gerät, bis Sie sich aamälded.",
+    "offlinePending": "Offline ({{count}} usstehend)",
+    "refusedByServer": "Vom Server abglehnt:",
     "syncingDots": "Synchronisiere...",
     "title": "Verbindigsstatus",
     "pendingBackgroundSync": "Usstehendi Hintergrund-Sync:",

@@ -1574,6 +1574,8 @@
     "passwordTooShort": "Password must be at least 6 characters",
     "accountCreated": "Account created successfully!",
     "checkEmail": "Check your email to confirm your account",
+    "accountReady": "Your account is ready. You can sign in now.",
+    "profileNotSaved": "Your profile was not saved. Please reload the app and try again.",
     "tip": "Tip",
     "autoFillTip": "Your profile info will be auto-filled when you start a new official match as scorer.",
     "dangerZone": "Danger Zone",
@@ -1619,6 +1621,11 @@
       "decisionChange": "Decision Change"
     }
   },
+  "syncBanner": {
+    "title": "Not signed in: this match is saved on this device only",
+    "body": "Scoring keeps working. Sign in to save it to the cloud (referee, livescore, backup); waiting changes are sent right after.",
+    "later": "Later"
+  },
   "connectionStatus": {
     "syncing": "Syncing",
     "connected": "Connected",
@@ -1638,7 +1645,12 @@
     "scoreboard": "Scoreboard",
     "match": "Match",
     "database": "Database",
-    "supabase": "Supabase",
+    "supabase": "Cloud sync",
+    "cloud": "Cloud sync",
+    "signInToSync": "Sign in to sync",
+    "signInToSyncHint": "Not signed in: changes are kept on this device until you sign in.",
+    "offlinePending": "Offline ({{count}} waiting)",
+    "refusedByServer": "Refused by the server:",
     "syncingDots": "Syncing...",
     "title": "Connection Status",
     "pendingBackgroundSync": "Pending background sync:",

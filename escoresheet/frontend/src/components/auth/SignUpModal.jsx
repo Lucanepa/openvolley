@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
+import { needsEmailConfirmation } from './signUpResult'
 
 export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const { t } = useTranslation()
-  const { signUp } = useAuth()
+  const { signUp, signIn } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,6 +17,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [confirmByEmail, setConfirmByEmail] = useState(false)
 
   if (!open) return null
 
@@ -35,7 +37,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
 
     setLoading(true)
 
-    const { error: signUpError } = await signUp(email, password, {
+    const { data: signUpData, error: signUpError } = await signUp(email, password, {
       firstName,
       lastName,
       country,
@@ -47,6 +49,18 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
       setError(signUpError.message)
       setLoading(false)
     } else {
+      // The backend confirms the account at sign-up (no email is sent): sign
+      // the user in right away. Only an unconfirmed account gets the email step.
+      const mustConfirm = needsEmailConfirmation(signUpData)
+      setConfirmByEmail(mustConfirm)
+      if (!mustConfirm) {
+        const { error: signInError } = await signIn(email, password)
+        if (!signInError) {
+          setLoading(false)
+          onClose?.()
+          return
+        }
+      }
       setSuccess(true)
       setLoading(false)
     }
@@ -152,7 +166,9 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
               <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
               <p style={{ marginBottom: 8 }}>{t('auth.accountCreated', 'Account created successfully!')}</p>
               <p style={{ color: 'var(--muted)', fontSize: 14 }}>
-                {t('auth.checkEmail', 'Check your email to confirm your account')}
+                {confirmByEmail
+                  ? t('auth.checkEmail', 'Check your email to confirm your account')
+                  : t('auth.accountReady', 'Your account is ready. You can sign in now.')}
               </p>
               <button
                 onClick={onSwitchToLogin}
