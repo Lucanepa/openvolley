@@ -28,12 +28,12 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
-import { getSetResult, getFirstServeForSet } from '../domain/rules'
+import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
-import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner } from '../domain/matchEnd'
+import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
@@ -1854,10 +1854,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ? new Date().toISOString()
         : (match?.intervalStartedAt || null)
 
-      // For set_end, we need to show the NEXT set state (interval between sets)
-      // The snapshot still has the OLD set data, so we override for set_end
-      const nextSetIndex = isSetInterval ? snapshot.currentSetIndex + 1 : snapshot.currentSetIndex
-
       // Calculate updated set scores including the just-finished set
       // eventData.winner is 'home' or 'away' from the set_end event
       // Fallback: if eventData.winner is undefined, calculate from snapshot points
@@ -1873,6 +1869,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ? (setWinner === snapshot.teamBKey ? snapshot.setScoreB + 1 : snapshot.setScoreB)
         : snapshot.setScoreB
 
+      // For set_end, we need to show the NEXT set state (interval between sets)
+      // The snapshot still has the OLD set data, so we override for set_end.
+      // Same sequence as the set actually created: best-of-3 at 1-1 goes 2 -> 5.
+      const nextSetIndex = isSetInterval
+        ? getNextSetIndex(snapshot.currentSetIndex, updatedSetScoreA, updatedSetScoreB, match?.bestOf)
+        : snapshot.currentSetIndex
+
       // Check if match is finished - don't increment current_set past the final set
       const isMatchFinished = isMatchFinishedUtil(updatedSetScoreA, updatedSetScoreB, match?.bestOf)
       const finalSetIndex = isSetInterval && isMatchFinished ? snapshot.currentSetIndex : nextSetIndex
@@ -1883,11 +1886,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       else if (isTimeout) matchStatus = 'timeout'
       else if (isSetInterval) matchStatus = 'interval'
 
-      // Calculate side for next set (odd sets: A on left, even sets: A on right)
-      // This follows the standard volleyball alternation pattern
-      const nextSideA = isSetInterval
-        ? (nextSetIndex % 2 === 1 ? 'left' : 'right')
-        : snapshot.sideA
+      // Calculate side for next set: a manual side override or the set 5 coin
+      // toss choice (both stored as the LEFT team 'A'/'B') wins, as in
+      // captureFullStateSnapshot; otherwise odd sets A on left, even sets A on right
+      let nextSideA = snapshot.sideA
+      if (isSetInterval) {
+        const leftOverride = (match.setLeftTeamOverrides || {})[nextSetIndex]
+        if (leftOverride !== undefined) {
+          nextSideA = leftOverride === 'A' ? 'left' : 'right'
+        } else if (nextSetIndex === 5 && match.set5LeftTeam) {
+          nextSideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
+        } else {
+          nextSideA = nextSetIndex % 2 === 1 ? 'left' : 'right'
+        }
+      }
 
       // For interval, points reset to 0 for the new set
       const nextPointsA = isSetInterval ? 0 : snapshot.pointsA
@@ -2242,7 +2254,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // GUARD 1: Check if match is over by status
     const match = await db.matches.get(matchId)
     console.log('[SET_END_DEBUG] [ensureActiveSet] Match status:', match?.status)
-    if (match?.status === 'ended' || match?.status === 'approved' || match?.status === 'final') {
+    if (isMatchOverStatus(match?.status)) {
       console.log('[SET_END_DEBUG] [ensureActiveSet] Match status is', match.status, '- STOPPING, not creating new set')
       setCreationInProgressRef.current = false
       return
@@ -2302,11 +2314,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // CRITICAL VALIDATION 2: Check if previous set (nextIndex - 1) is finished
+    // CRITICAL VALIDATION 2: Check if the set played before nextIndex is finished
+    // (bo3: the decider 5 follows set 2, so do not look for set nextIndex - 1)
     if (nextIndex > 1) {
-      const previousSet = allSets.find(s => s.index === nextIndex - 1)
+      const previousSet = findPreviousSet(allSets, nextIndex)
       if (!previousSet || !previousSet.finished) {
-        console.log('[ensureActiveSet] ⛔ Cannot create set', nextIndex, '- previous set', (nextIndex - 1), 'is not finished:', previousSet)
+        console.log('[ensureActiveSet] ⛔ Cannot create set', nextIndex, '- previous set', previousSet?.index, 'is not finished:', previousSet)
         setCreationInProgressRef.current = false
         return
       }
@@ -2764,11 +2777,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Check if we're between sets (previous set finished, current set hasn't started)
   const isBetweenSets = useMemo(() => {
     if (!data?.sets || !data?.set) return false
-    const allSets = data.sets.sort((a, b) => a.index - b.index)
     const currentSetIndex = data.set.index
     if (currentSetIndex === 1) return false // First set, not between sets
 
-    const previousSet = allSets.find(s => s.index === currentSetIndex - 1)
+    // The set played before this one (bo3 decider: set 2 before set 5, not set 4).
+    // findPreviousSet does not sort the live-query array in place.
+    const previousSet = findPreviousSet(data.sets, currentSetIndex)
     if (!previousSet || !previousSet.finished) return false
 
     // Check if current set has started (has points or set_start event)
@@ -2786,7 +2800,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (isBetweenSets && betweenSetsCountdown === null && !countdownDismissedRef.current) {
       // Calculate remaining time based on previous set's endTime
       const currentSetIndex = data?.set?.index || 1
-      const previousSet = data?.sets?.find(s => s.index === currentSetIndex - 1)
+      const previousSet = findPreviousSet(data?.sets, currentSetIndex)
       let remainingTime = setIntervalDuration
 
       if (previousSet?.endTime) {
@@ -3879,10 +3893,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const si = setIndex ?? data?.set?.index ?? '?'
     const sc = scoreStr ?? `${data?.set?.homePoints ?? '?'}-${data?.set?.awayPoints ?? '?'}`
     const remark = `Manual edit (Set ${si}, ${sc}, ${timeStr}): ${description}`
-    const currentRemarks = data?.match?.remarks || ''
-    const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
-    await db.matches.update(matchId, { remarks: newRemarks })
-  }, [logManualChange, matchId, data?.set?.index, data?.set?.homePoints, data?.set?.awayPoints, data?.match?.remarks])
+    // Append inside a transaction on a fresh read: the render-time remarks can be
+    // stale when two edits land before the live query re-renders
+    await db.transaction('rw', db.matches, async () => {
+      const fresh = await db.matches.get(matchId)
+      await db.matches.update(matchId, { remarks: appendRemark(fresh?.remarks || '', remark) })
+    })
+  }, [logManualChange, matchId, data?.set?.index, data?.set?.homePoints, data?.set?.awayPoints])
 
   // ==================== REOPEN ROSTER HELPERS ====================
 
@@ -6505,6 +6522,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const events = await db.events.where('matchId').equals(matchId).toArray()
     const match = await db.matches.get(matchId)
     await db.matches.update(matchId, { sanctions: { ...(match?.sanctions || {}), ...deriveTeamSanctionFlags(events) } })
+  }, [matchId])
+
+  // After a point event is edited or deleted by hand, the set row must follow
+  // the events (the score, serve/rotation and running score all derive from them)
+  const resyncSetScoreFromEvents = useCallback(async (setIndex) => {
+    const events = await db.events.where('matchId').equals(matchId).toArray()
+    const { homePoints, awayPoints } = scoreFromPointEvents(events, setIndex)
+    const setRow = await db.sets.where({ matchId }).and(s => s.index === setIndex).first()
+    if (!setRow) return
+    await db.sets.update(setRow.id, { homePoints, awayPoints })
+    const match = await db.matches.get(matchId)
+    if (match && !match.test && match.seed_key) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'update',
+        payload: { external_id: String(setRow.id), home_points: homePoints, away_points: awayPoints },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
   }, [matchId])
 
   // Undo writes outside the event log done by the forward handlers of the
@@ -20431,10 +20468,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   type="number"
                                   min="0"
                                   max="99"
-                                  value={(leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
-                                  onChange={async (e) => {
+                                  key={`cur-left-${data.set.id}-${(leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0}`}
+                                  defaultValue={(leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                                  onBlur={async (e) => {
+                                    // Commit on blur / Enter (not per keystroke: typing 25 must not save 2 first)
                                     const oldPoints = (leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
                                     const update = leftIsHome ? { homePoints: newPoints } : { awayPoints: newPoints }
                                     await db.sets.update(data.set.id, update)
 
@@ -20473,10 +20514,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   type="number"
                                   min="0"
                                   max="99"
-                                  value={(rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
-                                  onChange={async (e) => {
+                                  key={`cur-right-${data.set.id}-${(rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0}`}
+                                  defaultValue={(rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                                  onBlur={async (e) => {
+                                    // Commit on blur / Enter (not per keystroke: typing 25 must not save 2 first)
                                     const oldPoints = (rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
                                     const update = rightIsHome ? { homePoints: newPoints } : { awayPoints: newPoints }
                                     await db.sets.update(data.set.id, update)
 
@@ -20608,7 +20653,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.edit.editAllSetsDesc')}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {data.sets.sort((a, b) => a.index - b.index).map(set => (
+                          {[...data.sets].sort((a, b) => a.index - b.index).map(set => (
                             <div key={set.id} style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -20624,10 +20669,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   type="number"
                                   min="0"
                                   max="99"
-                                  value={set.homePoints || 0}
-                                  onChange={async (e) => {
+                                  key={`all-home-${set.id}-${set.homePoints || 0}`}
+                                  defaultValue={set.homePoints || 0}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                                  onBlur={async (e) => {
+                                    // Commit on blur / Enter (not per keystroke)
                                     const oldPoints = set.homePoints || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
                                     await db.sets.update(set.id, { homePoints: newPoints })
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
@@ -20657,10 +20706,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   type="number"
                                   min="0"
                                   max="99"
-                                  value={set.awayPoints || 0}
-                                  onChange={async (e) => {
+                                  key={`all-away-${set.id}-${set.awayPoints || 0}`}
+                                  defaultValue={set.awayPoints || 0}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                                  onBlur={async (e) => {
+                                    // Commit on blur / Enter (not per keystroke)
                                     const oldPoints = set.awayPoints || 0
                                     const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
+                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
                                     await db.sets.update(set.id, { awayPoints: newPoints })
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
@@ -20692,11 +20745,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onChange={async (e) => {
                                     const oldFinished = set.finished || false
                                     const newFinished = e.target.checked
-                                    await db.sets.update(set.id, { finished: newFinished })
+                                    if (!newFinished) {
+                                      // Un-finishing a set is a reopen: go through the Reopen Set flow,
+                                      // which also removes its set_end, later sets and the match-end state
+                                      setReopenSetConfirm({ setId: set.id, setIndex: set.index })
+                                      return
+                                    }
+                                    const endTime = set.endTime || roundToMinute(new Date().toISOString())
+                                    await db.sets.update(set.id, { finished: newFinished, endTime })
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ finished: newFinished, end_time: endTime, sport_type: 'indoor' }).eq('external_id', String(set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Set ${set.index} Finished`, oldFinished, newFinished,
@@ -20945,6 +21005,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     await db.events.update(event.id, {
                                       payload: { ...event.payload, team: newTeam }
                                     })
+                                    await resyncSetScoreFromEvents(setIndex)
                                     logManualChangeWithRemark('Point', 'Team', oldTeam, newTeam,
                                       `Point team changed from ${oldTeam} to ${newTeam}`,
                                       { setIndex, scoreStr: `${homeScore}-${awayScore}` })
@@ -20970,6 +21031,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     if (confirm(t('scoreboard.actionLog.deletePointEvent'))) {
                                       const deletedTeam = team || '?'
                                       await db.events.delete(event.id)
+                                      await resyncSetScoreFromEvents(setIndex)
                                       logManualChangeWithRemark('Point', 'Delete',
                                         `${deletedTeam} point at ${homeScore}-${awayScore}`, null,
                                         `Deleted ${deletedTeam} point (Set ${setIndex}, ${homeScore}-${awayScore})`,
@@ -22089,7 +22151,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         Edit start and end times for sets.
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {data.sets.sort((a, b) => a.index - b.index).map(set => (
+                        {[...data.sets].sort((a, b) => a.index - b.index).map(set => (
                           <div key={set.id} style={{
                             display: 'flex',
                             flexDirection: 'column',
@@ -22333,7 +22395,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         flexDirection: 'column',
                         gap: '4px'
                       }}>
-                        {data.events
+                        {[...data.events] // copy: data.events is the shared seq-ascending live-query array
                           .sort((a, b) => {
                             const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
                             const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
@@ -22974,12 +23036,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
                     const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
 
-                    // Get all sets including current
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    // Get all sets including current (copy: never sort the live-query array in place)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const finishedSets = allSets.filter(s => s.finished)
 
-                    // Check if match is final
-                    const isMatchFinal = data?.match?.status === 'final'
+                    // Check if match is over (ended -> approved -> final)
+                    const isMatchFinal = isMatchOverStatus(data?.match?.status)
 
                     // If match is final, show match results table
                     if (isMatchFinal) {
@@ -23051,10 +23113,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         matchDurationMin = Math.floor(durationMs / 60000)
                       }
 
-                      // Determine winner
-                      const winnerTeamKey = leftTotalWins > rightTotalWins ? currentLeftTeamKey : currentRightTeamKey
+                      // Determine winner (none for a match stopped with level sets)
+                      const winnerTeamKey = getMatchWinner(allSets, data?.match?.bestOf, { forfeitTeam: data?.match?.forfeitTeam })
                       const winnerTeamData = winnerTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                      const winnerTeamName = winnerTeamData?.name || (winnerTeamKey === 'home' ? 'Home' : 'Away')
+                      const winnerTeamName = winnerTeamKey
+                        ? (winnerTeamData?.name || (winnerTeamKey === 'home' ? 'Home' : 'Away'))
+                        : t('matchEnd.noWinner', 'No winner (match stopped)')
                       const winnerScore = `${leftTotalWins}-${rightTotalWins}`
 
                       // Get captain signatures
@@ -26651,24 +26715,75 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
                 onClick={async () => {
-                  // Mark the set as not finished
-                  await db.sets.update(reopenSetConfirm.setId, { finished: false })
+                  const reopenIndex = reopenSetConfirm.setIndex
+                  const matchRecord = await db.matches.get(matchId)
 
-                  // Delete all subsequent sets
+                  // Mark the set as not finished (and no longer ended)
+                  await db.sets.update(reopenSetConfirm.setId, { finished: false, endTime: null })
+
+                  // Remove what ending the set wrote: its set_end (and a forfait) event
+                  const allEventsForReopen = await db.events.where('matchId').equals(matchId).toArray()
+                  const removedEvents = allEventsForReopen.filter(e =>
+                    (e.setIndex === reopenIndex && (e.type === 'set_end' || e.type === 'forfait' || e.type === 'match_stopped')) ||
+                    e.setIndex > reopenIndex
+                  )
+
+                  // Delete all subsequent sets and their events
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                  const setsToDelete = allSets.filter(s => s.index > reopenSetConfirm.setIndex)
+                  const setsToDelete = allSets.filter(s => s.index > reopenIndex)
+                  await db.events.bulkDelete(removedEvents.map(e => e.id))
                   for (const s of setsToDelete) {
-                    // Delete events for this set
-                    await db.events.where('matchId').equals(matchId).and(e => e.setIndex === s.index).delete()
-                    // Delete the set
                     await db.sets.delete(s.id)
                   }
 
-                  // Update match status back to 'live' if it was 'final'
-                  if (data.match?.status === 'final') {
-                    await db.matches.update(matchId, { status: 'live' })
+                  // Drop queued (not yet sent) sync jobs for the removed events
+                  const removedIds = new Set(removedEvents.map(e => String(e.id)))
+                  const queued = await db.sync_queue.where('status').equals('queued').toArray()
+                  for (const job of queued) {
+                    if (job.resource === 'event' && removedIds.has(String(job.payload?.external_id))) {
+                      await db.sync_queue.delete(job.id)
+                    }
                   }
 
+                  // The match is being played on: back to 'live' from any finished
+                  // state (the scoreboard writes 'ended', MatchEnd 'approved'/'final').
+                  // The result changes, so post-match signatures and forfeit/stop
+                  // markers are cleared too.
+                  if (isMatchOverStatus(matchRecord?.status)) {
+                    await db.matches.update(matchId, {
+                      status: 'live',
+                      approved: false,
+                      approvedAt: null,
+                      forfeitTeam: null,
+                      forfeitReason: null,
+                      stoppedReason: null,
+                      ...clearedPostMatchSignatures()
+                    })
+                  }
+
+                  if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
+                    await db.sync_queue.add({
+                      resource: 'set',
+                      action: 'update',
+                      payload: { external_id: String(reopenSetConfirm.setId), finished: false, end_time: null },
+                      ts: new Date().toISOString(),
+                      status: 'queued'
+                    })
+                    if (isMatchOverStatus(matchRecord.status)) {
+                      await db.sync_queue.add({
+                        resource: 'match',
+                        action: 'update',
+                        payload: { id: matchRecord.seed_key, status: 'live' },
+                        ts: new Date().toISOString(),
+                        status: 'queued'
+                      })
+                    }
+                  }
+
+                  logManualChangeWithRemark('Set', 'Reopen', `Set ${reopenIndex} finished`, `Set ${reopenIndex} reopened`,
+                    `Reopened set ${reopenIndex} (later sets deleted: ${setsToDelete.length})`)
+                  syncToReferee()
+                  syncLiveStateToSupabase('manual_reopen_set', null, { setIndex: reopenIndex })
                   notifyScoresheetUpdate('reopen_set')
                   setReopenSetConfirm(null)
                 }}
