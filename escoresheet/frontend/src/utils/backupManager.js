@@ -11,6 +11,7 @@ import { sanitizeSimple } from './stringUtils'
 import { getApiUrl } from './backendConfig'
 import { filterMatchPayload } from '../db/matchRepository'
 import { setExtId, eventExtId, jobMatchKey } from './syncIds'
+import { buildConnectionPins } from './connectionPins'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -269,9 +270,20 @@ export async function downloadMatchBackup(matchId) {
   return filename
 }
 
+// Local key of a match (seed_key; older rows used seedKey / externalId)
+const localMatchKey = (m) => m?.seed_key || m?.seedKey || m?.externalId || m?.external_id || null
+
+// Full connection_pins for the restore upsert, or nothing when the backup has no
+// PINs (an empty object would wipe the cloud PINs the referee/bench check reads).
+function restorePins(localMatch) {
+  const pins = buildConnectionPins(localMatch)
+  return Object.keys(pins).length > 0 ? { connection_pins: pins } : {}
+}
+
 /**
  * Restore match from JSON backup data
- * WIPE & REPLACE: Clears all local match data, restores from backup, queues Supabase sync
+ * REPLACE: removes this match's local rows (other local matches are kept),
+ * restores it from the backup and queues the Supabase restore.
  */
 export async function restoreMatchFromJson(jsonData) {
   // Validate schema
@@ -289,19 +301,25 @@ export async function restoreMatchFromJson(jsonData) {
 
   let restoredMatchId = null
 
-  // Start transaction - WIPE then RESTORE
+  // Start transaction - REPLACE this match only
   await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, db.sync_queue, async () => {
-    // STEP A: WIPE ALL existing match data from IndexedDB
-    // (Keep teams/players/referees/scorers as they're reusable)
-    console.log('[Restore] Wiping local IndexedDB: events, sets, matches, sync_queue')
-    await db.events.clear()
-    await db.sets.clear()
-    await db.matches.clear()
-    // Keep other matches' unsynced writes (they carry everything the cloud
-    // needs); drop this match's jobs (the restore job below replaces them),
-    // sent history and anything that cannot be attributed to a match.
+    // STEP A: remove THIS match's local copy (by seed_key) with its sets and
+    // events. Other local matches, and teams/players/referees/scorers, are kept.
+    if (externalId) {
+      const previous = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
+      for (const old of previous) {
+        await db.events.where('matchId').equals(old.id).delete()
+        await db.sets.where('matchId').equals(old.id).delete()
+        await db.matches.delete(old.id)
+      }
+      if (previous.length) console.log(`[Restore] Replaced ${previous.length} local copy/copies of match ${externalId}`)
+    }
+    // Keep other matches' jobs (unsynced writes and the sent history their
+    // retries are trimmed against); drop this match's jobs (the local match they
+    // describe is gone and the restore job below replaces them) and anything
+    // that cannot be attributed to a match.
     const queuedJobs = await db.sync_queue.toArray()
-    const keepJob = (j) => (j.status === 'queued' || j.status === 'error') && jobMatchKey(j) && jobMatchKey(j) !== externalId
+    const keepJob = (j) => !!jobMatchKey(j) && jobMatchKey(j) !== externalId
     await db.sync_queue.bulkDelete(queuedJobs.filter(j => !keepJob(j)).map(j => j.id))
 
     // STEP B: Create teams (reuse existing or create new)
@@ -344,10 +362,10 @@ export async function restoreMatchFromJson(jsonData) {
       }
     }
 
-    // Create match with ID=1 (always single match in session)
+    // New auto-increment id: other local matches keep theirs
     const matchId = await db.matches.add({
       ...match,
-      id: 1, // Fixed ID for single match
+      id: undefined,
       homeTeamId,
       awayTeamId,
       seed_key: externalId, // Ensure seed_key is set for sync
@@ -385,28 +403,15 @@ export async function restoreMatchFromJson(jsonData) {
       }
     }
 
-    // Create sets with sequential IDs
-    if (sets?.length) {
-      for (let i = 0; i < sets.length; i++) {
-        const set = sets[i]
-        await db.sets.add({
-          ...set,
-          id: i + 1, // Sequential IDs
-          matchId
-        })
-      }
+    // Create sets and events with new auto-increment ids (fixed ids would collide
+    // with other local matches' rows); the cloud external_id is built from them.
+    const newSetIds = []
+    for (const set of sets || []) {
+      newSetIds.push(await db.sets.add({ ...set, id: undefined, matchId }))
     }
-
-    // Create events with sequential IDs
-    if (events?.length) {
-      for (let i = 0; i < events.length; i++) {
-        const event = events[i]
-        await db.events.add({
-          ...event,
-          id: i + 1, // Sequential IDs
-          matchId
-        })
-      }
+    const newEventIds = []
+    for (const event of events || []) {
+      newEventIds.push(await db.events.add({ ...event, id: undefined, matchId }))
     }
 
     // STEP C: Queue Supabase 'restore' sync job (DELETE first, then UPSERT)
@@ -421,6 +426,7 @@ export async function restoreMatchFromJson(jsonData) {
         game_pin: match.gamePin || match.game_pin,
         game_n: match.gameN || match.game_n,
         status: match.status || 'live',
+        ...restorePins(match),
         home_team: homeTeam ? {
           name: homeTeam.name,
           short_name: homeTeam.shortName || homeTeam.short_name,
@@ -452,11 +458,11 @@ export async function restoreMatchFromJson(jsonData) {
       }
 
       // Build sets payload (convert local to Supabase format)
-      // external_id is derived from the NEW local id (i + 1 above): later set
-      // updates from the scoreboard send setExtId(seed, localId), so the cloud
-      // row must carry that id or those updates match nothing.
+      // external_id is derived from the NEW local id (above): later set updates
+      // from the scoreboard send setExtId(seed, localId), so the cloud row must
+      // carry that id or those updates match nothing.
       const setsPayload = (sets || []).map((s, i) => ({
-        external_id: setExtId(externalId, i + 1),
+        external_id: setExtId(externalId, newSetIds[i]),
         index: s.index,
         home_points: s.homePoints ?? s.home_points ?? 0,
         away_points: s.awayPoints ?? s.away_points ?? 0,
@@ -467,7 +473,7 @@ export async function restoreMatchFromJson(jsonData) {
 
       // Build events payload (convert local to Supabase format)
       const eventsPayload = (events || []).map((e, i) => ({
-        external_id: eventExtId(externalId, i + 1),
+        external_id: eventExtId(externalId, newEventIds[i]),
         set_index: e.setIndex ?? e.set_index,
         type: e.type,
         payload: e.payload,
@@ -585,12 +591,20 @@ export async function restoreMatchInPlace(matchId, jsonData) {
     if (externalId && !match.test) {
       console.log('[RestoreInPlace] Queuing Supabase restore job for match:', externalId)
 
-      // Pending jobs of this match describe the state being replaced (e.g. events
-      // that no longer exist locally); the restore job supersedes them.
+      // Pending set/event jobs of this match describe rows the restore replaces
+      // (events that no longer exist locally); an older pending restore is
+      // superseded too. Match insert/update jobs are KEPT: they carry columns the
+      // restore payload does not (officials, signatures, connections, ...), and
+      // have lower ids, so they run before the restore job.
       const pendingJobs = await db.sync_queue.toArray()
+      const replacedByRestore = (j) => (j.resource === 'set' || j.resource === 'event' || (j.resource === 'match' && j.action === 'restore'))
       await db.sync_queue.bulkDelete(pendingJobs
-        .filter(j => (j.status === 'queued' || j.status === 'error') && jobMatchKey(j) === externalId)
+        .filter(j => (j.status === 'queued' || j.status === 'error') && replacedByRestore(j) && jobMatchKey(j) === externalId)
         .map(j => j.id))
+
+      // PINs from the local match after the update above (backup fields over the
+      // current ones, so PINs the backup lacks are still sent)
+      const restoredLocal = await db.matches.get(matchId)
 
       // Build match payload for Supabase
       const matchPayload = {
@@ -598,6 +612,7 @@ export async function restoreMatchInPlace(matchId, jsonData) {
         game_pin: match.gamePin || match.game_pin,
         game_n: match.gameN || match.game_n,
         status: match.status || 'live',
+        ...restorePins(restoredLocal || match),
         home_team: homeTeam ? {
           name: homeTeam.name,
           short_name: homeTeam.shortName || homeTeam.short_name,
