@@ -45,13 +45,15 @@ function cookieMap(header) {
  * @param {number}   [o.failSearchAt]    offset whose search call answers 500 forever
  * @param {number}   [o.transient500]    first N requests of any kind answer 503
  * @param {number}   [o.reportTotal]     totalItemsCount to report (default games.length)
+ * @param {number}   [o.maxPageSize]     server-side cap on searchConfiguration[limit]
  */
 export function createFakeVolleyManager({
   games = [],
   password = FAKE_PASSWORD,
   failSearchAt = null,
   transient500 = 0,
-  reportTotal = null
+  reportTotal = null,
+  maxPageSize = null
 } = {}) {
   const calls = []
   let transientLeft = transient500
@@ -110,7 +112,8 @@ export function createFakeVolleyManager({
       const form = new URLSearchParams(body)
       if (!authed || form.get('__csrfToken') !== FAKE_CSRF) return redirect('/login', { status: 302 })
       const offset = Number(form.get('searchConfiguration[offset]'))
-      const limit = Number(form.get('searchConfiguration[limit]'))
+      const asked = Number(form.get('searchConfiguration[limit]'))
+      const limit = maxPageSize ? Math.min(asked, maxPageSize) : asked
       if (failSearchAt != null && offset === failSearchAt) return html('error', { status: 500 })
       const json = JSON.stringify({ totalItemsCount: reportTotal ?? games.length, items: games.slice(offset, offset + limit) })
       return new Response(json, { status: 200, headers: { 'content-type': 'application/json' } })

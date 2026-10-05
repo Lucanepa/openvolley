@@ -51,13 +51,41 @@ describe('transformGame: kick-off in Europe/Zurich', () => {
     assert.equal(r.time, '00:15')
   })
 
-  it('accepts an explicit offset and reads an offset-less string as UTC', () => {
+  it('accepts an explicit offset and reads an offset-less string as Zurich wall-clock time', () => {
     assert.equal(t(makeGame(10, { startingDateTime: '2026-10-10T18:00:00+02:00' })).time, '18:00')
-    assert.equal(t(makeGame(11, { startingDateTime: '2026-10-10T16:00:00' })).time, '18:00')
+    assert.equal(t(makeGame(13, { startingDateTime: '2026-10-10T16:00:00-0400' })).time, '22:00')
+    assert.equal(t(makeGame(14, { startingDateTime: '2026-10-10T20:00+01' })).time, '21:00')
+    // As the frontend's `new Date(datetime)` reads it in a Swiss browser; the digits stay
+    const r = t(makeGame(11, { startingDateTime: '2026-10-10T16:00:00' }))
+    assert.deepEqual([r.date, r.time], ['10/10/2026', '16:00'])
+    assert.equal(t(makeGame(15, { startingDateTime: '2026-01-17T23:45' })).time, '23:45')
+  })
+
+  it('parseVmDateTime: instants, Zurich wall clock, and rejects (never the host zone)', () => {
+    assert.equal(parseVmDateTime('2026-10-10T16:00:00.5Z').toISOString(), '2026-10-10T16:00:00.500Z')
+    assert.equal(parseVmDateTime('2026-10-10T18:00:00+02:00').toISOString(), '2026-10-10T16:00:00.000Z')
+    assert.equal(parseVmDateTime('2026-01-17T19:30:00').toISOString(), '2026-01-17T18:30:00.000Z', 'CET')
+    assert.equal(parseVmDateTime('2026-07-01T19:30:15.250').toISOString(), '2026-07-01T17:30:15.250Z', 'CEST')
+    assert.equal(parseVmDateTime(' 2026-10-10T16:00Z ').toISOString(), '2026-10-10T16:00:00.000Z')
+    for (const bad of [
+      '2026-10-10 18:00:00', // space separator: V8 would read it in the host's zone
+      '10.10.2026 18:00',
+      'Sat Oct 10 2026 18:00:00',
+      '2026-02-30T10:00:00Z', // V8 would roll it over to March 2
+      '2026-04-31T10:00:00Z',
+      '2026-10-10T24:00:00Z',
+      '2026-10-10T18:60:00Z',
+      '2026-13-01T10:00:00Z',
+      '2026-10-10T18:00:00+25:00',
+      '2026-10-10',
+      'garbage', '', null, 12345
+    ]) {
+      assert.equal(parseVmDateTime(bad), null, String(bad))
+    }
   })
 
   it('leaves date/time empty for a missing or unparsable datetime (no NaN)', () => {
-    for (const startingDateTime of ['', 'not a date', null]) {
+    for (const startingDateTime of ['', 'not a date', null, '2026-10-10 18:00:00', '2026-02-30T10:00:00Z']) {
       const r = t(makeGame(12, { startingDateTime }))
       assert.equal(r.date, '')
       assert.equal(r.time, '')
@@ -193,6 +221,9 @@ describe('Zurich calendar window', () => {
     assert.deepEqual(windowFromEnv({ VM_SYNC_DAYS_BACK: '2', VM_SYNC_DAYS_AHEAD: '30' }), { daysBack: 2, daysAhead: 30 })
     assert.deepEqual(windowFromEnv({}), {})
     assert.throws(() => windowFromEnv({ VM_SYNC_DAYS_AHEAD: '-3' }), /non-negative/)
+    // MAX_WINDOW_DAYS is checked here, at wiring time, not first on the 06:00 run
+    assert.throws(() => windowFromEnv({ VM_SYNC_DAYS_AHEAD: '500' }), /VM_SYNC_DAYS_BACK \/ VM_SYNC_DAYS_AHEAD: window spans 502 days \(max 400\)/)
+    assert.deepEqual(windowFromEnv({ VM_SYNC_DAYS_BACK: ' 0 ', VM_SYNC_DAYS_AHEAD: String(MAX_WINDOW_DAYS - 1) }), { daysBack: 0, daysAhead: MAX_WINDOW_DAYS - 1 })
   })
 
   it('search body carries the Zurich-aligned range and the CSRF token', () => {

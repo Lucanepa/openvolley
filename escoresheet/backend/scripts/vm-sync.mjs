@@ -15,7 +15,9 @@
  * Other options:
  *   --dry-run   log in and fetch + transform, but do not touch the database
  *               (DATABASE_URL not needed)
- *   --json      print the result as JSON on stdout
+ *   --json      print the result as JSON on stdout; it includes datetimeSamples
+ *               (raw VM startingDateTime values) and offsetlessDatetimes, to see
+ *               whether VM sends Z/offsets or Zurich wall-clock times
  *   --help
  *
  * On hetzner:

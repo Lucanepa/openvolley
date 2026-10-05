@@ -159,6 +159,26 @@ describe('fetchWithRetry', () => {
     assert.equal(n, 3)
   })
 
+  it('times out a body that never finishes (headers already arrived) and retries', async () => {
+    let n = 0
+    const fetch = async (url, init) => {
+      n++
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"partial":'))
+          // never closes; only the abort signal ends it
+          init.signal.addEventListener('abort', () => controller.error(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+        }
+      })
+      return new Response(body, { status: 200 })
+    }
+    await assert.rejects(
+      fetchWithRetry(fetch, `${FAKE_BASE}/x`, {}, { label: 'x', timeoutMs: 20, retries: 1, sleep: noSleep }),
+      (err) => err instanceof VmHttpError && /timed out after 20 ms/.test(err.message)
+    )
+    assert.equal(n, 2, 'retried once')
+  })
+
   it('does not retry a 4xx', async () => {
     let n = 0
     const fetch = async () => { n++; return new Response('nope', { status: 403 }) }
@@ -202,6 +222,16 @@ describe('fetchAllGames', () => {
     assert.equal(r.items.length, 4)
     assert.equal(r.incomplete, true)
     assert.match(r.pageError, /HTTP 500/)
+  })
+
+  it('keeps paging when VM caps the page size below the requested limit', async () => {
+    const games = Array.from({ length: 23 }, (_, i) => makeGame(2000 + i))
+    const vm = createFakeVolleyManager({ games, maxPageSize: 3 })
+    const { jar, csrfToken } = await login(vm)
+    const r = await fetchAllGames(jar, csrfToken, 'a', 'b', { fetch: vm.fetch, baseUrl: vm.baseUrl, http, batchSize: 10, sleep: noSleep })
+    assert.equal(r.items.length, 23)
+    assert.equal(r.incomplete, false)
+    assert.deepEqual(r.items.map((g) => g.game.number), games.map((g) => g.game.number))
   })
 
   it('stops when VM reports more than it returns', async () => {
