@@ -1,0 +1,52 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const api = vi.hoisted(() => ({ calls: [], rows: [] }))
+vi.mock('../../lib/apiClient', () => ({
+  apiFrom: (table) => {
+    const call = { table, columns: null, filters: [] }
+    const b = {
+      select(cols) { call.columns = cols; return b },
+      in(c, v) { call.filters.push(['in', c, v]); return b },
+      order() { return b },
+      then(resolve) {
+        api.calls.push(call)
+        return Promise.resolve({ data: api.rows, error: null }).then(resolve)
+      }
+    }
+    return b
+  }
+}))
+
+import { listRosterUploadMatches, isOpenForRosterUpload } from '../rosterUploadMatches'
+
+beforeEach(() => {
+  api.calls = []
+  api.rows = []
+})
+
+describe('roster upload match list', () => {
+  it('lists every match still in setup, whether or not the referee connection is on', async () => {
+    api.rows = [
+      { id: 'u1', external_id: 'match_1_a', game_n: 991454, status: 'setup', scheduled_at: '2026-10-05T18:00:00Z', home_team: { name: 'E2E Home V' }, away_team: { name: 'E2E Away V' }, test: false },
+      { id: 'u2', external_id: 'match_2_b', game_n: 991455, status: 'setup', scheduled_at: null, home_team: { name: 'H' }, away_team: { name: 'A' } }
+    ]
+    const res = await listRosterUploadMatches()
+    expect(res.success).toBe(true)
+    expect(res.matches.map(m => m.gameNumber)).toEqual([991454, 991455])
+    expect(res.matches[0]).toMatchObject({ id: 'match_1_a', external_id: 'match_1_a', homeTeamName: 'E2E Home V', awayTeamName: 'E2E Away V', status: 'setup' })
+    expect(res.matches[1].dateTime).toBe('TBD')
+
+    const q = api.calls[0]
+    expect(q.filters).toContainEqual(['in', 'status', ['setup']])
+    // never the PINs, nor the pending rosters/signatures in connections
+    expect(q.columns).not.toMatch(/connection|pin/)
+  })
+
+  it('a match whose coin toss is done (live), final or a test match is closed for upload', () => {
+    expect(isOpenForRosterUpload({ status: 'setup' })).toBe(true)
+    expect(isOpenForRosterUpload({ status: 'live' })).toBe(false)
+    expect(isOpenForRosterUpload({ status: 'final' })).toBe(false)
+    expect(isOpenForRosterUpload({ status: 'setup', test: true })).toBe(false)
+    expect(isOpenForRosterUpload(null)).toBe(false)
+  })
+})

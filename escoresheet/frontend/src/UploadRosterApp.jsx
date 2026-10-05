@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase, validateUploadPinSupabase } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, validateUploadPinSupabase } from './utils/serverDataSync'
+import { listRosterUploadMatches } from './utils/rosterUploadMatches'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -212,7 +213,9 @@ export default function UploadRosterApp() {
         if (useSupabase) {
           console.log('[Roster DEBUG] Attempting Supabase connection...')
           try {
-            const result = await listAvailableMatchesSupabase()
+            // Matches still in setup (rosters open), not only those with the
+            // referee connection on (that comes after the coin toss)
+            const result = await listRosterUploadMatches()
             console.log('[Roster DEBUG] Supabase result:', JSON.stringify(result, null, 2))
 
             if (result.success && result.matches && result.matches.length > 0) {
