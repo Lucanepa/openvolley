@@ -1541,6 +1541,8 @@
     "passwordTooShort": "Le mot de passe doit contenir au moins 6 caractères",
     "accountCreated": "Compte créé avec succès !",
     "checkEmail": "Vérifiez votre email pour confirmer votre compte",
+    "accountReady": "Votre compte est prêt. Vous pouvez vous connecter maintenant.",
+    "profileNotSaved": "Votre profil n'a pas été enregistré. Rechargez l'application et réessayez.",
     "tip": "Astuce",
     "autoFillTip": "Vos informations de profil seront pré-remplies lorsque vous démarrez un match officiel en tant que marqueur.",
     "dangerZone": "Zone de danger",
@@ -1586,6 +1588,14 @@
       "decisionChange": "Changement de décision"
     }
   },
+  "syncBanner": {
+    "title": "Non connecté : ce match est enregistré uniquement sur cet appareil",
+    "body": "La saisie continue de fonctionner. Connectez-vous pour l'enregistrer dans le cloud (arbitre, livescore, sauvegarde) ; les modifications en attente sont envoyées aussitôt après.",
+    "later": "Plus tard",
+    "expiredTitle": "Session expirée : les modifications sont enregistrées uniquement sur cet appareil",
+    "expiredBody": "La saisie continue de fonctionner. Reconnectez-vous pour enregistrer dans le cloud ; les modifications en attente sont envoyées aussitôt après.",
+    "signInAgain": "Se reconnecter"
+  },
   "connectionStatus": {
     "syncing": "Synchronisation",
     "connected": "Connecté",
@@ -1605,7 +1615,12 @@
     "scoreboard": "Tableau de bord",
     "match": "Match",
     "database": "Base de données",
-    "supabase": "Supabase",
+    "supabase": "Synchronisation cloud",
+    "cloud": "Synchronisation cloud",
+    "signInToSync": "Se connecter pour synchroniser",
+    "signInToSyncHint": "Non connecté : les modifications restent sur cet appareil jusqu'à la connexion.",
+    "offlinePending": "Hors ligne ({{count}} en attente)",
+    "refusedByServer": "Refusé par le serveur :",
     "syncingDots": "Synchronisation...",
     "title": "État de connexion",
     "pendingBackgroundSync": "Synchronisation en attente :",

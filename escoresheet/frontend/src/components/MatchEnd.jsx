@@ -20,7 +20,7 @@ import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
-import { syncJobsForEvents } from '../domain/corrections'
+import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
 
 // Helper to format duration as hh:mm
@@ -1157,7 +1157,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         const queued = await db.sync_queue.where('status').equals('queued').toArray()
         const staleJobs = [
           ...syncJobsForEvents(queued, deleteIds),
-          ...queued.filter(j => j.resource === 'set' && deletedSetIds.has(String(j.payload?.external_id)))
+          ...syncJobsForSets(queued, forfeitPlan.deleteSetIds)
         ]
         if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
         if (!match?.test && match?.seed_key) {

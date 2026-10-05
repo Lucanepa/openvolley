@@ -13,11 +13,15 @@ function fakeTable() {
 const fakeDb = vi.hoisted(() => ({}))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
 
-const sync = vi.hoisted(() => ({ processJob: null }))
+const sync = vi.hoisted(() => ({ processJob: null, errors: new Map() }))
 vi.mock('../useSyncQueue', () => ({
   processJob: (job) => sync.processJob(job),
+  takeJobError: (id) => { const e = sync.errors.get(id) ?? null; sync.errors.delete(id); return e },
   errorBackoffMs: () => 30000,
-  DROP_JOB: 'drop'
+  DROP_JOB: 'drop',
+  AUTH_REQUIRED: 'auth_required',
+  PERMANENT_FAILURE: 'permanent',
+  STOP_ERROR: 'stop_error'
 }))
 
 import { sendJobNow } from '../useSequentialSync'
@@ -80,6 +84,36 @@ describe('sendJobNow', () => {
     sync.processJob = async () => null
     const result = await sendJobNow(JOB)
     expect(result).toMatchObject({ success: false, offline: true })
+    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
+  })
+
+  it('a job the backend refuses (4xx) is parked as failed, not retried with backoff', async () => {
+    sync.processJob = async () => 'permanent'
+    const result = await sendJobNow(JOB)
+    expect(result).toMatchObject({ success: false })
+    expect(result.offline).toBeUndefined()
+    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'failed', attempts: 1 })
+  })
+
+  it('a refused set-end job keeps the reason it was refused', async () => {
+    const reason = { status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID', message: 'Database operation failed' }
+    sync.processJob = async (job) => { sync.errors.set(job.id, reason); return 'permanent' }
+    const result = await sendJobNow(JOB)
+    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'failed', last_error: reason })
+  })
+
+  it('a 4xx page without a backend error code is retried with backoff, with its reason', async () => {
+    const reason = { status: 403, code: null, message: 'Request failed (403)' }
+    sync.processJob = async (job) => { sync.errors.set(job.id, reason); return 'stop_error' }
+    const result = await sendJobNow(JOB)
+    expect(result.offline).toBeUndefined()
+    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'error', attempts: 1, last_error: reason })
+  })
+
+  it('a missing session leaves the job queued and reports it as deferred', async () => {
+    sync.processJob = async () => 'auth_required'
+    const result = await sendJobNow(JOB)
+    expect(result).toMatchObject({ success: false, offline: true, authRequired: true })
     expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
   })
 

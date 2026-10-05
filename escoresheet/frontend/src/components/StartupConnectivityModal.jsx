@@ -37,7 +37,8 @@ export default function StartupConnectivityModal({
     }
   }, [open])
 
-  // App is ready when DB works AND at least one sync path works (Supabase OR WebSocket)
+  // App is ready when DB works AND at least one sync path works (cloud backend OR WebSocket).
+  // The status key is still called 'supabase'; it is the OpenVolley backend now.
   const dbOk = isStatusOk(connectionStatuses.db)
   const supabaseOk = isStatusOk(connectionStatuses.supabase)
   const websocketOk = connectionStatuses.websocket === 'connected'
@@ -73,7 +74,7 @@ export default function StartupConnectivityModal({
 
   if (!open) return null
 
-  // Show DB + Supabase always, show fallback services only when connected
+  // Show DB + cloud always, show fallback services only when connected
   const visibleKeys = [
     'db', 'supabase',
     ...['api', 'server', 'websocket', 'scoreboard'].filter(key => connectionStatuses[key] === 'connected')
@@ -85,7 +86,7 @@ export default function StartupConnectivityModal({
     websocket: t('connectionStatus.webSocket', 'WebSocket'),
     scoreboard: t('connectionStatus.scoreboard', 'Scoreboard'),
     db: t('connectionStatus.database', 'Database'),
-    supabase: t('connectionStatus.supabase', 'Supabase')
+    supabase: t('connectionStatus.cloud', 'Cloud sync')
   }
 
   const getStatusIcon = (status) => {
@@ -121,6 +122,7 @@ export default function StartupConnectivityModal({
     if (status === 'disconnected') return t('connectionStatus.disconnected', 'Disconnected')
     if (status === 'error') return t('connectionStatus.error', 'Error')
     if (status === 'offline') return t('connectionStatus.offline', 'Offline')
+    if (status === 'auth_required') return t('connectionStatus.signInToSync', 'Sign in to sync')
     return t('connectionStatus.unknown', 'Unknown')
   }
 

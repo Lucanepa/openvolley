@@ -1414,6 +1414,8 @@
     "passwordTooShort": "Passwort muss mindestens 6 Zeichen haben",
     "accountCreated": "Konto erfolgreich erstellt!",
     "checkEmail": "Prüfen Sie Ihre E-Mails zur Bestätigung",
+    "accountReady": "Ihr Konto ist bereit. Sie können sich jetzt anmelden.",
+    "profileNotSaved": "Ihr Profil wurde nicht gespeichert. Bitte laden Sie die App neu und versuchen Sie es erneut.",
     "tip": "Tipp",
     "autoFillTip": "Ihre Profildaten werden automatisch ausgefüllt, wenn Sie als Schreiber ein offizielles Spiel starten.",
     "dangerZone": "Gefahrenzone",
@@ -1459,6 +1461,14 @@
       "decisionChange": "Entscheidungsänderung"
     }
   },
+  "syncBanner": {
+    "title": "Nicht angemeldet: Dieses Spiel ist nur auf diesem Gerät gespeichert",
+    "body": "Die Erfassung funktioniert weiter. Melden Sie sich an, um es in der Cloud zu speichern (Schiedsrichter, Livescore, Backup); wartende Änderungen werden danach sofort gesendet.",
+    "later": "Später",
+    "expiredTitle": "Sitzung abgelaufen: Änderungen sind nur auf diesem Gerät gespeichert",
+    "expiredBody": "Die Erfassung funktioniert weiter. Melden Sie sich erneut an, um in der Cloud zu speichern; wartende Änderungen werden danach sofort gesendet.",
+    "signInAgain": "Erneut anmelden"
+  },
   "connectionStatus": {
     "syncing": "Synchronisiere",
     "connected": "Verbunden",
@@ -1478,7 +1488,12 @@
     "scoreboard": "Anzeigetafel",
     "match": "Spiel",
     "database": "Datenbank",
-    "supabase": "Supabase",
+    "supabase": "Cloud-Synchronisierung",
+    "cloud": "Cloud-Synchronisierung",
+    "signInToSync": "Zum Synchronisieren anmelden",
+    "signInToSyncHint": "Nicht angemeldet: Änderungen bleiben auf diesem Gerät, bis Sie sich anmelden.",
+    "offlinePending": "Offline ({{count}} ausstehend)",
+    "refusedByServer": "Vom Server abgelehnt:",
     "syncingDots": "Synchronisiere...",
     "title": "Verbindungsstatus",
     "pendingBackgroundSync": "Ausstehende Hintergrund-Synchronisierung:",

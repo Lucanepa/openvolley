@@ -1,14 +1,18 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
-import { processJob, errorBackoffMs, DROP_JOB } from './useSyncQueue'
+import { processJob, takeJobError, errorBackoffMs, DROP_JOB, AUTH_REQUIRED, PERMANENT_FAILURE, STOP_ERROR } from './useSyncQueue'
 
 const TIMED_OUT = 'timed_out'
 
 // Store the outcome of a direct processJob call on its sync_queue row and map it
 // to the executeAndWait result.
 async function settleJob(job, jobId, result) {
+  // Why it failed (status/code/message, never the payload), stored on the row
+  // so a parked set-end or match-end job can be explained
+  const lastError = takeJobError(jobId)
+
   if (result === true) {
-    await db.sync_queue.update(jobId, { status: 'sent' })
+    await db.sync_queue.update(jobId, { status: 'sent', last_error: null })
     console.log(`[SequentialSync] ${job.resource} ${job.action} successful`)
     return { success: true, jobId }
   }
@@ -18,18 +22,33 @@ async function settleJob(job, jobId, result) {
     return { success: false, error: 'Job cannot be attributed to a match', jobId }
   }
 
-  if (result === false) {
-    // Permanent failure (details logged by processJob): the background queue
-    // retries it with backoff
-    console.error(`[SequentialSync] Supabase sync FAILED for ${job.resource}:`, { action: job.action, payload: job.payload })
-    await db.sync_queue.update(jobId, { status: 'error', attempts: 1, next_attempt_at: Date.now() + errorBackoffMs(1) })
+  if (result === PERMANENT_FAILURE) {
+    // Refused by the backend (4xx): not retried automatically, shown in the
+    // sync indicator with a manual retry
+    console.error(`[SequentialSync] ${job.resource} ${job.action} refused by the backend`)
+    await db.sync_queue.update(jobId, { status: 'failed', attempts: 1, failed_at: Date.now(), last_error: lastError })
+    return { success: false, error: `${job.resource} ${job.action} refused`, jobId }
+  }
+
+  if (result === AUTH_REQUIRED) {
+    // No session: saved locally, sent once the scorer signs in
+    console.warn(`[SequentialSync] ${job.resource} ${job.action} needs a sign-in; left in the sync queue`)
+    await db.sync_queue.update(jobId, { status: 'queued' })
+    return { success: false, offline: true, authRequired: true, jobId }
+  }
+
+  if (result === false || result === STOP_ERROR) {
+    // Failed (details logged by processJob), or a 4xx page from a proxy/WAF in
+    // front of the backend: the background queue retries it with backoff
+    console.error(`[SequentialSync] Cloud sync FAILED for ${job.resource} ${job.action}:`, lastError?.code || lastError?.status || '')
+    await db.sync_queue.update(jobId, { status: 'error', attempts: 1, next_attempt_at: Date.now() + errorBackoffMs(1), last_error: lastError })
     return { success: false, error: `${job.resource} ${job.action} failed`, jobId }
   }
 
   // Retry later (match not in the cloud yet, 5xx), rate limited or unreachable:
   // the data is saved locally and the background queue sends it.
   console.warn(`[SequentialSync] ${job.resource} ${job.action} deferred to the sync queue:`, result)
-  await db.sync_queue.update(jobId, { status: 'queued' })
+  await db.sync_queue.update(jobId, { status: 'queued', ...(lastError ? { last_error: lastError } : {}) })
   return { success: false, offline: true, jobId }
 }
 

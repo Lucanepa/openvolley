@@ -14,6 +14,7 @@
  *   payload.createdSubEventIds  ids of the new team's sub-events the swap wrote
  */
 import { scoreFromPointEvents } from './rules'
+import { parseExtId } from '../utils/syncIds'
 
 /**
  * The undo record to store on a decision_change event.
@@ -70,17 +71,51 @@ export function planDecisionChangeReversal(decisionEvent, events) {
 }
 
 /**
+ * The local Dexie id a sync job's external_id stands for: the namespaced form
+ * `${seedKey}:e:${id}` / `${seedKey}:s:${id}` (utils/syncIds), or a bare id
+ * queued before ids were namespaced. Null for anything else.
+ * @param {*} externalId
+ * @param {'event'|'set'} kind
+ * @returns {string|null}
+ */
+export function localIdOfExtId(externalId, kind) {
+  if (externalId == null) return null
+  const parsed = parseExtId(externalId)
+  if (parsed) return parsed.kind === kind ? String(parsed.localId) : null
+  const bare = String(externalId)
+  return /^\d+$/.test(bare) ? bare : null
+}
+
+/**
  * Queued (not yet sent) sync jobs that carry one of the given events — to be
  * dropped when the events are deleted locally, so the cloud never receives a
- * phantom row.
+ * phantom row. Event ids are local Dexie ids; the jobs carry them namespaced
+ * (`${seedKey}:e:${id}`) or, when queued before that, bare.
  * @param {Array} queuedJobs sync_queue rows with status 'queued'
  * @param {Iterable} eventIds
  * @returns {Array} the jobs to delete
  */
 export function syncJobsForEvents(queuedJobs, eventIds) {
   const ids = new Set([...(eventIds || [])].map(String))
-  return (queuedJobs || []).filter(j =>
-    j && j.resource === 'event' &&
-    j.payload?.external_id != null && ids.has(String(j.payload.external_id))
-  )
+  return (queuedJobs || []).filter(j => {
+    if (!j || j.resource !== 'event') return false
+    const localId = localIdOfExtId(j.payload?.external_id, 'event')
+    return localId != null && ids.has(localId)
+  })
+}
+
+/**
+ * Queued (not yet sent) sync jobs of the given local sets (insert or update) —
+ * to be dropped when the sets are deleted locally.
+ * @param {Array} queuedJobs sync_queue rows with status 'queued'
+ * @param {Iterable} setIds
+ * @returns {Array} the jobs to delete
+ */
+export function syncJobsForSets(queuedJobs, setIds) {
+  const ids = new Set([...(setIds || [])].map(String))
+  return (queuedJobs || []).filter(j => {
+    if (!j || j.resource !== 'set') return false
+    const localId = localIdOfExtId(j.payload?.external_id, 'set')
+    return localId != null && ids.has(localId)
+  })
 }

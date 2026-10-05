@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { apiFrom, apiAuth } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
+import { profileUpdateColumns, confirmedProfileRow, PROFILE_NOT_SAVED } from '../components/auth/profileWrite'
 
 const AuthContext = createContext(null)
 
@@ -184,36 +185,30 @@ export function AuthProvider({ children }) {
       return { error: { message: 'Not authenticated' } }
     }
 
+    // roles/user_id are never writable (the backend strips them and scopes the
+    // row to the caller), so only the editable columns are sent.
+    const columns = profileUpdateColumns(updates)
     const { data, error } = await apiFrom('profiles')
-      .update({
-        first_name: updates.firstName,
-        last_name: updates.lastName,
-        country: updates.country,
-        dob: updates.dob,
-        roles: updates.roles,
-        sport_type: 'indoor'
-      })
+      .update(columns)
       .eq('user_id', user.id)
       .select()
       .single()
 
     if (error) return { data, error }
 
-    // The proxy does not return written rows yet, so data may be null even on
-    // success: apply the edit to the profile we already have.
-    const updatedProfile = data || {
-      ...(profile || {}),
-      first_name: updates.firstName,
-      last_name: updates.lastName,
-      country: updates.country,
-      dob: updates.dob,
-      sport_type: 'indoor'
+    // Success only when the backend returns the written row with the new
+    // values. Anything else (no row, an unchanged row) was not saved and must
+    // not be shown as saved.
+    const updatedProfile = confirmedProfileRow(columns, data)
+    if (!updatedProfile) {
+      console.warn('[AuthContext] Profile save not confirmed by the backend')
+      return { data: null, error: { message: 'Your profile was not saved. Please reload the app and try again.', code: PROFILE_NOT_SAVED } }
     }
     setProfile(updatedProfile)
     localStorage.setItem('cachedProfile', JSON.stringify(updatedProfile))
 
-    return { data: updatedProfile, error }
-  }, [user, profile])
+    return { data: updatedProfile, error: null }
+  }, [user])
 
   // Reset password
   const resetPassword = useCallback(async (email) => {

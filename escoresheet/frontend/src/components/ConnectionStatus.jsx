@@ -1,17 +1,47 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
+import { useSyncQueueStats } from '../hooks/useSyncQueue'
+
+// The local server + WebSocket path (LAN relay) works on its own, cloud or not
+function isServerWebsocketViable(serverStatus, websocketStatus) {
+  return serverStatus === 'connected' && (websocketStatus === 'connected' || websocketStatus === 'no_match')
+}
 
 export default function ConnectionStatus({
   connectionStatuses = {},
   connectionDebugInfo = {},
   onCheckStatus,
   onRetryErrors,
-  queueStats = { pending: 0, error: 0 },
+  queueStats = null,
   position = 'right', // 'left' | 'right' | 'center'
   size = 'normal' // 'normal' | 'small' | 'large'
 }) {
   const { t } = useTranslation()
+
+  // Queue counts come from a live query on the local sync queue (callers used
+  // to pass the sync status string here, so pending/failed jobs never showed).
+  // queueStats may still carry counts (tests) and authRequired; a caller that
+  // passes the status string still gets 'auth_required' recognised.
+  const liveCounts = useSyncQueueStats()
+  const given = queueStats && typeof queueStats === 'object' ? queueStats : {}
+  const count = (key) => (typeof given[key] === 'number' ? given[key] : (liveCounts?.[key] || 0))
+  const stats = { pending: count('pending'), error: count('error'), failed: count('failed') }
+  const pendingCount = stats.pending
+  const errorCount = stats.error + stats.failed
+  const authRequired = given.authRequired === true || queueStats === 'auth_required'
+
+  // The browser's own view of the network (the 'Online' switch is offline mode)
+  const [browserOffline, setBrowserOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
+  useEffect(() => {
+    const update = () => setBrowserOffline(navigator.onLine === false)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
 
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
@@ -116,6 +146,8 @@ export default function ConnectionStatus({
       return { bg: 'rgba(156, 163, 175, 0.2)', border: 'rgba(156, 163, 175, 0.5)', dot: '#9ca3af', text: t('connectionStatus.naStatic', 'N/A (Static)') }
     } else if (status === 'connecting') {
       return { bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)', dot: '#eab308', text: t('connectionStatus.connecting', 'Connecting') }
+    } else if (status === 'auth_required') {
+      return { bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)', dot: '#f59e0b', text: t('connectionStatus.signInToSync', 'Sign in to sync') }
     } else if (status === 'test_mode') {
       return { bg: 'rgba(139, 92, 246, 0.2)', border: 'rgba(139, 92, 246, 0.5)', dot: '#8b5cf6', text: t('connectionStatus.testMode', 'Test Mode') }
     } else {
@@ -130,7 +162,8 @@ export default function ConnectionStatus({
     scoreboard: t('connectionStatus.scoreboard', 'Scoreboard'),
     match: t('connectionStatus.match', 'Match'),
     db: t('connectionStatus.database', 'Database'),
-    supabase: t('connectionStatus.supabase', 'Supabase')
+    // status key 'supabase' is the self-hosted OpenVolley cloud backend now
+    supabase: t('connectionStatus.cloud', 'Cloud sync')
   }
 
   const getOverallStatus = () => {
@@ -153,9 +186,7 @@ export default function ConnectionStatus({
     const matchStatus = connectionStatuses.match
 
     // Check if Server+WebSocket path is viable
-    const serverPathOk = serverStatus === 'connected'
-    const websocketPathOk = websocketStatus === 'connected' || websocketStatus === 'no_match'
-    const serverWebsocketViable = serverPathOk && websocketPathOk
+    const serverWebsocketViable = isServerWebsocketViable(serverStatus, websocketStatus)
 
     // Check if Supabase path is viable
     const supabaseViable = supabaseStatus === 'connected'
@@ -164,6 +195,8 @@ export default function ConnectionStatus({
     const hasViableConnection = serverWebsocketViable || supabaseViable
 
     if (!hasViableConnection) {
+      // Unreachable cloud and no local server: offline, not an error
+      if (supabaseStatus === 'offline') return 'offline'
       return 'attention' // No viable connection path
     }
 
@@ -181,7 +214,16 @@ export default function ConnectionStatus({
     return 'connected'
   }
 
-  const overallStatus = queueStats.error > 0 ? 'attention' : getOverallStatus()
+  // No network as far as the browser knows, but a local server (offline
+  // desktop / LAN scoretable serving tablets) can still be connected: then the
+  // match runs normally and only the cloud copy waits ('Syncing...' + count).
+  const overallStatus = browserOffline && !isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket)
+    ? 'offline'
+    : errorCount > 0
+      ? 'attention'
+      : authRequired
+        ? 'auth_required'
+        : getOverallStatus()
   const statusInfo = getStatusColor(overallStatus)
 
   const sizeStyles = {
@@ -244,10 +286,15 @@ export default function ConnectionStatus({
           background: statusInfo.dot
         }}></span>
         <span>
-          {overallStatus === 'connected' ? (queueStats.pending > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
+          {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
             overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
-              t('connectionStatus.error', 'Error')}
-          {queueStats.error > 0 && (
+              overallStatus === 'offline'
+                ? (pendingCount > 0
+                  ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
+                  : t('connectionStatus.offline', 'Offline'))
+                : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
+                  t('connectionStatus.error', 'Error')}
+          {errorCount > 0 && (
             <span style={{
               background: '#ef4444',
               color: '#fff',
@@ -257,7 +304,7 @@ export default function ConnectionStatus({
               marginLeft: '4px',
               fontWeight: 800
             }}>
-              {queueStats.error}
+              {errorCount}
             </span>
           )}
         </span>
@@ -363,8 +410,8 @@ export default function ConnectionStatus({
                   </div>
                 </div>
 
-                {/* Queue Stats for Supabase */}
-                {key === 'supabase' && (queueStats.pending > 0 || queueStats.error > 0) && (
+                {/* Queue stats for the cloud backend */}
+                {key === 'supabase' && (pendingCount > 0 || errorCount > 0 || authRequired) && (
                   <div style={{
                     padding: '8px',
                     margin: '0 8px 8px',
@@ -375,17 +422,28 @@ export default function ConnectionStatus({
                     flexDirection: 'column',
                     gap: '4px'
                   }}>
-                    {queueStats.pending > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#3b82f6' }}>
-                        <span>{t('connectionStatus.pendingBackgroundSync', 'Pending background sync:')}</span>
-                        <span style={{ fontWeight: 700 }}>{queueStats.pending}</span>
+                    {authRequired && (
+                      <div style={{ color: '#f59e0b' }}>
+                        {t('connectionStatus.signInToSyncHint', 'Not signed in: changes are kept on this device until you sign in.')}
                       </div>
                     )}
-                    {queueStats.error > 0 && (
+                    {pendingCount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#3b82f6' }}>
+                        <span>{t('connectionStatus.pendingBackgroundSync', 'Pending background sync:')}</span>
+                        <span style={{ fontWeight: 700 }}>{pendingCount}</span>
+                      </div>
+                    )}
+                    {stats.failed > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ef4444' }}>
+                        <span>{t('connectionStatus.refusedByServer', 'Refused by the server:')}</span>
+                        <span style={{ fontWeight: 700 }}>{stats.failed}</span>
+                      </div>
+                    )}
+                    {errorCount > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ef4444' }}>
                         <span>{t('connectionStatus.synchronizationErrors', 'Synchronization errors:')}</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 700 }}>{queueStats.error}</span>
+                          <span style={{ fontWeight: 700 }}>{errorCount}</span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()

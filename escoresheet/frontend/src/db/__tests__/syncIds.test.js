@@ -6,7 +6,8 @@ import {
   isBareLocalId,
   jobMatchKey,
   resolveJobExternalId,
-  rewriteQueuedSyncJobs
+  rewriteQueuedSyncJobs,
+  legacyCoinTossSeed
 } from '../../utils/syncIds'
 import { buildConnectionPins } from '../../utils/connectionPins'
 
@@ -175,5 +176,92 @@ describe('buildConnectionPins', () => {
       awayTeamUploadPin: ' 555555 '
     })).toEqual({ referee: '111111', bench_home: '222222', upload_away: '555555' })
     expect(buildConnectionPins(null)).toEqual({})
+  })
+})
+
+// Fake with the query shapes the coin toss lookup uses (filter, where().equals().and())
+function queryTable(rows = []) {
+  const t = fakeTable(rows)
+  const collection = (pred) => ({
+    first: async () => [...t.map.values()].filter(pred)[0],
+    and: (fn) => collection(r => pred(r) && fn(r)),
+    toArray: async () => [...t.map.values()].filter(pred)
+  })
+  t.filter = (fn) => collection(fn)
+  t.where = (field) => ({
+    equals: (v) => collection(r => r[field] === v),
+    anyOf: (...values) => collection(r => values.flat().includes(r[field]))
+  })
+  return t
+}
+
+describe('legacy coin toss ids (Dexie v18)', () => {
+  const tables = () => ({
+    sets: queryTable([]),
+    matches: queryTable([{ id: 1, seed_key: 'match_100_aaa' }, { id: 2, seed_key: 'match_200_bbb' }]),
+    events: queryTable([
+      { id: 31, matchId: 1, type: 'point' },
+      { id: 30, matchId: 1, type: 'coin_toss' }
+    ])
+  })
+
+  it('recognises the legacy id', () => {
+    expect(legacyCoinTossSeed('coin_toss_match_100_aaa')).toBe('match_100_aaa')
+    expect(legacyCoinTossSeed('match_100_aaa:e:30')).toBeNull()
+  })
+
+  it('resolves to the local coin toss event, scoped to its match', async () => {
+    const job = { resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa' } }
+    expect(await resolveJobExternalId(job, tables())).toEqual({ external_id: 'match_100_aaa:e:30' })
+  })
+
+  it('falls back to a match-scoped fixed id when the local event is gone', async () => {
+    const job = { resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_200_bbb', match_id: 'match_200_bbb' } }
+    const r = await resolveJobExternalId(job, tables())
+    expect(r).toEqual({ external_id: 'match_200_bbb:e:coin_toss' })
+    // the backend accepts it: the match key followed by ':'
+    expect(r.external_id.startsWith('match_200_bbb:')).toBe(true)
+  })
+
+  it('rewrites queued, errored and failed coin toss jobs and puts parked ones back in the queue', async () => {
+    const queue = queryTable([
+      { id: 1, resource: 'event', action: 'insert', status: 'error', attempts: 4, next_attempt_at: Date.now() + 600000, payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa', type: 'coin_toss' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'failed', payload: { external_id: 'coin_toss_match_200_bbb', match_id: 'match_200_bbb', type: 'coin_toss' } },
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:31', match_id: 'match_100_aaa', type: 'point' } },
+      { id: 4, resource: 'event', action: 'insert', status: 'sent', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa' } }
+    ])
+    const result = await rewriteQueuedSyncJobs({ queue, ...tables() }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    expect(result).toEqual({ rewritten: 2, dropped: 0, failed: 0 })
+    expect(queue.map.get(1)).toMatchObject({ status: 'queued', next_attempt_at: null, payload: { external_id: 'match_100_aaa:e:30', type: 'coin_toss' } })
+    expect(queue.map.get(2)).toMatchObject({ status: 'queued', payload: { external_id: 'match_200_bbb:e:coin_toss' } })
+    expect(queue.map.get(3).payload.external_id).toBe('match_100_aaa:e:31')
+    expect(queue.map.get(4).payload.external_id).toBe('coin_toss_match_100_aaa')
+  })
+
+  it('without the events table a legacy coin toss job is left for a caller that has it', async () => {
+    const { sets, matches } = tables()
+    const job = { resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa' } }
+    expect(await resolveJobExternalId(job, { sets, matches })).toBeNull()
+  })
+
+  it('upgrading v16 -> v17 -> v18 gives the coin toss job its local event id, not the fallback', async () => {
+    const queue = queryTable([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'coin_toss_match_100_aaa', match_id: 'match_100_aaa', type: 'coin_toss' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: '31', match_id: 'match_100_aaa', type: 'point' } }
+    ])
+    const t = tables()
+    // v17 (db.js passes the events table too)
+    await rewriteQueuedSyncJobs({ queue, ...t })
+    // v18
+    await rewriteQueuedSyncJobs({ queue, ...t }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    expect(queue.map.get(1).payload.external_id).toBe('match_100_aaa:e:30')
+    expect(queue.map.get(2).payload.external_id).toBe('match_100_aaa:e:31')
+
+    // a v17 that ran without the events table leaves it for v18, same result
+    const queue2 = queryTable([{ ...queue.map.get(1), payload: { ...queue.map.get(1).payload, external_id: 'coin_toss_match_100_aaa' } }])
+    await rewriteQueuedSyncJobs({ queue: queue2, sets: t.sets, matches: t.matches })
+    expect(queue2.map.get(1).payload.external_id).toBe('coin_toss_match_100_aaa')
+    await rewriteQueuedSyncJobs({ queue: queue2, ...t }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    expect(queue2.map.get(1).payload.external_id).toBe('match_100_aaa:e:30')
   })
 })
