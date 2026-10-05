@@ -154,7 +154,8 @@ function normalizeEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : ''
 }
 
-function bearerFromHeaders(headers) {
+/** Bearer token from an Authorization header, or null (pure; used by server.js logs). */
+export function bearerFromHeaders(headers) {
   const h = headers?.authorization || headers?.Authorization
   if (typeof h !== 'string') return null
   const m = /^Bearer\s+(\S+)$/i.exec(h.trim())

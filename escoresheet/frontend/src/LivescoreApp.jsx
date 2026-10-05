@@ -1,14 +1,25 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
+import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
+import { listedGames, getSetResults, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, isEndedStatus, shouldAutoConnect } from './utils/livescoreModel'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { PhoneIcon } from './components/icons'
+
+function shouldAutoConnectNow() {
+  if (typeof window === 'undefined') return false
+  return shouldAutoConnect({
+    servedFromLocalServer: isServedFromLocalServer(),
+    staticDeployment: isStaticDeployment(),
+    search: window.location.search,
+    hasOverride: !!getBackendOverride()
+  })
+}
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
@@ -21,34 +32,50 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
  */
 export default function LivescoreApp() {
   const { t } = useTranslation()
-  const [serverReady, setServerReady] = useState(isServedFromLocalServer())
+  // Livescore needs no PIN: skip the connection screen whenever the server is
+  // known (LAN server / desktop app, *.openvolley.app, ?match= / ?server=, or a
+  // server chosen earlier on this device). See utils/livescoreModel.js.
+  const [serverReady, setServerReady] = useState(() => shouldAutoConnectNow())
   const [liveGames, setLiveGames] = useState([]) // All games from match_live_state
   const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // A refetch failed after an earlier success: keep showing the last good
+  // list with a small notice instead of replacing it with the error view.
+  const [stale, setStale] = useState(false)
+  const hasLoadedRef = useRef(false)
   const channelRef = useRef(null)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
-  // Check URL params for auto-connect on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const matchParam = params.get('match')
-    const serverParam = params.get('server')
+  // Matches shown as started in this session (stay listed after an undo to
+  // 0:0) and matches watched while they could still change their set results.
+  const shownStartedRef = useRef(new Set())
+  const watchedRef = useRef(new Set())
+  const finalRefetchAttemptsRef = useRef(new Map())
+  const [finalRefetchTick, setFinalRefetchTick] = useState(0)
 
+  // ?server= sets the backend for this and later visits (the initial state
+  // already counts it as a known server)
+  useEffect(() => {
+    const serverParam = new URLSearchParams(window.location.search).get('server')
     if (serverParam) {
       setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
-    }
-
-    // Livescore can auto-connect — it doesn't need PIN
-    if (matchParam || serverParam) {
-      setServerReady(true)
     }
   }, [])
 
   // Handle server connection established
   const handleServerConnected = useCallback(() => {
     setServerReady(true)
+  }, [])
+
+  // Back to the connection screen (e.g. a stored LAN server is unreachable)
+  const handleChangeServer = useCallback(() => {
+    setSelectedGame(null)
+    hasLoadedRef.current = false
+    setStale(false)
+    setLiveGames([])
+    setServerReady(false)
   }, [])
 
   // Track viewport size for narrow screen blocking
@@ -71,24 +98,30 @@ export default function LivescoreApp() {
 
       if (fetchError) {
         console.error('[Livescore] Error fetching games:', fetchError)
-        setError(fetchError.message)
+        if (hasLoadedRef.current) setStale(true)
+        else setError(fetchError.message)
       } else {
         setLiveGames(visibleGames(data))
+        hasLoadedRef.current = true
         setError(null)
+        setStale(false)
       }
     } catch (err) {
       console.error('[Livescore] Exception:', err)
-      setError(err.message)
+      if (hasLoadedRef.current) setStale(true)
+      else setError(err.message)
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Initial fetch and subscribe to realtime updates
+  // Initial fetch and subscribe to realtime updates, once the server is known
+  // (a server chosen on the connection screen is used by both).
   useEffect(() => {
+    if (!serverReady) return undefined
     fetchLiveGames()
 
-    if (!supabase) return
+    if (!supabase) return undefined
 
     // Subscribe to every indoor match_live_state change (relay realtime shim)
     const channel = supabase
@@ -112,6 +145,19 @@ export default function LivescoreApp() {
           }
         }
       )
+      // FINAL set chips: set_results is written to the matches row by the
+      // scorer's sync queue, not to match_live_state, so take it from the
+      // match row's own change (secrets are stripped by the hub).
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'matches',
+          filter: 'sport_type=eq.indoor'
+        },
+        (payload) => setLiveGames(prev => applyMatchRowChange(prev, payload))
+      )
       .subscribe((status) => {
         console.log('[Livescore] Subscription status:', status)
         // SUBSCRIBED repeats after every reconnect: refetch to catch up on
@@ -124,9 +170,38 @@ export default function LivescoreApp() {
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current)
+        channelRef.current = null
       }
     }
-  }, [fetchLiveGames])
+  }, [fetchLiveGames, serverReady])
+
+  // Only started (or finished) matches are listed: a match appears when it is
+  // under way, not at the first lineup confirm. See utils/livescoreModel.js.
+  const shownGames = useMemo(() => listedGames(liveGames, shownStartedRef.current), [liveGames])
+
+  // FINAL view set results: match_live_state UPDATEs carry no set_results,
+  // so a match that ends while this page watches it keeps the (empty)
+  // matches.set_results of the first load until the realtime matches UPDATE
+  // above brings them. Safety net for a missed change: refetch (with the
+  // join) a few times, jittered so viewers do not refetch in step.
+  trackWatched(liveGames, watchedRef.current)
+  const finalPendingKey = liveGames
+    .filter((g) => needsFinalRefetch(g, watchedRef.current) &&
+      (finalRefetchAttemptsRef.current.get(g.match_id) || 0) < FINAL_REFETCH_DELAYS_MS.length)
+    .map((g) => g.match_id)
+    .join(',')
+  useEffect(() => {
+    if (!finalPendingKey || !serverReady) return undefined
+    const ids = finalPendingKey.split(',')
+    const attempts = finalRefetchAttemptsRef.current
+    const attempt = Math.min(...ids.map((id) => attempts.get(id) || 0))
+    const timer = setTimeout(async () => {
+      for (const id of ids) attempts.set(id, (attempts.get(id) || 0) + 1)
+      await fetchLiveGames()
+      setFinalRefetchTick((n) => n + 1)
+    }, jitterDelay(FINAL_REFETCH_DELAYS_MS[attempt]))
+    return () => clearTimeout(timer)
+  }, [finalPendingKey, finalRefetchTick, fetchLiveGames, serverReady])
 
   // Get selected game data
   const selectedGameData = selectedGame
@@ -137,7 +212,7 @@ export default function LivescoreApp() {
   const getLeftRight = (game) => {
     const sideA = game.side_a || 'left' // default Team A on left
     const isALeft = sideA === 'left'
-    const isMatchEnded = game.match_status === 'ended' || game.match_status === 'final'
+    const isMatchEnded = isEndedStatus(game.match_status)
     const isInSetInterval = !isMatchEnded && game.set_interval_active
 
     // When match is ended, show set score as main score
@@ -146,10 +221,10 @@ export default function LivescoreApp() {
     const leftPoints = isALeft ? (game.points_a || 0) : (game.points_b || 0)
     const rightPoints = isALeft ? (game.points_b || 0) : (game.points_a || 0)
 
-    // Get set results from joined matches table and transform to left/right
+    // Set results (live-state row, else the joined matches row), to left/right
     // Format from DB: [{set: 1, home: 25, away: 20}, ...]
     // Team A is always home in our system
-    const rawSetResults = game.matches?.set_results || []
+    const rawSetResults = getSetResults(game)
     const setResults = rawSetResults.map(s => ({
       set: s.set,
       left: isALeft ? s.home : s.away,
@@ -174,6 +249,28 @@ export default function LivescoreApp() {
     }
   }
 
+  // Last refetch failed after an earlier success: the scores shown may be old.
+  const staleNotice = stale ? (
+    <div
+      role="status"
+      style={{
+        position: 'fixed',
+        bottom: '8px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        padding: '4px 10px',
+        borderRadius: '6px',
+        background: 'var(--panel)',
+        color: 'var(--muted)',
+        fontSize: '12px',
+        zIndex: 50,
+        pointerEvents: 'none'
+      }}
+    >
+      {t('livescore.staleData', 'Connection problem: showing the last known scores')}
+    </div>
+  ) : null
+
   // Fullscreen view for selected game
   if (selectedGameData) {
     const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(selectedGameData)
@@ -191,6 +288,7 @@ export default function LivescoreApp() {
         display: 'flex',
         flexDirection: 'column'
       }}>
+        {staleNotice}
         {/* Narrow screen blocking overlay */}
         {(viewportWidth < 357 || viewportHeight < 650) && (
           <div style={{
@@ -488,14 +586,15 @@ export default function LivescoreApp() {
       )}
 
       <UpdateBanner />
+      {staleNotice}
 
       {/* Header */}
       <DashboardHeader
         title={t('livescore.title', 'Live Scores')}
-        subtitle={`${liveGames.length} ${liveGames.length === 1 ? 'game' : 'games'} live`}
+        subtitle={`${shownGames.length} ${shownGames.length === 1 ? 'game' : 'games'} live`}
         onLoadGames={fetchLiveGames}
         loadingMatches={loading}
-        matchCount={liveGames.length}
+        matchCount={shownGames.length}
         showOptionsMenu={false}
       />
 
@@ -521,15 +620,30 @@ export default function LivescoreApp() {
             >
               {t('common.retry', 'Retry')}
             </button>
+            {/* A stored server (e.g. a venue LAN server) may be unreachable now */}
+            <button
+              onClick={handleChangeServer}
+              style={{
+                marginLeft: '8px',
+                padding: '10px 20px',
+                background: 'var(--panel)',
+                border: 'none',
+                borderRadius: '6px',
+                color: 'var(--text)',
+                cursor: 'pointer'
+              }}
+            >
+              {t('connection.changeServer', 'Change server')}
+            </button>
           </div>
-        ) : liveGames.length === 0 ? (
+        ) : shownGames.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
             <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '60px', opacity: 0.5, marginBottom: '16px' }} />
             <div>{t('livescore.noActiveGame', 'No live games')}</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-            {liveGames.map((game) => {
+            {shownGames.map((game) => {
               const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam } = getLeftRight(game)
               const gameN = game.game_n || ''
               const league = game.league || ''
