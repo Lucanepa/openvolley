@@ -463,6 +463,28 @@ describe('realtimeHub ordering and cascades', () => {
     c.close(); await c.closed
   })
 
+  it('clamps a far-future ordering value, so it cannot freeze the feed', async () => {
+    let clock = Date.parse('2026-10-05T12:00:00.000Z')
+    const local = await startServer({ now: () => clock })
+    try {
+      const c = await liveClient(local.url)
+      await subscribe(c, 'l', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_A }])
+      // A writer with a bogus clock: year 2099. Admitted (newest), remembered as now + 5 s.
+      local.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 1, updated_at: '2099-01-01T00:00:00.000Z' }])
+      assert.equal((await c.next()).new.points_a, 1)
+      // Within the skew window an honest row is still older: dropped.
+      clock += 1000
+      assert.equal(local.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 2, updated_at: new Date(clock).toISOString() }]), 0)
+      // Once the clamp window has passed, honest rows flow again.
+      clock += 5000
+      local.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_A, points_a: 3, updated_at: new Date(clock).toISOString() }])
+      assert.equal((await c.next()).new.points_a, 3)
+      c.close(); await c.closed
+    } finally {
+      await local.stop()
+    }
+  })
+
   it('a matches DELETE also publishes a match_live_state DELETE (ON DELETE CASCADE is not RETURNed)', async () => {
     const livescore = await liveClient(srv.url)
     await subscribe(livescore, 'all', [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }])

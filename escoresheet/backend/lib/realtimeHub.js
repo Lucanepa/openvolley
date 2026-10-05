@@ -78,7 +78,8 @@
  * point reaches the hub twice (HTTP write-through and relay live-state-update)
  * in no guaranteed order; this keeps a late, older copy from rolling the score
  * back. Equal timestamps pass (an update that does not bump updated_at, e.g.
- * the scorer-attention alarm, still goes out).
+ * the scorer-attention alarm, still goes out). Values more than
+ * `maxFutureSkewMs` (5 s) in the future are clamped to now + 5 s.
  *
  * Cascades: Postgres cascades a matches DELETE to match_live_state, sets and
  * events without RETURNING those rows, so a write-through never sees them. For
@@ -225,6 +226,8 @@ function stripInternal(row) {
  *           already published for the same `key`. Default
  *           { match_live_state: { key: 'match_id', column: 'updated_at' } }; {} disables.
  * @property {number} [maxOrderingEntries=10000]  Keys remembered for ordering (oldest evicted).
+ * @property {number} [maxFutureSkewMs=5000]  Ordering values further in the future are clamped to now + this.
+ * @property {() => number} [now=Date.now]  Clock for the clamp (tests).
  * @property {Object<string, Array<{table: string, key: string, from?: string, carry?: string[]}>>} [cascadeDeletes]
  *           On a DELETE of the outer table, also publish a DELETE on each `table` with
  *           old = { [key]: row[from || 'id'], ...carry columns }. Default
@@ -254,6 +257,8 @@ export function createRealtimeHub(options = {}) {
     maxBufferedBytes = 256 * 1024,
     ordering = { match_live_state: { key: 'match_id', column: 'updated_at' } },
     maxOrderingEntries = 10000,
+    maxFutureSkewMs = 5000,
+    now: clock = Date.now,
     cascadeDeletes = { matches: [{ table: 'match_live_state', key: 'match_id', from: 'id', carry: ['sport_type'] }] },
     pingIntervalMs = 30000,
     getClientIp = (req) => (req?.socket?.remoteAddress || 'unknown').replace('::ffff:', ''),
@@ -499,8 +504,12 @@ export function createRealtimeHub(options = {}) {
       newest.delete(id)
       return true
     }
-    const ts = toMillis(raw[rule.column])
-    if (ts == null) return true
+    const rawTs = toMillis(raw[rule.column])
+    if (rawTs == null) return true
+    // The ordering value is client-supplied: clamp it to now + maxFutureSkewMs,
+    // so a fast clock or a far-future updated_at cannot freeze the key's feed
+    // (every later, honest row would otherwise look stale until eviction).
+    const ts = Math.min(rawTs, clock() + maxFutureSkewMs)
     const prev = newest.get(id)
     if (prev != null && ts < prev) {
       counters.staleDropped++
