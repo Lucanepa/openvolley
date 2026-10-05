@@ -1,6 +1,7 @@
 import React from 'react';
-import { LCSData, LiberoReplacement } from '../types_scoresheet';
+import { LCSData, LiberoReplacement, LiberoRedesignation } from '../types_scoresheet';
 import { Header } from './Header';
+import { displaySetNumber } from '../utils/scoresheetModel';
 
 interface LiberoControlSheetProps {
   match?: any;
@@ -11,6 +12,7 @@ interface LiberoControlSheetProps {
   teamAKey: 'home' | 'away';
   lcsData: LCSData;
   coinTossConfirmed?: boolean;
+  bestOf?: number;
 }
 
 const ROWS_PER_COLUMN = 8;
@@ -106,6 +108,7 @@ const SetSection: React.FC<{
 };
 
 const Set5Section: React.FC<{
+  label: number;
   teamALiberos: { number: number }[];
   teamBLiberos: { number: number }[];
   teamAReps: LiberoReplacement[];
@@ -113,7 +116,7 @@ const Set5Section: React.FC<{
   teamAReps_After: LiberoReplacement[];
   teamBReps_After: LiberoReplacement[];
   rowsPerColumn: number;
-}> = ({ teamALiberos, teamBLiberos, teamAReps, teamBReps, teamAReps_After, teamBReps_After, rowsPerColumn }) => {
+}> = ({ label, teamALiberos, teamBLiberos, teamAReps, teamBReps, teamAReps_After, teamBReps_After, rowsPerColumn }) => {
   // Combine before + after for each team, then split into 2 columns
   const allTeamA = [...teamAReps, ...teamAReps_After];
   const allTeamB = [...teamBReps, ...teamBReps_After];
@@ -121,7 +124,7 @@ const Set5Section: React.FC<{
   return (
     <div className="border-t border-black">
       <div className="bg-gray-200 text-center font-bold text-[10px] border-b border-black py-[1px]">
-        SET 5
+        SET {label}
       </div>
       <div className="grid grid-cols-4">
         <LiberoHeader liberos={teamALiberos} teamLetter="A" colSpan={2} compact />
@@ -149,7 +152,17 @@ const Set5Section: React.FC<{
   );
 };
 
-const Footer: React.FC<{ redesignationA?: any; redesignationB?: any }> = ({ redesignationA, redesignationB }) => (
+// Printed set number for a redesignation (best-of-3 deciding set is index 5 but set 3)
+type PrintedRedesignation = LiberoRedesignation & { setLabel: number };
+
+const formatRedesignation = (r: PrintedRedesignation): string =>
+  `Re-designation team ${r.team}: ${r.outNumber}/${r.inNumber}, Set ${r.setLabel}, Points ${r.score.replace(':', ' : ')}`;
+
+const Footer: React.FC<{
+  redesignationA?: PrintedRedesignation;
+  redesignationB?: PrintedRedesignation;
+  extraRedesignations?: PrintedRedesignation[];
+}> = ({ redesignationA, redesignationB, extraRedesignations = [] }) => (
   <div className="border border-black border-t-0">
     <div className="grid grid-cols-2 border-b border-black">
       <div className="border-r border-black px-2 py-[2px] flex items-center gap-2">
@@ -160,7 +173,7 @@ const Footer: React.FC<{ redesignationA?: any; redesignationB?: any }> = ({ rede
         </span>
         <span className="text-[8px]">Set:</span>
         <span className="text-[9px] font-bold underline min-w-[12px]">
-          {redesignationA?.setNumber || '____'}
+          {redesignationA?.setLabel || '____'}
         </span>
         <span className="text-[8px]">Points:</span>
         <span className="text-[9px] font-bold underline min-w-[20px]">
@@ -175,7 +188,7 @@ const Footer: React.FC<{ redesignationA?: any; redesignationB?: any }> = ({ rede
         </span>
         <span className="text-[8px]">Set:</span>
         <span className="text-[9px] font-bold underline min-w-[12px]">
-          {redesignationB?.setNumber || '____'}
+          {redesignationB?.setLabel || '____'}
         </span>
         <span className="text-[8px]">Points:</span>
         <span className="text-[9px] font-bold underline min-w-[20px]">
@@ -183,9 +196,17 @@ const Footer: React.FC<{ redesignationA?: any; redesignationB?: any }> = ({ rede
         </span>
       </div>
     </div>
-    <div className="border-b border-black px-2 py-[2px]">
+    <div className="border-b border-black px-2 py-[2px] whitespace-normal break-words leading-tight">
       <span className="text-[8px] font-bold">Remark(s): </span>
-      <span className="text-[8px]">{'_'.repeat(80)}</span>
+      {/* One slot per team above; any further re-designation of the same team goes here,
+          one line each so several redesignations wrap instead of clipping */}
+      {extraRedesignations.length > 0 ? (
+        extraRedesignations.map((r, i) => (
+          <div key={i} className="text-[8px]">{formatRedesignation(r)}</div>
+        ))
+      ) : (
+        <span className="text-[8px]">{'_'.repeat(80)}</span>
+      )}
     </div>
     <div className="grid grid-cols-2 px-2 py-[3px]">
       <div className="flex items-center gap-1">
@@ -234,13 +255,25 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
   teamAKey,
   lcsData,
   coinTossConfirmed,
+  bestOf = 5,
 }) => {
-  const redesignationA = lcsData.redesignations.find(r => r.team === 'A');
-  const redesignationB = lcsData.redesignations.find(r => r.team === 'B');
+  // Every redesignation is printed: the first per team in its slot, later ones in the remarks line
+  const printedRedesignations: PrintedRedesignation[] = lcsData.redesignations.map(r => ({
+    ...r,
+    setLabel: displaySetNumber(r.setNumber, bestOf),
+  }));
+  const redesignationA = printedRedesignations.find(r => r.team === 'A');
+  const redesignationB = printedRedesignations.find(r => r.team === 'B');
+  const extraRedesignations = printedRedesignations.filter(r => r !== redesignationA && r !== redesignationB);
 
-  // Calculate rows needed per set
+  // Best-of-3: sets 3 and 4 never exist (the deciding set is stored at index 5)
+  const setNumbers = bestOf === 3 ? [1, 2, 5] : [1, 2, 3, 4, 5];
+  const set5Label = displaySetNumber(5, bestOf);
+
+  // Calculate rows needed per set (indexed like setNumbers)
   const setRowCounts: number[] = [];
-  for (let i = 1; i <= 4; i++) {
+  for (const i of setNumbers) {
+    if (i === 5) continue;
     const setData = lcsData.sets.find(s => s.setNumber === i);
     setRowCounts.push(
       calcSetRowsNeeded(
@@ -283,7 +316,7 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
           />
         </div>
         <div className="border border-black flex-1 flex flex-col">
-          {[1, 2, 3, 4].map((setNum, idx) => {
+          {setNumbers.filter(n => n !== 5).map((setNum, idx) => {
             const setData = lcsData.sets.find(s => s.setNumber === setNum);
             return (
               <SetSection
@@ -298,6 +331,7 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
             );
           })}
           <Set5Section
+            label={set5Label}
             teamALiberos={lcsData.teamALiberos}
             teamBLiberos={lcsData.teamBLiberos}
             teamAReps={set5Data?.teamAReplacements || []}
@@ -307,7 +341,7 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
             rowsPerColumn={set5RowCount}
           />
         </div>
-        <Footer redesignationA={redesignationA} redesignationB={redesignationB} />
+        <Footer redesignationA={redesignationA} redesignationB={redesignationB} extraRedesignations={extraRedesignations} />
       </div>
     );
   }
@@ -323,13 +357,13 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
   };
   let currentHeight = page1FixedHeight;
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < setNumbers.length; i++) {
     const setHeight = totalSetHeights[i];
-    const isLast = i === 4;
+    const isLast = i === setNumbers.length - 1;
     const neededWithFooter = currentHeight + setHeight + (isLast ? FOOTER_HEIGHT_MM : 0);
 
     if (neededWithFooter <= USABLE_HEIGHT_MM) {
-      currentPage.sets.push(i + 1);
+      currentPage.sets.push(setNumbers[i]);
       currentHeight += setHeight;
       if (isLast) {
         currentPage.includeFooter = true;
@@ -339,7 +373,7 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
       if (currentPage.sets.length > 0) {
         pages.push(currentPage);
       }
-      currentPage = { sets: [i + 1], includeHeader: false, includeFooter: isLast };
+      currentPage = { sets: [setNumbers[i]], includeHeader: false, includeFooter: isLast };
       currentHeight = setHeight + (isLast ? FOOTER_HEIGHT_MM : 0);
       // If even a single set + footer doesn't fit, we still put it (it'll be a bit cramped)
     }
@@ -391,11 +425,12 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
           )}
           <div className="border border-black flex-1 flex flex-col">
             {page.sets.map(setNum => {
-              const idx = setNum - 1;
+              const idx = setNumbers.indexOf(setNum);
               if (setNum === 5) {
                 return (
                   <Set5Section
                     key={5}
+                    label={set5Label}
                     teamALiberos={lcsData.teamALiberos}
                     teamBLiberos={lcsData.teamBLiberos}
                     teamAReps={set5Data?.teamAReplacements || []}
@@ -421,7 +456,7 @@ export const LiberoControlSheet: React.FC<LiberoControlSheetProps> = ({
             })}
           </div>
           {page.includeFooter && (
-            <Footer redesignationA={redesignationA} redesignationB={redesignationB} />
+            <Footer redesignationA={redesignationA} redesignationB={redesignationB} extraRedesignations={extraRedesignations} />
           )}
         </div>
       ))}

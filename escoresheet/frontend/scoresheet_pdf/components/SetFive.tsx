@@ -18,6 +18,7 @@ interface SetFiveProps {
     firstServeTeamA?: boolean;
     startTime?: string;
     endTime?: string;
+    setFinished?: boolean; // Set ended: void unused point numbers like sets 1-4
 
     // Panel 1 (Left A - Before Court Change)
     lineupA?: string[];
@@ -290,6 +291,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
     firstServeTeamA,
     startTime,
     endTime,
+    setFinished = false,
     lineupA,
     subsA,
     timeoutsA,
@@ -314,8 +316,12 @@ export const SetFive: React.FC<SetFiveProps> = ({
     pointsAtChangeB = 0,
     positionBoxRef
 }) => {
-  // Calculate max score for dynamic points column sizing (Panel 2 and 3 use PointsColumn30)
-  const maxScore = Math.max(pointsB || 0, pointsA_Right || 0);
+  // Left (panel 1/3) team's full score: panel 1 holds 1-8, panel 3 the rest (pointsA_Right = score - 8)
+  const finalScoreA = (pointsA_Left || 0) + (pointsA_Right || 0);
+  const finalScoreB = pointsB || 0;
+  // Calculate max score for dynamic points column sizing (Panel 2 and 3 use PointsColumn30;
+  // panel 3 numbers the left team's points from 1, so size it on the full score)
+  const maxScore = Math.max(finalScoreB, finalScoreA);
 
   return (
     <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0 relative" style={{ width: '229mm' }}>
@@ -389,19 +395,19 @@ export const SetFive: React.FC<SetFiveProps> = ({
             {/* Panel 1: Team A */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
-                 <PointsColumn5 timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} />
+                 <PointsColumn5 timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} finalScore={finalScoreA} />
             </div>
 
             {/* Panel 2: Team B */}
             <div className="flex border-l border-black shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupB} subs={subsB} startsReceiving={firstServeTeamA === true} serviceRounds={serviceRoundsB} />
-                 <PointsColumn30 timeouts={timeoutsB || ["", ""]} markedPoints={markedPointsB || []} circledPoints={circledPointsB || []} maxScore={maxScore} />
+                 <PointsColumn30 timeouts={timeoutsB || ["", ""]} markedPoints={markedPointsB || []} circledPoints={circledPointsB || []} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreB} />
             </div>
 
             {/* Panel 3: Team A (Swapped) */}
             <div className="flex shrink-0" style={{ width: '76mm', marginLeft: '3.5mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA_Right || subsA} startsReceiving={false} serviceRounds={serviceRoundsA_Right} />
-                 <PointsColumn30 isLast={true} isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA} maxScore={maxScore} />
+                 <PointsColumn30 isLast={true} isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
             </div>
        </div>
     </div>

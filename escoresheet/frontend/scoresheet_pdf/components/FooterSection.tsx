@@ -187,6 +187,11 @@ interface ResultsProps {
   result?: string;
   coinTossConfirmed?: boolean;
   bestOf?: number;
+  /**
+   * Official sheet: leave RESULT blank until the match is finished (`result` set).
+   * Default false keeps the live set count for the match-entry view (MatchEntry.jsx).
+   */
+  blankResultUntilFinished?: boolean;
 }
 
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
@@ -206,7 +211,8 @@ export const Results: React.FC<ResultsProps> = ({
   winner = '',
   result = '',
   coinTossConfirmed = false,
-  bestOf = 5
+  bestOf = 5,
+  blankResultUntilFinished = false
 }) => {
     // For best-of-3: show 3 rows (sets 1, 2, and the deciding set which is stored at index 5)
     // For best-of-5: show 5 rows (sets 1-5)
@@ -381,12 +387,21 @@ export const Results: React.FC<ResultsProps> = ({
                      <span className="text-[12px] absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
                      <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">
                          {(() => {
-                             // Calculate sets won by each team from setResults
-                             const teamASetsWon = setResults.reduce((sum, r) => sum + (r.teamAWon || 0), 0);
-                             const teamBSetsWon = setResults.reduce((sum, r) => sum + (r.teamBWon || 0), 0);
-                             // Winner has 3 sets, loser has the remaining
-                             const winnerSets = Math.max(teamASetsWon, teamBSetsWon);
-                             const loserSets = Math.min(teamASetsWon, teamBSetsWon);
+                             // `result` ("3-1", or "3:1" from MatchEntry) is only set once the match
+                             // is finished, like WINNER. The official sheet stays blank until then;
+                             // the live match-entry view shows the running set count.
+                             let winnerSets: string | number = '';
+                             let loserSets: string | number = '';
+                             if (result) {
+                                 [winnerSets = '', loserSets = ''] = result.split(/[-:]/);
+                             } else if (blankResultUntilFinished) {
+                                 return null;
+                             } else {
+                                 const teamASetsWon = setResults.reduce((sum, r) => sum + (r.teamAWon || 0), 0);
+                                 const teamBSetsWon = setResults.reduce((sum, r) => sum + (r.teamBWon || 0), 0);
+                                 winnerSets = Math.max(teamASetsWon, teamBSetsWon);
+                                 loserSets = Math.min(teamASetsWon, teamBSetsWon);
+                             }
                              return (
                                  <>
                                      <span className="w-1/2 text-right">{winnerSets}</span>
