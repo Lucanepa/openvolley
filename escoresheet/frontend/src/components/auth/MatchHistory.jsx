@@ -50,7 +50,9 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
       // Get match details for each match_external_id (which references matches.external_id)
       const matchIds = userMatches.map(m => m.match_external_id)
       const { data: matchDetails, error: matchError } = await apiFrom('matches')
-        .select('external_id, team_a, team_b, final_score, winner, status, start_time, created_at')
+        // matches has no team_a/team_b/start_time columns (the backend refuses
+        // unknown ones): the teams are home_team/away_team, the date scheduled_at
+        .select('external_id, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
         .in('external_id', matchIds)
         .eq('sport_type', 'indoor')
 
@@ -190,7 +192,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {matches.map((match, index) => (
                 <div
-                  key={match.match_external_id || index}
+                  key={`${match.match_external_id || index}:${match.userRole || ''}`}
                   onClick={() => onSelectMatch?.(match)}
                   style={{
                     padding: '14px 16px',
@@ -216,13 +218,13 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ color: 'var(--text)', fontWeight: 500 }}>
-                        {getTeamName(match.team_a)}
+                        {getTeamName(match.home_team)}
                       </div>
                       <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                         {t('matchHistory.vs', 'vs')}
                       </div>
                       <div style={{ color: 'var(--text)', fontWeight: 500 }}>
-                        {getTeamName(match.team_b)}
+                        {getTeamName(match.away_team)}
                       </div>
                     </div>
                     {match.final_score && (
@@ -245,7 +247,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                     fontSize: 12
                   }}>
                     <div style={{ color: 'var(--muted)' }}>
-                      {formatDate(match.start_time || match.created_at)}
+                      {formatDate(match.scheduled_at || match.created_at)}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <span style={{
