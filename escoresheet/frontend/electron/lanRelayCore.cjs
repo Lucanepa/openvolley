@@ -24,8 +24,9 @@
  *                     reused by another scorer: after ORPHAN_TAKEOVER_MS when the stored
  *                     match is finished, after STALE_TAKEOVER_MS otherwise — and then the
  *                     displaced game PIN may reclaim the id once. Wrong-PIN claims are
- *                     limited per IP and per socket ('rate-limited', no PIN oracle), and a
- *                     LAN IP may hold only a few match ids at once ('too-many-matches').
+ *                     limited per IP and per socket ('rate-limited', no PIN oracle); only
+ *                     a claim carrying a PIN counts. A LAN IP may hold only a few match
+ *                     ids at once ('too-many-matches').
  *                     Room key: the match's seed_key (match.seed_key) when it carries one,
  *                     else String(matchId). Every device's first match is Dexie id 1, so
  *                     the seed_key keeps scorers apart and is the id the tablets know
@@ -36,10 +37,14 @@
  *                     PINs: a socket that already proved the match may leave the PIN
  *                     fields (gamePin, refereePin, ...) out; the relay keeps the stored
  *                     ones. A field that is present (even null) replaces the stored value.
- *                     A socket that sent PINs for a key before and now leaves them out
- *                     while the relay no longer holds that match gets
- *                     { code:'pins-required' }: it must resend them (a room recreated
- *                     without PINs could be claimed by anyone).
+ *                     A sync without the PIN fields gets { code:'pins-required' } when this
+ *                     socket sent PINs for the key before and the relay no longer holds
+ *                     the match (a room recreated without PINs could be claimed by
+ *                     anyone), and when this socket has not proved the stored match (a
+ *                     scorer's reconnected socket): it must resend them. Not a failed
+ *                     claim: never counted toward 'rate-limited'. The scorer publishes
+ *                     only under the seed key (never a Dexie id), PINs with the first
+ *                     sync of each key, and in the browser on one socket for all views.
  *                     Rooms exist only under that key: a scoreboard asked for a match by
  *                     another id (GET /api/match/<Dexie id>) is not answered, so a Dexie
  *                     id never opens a second, frozen room. Subscribers (tablets, the
@@ -526,7 +531,9 @@ function createLanRelay(options = {}) {
    *   socket that already owns it may attach a game PIN to it;
    * - an abandoned match (see isAbandoned) may be taken over; when an
    *   unfinished match is taken over with another game PIN, its own PIN may
-   *   reclaim it once (a scorer that was asleep is not locked out for good).
+   *   reclaim it once (a scorer that was asleep is not locked out for good);
+   * - a socket that has not proved the match and leaves the game PIN out is
+   *   asked for it ('pins-required'): not a guess, not counted.
    */
   function claim(ws, matchId, incomingMatch) {
     const meta = clients.get(ws)
@@ -553,6 +560,9 @@ function createLanRelay(options = {}) {
     // An owner re-sending its own PIN proved it already: never rate limited.
     // Leaving the PIN out is fine too (PINs are sent only when they change).
     if (wasOwner && storedPin !== null && (incomingPin === storedPin || !hasGamePinField(incomingMatch))) return grant('owner')
+    // Proof takes the game PIN. A socket that leaves it out (the scorer after
+    // a reconnect) is asked for it: nothing compared, nothing counted.
+    if (storedPin !== null && !hasGamePinField(incomingMatch)) return { ok: false, code: 'pins-required' }
     // From here the socket must prove something. Over the failure limit it is
     // refused before any comparison, so the reply says nothing about the PIN.
     const keys = failureKeys(meta)
@@ -573,7 +583,8 @@ function createLanRelay(options = {}) {
       else displaced.delete(matchId)
       return grant('takeover')
     }
-    for (const k of keys) claimFailures.fail(k)
+    // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
+    if (incomingPin !== null) for (const k of keys) claimFailures.fail(k)
     return { ok: false, code: 'not-match-owner' }
   }
 

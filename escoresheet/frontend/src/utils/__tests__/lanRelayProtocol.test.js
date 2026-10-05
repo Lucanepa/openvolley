@@ -410,12 +410,38 @@ describe('lanRelayCore protocol', () => {
     expect(relay.validatePin({ pin: PINS.refereePin, type: 'referee' }).status).toBe(404)
     expect(relay.validatePin({ pin: '565656', type: 'referee' }).status).toBe(200)
 
-    // A socket that never proved the match cannot leave the game PIN out
+    // A socket that never proved the match cannot leave the game PIN out: it
+    // is asked for it
     msg(relay, other, syncMessage({ ...noPins }))
-    expect(other.last('error').code).toBe('not-match-owner')
+    expect(other.last('error').code).toBe('pins-required')
     // ...and the game PIN is still required from a new socket
     msg(relay, other, syncMessage(makeMatch({ seed_key: seed })))
     expect(other.sent.filter((m) => m.type === 'error')).toHaveLength(1)
+  })
+
+  it('a scorer\'s PIN-less syncs are no failed claims: asked for the PINs, never rate limited', () => {
+    const relay = createLanRelay()
+    const seed = 'match_1791215210058_ffffff'
+    const full = makeMatch({ id: 1, seed_key: seed })
+    const { refereePin, homeTeamPin, awayTeamPin, homeTeamUploadPin, awayTeamUploadPin, gamePin, ...noPins } = full
+    const first = connect(relay, '192.168.1.10')
+    msg(relay, first, syncMessage(full))
+    expect(first.last('error')).toBeUndefined()
+
+    // The same device on a new socket (reconnect) leaves the PINs out, more
+    // often than the failure limit: asked for them every time, nothing counted
+    const second = connect(relay, '192.168.1.10')
+    for (let i = 0; i < 8; i++) msg(relay, second, syncMessage({ ...noPins }))
+    expect(second.sent.filter((m) => m.type === 'error').map((m) => m.code)).toEqual(Array(8).fill('pins-required'))
+    // With its PINs (what the scorer resends) it proves the match at once
+    msg(relay, second, syncMessage(full))
+    expect(second.sent.filter((m) => m.type === 'error')).toHaveLength(8)
+    // A claim with a null game PIN is no guess either
+    const third = connect(relay, '192.168.1.10')
+    for (let i = 0; i < 6; i++) msg(relay, third, syncMessage({ ...noPins, gamePin: null }))
+    expect(third.last('error').code).toBe('not-match-owner')
+    msg(relay, third, syncMessage(full))
+    expect(third.sent.filter((m) => m.type === 'error')).toHaveLength(6)
   })
 
   it('GET /api/match/<Dexie id> opens no second, frozen room (rooms exist only under the seed key)', async () => {

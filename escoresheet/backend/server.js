@@ -547,9 +547,12 @@ const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
 // (frontend/electron/lanRelayCore.cjs).
 const ORPHAN_TAKEOVER_MS = 60 * 1000
 const STALE_TAKEOVER_MS = 10 * 60 * 1000
-// Wrong game-PIN claims per IP / per socket per minute before claims needing
-// proof are refused without comparing the PIN (no guessing oracle).
+// Wrong game-PIN claims per socket / per IP per minute before claims needing
+// proof are refused without comparing the PIN (no guessing oracle). Only a
+// claim that carries a PIN counts. The IP limit is higher: every scorer of a
+// venue may share one NAT address.
 const CLAIM_FAILURE_LIMIT = 5
+const CLAIM_FAILURE_LIMIT_PER_IP = 20
 // Distinct match ids one IP's sockets may own at once / claim per minute
 // (higher than the LAN relays: a club's courts can share one NAT address).
 const MAX_OWNED_PER_IP = 20
@@ -3297,7 +3300,10 @@ function newClaimDenied(clientInfo, matchId) {
  * - a match nobody has owned for ORPHAN_TAKEOVER_MS (finished) or
  *   STALE_TAKEOVER_MS (in play) may be taken over; an unfinished one taken
  *   over with another PIN may be reclaimed once by its own PIN.
- * Wrong-PIN claims are limited per IP and per socket; over the limit a claim
+ * A socket that never proved the match and leaves the game PIN out is asked
+ * for it ('pins-required'): the scorer's sync after a reconnect or relay
+ * restart, not a guess, so it is not counted.
+ * Wrong-PIN claims are limited per socket and per IP; over the limit a claim
  * needing proof is refused BEFORE the PIN is compared (no guessing oracle).
  */
 function claimMatch(clientInfo, matchId, incomingMatch) {
@@ -3320,8 +3326,11 @@ function claimMatch(clientInfo, matchId, incomingMatch) {
   // Leaving the PIN out is fine too (PINs are sent only when they change).
   if (wasOwner && storedPin !== null && !hasGamePinField(incomingMatch)) return grant('owner')
   if (wasOwner && storedPin !== null && incomingPin !== null && safeEqualStr(incomingPin, storedPin)) return grant('owner')
-  const keys = [`ip:${clientInfo.ip}`, `ws:${clientInfo.id}`]
-  if (keys.some(k => (windowEntry(claimFailures, k)?.count || 0) >= CLAIM_FAILURE_LIMIT)) {
+  // Proof takes the game PIN; nothing is compared without one
+  if (storedPin !== null && !hasGamePinField(incomingMatch)) return { ok: false, code: 'pins-required' }
+  const limits = [[`ip:${clientInfo.ip}`, CLAIM_FAILURE_LIMIT_PER_IP], [`ws:${clientInfo.id}`, CLAIM_FAILURE_LIMIT]]
+  const keys = limits.map(([k]) => k)
+  if (limits.some(([k, max]) => (windowEntry(claimFailures, k)?.count || 0) >= max)) {
     return { ok: false, code: 'rate-limited' }
   }
   if (storedPin !== null && incomingPin !== null && safeEqualStr(incomingPin, storedPin)) {
@@ -3341,7 +3350,8 @@ function claimMatch(clientInfo, matchId, incomingMatch) {
     else displacedPins.delete(matchId)
     return grant('takeover')
   }
-  for (const k of keys) bumpWindow(claimFailures, k)
+  // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
+  if (incomingPin !== null) for (const k of keys) bumpWindow(claimFailures, k)
   return { ok: false, code: 'not-match-owner' }
 }
 
