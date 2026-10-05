@@ -18,7 +18,7 @@ import ical from 'node-ical'
 import { randomBytes, createHash, timingSafeEqual } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { readFile } from 'fs/promises'
-import { isIP } from 'net'
+import { isIP, BlockList } from 'net'
 import { join, extname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
@@ -28,6 +28,9 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // realtimeHub only needs `ws` and node core, so the LAN/SEA bundle can import it
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch } from './lib/realtimeHub.js'
+// Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
+import { ipBucketKey, createConcurrencyGate } from './lib/auth.js'
+import { createAttemptLimiter } from './lib/matchRestore.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -49,6 +52,27 @@ if (TRUST_PROXY && TRUST_PROXY !== 'cloudflare') {
   console.error(`[Config] TRUST_PROXY must be "cloudflare" or unset (got ${JSON.stringify(process.env.TRUST_PROXY)})`)
   process.exit(1)
 }
+// TRUST_PROXY_FROM (comma list of CIDRs): cf-connecting-ip is honored only when
+// the socket peer (cloudflared / Traefik) is inside one of them, so a caller
+// that reaches the origin port directly cannot forge its client address.
+let TRUST_PROXY_FROM = null
+try {
+  TRUST_PROXY_FROM = parseCidrList(process.env.TRUST_PROXY_FROM)
+} catch (err) {
+  console.error(`[Config] TRUST_PROXY_FROM: ${err.message}`)
+  process.exit(1)
+}
+if (TRUST_PROXY_FROM && TRUST_PROXY !== 'cloudflare') {
+  console.error('[Config] TRUST_PROXY_FROM needs TRUST_PROXY=cloudflare')
+  process.exit(1)
+}
+if (DB_MODE && !TRUST_PROXY) {
+  console.warn('⚠️  [Config] DATABASE_URL is set but TRUST_PROXY is not: every per-IP limit keys on the socket peer. ' +
+    'Behind cloudflared/Traefik that is the proxy, so all clients share ONE bucket. Set TRUST_PROXY=cloudflare (and TRUST_PROXY_FROM).')
+} else if (TRUST_PROXY && !TRUST_PROXY_FROM) {
+  console.warn('⚠️  [Config] TRUST_PROXY=cloudflare without TRUST_PROXY_FROM: cf-connecting-ip is trusted from ANY peer. ' +
+    'The origin port must be reachable only through the tunnel/proxy.')
+}
 // Extra trusted browser origins (comma list), on top of *.openvolley.app.
 const PUBLIC_ORIGINS = String(process.env.PUBLIC_ORIGINS || '')
   .split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
@@ -57,6 +81,16 @@ const PUBLIC_ORIGINS = String(process.env.PUBLIC_ORIGINS || '')
 const STORAGE_ROOT = process.env.STORAGE_ROOT || process.env.STORAGE_DIR || '/data/storage'
 // Read-only directory holding `last_backup` (UTC timestamp written by the host's backup job).
 const STATUS_DIR = process.env.STATUS_DIR || '/var/lib/openvolley-status'
+// A host backup older than this (or missing) makes /health 503 (backup:
+// stale|unknown) and pauses the 30-day backup/ sweep, so rotation never deletes
+// the only copies while the nightly snapshot is failing. 0 disables both (dev).
+const BACKUP_MAX_AGE_HOURS = process.env.BACKUP_MAX_AGE_HOURS === undefined || process.env.BACKUP_MAX_AGE_HOURS === ''
+  ? 36
+  : Number(process.env.BACKUP_MAX_AGE_HOURS)
+if (!Number.isFinite(BACKUP_MAX_AGE_HOURS) || BACKUP_MAX_AGE_HOURS < 0) {
+  console.error(`[Config] BACKUP_MAX_AGE_HOURS must be a number >= 0 (got ${JSON.stringify(process.env.BACKUP_MAX_AGE_HOURS)})`)
+  process.exit(1)
+}
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
 // X-OV-Proto this server requires for writes (pgQuery minWriteProto).
 const MIN_WRITE_PROTO = 2
@@ -141,8 +175,15 @@ const DB_READ_RATE_LIMIT_MAX = 600   // /api/db reads per IP and minute
 const DB_WRITE_RATE_LIMIT_MAX = 600  // /api/db writes per user id and minute
 const DB_WRITE_IP_RATE_LIMIT_MAX = 1200 // /api/db writes per IP, checked before the token lookup
 const STORAGE_IP_RATE_LIMIT_MAX = 600 // /api/storage/* per IP (per-user write quota lives in lib/storage.js)
-const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP + PIN type (+ match when sent)
-const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP
+const PIN_RATE_LIMIT_MAX = 20        // validate-connection-pin per IP (/64) + PIN type
+const PIN_IP_RATE_LIMIT_MAX = 60     // validate-connection-pin per IP (/64), coarse total
+// validate-connection-pin FAILED guesses per IP (/64): the brute-force budget.
+// A success is refunded, so a venue NAT pairing many devices is not affected.
+const PIN_FAILURES = { max: 20, windowMs: 10 * 60 * 1000 }
+const pinFailureLimiter = createAttemptLimiter(PIN_FAILURES)
+const DB_IP_RATE_LIMIT_MAX = 1200    // /api/db per IP (/64), any action, checked BEFORE the body is read
+// /api/match/restore bodies (up to MAX_RESTORE_BODY_SIZE) parsed at once, per process
+const restoreGate = createConcurrencyGate({ maxConcurrent: 2, maxQueue: 4 })
 const RESTORE_RATE_LIMIT_MAX = 30    // /api/match/restore per user
 const RESTORE_PIN_IP_RATE_LIMIT_MAX = 60 // /api/match/restore-by-pin per IP (the attempt limiter is inside)
 // Internal scan of setup/live matches for validate-connection-pin
@@ -623,12 +664,49 @@ function isValidPin(pin) {
 // other mode we key on the real socket address so per-IP rate limits cannot be
 // defeated by spoofing headers.
 function getClientIp(req) {
-  if (TRUST_PROXY === 'cloudflare') {
+  const addr = (req.socket?.remoteAddress || 'unknown').replace(/^::ffff:/, '')
+  if (TRUST_PROXY === 'cloudflare' && (!TRUST_PROXY_FROM || peerInList(TRUST_PROXY_FROM, addr))) {
     const cfIp = String(req.headers['cf-connecting-ip'] || '').trim()
     if (cfIp && isIP(cfIp)) return cfIp.replace(/^::ffff:/, '')
   }
-  const addr = req.socket?.remoteAddress || 'unknown'
-  return addr.replace('::ffff:', '')
+  return addr
+}
+
+/** "10.0.0.0/8, fd00::/8, 172.18.0.5" -> BlockList, or null when empty. Throws on a bad entry. */
+function parseCidrList(value) {
+  const items = String(value || '').split(',').map(s => s.trim()).filter(Boolean)
+  if (items.length === 0) return null
+  const list = new BlockList()
+  for (const item of items) {
+    const [ip, bits, extra] = item.split('/')
+    const family = isIP(ip)
+    const max = family === 4 ? 32 : 128
+    const prefix = bits === undefined ? max : Number(bits)
+    if (!family || extra !== undefined || !Number.isInteger(prefix) || prefix < 0 || prefix > max || (bits !== undefined && !/^\d+$/.test(bits))) {
+      throw new Error(`invalid CIDR ${JSON.stringify(item)}`)
+    }
+    list.addSubnet(ip, prefix, family === 4 ? 'ipv4' : 'ipv6')
+  }
+  return list
+}
+
+function peerInList(list, addr) {
+  const family = isIP(addr)
+  if (!family) return false
+  try { return list.check(addr, family === 4 ? 'ipv4' : 'ipv6') } catch { return false }
+}
+
+/**
+ * True for a caller that reached this process directly from loopback or a
+ * private network (Uptime Kuma on the status network, docker exec curl), not
+ * through cloudflared / Traefik: a proxied request always carries
+ * cf-connecting-ip or X-Forwarded-For, which a client cannot remove.
+ */
+function isInternalCaller(req) {
+  if (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.headers['forwarded']) return false
+  const addr = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
+  return addr === '::1' || /^127\./.test(addr) || /^10\./.test(addr) || /^192\.168\./.test(addr) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(addr) || /^f[cd][0-9a-f]{2}:/i.test(addr)
 }
 
 // --- Rate limiting (per-category isolation) ---
@@ -647,8 +725,9 @@ const rateLimitMaps = {
   dbWrite: new Map(),   // /api/db writes, per user id
   dbWriteIp: new Map(), // /api/db writes, per IP (before the token lookup)
   storage: new Map(),   // /api/storage/*, per IP
-  pin: new Map(),       // validate-connection-pin, per IP + type (+ match)
-  pinIp: new Map(),     // validate-connection-pin, per IP
+  dbIp: new Map(),      // /api/db, per IP (/64), before the body is read
+  pin: new Map(),       // validate-connection-pin, per IP (/64) + type
+  pinIp: new Map(),     // validate-connection-pin, per IP (/64)
   restore: new Map(),   // /api/match/restore, per user id
   restorePin: new Map() // /api/match/restore-by-pin, per IP
 }
@@ -965,6 +1044,15 @@ const ALLOWED_ORIGINS = [
   'https://bench.openvolley.app',
   'https://livescore.openvolley.app',
   'https://roster.openvolley.app',
+  // Native shells: Capacitor (Android androidScheme https, iOS), Tauri
+  // (macOS/Linux, Windows). DATABASE_URL implies strict cloud CORS, so without
+  // these the apps would lose cloud sync. Auth is a bearer token, never a
+  // cookie, so trusting them grants no ambient credentials.
+  'https://localhost',
+  'capacitor://localhost',
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
   // Local development
   'http://localhost:5173',
   'http://localhost:3000',
@@ -1007,7 +1095,8 @@ const CLOUD_CONNECT_SRC = [
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
 //               free space (floor), last backup age, socket pools. 503 when the
-//               db, catalog, floor or sentinel is not ok. Cached for 2 s.
+//               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
+//               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
 const HEALTH_DB_TIMEOUT_MS = 3000
 let healthCache = null // { at, status, body }
@@ -1030,6 +1119,13 @@ async function readLastBackup() {
   } catch {
     return { lastBackupAt: null, lastBackupAgeMin: null }
   }
+}
+
+/** 'ok' | 'stale' | 'unknown' (no readable last_backup), or 'unchecked' when BACKUP_MAX_AGE_HOURS=0. */
+function backupState(lastBackupAgeMin) {
+  if (BACKUP_MAX_AGE_HOURS === 0) return 'unchecked'
+  if (lastBackupAgeMin == null) return 'unknown'
+  return lastBackupAgeMin <= BACKUP_MAX_AGE_HOURS * 60 ? 'ok' : 'stale'
 }
 
 function relayStats() {
@@ -1067,8 +1163,10 @@ async function computeCloudHealth() {
     body.floor = st.lowSpace === true ? 'low' : (st.lowSpace === false ? 'ok' : 'unknown')
   }
   Object.assign(body, await readLastBackup(), relayStats())
+  body.backup = backupState(body.lastBackupAgeMin)
   if (realtimeHub) body.realtime = realtimeHub.stats()
-  const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok'
+  const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
+    (body.backup === 'ok' || body.backup === 'unchecked')
   if (!healthy) body.status = 'degraded'
   return { status: healthy ? 200 : 503, body }
 }
@@ -1141,9 +1239,14 @@ const server = createServer((req, res) => {
   }
 
   // Health check
+  // Proxied (public) callers get only the verdict; the full body (disk space,
+  // backup times, socket counts) is for monitors on loopback / the status network.
   if (url.pathname === '/health' && DB_MODE) {
+    const detailed = isInternalCaller(req)
     cloudHealth().then(
-      (h) => sendJson(res, h.status, h.body, { 'Cache-Control': 'no-store' }),
+      (h) => sendJson(res, h.status,
+        detailed ? h.body : { status: h.body.status, mode: 'cloud', db: h.body.db, backup: h.body.backup },
+        { 'Cache-Control': 'no-store' }),
       (err) => {
         console.error('[Health] failed:', err?.message)
         sendJson(res, 503, { status: 'down', mode: 'cloud' }, { 'Cache-Control': 'no-store' })
@@ -1975,9 +2078,10 @@ Generated by eScoresheet
   // never returned to the client. Reads run as trusted server code (internal:
   // no redaction of connection_pins), never through the client contract.
   if (url.pathname === '/api/match/validate-connection-pin' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
+    // IPv6 callers are keyed by /64: one subscriber holds a whole /64.
+    const ipKey = ipBucketKey(getClientIp(req))
     const tooMany = { success: false, error: 'Too many attempts. Please wait a minute before trying again.' }
-    if (isRateLimited(clientIp, PIN_IP_RATE_LIMIT_MAX, 'pinIp')) {
+    if (isRateLimited(ipKey, PIN_IP_RATE_LIMIT_MAX, 'pinIp')) {
       sendTooMany(tooMany)
       return
     }
@@ -1995,10 +2099,11 @@ Generated by eScoresheet
       }
       try {
         const { pin, type = 'referee' } = body || {}
-        // Own bucket per IP + PIN type (+ match when the client names one), so a
-        // venue NAT validating several devices is not starved by one bucket.
-        const matchKey = body?.matchId != null ? String(body.matchId).slice(0, 64) : '*'
-        if (isRateLimited(`${clientIp}|${String(type).slice(0, 20)}|${matchKey}`, PIN_RATE_LIMIT_MAX, 'pin')) {
+        // Own bucket per IP + PIN type, so a venue NAT validating several
+        // device kinds is not starved by one bucket. (A client-sent matchId is
+        // not part of the key: the scan below ignores it, so it would only
+        // hand an attacker fresh buckets.)
+        if (isRateLimited(`${ipKey}|${String(type).slice(0, 20)}`, PIN_RATE_LIMIT_MAX, 'pin')) {
           sendTooMany(tooMany)
           return
         }
@@ -2019,6 +2124,16 @@ Generated by eScoresheet
           sendJson(res, 400, { success: false, error: 'Invalid request' })
           return
         }
+        // The brute-force budget: failed guesses per IP (/64). isLimited counts
+        // this attempt up front (parallel guesses cannot all slip through);
+        // a success or a server error is refunded below.
+        if (pinFailureLimiter.isLimited(ipKey)) {
+          sendTooMany({ success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, '600')
+          return
+        }
+        let counted = true
+        const refund = () => { if (counted) { counted = false; pinFailureLimiter.refund(ipKey) } }
+        res.once('finish', () => { if (res.statusCode !== 404) refund() })
         const pinStr = String(pin).trim()
         const layer = await getDataLayer()
         const { status, body: out } = await layer.db.runQuery({
@@ -2087,6 +2202,12 @@ Generated by eScoresheet
       return
     }
     const clientIp = getClientIp(req)
+    // Coarse per-IP (/64) bucket before the body (up to MAX_MATCH_BODY_SIZE)
+    // is buffered; the per-action buckets below need the parsed body.
+    if (isRateLimited(ipBucketKey(clientIp), DB_IP_RATE_LIMIT_MAX, 'dbIp')) {
+      sendTooMany()
+      return
+    }
     ;(async () => {
       let request
       try {
@@ -2187,17 +2308,26 @@ Generated by eScoresheet
           sendTooMany()
           return
         }
-        let body
-        try {
-          body = await readJsonBody(req, MAX_RESTORE_BODY_SIZE)
-        } catch (err) {
-          sendBodyError(res, err)
+        // At most 2 restore bodies (16 MB each, several times that once
+        // parsed) in memory at once, a short queue behind them, 503 beyond.
+        await restoreGate.run(async () => {
+          let body
+          try {
+            body = await readJsonBody(req, MAX_RESTORE_BODY_SIZE)
+          } catch (err) {
+            sendBodyError(res, err)
+            return
+          }
+          const r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'] })
+          if (r.status === 200) publishChanges(r.changes)
+          sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
+        })
+      } catch (err) {
+        if (err?.code === 'AUTH_BUSY') {
+          req.resume() // discard the unread body
+          sendJson(res, 503, { data: null, error: { message: 'Server busy, retry shortly', code: 'OV_BUSY', retryable: true } }, { 'Retry-After': '5', Connection: 'close' })
           return
         }
-        const r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'] })
-        if (r.status === 200) publishChanges(r.changes)
-        sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
-      } catch (err) {
         sendLayerError('match/restore', err)
       }
     })()
@@ -3356,9 +3486,25 @@ if (DB_MODE) {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
     }, 60 * 60 * 1000).unref()
     // backup/backups/** older than 30 days and stale temp files: 5 min after start, then daily
-    const runSweep = () => layer.storage.sweep()
-      .then((r) => console.log('[Storage] sweep', JSON.stringify(r)))
-      .catch((err) => console.error('[Storage] sweep failed:', err.message))
+    // While the host backup is stale or missing, keep every backup/ file (the
+    // nightly snapshot may be the only other copy, and it is not being made):
+    // maxAgeMs Infinity deletes no file but still clears stale temp files.
+    const runSweep = async () => {
+      try {
+        const { lastBackupAgeMin } = await readLastBackup()
+        const state = backupState(lastBackupAgeMin)
+        const paused = state === 'stale' || state === 'unknown'
+        if (paused) {
+          console.error(`❌ [Storage] backup/ sweep PAUSED: host backup is ${state} ` +
+            `(last_backup age ${lastBackupAgeMin ?? 'n/a'} min, limit ${BACKUP_MAX_AGE_HOURS} h, STATUS_DIR ${STATUS_DIR}). ` +
+            'No backup file is deleted until the backup job runs again.')
+        }
+        const r = await layer.storage.sweep(paused ? { maxAgeMs: Infinity } : undefined)
+        console.log('[Storage] sweep', JSON.stringify({ ...r, backupSweep: paused ? 'paused' : 'ran' }))
+      } catch (err) {
+        console.error('[Storage] sweep failed:', err.message)
+      }
+    }
     setTimeout(runSweep, 5 * 60 * 1000).unref()
     setInterval(runSweep, 24 * 60 * 60 * 1000).unref()
   }, (err) => {

@@ -16,7 +16,7 @@
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn, execFileSync } from 'node:child_process'
+import { spawn, spawnSync, execFileSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -73,9 +73,9 @@ async function waitUntil(fn, { timeoutMs = 15000, intervalMs = 100, what = 'cond
 /** Starts `node server.js` with env; resolves once /health/live answers. */
 async function bootServer(env, args = []) {
   const port = await freePort()
-  const childEnv = { ...process.env, ...env, PORT: String(port) }
-  for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY', 'PG_TEST_URL', 'TEST_DATABASE_URL']) delete childEnv[k]
-  if (!env.DATABASE_URL) delete childEnv.DATABASE_URL
+  const inherited = { ...process.env }
+  for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'IS_CLOUD', 'TRUST_PROXY', 'TRUST_PROXY_FROM', 'BACKUP_MAX_AGE_HOURS', 'PG_TEST_URL', 'TEST_DATABASE_URL', 'DATABASE_URL']) delete inherited[k]
+  const childEnv = { ...inherited, ...env, PORT: String(port) }
   const child = spawn(process.execPath, ['server.js', ...args], { cwd: BACKEND_DIR, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   const output = []
   child.stdout.on('data', (d) => output.push(d.toString()))
@@ -231,6 +231,9 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
       DATABASE_URL: db.url,
       STORAGE_ROOT: storageRoot,
       STATUS_DIR: statusDir,
+      // the e2e client is the "proxy": cf-connecting-ip picks the client address
+      TRUST_PROXY: 'cloudflare',
+      TRUST_PROXY_FROM: '127.0.0.1/32,::1/128',
       // the test machine's free space must not decide the floor check
       STORAGE_BACKUP_MIN_FREE_MB: '1',
       STORAGE_SCORESHEETS_MIN_FREE_MB: '1',
@@ -260,9 +263,38 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(typeof h.json.diskFreeMB, 'number')
     assert.ok(h.json.lastBackupAgeMin >= 4 && h.json.lastBackupAgeMin <= 10, String(h.json.lastBackupAgeMin))
     assert.deepEqual(Object.keys(h.json.connections).sort(), ['live', 'role'])
+    assert.equal(h.json.backup, 'ok')
     const liveness = await api(srv.base, '/health/live', { method: 'GET', proto: null })
     assert.equal(liveness.status, 200)
     assert.equal(liveness.json.status, 'ok')
+    // Through a proxy (cloudflared / Traefik headers): the verdict only.
+    for (const headers of [{ 'cf-connecting-ip': '203.0.113.9' }, { 'X-Forwarded-For': '203.0.113.9' }]) {
+      const pub = await api(srv.base, '/health', { method: 'GET', proto: null, headers })
+      assert.equal(pub.status, 200)
+      assert.deepEqual(Object.keys(pub.json).sort(), ['backup', 'db', 'mode', 'status'])
+    }
+  })
+
+  it('/health goes 503 (backup: stale) when the host backup is older than 36 h, and back', async () => {
+    const stamp = (ageMin) => writeFileSync(join(statusDir, 'last_backup'), new Date(Date.now() - ageMin * 60000).toISOString() + '\n')
+    try {
+      stamp(37 * 60)
+      const stale = await waitUntil(async () => {
+        const r = await api(srv.base, '/health', { method: 'GET', proto: null })
+        return r.status === 503 ? r : null
+      }, { what: '/health 503' })
+      assert.equal(stale.json.backup, 'stale')
+      assert.equal(stale.json.status, 'degraded')
+      rmSync(join(statusDir, 'last_backup'))
+      const unknown = await waitUntil(async () => {
+        const r = await api(srv.base, '/health', { method: 'GET', proto: null })
+        return r.json?.backup === 'unknown' ? r : null
+      }, { what: '/health backup unknown' })
+      assert.equal(unknown.status, 503)
+    } finally {
+      stamp(5)
+    }
+    await waitUntil(async () => (await api(srv.base, '/health', { method: 'GET', proto: null })).status === 200, { what: '/health 200 again' })
   })
 
   it('CORS preflight allows X-OV-Proto; PUBLIC_ORIGINS is trusted; the removed rpc is 404', async () => {
@@ -439,6 +471,26 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(wrong.status, 404)
   })
 
+  it('limits FAILED connection-PIN guesses per IPv6 /64 (20 per 10 min); successes are refunded', async () => {
+    const pinCall = (ip, pin, type) => api(srv.base, '/api/match/validate-connection-pin', {
+      proto: null, headers: { 'cf-connecting-ip': ip }, body: { pin, type }
+    })
+    // Successes do not use the failure budget.
+    for (let i = 0; i < 5; i++) assert.equal((await pinCall('2001:db8:1:2::5', PINS.referee, 'referee')).status, 200)
+    // 20 failures from two addresses of the same /64 (two PIN types: the
+    // per-type bucket is 20 per minute on its own).
+    for (let i = 0; i < 10; i++) {
+      assert.equal((await pinCall(`2001:db8:1:2::${i + 10}`, '000000', 'referee')).status, 404)
+      assert.equal((await pinCall(`2001:db8:1:2:ffff::${i + 1}`, '000001', 'bench_home')).status, 404)
+    }
+    // The /64 is out of guesses, even with the right PIN and a fresh address.
+    const blocked = await pinCall('2001:db8:1:2:abcd::1', PINS.bench_away, 'bench_away')
+    assert.equal(blocked.status, 429)
+    assert.equal(blocked.headers.get('retry-after'), '600')
+    // Another /64 is unaffected.
+    assert.equal((await pinCall('2001:db8:1:3::1', PINS.bench_away, 'bench_away')).status, 200)
+  })
+
   it('restore-by-pin returns the match, sets, events and live state (no secrets)', async () => {
     const wrong = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: 4711, pin: '000000' } })
     assert.equal(wrong.status, 404)
@@ -568,6 +620,41 @@ describe('server.js without a database (LAN relay mode)', () => {
       const r = await api(srv.base, path, { body: {} })
       assert.equal(r.status, 503, path)
     }
+  })
+
+  it('cf-connecting-ip is ignored unless the peer is inside TRUST_PROXY_FROM', async () => {
+    // validate-connection-pin checks its per-IP bucket (60/min) before the 503.
+    const outside = await bootServer({ TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '10.0.0.0/8' }, ['--local'])
+    try {
+      const statuses = []
+      for (let i = 0; i < 61; i++) {
+        const r = await api(outside.base, '/api/match/validate-connection-pin', { body: {}, headers: { 'cf-connecting-ip': `198.51.100.${i + 1}` } })
+        statuses.push(r.status)
+      }
+      assert.equal(statuses.at(-1), 429, 'all forged addresses share the socket peer bucket')
+    } finally {
+      await outside.stop()
+    }
+    const inside = await bootServer({ TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '127.0.0.0/8' }, ['--local'])
+    try {
+      for (let i = 0; i < 61; i++) {
+        const r = await api(inside.base, '/api/match/validate-connection-pin', { body: {}, headers: { 'cf-connecting-ip': `198.51.100.${i + 1}` } })
+        assert.equal(r.status, 503)
+      }
+    } finally {
+      await inside.stop()
+    }
+  })
+
+  it('refuses to start with a bad TRUST_PROXY_FROM', async () => {
+    const r = spawnSync(process.execPath, ['server.js', '--local'], {
+      cwd: BACKEND_DIR,
+      env: { PATH: process.env.PATH, PORT: '0', TRUST_PROXY: 'cloudflare', TRUST_PROXY_FROM: '10.0.0.0/33' },
+      encoding: 'utf8',
+      timeout: 10000
+    })
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /TRUST_PROXY_FROM: invalid CIDR/)
   })
 
   it('a purpose=live socket gets the plain relay hello (realtime not supported)', async () => {

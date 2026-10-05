@@ -55,10 +55,19 @@ covers both.
 
 ```bash
 curl -fsS https://backend.openvolley.app/health/live   # process up (no DB)
-curl -fsS https://backend.openvolley.app/health        # db, catalog, sentinel, floor, backup age
+curl -fsS https://backend.openvolley.app/health        # verdict: status, db, backup (full body from the status network)
 ```
 
-Cloud-mode `/health` (HTTP 200 only when `db`, `catalog`, `sentinel` and `floor` are ok, else 503; cached 2 s):
+Use `/health/live` for the Docker healthcheck (Traefik drops an unhealthy
+container from routing, and the WebSocket relay with it) and `/health` only for
+the monitor (Uptime Kuma).
+
+Cloud-mode `/health` (HTTP 200 only when `db`, `catalog`, `sentinel`, `floor`
+and `backup` are ok, else 503; cached 2 s). The full body below goes only to
+direct callers from loopback or a private network (Kuma on the status network,
+`docker exec ... curl`). A request that came through cloudflared or Traefik
+(it carries `cf-connecting-ip` / `X-Forwarded-For`) gets the verdict only:
+`{"status","mode","db","backup"}`.
 
 ```json
 {
@@ -73,6 +82,7 @@ Cloud-mode `/health` (HTTP 200 only when `db`, `catalog`, `sentinel` and `floor`
   "floor": "ok",
   "lastBackupAt": "2026-10-05T11:05:00.000Z",
   "lastBackupAgeMin": 55,
+  "backup": "ok",
   "connections": { "role": 4, "live": 61 },
   "activeRooms": 3,
   "realtime": { "sockets": 61, "ips": 2, "channels": 70, "...": "hub counters" }
@@ -81,8 +91,13 @@ Cloud-mode `/health` (HTTP 200 only when `db`, `catalog`, `sentinel` and `floor`
 
 `db` is `ok|down`, `sentinel` is `ok|missing`, `floor` is `ok|low|unknown`.
 `lastBackupAt`/`lastBackupAgeMin` are `null` when `$STATUS_DIR/last_backup`
-is missing or unreadable (reported only, never a 503). LAN `/health` keeps the
-old shape (`status: healthy`, `mode: local`, always 200).
+is missing or unreadable. `backup` is `ok` (younger than `BACKUP_MAX_AGE_HOURS`,
+36 h), `stale`, `unknown` (no readable `last_backup`) or `unchecked`
+(`BACKUP_MAX_AGE_HOURS=0`); `stale` and `unknown` make `/health` 503. While the
+backup is `stale` or `unknown` the daily storage sweep also **keeps every file
+under `backup/backups/`** (it logs `backup/ sweep PAUSED`), so the 30-day
+rotation never deletes the only copies while the nightly snapshot is failing.
+LAN `/health` keeps the old shape (`status: healthy`, `mode: local`, always 200).
 
 Test WebSocket (browser console):
 
@@ -131,7 +146,9 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `STORAGE_ROOT` | Object storage root (`{root}/{bucket}/{path}`), must contain the `.ovdata` sentinel or every write gets 503. `STORAGE_DIR` is accepted as the older name. | `/data/storage` |
 | `STATUS_DIR` | Read-only directory with `last_backup` (a UTC timestamp, e.g. `date -u +%FT%TZ`) reported by `/health`. | `/var/lib/openvolley-status` |
 | `PUBLIC_ORIGINS` | Extra trusted browser origins, comma separated (CORS with credentials, CSP connect-src), on top of `https://*.openvolley.app` and the built-in list. | - |
-| `TRUST_PROXY` | `cloudflare`: the client IP is `cf-connecting-ip` (only valid when the origin is reachable through Cloudflare only). Unset: the socket peer address. Any other value stops the server. | - |
+| `TRUST_PROXY` | `cloudflare`: the client IP is `cf-connecting-ip` (only valid when the origin is reachable through Cloudflare only). Unset: the socket peer address. Any other value stops the server. **Required behind cloudflared/Traefik**: without it every per-IP limit (socket caps, PIN and restore buckets, `/api/db`, auth) keys on the proxy's address, i.e. one bucket for all clients (the server warns at startup). | - |
+| `TRUST_PROXY_FROM` | Comma list of CIDRs (e.g. the tunnel/Traefik network `172.30.0.0/24`). With it, `cf-connecting-ip` is honored only when the socket peer is inside one of them, so a caller that reaches the origin port directly cannot forge its address. Needs `TRUST_PROXY=cloudflare`; a bad entry stops the server. Without it the origin port must be reachable through the proxy only (no published host port, own Docker network). | - |
+| `BACKUP_MAX_AGE_HOURS` | Max age of `$STATUS_DIR/last_backup` before `/health` says `backup: stale` (503) and the `backup/` sweep pauses. `0` disables both (dev only). | `36` |
 | `IS_CLOUD` | Strict cloud CORS/HSTS/CSP without a database (relay-only cloud). Implied by `DATABASE_URL`. | - |
 | `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
 | `CONTACT_EMAIL` | Contact form recipient; also named in the "password reset unavailable" message | `volleyball@lucanepa.com` |
@@ -148,16 +165,42 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read.
 
 Rate limits in cloud mode (per minute unless noted; sized for a venue NAT):
-`/api/db` reads 600 per IP, writes 600 per user (and 1200 per IP before the
-token lookup); `/api/storage/*` 600 per IP plus the per-user write quota of
-`lib/storage.js`; `validate-connection-pin` 60 per IP and 20 per IP + PIN type;
-`/api/match/restore` 30 per user; `/api/match/restore-by-pin` 60 per IP plus the
+`/api/db` 1200 per IP before the body is read, then reads 600 per IP, writes
+600 per user (and 1200 per IP before the token lookup); `/api/storage/*` 600 per
+IP plus the per-user write quota of `lib/storage.js`; `validate-connection-pin`
+60 per IP and 20 per IP + PIN type, plus at most **20 failed guesses per IP in
+10 minutes** (a success is refunded; 429 with `Retry-After: 600`);
+`/api/match/restore` 30 per user, at most 2 bodies parsed at once per process
+(4 queued, then 503 `OV_BUSY`); the PIN and `/api/db` buckets key IPv6 by /64; `/api/match/restore-by-pin` 60 per IP plus the
 attempt limiter (20 failed per caller / 5 per caller and game in 10 min); auth
 buckets live in `lib/auth.js`. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
+
+CORS in cloud mode trusts `https://*.openvolley.app`, `PUBLIC_ORIGINS`, and the
+native shells: Capacitor (`https://localhost`, `capacitor://localhost`) and
+Tauri (`tauri://localhost`, `http(s)://tauri.localhost`).
+
+### Cutover: frontend and backend ship together
+
+This frontend and this backend only work with each other, in both directions:
+
+- The frontend sends `X-OV-Proto` on every `/api/db`, `/api/storage/*` and
+  `/api/match/*` call, reads included. The old Supabase-proxy backend allows
+  only `Content-Type, Authorization` in CORS, so every cross-origin preflight
+  fails: reads, writes, storage and restore all break. Its realtime shim
+  (`supabaseClient.js` -> `?purpose=live` sockets) needs this backend's hub.
+- This backend answers 426 to every write from a cached old PWA (no
+  `X-OV-Proto: 2`) until the service worker updates it.
+
+So the frontend deploy (auto-deploy on merge to `main`, if enabled) and the
+switch of the backend URL to the `DATABASE_URL` backend are **one step**: do not
+merge to `main`, or pause the frontend auto-deploy, until the new backend
+answers at the same backend URL. Optional, to decouple the two: first ship a
+backend-only change to the current production backend that adds `X-OV-Proto`
+to `Access-Control-Allow-Headers`.
 
 Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works on all cloud platforms) or SMTP credentials.
 
