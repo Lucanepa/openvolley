@@ -124,7 +124,7 @@ export default function ConnectionSetupModal({
     FOCUS_RING
   )
   const smallBtn = (done) => cn(
-    'inline-flex h-9 items-center justify-center rounded-lg border px-3 text-xs font-medium transition-colors',
+    'inline-flex h-11 items-center justify-center rounded-lg border px-3.5 text-xs font-medium transition-colors',
     done ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-50',
     FOCUS_RING
   )
@@ -173,13 +173,17 @@ export default function ConnectionSetupModal({
       <div key={role} className={cn('flex items-stretch gap-3 py-3 transition-opacity', enabled === false && 'opacity-60')}>
         <span className="w-[2px] shrink-0 self-stretch rounded-full" style={{ background: enabled === false ? '#e7e5e4' : color }} />
         <div className="min-w-0 flex-1">
-          <div className={cn('flex items-center justify-between gap-3', enabled !== false && 'mb-2')}>
-            <div className="flex items-center gap-2.5">
+          <div className={cn('flex min-h-11 items-center justify-between gap-3', enabled !== false && 'mb-2')}>
+            <div className="flex items-center gap-3">
               {hasToggle && (
+                // Opens over the scoreboard: "on" is slate-900, never brand red (R4).
+                // lg track plus an 8px invisible halo = a 44px courtside hit area (R12).
                 <Switch
+                  size="lg"
                   checked={!!enabled}
                   aria-label={label}
                   onCheckedChange={() => handleToggleConnection(dbField, syncField, pinSyncField, !enabled)}
+                  className={cn("before:absolute before:-inset-2 before:content-['']", enabled && 'bg-slate-900')}
                 />
               )}
               <h4 className="text-sm font-semibold text-stone-900">{label}</h4>
@@ -188,7 +192,7 @@ export default function ConnectionSetupModal({
               <button
                 type="button"
                 onClick={() => setShowQRModal(role)}
-                className={cn(smallBtn(false), 'h-11 px-3.5')}
+                className={smallBtn(false)}
               >
                 <QrCode size={14} aria-hidden="true" className="mr-1.5 text-stone-400" />
                 {t('connection.showQR', 'Show QR')}

@@ -490,17 +490,19 @@ export default function ScoreboardOptionsModal({
               const currentFont = fontOptions.find(f => f.value === scoreFont) || fontOptions[0]
               return (
                 <>
-                  <button
-                    type="button"
-                    aria-expanded={fontSelectorOpen}
-                    onClick={() => setFontSelectorOpen(!fontSelectorOpen)}
-                    className="flex w-full min-h-11 items-center justify-between rounded-lg text-left transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-                  >
+                  {/* Label + InfoDot sit beside the picker button, not inside it (no button in a button). */}
+                  <div className="flex w-full min-h-11 items-center justify-between gap-3">
                     <div className="flex items-center gap-1.5">
-                      <div className="text-sm font-semibold text-stone-900">{t('options.scoreFont')}</div>
+                      <div id="score-font-label" className="text-sm font-semibold text-stone-900">{t('options.scoreFont')}</div>
                       <InfoDot title={t('options.scoreFontInfo')} />
                     </div>
-                    <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      aria-expanded={fontSelectorOpen}
+                      aria-labelledby="score-font-label"
+                      onClick={() => setFontSelectorOpen(!fontSelectorOpen)}
+                      className="flex min-h-11 items-center gap-3 rounded-lg px-2 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                    >
                       <span style={{
                         fontFamily: currentFont.fontFamily,
                         fontSize: '18px',
@@ -511,8 +513,8 @@ export default function ScoreboardOptionsModal({
                         {currentFont.preview}
                       </span>
                       <ChevronDown size={16} aria-hidden="true" className={cn('text-stone-400 transition-transform', fontSelectorOpen && 'rotate-180')} />
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                   {fontSelectorOpen && (
                     <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                       {fontOptions.map(option => (
@@ -630,10 +632,14 @@ export default function ScoreboardOptionsModal({
                 <div className="text-sm font-semibold text-stone-900">{t('options.screenMode')}</div>
                 <InfoDot title={t('options.screenModeInfo')} />
               </div>
+              {/* joined (aria-pressed buttons): commits on click/Enter/Space only, so
+                  arrowing across segments cannot trigger fullscreen as a radiogroup would. */}
               <SegmentedControl
                 ariaLabel={t('options.screenMode')}
+                variant="joined"
+                size="lg"
                 value={displayMode}
-                className="max-w-md [&>button]:h-11 [&>button]:text-sm [&>button]:capitalize"
+                className="max-w-md [&>button]:capitalize"
                 options={['auto', 'desktop', 'tablet'].map(mode => ({
                   value: mode,
                   label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,

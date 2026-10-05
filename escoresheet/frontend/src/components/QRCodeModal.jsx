@@ -165,7 +165,7 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
               type="button"
               onClick={handleCopy}
               className={cn(
-                'inline-flex h-9 items-center justify-center rounded-lg border px-3 text-xs font-medium transition-colors',
+                'inline-flex h-11 items-center justify-center rounded-lg border px-3.5 text-xs font-medium transition-colors',
                 copyFeedback ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-50',
                 FOCUS_RING
               )}
