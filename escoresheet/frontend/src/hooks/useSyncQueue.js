@@ -1449,9 +1449,12 @@ export function useUserMatchLink(matchId) {
     const bump = () => setAuthTick(t => t + 1)
     const onStorage = (e) => { if (e.key === AUTH_TOKEN_STORAGE_KEY || e.key === 'cachedProfile') bump() }
     window.addEventListener(AUTH_TOKEN_CHANGE_EVENT, bump)
+    // AuthContext PROFILE_CACHED_EVENT: the profile (name) arrives after the sign-in
+    window.addEventListener('ov-profile-cached', bump)
     window.addEventListener('storage', onStorage)
     return () => {
       window.removeEventListener(AUTH_TOKEN_CHANGE_EVENT, bump)
+      window.removeEventListener('ov-profile-cached', bump)
       window.removeEventListener('storage', onStorage)
     }
   }, [])
