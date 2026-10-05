@@ -3847,13 +3847,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         apiFrom('matches')
           .update({ manual_changes: updatedChanges })
           .eq('external_id', data.match.seed_key)
-          .select('id, external_id, manual_changes')
           .then((result) => {
-            console.log('[ManualChange] Supabase result:', result)
-            if (result.data && result.data.length > 0) {
-              console.log('[ManualChange] Updated row:', result.data[0])
+            // The proxy does not return written rows; only an error is meaningful.
+            if (result.error) {
+              console.warn('[ManualChange] Supabase update failed:', result.error)
             } else {
-              console.warn('[ManualChange] NO ROWS UPDATED! external_id not found:', data.match.seed_key)
+              console.log('[ManualChange] Synced manual_changes to Supabase:', data.match.seed_key)
             }
           })
           .catch((err) => {
@@ -20378,7 +20377,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     if (data.match?.seed_key) {
                                       try {
                                         const sbUpdate = leftIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        await apiFrom('sets').update(sbUpdate).eq('external_id', setExtId(data.match.seed_key, data.set.id))
+                                        // Queued (not written directly): processJob scopes set updates to
+                                        // their match and also matches pre-namespacing set rows.
+                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, data.set.id), ...sbUpdate }, ts: new Date().toISOString(), status: 'queued' })
                                       } catch (err) { /* ignore */ }
                                     }
 
@@ -20420,7 +20421,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     if (data.match?.seed_key) {
                                       try {
                                         const sbUpdate = rightIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        await apiFrom('sets').update(sbUpdate).eq('external_id', setExtId(data.match.seed_key, data.set.id))
+                                        // Queued (not written directly): processJob scopes set updates to
+                                        // their match and also matches pre-namespacing set rows.
+                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, data.set.id), ...sbUpdate }, ts: new Date().toISOString(), status: 'queued' })
                                       } catch (err) { /* ignore */ }
                                     }
 
@@ -20568,7 +20571,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', setExtId(data.match.seed_key, set.id))
+                                        // Queued (not written directly): processJob scopes set updates to
+                                        // their match and also matches pre-namespacing set rows.
+                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, set.id), home_points: newPoints, sport_type: 'indoor' }, ts: new Date().toISOString(), status: 'queued' })
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Home Points Set ${set.index}`, oldPoints, newPoints,
@@ -20601,7 +20606,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', setExtId(data.match.seed_key, set.id))
+                                        // Queued (not written directly): processJob scopes set updates to
+                                        // their match and also matches pre-namespacing set rows.
+                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, set.id), away_points: newPoints, sport_type: 'indoor' }, ts: new Date().toISOString(), status: 'queued' })
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Away Points Set ${set.index}`, oldPoints, newPoints,
@@ -20632,7 +20639,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', setExtId(data.match.seed_key, set.id))
+                                        // Queued (not written directly): processJob scopes set updates to
+                                        // their match and also matches pre-namespacing set rows.
+                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, set.id), finished: newFinished, sport_type: 'indoor' }, ts: new Date().toISOString(), status: 'queued' })
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Set ${set.index} Finished`, oldFinished, newFinished,

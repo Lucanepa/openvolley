@@ -8026,8 +8026,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           const teamName = isHome ? home : away
                           const shortName = isHome ? homeShortName : awayShortName
 
-                          // Update matches table
-                          const { data: supabaseMatch } = await apiFrom('matches')
+                          // Update matches table. The proxy does not return written
+                          // rows, so look the cloud UUID up separately for match_live_state.
+                          const { error: colorError } = await apiFrom('matches')
                             .update({
                               [teamKey]: {
                                 name: teamName?.trim() || '',
@@ -8036,12 +8037,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               }
                             })
                             .eq('external_id', match.seed_key)
-                            .select('id')
-                            .maybeSingle()
 
-                          if (supabaseMatch) {
+                          if (!colorError) {
                             console.log(`[MatchSetup] Synced ${teamKey} color to Supabase:`, color)
                           }
+
+                          const { data: supabaseMatch } = await apiFrom('matches')
+                            .select('id')
+                            .eq('external_id', match.seed_key)
+                            .maybeSingle()
 
                           // Also update match_live_state if it exists (for Referee app)
                           if (supabaseMatch?.id) {
