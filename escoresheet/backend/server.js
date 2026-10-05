@@ -293,6 +293,44 @@ function normalizeMatchId(id) {
   return s && s.length <= 128 ? s : null
 }
 
+// Room key of a synced match: its seed_key when it carries one, else the id the
+// scoreboard sent (same rule as frontend/electron/lanRelayCore.cjs). Every
+// device's first match is Dexie id 1, so keying by it made concurrent scorers
+// fight over room '1', and the tablets (which know the seed key from the PIN
+// check / QR code) sat in an empty room. The scoreboard's own id stays usable
+// on that socket as an alias (clientInfo.aliases, see resolveMatchKey).
+function relayKeyOf(rawId, match) {
+  const seed = match && typeof match === 'object' ? (match.seed_key ?? match.seedKey) : null
+  return (typeof seed === 'string' && normalizeMatchId(seed)) || normalizeMatchId(rawId)
+}
+const MAX_ALIASES = 16
+function resolveMatchKey(clientInfo, rawId) {
+  const id = normalizeMatchId(rawId)
+  if (!id) return null
+  return clientInfo?.aliases?.get(id) || id
+}
+
+// A scoreboard that already proved the match sends its PINs only when they
+// change: fields it leaves out keep the stored values (a present field, even
+// null, replaces them).
+function carryMatchSecrets(prevMatch, nextMatch) {
+  if (!prevMatch || typeof prevMatch !== 'object' || !nextMatch || typeof nextMatch !== 'object') return nextMatch
+  let out = nextMatch
+  for (const k of MATCH_SECRET_FIELDS) {
+    if (!(k in nextMatch) && prevMatch[k] !== undefined) {
+      if (out === nextMatch) out = { ...nextMatch }
+      out[k] = prevMatch[k]
+    }
+  }
+  return out
+}
+const hasGamePinField = (match) => !!match && typeof match === 'object' && ('gamePin' in match || 'game_pin' in match)
+
+// subscribe-match { device, team }: a label for /api/server/connections (the
+// scorer's tablet status). Grants nothing; 'referee'/'bench' as `role` still
+// need the PIN.
+const DEVICE_LABELS = ['referee', 'bench', 'livescore']
+
 // The match's game PIN as a comparable string, or null (test matches have none).
 function gamePinOf(match) {
   if (!match || typeof match !== 'object') return null
@@ -467,6 +505,11 @@ if (realtimeHub) {
   liveStateRelay = createLiveStateRelay({
     hub: realtimeHub,
     getSyncedMatch: (id) => activeMatches.get(String(id)),
+    // Any socket that proved the match may publish (the scorer can hold two:
+    // App's periodic sync and the Scoreboard's live one). message.matchId is
+    // already the resolved room key.
+    isAuthorized: (client, message, synced) =>
+      !!synced && message?.matchId != null && client?.ownedMatches?.has(String(message.matchId)) === true,
     lookupMatch: async (key) => {
       const layer = await getDataLayer()
       const r = await layer.db.runQuery({
@@ -1611,8 +1654,9 @@ const server = createServer((req, res) => {
           // LAN scorers see which tablet is which; a public cloud relay must
           // not hand every client's IP to anonymous callers.
           ip: IS_CLOUD ? null : client.ip,
-          role: client.role,
-          team: client.team,
+          // A PIN-verified role wins over the subscribe-match label
+          role: client.role === 'subscriber' && client.device ? client.device : client.role,
+          team: client.team || client.deviceTeam,
           matchId: client.matchId,
           connectedAt: client.connectedAt
         })
@@ -1630,8 +1674,12 @@ const server = createServer((req, res) => {
       referees: refereesCount,
       benches: benchCount,
       clients,
+      // Watchers only, like the LAN relays (the scoreboard's sockets are room members too)
       matchSubscriptions: Object.fromEntries(
-        Array.from(rooms.entries()).map(([matchId, room]) => [matchId, room.clients.size])
+        Array.from(rooms.entries()).map(([matchId, room]) => [
+          matchId,
+          [...room.clients].filter((id) => connections.get(id)?.role !== 'scoreboard').length
+        ])
       )
     }))
     return
@@ -2767,6 +2815,10 @@ wss.on('connection', (ws, req) => {
     team: null, // 'home' or 'away' for bench clients
     // Matches this socket proved the scoreboard role for (game PIN in sync-match-data)
     ownedMatches: new Set(),
+    // Id this socket synced under (its Dexie id) -> room key (seed_key)
+    aliases: new Map(),
+    device: null, // subscribe-match label: 'referee' | 'bench' | 'livescore'
+    deviceTeam: null,
     connectedAt: new Date().toISOString()
   }
 
@@ -2832,7 +2884,7 @@ wss.on('connection', (ws, req) => {
           // DATABASE_URL mode: also a match_live_state db-change for live
           // subscribers (livescore, scorer alarm), even when HTTP sync is down.
           if (liveStateRelay) {
-            liveStateRelay.handle(clientInfo, message).then((r) => {
+            liveStateRelay.handle(clientInfo, { ...message, matchId: resolveMatchKey(clientInfo, message.matchId) }).then((r) => {
               if (!r.ok && !['forbidden', 'not_synced', 'no_match_key', 'unknown_match'].includes(r.reason)) {
                 console.warn('[realtime] live-state-update not published:', r.reason)
               }
@@ -2863,6 +2915,8 @@ wss.on('connection', (ws, req) => {
             matchId: message.matchId,
             role: message.role || 'subscriber'
           })
+          clientInfo.device = DEVICE_LABELS.includes(message.device) ? message.device : clientInfo.device
+          clientInfo.deviceTeam = VALID_TEAMS.includes(message.team) ? message.team : clientInfo.deviceTeam
           break
 
         default:
@@ -3066,7 +3120,7 @@ function requireMatchOwner(clientInfo, matchId, what) {
 // it). Relayed only from the match's proven scoreboard and never stored, so it
 // cannot replace the synced match (and its PINs / owner).
 function handleMatchUpdate(clientInfo, message) {
-  const matchId = normalizeMatchId(message.matchId)
+  const matchId = resolveMatchKey(clientInfo, message.matchId)
   const { data } = message
 
   if (!matchId || !data || typeof data !== 'object') {
@@ -3091,7 +3145,7 @@ function handleMatchUpdate(clientInfo, message) {
 
 // Handle action (timeout, substitution, etc.) — legacy format
 function handleAction(clientInfo, message) {
-  const matchId = normalizeMatchId(message.matchId)
+  const matchId = resolveMatchKey(clientInfo, message.matchId)
   const { action } = message
 
   if (!matchId || !action) {
@@ -3202,6 +3256,8 @@ function claimMatch(clientInfo, matchId, incomingMatch) {
     return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'open')
   }
   // An owner re-sending its own PIN proved it already: never rate limited.
+  // Leaving the PIN out is fine too (PINs are sent only when they change).
+  if (wasOwner && storedPin !== null && !hasGamePinField(incomingMatch)) return grant('owner')
   if (wasOwner && storedPin !== null && incomingPin !== null && safeEqualStr(incomingPin, storedPin)) return grant('owner')
   const keys = [`ip:${clientInfo.ip}`, `ws:${clientInfo.id}`]
   if (keys.some(k => (windowEntry(claimFailures, k)?.count || 0) >= CLAIM_FAILURE_LIMIT)) {
@@ -3248,8 +3304,10 @@ function handleSyncMatchData(clientInfo, message) {
   // Support both formats:
   // Frontend format: { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
   // Legacy format: { matchId, match, teams, players, sets, events }
-  const { match, teams, players, sets, events } = message
-  const matchId = normalizeMatchId(message.matchId)
+  const { teams, players, sets, events } = message
+  let { match } = message
+  const rawMatchId = normalizeMatchId(message.matchId)
+  const matchId = relayKeyOf(rawMatchId, match)
   const homeTeam = message.homeTeam || teams?.[0]
   const awayTeam = message.awayTeam || teams?.[1]
   const homePlayers = message.homePlayers || players?.filter(p => p.teamId === match?.homeTeamId) || []
@@ -3285,11 +3343,20 @@ function handleSyncMatchData(clientInfo, message) {
     handleLeaveMatch(clientInfo)
   }
 
+  if (rawMatchId && rawMatchId !== matchId) {
+    clientInfo.aliases.delete(rawMatchId)
+    if (clientInfo.aliases.size >= MAX_ALIASES) clientInfo.aliases.delete(clientInfo.aliases.keys().next().value)
+    clientInfo.aliases.set(rawMatchId, matchId)
+  }
+
   // Store/update match in activeMatches with all the data. A sync carries no
   // live-state: keep the last one pushed only while the same scoreboard / game
   // PIN keeps the match — never across a takeover, reclaim or PIN change (it
   // would describe another match: sides, sets won, 'ended', ...).
   const previous = activeMatches.get(matchId)
+  if (previous?.match && (claimed.kind === 'owner' || claimed.kind === 'proved')) {
+    match = carryMatchSecrets(previous.match, match)
+  }
   const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
     gamePinOf(previous?.match) === gamePinOf(match)
   activeMatches.set(matchId, {
@@ -3340,7 +3407,7 @@ function handleSyncMatchData(clientInfo, message) {
 
 // Handle match-action from frontend
 function handleMatchAction(clientInfo, message) {
-  const matchId = normalizeMatchId(message.matchId)
+  const matchId = resolveMatchKey(clientInfo, message.matchId)
   const { action } = message
 
   if (!matchId || !action || typeof action !== 'string') {
@@ -3367,7 +3434,7 @@ function handleMatchAction(clientInfo, message) {
 
 // Handle live-state-update (scoreboard's computed live state)
 function handleLiveStateUpdate(clientInfo, message) {
-  const matchId = normalizeMatchId(message.matchId)
+  const matchId = resolveMatchKey(clientInfo, message.matchId)
   if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return
   if (!message.liveState || typeof message.liveState !== 'object') return
   const stored = activeMatches.get(matchId)
@@ -3404,7 +3471,7 @@ function handleClearMatches(clientInfo, message) {
     clientInfo?.ws?.send(JSON.stringify({ type: 'error', code: 'not-scoreboard', message: 'Not authorized to clear matches' }))
     return
   }
-  const keepMatchId = normalizeMatchId(message.keepMatchId)
+  const keepMatchId = resolveMatchKey(clientInfo, message.keepMatchId)
   let cleared = 0
   for (const matchId of [...clientInfo.ownedMatches]) {
     if (matchId === keepMatchId) continue
@@ -3422,7 +3489,7 @@ function handleClearMatches(clientInfo, message) {
 
 // Handle delete-match
 function handleDeleteMatch(clientInfo, message) {
-  const matchId = normalizeMatchId(message.matchId)
+  const matchId = resolveMatchKey(clientInfo, message.matchId)
   if (!matchId) return
   if (!requireMatchOwner(clientInfo, matchId, 'delete-match')) return
 

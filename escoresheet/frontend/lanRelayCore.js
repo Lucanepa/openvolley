@@ -16,6 +16,8 @@ export const {
   stripMatchDataSecrets,
   normalizeMatchId,
   gamePinOf,
+  relayKeyOf,
+  carryMatchSecrets,
   toWireBundle,
   matchDataMessage,
   createRateLimiter,

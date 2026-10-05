@@ -350,6 +350,74 @@ describe('lanRelayCore protocol', () => {
     expect(containsPin(JSON.stringify(result.body))).toBe(false)
   })
 
+  it('keys the room by the seed_key, so tablets that know the seed key get the scorer\'s data and scorers never share Dexie id 1', () => {
+    const relay = createLanRelay()
+    const courtA = connect(relay)
+    const courtB = connect(relay, '192.168.1.51')
+    const referee = connect(relay, '192.168.1.60')
+    const seedA = 'match_1791215210058_aaaaaa'
+    const seedB = 'match_1791215210059_bbbbbb'
+    msg(relay, referee, { type: 'subscribe-match', matchId: seedA, device: 'referee' })
+    // Both scorers' first match is Dexie id 1
+    msg(relay, courtA, syncMessage(makeMatch({ id: 1, seed_key: seedA, gamePin: '111111' })))
+    msg(relay, courtB, syncMessage(makeMatch({ id: 1, seed_key: seedB, gamePin: '222222' })))
+    expect(courtB.last('error')).toBeUndefined()
+    expect(relay.hasMatch(seedA)).toBe(true)
+    expect(relay.hasMatch(seedB)).toBe(true)
+    expect(relay.hasMatch(1)).toBe(false)
+
+    const update = referee.last('match-data-update')
+    expect(update.matchId).toBe(seedA)
+    expect(update.match.seed_key).toBe(seedA)
+
+    // Later messages may still use the Dexie id: it is an alias on that socket
+    msg(relay, courtA, { type: 'live-state-update', matchId: 1, liveState: { points_a: 2 } })
+    expect(referee.last('live-state-update')).toEqual({ type: 'live-state-update', matchId: seedA, liveState: { points_a: 2 } })
+    msg(relay, courtA, { type: 'match-action', matchId: 1, action: 'timeout', data: { team: 'home' } })
+    expect(referee.last('match-action').matchId).toBe(seedA)
+    // ...but only on the socket that synced it: court B's alias 1 is its own match
+    msg(relay, courtB, { type: 'live-state-update', matchId: 1, liveState: { points_a: 9 } })
+    expect(referee.last('live-state-update').liveState).toEqual({ points_a: 2 })
+
+    // PIN check and match list hand out the seed key
+    expect(relay.validatePin({ pin: PINS.refereePin, type: 'referee' }).body.match.id).toBe(seedA)
+    // Tablet status: the subscriber is labelled by its device
+    const conns = relay.getConnections(seedA)
+    expect(conns.referees).toBe(1)
+    expect(conns.clients[0]).toMatchObject({ role: 'referee', matchId: seedA })
+
+    msg(relay, courtA, { type: 'clear-all-matches', keepMatchId: '1' })
+    expect(relay.hasMatch(seedA)).toBe(true)
+    msg(relay, courtA, { type: 'delete-match', matchId: 1 })
+    expect(relay.hasMatch(seedA)).toBe(false)
+    expect(relay.hasMatch(seedB)).toBe(true)
+  })
+
+  it('keeps the stored PINs when the proven scoreboard leaves them out (PINs are sent only when they change)', () => {
+    const relay = createLanRelay()
+    const scoreboard = connect(relay)
+    const other = connect(relay, '192.168.1.51')
+    const seed = 'match_1791215210058_cccccc'
+    msg(relay, scoreboard, syncMessage(makeMatch({ seed_key: seed })))
+    const { refereePin, homeTeamPin, awayTeamPin, homeTeamUploadPin, awayTeamUploadPin, gamePin, ...noPins } = makeMatch({ seed_key: seed })
+    msg(relay, scoreboard, syncMessage({ ...noPins, status: 'live' }))
+    expect(scoreboard.last('error')).toBeUndefined()
+    expect(relay.validatePin({ pin: PINS.refereePin, type: 'referee' }).status).toBe(200)
+    expect(relay.validatePin({ pin: PINS.homeTeamPin, type: 'homeTeam' }).status).toBe(200)
+
+    // A changed PIN replaces the stored one
+    msg(relay, scoreboard, syncMessage({ ...noPins, refereePin: '565656' }))
+    expect(relay.validatePin({ pin: PINS.refereePin, type: 'referee' }).status).toBe(404)
+    expect(relay.validatePin({ pin: '565656', type: 'referee' }).status).toBe(200)
+
+    // A socket that never proved the match cannot leave the game PIN out
+    msg(relay, other, syncMessage({ ...noPins }))
+    expect(other.last('error').code).toBe('not-match-owner')
+    // ...and the game PIN is still required from a new socket
+    msg(relay, other, syncMessage(makeMatch({ seed_key: seed })))
+    expect(other.sent.filter((m) => m.type === 'error')).toHaveLength(1)
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
