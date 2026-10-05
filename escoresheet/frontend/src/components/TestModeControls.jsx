@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { db } from '../db/db'
+import { Button } from '../ui/Button.jsx'
 
 /**
  * TestModeControls - Debug buttons for testing match functionality
@@ -361,19 +362,8 @@ export default function TestModeControls({ matchId, onRefresh }) {
   }
 
   // volleyui (RESTYLE-SPEC P3b): the panel's tools are kit outline buttons
-  // (white, stone-300 hairline, stone-700), 36px in a dense developer panel.
-  const buttonStyle = {
-    minHeight: '36px',
-    padding: '6px 10px',
-    fontSize: '12px',
-    fontWeight: 500,
-    background: 'var(--ov-card)',
-    color: '#44403c',
-    border: '1px solid var(--ov-hairline-strong)',
-    borderRadius: 'var(--ov-radius)',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap'
-  }
+  // (secondary md, h-9) in a dense developer panel scoped by `.ov-kit`.
+  const TOOL_CLASS = 'whitespace-nowrap px-2.5 text-xs'
 
   if (!expanded) {
     return (
@@ -397,7 +387,7 @@ export default function TestModeControls({ matchId, onRefresh }) {
   }
 
   return (
-    <div className="no-print rounded-2xl border border-stone-200/70 bg-white shadow-card-lg" style={{
+    <div className="ov-kit no-print rounded-2xl border border-stone-200/70 bg-white shadow-card-lg" style={{
       position: 'fixed',
       bottom: '10px',
       right: '10px',
@@ -436,33 +426,33 @@ export default function TestModeControls({ matchId, onRefresh }) {
         gap: '6px',
         marginBottom: '8px'
       }}>
-        <button style={buttonStyle} onClick={handleAddPoint}>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleAddPoint}>
           + Point
-        </button>
-        <button style={buttonStyle} onClick={handleInsertLibero}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleInsertLibero}>
           Libero
-        </button>
-        <button style={buttonStyle} onClick={handleSwitchSide}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleSwitchSide}>
           Side
-        </button>
-        <button style={buttonStyle} onClick={handleSwitchServe}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleSwitchServe}>
           Serve
-        </button>
-        <button style={buttonStyle} onClick={handleTriggerTimeout}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerTimeout}>
           Timeout
-        </button>
-        <button style={buttonStyle} onClick={handleSubstitute}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleSubstitute}>
           Sub
-        </button>
-        <button style={buttonStyle} onClick={handleTriggerSetEnd}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerSetEnd}>
           Set End
-        </button>
-        <button style={buttonStyle} onClick={handleTriggerMatchEnd}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerMatchEnd}>
           Match End
-        </button>
-        <button style={buttonStyle} onClick={handleCallReferee}>
+        </Button>
+        <Button variant="secondary" className={TOOL_CLASS} onClick={handleCallReferee}>
           Call Ref
-        </button>
+        </Button>
       </div>
 
       {lastAction && (
