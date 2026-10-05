@@ -1,17 +1,40 @@
 :root {
-  /* LIGHT MODE palette (dark mode removed). Surfaces are light, text is dark;
-     accent/danger stay semantic. Kept in sync with the shadcn tokens in tailwind.css. */
-  --bg: #f1f5f9;        /* app background (slate-100) */
-  --panel: #ffffff;     /* cards / panels */
-  --panel-2: #f8fafc;   /* subtle raised surface (slate-50) */
-  --text: #0f172a;      /* primary text (slate-900) */
-  --muted: #64748b;     /* secondary text (slate-500) */
-  --border: #e2e8f0;    /* hairline borders (slate-200) */
+  /* Legacy names, re-pointed at the volleyui --ov-* tokens (src/tailwind.css,
+     RESTYLE-SPEC 1.4). About 2,200 inline style={{}} objects read these, so the
+     cool slate greys become warm stone without touching the JSX. */
+  --bg: var(--ov-page);           /* stone-100 page   (was slate-100 #f1f5f9) */
+  --panel: var(--ov-card);        /* white cards and panels */
+  --panel-2: var(--ov-sunken);    /* stone-50 sunken  (was slate-50 #f8fafc) */
+  --text: var(--ov-text);         /* stone-900        (was slate-900 #0f172a) */
+  --muted: var(--ov-text-muted);  /* stone-500        (was slate-500 #64748b) */
+  --border: var(--ov-hairline);   /* stone-200        (was slate-200 #e2e8f0) */
+  /* Unchanged on purpose. --accent is the scoring green (serve badge, colon
+     dots, TO counters, interval timer, captain "C"). --danger is the red of the
+     offline/error status dots (frozen hues) and of the rally controls' Undo
+     button (frozen, and no brand red on the scoreboard: R4). */
   --accent: #22c55e;
   --danger: #ef4444;
   /* Scale factor for dynamic sizing - set by JavaScript */
   --scale-factor: 1;
   --vmin-base: 768px;
+}
+
+/* Frozen scoring readouts keep the exact pre-restyle palette (RESTYLE-SPEC 4).
+   The aliases above turn the app from slate to stone. Inside the court (discs,
+   position tags I-VI, captain marks), the big rally score, the toolbar set-score
+   boxes, the TO/SUB counters and the set-end / match-end readouts the old
+   values are pinned instead, so they stay pixel-identical. This only sets
+   custom properties (and re-resolves the inherited text colour); the frozen
+   rules themselves are not edited. */
+:where(.court, .set-score-display, [data-help-id="scoreboard-set-display"],
+       .to-sub-counter, .set-end-readout, .match-end-score) {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --panel-2: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  color: var(--text);
 }
 
 html,
