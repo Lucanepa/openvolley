@@ -15558,7 +15558,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
                     const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                     const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const currentSetIndex = data?.set?.index || 1
                     const setsByIndex = new Map()
                     allSets.forEach(set => {
@@ -17271,7 +17271,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     // Get all sets, filter to show only current set and previous sets
                     // Also deduplicate by index (keep the latest one for each index)
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const currentSetIndex = data?.set?.index || 1
                     const setsByIndex = new Map()
                     allSets.forEach(set => {
@@ -17727,7 +17727,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     // Get all sets, filter to show only current set and previous sets
                     // Also deduplicate by index (keep the latest one for each index)
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const currentSetIndex = data?.set?.index || 1
                     const setsByIndex = new Map()
                     allSets.forEach(set => {
@@ -17823,7 +17823,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
                     const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                     const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const currentSetIndex = data?.set?.index || 1
                     const setsByIndex = new Map()
                     allSets.forEach(set => { if (set.index <= currentSetIndex) setsByIndex.set(set.index, set) })
@@ -17896,7 +17896,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
                     const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                     const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const currentSetIndex = data?.set?.index || 1
                     const setsByIndex = new Map()
                     allSets.forEach(set => { if (set.index <= currentSetIndex) setsByIndex.set(set.index, set) })
@@ -18926,7 +18926,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
                     const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                     const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
-                    const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
                     const currentSetIndex = data?.set?.index || 1
                     const setsByIndex = new Map()
                     allSets.forEach(set => {
@@ -22307,7 +22307,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             color: 'var(--text)'
                           }}
                         >
-                          {data?.sets?.sort((a, b) => a.index - b.index).map(set => (
+                          {[...(data?.sets || [])].sort((a, b) => a.index - b.index).map(set => (
                             <option key={set.id} value={set.index} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.setIndex', { index: set.index })}</option>
                           ))}
                         </select>
@@ -25568,7 +25568,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (teamKey === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = teamKey === teamAKey ? 'A' : 'B'
-        const allSets = (data?.sets || []).sort((a, b) => a.index - b.index)
+        const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
         const currentSetIndex = data?.set?.index || 1
         const setsByIndex = new Map()
         allSets.forEach(set => {
