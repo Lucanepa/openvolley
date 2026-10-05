@@ -3759,10 +3759,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div
               role="dialog"
               aria-modal="true"
-              className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
+              className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
+              style={{ transform: 'translate(-50%, -50%)' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mb-3 text-sm leading-[normal] font-semibold text-stone-900">
+              <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
                 {t('matchSetup.chooseTeamColour', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
@@ -7219,10 +7220,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div
             role="dialog"
             aria-modal="true"
-            className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
+            className="fixed left-1/2 top-1/2 z-[1000] min-w-[280px] rounded-2xl border border-stone-200/70 bg-white p-4 shadow-2xl"
+              style={{ transform: 'translate(-50%, -50%)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 text-sm leading-[normal] font-semibold text-stone-900">
+            <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
               {t('matchSetup.chooseTeamColor', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
             </div>
             <div
