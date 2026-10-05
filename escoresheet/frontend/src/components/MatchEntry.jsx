@@ -878,21 +878,23 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     }}>
       {/* Header with Back button - only show when not embedded */}
       {!embedded && (
+        // 1fr auto 1fr: the team name stays centred whatever the Back width.
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
           alignItems: 'center',
+          gap: '8px',
           marginBottom: '4px'
         }}>
-          <div className="ov-kit">
+          <div className="ov-kit" style={{ justifySelf: 'start' }}>
             <Button variant="toolbar" size="xl" className="font-medium" onClick={onBack}>
               {t('matchEntry.backArrow', '← Back')}
             </Button>
           </div>
-          <h1 className="tracking-tight text-stone-900" style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
+          <h1 className="tracking-tight text-stone-900" style={{ fontSize: '18px', fontWeight: 700, margin: 0, textAlign: 'center' }}>
             {teamInfo.name}
           </h1>
-          <div style={{ width: '80px' }}></div>
+          <div />
         </div>
       )}
 
