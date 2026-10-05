@@ -31,6 +31,7 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../util
 import { getSetResult, getFirstServeForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure } from '../domain/rotation'
+import { planSubstitutionDeletion } from '../domain/substitutions'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { TimeInput24 } from './TimeInput24'
@@ -21279,65 +21280,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteSubstitutionEvent'))) {
-                                      const subTeam = event.payload?.team
-                                      const subPosition = event.payload?.position
-                                      const subPlayerOut = event.payload?.playerOut
                                       const subSetIndex = event.setIndex
 
-                                      // Delete the substitution event
-                                      await db.events.delete(event.id)
+                                      // Remove THIS substitution: its own lineup sub-event (seq N.x) is
+                                      // deleted and later lineups/libero records are corrected by player
+                                      // number (domain/substitutions, tested). Refused if a later
+                                      // substitution involves the same players.
+                                      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+                                      const plan = planSubstitutionDeletion(allEvents, event)
+                                      if (plan.blocked) {
+                                        showAlert(plan.reason, 'error')
+                                        return
+                                      }
+                                      await db.transaction('rw', db.events, async () => {
+                                        for (const u of plan.updates) {
+                                          await db.events.update(u.id, { payload: u.payload })
+                                        }
+                                        await db.events.bulkDelete(plan.deleteIds)
+                                      })
                                       logManualChangeWithRemark('Substitution', 'Delete',
                                         `Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position}`, null,
                                         `Deleted substitution (Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position})`,
                                         { setIndex: subSetIndex, scoreStr: `${homeScore}-${awayScore}` })
-
-                                      // Find and delete the lineup event created by this substitution
-                                      // Then restore the previous lineup with the original player
-                                      if (subTeam && subPosition && subPlayerOut) {
-                                        const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-                                        const lineupEvents = allEvents
-                                          .filter(e => e.type === 'lineup' && e.payload?.team === subTeam && e.setIndex === subSetIndex)
-                                          .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-
-                                        if (lineupEvents.length > 1) {
-                                          // Delete the most recent lineup (created by the substitution)
-                                          const mostRecentLineup = lineupEvents[0]
-                                          // Preserve liberoSubstitution from the lineup we're deleting
-                                          const existingLiberoSub = mostRecentLineup.payload?.liberoSubstitution || null
-                                          await db.events.delete(mostRecentLineup.id)
-
-                                          // Get the previous lineup and restore it with the original player
-                                          const previousLineup = lineupEvents[1]?.payload?.lineup || {}
-                                          const restoredLineup = { ...previousLineup }
-                                          restoredLineup[subPosition] = String(subPlayerOut)
-
-                                          // Get next sequence number
-                                          const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
-                                          const nextSeq = Math.floor(maxSeq) + 1
-
-                                          // Create restored lineup event
-                                          const restoredPayload = { team: subTeam, lineup: restoredLineup, fromSubstitution: true }
-                                          if (existingLiberoSub) {
-                                            restoredPayload.liberoSubstitution = existingLiberoSub
-                                          }
-                                          await db.events.add({
-                                            matchId,
-                                            setIndex: subSetIndex,
-                                            type: 'lineup',
-                                            payload: restoredPayload,
-                                            ts: new Date().toISOString(),
-                                            seq: nextSeq
-                                          })
-                                        } else if (lineupEvents.length === 1) {
-                                          // Only one lineup - just update it to restore the original player
-                                          const currentLineup = lineupEvents[0]
-                                          const restoredLineup = { ...currentLineup.payload?.lineup }
-                                          restoredLineup[subPosition] = String(subPlayerOut)
-                                          await db.events.update(currentLineup.id, {
-                                            payload: { ...currentLineup.payload, lineup: restoredLineup }
-                                          })
-                                        }
-                                      }
                                     }
                                   }}
                                   style={{
