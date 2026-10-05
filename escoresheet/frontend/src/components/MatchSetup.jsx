@@ -224,6 +224,7 @@ const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle, label }) {
     <Switch
       checked={on}
       onCheckedChange={() => onToggle()}
+      className="p-0"
       aria-label={label}
       title={label}
     />
@@ -3238,179 +3239,154 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'info') {
     return (
       <MatchSetupInfoView kitScale={kitScale}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <button className="secondary" onClick={() => { restoreMatchInfo(); restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-              <h1 style={{ margin: 8 }}>{t('matchSetup.matchInfo')}</h1>
-              <button
-                onClick={() => setLoadOfficialMatchModal(true)}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-                  color: '#60a5fa',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
-              >
-                {t('loadOfficialMatch.button')}
-              </button>
-            </div>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+          <div>
+            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
-          <div style={{ width: 80 }}></div>
+          <div className="flex flex-col items-center gap-2">
+            <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
+            <Button variant="toolbar" size="md" onClick={() => setLoadOfficialMatchModal(true)}>
+              {t('loadOfficialMatch.button')}
+            </Button>
+          </div>
+          <div />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.dateTime')}</span>
+        <div className="grid grid-cols-5 gap-4">
+          <div className={OFFICIAL_BOX}>
+            <div className={OFFICIAL_HEAD}>
+              <span className={OFFICIAL_TITLE}>{t('matchSetup.dateTime')}</span>
             </div>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.date')}</label>
-                <input
+            <div className="flex flex-col gap-3 p-4">
+              <Field tone="compact" className={FIELD} label={t('matchSetup.date')} error={dateError || undefined}>
+                <Input
                   aria-label={t('matchSetup.date')}
-                  className="w-100"
+                  className="tabular-nums"
                   type="date"
                   value={date}
                   onChange={e => handleDateChange(e.target.value)}
-                  style={dateError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
+                  invalid={!!dateError}
                 />
-                {dateError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{dateError}</span>}
-              </div>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.time')}</label>
-                <input
+              </Field>
+              <Field tone="compact" className={FIELD} label={t('matchSetup.time')} error={timeError || undefined}>
+                <Input
                   aria-label={t('matchSetup.time')}
-                  className="w-100"
+                  className="tabular-nums"
                   type="text"
                   value={time}
                   onChange={e => handleTimeChange(e.target.value)}
                   placeholder={t('matchSetup.placeholders.hhMm')}
-                  style={timeError ? { borderColor: '#ef4444', boxShadow: '0 0 0 1px #ef4444' } : {}}
+                  invalid={!!timeError}
                 />
-                {timeError && <span style={{ color: '#ef4444', fontSize: '12px', marginLeft: '8px' }}>{timeError}</span>}
-              </div>
+              </Field>
             </div>
           </div>
 
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.location')}</span>
+          <div className={OFFICIAL_BOX}>
+            <div className={OFFICIAL_HEAD}>
+              <span className={OFFICIAL_TITLE}>{t('matchSetup.location')}</span>
             </div>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.city')}</label>
-                <input
+            <div className="flex flex-col gap-3 p-4">
+              <Field tone="compact" className={FIELD} label={t('matchSetup.city')}>
+                <Input
                   aria-label={t('matchSetup.city')}
-                  className="w-160 capitalize"
+                  className="capitalize"
                   value={city}
                   onChange={e => setCity(e.target.value)}
                   list="cities-zurich"
                   placeholder={t('matchSetup.enterCity')}
                 />
-                <datalist id="cities-zurich">
-                  {citiesZurich.map(c => <option key={c} value={c} />)}
-                </datalist>
-              </div>
-              <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.hall')}</label><input aria-label={t('matchSetup.hall')} className="w-250 capitalize" value={hall} onChange={e => setHall(e.target.value)} /></div>
+              </Field>
+              <datalist id="cities-zurich">
+                {citiesZurich.map(c => <option key={c} value={c} />)}
+              </datalist>
+              <Field tone="compact" className={FIELD} label={t('matchSetup.hall')}><Input aria-label={t('matchSetup.hall')} className="capitalize" value={hall} onChange={e => setHall(e.target.value)} /></Field>
             </div>
           </div>
 
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.matchType')}</span>
+          <div className={OFFICIAL_BOX}>
+            <div className={OFFICIAL_HEAD}>
+              <span className={OFFICIAL_TITLE}>{t('matchSetup.matchType')}</span>
             </div>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.matchType')}</label>
-                <select aria-label={t('matchSetup.matchType')} className="w-160 capitalize" value={type1} onChange={e => setType1(e.target.value)}>
+            <div className="flex flex-col gap-3 p-4">
+              <Field tone="compact" className={FIELD} label={t('matchSetup.matchType')}>
+                <Select aria-label={t('matchSetup.matchType')} block className="capitalize" value={type1} onChange={e => setType1(e.target.value)}>
                   <option value="championship">{t('matchSetup.championship')}</option>
                   <option value="cup">{t('matchSetup.cup')}</option>
                   <option value="friendly">{t('matchSetup.friendly')}</option>
                   <option value="tournament">{t('matchSetup.tournament')}</option>
                   <option value="other">{t('matchSetup.other')}</option>
-                </select>
-              </div>
+                </Select>
+              </Field>
               {type1 === 'other' && (
-                <div className="field" style={{ gap: '2px' }}>
-                  <label>{t('matchSetup.specify')}</label>
-                  <input aria-label={t('matchSetup.specify')} className="w-120" value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
-                </div>
+                <Field tone="compact" className={FIELD} label={t('matchSetup.specify')}>
+                  <Input aria-label={t('matchSetup.specify')} value={type1Other} onChange={e => setType1Other(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                </Field>
               )}
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.championshipType')}</label>
-                <select aria-label={t('matchSetup.championshipType')} className="w-140" value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
+              <Field tone="compact" className={FIELD} label={t('matchSetup.championshipType')}>
+                <Select aria-label={t('matchSetup.championshipType')} block value={championshipType} onChange={e => setChampionshipType(e.target.value)}>
                   <option value="regional">{t('matchSetup.regional')}</option>
                   <option value="national">{t('matchSetup.national')}</option>
                   <option value="international">{t('matchSetup.international')}</option>
                   <option value="other">{t('matchSetup.other')}</option>
-                </select>
-              </div>
+                </Select>
+              </Field>
               {championshipType === 'other' && (
-                <div className="field" style={{ gap: '2px' }}>
-                  <label>{t('matchSetup.specify')}</label>
-                  <input aria-label={t('matchSetup.specify')} className="w-120" value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
-                </div>
+                <Field tone="compact" className={FIELD} label={t('matchSetup.specify')}>
+                  <Input aria-label={t('matchSetup.specify')} value={championshipTypeOther} onChange={e => setChampionshipTypeOther(e.target.value)} placeholder={t('matchSetup.otherType')} />
+                </Field>
               )}
             </div>
           </div>
 
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.categoryLevel')}</span>
+          <div className={OFFICIAL_BOX}>
+            <div className={OFFICIAL_HEAD}>
+              <span className={OFFICIAL_TITLE}>{t('matchSetup.categoryLevel')}</span>
             </div>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.gender')}</label>
-                <select aria-label={t('matchSetup.gender')} className="w-120" value={type2} onChange={e => setType2(e.target.value)}>
+            <div className="flex flex-col gap-3 p-4">
+              <Field tone="compact" className={FIELD} label={t('matchSetup.gender')}>
+                <Select aria-label={t('matchSetup.gender')} block value={type2} onChange={e => setType2(e.target.value)}>
                   <option value="men">{t('matchSetup.men')}</option>
                   <option value="women">{t('matchSetup.women')}</option>
-                </select>
-              </div>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.matchLevel')}</label>
-                <select aria-label={t('matchSetup.matchLevel')} className="w-90" value={type3} onChange={e => setType3(e.target.value)}>
+                </Select>
+              </Field>
+              <Field tone="compact" className={FIELD} label={t('matchSetup.matchLevel')}>
+                <Select aria-label={t('matchSetup.matchLevel')} block value={type3} onChange={e => setType3(e.target.value)}>
                   <option value="senior">{t('matchSetup.senior')}</option>
                   <option value="U23">U23</option>
                   <option value="U21">U21</option>
                   <option value="U19">U19</option>
                   <option value="U17">U17</option>
                   <option value="other">{t('matchSetup.other')}</option>
-                </select>
-              </div>
+                </Select>
+              </Field>
               {type3 === 'other' && (
-                <div className="field" style={{ gap: '2px' }}>
-                  <label>{t('matchSetup.specify')}</label>
-                  <input aria-label={t('matchSetup.specify')} className="w-120" value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
-                </div>
+                <Field tone="compact" className={FIELD} label={t('matchSetup.specify')}>
+                  <Input aria-label={t('matchSetup.specify')} value={type3Other} onChange={e => setType3Other(e.target.value)} placeholder={t('matchSetup.otherLevel')} />
+                </Field>
               )}
             </div>
           </div>
 
-          <div style={{ border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--panel-2)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--panel)', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('matchSetup.gameDetails')}</span>
+          <div className={OFFICIAL_BOX}>
+            <div className={OFFICIAL_HEAD}>
+              <span className={OFFICIAL_TITLE}>{t('matchSetup.gameDetails')}</span>
             </div>
-            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.gameNumber')}</label><input aria-label={t('matchSetup.gameNumber')} className="w-80" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></div>
-                <div className="field" style={{ gap: '2px' }}><label>{t('matchSetup.league')}</label><input aria-label={t('matchSetup.league')} className="w-80 capitalize" value={league} onChange={e => setLeague(e.target.value)} /></div>
+            <div className="flex flex-col gap-3 p-4">
+              <div className="grid grid-cols-2 gap-2">
+                <Field tone="compact" className={FIELD} label={t('matchSetup.gameNumber')}><Input aria-label={t('matchSetup.gameNumber')} className="tabular-nums" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></Field>
+                <Field tone="compact" className={FIELD} label={t('matchSetup.league')}><Input aria-label={t('matchSetup.league')} className="capitalize" value={league} onChange={e => setLeague(e.target.value)} /></Field>
               </div>
-              <div className="field" style={{ gap: '2px' }}>
-                <label>{t('matchSetup.matchFormat')}</label>
-                <select aria-label={t('matchSetup.matchFormat')} style={{ width: 'auto', maxWidth: '100px' }} value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
+              <Field tone="compact" className={FIELD} label={t('matchSetup.matchFormat')}>
+                <Select aria-label={t('matchSetup.matchFormat')} block value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>
                   <option value={5}>{t('matchSetup.bestOf5')}</option>
                   <option value={3}>{t('matchSetup.bestOf3')}</option>
-                </select>
-              </div>
+                </Select>
+              </Field>
             </div>
           </div>
 
           {/* Match Officials Row */}
-          <div style={{ gridColumn: 'span 5', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
+          <div className="col-span-5 grid grid-cols-5 items-start gap-4">
             <OfficialCard
               title={t('matchSetup.referee1')}
               officialKey="ref1"
@@ -3494,22 +3470,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Teams Card - Full width row at bottom */}
-          <div className="card" style={{ gridColumn: 'span 5' }}>
-            <h2 style={{ marginTop: 0, marginBottom: 24, textAlign: 'center', fontSize: '24px', fontWeight: 700 }}>{t('matchSetup.teams').toUpperCase()}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <div className="col-span-5 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+            <SectionHeader title={t('matchSetup.teams')} as="h2" className="mb-4" />
+            <div className="flex items-center gap-6">
               {/* Home Team */}
-              <div data-help-id="setup-home-team-card" style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
+              <div data-help-id="setup-home-team-card" className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
                 {/* Header row: Trikot container + Title */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
+                <div className="mb-4 flex items-center gap-3">
                   {/* Trikot container */}
                   <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: 16,
-                      cursor: 'pointer'
-                    }}
+                    className="m-4 flex cursor-pointer items-center justify-center"
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect()
                       setColorPickerModal({
@@ -3526,7 +3496,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
                     </div>
                   </div>
-                  {/* Title */}
+                  {/* Title: team-colour bar (frozen) */}
                   <div
                     style={{
                       flex: 1,
@@ -3543,56 +3513,44 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     {t('matchSetup.homeTeam').toUpperCase()}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
-                    <input
+                <div className="flex items-end gap-4">
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%]')} label={t('matchSetup.teamName')}>
+                    <Input
+                      size="lg"
                       aria-label={`${t('common.home')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={home}
                       onChange={e => setHome(e.target.value)}
                       placeholder={t('matchSetup.homeTeamName')}
-                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
+                      className="text-center font-semibold"
                     />
-                  </div>
-                  <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
-                    <input
+                  </Field>
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)]')} label={t('matchSetup.short')}>
+                    <Input
+                      size="lg"
                       aria-label={`${t('common.home')} ${t('matchSetup.short')}`}
                       type="text"
                       value={homeShortName}
                       onChange={e => setHomeShortName(e.target.value.toUpperCase())}
                       maxLength={8}
                       placeholder={t('common.home').toUpperCase()}
-                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
+                      className="text-center font-semibold"
                     />
-                  </div>
+                  </Field>
                 </div>
               </div>
 
               {/* VS Divider */}
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 12px',
-                marginTop: 24
-              }}>
-                <span style={{
-                  fontSize: '22px',
-                  fontWeight: 700,
-                  fontStyle: 'italic',
-                  color: 'var(--text)'
-                }}>VS</span>
+              <div className="mt-6 flex flex-col items-center justify-center px-3">
+                <span className="text-sm font-semibold text-stone-400">vs</span>
               </div>
 
               {/* Away Team */}
-              <div data-help-id="setup-away-team-card" style={{ flex: 1, border: '2px solid white', padding: '10px', borderRadius: '10px' }}>
+              <div data-help-id="setup-away-team-card" className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
                 {/* Header row: Trikot container + Title */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 16 }}>
+                <div className="mb-4 flex items-center gap-3">
 
-                  {/* Title */}
+                  {/* Title: team-colour bar (frozen) */}
                   <div
                     style={{
                       flex: 1,
@@ -3610,13 +3568,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                   {/* Trikot container */}
                   <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: 16,
-                      cursor: 'pointer'
-                    }}
+                    className="m-4 flex cursor-pointer items-center justify-center"
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect()
                       setColorPickerModal({
@@ -3634,31 +3586,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                  <div className="field" style={{ flex: '0 0 60%', marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.teamName')}</label>
-                    <input
+                <div className="flex items-end gap-4">
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%]')} label={t('matchSetup.teamName')}>
+                    <Input
+                      size="lg"
                       aria-label={`${t('common.away')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={away}
                       onChange={e => setAway(e.target.value)}
                       placeholder={t('matchSetup.awayTeamName')}
-                      style={{ width: '100%', padding: '10px', fontSize: '18px', fontWeight: 600, textAlign: 'center', alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
+                      className="text-center font-semibold"
                     />
-                  </div>
-                  <div className="field" style={{ flex: '0 0 calc(40% - 16px)', marginBottom: 0 }}>
-                    <label style={{ fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex' }}>{t('matchSetup.short')}</label>
-                    <input
+                  </Field>
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)]')} label={t('matchSetup.short')}>
+                    <Input
+                      size="lg"
                       aria-label={`${t('common.away')} ${t('matchSetup.short')}`}
                       type="text"
                       value={awayShortName}
                       onChange={e => setAwayShortName(e.target.value.toUpperCase())}
                       maxLength={8}
                       placeholder={t('common.away').toUpperCase()}
-                      style={{ width: '100%', textAlign: 'center', padding: '10px', fontSize: '18px', fontWeight: 600, alignItems: 'center', justifyContent: 'center', display: 'flex', background: 'var(--panel)', borderRadius: '10px' }}
+                      className="text-center font-semibold"
                     />
-                  </div>
-
+                  </Field>
                 </div>
 
               </div>
@@ -3668,52 +3619,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {match && !match.test && match.gamePin && (
-          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-            <div
-              style={{
-                padding: '12px 24px',
-                background: 'var(--panel-2)',
-                borderRadius: '8px',
-                fontFamily: 'monospace',
-                fontSize: '18px',
-                fontWeight: 700,
-                letterSpacing: '2px',
-                textAlign: 'center',
-                minWidth: '200px',
-                transition: 'background 0.2s ease'
-              }}
-            >
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>{t('matchSetup.gamePin')}</div>
-              <div style={{ userSelect: 'text', cursor: 'text' }}>{match.gamePin}</div>
-              <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+          <div className="flex justify-center">
+            <div className="min-w-[200px] rounded-xl border border-stone-200 bg-stone-50 px-6 py-3 text-center">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t('matchSetup.gamePin')}</div>
+              <div className="cursor-text select-text font-mono text-lg font-bold tracking-[0.3em] text-stone-900">{match.gamePin}</div>
+              <div className="mt-1 text-[11px] text-stone-500">
                 {t('matchSetup.gamePinDescription')}
               </div>
               {match && !match.test && match.gamePin && (
-                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-                  <div className="field" style={{ maxWidth: '400px', width: '100%' }}>
-                    <label style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', display: 'block' }}>
+                <div className="mt-4 flex justify-center">
+                  <div className="w-full max-w-[400px] text-left">
+                    <label className="mt-0 mb-1.5 block text-sm font-medium text-stone-700">
                       {t('matchSetup.notificationEmail')}
                     </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
+                    <div className="flex gap-2">
+                      <Input
                         aria-label={t('matchSetup.notificationEmail')}
                         type="email"
                         placeholder={t('matchSetup.notificationEmailPlaceholder')}
                         value={notificationEmail}
                         onChange={(e) => setNotificationEmail(e.target.value)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          fontSize: '14px',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border)',
-                          background: 'var(--panel-2)',
-                          color: 'inherit'
-                        }}
+                        className="h-11 flex-1"
                       />
-                      <button
-                        type="button"
-                        disabled={sendingEmail}
+                      <Button
+                        variant="dark"
+                        size="xl"
+                        loading={sendingEmail}
                         onClick={async () => {
                           console.log('[Email] Button clicked, email:', notificationEmail)
                           if (!notificationEmail || !notificationEmail.includes('@')) {
@@ -3754,20 +3685,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             setSendingEmail(false)
                           }
                         }}
-                        style={{
-                          padding: '10px 16px',
-                          fontSize: '14px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          background: sendingEmail ? 'var(--muted, #666)' : 'var(--primary, #4a90d9)',
-                          color: 'white',
-                          cursor: sendingEmail ? 'wait' : 'pointer',
-                          fontWeight: 600,
-                          opacity: sendingEmail ? 0.7 : 1
-                        }}
                       >
                         {sendingEmail ? (t('matchSetup.sending') || 'Sending...') : (t('matchSetup.send') || 'Send')}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -3803,14 +3723,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           position={refereeSelectorPosition}
         />
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 16 }}>
-          <button
-            style={{
-              padding: `${s(10)}px ${s(20)}px`,
-              fontSize: s(14),
-              opacity: !canConfirmMatchInfo ? 0.5 : 1,
-              cursor: !canConfirmMatchInfo ? 'not-allowed' : 'pointer'
-            }}
+        <div className="flex items-center justify-end">
+          <Button
+            variant="primary"
+            size="xl"
+            className="disabled:cursor-not-allowed"
             onClick={(e) => {
               if (!canConfirmMatchInfo) {
                 e.preventDefault()
@@ -3826,7 +3743,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             title={!canConfirmMatchInfo ? getMissingFieldsTooltip() : ''}
           >
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
-          </button>
+            </Button>
           {!canConfirmMatchInfo && (
             <WarningIndicator id="confirmMatchInfo" missingItems={getMissingFieldsList()} position="below" />
           )}
@@ -7946,7 +7863,7 @@ const setupViewStyle = {
 }
 // Two legacy leaks fenced off for the kit inside these views (styles.css is
 // not this package's file): `.text-sm` / `.text-xs` there add 0.2px tracking
-// to every kit text-sm/text-xs, and the UA `font` reset on <button> drops the
+// to every kit text-sm/text-xs, and the UA `font` reset on form controls drops the
 // Inter Display cut (opsz 32, cv features). Swatch buttons (the frozen shirt
 // previews) are excluded so the colour picker renders exactly as before.
 // Legacy h2-h4 margins are dropped too: kit headings own their spacing.
@@ -7954,9 +7871,9 @@ const SETUP_VIEW = cn(
   'setup content-start',
   '[&_:where(h2,h3,h4)]:m-0',
   '[&_:where(.text-xs,.text-sm):not([class*=tracking-])]:tracking-normal',
-  '[&_button:not(:has(.shirt))]:[font-variation-settings:inherit]',
-  '[&_button:not(:has(.shirt))]:[font-feature-settings:inherit]',
-  '[&_button:not(:has(.shirt))]:[font-optical-sizing:inherit]'
+  '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-variation-settings:inherit]',
+  '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-feature-settings:inherit]',
+  '[&_:is(button:not(:has(.shirt)),input,select,textarea)]:[font-optical-sizing:inherit]'
 )
 
 function MatchSetupMainView({ children, kitScale }) {
