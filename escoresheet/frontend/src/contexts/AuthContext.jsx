@@ -96,9 +96,17 @@ export function AuthProvider({ children }) {
       }
     )
 
-    // Get initial session
+    // Get initial session. The UI was seeded from the unverified stored session
+    // (INITIAL_SESSION); reconcile it with the server's answer. getSession only
+    // drops the session when the server rejects the token, never when offline.
     apiAuth.getSession().then(({ data: { session } }) => {
-      console.log('[AuthContext] getSession result:', session?.user?.id)
+      console.log('[AuthContext] getSession result:', session?.user?.id, session?.unverified ? '(unverified)' : '')
+      if (!session) {
+        setUser(null)
+        setProfile(null)
+      } else if (session.user && !session.unverified) {
+        setUser(prev => (prev?.id === session.user.id ? prev : session.user))
+      }
     }).catch((err) => {
       clearTimeout(loadingTimeout)
       console.error('Failed to get auth session:', err)
@@ -189,13 +197,23 @@ export function AuthProvider({ children }) {
       .select()
       .single()
 
-    if (!error && data) {
-      setProfile(data)
-      localStorage.setItem('cachedProfile', JSON.stringify(data))
-    }
+    if (error) return { data, error }
 
-    return { data, error }
-  }, [user])
+    // The proxy does not return written rows yet, so data may be null even on
+    // success: apply the edit to the profile we already have.
+    const updatedProfile = data || {
+      ...(profile || {}),
+      first_name: updates.firstName,
+      last_name: updates.lastName,
+      country: updates.country,
+      dob: updates.dob,
+      sport_type: 'indoor'
+    }
+    setProfile(updatedProfile)
+    localStorage.setItem('cachedProfile', JSON.stringify(updatedProfile))
+
+    return { data: updatedProfile, error }
+  }, [user, profile])
 
   // Reset password
   const resetPassword = useCallback(async (email) => {

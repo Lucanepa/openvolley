@@ -16,6 +16,7 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
+import { setExtId } from '../utils/syncIds'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 
 // Generate a placeholder signature image (wavy line) for test matches
@@ -333,8 +334,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           const shortName = isHome ? homeShortName : awayShortName
           const color = isHome ? homeColor : awayColor
 
-          // Update matches table
-          const { data: supabaseMatch } = await apiFrom('matches')
+          // Update matches table. The proxy does not return written rows, so the
+          // cloud UUID for match_live_state is looked up separately below.
+          await apiFrom('matches')
             .update({
               [teamKey]: {
                 name: teamName?.trim() || '',
@@ -353,10 +355,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               [benchKey]: bench || []
             })
             .eq('external_id', match.seed_key)
-            .select('id')
-            .single()
 
           console.log(`[CoinToss] Roster synced for ${teamType} team (Supabase)`)
+
+          const { data: supabaseMatch } = await apiFrom('matches')
+            .select('id')
+            .eq('external_id', match.seed_key)
+            .maybeSingle()
 
           // Also update match_live_state if it exists (just team info, not deprecated columns)
           if (supabaseMatch?.id) {
@@ -807,7 +812,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         resource: 'set',
         action: 'insert',
         payload: {
-          external_id: String(firstSetId),
+          external_id: setExtId(match.seed_key, firstSetId),
           match_id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: 1,
           home_points: 0,

@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
-import { listCloudBackups, loadCloudBackup } from '../../utils/logger'
-import { restoreMatchInPlace } from '../../utils/backupManager'
+import { db } from '../../db/db'
+import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup } from '../../utils/backupManager'
 import BackupTable from '../BackupTable'
 import { SatelliteDishIcon } from '../icons'
 
@@ -186,7 +186,12 @@ export default function ScoreboardOptionsModal({
     }
     setBackupsLoading(true)
     try {
-      const backups = await listCloudBackups(matchId)
+      // Backups are filed under the match's game number (logger.js upload path),
+      // so list that folder, not game 1's. backupManager.listCloudBackups throws
+      // on error, so a failed listing reaches the alert below.
+      const match = await db.matches.get(matchId)
+      const gameN = match?.gameN || match?.game_n || match?.gameNumber || 1
+      const backups = await listCloudBackups(null, gameN)
       setCloudBackups(backups)
       setShowCloudBackups(true)
     } catch (err) {
@@ -200,9 +205,18 @@ export default function ScoreboardOptionsModal({
   // Restore from a cloud backup
   const handleRestore = async (backup) => {
     try {
-      const backupData = await loadCloudBackup(backup.path)
+      const backupData = await fetchCloudBackup(backup.path)
       if (!backupData) {
         showAlert(t('options.alerts.failedToLoadBackupData'), 'error')
+        return
+      }
+      // The game-number folder is shared by every match with that number:
+      // never restore another match's backup onto the open one.
+      const current = await db.matches.get(matchId)
+      const currentKey = current?.seed_key || current?.externalId
+      const backupKey = backupData.match?.seed_key || backupData.match?.seedKey || backupData.match?.external_id
+      if (currentKey && backupKey && currentKey !== backupKey) {
+        showAlert(t('options.alerts.failedToRestoreBackup', { error: 'This backup belongs to a different match' }), 'error')
         return
       }
       // Use the callback or in-place restore
