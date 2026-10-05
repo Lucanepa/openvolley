@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import bcryptjs from 'bcryptjs'
+import { createDatabase, testSchemaSql } from './helpers/pgTestDb.js'
 import {
   createAuth, createRateLimiter, createLockout, createConcurrencyGate, ipBucketKey,
   sendAuthResult, hashToken, generateToken, isWellFormedToken, AUTH_ACTIONS
@@ -298,7 +299,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
     pg = (await import('pg')).default
     admin = new pg.Client({ connectionString: PG_TEST_URL })
     await admin.connect()
-    await admin.query(`CREATE DATABASE ${dbName}`)
+    await createDatabase(admin, dbName)
     const u = new URL(PG_TEST_URL)
     u.pathname = '/' + dbName
     dbUrl = u.toString()
@@ -308,7 +309,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
     // connection due to administrator command"). That error must not become an
     // uncaught exception of whichever test created the client.
     pool.on('connect', (client) => client.on('error', () => {}))
-    await pool.query(await readFile(path.join(HERE, 'fixtures/synthetic_schema.sql'), 'utf8'))
+    await pool.query(testSchemaSql())
     const migration = await readFile(path.join(BACKEND, 'db/002_app_sessions.sql'), 'utf8')
     await pool.query(migration)
     await pool.query(migration) // idempotent

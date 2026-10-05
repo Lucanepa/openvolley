@@ -309,7 +309,7 @@ List all available leagues across federations (SV, SVRZ).
 
 Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its own Postgres (`DATABASE_URL`). Users stay in `auth.users` with their Supabase UUIDs and bcrypt hashes (`$2a$`/`$2b$`/`$2y$`), so old passwords keep working. Sessions are opaque 32-byte tokens; only `SHA-256(token)` is stored, in `auth.app_sessions`.
 
-**Database.** Run `db/002_app_sessions.sql` as the owner role after `000_prelude.sql` and before `roles.sql`. It is idempotent. It stops with a clear error if restored `auth.users` rows have emails that differ only in case, or if an index named `users_email_lower` exists that is not unique on `lower(email)`; sign-up depends on that unique index to detect concurrent duplicates.
+**Database.** `scripts/migrate/restore.sh` runs the whole bootstrap (see "Database bootstrap" below). By hand: run `db/002_app_sessions.sql` as the owner role after `000_prelude.sql` and before `roles.sql`. It is idempotent. It stops with a clear error if restored `auth.users` rows have emails that differ only in case, or if an index named `users_email_lower` exists that is not unique on `lower(email)`; sign-up depends on that unique index to detect concurrent duplicates.
 
 **Endpoints** (all `POST /api/auth/<action>`, JSON in, `{data, error:{message, code}}` out):
 
@@ -354,7 +354,30 @@ PG_TEST_URL=postgres://postgres:test@127.0.0.1:$PORT/postgres npm test
 docker stop ov-test-auth
 ```
 
-`tests/fixtures/synthetic_schema.sql` stands in for the real Supabase dump until it is available.
+`tests/fixtures/synthetic_schema.sql` stands in for the real Supabase dump. With `PG_TEST_TEMPLATE=<database>` (same server as `PG_TEST_URL`, nothing connected to it) every suite copies that database instead, and `tests/vmSync.pg.test.js` then runs the sync as a member of the restored `ov_app`. **Only in a rehearsal or throwaway container, never on the production cluster**: the suites create cluster-wide login roles with fixed passwords, add `pgcrypto`, copy the template's users and hashes into scratch databases, and need the template idle. The helper refuses a template whose comment does not end in `(rehearsal, scrubbed)`, which `restore.sh --scrub-except` sets (`PG_TEST_TEMPLATE_UNSCRUBBED=1` overrides it for a template built from synthetic data). Against the production schema 13 tests fail on purpose-built fixture shortcuts, not on the schema: they insert sets/events/live states without the columns production declares `NOT NULL` (`sets.index`, `events.set_index/type/payload`, `match_live_state.match_id`), expect the synthetic `matches.sport_type` default `'indoor'` (production has none), or add `auth.users.deleted_at/banned_until`, which the real table already has.
+
+## Database bootstrap (self-hosted Postgres)
+
+Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only):
+
+| File | When | What |
+|---|---|---|
+| `000_prelude.sql` | fresh database, before `pg_restore` | UTC, database owner, `auth` schema, `auth.users` (Supabase columns incl. `banned_until`/`deleted_at`), `users_email_lower`, staging table `auth.users_import`. No extensions and no Supabase roles are needed (checked against the production schema). |
+| `001_post_restore.sql` | once, after `pg_restore` | drops RLS/policy remnants, moves `auth.users_import` into `auth.users` (lower-cased emails, stops on case duplicates), re-creates the 4 FKs to `auth.users` after an orphan check (`created_by`/`claimed_by` of `beach_competition_matches` now `ON DELETE SET NULL`, so delete-account works) |
+| `002_app_sessions.sql` | after 001 | `auth.app_sessions` |
+| `003_svrz_games_local_time.sql` | after 002 | one-off: `svrz_games.date/time` in Zurich time, closes stuck `svrz_sync_log` rows (vm-sync port) |
+| `004_live_state_best_of.sql` | after 003 | `match_live_state.best_of` (written by the scoreboard, missing on Supabase) |
+| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
+
+`scripts/migrate/restore.sh [--force] [--expect-counts FILE] [--env-file FILE] [--db-user U] [--scrub-except EMAIL] <container> <export-dir>` loads the Phase-0 export (`public.dump`, `auth_users.csv`) through all of the above (every `db/NNN_*.sql` from 003 on, in order; two files with the same number stop it) with a filtered `pg_restore` list, then verifies (row counts, per table against `--expect-counts` when given, users vs CSV, FKs incl. `match_live_state_match_id_fkey_cascade`, no RLS, sequences, ownership, `ov_app` grants and TCP login). A restore list that leaves out a table's data is refused (`--allow-missing-data` overrides). It replaces the target database only when that is empty or left over from an unfinished run the app never used; otherwise it refuses unless `--force`, which renames the old database to `<db>_pre_restore_<UTC>` instead of dropping it. `--print-toc` shows the restore list. `--help` has the details.
+
+```bash
+# local rehearsal (a postgres:17 container with the default superuser)
+OV_REHEARSAL_PW=... scripts/migrate/restore.sh --db-user postgres --scrub-except owner@example.com ov-rehearsal /dev/shm/ov-export/2026-10-05
+# server (RUNBOOK-hetzner.md step 8), with the SQL files and restore.sh copied into the import directory
+bash /data/openvolley/pg/import/restore.sh --env-file /opt/openvolley/.env \
+  "$(docker compose -f /opt/openvolley/compose.yaml ps -q ov-postgres)" /data/openvolley/pg/import
+```
 
 ## WebSocket Protocol
 
