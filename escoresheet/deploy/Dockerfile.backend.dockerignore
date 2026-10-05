@@ -1,0 +1,16 @@
+# BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile, so this
+# list applies to the escoresheet/backend build context without adding a
+# .dockerignore inside escoresheet/backend.
+**/node_modules
+dist
+tests
+public
+*.log
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.dump
+**/*.sql.gz
+build-server.js
+sea-config*.json

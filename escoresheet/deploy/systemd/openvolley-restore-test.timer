@@ -1,0 +1,10 @@
+[Unit]
+Description=OpenVolley weekly restore test, Sunday 06:00 (after the NAS pull)
+
+[Timer]
+OnCalendar=Sun *-*-* 06:00:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
