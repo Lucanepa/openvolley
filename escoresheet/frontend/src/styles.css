@@ -454,19 +454,6 @@ input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color
   font-family: inherit;
 }
 
-/* TimeInput24 (set start/end time, match times) still carries a dark-theme
-   inline border (white at 20 %), invisible on white. Give it the field
-   hairline until its owner (RESTYLE-SPEC P3b) converts the inline style.
-   The selector matches only TimeInput24's dark-fallback signature, never the
-   Scoreboard inputs that read var(--bg-secondary) with their own borders
-   (the lineup grid paints errors red there).
-   TODO(P3b): delete this selector when TimeInput24's defaultInputStyle loses
-   its background and border keys; it stops matching silently once that
-   inline style string changes. */
-input[style*="var(--bg-secondary, #1f2937)"] {
-  border-color: var(--ov-hairline-strong) !important;
-}
-
 input::placeholder,
 textarea::placeholder {
   color: var(--ov-text-faint);
