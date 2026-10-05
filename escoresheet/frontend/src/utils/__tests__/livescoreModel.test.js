@@ -6,7 +6,10 @@ import {
   trackWatched,
   needsFinalRefetch,
   shouldAutoConnect,
-  SETUP_EVENT_TYPES
+  applyMatchRowChange,
+  jitterDelay,
+  SETUP_EVENT_TYPES,
+  IN_PLAY_EVENT_TYPES
 } from '../livescoreModel'
 import { applyLiveChange } from '../livescoreChanges'
 
@@ -36,6 +39,29 @@ describe('hasMatchStarted', () => {
       expect(hasMatchStarted(lineupRow('m', { last_event_type: ev }))).toBe(false)
     }
     expect(hasMatchStarted(lineupRow('m', { last_event_type: null }))).toBe(false)
+  })
+
+  it('events that also happen before Start Set do not make a 0:0 set-1 match live', () => {
+    // handleUndo always syncs 'undo' (e.g. an undone lineup or court captain)
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'undo' }))).toBe(false)
+    // a pre-match sanction goes through logEvent keyEvents
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'sanction' }))).toBe(false)
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'manual_score_update' }))).toBe(false)
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'libero_entry' }))).toBe(false)
+    // an event type livescore does not know yet is not a start either
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'some_new_event' }))).toBe(false)
+  })
+
+  it('the same events do not hide a match that has points', () => {
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'undo', points_b: 1 }))).toBe(true)
+    expect(hasMatchStarted(lineupRow('m', { last_event_type: 'sanction', points_a: 4 }))).toBe(true)
+  })
+
+  it('every in-play event makes a 0:0 set-1 match live', () => {
+    for (const ev of IN_PLAY_EVENT_TYPES) {
+      expect(hasMatchStarted(lineupRow('m', { last_event_type: ev }))).toBe(true)
+    }
+    expect(IN_PLAY_EVENT_TYPES.some((ev) => SETUP_EVENT_TYPES.includes(ev))).toBe(false)
   })
 
   it('is live from the first in-play event, point or set', () => {
@@ -152,5 +178,45 @@ describe('shouldAutoConnect', () => {
   it('asks only in a dev build with no stored choice', () => {
     expect(shouldAutoConnect({})).toBe(false)
     expect(shouldAutoConnect({ search: '?foo=1' })).toBe(false)
+  })
+})
+
+describe('applyMatchRowChange', () => {
+  const sets = [{ set: 1, home: 25, away: 4 }]
+
+  it('copies the match row set_results into the game with that match_id', () => {
+    const games = [lineupRow('a', { match_status: 'ended', matches: { set_results: [] } }), lineupRow('b')]
+    const next = applyMatchRowChange(games, { eventType: 'UPDATE', new: { id: 'a', set_results: sets, home_team: { x: 1 } } })
+    expect(getSetResults(next[0])).toEqual(sets)
+    expect(next[0].matches).toEqual({ set_results: sets })
+    expect(next[1]).toBe(games[1])
+  })
+
+  it('also fills a game that arrived through realtime only (no join)', () => {
+    const games = [lineupRow('a', { match_status: 'ended' })]
+    const next = applyMatchRowChange(games, { eventType: 'UPDATE', new: { id: 'a', set_results: sets } })
+    expect(getSetResults(next[0])).toEqual(sets)
+  })
+
+  it('a later live-state UPDATE keeps the merged set results', () => {
+    let games = applyMatchRowChange([lineupRow('a', { matches: { set_results: [] } })], { eventType: 'UPDATE', new: { id: 'a', set_results: sets } })
+    games = applyLiveChange(games, { eventType: 'UPDATE', new: { match_id: 'a', match_status: 'ended', set_results: [] } })
+    expect(getSetResults(games[0])).toEqual(sets)
+  })
+
+  it('returns the same list when nothing applies', () => {
+    const games = [lineupRow('a', { matches: { set_results: sets } })]
+    expect(applyMatchRowChange(games, { eventType: 'UPDATE', new: { id: 'a', set_results: structuredClone(sets) } })).toBe(games)
+    expect(applyMatchRowChange(games, { eventType: 'UPDATE', new: { id: 'zz', set_results: sets } })).toBe(games)
+    expect(applyMatchRowChange(games, { eventType: 'UPDATE', new: { id: 'a' } })).toBe(games)
+    expect(applyMatchRowChange(games, { eventType: 'DELETE', old: { id: 'a' } })).toBe(games)
+  })
+})
+
+describe('jitterDelay', () => {
+  it('stays within ±30%', () => {
+    expect(jitterDelay(1000, () => 0)).toBe(700)
+    expect(jitterDelay(1000, () => 0.5)).toBe(1000)
+    expect(jitterDelay(1000, () => 0.999999)).toBe(1300)
   })
 })

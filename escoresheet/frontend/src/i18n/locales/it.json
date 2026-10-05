@@ -1420,6 +1420,7 @@
     "switchToReception": "Passa alla formazione di ricezione"
   },
   "connection": {
+    "changeServer": "Cambia server",
     "title": "Configurazione connessione",
     "chooseConnection": "Come connettere i dispositivi:",
     "sameWifi": "Stessa rete WiFi",
@@ -1508,6 +1509,7 @@
     "failedToLoadLeagues": "Caricamento delle leghe fallito"
   },
   "livescore": {
+    "staleData": "Problema di connessione: vengono mostrati gli ultimi punteggi noti",
     "title": "Punteggio Live",
     "loadingGames": "Caricamento partite disponibili...",
     "selectGame": "Seleziona una partita per vedere il punteggio live",

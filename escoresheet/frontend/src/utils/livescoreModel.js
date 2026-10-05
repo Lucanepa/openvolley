@@ -14,11 +14,22 @@
  *
  *   started  = any point or set already played (points, sets won, set > 1),
  *              or a status only an in-play match has (interval, timeout,
- *              ended/final), or a last event that is not a setup event.
- *   setup    = lineup, rotation, coin toss, court captain, manual side/serve
- *              changes: what the scorer does before Start Set.
+ *              ended/final), or a last event from IN_PLAY_EVENT_TYPES (an
+ *              allowlist: point, set_start, timeout, substitution, ...).
+ *   anything else at 0:0 / set 1 / no sets won is not started: setup events
+ *              (lineup, rotation, coin toss, court captain, manual side/serve
+ *              changes), and events that can happen before Start Set too
+ *              ('undo' is synced after every undo, including an undone
+ *              lineup; a pre-match 'sanction'; 'manual_score_update';
+ *              libero_*). An unknown event type is also not started, so a new
+ *              scorer event cannot list a match early by accident.
  *   explicit pre-start statuses (pre_match, scheduled, not_started) are never
  *   live, so a scoreboard that starts writing one is honoured as is.
+ *
+ * Open: Start Set alone (no rally yet) is not visible, because set_start is
+ * not pushed to match_live_state. The companion change is in Scoreboard.jsx
+ * (sync 'set_start' after writing it; write 'pre_match' for setup upserts);
+ * livescore already honours both.
  *
  * A match the list has already shown as started stays listed for the rest of
  * the session (an undo back to 0:0 must not make it vanish).
@@ -39,7 +50,27 @@ export const SETUP_EVENT_TYPES = Object.freeze([
   'manual_side_change',
   'manual_serve_change'
 ])
-const SETUP_EVENTS = new Set(SETUP_EVENT_TYPES)
+
+/**
+ * Event types that only happen once a set is under way (allowlist). Anything
+ * else (setup events, 'undo', 'sanction', 'manual_*', libero_*, unknown types)
+ * leaves the decision to the score, sets and status.
+ */
+export const IN_PLAY_EVENT_TYPES = Object.freeze([
+  'point',
+  'rally',
+  'replay',
+  'decision_change',
+  'set_start',
+  'set_end',
+  'timeout',
+  'end_timeout',
+  'substitution',
+  'end_interval',
+  'court_switch',
+  'match_end'
+])
+const IN_PLAY_EVENTS = new Set(IN_PLAY_EVENT_TYPES)
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 
@@ -57,9 +88,7 @@ export function hasMatchStarted(game) {
   if (num(game.sets_won_a) + num(game.sets_won_b) > 0) return true
   if (num(game.points_a) + num(game.points_b) > 0) return true
   if (num(game.current_set) > 1) return true
-  const ev = game.last_event_type
-  if (!ev) return false
-  return !SETUP_EVENTS.has(ev)
+  return IN_PLAY_EVENTS.has(game.last_event_type)
 }
 
 /**
@@ -123,8 +152,45 @@ export function needsFinalRefetch(game, watched) {
   return watched.has(game.match_id)
 }
 
-/** Delays (ms) for the refetches after a match ends without set results. */
+/**
+ * Delays (ms) for the safety-net refetches after a match ends without set
+ * results. The primary path is applyMatchRowChange (realtime matches UPDATE);
+ * these only cover a missed or late change. Jittered, see jitterDelay.
+ */
 export const FINAL_REFETCH_DELAYS_MS = Object.freeze([1500, 4000, 10000, 30000])
+
+/**
+ * ±30% jitter so the viewers of one match do not refetch the list in step.
+ * @param {number} ms
+ * @param {() => number} [random]
+ */
+export function jitterDelay(ms, random = Math.random) {
+  return Math.round(ms * (0.7 + 0.6 * random()))
+}
+
+/**
+ * Reducer for a realtime `matches` change: copy its set_results into the
+ * joined `matches` of the game with that match_id, so the FINAL view gets its
+ * set chips as soon as the scorer's match sync lands (match_live_state
+ * UPDATEs do not carry set_results). Other columns of the match row are
+ * ignored.
+ * @param {object[]} games
+ * @param {{eventType: string, new?: object}} payload
+ * @returns {object[]} the next list (the same array when nothing changed)
+ */
+export function applyMatchRowChange(games, payload) {
+  if (payload?.eventType !== 'UPDATE' && payload?.eventType !== 'INSERT') return games
+  const row = payload.new
+  if (!row || row.id == null || !Array.isArray(row.set_results)) return games
+  const index = (games || []).findIndex((g) => g?.match_id === row.id)
+  if (index === -1) return games
+  const game = games[index]
+  const joined = Array.isArray(game.matches) ? game.matches[0] : game.matches
+  if (JSON.stringify(joined?.set_results ?? null) === JSON.stringify(row.set_results)) return games
+  const next = games.slice()
+  next[index] = { ...game, matches: { ...(joined || {}), set_results: row.set_results } }
+  return next
+}
 
 /**
  * Whether livescore can skip the server-connection screen. Livescore needs no

@@ -25,6 +25,7 @@ vi.mock('../lib/apiClient', () => ({
       order: () => {
         api.calls++
         const r = api.responses.length > 1 ? api.responses.shift() : api.responses[0]
+        if (r && r.fail) return Promise.resolve({ data: null, error: { message: r.fail } })
         return Promise.resolve({ data: structuredClone(r), error: null })
       }
     }
@@ -32,14 +33,19 @@ vi.mock('../lib/apiClient', () => ({
   }
 }))
 
-// Realtime shim: capture the postgres_changes handler
-const rt = vi.hoisted(() => ({ handler: null }))
+// Realtime shim: capture the postgres_changes handlers by table
+// (rt.handler = match_live_state, rt.handlers.matches = matches)
+const rt = vi.hoisted(() => ({ handler: null, handlers: {}, subscribed: null }))
 vi.mock('../lib/supabaseClient', () => ({
   supabase: {
     channel: () => {
       const ch = {
-        on: (_type, _filter, cb) => { rt.handler = cb; return ch },
-        subscribe: () => ch
+        on: (_type, filter, cb) => {
+          rt.handlers[filter.table] = cb
+          if (filter.table === 'match_live_state') rt.handler = cb
+          return ch
+        },
+        subscribe: (cb) => { rt.subscribed = cb; return ch }
       }
       return ch
     },
@@ -89,6 +95,7 @@ describe('LivescoreApp', () => {
     api.responses = []
     api.calls = 0
     rt.handler = null
+    rt.handlers = {}
     window.innerWidth = 1024
     window.innerHeight = 900
   })
@@ -149,6 +156,64 @@ describe('LivescoreApp', () => {
     // filled: no further refetches
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
     expect(api.calls).toBe(2)
+  })
+
+  it('an undo before Start Set does not list the match', async () => {
+    api.responses = [[row('a')]]
+    render(<LivescoreApp />)
+    await flush()
+    // the scorer undoes a lineup / captain / rotation: handleUndo syncs 'undo'
+    act(() => rt.handler({ eventType: 'UPDATE', new: { match_id: 'a', last_event_type: 'undo' }, old: {} }))
+    act(() => rt.handler({ eventType: 'UPDATE', new: { match_id: 'a', last_event_type: 'sanction' }, old: {} }))
+    expect(screen.queryByText('Home a')).toBeNull()
+    expect(screen.getByText('No live games')).toBeInTheDocument()
+  })
+
+  it('FINAL set scores arrive with the realtime matches UPDATE, before any refetch', async () => {
+    vi.useFakeTimers()
+    const live = row('a', { points_a: 24, sets_won_a: 2, current_set: 3, last_event_type: 'point' })
+    api.responses = [[live]]
+    render(<LivescoreApp />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    fireEvent.click(screen.getByText('Home a'))
+    act(() => rt.handler({
+      eventType: 'UPDATE',
+      new: { match_id: 'a', match_status: 'ended', sets_won_a: 3, points_a: 25, last_event_type: 'match_end', set_results: [] },
+      old: {}
+    }))
+    expect(screen.queryByText('25-4')).toBeNull()
+    act(() => rt.handlers.matches({
+      eventType: 'UPDATE',
+      new: { id: 'a', set_results: [{ set: 1, home: 25, away: 4 }, { set: 2, home: 25, away: 0 }, { set: 3, home: 25, away: 0 }] },
+      old: {}
+    }))
+    expect(screen.getByText('25-4')).toBeInTheDocument()
+    expect(api.calls).toBe(1)
+    // filled: the safety-net refetch never runs
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+    expect(api.calls).toBe(1)
+  })
+
+  it('a failed refetch keeps the last good list with a notice', async () => {
+    api.responses = [[row('a', { points_a: 5, last_event_type: 'point' })]]
+    render(<LivescoreApp />)
+    await flush()
+    expect(screen.getByText('Home a')).toBeInTheDocument()
+    // the realtime socket reconnects and the catch-up refetch fails (429)
+    api.responses = [{ fail: 'HTTP 429' }]
+    await act(async () => { rt.subscribed('SUBSCRIBED'); await Promise.resolve() })
+    expect(screen.getByText('Home a')).toBeInTheDocument()
+    expect(screen.queryByText('HTTP 429')).toBeNull()
+    expect(screen.getByRole('status').textContent).toMatch(/last known scores/)
+  })
+
+  it('a failed first load shows the error view with Change server', async () => {
+    api.responses = [{ fail: 'unreachable' }]
+    render(<LivescoreApp />)
+    await flush()
+    expect(screen.getByText('unreachable')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Change server'))
+    expect(screen.getByText('Connect to Server')).toBeInTheDocument()
   })
 
   it('a match already finished at load is not refetched in a loop', async () => {

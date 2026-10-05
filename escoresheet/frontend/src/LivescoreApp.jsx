@@ -7,7 +7,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
-import { listedGames, getSetResults, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, isEndedStatus, shouldAutoConnect } from './utils/livescoreModel'
+import { listedGames, getSetResults, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, isEndedStatus, shouldAutoConnect } from './utils/livescoreModel'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { PhoneIcon } from './components/icons'
 
@@ -40,6 +40,10 @@ export default function LivescoreApp() {
   const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // A refetch failed after an earlier success: keep showing the last good
+  // list with a small notice instead of replacing it with the error view.
+  const [stale, setStale] = useState(false)
+  const hasLoadedRef = useRef(false)
   const channelRef = useRef(null)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
@@ -68,6 +72,9 @@ export default function LivescoreApp() {
   // Back to the connection screen (e.g. a stored LAN server is unreachable)
   const handleChangeServer = useCallback(() => {
     setSelectedGame(null)
+    hasLoadedRef.current = false
+    setStale(false)
+    setLiveGames([])
     setServerReady(false)
   }, [])
 
@@ -91,14 +98,18 @@ export default function LivescoreApp() {
 
       if (fetchError) {
         console.error('[Livescore] Error fetching games:', fetchError)
-        setError(fetchError.message)
+        if (hasLoadedRef.current) setStale(true)
+        else setError(fetchError.message)
       } else {
         setLiveGames(visibleGames(data))
+        hasLoadedRef.current = true
         setError(null)
+        setStale(false)
       }
     } catch (err) {
       console.error('[Livescore] Exception:', err)
-      setError(err.message)
+      if (hasLoadedRef.current) setStale(true)
+      else setError(err.message)
     } finally {
       setLoading(false)
     }
@@ -134,6 +145,19 @@ export default function LivescoreApp() {
           }
         }
       )
+      // FINAL set chips: set_results is written to the matches row by the
+      // scorer's sync queue, not to match_live_state, so take it from the
+      // match row's own change (secrets are stripped by the hub).
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'matches',
+          filter: 'sport_type=eq.indoor'
+        },
+        (payload) => setLiveGames(prev => applyMatchRowChange(prev, payload))
+      )
       .subscribe((status) => {
         console.log('[Livescore] Subscription status:', status)
         // SUBSCRIBED repeats after every reconnect: refetch to catch up on
@@ -155,11 +179,11 @@ export default function LivescoreApp() {
   // under way, not at the first lineup confirm. See utils/livescoreModel.js.
   const shownGames = useMemo(() => listedGames(liveGames, shownStartedRef.current), [liveGames])
 
-  // FINAL view set results: realtime UPDATEs carry only match_live_state
-  // columns, so a match that ends while this page watches it keeps the
-  // (empty) matches.set_results of the first load. Refetch (with the join)
-  // after the end, a few times in case the match row is written after the
-  // live state.
+  // FINAL view set results: match_live_state UPDATEs carry no set_results,
+  // so a match that ends while this page watches it keeps the (empty)
+  // matches.set_results of the first load until the realtime matches UPDATE
+  // above brings them. Safety net for a missed change: refetch (with the
+  // join) a few times, jittered so viewers do not refetch in step.
   trackWatched(liveGames, watchedRef.current)
   const finalPendingKey = liveGames
     .filter((g) => needsFinalRefetch(g, watchedRef.current) &&
@@ -175,7 +199,7 @@ export default function LivescoreApp() {
       for (const id of ids) attempts.set(id, (attempts.get(id) || 0) + 1)
       await fetchLiveGames()
       setFinalRefetchTick((n) => n + 1)
-    }, FINAL_REFETCH_DELAYS_MS[attempt])
+    }, jitterDelay(FINAL_REFETCH_DELAYS_MS[attempt]))
     return () => clearTimeout(timer)
   }, [finalPendingKey, finalRefetchTick, fetchLiveGames, serverReady])
 
@@ -225,6 +249,28 @@ export default function LivescoreApp() {
     }
   }
 
+  // Last refetch failed after an earlier success: the scores shown may be old.
+  const staleNotice = stale ? (
+    <div
+      role="status"
+      style={{
+        position: 'fixed',
+        bottom: '8px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        padding: '4px 10px',
+        borderRadius: '6px',
+        background: 'var(--panel)',
+        color: 'var(--muted)',
+        fontSize: '12px',
+        zIndex: 50,
+        pointerEvents: 'none'
+      }}
+    >
+      {t('livescore.staleData', 'Connection problem: showing the last known scores')}
+    </div>
+  ) : null
+
   // Fullscreen view for selected game
   if (selectedGameData) {
     const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(selectedGameData)
@@ -242,6 +288,7 @@ export default function LivescoreApp() {
         display: 'flex',
         flexDirection: 'column'
       }}>
+        {staleNotice}
         {/* Narrow screen blocking overlay */}
         {(viewportWidth < 357 || viewportHeight < 650) && (
           <div style={{
@@ -539,6 +586,7 @@ export default function LivescoreApp() {
       )}
 
       <UpdateBanner />
+      {staleNotice}
 
       {/* Header */}
       <DashboardHeader

@@ -1419,6 +1419,7 @@
     "switchToReception": "Zur Annahmeformation wechseln"
   },
   "connection": {
+    "changeServer": "Server wächsle",
     "title": "Verbindigsiirichtig",
     "chooseConnection": "Wie sölled d Grät verbunde werde:",
     "sameWifi": "Gliiches WLAN-Netzwerk",
@@ -1477,6 +1478,7 @@
     "failedToLoadLeagues": "Lige händ nöd chönne glade werde"
   },
   "livescore": {
+    "staleData": "Verbindigsproblem: di zletscht bekannte Ergebnis werdet aazeigt",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfüegbari Spiil werdet glade...",
     "selectGame": "Wähled Sie es Spiil us, um s Live-Ergebnis aazeige",
