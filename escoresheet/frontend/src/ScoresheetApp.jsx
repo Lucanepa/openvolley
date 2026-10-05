@@ -5,20 +5,24 @@ import { apiFrom, apiStorage } from './lib/apiClient'
 import './i18n' // the scoresheet components call useTranslation (own entry, own i18n init)
 import App from '../scoresheet_pdf/App_Scoresheet'
 import { ClipboardIcon } from './components/icons'
-import { finalScoresheetPath, describeScoresheetLoadError } from '../scoresheet_pdf/utils/scoresheetStorage'
+import { describeScoresheetLoadError, findOwnScoresheet, redactScoresheetPath } from '../scoresheet_pdf/utils/scoresheetStorage'
 
 // Fetch an approved scoresheet (_final file) from cloud storage. Only the
-// account that uploaded it may read it (backend README "Who can read a
-// scoresheet"): returns { data } or { error } with the storage error (status,
+// account that uploaded it may list or read it (backend README "Who can read a
+// scoresheet"), and its name has a random part, so it is found by listing the
+// date folder. Returns { data } or { error } with the storage error (status,
 // code) so the viewer can tell sign-in / not yours / not found apart.
 const fetchFromStorage = async (date, game) => {
   try {
-    const storagePath = finalScoresheetPath(date, game)
-    console.log('[Scoresheet] Fetching from storage:', storagePath)
+    const bucket = apiStorage.from('scoresheets')
+    const found = await findOwnScoresheet(bucket, date, game)
+    if (found.error) {
+      console.warn('[Scoresheet] Storage lookup:', found.error.code || found.error.status, found.error.message)
+      return { data: null, error: found.error }
+    }
+    console.log('[Scoresheet] Fetching from storage:', redactScoresheetPath(found.path))
 
-    const { data, error } = await apiStorage
-      .from('scoresheets')
-      .download(storagePath)
+    const { data, error } = await bucket.download(found.path)
 
     if (error) {
       console.warn('[Scoresheet] Storage fetch error:', error.code || error.status, error.message)
@@ -289,10 +293,10 @@ const ScoresheetViewer = ({ date, game, action }) => {
         if (data) {
           setMatchData(data)
         } else {
-          setError(describeScoresheetLoadError(loadError, finalScoresheetPath(date, game)))
+          setError(describeScoresheetLoadError(loadError, `${date}, game ${game}`))
         }
       } catch (err) {
-        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, finalScoresheetPath(date, game)))
+        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`))
       } finally {
         setLoading(false)
       }

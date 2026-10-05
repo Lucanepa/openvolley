@@ -10,7 +10,8 @@ import Modal from './Modal'
 import mikasaVolleyball from '../mikasa_v200w.png'
 import JSZip from 'jszip'
 import { apiStorage } from '../lib/apiClient'
-import { uploadScoresheet } from '../utils/scoresheetUploader'
+import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
+import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
@@ -860,14 +861,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // Upload PDF and final JSON to Supabase storage "scoresheets" bucket
       if (!match?.test) {
         try {
-          const scheduledDate = match.scheduledAt
-            ? new Date(match.scheduledAt).toISOString().slice(0, 10) // YYYY-MM-DD
-            : new Date().toISOString().slice(0, 10)
-          const gameNumber = match.gameNumber || match.externalId || match.game_n || 'unknown'
+          // Same name scheme as the JSON (random part: only this scorer
+          // account can read it, nobody can claim the name first)
+          const pdfStoragePath = scoresheetUploadPath(match, { ext: 'pdf' })
 
           // Upload PDF (only if generation succeeded)
-          if (pdfResult) {
-            const pdfStoragePath = `${scheduledDate}/game${gameNumber}.pdf`
+          if (pdfResult && pdfStoragePath) {
             const { error: uploadError } = await apiStorage
               .from('scoresheets')
               .upload(pdfStoragePath, pdfResult.blob, {
@@ -877,7 +876,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             if (uploadError) {
               console.warn('Failed to upload PDF to cloud:', uploadError)
             } else {
-              console.log('PDF uploaded to cloud:', pdfStoragePath)
+              console.log('PDF uploaded to cloud:', redactScoresheetPath(pdfStoragePath))
             }
           }
 
@@ -893,7 +892,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             final: true
           })
           if (jsonResult.success) {
-            console.log('Final JSON uploaded to cloud:', jsonResult.path)
+            console.log('Final JSON uploaded to cloud:', redactScoresheetPath(jsonResult.path))
           } else {
             console.warn('Failed to upload final JSON:', jsonResult.error)
           }
