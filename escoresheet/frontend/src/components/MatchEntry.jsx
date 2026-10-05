@@ -9,6 +9,18 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
+import { ArrowLeft } from 'lucide-react'
+import { Button } from '../ui/Button.jsx'
+
+// volleyui (RESTYLE-SPEC P3b). This is the bench's live view: the TO/SUB
+// counters, the score, the court, libero/captain tags and the sanction cards
+// are frozen. Only the surfaces around them (white kit cards on the stone
+// page instead of stone-50 slabs) and the Back buttons change.
+const SURFACE = {
+  background: 'var(--ov-card)',
+  border: '1px solid var(--ov-hairline-soft)',
+  boxShadow: 'var(--ov-shadow-card)'
+}
 import { setsToWin } from '../utils/matchFormat'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
@@ -801,13 +813,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         gap: '24px'
       }}>
         {/* Match Ended Banner */}
-        <div style={{
-          fontSize: '18px',
-          fontWeight: 500,
-          color: 'var(--muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '2px'
-        }}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">
           {t('matchEntry.matchHasEnded', 'The match has ended')}
         </div>
 
@@ -847,23 +853,11 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         </div>
 
         {!embedded && (
-          <button
-            onClick={onBack}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'background 0.2s',
-              marginTop: '16px'
-            }}
-          >
-            {t('matchEntry.back', 'Back')}
-          </button>
+          <div className="ov-kit" style={{ marginTop: '16px' }}>
+            <Button variant="secondary" size="xl" icon={ArrowLeft} className="font-medium" onClick={onBack}>
+              {t('matchEntry.back', 'Back')}
+            </Button>
+          </div>
         )}
       </div>
     )
@@ -890,22 +884,12 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           alignItems: 'center',
           marginBottom: '4px'
         }}>
-          <button
-            onClick={onBack}
-            style={{
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-          >
-            {t('matchEntry.backArrow', '← Back')}
-          </button>
-          <h1 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
+          <div className="ov-kit">
+            <Button variant="toolbar" size="xl" className="font-medium" onClick={onBack}>
+              {t('matchEntry.backArrow', '← Back')}
+            </Button>
+          </div>
+          <h1 className="tracking-tight text-stone-900" style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
             {teamInfo.name}
           </h1>
           <div style={{ width: '80px' }}></div>
@@ -970,8 +954,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Center: Score and Set Counter */}
         <div style={{
-          background: 'var(--panel-2)',
-          borderRadius: '8px',
+          ...SURFACE,
+          borderRadius: '12px',
           padding: '8px 12px',
           display: 'flex',
           flexDirection: 'column',
@@ -1025,8 +1009,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Right: Sanctions */}
         <div style={{
-          background: 'var(--panel-2)',
-          borderRadius: '8px',
+          ...SURFACE,
+          borderRadius: '12px',
           padding: '6px 10px',
           display: 'flex',
           flexDirection: 'column',
@@ -1035,7 +1019,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           overflow: 'auto',
           minWidth: '100px'
         }}>
-          <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600 }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
+          <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
           {allSanctionsForDisplay.length === 0 ? (
             <div style={{ color: 'var(--muted)', fontSize: '10px' }}>{t('matchEntry.none', 'None')}</div>
           ) : (
@@ -1269,8 +1253,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
       {/* SECTION 3: Bench - Players, Liberos, Officials (N and Codes only) */}
       <div style={{
-        background: 'var(--panel-2)',
-        borderRadius: '8px',
+        ...SURFACE,
+        borderRadius: '12px',
         padding: '8px 12px',
         display: 'flex',
         flexWrap: 'wrap',
