@@ -10,6 +10,7 @@
 // is the scoring green). `tracking-normal` cancels the legacy `.text-xs` /
 // `.text-sm` letter-spacing. Utilities sit above the legacy layer, so these win;
 // inline style still beats them, so converted elements drop the matching keys.
+import i18n from 'i18next' // the app's singleton (configured in ../i18n); no react-i18next import, so tests that mock it still load
 import { FOCUS_RING } from '../ui/Button.jsx'
 
 export { FOCUS_RING }
@@ -95,6 +96,11 @@ const ITEM_TONES = {
   '#ef4444': 'text-red-600',
   '#dc2626': 'text-red-600',
   'var(--text)': 'text-stone-700',
+}
+
+/** The kit toast's own label language (its dismiss button): DE for German UIs, else EN. */
+export function toastLang() {
+  return String(i18n.language || '').startsWith('de') ? 'DE' : 'EN'
 }
 
 /** { className, style } for a caller-supplied menu item colour. */
