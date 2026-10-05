@@ -16,7 +16,7 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
-import { setExtId } from '../utils/syncIds'
+import { setExtId, eventExtId } from '../utils/syncIds'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 
 // Generate a placeholder signature image (wavy line) for test matches
@@ -603,9 +603,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         .and(e => e.type === 'coin_toss')
         .first()
 
-      // Create coin_toss event if it doesn't exist
+      // Create coin_toss event if it doesn't exist. Its local id names the
+      // cloud row (`${seed}:e:${id}`, like every other event).
+      let coinTossEventId = existingCoinTossEvent?.id ?? null
       if (!existingCoinTossEvent) {
-        await db.events.add({
+        coinTossEventId = await db.events.add({
           matchId: matchId,
           setIndex: 1,
           type: 'coin_toss',
@@ -633,7 +635,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           resource: 'event',
           action: 'insert',
           payload: {
-            external_id: 'coin_toss_' + match.seed_key, // Unique ID for this event
+            // Scoped to the match: the backend refuses ids that do not start
+            // with the match key (a 'coin_toss_<seed>' id failed forever)
+            external_id: eventExtId(match.seed_key, coinTossEventId),
             match_id: match.seed_key,
             set_index: 1,
             type: 'coin_toss',
