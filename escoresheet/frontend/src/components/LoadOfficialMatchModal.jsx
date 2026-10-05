@@ -5,6 +5,16 @@ import { getApiUrl } from '../utils/backendConfig'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { apiFrom } from '../lib/apiClient'
+import { AlertTriangle, Loader2, Search, X } from 'lucide-react'
+import { cn, FOCUS_RING, IconButton } from '../ui'
+
+// Kit recipes: native select at h-11 (tablet), compact label, filter pills
+// (slate when on), sticky table head.
+const SELECT_CLS = 'h-11 min-w-[8rem] rounded-xl border border-stone-300 bg-white px-3 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50'
+const LABEL_CLS = 'mb-1 block text-xs font-medium text-stone-500'
+const PILL_CLS = 'shrink-0 h-9 px-3.5 rounded-full border text-xs font-medium whitespace-nowrap transition-colors'
+const PILL_ON = 'bg-slate-900 border-slate-900 text-white'
+const PILL_OFF = 'bg-white border-stone-200 text-stone-600 hover:bg-stone-100'
 
 // Styles will be generated dynamically with scaleFactor
 
@@ -132,47 +142,6 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   const { showAlert } = useAlert()
   const { scaleFactor } = useScaledLayout()
 
-  // Scaled styles
-  const selectStyle = {
-    width: 'auto',
-    minWidth: `${Math.round(80 * scaleFactor)}px`,
-    padding: `${Math.round(10 * scaleFactor)}px ${Math.round(32 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-    fontSize: `${Math.round(14 * scaleFactor)}px`,
-    background: 'var(--panel)',
-    border: '1px solid var(--border)',
-    borderRadius: `${Math.round(8 * scaleFactor)}px`,
-    color: 'var(--text)',
-    cursor: 'pointer',
-    appearance: 'none',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: `right ${Math.round(12 * scaleFactor)}px center`
-  }
-
-  const labelStyle = {
-    display: 'block',
-    fontSize: `${Math.round(12 * scaleFactor)}px`,
-    fontWeight: 600,
-    color: 'var(--muted)',
-    marginBottom: `${Math.round(6 * scaleFactor)}px`
-  }
-
-  const filterButtonStyle = {
-    padding: `${Math.round(6 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-    fontSize: `${Math.round(12 * scaleFactor)}px`,
-    background: 'var(--panel)',
-    border: '1px solid var(--border)',
-    borderRadius: `${Math.round(6 * scaleFactor)}px`,
-    color: 'var(--text)',
-    cursor: 'pointer',
-    transition: 'all 0.15s'
-  }
-
-  const filterButtonActiveStyle = {
-    ...filterButtonStyle,
-    background: 'rgba(59, 130, 246, 0.3)',
-    borderColor: 'rgba(59, 130, 246, 0.5)'
-  }
 
   // Dynamic leagues
   const [allLeagues, setAllLeagues] = useState([])
@@ -453,63 +422,32 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       width={650}
       hideCloseButton={true}
     >
+      <div className="ov-kit text-stone-800">
       {/* Sticky Header */}
-      <div style={{
-        position: 'sticky',
-        top: Math.round(-16 * scaleFactor),
-        background: 'var(--panel)',
-        borderBottom: '1px solid var(--border)',
-        padding: `${Math.round(12 * scaleFactor)}px 0`,
-        marginBottom: `${Math.round(16 * scaleFactor)}px`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 10
-      }}>
-        <h2 style={{ margin: 0, fontSize: `${Math.round(18 * scaleFactor)}px`, fontWeight: 600 }}>
+      <div className="sticky -top-4 z-10 mb-4 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white py-2">
+        <h2 className="text-lg font-bold text-stone-900">
           {t('loadOfficialMatch.title', 'Load Match from Schedule')}
         </h2>
-        <button
-          onClick={onClose}
-          aria-label={t('common.close', 'Close')}
-          style={{
-            width: `${Math.round(32 * scaleFactor)}px`,
-            height: `${Math.round(32 * scaleFactor)}px`,
-            borderRadius: `${Math.round(6 * scaleFactor)}px`,
-            background: 'var(--panel)',
-            border: 'none',
-            color: 'var(--text)',
-            fontSize: `${Math.round(18 * scaleFactor)}px`,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          ×
-        </button>
+        <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} />
       </div>
 
       {/* Filters - 2 Dropdowns */}
-      <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
+      <div className="mb-4">
         {loadingConfig ? (
-          <div style={{ color: 'var(--muted)', fontSize: `${Math.round(14 * scaleFactor)}px` }}>
+          <div className="flex items-center gap-2 text-sm text-stone-500">
+            <Loader2 size={14} className="animate-spin text-stone-400" aria-hidden="true" />
             {t('loadOfficialMatch.loading', 'Loading...')}
           </div>
         ) : (
-          <div style={{
-            display: 'flex',
-            gap: `${Math.round(12 * scaleFactor)}px`,
-            alignItems: 'flex-end'
-          }}>
+          <div className="flex flex-wrap items-end gap-3">
             {/* Gender Dropdown */}
             <div>
-              <label style={labelStyle}>{t('loadOfficialMatch.gender', 'Gender')}</label>
+              <label className={LABEL_CLS}>{t('loadOfficialMatch.gender', 'Gender')}</label>
               <select
                 value={gender}
                 onChange={e => setGender(e.target.value)}
                 aria-label={t('loadOfficialMatch.gender', 'Gender')}
-                style={selectStyle}
+                className={SELECT_CLS}
               >
                 <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
                 <option value="men">{t('matchSetup.men', 'Men')} ♂</option>
@@ -519,13 +457,13 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
             {/* League Dropdown */}
             <div>
-              <label style={labelStyle}>{t('loadOfficialMatch.league', 'League')}</label>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <label className={LABEL_CLS}>{t('loadOfficialMatch.league', 'League')}</label>
+              <div className="flex items-center">
                 <select
                   value={league}
                   onChange={e => setLeague(e.target.value)}
                   aria-label={t('loadOfficialMatch.league', 'League')}
-                  style={{ ...selectStyle, opacity: gender ? 1 : 0.5 }}
+                  className={SELECT_CLS}
                   disabled={!gender}
                 >
                   <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
@@ -536,53 +474,25 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 {!gender && (
                   <span
                     ref={showLeagueWarning ? leagueWarningRef : undefined}
-                    style={{ position: 'relative', display: 'inline-flex', marginLeft: Math.round(6 * scaleFactor) }}
+                    className="relative ml-1.5 inline-flex"
                   >
-                    <span
+                    <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         setShowLeagueWarning(v => !v)
                       }}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: Math.round(22 * scaleFactor),
-                        height: Math.round(22 * scaleFactor),
-                        borderRadius: '50%',
-                        backgroundColor: '#f59e0b',
-                        color: '#0b1120',
-                        fontWeight: 700,
-                        fontSize: Math.round(14 * scaleFactor),
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        border: '2px solid rgba(245, 158, 11, 0.4)',
-                        boxShadow: '0 0 8px rgba(245, 158, 11, 0.3)'
-                      }}
+                      aria-expanded={showLeagueWarning}
+                      aria-label={t('warnings.clickForDetails')}
+                      className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-amber-50', FOCUS_RING)}
                       title={t('warnings.clickForDetails')}
                     >
-                      !
-                    </span>
+                      <AlertTriangle size={18} aria-hidden="true" />
+                    </button>
                     {showLeagueWarning && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        style={{
-                          position: 'absolute',
-                          top: '100%',
-                          right: 0,
-                          marginTop: Math.round(8 * scaleFactor),
-                          background: 'var(--panel)',
-                          border: '1px solid #f59e0b',
-                          borderRadius: Math.round(8 * scaleFactor),
-                          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(14 * scaleFactor)}px`,
-                          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
-                          zIndex: 100,
-                          whiteSpace: 'nowrap',
-                          maxWidth: '90vw',
-                          fontSize: Math.round(12 * scaleFactor),
-                          color: '#f59e0b',
-                          fontWeight: 600
-                        }}
+                        className="absolute right-0 top-full z-40 mt-2 max-w-[90vw] whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 shadow-xl"
                       >
                         {t('warnings.selectGenderFirst')}
                       </div>
@@ -596,25 +506,15 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
         {/* Selection Path - shown when selections are made */}
         {gender && (
-          <div style={{
-            borderTop: '1px solid var(--border)',
-            marginTop: `${Math.round(12 * scaleFactor)}px`,
-            paddingTop: `${Math.round(10 * scaleFactor)}px`
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: `${Math.round(8 * scaleFactor)}px`,
-              fontSize: `${Math.round(13 * scaleFactor)}px`,
-              color: 'var(--text)'
-            }}>
+          <div className="mt-3 border-t border-stone-100 pt-2.5">
+            <div className="flex items-center gap-2 text-sm text-stone-700">
               <span>
                 {gender === 'men' ? `${t('matchSetup.men', 'Men')} ♂` : `${t('matchSetup.women', 'Women')} ♀`}
               </span>
               {league && (
                 <>
-                  <span style={{ color: 'var(--muted)' }}>|</span>
-                  <span style={{ fontWeight: 600 }}>{formatLeagueDisplay(league, gender)}</span>
+                  <span className="text-stone-300">·</span>
+                  <span className="font-semibold text-stone-900">{formatLeagueDisplay(league, gender)}</span>
                 </>
               )}
             </div>
@@ -624,162 +524,117 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
       {/* Search and Date Filters - shown when matches are loaded */}
       {matches.length > 0 && (
-        <div style={{
-          marginBottom: `${Math.round(12 * scaleFactor)}px`,
-          display: 'flex',
-          gap: `${Math.round(12 * scaleFactor)}px`,
-          alignItems: 'center',
-          flexWrap: 'wrap'
-        }}>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           {/* Search Input */}
-          <div style={{ flex: 1, minWidth: `${Math.round(150 * scaleFactor)}px` }}>
+          <div className="relative min-w-[150px] flex-1">
+            <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" aria-hidden="true" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
               aria-label={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
-              style={{
-                width: '100%',
-                padding: `${Math.round(8 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-                fontSize: `${Math.round(13 * scaleFactor)}px`,
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: `${Math.round(6 * scaleFactor)}px`,
-                color: 'var(--text)',
-                outline: 'none'
-              }}
+              className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
             />
           </div>
 
           {/* Date Filter Buttons */}
-          <div style={{ display: 'flex', gap: `${Math.round(6 * scaleFactor)}px`, alignItems: 'center' }}>
+          <div className="flex items-center gap-1.5">
             <button
+              type="button"
+              aria-pressed={dateFilter === 'today'}
               onClick={() => setDateFilter(dateFilter === 'today' ? '' : 'today')}
-              style={dateFilter === 'today' ? filterButtonActiveStyle : filterButtonStyle}
+              className={cn(PILL_CLS, dateFilter === 'today' ? PILL_ON : PILL_OFF, 'h-11', FOCUS_RING)}
             >
               {t('loadOfficialMatch.today', 'Today')}
             </button>
             <button
+              type="button"
+              aria-pressed={dateFilter === 'tomorrow'}
               onClick={() => setDateFilter(dateFilter === 'tomorrow' ? '' : 'tomorrow')}
-              style={dateFilter === 'tomorrow' ? filterButtonActiveStyle : filterButtonStyle}
+              className={cn(PILL_CLS, dateFilter === 'tomorrow' ? PILL_ON : PILL_OFF, 'h-11', FOCUS_RING)}
             >
               {t('loadOfficialMatch.tomorrow', 'Tomorrow')}
             </button>
             {dateFilter && (
-              <button
+              <IconButton
+                variant="close"
+                icon={X}
+                label={t('loadOfficialMatch.clearFilter', 'Clear filter')}
                 onClick={() => setDateFilter('')}
-                style={{
-                  ...filterButtonStyle,
-                  padding: `${Math.round(6 * scaleFactor)}px ${Math.round(8 * scaleFactor)}px`,
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  borderColor: 'rgba(239, 68, 68, 0.3)'
-                }}
-                title={t('loadOfficialMatch.clearFilter', 'Clear filter')}
-              >
-                ✕
-              </button>
+              />
             )}
           </div>
         </div>
       )}
 
       {/* Matches Table */}
-      <div style={{ maxHeight: `${Math.round(350 * scaleFactor)}px`, overflowY: 'auto' }}>
+      <div className="max-h-[350px] overflow-y-auto rounded-lg border border-stone-200 empty:border-0">
         {loading && (
-          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'var(--muted)' }}>
-            <div style={{ fontSize: `${Math.round(24 * scaleFactor)}px`, marginBottom: `${Math.round(8 * scaleFactor)}px` }}>⏳</div>
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-sm text-stone-500">
+            <Loader2 size={20} className="animate-spin text-stone-400" aria-hidden="true" />
             {t('loadOfficialMatch.loading', 'Loading matches...')}
           </div>
         )}
 
         {error && (
-          <div style={{
-            textAlign: 'center',
-            padding: `${Math.round(40 * scaleFactor)}px`,
-            color: '#ef4444',
-            background: 'rgba(239, 68, 68, 0.1)',
-            borderRadius: `${Math.round(8 * scaleFactor)}px`
-          }}>
+          <div role="alert" className="m-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
             {error}
           </div>
         )}
 
         {!loading && !error && league && matches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'var(--muted)' }}>
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500">
             {t('loadOfficialMatch.noUpcomingMatches', 'No upcoming matches found')}
           </div>
         )}
 
         {!loading && !error && matches.length > 0 && filteredMatches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: `${Math.round(40 * scaleFactor)}px`, color: 'var(--muted)' }}>
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500">
             {t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
           </div>
         )}
 
         {!loading && !error && filteredMatches.length > 0 && (
-          <>
+          <div className="divide-y divide-stone-100">
             {/* Table Header */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: gridColumns,
-              gap: `${Math.round(8 * scaleFactor)}px`,
-              padding: `${Math.round(8 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px`,
-              fontSize: `${Math.round(11 * scaleFactor)}px`,
-              fontWeight: 600,
-              color: 'var(--muted)',
-              borderBottom: '2px solid var(--border)',
-              marginBottom: `${Math.round(2 * scaleFactor)}px`,
-              alignItems: 'center'
-            }}>
-              <span style={{ textAlign: 'center' }}>{t('loadOfficialMatch.gameN', 'Game #')}</span>
-              <span style={{ textAlign: 'center' }}>{t('loadOfficialMatch.date', 'Date')}</span>
-              <span style={{ textAlign: 'center' }}>{t('loadOfficialMatch.time', 'Time')}</span>
+            <div
+              className="sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
+              style={{ gridTemplateColumns: gridColumns }}
+            >
+              <span className="text-center">{t('loadOfficialMatch.gameN', 'Game #')}</span>
+              <span className="text-center">{t('loadOfficialMatch.date', 'Date')}</span>
+              <span className="text-center">{t('loadOfficialMatch.time', 'Time')}</span>
               <span>{t('loadOfficialMatch.homeVsAway', 'Home vs Away')}</span>
             </div>
 
             {/* Table Rows */}
-            {filteredMatches.map((match, index) => (
+            {filteredMatches.map((match) => (
               <div
                 key={match.gameN}
                 onClick={() => handleSelectMatch(match)}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: gridColumns,
-                  gap: `${Math.round(8 * scaleFactor)}px`,
-                  alignItems: 'center',
-                  padding: `${Math.round(10 * scaleFactor)}px`,
-                  background: index % 2 === 0 ? 'var(--panel-2)' : 'transparent',
-                  cursor: 'pointer',
-                  borderRadius: `${Math.round(4 * scaleFactor)}px`,
-                  transition: 'background 0.15s'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
-                onMouseLeave={e => e.currentTarget.style.background = index % 2 === 0 ? 'var(--panel-2)' : 'transparent'}
+                className="grid min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs tabular-nums text-stone-800 transition-colors hover:bg-stone-50"
+                style={{ gridTemplateColumns: gridColumns }}
               >
-                <span style={{ fontWeight: 600, textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
+                <span className="text-center font-semibold">
                   {match.gameN}
                 </span>
-                <span style={{ textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
+                <span className="text-center">
                   {formatDisplayDate(match.dtstart)}
                 </span>
-                <span style={{ textAlign: 'center', fontSize: `${Math.round(12 * scaleFactor)}px` }}>
+                <span className="text-center">
                   {formatDisplayTime(match.dtstart)}
                 </span>
-                <span style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  fontSize: `${Math.round(12 * scaleFactor)}px`
-                }}>
-                  <span style={{ fontWeight: 600 }}>{match.home}</span>
-                  <span style={{ color: 'var(--muted)', margin: `0 ${Math.round(6 * scaleFactor)}px` }}>{t('common.vs', 'vs')}</span>
-                  <span style={{ fontWeight: 600 }}>{match.away}</span>
+                <span className="truncate">
+                  <span className="font-semibold text-stone-900">{match.home}</span>
+                  <span className="mx-1.5 text-stone-400">{t('common.vs', 'vs')}</span>
+                  <span className="font-semibold text-stone-900">{match.away}</span>
                 </span>
               </div>
             ))}
-          </>
+          </div>
         )}
+      </div>
       </div>
     </Modal>
   )
