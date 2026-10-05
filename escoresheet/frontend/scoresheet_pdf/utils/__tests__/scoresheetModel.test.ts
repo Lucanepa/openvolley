@@ -44,10 +44,50 @@ describe('getStartingLineup', () => {
     expect(getStartingLineup(events, 1, 'home')).toEqual(['1', '2', '3', '14', '5', '6'])
   })
 
-  it('ignores a manual mid-set correction (isInitial false)', () => {
+  it('uses a pre-rally FIVB 7.3.4 rectification (manual lineup, isInitial false)', () => {
     const events = [
       lineup('home', START, 1, { isInitial: true }),
-      lineup('home', { ...START, I: 7 }, 5, { isInitial: false })
+      lineup('home', { ...START, I: 7 }, 2, { isInitial: false }),
+      point('home', 3),
+      lineup('home', { I: 2, II: 3, III: 4, IV: 5, V: 6, VI: 7 }, 4)
+    ]
+    expect(getStartingLineup(events, 1, 'home')).toEqual(['7', '2', '3', '4', '5', '6'])
+  })
+
+  it('uses a rectification when the set has no points yet', () => {
+    const events = [
+      lineup('home', START, 1, { isInitial: true }),
+      lineup('home', { ...START, III: 13 }, 2, { isInitial: false })
+    ]
+    expect(getStartingLineup(events, 1, 'home')[2]).toBe('13')
+  })
+
+  it('ignores an initial lineup re-entered after the first point (mid-set re-prompt)', () => {
+    // e.g. LineupModal reopened in mode 'initial' after a libero redesignation of 3
+    const events = [
+      lineup('home', START, 1, { isInitial: true }),
+      point('away', 2),
+      lineup('home', { I: 2, II: 15, III: 4, IV: 5, V: 6, VI: 1 }, 5, { isInitial: true })
+    ]
+    expect(getStartingLineup(events, 1, 'home')).toEqual(['1', '2', '3', '4', '5', '6'])
+  })
+
+  it('does not count a libero entry or substitution before the first rally', () => {
+    const events = [
+      lineup('home', START, 1, { isInitial: true }),
+      lineup('home', { ...START, V: 12 }, 2.1, { liberoSubstitution: { liberoNumber: 12, playerNumber: 5 } }),
+      lineup('home', { ...START, II: 9, V: 12 }, 3.1, { fromSubstitution: true, liberoSubstitution: { liberoNumber: 12 } }),
+      lineup('home', { ...START, II: 9 }, 4.1, { fromSubstitution: true, liberoSubstitution: null }),
+      point('home', 5)
+    ]
+    expect(getStartingLineup(events, 1, 'home')).toEqual(['1', '2', '3', '4', '5', '6'])
+  })
+
+  it('falls back to the first initial lineup when every entered lineup comes after a point', () => {
+    const events = [
+      point('home', 1),
+      lineup('home', START, 2, { isInitial: true }),
+      lineup('home', { ...START, I: 8 }, 3, { isInitial: true })
     ]
     expect(getStartingLineup(events, 1, 'home')[0]).toBe('1')
   })
@@ -101,6 +141,20 @@ describe('assignSubsToColumns', () => {
     const columns = assignSubsToColumns(subs, getStartingLineup(events, 1, 'home'))
     expect(columns[4]).toEqual([{ playerOut: 5, playerIn: 9, score: '3:4', isCircled: false }])
     expect(columns.filter(c => c.length > 0)).toHaveLength(1)
+  })
+
+  it('draws a later substitution of a rectified-in starter in its column', () => {
+    // 7 replaced 1 at position I through a pre-rally rectification; later 7 -> 10.
+    const events = [
+      lineup('home', START, 1, { isInitial: true }),
+      lineup('home', { ...START, I: 7 }, 2, { isInitial: false }),
+      point('away', 3),
+      lineup('home', { I: 2, II: 3, III: 4, IV: 5, V: 6, VI: 7 }, 4),
+      lineup('home', { I: 2, II: 3, III: 4, IV: 5, V: 6, VI: 10 }, 6.1, { fromSubstitution: true })
+    ]
+    const subs = new Map([[7, [{ playerOut: 7, playerIn: 10, score: '0:2', isCircled: false }]]])
+    const columns = assignSubsToColumns(subs, getStartingLineup(events, 1, 'home'))
+    expect(columns[0]).toEqual([{ playerOut: 7, playerIn: 10, score: '0:2', isCircled: false }])
   })
 
   it('ignores subs for numbers not in the starting lineup and empty slots', () => {

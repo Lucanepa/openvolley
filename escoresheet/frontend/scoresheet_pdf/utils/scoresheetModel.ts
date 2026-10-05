@@ -6,9 +6,10 @@
  *
  * Event model notes (Scoreboard.jsx):
  *  - A 'lineup' event is written for the initial lineup (payload.isInitial === true),
- *    for manual mid-set corrections (isInitial false), and on EVERY rotation,
- *    substitution (fromSubstitution) and libero swap (liberoSubstitution).
- *    Only the initial one is the "starting lineup" of the set.
+ *    for a pre-rally FIVB 7.3.4 rectification (openManualLineup, isInitial false), and
+ *    on EVERY rotation (unflagged, or fromRotation), substitution (fromSubstitution)
+ *    and libero swap (liberoSubstitution). The starting lineup is the last entered
+ *    lineup before the set's first point.
  *  - Exceptional substitutions are 'substitution' events with payload.isExceptional;
  *    they do not count towards the 6 regular substitutions.
  *  - The deciding set is always stored at index 5, also in best-of-3 matches.
@@ -35,16 +36,45 @@ export function lineupToArray(lineupObj: any): string[] {
 const hasAnyPlayer = (e: any) => lineupToArray(e?.payload?.lineup).some(n => n !== '');
 
 /**
+ * A lineup the scorer entered through the line-up form: the initial lineup
+ * (isInitial true) or a FIVB 7.3.4 rectification (mode 'manual', isInitial false).
+ * Rotation, substitution and libero lineups are derived states, never a starting lineup.
+ */
+const isEnteredLineup = (e: any) => {
+  const p = e?.payload || {};
+  return typeof p.isInitial === 'boolean'
+    && !p.fromSubstitution
+    && !p.fromRotation
+    && (p.liberoSubstitution === undefined || p.liberoSubstitution === null)
+    && hasAnyPlayer(e);
+};
+
+/**
  * The lineup event that holds a team's starting lineup for a set.
- * Latest non-empty `isInitial` lineup (so a re-entered initial lineup wins);
- * falls back to the first lineup event of the set for legacy data without the flag.
+ *
+ *  1. The latest entered lineup (initial or pre-rally rectification, FIVB 7.3.4) logged
+ *     before the set's first point - Scoreboard only allows a rectification before the
+ *     first rally, and a mid-set re-prompt (e.g. after a libero redesignation) must not
+ *     overwrite the lineup the set started with. With no points yet, the latest one.
+ *  2. Fallback when nothing qualifies (e.g. odd ordering): the first non-empty isInitial lineup.
+ *  3. Legacy data without the flag: the first non-empty lineup event of the set.
  */
 export function getStartingLineupEvent(events: any[], setIndex: number, team: TeamKey): any | undefined {
-  const lineups = (events || [])
+  const all = events || [];
+  const lineups = all
     .filter(e => e?.type === 'lineup' && e.setIndex === setIndex && e.payload?.team === team)
     .sort(compareEventsBySeq);
-  const initial = lineups.filter(e => e.payload?.isInitial === true && hasAnyPlayer(e));
-  if (initial.length > 0) return initial[initial.length - 1];
+  const firstPoint = all
+    .filter(e => e?.type === 'point' && e.setIndex === setIndex)
+    .sort(compareEventsBySeq)[0];
+
+  const preRally = lineups.filter(e =>
+    isEnteredLineup(e) && (!firstPoint || compareEventsBySeq(e, firstPoint) < 0)
+  );
+  if (preRally.length > 0) return preRally[preRally.length - 1];
+
+  const initial = lineups.find(e => e.payload?.isInitial === true && hasAnyPlayer(e));
+  if (initial) return initial;
   return lineups.find(hasAnyPlayer) || lineups[0];
 }
 
