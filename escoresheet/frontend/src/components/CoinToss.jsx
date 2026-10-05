@@ -28,6 +28,16 @@ const SIGNED_CLASS = 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg
 // The Scoresheet menu trigger: the kit toolbar button (white, stone-200
 // hairline, shadow-sm), h-11 for the tablet.
 const TOOLBAR_TRIGGER = 'inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-stone-200 bg-white text-sm font-medium text-stone-700 shadow-sm hover:bg-stone-50 transition-colors'
+// Section head inside the roster dialog: a name on the dark 1.5px rule
+// (kit SectionHeader); the count stays in the translated string.
+const SECTION_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5 mb-2'
+const SECTION_TITLE = 'text-[11px] font-bold uppercase tracking-wider text-stone-800'
+// Row tool: a square icon button that turns red on hover (delete).
+const ROW_ICON_BTN = 'h-8 w-8 inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors'
+// Form label (one tone per form: the kit "form" label).
+const FIELD_LABEL = 'block text-xs font-medium text-stone-500 mb-1'
+// Neutral, labelled spinner ring (kit: spinners are stone and always labelled).
+const SPINNER_RING = { border: '4px solid #e7e5e4', borderTop: '4px solid #57534e' }
 
 // Generate a placeholder signature image (wavy line) for test matches
 function generatePlaceholderSignature() {
@@ -1795,16 +1805,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             <div style={{ maxHeight: '70vh', overflowY: 'auto', padding: '0 16px' }}>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('roster.playersCount', { count: roster.length })}</h4>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setAddPlayerModal(rosterModal)}
-                    style={{ padding: '4px 8px', fontSize: '12px' }}
-                  >
+                <div className={`ov-kit ${SECTION_HEAD}`}>
+                  <h4 className={SECTION_TITLE}>{t('roster.playersCount', { count: roster.length })}</h4>
+                  <Button variant="ghost" size="sm" className="bg-white font-medium" onClick={() => setAddPlayerModal(rosterModal)}>
                     {t('roster.addPlayer')}
-                  </button>
+                  </Button>
                 </div>
                 <table className="roster-table" style={{ width: '100%' }}>
                   <thead>
@@ -1983,11 +1988,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             <button
                               type="button"
                               aria-label={t('roster.deletePlayer', 'Delete player')}
-                              className="secondary"
+                              title={t('roster.deletePlayer', 'Delete player')}
+                              className={ROW_ICON_BTN}
                               onClick={() => setDeletePlayerModal({ team: rosterModal, index: originalIdx })}
-                              style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              style={{ padding: 0 }}
                             >
-                              <TrashIcon size={12} />
+                              <TrashIcon size={14} />
                             </button>
                           </td>
                         </tr>
@@ -1998,17 +2004,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               </div>
 
               {/* Bench Officials Section */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>{t('roster.benchOfficialsCount', { count: bench.length })}</h4>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setBench([...bench, initBench('Coach')])}
-                    style={{ padding: '4px 8px', fontSize: '12px' }}
-                  >
+              <div style={{ paddingTop: 8 }}>
+                <div className={`ov-kit ${SECTION_HEAD}`}>
+                  <h4 className={SECTION_TITLE}>{t('roster.benchOfficialsCount', { count: bench.length })}</h4>
+                  <Button variant="ghost" size="sm" className="bg-white font-medium" onClick={() => setBench([...bench, initBench('Coach')])}>
                     {t('roster.addBench')}
-                  </button>
+                  </Button>
                 </div>
                 <table className="roster-table" style={{ width: '100%' }}>
                   <thead>
@@ -2078,11 +2079,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             <button
                               type="button"
                               aria-label={t('roster.deleteOfficial', 'Delete official')}
-                              className="secondary"
+                              title={t('roster.deleteOfficial', 'Delete official')}
+                              className={ROW_ICON_BTN}
                               onClick={() => setBench(bench.filter((_, i) => i !== originalIdx))}
-                              style={{ padding: '2px', fontSize: '10px', minWidth: 'auto', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              style={{ padding: 0 }}
                             >
-                              <TrashIcon size={12} />
+                              <TrashIcon size={14} />
                             </button>
                           </td>
                         </tr>
@@ -2093,39 +2095,42 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               </div>
 
               {/* Signatures Section */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>{t('roster.signatures')}</h4>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className={`sign ${coachSig ? 'signed' : ''}`}
+              <div className="ov-kit" style={{ paddingTop: 8, marginTop: 16 }}>
+                <div className={SECTION_HEAD}>
+                  <h4 className={SECTION_TITLE}>{t('roster.signatures')}</h4>
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+                  <Button
+                    variant="secondary"
+                    size="xl"
+                    className={coachSig ? SIGNED_CLASS : undefined}
                     onClick={() => setRosterModalSignature('coach')}
-                    style={{ padding: '8px 16px', fontSize: '13px', flex: 1, minWidth: '120px' }}
+                    style={{ flex: 1, minWidth: '120px' }}
                   >
                     {t('coinToss.coach')} {coachSig ? '✓' : ''}
-                  </button>
-                  <button
-                    type="button"
-                    className={`sign ${captainSig ? 'signed' : ''}`}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="xl"
+                    className={captainSig ? SIGNED_CLASS : undefined}
                     onClick={() => setRosterModalSignature('captain')}
-                    style={{ padding: '8px 16px', fontSize: '13px', flex: 1, minWidth: '120px' }}
+                    style={{ flex: 1, minWidth: '120px' }}
                   >
                     {t('coinToss.captain')} {captainSig ? '✓' : ''}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Signature Pad Modal */}
               {rosterModalSignature && (
-                <div style={{
-                  position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.5)',
+                <div className="bg-stone-900/50 backdrop-blur-sm" style={{
+                  position: 'fixed', inset: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
                 }}>
-                  <div style={{
-                    background: 'var(--panel)', padding: 16, borderRadius: 12,
-                    border: '1px solid var(--border)', maxWidth: '90vw'
+                  <div className="bg-white rounded-2xl shadow-2xl" style={{
+                    padding: 20, maxWidth: '90vw'
                   }}>
-                    <h3 style={{ margin: '0 0 12px 0' }}>
+                    <h3 className="text-lg font-bold text-stone-900" style={{ margin: '0 0 12px 0' }}>
                       {t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })}
                     </h3>
                     <SignaturePad
@@ -2146,11 +2151,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </div>
 
             {/* Custom Close/Modify Button */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            <div className="ov-kit border-t border-stone-200" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16, paddingTop: 12 }}>
               {hasChanges && (
-                <button
-                  type="button"
-                  className="secondary"
+                <Button
+                  variant="secondary"
+                  size="xl"
+                  className="font-medium"
                   onClick={() => {
                     // Revert to original data
                     if (originalRosterDataRef.current) {
@@ -2161,19 +2167,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     setRosterModalSignature(null)
                     setRosterModal(null)
                   }}
-                  style={{ padding: '8px 20px', fontSize: '14px' }}
                 >
                   {t('common.cancel')}
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
-                className={hasChanges ? 'primary' : 'secondary'}
+              {/* Saving the roster edits is emerald; with nothing changed the
+                  button just closes, the neutral dark "Done". */}
+              <Button
+                variant={hasChanges ? 'positive' : 'dark'}
+                size="xl"
                 onClick={handleCloseOrModify}
-                style={{ padding: '8px 20px', fontSize: '14px' }}
               >
                 {hasChanges ? t('roster.modify') : t('common.close')}
-              </button>
+              </Button>
             </div>
           </Modal>
         )
@@ -2200,7 +2206,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.numberLabel')}</label>
+                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.numberLabel')}</label>
                 <input
                   aria-label={t('roster.numberLabel')}
                   type="number"
@@ -2208,11 +2214,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   value={num}
                   onChange={e => currentTeam === 'home' ? setHomeNum(e.target.value) : setAwayNum(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.lastName')}</label>
+                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.lastName')}</label>
                 <input
                   aria-label={t('roster.lastName')}
                   type="text"
@@ -2220,11 +2226,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   value={last}
                   onChange={e => currentTeam === 'home' ? setHomeLast(e.target.value) : setAwayLast(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.firstName')}</label>
+                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.firstName')}</label>
                 <input
                   aria-label={t('roster.firstName')}
                   type="text"
@@ -2232,11 +2238,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   value={first}
                   onChange={e => currentTeam === 'home' ? setHomeFirst(e.target.value) : setAwayFirst(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.dateOfBirth')}</label>
+                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.dateOfBirth')}</label>
                 <input
                   aria-label={t('roster.dateOfBirth')}
                   type="date"
@@ -2246,11 +2252,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     currentTeam === 'home' ? setHomeDob(value) : setAwayDob(value)
                   }}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: 4 }}>{t('roster.libero')}</label>
+                <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.libero')}</label>
                 <select
                   aria-label={t('roster.libero')}
                   value={libero}
@@ -2262,7 +2268,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     }
                     currentTeam === 'home' ? setHomeLibero(newValue) : setAwayLibero(newValue)
                   }}
-                  style={{ width: '100%', padding: '8px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text)' }}
+                  style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 >
                   <option value="">{t('roster.none')}</option>
                   {!roster.some(p => p.libero === 'libero1') && <option value="libero1">{t('roster.liberoFull1')}</option>}
@@ -2294,9 +2300,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   {t('coinToss.captain')}
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                <button className="secondary" onClick={() => setAddPlayerModal(null)}>{t('common.cancel')}</button>
-                <button onClick={() => {
+              <div className="ov-kit" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                <Button variant="secondary" size="xl" className="font-medium" onClick={() => setAddPlayerModal(null)}>{t('common.cancel')}</Button>
+                <Button variant="positive" size="xl" onClick={() => {
                   if (!last || !first) {
                     showAlert(t('roster.enterNames'), 'warning')
                     return
@@ -2317,7 +2323,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
                   }
                   setAddPlayerModal(null)
-                }}>{t('roster.addPlayerButton')}</button>
+                }}>{t('roster.addPlayerButton')}</Button>
               </div>
             </div>
           </Modal>
@@ -2340,19 +2346,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             width={400}
           >
             <div style={{ padding: '16px 0' }}>
-              <p style={{ marginBottom: 16 }}>
-                Are you sure you want to delete <strong>{playerName}</strong> from {isTeamA ? 'Team A' : 'Team B'}?
+              <p className="text-sm text-stone-600" style={{ margin: '0 0 16px' }}>
+                Are you sure you want to delete <strong className="font-semibold text-stone-900">{playerName}</strong> from {isTeamA ? 'Team A' : 'Team B'}?
               </p>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="secondary" onClick={() => setDeletePlayerModal(null)}>Cancel</button>
-                <button onClick={() => {
+              <div className="ov-kit" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Button variant="secondary" size="xl" className="font-medium" onClick={() => setDeletePlayerModal(null)}>Cancel</Button>
+                <Button variant="danger" size="xl" onClick={() => {
                   if (currentTeam === 'home') {
                     setHomeRoster(list => list.filter((_, idx) => idx !== deletePlayerModal.index))
                   } else {
                     setAwayRoster(list => list.filter((_, idx) => idx !== deletePlayerModal.index))
                   }
                   setDeletePlayerModal(null)
-                }}>Delete</button>
+                }}>Delete</Button>
               </div>
             </div>
           </Modal>
@@ -2369,20 +2375,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           hideCloseButton={true}
         >
           <div style={{ padding: '24px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px', color: 'var(--text)', whiteSpace: 'pre-line' }}>
+            <p className="text-sm text-stone-700" style={{ margin: '0 0 24px', fontSize: '16px', whiteSpace: 'pre-line' }}>
               {noticeModal.message}
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={() => setNoticeModal(null)}
-                style={{
-                  padding: '12px 24px', fontSize: '14px', fontWeight: 600,
-                  background: 'var(--accent)', color: '#000',
-                  border: 'none', borderRadius: '8px', cursor: 'pointer'
-                }}
-              >
+            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <Button variant="dark" size="xl" className="min-w-24" onClick={() => setNoticeModal(null)}>
                 OK
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
@@ -2405,51 +2404,46 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             <div style={{ marginBottom: '20px' }}>
               {(initModal.status === 'syncing' || initModal.status === 'checking') && (
                 <div style={{
-                  width: '60px', height: '60px', margin: '0 auto',
-                  border: '4px solid rgba(59, 130, 246, 0.3)',
-                  borderTop: '4px solid #3b82f6',
+                  width: '56px', height: '56px', margin: '0 auto',
+                  ...SPINNER_RING,
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'
                 }} />
               )}
               {initModal.status === 'verifying' && (
                 <div style={{
-                  width: '60px', height: '60px', margin: '0 auto',
-                  border: '4px solid rgba(234, 179, 8, 0.3)',
-                  borderTop: '4px solid #eab308',
+                  width: '56px', height: '56px', margin: '0 auto',
+                  border: '4px solid #fef3c7',
+                  borderTop: '4px solid #d97706',
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'
                 }} />
               )}
               {initModal.status === 'success' && (
-                <div style={{
-                  width: '60px', height: '60px', margin: '0 auto',
-                  background: 'rgba(34, 197, 94, 0.2)',
+                <div className="bg-emerald-50 text-emerald-600" style={{
+                  width: '56px', height: '56px', margin: '0 auto',
                   borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
-                  <span style={{ fontSize: '32px', color: '#22c55e' }}>✓</span>
+                  <span style={{ fontSize: '28px' }}>✓</span>
                 </div>
               )}
               {initModal.status === 'error' && (
-                <div style={{
-                  width: '60px', height: '60px', margin: '0 auto',
-                  background: 'rgba(239, 68, 68, 0.2)',
+                <div className="bg-red-50 text-red-600" style={{
+                  width: '56px', height: '56px', margin: '0 auto',
                   borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
-                  <span style={{ fontSize: '32px', color: '#ef4444' }}>✕</span>
+                  <span style={{ fontSize: '28px' }}>✕</span>
                 </div>
               )}
               {initModal.status === 'check_results' && (
-                <div style={{
-                  width: '60px', height: '60px', margin: '0 auto',
-                  background: Object.values(initModal.checks || {}).some(c => c.status === 'fail')
-                    ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                <div className={Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'} style={{
+                  width: '56px', height: '56px', margin: '0 auto',
                   borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
-                  <span style={{ fontSize: '32px', color: Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? '#eab308' : '#22c55e' }}>
+                  <span style={{ fontSize: '28px' }}>
                     {Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? '!' : '✓'}
                   </span>
                 </div>
@@ -2457,50 +2451,48 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </div>
 
             {/* Message */}
-            <p style={{
+            <p className={initModal.status === 'error' ? 'text-red-700' : initModal.status === 'success' ? 'text-emerald-700' : 'text-stone-800'} style={{
+              margin: 0,
               marginBottom: initModal.checks ? '16px' : '24px',
-              fontSize: '16px',
-              color: initModal.status === 'error' ? '#ef4444' :
-                initModal.status === 'success' ? '#22c55e' : 'var(--text)'
+              fontSize: '15px',
+              fontWeight: 500
             }}>
               {initModal.message}
             </p>
 
             {/* Connection checks checklist */}
             {initModal.checks && (
-              <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+              <div className="rounded-xl border border-stone-200 divide-y divide-stone-100" style={{ textAlign: 'left', marginBottom: '20px' }}>
                 {Object.entries(initModal.checks).map(([key, check]) => (
                   <div key={key} style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
-                    padding: '8px 12px',
-                    borderBottom: '1px solid var(--border)'
+                    padding: '10px 12px'
                   }}>
                     <span style={{ width: 20, textAlign: 'center', fontSize: 14, flexShrink: 0 }}>
                       {check.status === 'pending' && (
                         <span style={{
                           display: 'inline-block', width: 14, height: 14,
-                          border: '2px solid rgba(59, 130, 246, 0.3)',
-                          borderTop: '2px solid #3b82f6',
+                          border: '2px solid #e7e5e4',
+                          borderTop: '2px solid #57534e',
                           borderRadius: '50%',
                           animation: 'spin 1s linear infinite'
                         }} />
                       )}
-                      {check.status === 'pass' && <span style={{ color: '#22c55e' }}>✓</span>}
-                      {check.status === 'warn' && <span style={{ color: '#eab308' }}>!</span>}
-                      {check.status === 'fail' && <span style={{ color: '#ef4444' }}>✕</span>}
-                      {check.status === 'skip' && <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {check.status === 'pass' && <span className="text-emerald-600">✓</span>}
+                      {check.status === 'warn' && <span className="text-amber-600">!</span>}
+                      {check.status === 'fail' && <span className="text-red-600">✕</span>}
+                      {check.status === 'skip' && <span className="text-stone-400">—</span>}
                     </span>
-                    <span style={{
+                    <span className={check.status === 'skip' ? 'text-stone-500' : 'text-stone-800'} style={{
                       fontSize: 13,
-                      color: check.status === 'skip' ? 'var(--muted)' : 'var(--text)',
                       flex: 1
                     }}>
                       {check.label}
                     </span>
                     {check.detail && (
-                      <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                      <span className="text-stone-500 tabular-nums" style={{ fontSize: 11, fontFamily: 'monospace' }}>
                         {check.detail}
                       </span>
                     )}
@@ -2511,35 +2503,25 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
             {/* Error button */}
             {initModal.status === 'error' && (
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
-                  onClick={() => setInitModal(null)}
-                  style={{
-                    padding: '12px 24px', fontSize: '14px', fontWeight: 600,
-                    background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444',
-                    border: '1px solid #ef4444', borderRadius: '8px', cursor: 'pointer'
-                  }}
-                >
+              <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <Button variant="secondary" size="xl" icon={ArrowLeft} className="font-medium" onClick={() => setInitModal(null)}>
                   {t('common.back', 'Back')}
-                </button>
+                </Button>
               </div>
             )}
 
             {/* Proceed anyway button (for check failures) */}
             {initModal.status === 'check_results' && initModal.canProceed && (
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
+              <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <Button
+                  variant="dark"
+                  size="xl"
                   onClick={() => {
                     if (window.__coinTossCheckResolve) window.__coinTossCheckResolve()
                   }}
-                  style={{
-                    padding: '12px 24px', fontSize: '14px', fontWeight: 600,
-                    background: 'var(--accent)', color: '#000',
-                    border: 'none', borderRadius: '8px', cursor: 'pointer'
-                  }}
                 >
                   {t('coinToss.proceedAnyway', 'Proceed Anyway')}
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -2564,45 +2546,31 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           hideCloseButton={true}
         >
           <div style={{ padding: '24px' }}>
-            <p style={{ marginBottom: '16px', fontSize: '14px', color: '#eab308' }}>
+            <p className="text-sm font-medium text-amber-800" style={{ margin: '0 0 12px' }}>
               The following people have birthdates on January 1st, which may indicate import errors:
             </p>
-            <div style={{
-              background: 'rgba(234, 179, 8, 0.1)',
-              border: '1px solid rgba(234, 179, 8, 0.3)',
-              borderRadius: '8px',
-              padding: '12px',
+            <div className="rounded-lg border border-amber-200 bg-amber-50 divide-y divide-amber-100" style={{
+              padding: '4px 12px',
               marginBottom: '20px',
               maxHeight: '200px',
               overflowY: 'auto'
             }}>
               {birthdateConfirmModal.suspiciousDates.map((date, idx) => (
-                <div key={idx} style={{ fontSize: '13px', color: 'var(--text)', padding: '4px 0' }}>
+                <div key={idx} className="text-stone-800 tabular-nums" style={{ fontSize: '13px', padding: '6px 0' }}>
                   {date}
                 </div>
               ))}
             </div>
-            <p style={{ marginBottom: '20px', fontSize: '14px', color: 'var(--text)' }}>
+            <p className="text-sm text-stone-700" style={{ margin: '0 0 20px' }}>
               Are these dates correct?
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                onClick={() => setBirthdateConfirmModal(null)}
-                className="secondary"
-                style={{ padding: '12px 24px', fontSize: '14px' }}
-              >
+            <div className="ov-kit" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <Button variant="secondary" size="xl" className="font-medium" onClick={() => setBirthdateConfirmModal(null)}>
                 No, go back
-              </button>
-              <button
-                onClick={birthdateConfirmModal.onConfirm}
-                style={{
-                  padding: '12px 24px', fontSize: '14px', fontWeight: 600,
-                  background: 'var(--accent)', color: '#000',
-                  border: 'none', borderRadius: '8px', cursor: 'pointer'
-                }}
-              >
+              </Button>
+              <Button variant="positive" size="xl" onClick={birthdateConfirmModal.onConfirm}>
                 Yes, continue
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>
