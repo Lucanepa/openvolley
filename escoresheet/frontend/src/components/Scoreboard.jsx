@@ -26,6 +26,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
+import { queueEventSync, queueSetScoreSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
@@ -2073,7 +2074,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .select('id')
           .eq('external_id', seedKey)
           .maybeSingle()
-        if (error || !matchData) return
+        if (error || !matchData) {
+          // Offline, or the match is not in the cloud yet: push again later
+          setLiveStateDirty(matchId, true)
+          return
+        }
         supabaseMatchId = matchData.id
         liveStateData.match_id = supabaseMatchId
         console.log(`[PERF:liveState] After Supabase match lookup: +${(performance.now() - _tl).toFixed(0)}ms`)
@@ -2101,18 +2106,53 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       if (liveStateResult.error) {
         console.error('[LiveState] Sync error:', liveStateResult.error)
-        setScoresheetErrorModal({
-          error: t('errors.syncFailed'),
-          details: liveStateResult.error.message || t('errors.databaseWriteError')
-        })
+        setLiveStateDirty(matchId, true)
+        // Offline, signed out or a backend hiccup is caught up later, not a dialog
+        if (isLiveStateErrorWorthAlert(liveStateResult.error)) {
+          setScoresheetErrorModal({
+            error: t('errors.syncFailed'),
+            details: liveStateResult.error.message || t('errors.databaseWriteError')
+          })
+        }
       } else {
+        setLiveStateDirty(matchId, false)
         console.log('[LiveState] Synced successfully - side_a:', snapshot.sideA, 'serving:', snapshot.servingTeam)
       }
       console.log(`[PERF:liveState] TOTAL: ${(performance.now() - _tl).toFixed(0)}ms`)
     } catch (err) {
       console.error('[LiveState] Exception:', err)
+      setLiveStateDirty(matchId, true)
     }
   }, [matchId, captureFullStateSnapshot, sendRelayMessage])
+
+  // match_live_state is written directly, not queued. After an offline period
+  // (or while the match waited in the queue for a sign-in) push the current
+  // state again: on 'online', when the sync queue drains with a push pending,
+  // and once on mount after a reload. Otherwise livescore shows the score from
+  // before the drop until the next rally.
+  const syncLiveStateRef = useRef(syncLiveStateToSupabase)
+  syncLiveStateRef.current = syncLiveStateToSupabase
+  useEffect(() => {
+    if (!matchId) return
+    let timer = null
+    const push = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        syncLiveStateRef.current?.('reconnect', null, null)
+      }, 1500)
+    }
+    const onOnline = () => push()
+    const onDrained = () => { if (isLiveStateDirty(matchId)) push() }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('sync-queue-drained', onDrained)
+    if (isLiveStateDirty(matchId) && navigator.onLine !== false) push()
+    return () => {
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('sync-queue-drained', onDrained)
+    }
+  }, [matchId])
 
 
 
@@ -4424,6 +4464,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             status: 'queued'
           })
           console.log(`[PERF] After sync_queue.add: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+          // The cloud set row follows the running score (it stayed 0:0 until the
+          // set ended). Not awaited: queued score-only updates are coalesced.
+          if (type === 'point') queueSetScoreSync(db, { matchId, setIndex })
         }
 
         // Sync to referee after every event
@@ -5465,6 +5509,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       stateBefore: setStartStateBefore
     })
 
+    // Cloud copy of the set start (it was only ever stored locally)
+    queueEventSync(db, setStartEventId)
+
     // Debug log: set start
     debugLogger.log('SET_START', {
       setIndex: setStartTimeModal.setIndex,
@@ -5731,24 +5778,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           end_time: time
         }
 
-        // Prepare match payload if match end
-        let matchPayload = null
-        if (isMatchEnd) {
-          const setResults = finishedSets
-            .sort((a, b) => a.index - b.index)
-            .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
-          const matchWinner = homeSetsWon > awaySetsWon ? 'home' : 'away'
-          const finalScore = `${homeSetsWon}-${awaySetsWon}`
-
-          matchPayload = {
-            id: matchRecord.seed_key,
-            status: 'ended',
-            set_results: setResults,
-            winner: matchWinner,
-            final_score: finalScore,
-            sanctions: matchRecord?.sanctions || null
-          }
-        }
+        // Match row: every set end moves current_set on and publishes the
+        // finished sets (livescore reads set_results from the match); the
+        // result fields only at the match end
+        const matchPayload = buildSetEndMatchPayload({
+          seedKey: matchRecord.seed_key,
+          finishedSets,
+          isMatchEnd,
+          nextSetIndex: isMatchEnd ? null : getNextSetIndex(setIndex, homeSetsWon, awaySetsWon, matchRecord?.bestOf),
+          homeSetsWon,
+          awaySetsWon,
+          sanctions: matchRecord?.sanctions
+        })
 
         // Execute sequential sync (shows progress modal)
         syncResult = await syncSetEnd({
@@ -6622,7 +6663,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await db.sync_queue.add({
         resource: 'set',
         action: 'update',
-        payload: { external_id: String(setRow.id), home_points: homePoints, away_points: awayPoints },
+        payload: { external_id: setExtId(match.seed_key, setRow.id), home_points: homePoints, away_points: awayPoints },
         ts: new Date().toISOString(),
         status: 'queued'
       })
@@ -6832,6 +6873,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ...(currentSetIndex === 5 && Math.max(homePoints, awayPoints) < 8 ? { set5CourtSwitched: false } : {})
         })
       }
+
+      // The cloud set row follows the restored score
+      queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
 
       // Handle special cases for set_end undo
       if (lastEvent.type === 'set_end') {
@@ -29575,6 +29619,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           },
           seq: manualLineupSeq
         })
+        // Cloud copy of the starting (or corrected) lineup
+        queueEventSync(db, manualLineupEventId)
 
         // Sync to referee immediately after lineup is saved
         if (onLineupSaved) {
