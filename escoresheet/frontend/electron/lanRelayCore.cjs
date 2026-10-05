@@ -19,9 +19,13 @@
  *                       sets, events, _timestamp }  (or { matchId, matchData: {...} })
  *                     Proves the scoreboard role for matchId: accepted when the match is
  *                     new to the relay or its gamePin equals the stored match's gamePin.
- *                     Otherwise { type:'error', code:'not-match-owner' } — unless no
- *                     connected socket has owned that id for ORPHAN_TAKEOVER_MS (Dexie ids
- *                     restart at 1 on every device, so another scorer may reuse the id).
+ *                     Otherwise { type:'error', code:'not-match-owner' }. Dexie ids restart
+ *                     at 1 on every device, so an id nobody has owned for a while may be
+ *                     reused by another scorer: after ORPHAN_TAKEOVER_MS when the stored
+ *                     match is finished, after STALE_TAKEOVER_MS otherwise — and then the
+ *                     displaced game PIN may reclaim the id once. Wrong-PIN claims are
+ *                     limited per IP and per socket ('rate-limited', no PIN oracle), and a
+ *                     LAN IP may hold only a few match ids at once ('too-many-matches').
  *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
@@ -33,6 +37,10 @@
  *   match-full-data, match-data-update  FLAT bundle: { type, matchId, match, homeTeam, awayTeam,
  *                     homePlayers, awayPlayers, sets, events, liveState?, _timestamp,
  *                     _scoreboardTimestamp }. `match` is always stripped of PINs.
+ *                     When a liveState is stored it is ALSO sent as `data: { liveState }`
+ *                     (and nothing else under `data`) for the LedBox bridge (point-hub
+ *                     relaySubscriber reads msg.data.liveState). The liveState is carried
+ *                     across syncs only while the same game PIN keeps the match.
  *   match-action      { type, matchId, action, data, timestamp, _timestamp, _scoreboardTimestamp }
  *   live-state-update { type, matchId, liveState }
  *   match-deleted     { type, matchId }
@@ -55,11 +63,24 @@ const MATCH_SECRET_FIELDS = [
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
 const MAX_BODY_SIZE = 1024 * 1024
 const MAX_MATCH_ID_LENGTH = 128
-// A match whose scoreboard left this long ago may be claimed by another
-// scoreboard. Covers a second scorer device / reset browser reusing the same
-// Dexie id on a long-running relay; far longer than a Wi-Fi blip (clients
+// A FINISHED match whose scoreboard left this long ago may be claimed by
+// another scoreboard: a second scorer device / reset browser reusing the same
+// Dexie id on a long-running relay. Far longer than a Wi-Fi blip (clients
 // reconnect within ~5 s), so a live scoreboard is never displaced.
 const ORPHAN_TAKEOVER_MS = 60 * 1000
+// An UNFINISHED match is only claimable after a much longer absence (a scorer
+// tablet asleep through a set break must not lose its match), and its own game
+// PIN may then reclaim it once.
+const STALE_TAKEOVER_MS = 10 * 60 * 1000
+// Wrong game-PIN claims allowed per IP / per socket per minute. Past that every
+// claim needing proof is refused WITHOUT comparing the PIN, so the answer is
+// no oracle for guessing it.
+const CLAIM_FAILURE_LIMIT = 5
+// Distinct match ids the sockets of one (non-loopback) IP may own at once, and
+// new ids one IP may claim per minute: stops a LAN device squatting on ids.
+const MAX_OWNED_PER_IP = 4
+const NEW_CLAIM_LIMIT = 10
+const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 
 // PIN types accepted by POST /api/match/validate-pin
 const PIN_TYPES = {
@@ -136,6 +157,118 @@ function toWireBundle(bundle) {
   return out
 }
 
+/**
+ * A match-full-data / match-data-update message. Flat bundle for the apps; a
+ * stored liveState is mirrored under `data` for the LedBox bridge, which reads
+ * `msg.data.liveState` (`data` never carries anything else, so no PINs).
+ */
+function matchDataMessage(type, matchId, bundle, scoreboardTs) {
+  const now = Date.now()
+  const msg = { type, matchId, ...toWireBundle(bundle), _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
+  if (bundle.liveState !== undefined) msg.data = { liveState: bundle.liveState }
+  return msg
+}
+
+function isFinishedMatch(match) {
+  return !!match && FINISHED_STATUSES.has(String(match.status || '').toLowerCase())
+}
+
+function stripV4Prefix(addr) {
+  return typeof addr === 'string' && addr.startsWith('::ffff:') ? addr.slice(7) : addr
+}
+
+function isLoopbackAddress(addr) {
+  const a = stripV4Prefix(addr)
+  return a === '::1' || (typeof a === 'string' && a.startsWith('127.'))
+}
+
+/**
+ * `isLocal(addr)`: the request comes from the relay host itself — loopback, or
+ * one of its own interface addresses (the scoretable app calls the relay on
+ * its LAN IP, which arrives from that IP, not 127.0.0.1). Pass
+ * os.networkInterfaces; this module must not require() it.
+ */
+function createLocalAddressCheck(networkInterfaces) {
+  return function isLocal(addr) {
+    if (!addr) return false
+    if (isLoopbackAddress(addr)) return true
+    const a = stripV4Prefix(addr)
+    try {
+      const nets = networkInterfaces ? networkInterfaces() : {}
+      for (const list of Object.values(nets)) {
+        for (const net of list || []) if (net.address === a) return true
+      }
+    } catch { /* treat as remote */ }
+    return false
+  }
+}
+
+/**
+ * Single main-scoresheet lock, the same rule on every relay: only the relay
+ * host itself (see createLocalAddressCheck) may register or release it, and it
+ * may always re-register. A LAN device can therefore never lock the scoretable
+ * out of "/". When the scorer runs on a LAN tablet (headless Pi) nobody
+ * registers and the gate stays off — the gate would otherwise block that
+ * tablet's own reload, since a page navigation cannot send X-Instance-ID.
+ */
+function createMainInstanceGate({ isLocal }) {
+  let mainInstanceId = null
+  return {
+    get mainInstanceId() { return mainInstanceId },
+    register(instanceId, addr) {
+      if (!isLocal(addr)) {
+        return { status: 403, body: { success: false, error: 'Only the scoretable machine can register the main instance' } }
+      }
+      mainInstanceId = instanceId || `instance-${Date.now()}`
+      return { status: 200, body: { success: true, instanceId: mainInstanceId } }
+    },
+    unregister(instanceId, addr) {
+      if (!isLocal(addr)) {
+        return { status: 403, body: { success: false, error: 'Not the registered instance' } }
+      }
+      mainInstanceId = null // the host may always release its own lock
+      return { status: 200, body: { success: true } }
+    },
+    /** True when a request for "/" must get the "already running" page. */
+    blocksMainPage(addr, requestingInstanceId) {
+      return mainInstanceId !== null && !isLocal(addr) && requestingInstanceId !== mainInstanceId
+    },
+    /**
+     * Serve /api/server/register-main and /api/server/unregister-main.
+     * Returns true when handled.
+     */
+    handleRequest(req, res, path) {
+      if (path !== '/api/server/register-main' && path !== '/api/server/unregister-main') return false
+      const addr = req.socket && req.socket.remoteAddress
+      const id = req.headers['x-instance-id']
+      const r = path.endsWith('/register-main') ? this.register(id, addr) : this.unregister(id, addr)
+      res.writeHead(r.status, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(r.body))
+      return true
+    },
+  }
+}
+
+/** Counts failures per key in a fixed window; `blocked` never increments. */
+function createFailureCounter({ windowMs = 60 * 1000, max = CLAIM_FAILURE_LIMIT } = {}) {
+  const entries = new Map()
+  const fresh = (key) => {
+    const e = entries.get(key)
+    if (e && Date.now() - e.windowStart <= windowMs) return e
+    entries.delete(key)
+    return null
+  }
+  return {
+    blocked: (key) => { const e = fresh(key); return !!e && e.count >= max },
+    fail: (key) => {
+      if (entries.size > 10000) entries.clear() // bound memory under a flood
+      const e = fresh(key)
+      if (e) e.count++
+      else entries.set(key, { count: 1, windowStart: Date.now() })
+    },
+  }
+}
+
 /** Numeric ids stay numbers in HTTP responses (clients compare them to Dexie ids). */
 function publicMatchId(key) {
   return /^\d+$/.test(key) ? Number(key) : key
@@ -184,13 +317,18 @@ function createLanRelay(options = {}) {
   const log = options.log || console
   const requestTimeoutMs = options.requestTimeoutMs || 5000
   const orphanTakeoverMs = options.orphanTakeoverMs ?? ORPHAN_TAKEOVER_MS
+  const staleTakeoverMs = options.staleTakeoverMs ?? STALE_TAKEOVER_MS
+  const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
   const isRateLimited = options.isRateLimited || createRateLimiter()
+  const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
+  const isNewClaimLimited = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT })
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
   const clients = new Map() // ws -> { id, ip, role, connectedAt, owned:Set, subscribed:Set }
   const pending = new Map() // requestId -> { type, matchId, targets:Set<ws>, resolve, timer }
   const orphanedSince = new Map() // matchId -> when its last owning socket left
+  const displaced = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
   let nextClientId = 1
 
   function send(ws, msg) {
@@ -280,44 +418,111 @@ function createLanRelay(options = {}) {
     return out
   }
 
-  /** No connected socket has owned matchId for at least orphanTakeoverMs. */
-  function isAbandoned(matchId) {
+  /**
+   * No connected socket has owned matchId for long enough: ORPHAN_TAKEOVER_MS
+   * for a finished match, STALE_TAKEOVER_MS for one still in play.
+   */
+  function isAbandoned(matchId, existing) {
     const since = orphanedSince.get(matchId)
-    return since !== undefined && ownersOf(matchId).length === 0 && Date.now() - since >= orphanTakeoverMs
+    if (since === undefined || ownersOf(matchId).length > 0) return false
+    const grace = isFinishedMatch(existing && existing.match) ? orphanTakeoverMs : staleTakeoverMs
+    return Date.now() - since >= grace
+  }
+
+  const failureKeys = (meta) => (meta.ip ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
+
+  /** Squatting limits for a socket that is about to own an id it did not own. */
+  function newClaimDenied(meta, matchId) {
+    if (!meta.ip || isLoopbackAddress(meta.ip)) return null // the scoretable machine itself
+    const ids = new Set()
+    for (const other of clients.values()) {
+      if (other.ip !== meta.ip) continue
+      for (const id of other.owned) if (id !== matchId) ids.add(id)
+    }
+    if (ids.size >= maxOwnedPerIp) return 'too-many-matches'
+    if (isNewClaimLimited(`new:${meta.ip}`)) return 'rate-limited'
+    return null
   }
 
   /**
    * Prove the scoreboard role for matchId with the match's own game PIN.
+   * Returns { ok:true, kind } or { ok:false, code }. kind is 'owner' (this
+   * socket already owned it), 'proved' (same game PIN), 'new', 'open' (test
+   * match without a PIN), 'takeover' or 'reclaim'.
    * - match not on the relay yet: the first scoreboard claims it;
    * - stored match has a game PIN: the incoming match must carry the same one;
    * - stored match has none (test match): any socket may write it, but only a
    *   socket that already owns it may attach a game PIN to it;
-   * - an abandoned match (see isAbandoned) may be taken over by anyone.
+   * - an abandoned match (see isAbandoned) may be taken over; when an
+   *   unfinished match is taken over with another game PIN, its own PIN may
+   *   reclaim it once (a scorer that was asleep is not locked out for good).
    */
   function claim(ws, matchId, incomingMatch) {
     const meta = clients.get(ws)
-    if (!meta) return false
+    if (!meta) return { ok: false, code: 'bad-request' }
+    const wasOwner = meta.owned.has(matchId)
     const existing = store.get(matchId)
-    if (existing && !isAbandoned(matchId)) {
-      const storedPin = gamePinOf(existing.match)
-      const incomingPin = gamePinOf(incomingMatch)
-      if (storedPin !== null) {
-        if (incomingPin !== storedPin) return false
-      } else if (incomingPin !== null && !meta.owned.has(matchId)) {
-        return false
-      }
+    const incomingPin = gamePinOf(incomingMatch)
+    const grant = (kind) => {
+      meta.owned.add(matchId)
+      orphanedSince.delete(matchId)
+      return { ok: true, kind }
     }
-    meta.owned.add(matchId)
-    orphanedSince.delete(matchId)
-    return true
+    const denyNew = () => (wasOwner ? null : newClaimDenied(meta, matchId))
+
+    if (!existing) {
+      const denied = denyNew()
+      return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'new')
+    }
+    const storedPin = gamePinOf(existing.match)
+    if (storedPin === null && (incomingPin === null || wasOwner)) {
+      const denied = denyNew()
+      return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'open')
+    }
+    // An owner re-sending its own PIN proved it already: never rate limited.
+    if (wasOwner && storedPin !== null && incomingPin === storedPin) return grant('owner')
+    // From here the socket must prove something. Over the failure limit it is
+    // refused before any comparison, so the reply says nothing about the PIN.
+    const keys = failureKeys(meta)
+    if (keys.some((k) => claimFailures.blocked(k))) return { ok: false, code: 'rate-limited' }
+
+    if (storedPin !== null && incomingPin === storedPin) return grant(wasOwner ? 'owner' : 'proved')
+
+    const reclaimPin = displaced.get(matchId)
+    if (reclaimPin !== undefined && incomingPin !== null && incomingPin === reclaimPin) {
+      displaced.delete(matchId)
+      for (const other of clients.values()) if (other !== meta) other.owned.delete(matchId)
+      return grant('reclaim')
+    }
+    if (isAbandoned(matchId, existing)) {
+      const denied = denyNew()
+      if (denied) return { ok: false, code: denied }
+      if (storedPin !== null && incomingPin !== storedPin && !isFinishedMatch(existing.match)) displaced.set(matchId, storedPin)
+      else displaced.delete(matchId)
+      return grant('takeover')
+    }
+    for (const k of keys) claimFailures.fail(k)
+    return { ok: false, code: 'not-match-owner' }
   }
 
-  function storeBundle(matchId, bundle) {
+  const CLAIM_ERRORS = {
+    'not-match-owner': 'Match is owned by another scoreboard (game PIN mismatch)',
+    'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
+    'too-many-matches': 'This device already drives the maximum number of matches',
+    'bad-request': 'Unknown connection',
+  }
+
+  /**
+   * Store a synced bundle. A sync carries no liveState: the last one pushed is
+   * kept only while the same scoreboard / game PIN keeps the match — never
+   * across a takeover, a reclaim or a PIN change (it would describe another
+   * match: its sides, sets won, 'ended' status, ...).
+   */
+  function storeBundle(matchId, bundle, kind) {
     const prev = store.get(matchId)
-    // A sync carries no liveState; keep the last one the scoreboard pushed.
-    const next = prev && prev.liveState !== undefined && bundle.liveState === undefined
-      ? { ...bundle, liveState: prev.liveState }
-      : bundle
+    const carry = prev && prev.liveState !== undefined && bundle.liveState === undefined &&
+      (kind === 'owner' || kind === 'proved') && gamePinOf(prev.match) === gamePinOf(bundle.match)
+    const next = carry ? { ...bundle, liveState: prev.liveState } : bundle
     store.set(matchId, next)
     return next
   }
@@ -330,6 +535,7 @@ function createLanRelay(options = {}) {
     subscriptions.delete(matchId)
     store.delete(matchId)
     orphanedSince.delete(matchId)
+    displaced.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -372,11 +578,12 @@ function createLanRelay(options = {}) {
     if (msg.type === 'match-data-response') {
       const bundle = bundleFromMessage({ matchData: msg.data ?? msg.matchData })
       const id = normalizeMatchId(msg.matchId) ?? p.matchId
-      if (!msg.success || !bundle || id !== p.matchId || !claim(ws, id, bundle.match)) {
+      const claimed = msg.success && bundle && id === p.matchId ? claim(ws, id, bundle.match) : null
+      if (!claimed || !claimed.ok) {
         declineRequest(msg.requestId, ws)
         return
       }
-      settle(msg.requestId, storeBundle(id, bundle))
+      settle(msg.requestId, storeBundle(id, bundle, claimed.kind))
     } else if (msg.type === 'game-number-response') {
       const id = normalizeMatchId(msg.matchId)
       if (!msg.success || !msg.match || !id || !isOwner(ws, id)) {
@@ -391,10 +598,10 @@ function createLanRelay(options = {}) {
       }
       const bundle = bundleFromMessage({ matchData: msg.data })
       const id = normalizeMatchId(msg.matchId) ?? p.matchId
-      if (bundle && id === p.matchId && claim(ws, id, bundle.match)) {
-        const stored = storeBundle(id, bundle)
-        const now = Date.now()
-        sendToSubscribers(id, { type: 'match-data-update', matchId: id, ...toWireBundle(stored), _timestamp: now, _scoreboardTimestamp: now }, ws)
+      const claimed = bundle && id === p.matchId ? claim(ws, id, bundle.match) : null
+      if (claimed && claimed.ok) {
+        const stored = storeBundle(id, bundle, claimed.kind)
+        sendToSubscribers(id, matchDataMessage('match-data-update', id, stored), ws)
         settle(msg.requestId, { data: stored })
       } else {
         settle(msg.requestId, { data: null })
@@ -411,19 +618,13 @@ function createLanRelay(options = {}) {
       sendError(ws, 'bad-request', 'sync-match-data needs matchId and match')
       return
     }
-    if (!claim(ws, matchId, bundle.match)) {
-      sendError(ws, 'not-match-owner', 'Match is owned by another scoreboard (game PIN mismatch)', matchId)
+    const claimed = claim(ws, matchId, bundle.match)
+    if (!claimed.ok) {
+      sendError(ws, claimed.code, CLAIM_ERRORS[claimed.code] || 'Refused', matchId)
       return
     }
-    const stored = storeBundle(matchId, bundle)
-    const now = Date.now()
-    sendToSubscribers(matchId, {
-      type: 'match-data-update',
-      matchId,
-      ...toWireBundle(stored),
-      _timestamp: now,
-      _scoreboardTimestamp: msg._timestamp || now,
-    }, ws)
+    const stored = storeBundle(matchId, bundle, claimed.kind)
+    sendToSubscribers(matchId, matchDataMessage('match-data-update', matchId, stored, msg._timestamp), ws)
   }
 
   function onSubscribe(ws, msg) {
@@ -440,10 +641,7 @@ function createLanRelay(options = {}) {
       if (['referee', 'bench', 'livescore'].includes(msg.role)) meta.role = msg.role
     }
     const stored = store.get(matchId)
-    if (stored) {
-      const now = Date.now()
-      send(ws, { type: 'match-full-data', matchId, ...toWireBundle(stored), _timestamp: now, _scoreboardTimestamp: now })
-    }
+    if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored))
   }
 
   function onUnsubscribe(ws, msg) {
@@ -766,6 +964,9 @@ module.exports = {
   normalizeMatchId,
   gamePinOf,
   toWireBundle,
+  matchDataMessage,
   createRateLimiter,
+  createLocalAddressCheck,
+  createMainInstanceGate,
   createLanRelay,
 }

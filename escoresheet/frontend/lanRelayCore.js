@@ -17,7 +17,10 @@ export const {
   normalizeMatchId,
   gamePinOf,
   toWireBundle,
+  matchDataMessage,
   createRateLimiter,
+  createLocalAddressCheck,
+  createMainInstanceGate,
   createLanRelay,
 } = core
 
