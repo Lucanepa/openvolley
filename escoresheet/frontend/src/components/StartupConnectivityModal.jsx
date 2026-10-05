@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Check, Loader2, X } from 'lucide-react'
+import { cn, FOCUS_RING } from '../ui'
 
 // All services shown to the user
 const DISPLAY_KEYS = ['db', 'supabase', 'api', 'server', 'websocket', 'scoreboard']
@@ -89,29 +91,18 @@ export default function StartupConnectivityModal({
     supabase: t('connectionStatus.cloud', 'Cloud sync')
   }
 
+
   const getStatusIcon = (status) => {
     if (status === 'unknown' || status === 'connecting') {
-      return (
-        <span
-          style={{
-            display: 'inline-block',
-            width: 20,
-            height: 20,
-            border: '2px solid #3b82f6',
-            borderTopColor: 'transparent',
-            borderRadius: '50%',
-            animation: 'startup-spin 1s linear infinite'
-          }}
-        />
-      )
+      return <Loader2 size={18} className="animate-spin text-stone-400" aria-hidden="true" />
     }
     if (status === 'not_available' || status === 'not_configured') {
-      return <span style={{ color: 'var(--muted)', fontSize: 20, lineHeight: '20px' }}>—</span>
+      return <span className="text-base leading-none text-stone-400" aria-hidden="true">–</span>
     }
     if (isStatusOk(status)) {
-      return <span style={{ color: '#22c55e', fontSize: 20 }}>✓</span>
+      return <Check size={18} strokeWidth={2.5} className="text-green-600" aria-hidden="true" />
     }
-    return <span style={{ color: '#ef4444', fontSize: 20 }}>✗</span>
+    return <X size={18} strokeWidth={2.5} className="text-red-600" aria-hidden="true" />
   }
 
   const getStatusText = (status) => {
@@ -126,53 +117,22 @@ export default function StartupConnectivityModal({
     return t('connectionStatus.unknown', 'Unknown')
   }
 
-  const getTextColor = (status) => {
-    if (status === 'unknown' || status === 'connecting') return '#3b82f6'
-    if (status === 'not_available' || status === 'not_configured') return 'var(--muted)'
-    if (isStatusOk(status)) return '#22c55e'
-    return '#ef4444'
+  const getTextClass = (status) => {
+    if (status === 'unknown' || status === 'connecting') return 'text-stone-500'
+    if (status === 'not_available' || status === 'not_configured') return 'text-stone-500'
+    if (isStatusOk(status)) return 'text-green-700'
+    return 'text-red-700'
   }
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(15, 23, 42, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2000,
-        pointerEvents: 'auto'
-      }}
+      className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
+      style={{ zIndex: 2000, pointerEvents: 'auto' }}
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
-      <style>
-        {`
-          @keyframes startup-spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}
-      </style>
-
-      <div
-        style={{
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: 16,
-          padding: 32,
-          minWidth: 320,
-          maxWidth: '90vw'
-        }}
-      >
-        <h3 style={{
-          margin: '0 0 24px 0',
-          textAlign: 'center',
-          color: 'var(--text)',
-          fontSize: 18
-        }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="startup-connectivity-title" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 id="startup-connectivity-title" className="mb-3 text-center text-lg font-bold text-stone-900">
           {primaryOk
             ? (supabaseOk
               ? t('startupConnectivity.allConnected', 'All services connected!')
@@ -180,31 +140,21 @@ export default function StartupConnectivityModal({
             : t('startupConnectivity.connecting', 'Connecting...')}
         </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="divide-y divide-stone-100">
           {visibleKeys.map((key) => {
             const status = connectionStatuses[key] || 'unknown'
             return (
               <div
                 key={key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  opacity: status === 'unknown' ? 0.7 : 1,
-                  transition: 'opacity 0.3s'
-                }}
+                className={cn('flex min-h-10 items-center gap-3 py-2 transition-opacity', status === 'unknown' && 'opacity-70')}
               >
-                <div style={{ width: 24, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                <div className="flex w-6 shrink-0 justify-center">
                   {getStatusIcon(status)}
                 </div>
-                <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14, minWidth: 90 }}>
+                <span className="min-w-[90px] text-sm font-semibold text-stone-900">
                   {labelMap[key] || key}
                 </span>
-                <span style={{
-                  color: getTextColor(status),
-                  fontSize: 13,
-                  marginLeft: 'auto'
-                }}>
+                <span className={cn('ml-auto text-xs font-medium', getTextClass(status))}>
                   {getStatusText(status)}
                 </span>
               </div>
@@ -214,79 +164,35 @@ export default function StartupConnectivityModal({
 
         {/* Info when some connections failed */}
         {hasErrors && (
-          <div style={{
-            marginTop: 20,
-            padding: 12,
-            background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            borderRadius: 8,
-            color: '#f59e0b',
-            fontSize: 13,
-            textAlign: 'center',
-            lineHeight: 1.5
-          }}>
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm leading-snug text-amber-800">
             {t('startupConnectivity.noConnection', 'No server or cloud connection available. Scoring still works offline.')}
             <br />
-            <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+            <span className="text-xs text-stone-600">
               {t('startupConnectivity.backgroundRetry', 'Connection will keep retrying in the background.')}
             </span>
           </div>
         )}
 
         {/* Buttons */}
-        <div style={{
-          marginTop: 24,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          alignItems: 'center'
-        }}>
+        <div className="mt-5 flex flex-col items-center gap-2.5">
           {primaryOk ? (
             /* Dismiss button with countdown when all OK */
             <button
+              type="button"
               onClick={onDismiss}
-              style={{
-                padding: '10px 24px',
-                background: 'rgba(34, 197, 94, 0.15)',
-                color: '#22c55e',
-                border: '1px solid rgba(34, 197, 94, 0.4)',
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                width: '100%',
-                maxWidth: 240,
-                transition: 'all 0.2s'
-              }}
+              className={cn('inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800', FOCUS_RING)}
             >
               {t('startupConnectivity.dismiss', 'Dismiss')}
-              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, opacity: 0.7 }}>
+              <span className="text-xs font-normal tabular-nums text-white/70">
                 ({countdown}s)
               </span>
             </button>
           ) : (
             /* Go Offline - when primary checks fail or still connecting */
             <button
+              type="button"
               onClick={onGoOffline}
-              style={{
-                padding: '10px 24px',
-                background: 'transparent',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.5)',
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                width: '100%',
-                maxWidth: 240,
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent'
-              }}
+              className={cn('inline-flex h-11 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50', FOCUS_RING)}
             >
               {t('startupConnectivity.goOffline', 'Go Offline')}
             </button>
