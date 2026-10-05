@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import { MENU_PANEL, MENU_TITLE, MENU_ROW, MENU_ROW_DANGER, MENU_SEP, MENU_ICON, itemTone } from './chromeClasses'
+import { cn } from '../ui/cn.js'
 
 export default function MenuList({
   items = [],
@@ -138,52 +140,36 @@ export default function MenuList({
         )}
       </button>
       
-      {/* Menu List */}
+      {/* Menu List: white anchored dropdown, 48 px rows (volleyui menu) */}
       {showMenu && (
         <div
           ref={menuRef}
+          role="menu"
+          aria-label={menuTitle || undefined}
           onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            ...getPositionStyle(),
-            background: 'rgb(0, 0, 0)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '6px',
-            padding: '8px',
-            width: 'auto',
-            minWidth: '200px',
-            zIndex: 1000,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
-          }}
+          className={cn('ov-kit fixed', MENU_PANEL, 'min-w-[220px] max-h-[calc(100vh-16px)] overflow-y-auto')}
+          style={{ ...getPositionStyle(), zIndex: 1000 }}
         >
           {menuTitle && (
-            <div style={{
-              padding: '8px 12px 12px 12px',
-              fontSize: '14px',
-              fontWeight: 700,
-              color: '#fff',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
-              marginBottom: '8px'
-            }}>
+            <div className={MENU_TITLE}>
               {menuTitle}
             </div>
           )}
           {items.map((item, index) => {
             if (item.separator) {
-              return (
-                <div
-                  key={`separator-${index}`}
-                  style={{
-                    height: '1px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    margin: '8px 0'
-                  }}
-                />
-              )
+              return <div key={`separator-${index}`} role="separator" className={MENU_SEP} />
             }
 
+            // Callers colour a row through item.style (e.g. red "Stop the Match");
+            // a known legacy hex becomes the kit tone, anything else stays inline.
+            const { color, ...itemStyle } = item.style || {}
+            const tone = itemTone(color)
+            const danger = tone.className === 'text-red-600'
+
             return (
-              <div
+              <button
+                type="button"
+                role="menuitem"
                 key={item.key || index}
                 onClick={() => {
                   if (item.onClick) {
@@ -191,32 +177,12 @@ export default function MenuList({
                   }
                   setShowMenu(false)
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  marginBottom: index < items.length - 1 ? '4px' : '0',
-                  fontSize: '13px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  ...(item.style || {})
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
-                }}
+                className={cn(MENU_ROW, danger ? MENU_ROW_DANGER : tone.className)}
+                style={{ ...itemStyle, ...(tone.style || {}) }}
               >
-                {item.icon && <span style={{ fontSize: '16px' }}>{item.icon}</span>}
-                <span>{item.label}</span>
-              </div>
+                {item.icon && <span className={cn(MENU_ICON, danger && 'text-red-500')} aria-hidden="true">{item.icon}</span>}
+                <span className="min-w-0 flex-1">{item.label}</span>
+              </button>
             )
           })}
         </div>
