@@ -1,73 +1,46 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ChevronDown, Lightbulb } from 'lucide-react'
+import { cn } from '../../ui/cn.js'
+import { Button, FOCUS_RING } from '../../ui/Button.jsx'
 
+// One question in the help sheet: a flat row (no card), the question in
+// stone-800, the answer in stone-600 under it, and "Show me" as a kit ghost
+// button. Rendered inside the panel's `.ov-kit` box.
 export default function FAQItem({ questionKey, answerKey, helpId, tooltipKey, onShowMe }) {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <div style={{
-      marginBottom: 8,
-      borderRadius: 6,
-      overflow: 'hidden',
-      background: 'rgba(255,255,255,0.03)'
-    }}>
+    <div>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        style={{
-          width: '100%',
-          padding: '12px 14px',
-          background: 'transparent',
-          border: 'none',
-          color: '#60a5fa',
-          fontSize: 14,
-          textAlign: 'left',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 8
-        }}
+        aria-expanded={isOpen}
+        className={cn('flex min-h-12 w-full items-start gap-2 rounded-lg px-2 py-3 text-left text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50', FOCUS_RING)}
       >
-        <span style={{ fontWeight: 700, color: '#3b82f6', flexShrink: 0 }}>Q:</span>
-        <span style={{ flex: 1 }}>{t(questionKey)}</span>
-        <span style={{ fontSize: 10, opacity: 0.6, flexShrink: 0 }}>{isOpen ? '\u2212' : '+'}</span>
+        <span className="shrink-0 font-semibold text-stone-400">Q:</span>
+        <span className="flex-1">{t(questionKey)}</span>
+        <ChevronDown size={14} aria-hidden="true" className={cn('mt-0.5 shrink-0 text-stone-400 transition-transform', isOpen && 'rotate-180')} />
       </button>
       {isOpen && (
-        <div style={{
-          padding: '0 14px 12px 30px',
-          fontSize: 13,
-          color: 'rgba(255,255,255,0.8)',
-          lineHeight: 1.6,
-          animation: 'fade-in 0.2s ease-out'
-        }}>
-          <span style={{ fontWeight: 600, color: '#22c55e' }}>A: </span>
+        <div className="px-2 pb-3 pl-8 text-sm leading-relaxed text-stone-600">
+          <span className="font-semibold text-emerald-700">A: </span>
           {t(answerKey)}
 
           {helpId && onShowMe && (
-            <div style={{ marginTop: 10 }}>
-              <button
+            <div className="mt-2.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Lightbulb}
                 onClick={(e) => {
                   e.stopPropagation()
                   onShowMe(helpId, tooltipKey)
                 }}
-                style={{
-                  padding: '6px 12px',
-                  background: 'rgba(59, 130, 246, 0.2)',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  borderRadius: 6,
-                  color: '#60a5fa',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  transition: 'all 0.2s'
-                }}
               >
-                <span style={{ fontSize: 14 }}>&#x1F4A1;</span>
                 {t('contextHelp.showMe', 'Show me')}
-              </button>
+              </Button>
             </div>
           )}
         </div>
