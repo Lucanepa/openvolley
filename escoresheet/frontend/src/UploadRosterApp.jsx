@@ -555,7 +555,13 @@ export default function UploadRosterApp() {
       setServerPinValidated(false)
       if (uploadPin && uploadPin.length === 6) {
         let cancelled = false
-        validateUploadPinSupabase(team, uploadPin).then(res => {
+        // Bound to the match the roster will be written to
+        const matchKey = selectedMatch?.external_id || match?.external_id || null
+        if (!matchKey) {
+          setValidationError('Select the match first')
+          return
+        }
+        validateUploadPinSupabase(team, uploadPin, matchKey).then(res => {
           if (cancelled) return
           if (res.success) {
             setServerPinValidated(true)
@@ -593,7 +599,7 @@ export default function UploadRosterApp() {
     } else {
       setValidationError('')
     }
-  }, [uploadPin, match, team, activeConnection])
+  }, [uploadPin, match, selectedMatch, team, activeConnection])
 
   // Load teams when match is found (already loaded in checkMatchStatus)
 
@@ -622,7 +628,13 @@ export default function UploadRosterApp() {
           setValidationError('Please enter an upload PIN')
           return false
         }
-        const res = await validateUploadPinSupabase(team, uploadPin.trim())
+        const matchKey = selectedMatch?.external_id || foundMatch?.external_id || null
+        if (!matchKey) {
+          setServerPinValidated(false)
+          setValidationError('Select the match first')
+          return false
+        }
+        const res = await validateUploadPinSupabase(team, uploadPin.trim(), matchKey)
         if (!res.success) {
           setServerPinValidated(false)
           setValidationError(res.error || 'Invalid upload PIN')

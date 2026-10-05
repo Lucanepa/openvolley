@@ -14,6 +14,15 @@ import { formatTimeLocal } from './timeUtils'
  */
 export const ROSTER_UPLOAD_STATUSES = Object.freeze(['setup'])
 
+/**
+ * Listing window: from a day ago (a match running late, or set up the evening
+ * before) to two weeks ahead, soonest first, at most ROSTER_UPLOAD_LIMIT rows.
+ * Abandoned setup matches and ones without a date drop out instead of piling
+ * up in every coach's picker.
+ */
+export const ROSTER_UPLOAD_WINDOW = Object.freeze({ pastMs: 24 * 60 * 60 * 1000, futureMs: 14 * 24 * 60 * 60 * 1000 })
+export const ROSTER_UPLOAD_LIMIT = 200
+
 /** Is a match (cloud row) open for a roster upload? */
 export function isOpenForRosterUpload(row) {
   return !!row && ROSTER_UPLOAD_STATUSES.includes(row.status) && row.test !== true
@@ -54,13 +63,16 @@ export function toRosterUploadMatch(m) {
 /**
  * @returns {Promise<{ success: boolean, matches: object[], error?: string }>}
  */
-export async function listRosterUploadMatches() {
+export async function listRosterUploadMatches({ now = Date.now() } = {}) {
   try {
     const { data, error } = await apiFrom('matches')
       // Not connections: it carries the teams' pending rosters and signatures
       .select('id, external_id, game_n, status, scheduled_at, home_team, away_team, test')
       .in('status', [...ROSTER_UPLOAD_STATUSES])
+      .gte('scheduled_at', new Date(now - ROSTER_UPLOAD_WINDOW.pastMs).toISOString())
+      .lte('scheduled_at', new Date(now + ROSTER_UPLOAD_WINDOW.futureMs).toISOString())
       .order('scheduled_at', { ascending: true })
+      .limit(ROSTER_UPLOAD_LIMIT)
     if (error) {
       console.error('[listRosterUploadMatches] Error:', error)
       return { success: false, matches: [], error: error.message }
