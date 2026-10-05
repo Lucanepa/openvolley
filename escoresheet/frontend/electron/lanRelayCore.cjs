@@ -122,6 +122,60 @@ function stripMatchSecrets(match) {
   return clean
 }
 
+// Personal data the relay never hands out. Subscribing needs no PIN (tablets
+// check theirs over HTTP, then subscribe like any viewer) and the room key is
+// the match's public external_id, so every match object and bundle that
+// leaves the relay is public. The match is the scorer's free-form Dexie row,
+// hence denylists. Same lists in backend/lib/publicColumns.js and
+// src-tauri/src/relay.rs.
+const PERSON_PRIVATE_FIELDS = [
+  'dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date',
+  'country', 'nationality', 'email', 'phone', 'address',
+]
+// Plus every key containing "signature" (any case).
+const MATCH_PRIVATE_FIELDS = [
+  'officials', 'signatures', 'approval', 'manualChanges', 'manual_changes',
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+]
+// Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
+const MATCH_ROSTER_FIELDS = [
+  'players_home', 'players_away', 'bench_home', 'bench_away',
+  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers',
+]
+
+function publicPerson(p) {
+  if (p == null || typeof p !== 'object' || Array.isArray(p)) return p
+  let out = p
+  for (const k of PERSON_PRIVATE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(out, k)) {
+      if (out === p) out = { ...p }
+      delete out[k]
+    }
+  }
+  return out
+}
+
+/** A roster array without personal keys (anything else is returned as is). */
+function publicPeople(list) {
+  return Array.isArray(list) ? list.map(publicPerson) : list
+}
+
+/**
+ * A match object as the relay may hand it out: PIN-free (stripMatchSecrets),
+ * without MATCH_PRIVATE_FIELDS or signature keys, rosters without personal keys.
+ * @param {any} match
+ */
+function publicMatch(match) {
+  const clean = stripMatchSecrets(match)
+  if (!clean || typeof clean !== 'object' || Array.isArray(clean)) return clean
+  const out = {}
+  for (const [k, v] of Object.entries(clean)) {
+    if (MATCH_PRIVATE_FIELDS.includes(k) || /signature/i.test(k)) continue
+    out[k] = MATCH_ROSTER_FIELDS.includes(k) ? publicPeople(v) : v
+  }
+  return out
+}
+
 /**
  * Strip secrets from a stored match-data bundle ({ match, homeTeam, ... }),
  * redacting the nested `match` object which is where the PINs live.
@@ -210,14 +264,17 @@ function bundleFromMessage(msg) {
   }
 }
 
-/** The PIN-free bundle fields every match-data message and HTTP response carries. */
+/**
+ * The PIN-free, personal-data-free bundle fields every match-data message and
+ * HTTP response carries (only the scorer, who sent it, has the full bundle).
+ */
 function toWireBundle(bundle) {
   const out = {
-    match: stripMatchSecrets(bundle.match),
+    match: publicMatch(bundle.match),
     homeTeam: bundle.homeTeam ?? null,
     awayTeam: bundle.awayTeam ?? null,
-    homePlayers: bundle.homePlayers || [],
-    awayPlayers: bundle.awayPlayers || [],
+    homePlayers: publicPeople(bundle.homePlayers || []),
+    awayPlayers: publicPeople(bundle.awayPlayers || []),
     sets: bundle.sets || [],
     events: bundle.events || [],
   }
@@ -869,7 +926,7 @@ function createLanRelay(options = {}) {
       const expected = match[cfg.pin]
       if (expected === undefined || expected === null || String(expected).trim() !== pinStr) continue
       if (match[cfg.enabled] === true && match.status !== 'final') {
-        return { status: 200, body: { success: true, match: stripMatchSecrets({ ...match, id: publicMatchId(key) }) } }
+        return { status: 200, body: { success: true, match: publicMatch({ ...match, id: publicMatchId(key) }) } }
       }
     }
     return {
@@ -916,12 +973,12 @@ function createLanRelay(options = {}) {
     for (const [key, bundle] of store) {
       const match = bundle.match
       if (match && (String(match.gameNumber || '') === gn || String(match.game_n || '') === gn || key === gn)) {
-        return { status: 200, body: { success: true, match: stripMatchSecrets(match), matchId: key } }
+        return { status: 200, body: { success: true, match: publicMatch(match), matchId: key } }
       }
     }
     const found = await requestFromScoreboards('game-number-request', { gameNumber: gn })
     if (!found) return { status: 404, body: { success: false, error: 'Match not found with this game number' } }
-    return { status: 200, body: { success: true, match: stripMatchSecrets(found.match), matchId: found.matchId } }
+    return { status: 200, body: { success: true, match: publicMatch(found.match), matchId: found.matchId } }
   }
 
   async function updateMatch(rawId, updates) {
@@ -1065,6 +1122,11 @@ module.exports = {
   MAX_BODY_SIZE,
   stripMatchSecrets,
   stripMatchDataSecrets,
+  PERSON_PRIVATE_FIELDS,
+  MATCH_PRIVATE_FIELDS,
+  MATCH_ROSTER_FIELDS,
+  publicMatch,
+  publicPeople,
   normalizeMatchId,
   gamePinOf,
   relayKeyOf,

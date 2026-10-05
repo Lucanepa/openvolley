@@ -14,7 +14,9 @@ import {
   projectRows,
   projectLiveRow,
   hasAnonPolicy,
-  anonSelectCheck
+  anonSelectCheck,
+  publicRelayMatch,
+  publicPeople
 } from '../lib/publicColumns.js'
 import { createRealtimeHub } from '../lib/realtimeHub.js'
 import { redactSecrets } from '../lib/secrets.js'
@@ -138,6 +140,72 @@ describe('publicColumns: anonymous /api/db reads', () => {
     }
     assert.deepEqual(anonSelectCheck('match_live_state', { columns: '*' }), { needsMore: false, badFilter: null })
     assert.ok(ANON_DB_FILTER_COLUMNS.matches.every((c) => ANON_DB_COLUMNS.matches[c] === true))
+  })
+})
+
+describe('publicColumns: referee dates of birth', () => {
+  it('referee_database and svrz_games keep names, drop dob; dob cannot be filtered on', () => {
+    const ref = { id: 'r1', first_name: 'Rita', last_name: 'Ref', country: 'SUI', dob: DOB, sport_type: ['indoor'], created_at: 'x' }
+    assert.deepEqual(projectRows(ANON_DB_COLUMNS, 'referee_database', [ref]),
+      [{ id: 'r1', first_name: 'Rita', last_name: 'Ref', country: 'SUI', sport_type: ['indoor'], created_at: 'x' }])
+    const game = { id: 1, game_number: '991303', league: 'H2', referee_1: 'Rita Ref', referee_1_first_name: 'Rita', referee_1_dob: DOB, referee_2_dob: DOB, convocations: ['Rita Ref'] }
+    const anon = projectRows(ANON_DB_COLUMNS, 'svrz_games', game)
+    assert.equal(json(anon).includes(DOB), false)
+    assert.equal(anon.referee_1_first_name, 'Rita')
+    assert.deepEqual(anon.convocations, ['Rita Ref'])
+    for (const t of ['referee_database', 'svrz_games']) assert.equal(hasAnonPolicy(t), true, t)
+
+    // The pickers' queries: public ones need nothing; asking for dob is projected
+    // unless a session verifies; filtering on dob is refused
+    assert.deepEqual(anonSelectCheck('referee_database', {
+      columns: 'id, sport_type',
+      filters: [{ type: 'ilike', column: 'last_name', value: 'r%' }, { type: 'contains', column: 'sport_type', value: '["indoor"]' }],
+      order: [{ column: 'last_name' }]
+    }), { needsMore: false, badFilter: null })
+    assert.equal(anonSelectCheck('referee_database', { columns: 'first_name, last_name, country, dob, created_at' }).needsMore, true)
+    assert.equal(anonSelectCheck('referee_database', { columns: 'id', filters: [{ type: 'eq', column: 'dob', value: DOB }] }).badFilter, 'dob')
+    assert.equal(anonSelectCheck('svrz_games', { columns: '*', filters: [{ type: 'eq', column: 'league', value: 'H2' }], order: [{ column: 'datetime' }] }).badFilter, null)
+    assert.equal(anonSelectCheck('svrz_games', { columns: '*' }).needsMore, true)
+    assert.equal(anonSelectCheck('svrz_games', { columns: 'id', order: { column: 'referee_1_dob' } }).badFilter, 'referee_1_dob')
+    for (const t of ['referee_database', 'svrz_games']) {
+      assert.ok(ANON_DB_FILTER_COLUMNS[t].every((c) => ANON_DB_COLUMNS[t][c] === true), t)
+      assert.ok(Object.keys(ANON_DB_COLUMNS[t]).every((c) => !/dob/.test(c)), t)
+    }
+  })
+})
+
+describe('publicColumns: the match relay bundle', () => {
+  it('publicRelayMatch drops officials, signatures, approval, pending rosters, manual changes and dob', () => {
+    const match = {
+      id: 7,
+      status: 'live',
+      refereeConnectionEnabled: true,
+      officials: [{ role: '1st referee', lastName: 'Ref', dob: DOB }],
+      signatures: { home_coach: SIGNATURE },
+      homeCoachSignature: SIGNATURE,
+      away_captain_signature: SIGNATURE,
+      approval: { approved: true },
+      manualChanges: [{ a: 1 }],
+      manual_changes: [{ a: 1 }],
+      pendingHomeRoster: { players: [] },
+      pending_away_roster: { players: [] },
+      bench_home: [{ role: 'Coach', lastName: 'Coach', dob: DOB, country: 'SUI' }],
+      players_home: [{ number: 4, lastName: 'P', birthdate: DOB }],
+      remarks: 'ok'
+    }
+    const before = json(match)
+    const out = publicRelayMatch(match)
+    assert.equal(json(match), before, 'not mutated')
+    assert.deepEqual(out, {
+      id: 7,
+      status: 'live',
+      refereeConnectionEnabled: true,
+      bench_home: [{ role: 'Coach', lastName: 'Coach' }],
+      players_home: [{ number: 4, lastName: 'P' }],
+      remarks: 'ok'
+    })
+    assert.deepEqual(publicPeople([{ number: 1, dob: DOB, country: 'SUI', email: 'a@b' }, null]), [{ number: 1 }, null])
+    assert.equal(publicRelayMatch(null), null)
   })
 })
 
@@ -266,5 +334,26 @@ describe('realtimeHub: one frame per scorer state', () => {
     assert.equal(hub.stats().staleDropped, 1)
     assert.equal(hub.stats().duplicateDropped, 1)
     hub.close()
+  })
+
+  it('keeps rows for the duplicate check of recent keys only, as subscribers see them', () => {
+    const { hub, subscriber } = liveHub({ maxDuplicateRows: 2 })
+    const viewer = subscriber([{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }])
+    const keys = ['m1', 'm2', 'm3']
+    for (const k of keys) hub.broadcastDbChange('match_live_state', 'UPDATE', [{ ...relayCopy(), match_id: k }])
+    assert.equal(hub.stats().duplicateRows, 2)
+    assert.equal(hub.stats().orderingKeys, 3)
+    // m3 (recent) is deduplicated; m1 (evicted) goes out again (never stale)
+    assert.equal(hub.broadcastDbChange('match_live_state', 'UPSERT', [{ ...dbCopy(), match_id: 'm3' }]), 0)
+    assert.equal(hub.broadcastDbChange('match_live_state', 'UPSERT', [{ ...dbCopy(), match_id: 'm1' }]), 1)
+    assert.equal(viewer.changes().length, 4)
+    // A column live subscribers never see does not make a copy "news"
+    const projected = liveHub({ project: (t, row) => { const { points_b, ...rest } = row; return rest } })
+    const v2 = projected.subscriber([{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'indoor' }])
+    projected.hub.broadcastDbChange('match_live_state', 'UPDATE', [relayCopy()])
+    projected.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ ...relayCopy(), points_b: 99 }])
+    assert.equal(v2.changes().length, 1)
+    hub.close()
+    projected.hub.close()
   })
 })
