@@ -1,10 +1,8 @@
-import { clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
-
 /**
  * Merge conditional class names and de-duplicate conflicting Tailwind classes.
- * Standard shadcn/ui helper: cn('px-2', condition && 'px-4') → 'px-4'.
+ * cn('px-2', condition && 'px-4') → 'px-4'.
+ *
+ * One cn for the whole app: the volleyui kit's (src/ui/cn.js), which also
+ * knows the custom shadow-card / shadow-card-lg utilities.
  */
-export function cn(...inputs) {
-  return twMerge(clsx(inputs))
-}
+export { cn } from '../ui/cn.js'
