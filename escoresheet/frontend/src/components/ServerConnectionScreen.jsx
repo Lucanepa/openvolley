@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride } from '../utils/backendConfig'
 import { GlobeIcon, SatelliteDishIcon } from './icons'
+import { Loader2 } from 'lucide-react'
+import { Button, cn, FOCUS_RING, NOTICE } from '../ui'
 
 const LAST_SERVER_KEY = 'openvolley_last_server'
 
@@ -126,50 +128,30 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
     }
   }, [lastServer, connectToServer])
 
-  // Status indicator
+  // Status indicator (kit notice tones: sky = pending, green = ok, red = failed)
   const renderStatus = () => {
     if (status === 'idle') return null
 
-    const colors = {
-      checking: '#f59e0b',
-      connected: '#22c55e',
-      failed: '#ef4444'
-    }
-
     return (
-      <div style={{
-        padding: '12px 16px',
-        borderRadius: 8,
-        background: `${colors[status]}15`,
-        border: `1px solid ${colors[status]}40`,
-        marginTop: 16,
-        textAlign: 'center'
-      }}>
+      <div className="mt-4" aria-live="polite">
         {status === 'checking' && (
-          <span style={{ color: colors.checking }}>
+          <div className={cn(NOTICE.info, 'justify-center text-sm')}>
+            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
             {t('connection.checking', 'Connecting...')}
-          </span>
+          </div>
         )}
         {status === 'connected' && (
-          <span style={{ color: colors.connected }}>
+          <div className={cn(NOTICE.success, 'text-center text-sm font-medium')}>
             {t('connection.connectedSuccess', 'Connected!')}
-          </span>
+          </div>
         )}
         {status === 'failed' && (
-          <div>
-            <span style={{ color: colors.failed }}>{errorMsg}</span>
+          <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <span>{errorMsg}</span>
             <button
+              type="button"
               onClick={() => setStatus('idle')}
-              style={{
-                marginLeft: 12,
-                padding: '4px 12px',
-                fontSize: 12,
-                background: 'var(--panel)',
-                border: 'none',
-                borderRadius: 4,
-                color: 'var(--text)',
-                cursor: 'pointer'
-              }}
+              className={cn('inline-flex h-9 shrink-0 items-center rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 transition-colors hover:bg-red-50', FOCUS_RING)}
             >
               {t('connection.retry', 'Retry')}
             </button>
@@ -179,143 +161,96 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
     )
   }
 
+  const optionCls = (on) => cn(
+    'w-full rounded-xl border p-4 text-left transition-colors',
+    on ? 'border-slate-900 bg-white ring-1 ring-slate-900' : 'border-stone-200 bg-white hover:bg-stone-50'
+  )
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'var(--bg)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-      color: 'var(--text)'
-    }}>
-      <div style={{ width: '100%', maxWidth: 400 }}>
-        <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 600, textAlign: 'center' }}>
-          {t('connection.connectToServer', 'Connect to Server')}
-        </h2>
-        <p style={{ color: 'var(--muted)', textAlign: 'center', margin: '0 0 32px', fontSize: 14 }}>
-          {t('connection.selectServerMode', 'Choose how to connect')}
-        </p>
+    <div className="ov-kit min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="relative overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-6 shadow-card-lg sm:p-8">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+          <h2 className="text-center text-xl font-bold tracking-tight text-stone-900">
+            {t('connection.connectToServer', 'Connect to Server')}
+          </h2>
+          <p className="mt-1 mb-6 text-center text-sm text-stone-500">
+            {t('connection.selectServerMode', 'Choose how to connect')}
+          </p>
 
-        {/* Online (automatic) */}
-        <button
-          onClick={handleOnlineConnect}
-          disabled={status === 'checking'}
-          style={{
-            width: '100%',
-            padding: '16px 20px',
-            background: mode === 'online' ? 'rgba(59, 130, 246, 0.15)' : 'var(--panel-2)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: 12,
-            color: 'var(--text)',
-            cursor: status === 'checking' ? 'wait' : 'pointer',
-            textAlign: 'left',
-            marginBottom: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16
-          }}
-        >
-          <GlobeIcon size={28} />
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 16 }}>
-              {t('connection.onlineAutomatic', 'Online (automatic)')}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-              backend.openvolley.app
-            </div>
-          </div>
-        </button>
-
-        {/* Local server */}
-        <div style={{
-          padding: '16px 20px',
-          background: mode === 'local' ? 'rgba(16, 185, 129, 0.15)' : 'var(--panel-2)',
-          border: '1px solid rgba(16, 185, 129, 0.3)',
-          borderRadius: 12,
-          marginBottom: 12
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-            <SatelliteDishIcon size={28} />
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 16 }}>
-                {t('connection.localServer', 'Local server')}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                {t('connection.enterIPAddress', 'Enter IP address')}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="text"
-              aria-label={t('connection.enterIPAddress', 'Enter IP address')}
-              value={localAddress}
-              onChange={(e) => { setLocalAddress(e.target.value); setMode('local') }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleLocalConnect() }}
-              placeholder="192.168.1.42:8080"
-              style={{
-                flex: 1,
-                padding: '10px 14px',
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                color: 'var(--text)',
-                fontSize: 14,
-                fontFamily: 'monospace',
-                outline: 'none'
-              }}
-            />
-            <button
-              onClick={handleLocalConnect}
-              disabled={!localAddress.trim() || status === 'checking'}
-              style={{
-                padding: '10px 16px',
-                background: localAddress.trim() ? '#10b981' : 'var(--border)',
-                border: 'none',
-                borderRadius: 8,
-                color: '#fff',
-                cursor: localAddress.trim() ? 'pointer' : 'default',
-                fontWeight: 600,
-                fontSize: 14,
-                opacity: localAddress.trim() ? 1 : 0.5
-              }}
-            >
-              {t('connection.connect', 'Connect')}
-            </button>
-          </div>
-        </div>
-
-        {/* Last used server */}
-        {lastServer && (
+          {/* Online (automatic) */}
           <button
-            onClick={handleLastServerConnect}
+            type="button"
+            onClick={handleOnlineConnect}
             disabled={status === 'checking'}
-            style={{
-              width: '100%',
-              marginTop: 12,
-              padding: '10px 16px',
-              background: 'var(--panel-2)',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              color: 'var(--muted)',
-              cursor: 'pointer',
-              textAlign: 'center',
-              fontSize: 13
-            }}
+            className={cn(optionCls(mode === 'online'), 'mb-3 flex min-h-16 items-center gap-4 disabled:cursor-wait', FOCUS_RING)}
           >
-            {t('connection.lastUsed', 'Last used')}: {lastServer.label || lastServer.url}
-            {lastServer.url !== (getBackendOverride() || getBackendUrl()) && (
-              <span style={{ marginLeft: 8, color: 'var(--muted)' }}>
-                ({new URL(lastServer.url).host})
+            <span className="shrink-0 text-stone-500"><GlobeIcon size={26} /></span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-stone-900">
+                {t('connection.onlineAutomatic', 'Online (automatic)')}
               </span>
-            )}
+              <span className="mt-0.5 block text-xs text-stone-500">
+                backend.openvolley.app
+              </span>
+            </span>
           </button>
-        )}
 
-        {/* Status indicator */}
-        {renderStatus()}
+          {/* Local server */}
+          <div className={optionCls(mode === 'local')}>
+            <div className="mb-3 flex items-center gap-4">
+              <span className="shrink-0 text-stone-500"><SatelliteDishIcon size={26} /></span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-stone-900">
+                  {t('connection.localServer', 'Local server')}
+                </div>
+                <div className="mt-0.5 text-xs text-stone-500">
+                  {t('connection.enterIPAddress', 'Enter IP address')}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                aria-label={t('connection.enterIPAddress', 'Enter IP address')}
+                value={localAddress}
+                onChange={(e) => { setLocalAddress(e.target.value); setMode('local') }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLocalConnect() }}
+                placeholder="192.168.1.42:8080"
+                className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+              />
+              <Button
+                variant="primary"
+                size="xl"
+                onClick={handleLocalConnect}
+                disabled={!localAddress.trim() || status === 'checking'}
+                className="shrink-0"
+              >
+                {t('connection.connect', 'Connect')}
+              </Button>
+            </div>
+          </div>
+
+          {/* Last used server */}
+          {lastServer && (
+            <button
+              type="button"
+              onClick={handleLastServerConnect}
+              disabled={status === 'checking'}
+              className={cn('mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-lg px-3 text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-2 transition-colors hover:text-stone-800 disabled:cursor-wait', FOCUS_RING)}
+            >
+              {t('connection.lastUsed', 'Last used')}: {lastServer.label || lastServer.url}
+              {lastServer.url !== (getBackendOverride() || getBackendUrl()) && (
+                <span className="ml-2 text-stone-400">
+                  ({new URL(lastServer.url).host})
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Status indicator */}
+          {renderStatus()}
+        </div>
       </div>
     </div>
   )

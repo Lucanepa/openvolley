@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getApiUrl } from '../utils/backendConfig'
 import { useScaledLayout } from '../hooks/useScaledLayout'
+import { Check, Paperclip, Send, X } from 'lucide-react'
+import { Button, cn, FOCUS_RING, IconButton } from '../ui'
 
 const CONTACT_TYPES = ['support', 'feedback', 'request']
 
@@ -30,41 +32,25 @@ const SEVERITY_LEVELS = [
   { value: 4, label: 'severity4' }
 ]
 
+// Kit form recipes (svrz page form): form-tone label, h-11 controls, no
+// asterisks (the submit check names missing fields), kit focus ring.
+const LABEL_CLS = 'mb-1.5 block text-sm font-medium text-stone-700'
+const CONTROL_CLS = 'w-full rounded-xl border border-stone-300 bg-white px-3 text-base text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500'
+
 function Dropdown({ label, value, onChange, options, placeholder, t, translationPrefix, required = false, scaleFactor = 1 }) {
   return (
-    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
-      <label style={{
-        display: 'block',
-        marginBottom: `${Math.round(6 * scaleFactor)}px`,
-        fontSize: `${Math.round(14 * scaleFactor)}px`,
-        fontWeight: 600,
-        color: 'var(--text)'
-      }}>
-        {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
-      </label>
+    <label className="mb-4 block">
+      <span className={LABEL_CLS}>{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
-        style={{
-          width: '100%',
-          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-          fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: `${Math.round(8 * scaleFactor)}px`,
-          color: 'var(--text)',
-          cursor: 'pointer',
-          appearance: 'none',
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: `right ${Math.round(10 * scaleFactor)}px center`,
-          backgroundSize: `${Math.round(16 * scaleFactor)}px`
-        }}
+        required={required}
+        className={cn(CONTROL_CLS, 'h-11 cursor-pointer')}
       >
-        <option value="" style={{ background: 'var(--panel)' }}>{placeholder}</option>
+        <option value="">{placeholder}</option>
         {options.map(opt => (
-          <option key={typeof opt === 'object' ? opt.value : opt} value={typeof opt === 'object' ? opt.value : opt} style={{ background: 'var(--panel)' }}>
+          <option key={typeof opt === 'object' ? opt.value : opt} value={typeof opt === 'object' ? opt.value : opt}>
             {typeof opt === 'object'
               ? (translationPrefix ? t(`${translationPrefix}.${opt.label}`) : opt.label)
               : (translationPrefix ? t(`${translationPrefix}.${opt}`) : opt)
@@ -72,75 +58,41 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
           </option>
         ))}
       </select>
-    </div>
+    </label>
   )
 }
 
 function TextArea({ label, value, onChange, placeholder, rows = 4, required = false, scaleFactor = 1 }) {
   return (
-    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
-      <label style={{
-        display: 'block',
-        marginBottom: `${Math.round(6 * scaleFactor)}px`,
-        fontSize: `${Math.round(14 * scaleFactor)}px`,
-        fontWeight: 600,
-        color: 'var(--text)'
-      }}>
-        {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
-      </label>
+    <label className="mb-4 block">
+      <span className={LABEL_CLS}>{label}</span>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={label}
         rows={rows}
-        style={{
-          width: '100%',
-          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-          fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: `${Math.round(8 * scaleFactor)}px`,
-          color: 'var(--text)',
-          resize: 'vertical',
-          fontFamily: 'inherit',
-          boxSizing: 'border-box'
-        }}
+        required={required}
+        className={cn(CONTROL_CLS, 'resize-y py-2 leading-relaxed')}
       />
-    </div>
+    </label>
   )
 }
 
 function TextInput({ label, value, onChange, placeholder, type = 'text', required = false, scaleFactor = 1 }) {
   return (
-    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
-      <label style={{
-        display: 'block',
-        marginBottom: `${Math.round(6 * scaleFactor)}px`,
-        fontSize: `${Math.round(14 * scaleFactor)}px`,
-        fontWeight: 600,
-        color: 'var(--text)'
-      }}>
-        {label}{required && <span style={{ color: '#ef4444', marginLeft: `${Math.round(4 * scaleFactor)}px` }}>*</span>}
-      </label>
+    <label className="mb-4 block">
+      <span className={LABEL_CLS}>{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        style={{
-          width: '100%',
-          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-          fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: `${Math.round(8 * scaleFactor)}px`,
-          color: 'var(--text)',
-          boxSizing: 'border-box'
-        }}
+        required={required}
+        className={cn(CONTROL_CLS, 'h-11')}
       />
-    </div>
+    </label>
   )
 }
 
@@ -164,69 +116,42 @@ function FileAttachment({ label, files, onFilesChange, t, scaleFactor = 1 }) {
   }
 
   return (
-    <div style={{ marginBottom: `${Math.round(16 * scaleFactor)}px` }}>
-      <label style={{
-        display: 'block',
-        marginBottom: `${Math.round(6 * scaleFactor)}px`,
-        fontSize: `${Math.round(14 * scaleFactor)}px`,
-        fontWeight: 600,
-        color: 'var(--text)'
-      }}>
+    <div className="mb-4">
+      <div className={LABEL_CLS}>
         {label}
-      </label>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
         multiple
         onChange={handleFileSelect}
         aria-label={label}
-        style={{ display: 'none' }}
+        className="hidden"
         accept="image/*,.json,.txt,.log,.pdf,.csv"
       />
       <button
+        type="button"
         onClick={() => fileInputRef.current?.click()}
-        style={{
-          padding: `${Math.round(10 * scaleFactor)}px ${Math.round(16 * scaleFactor)}px`,
-          fontSize: `${Math.round(14 * scaleFactor)}px`,
-          background: 'var(--panel)',
-          border: '1px dashed var(--border)',
-          borderRadius: `${Math.round(8 * scaleFactor)}px`,
-          color: 'var(--text)',
-          cursor: 'pointer',
-          width: '100%',
-          textAlign: 'center'
-        }}
+        className={cn('inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 px-4 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100', FOCUS_RING)}
       >
+        <Paperclip size={16} aria-hidden="true" className="text-stone-400" />
         {t('supportFeedback.attachFiles')}
       </button>
       {files.length > 0 && (
-        <div style={{ marginTop: `${Math.round(8 * scaleFactor)}px`, display: 'flex', flexDirection: 'column', gap: `${Math.round(4 * scaleFactor)}px` }}>
+        <div className="mt-2 divide-y divide-stone-100 rounded-lg border border-stone-200">
           {files.map((file, index) => (
-            <div key={index} style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: `${Math.round(6 * scaleFactor)}px ${Math.round(10 * scaleFactor)}px`,
-              background: 'var(--panel-2)',
-              borderRadius: `${Math.round(6 * scaleFactor)}px`,
-              fontSize: `${Math.round(12 * scaleFactor)}px`
-            }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                {file.name} ({formatFileSize(file.size)})
+            <div key={index} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs text-stone-700">
+              <span className="flex-1 truncate">
+                {file.name} <span className="tabular-nums text-stone-500">({formatFileSize(file.size)})</span>
               </span>
               <button
+                type="button"
                 onClick={() => removeFile(index)}
                 aria-label={`${t('common.remove', 'Remove')} ${file.name}`}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#ef4444',
-                  cursor: 'pointer',
-                  padding: `${Math.round(2 * scaleFactor)}px ${Math.round(6 * scaleFactor)}px`,
-                  fontSize: `${Math.round(14 * scaleFactor)}px`
-                }}
+                title={`${t('common.remove', 'Remove')} ${file.name}`}
+                className={cn('inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-stone-400 transition-colors hover:bg-red-50 hover:text-red-700', FOCUS_RING)}
               >
-                ×
+                <X size={14} aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -347,6 +272,15 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
 
   if (!open) return null
 
+  const header = (title, tone) => (
+    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
+      <h2 className={cn('text-lg font-bold', tone || 'text-stone-900')}>
+        {title}
+      </h2>
+      <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={handleClose} />
+    </div>
+  )
+
   // Show success message
   if (sent) {
     const successMessage = contactType === 'support'
@@ -357,60 +291,19 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
 
     return (
       <Modal open={true} title="" onClose={handleClose} width={450} hideCloseButton={true}>
-        <div style={{
-          position: 'sticky',
-          top: 0,
-          background: 'var(--panel)',
-          borderBottom: '1px solid var(--border)',
-          padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          zIndex: 10
-        }}>
-          <h2 style={{ margin: 0, fontSize: `${Math.round(18 * scaleFactor)}px`, fontWeight: 600, color: '#22c55e' }}>
-            {t('supportFeedback.sent')}
-          </h2>
-          <button
-            onClick={handleClose}
-            aria-label={t('common.close', 'Close')}
-            style={{
-              width: `${Math.round(32 * scaleFactor)}px`,
-              height: `${Math.round(32 * scaleFactor)}px`,
-              borderRadius: `${Math.round(6 * scaleFactor)}px`,
-              border: 'none',
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              fontSize: `${Math.round(18 * scaleFactor)}px`,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            ×
-          </button>
-        </div>
-        <div style={{ padding: `${Math.round(24 * scaleFactor)}px`, textAlign: 'center' }}>
-          <div style={{ fontSize: `${Math.round(48 * scaleFactor)}px`, marginBottom: `${Math.round(16 * scaleFactor)}px` }}>✓</div>
-          <p style={{ fontSize: `${Math.round(16 * scaleFactor)}px`, color: 'var(--text)', marginBottom: `${Math.round(24 * scaleFactor)}px` }}>
-            {successMessage}
-          </p>
-          <button
-            onClick={handleClose}
-            style={{
-              padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
-              fontSize: `${Math.round(14 * scaleFactor)}px`,
-              fontWeight: 600,
-              background: '#22c55e',
-              color: '#fff',
-              border: 'none',
-              borderRadius: `${Math.round(8 * scaleFactor)}px`,
-              cursor: 'pointer'
-            }}
-          >
-            {t('common.close')}
-          </button>
+        <div className="ov-kit">
+          {header(t('supportFeedback.sent'), 'text-stone-900')}
+          <div className="px-2 py-6 text-center sm:px-4">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600">
+              <Check size={26} strokeWidth={2.25} aria-hidden="true" />
+            </div>
+            <p className="mb-6 text-base text-stone-700">
+              {successMessage}
+            </p>
+            <Button variant="dark" size="xl" onClick={handleClose} className="min-w-32 rounded-lg font-medium">
+              {t('common.close')}
+            </Button>
+          </div>
         </div>
       </Modal>
     )
@@ -425,44 +318,12 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
 
   return (
     <Modal open={true} title="" onClose={handleClose} width={450} hideCloseButton={true}>
+      <div className="ov-kit">
       {/* Sticky Header */}
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        background: 'var(--panel)',
-        borderBottom: '1px solid var(--border)',
-        padding: `${Math.round(12 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 10
-      }}>
-        <h2 style={{ margin: 0, fontSize: `${Math.round(18 * scaleFactor)}px`, fontWeight: 600 }}>
-          {t('supportFeedback.title')}
-        </h2>
-        <button
-          onClick={handleClose}
-          aria-label={t('common.close', 'Close')}
-          style={{
-            width: `${Math.round(32 * scaleFactor)}px`,
-            height: `${Math.round(32 * scaleFactor)}px`,
-            borderRadius: `${Math.round(6 * scaleFactor)}px`,
-            border: 'none',
-            background: 'var(--panel)',
-            color: 'var(--text)',
-            fontSize: `${Math.round(18 * scaleFactor)}px`,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          ×
-        </button>
-      </div>
+      {header(t('supportFeedback.title'))}
 
       {/* Content */}
-      <div style={{ padding: `${Math.round(24 * scaleFactor)}px`, maxHeight: `calc(80vh - ${Math.round(60 * scaleFactor)}px)`, overflowY: 'auto' }}>
+      <div className="max-h-[calc(80vh-60px)] overflow-y-auto px-2 pt-4 pb-2 sm:px-4">
         {/* Contact Type */}
         <Dropdown
           label={t('supportFeedback.contactTypeLabel')}
@@ -560,40 +421,26 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
 
         {/* Error message */}
         {error && (
-          <div style={{
-            padding: `${Math.round(10 * scaleFactor)}px ${Math.round(12 * scaleFactor)}px`,
-            background: 'rgba(239, 68, 68, 0.2)',
-            border: '1px solid rgba(239, 68, 68, 0.4)',
-            borderRadius: `${Math.round(8 * scaleFactor)}px`,
-            color: '#ef4444',
-            fontSize: `${Math.round(14 * scaleFactor)}px`,
-            marginBottom: `${Math.round(16 * scaleFactor)}px`
-          }}>
+          <p role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
-          </div>
+          </p>
         )}
 
         {/* Submit Button */}
         {showComments && (
-          <button
+          <Button
+            variant="primary"
+            size="xl"
+            block
             onClick={handleSubmit}
             disabled={sending}
-            style={{
-              width: '100%',
-              padding: `${Math.round(14 * scaleFactor)}px ${Math.round(24 * scaleFactor)}px`,
-              fontSize: `${Math.round(16 * scaleFactor)}px`,
-              fontWeight: 600,
-              background: sending ? 'rgba(34, 197, 94, 0.5)' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: `${Math.round(8 * scaleFactor)}px`,
-              cursor: sending ? 'not-allowed' : 'pointer',
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
+            loading={sending}
+            icon={Send}
           >
             {sending ? t('supportFeedback.sending') : t('supportFeedback.send')}
-          </button>
+          </Button>
         )}
+      </div>
       </div>
     </Modal>
   )
