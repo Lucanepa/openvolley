@@ -690,8 +690,8 @@ button:disabled {
 /* Section divider heading (e.g. "Bench Officials — Home") */
 .section-divider {
   text-align: center;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--ov-sunken-strong); /* stone-100 band (was white text on white) */
+  color: #44403c; /* stone-700 */
   margin: calc(16px * var(--scale-factor)) 0 calc(8px * var(--scale-factor));
   padding: calc(6px * var(--scale-factor)) calc(12px * var(--scale-factor));
   border-radius: calc(6px * var(--scale-factor));
@@ -704,7 +704,7 @@ button:disabled {
 .bench-grid-row.grid-header {
   font-weight: 600;
   font-size: calc(12px * var(--scale-factor));
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ov-text-muted); /* stone-500 table-head tone (was white on white) */
 }
 
 /* === END ROSTER / BENCH GRID === */
@@ -1180,7 +1180,7 @@ button:disabled {
 .roster-panel {
   padding: calc(20px * var(--scale-factor));
   background: var(--panel-2);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ov-hairline);
   border-radius: calc(12px * var(--scale-factor));
 }
 
@@ -1202,34 +1202,36 @@ button:disabled {
   color: var(--text);
 }
 
+/* Roster tables: the kit table (white body, stone-50 head with 11px uppercase
+   stone-500 labels, stone-200 row rules, stone-50 row hover). */
 .roster-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--panel-2);
+  background: var(--ov-card);
   border-radius: calc(8px * var(--scale-factor));
   overflow: hidden;
 }
 
 .roster-table thead {
-  background: var(--panel);
-  border-bottom: calc(2px * var(--scale-factor)) solid rgba(255, 255, 255, 0.1);
+  background: var(--ov-sunken);
+  border-bottom: 1px solid var(--ov-hairline);
 }
 
 .roster-table th {
   padding: calc(12px * var(--scale-factor)) calc(8px * var(--scale-factor));
   text-align: left;
-  font-size: calc(14px * var(--scale-factor));
-  font-weight: 600;
-  color: var(--muted);
+  font-size: calc(11px * var(--scale-factor));
+  font-weight: 700;
+  color: var(--ov-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.025em;
 }
 
 .roster-table td {
   padding: calc(10px * var(--scale-factor)) calc(8px * var(--scale-factor));
   font-size: calc(15px * var(--scale-factor));
   color: var(--text);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--ov-hairline);
 }
 
 .coin-toss-number,
@@ -1310,7 +1312,7 @@ button:disabled {
 }
 
 .roster-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ov-sunken);
 }
 
 .roster-table tbody tr:last-child td {
