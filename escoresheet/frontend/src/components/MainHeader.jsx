@@ -10,7 +10,7 @@ import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, X } from 'lucide-reac
 import { cn } from '../ui/cn.js'
 import { SwitchTrack } from '../ui/Switch.jsx'
 import {
-  FOCUS_RING, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
+  FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
   MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, STATUS_PILL, STATUS_TONES
 } from './chromeClasses'
 
@@ -386,40 +386,44 @@ export default function MainHeader({
 
     return (
       <div className="relative flex h-8 w-auto items-center justify-center gap-1.5">
-        <button
-          type="button"
-          data-match-info-menu
-          aria-expanded={matchInfoMenuOpen}
-          onClick={(e) => {
-            e.stopPropagation()
-            setMatchInfoMenuOpen(!matchInfoMenuOpen)
-          }}
-          className={cn(
-            'inline-flex h-7 min-w-[100px] items-center justify-center gap-1 rounded-full border px-3 text-[11px] font-semibold uppercase tracking-[0.08em] tabular-nums transition-colors cursor-pointer',
-            FOCUS_RING,
-            isTest
-              ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200/70'
-              : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
-          )}
-        >
-          <span>{buttonText}</span>
-          <ChevronDown size={13} aria-hidden="true" className={cn('transition-transform', matchInfoMenuOpen && 'rotate-180')} />
-        </button>
+        <span className={KIT_SCOPE}>
+          <button
+            type="button"
+            data-match-info-menu
+            aria-expanded={matchInfoMenuOpen}
+            onClick={(e) => {
+              e.stopPropagation()
+              setMatchInfoMenuOpen(!matchInfoMenuOpen)
+            }}
+            className={cn(
+              'inline-flex h-7 min-w-[100px] items-center justify-center gap-1 rounded-full border px-3 text-[11px] font-semibold uppercase tracking-[0.08em] tabular-nums transition-colors cursor-pointer',
+              FOCUS_RING,
+              isTest
+                ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200/70'
+                : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
+            )}
+          >
+            <span>{buttonText}</span>
+            <ChevronDown size={13} aria-hidden="true" className={cn('transition-transform', matchInfoMenuOpen && 'rotate-180')} />
+          </button>
+        </span>
 
         {/* Header collapse toggle button */}
         {collapsible && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsCollapsed(!isCollapsed)
-            }}
-            className={cn(HEADER_BTN, 'h-7 w-7 px-0')}
-            aria-label={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
-            title={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
-          >
-            <ChevronUp size={15} aria-hidden="true" className={cn('transition-transform', isCollapsed && 'rotate-180')} />
-          </button>
+          <span className={KIT_SCOPE}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsCollapsed(!isCollapsed)
+              }}
+              className={cn(HEADER_BTN, 'h-7 w-7 px-0')}
+              aria-label={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
+              title={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
+            >
+              <ChevronUp size={15} aria-hidden="true" className={cn('transition-transform', isCollapsed && 'rotate-180')} />
+            </button>
+          </span>
         )}
 
         {/* Collapsible Match Info Menu - hide when header is collapsed */}
@@ -475,25 +479,27 @@ export default function MainHeader({
   )
 
   const helpButton = onToggleHelp && (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onToggleHelp()
-      }}
-      aria-pressed={helpPanelOpen}
-      className={cn(HEADER_BTN, 'w-8 px-0 text-sm font-bold', helpPanelOpen && HEADER_BTN_ON)}
-      title={t('contextHelp.helpButton', 'Help')}
-    >
-      ?
-    </button>
+    <span className={KIT_SCOPE}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleHelp()
+        }}
+        aria-pressed={helpPanelOpen}
+        className={cn(HEADER_BTN, 'w-8 px-0 text-sm font-bold', helpPanelOpen && HEADER_BTN_ON)}
+        title={t('contextHelp.helpButton', 'Help')}
+      >
+        ?
+      </button>
+    </span>
   )
 
   return (
     <div style={{ position: 'relative', zIndex: 1000 }}>
       <div
         ref={headerRef}
-        className={cn('bg-white', !effectivelyCollapsed && 'border-b border-stone-200/70')}
+        className={effectivelyCollapsed ? 'bg-white' : HEADER_BAR}
         style={{
           display: 'flex',
           height: effectivelyCollapsed ? '0px' : `${40 * scaleFactor}px`,
@@ -511,18 +517,20 @@ export default function MainHeader({
         {/* Left: Online/Offline Toggle + Connection Status */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Online/Offline Toggle */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!offlineMode}
-            onClick={() => setOfflineMode(!offlineMode)}
-            title={offlineMode ? t('header.switchToOnline') : t('header.switchToOffline')}
-            className={cn('inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-lg border-0 bg-transparent px-2 text-xs font-medium tracking-normal text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer', FOCUS_RING)}
-          >
-            <span>{offlineMode ? t('header.offline') : t('header.online')}</span>
-            {/* Toggle Switch: emerald when online (no brand red on the scoreboard, R4) */}
-            <SwitchTrack checked={!offlineMode} className={!offlineMode ? 'bg-emerald-500' : undefined} />
-          </button>
+          <span className={KIT_SCOPE}>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!offlineMode}
+              onClick={() => setOfflineMode(!offlineMode)}
+              title={offlineMode ? t('header.switchToOnline') : t('header.switchToOffline')}
+              className={cn('inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-lg border-0 bg-transparent px-2 text-xs font-medium tracking-normal text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer', FOCUS_RING)}
+            >
+              <span>{offlineMode ? t('header.offline') : t('header.online')}</span>
+              {/* Toggle Switch: emerald when online (no brand red on the scoreboard, R4) */}
+              <SwitchTrack checked={!offlineMode} className={!offlineMode ? 'bg-emerald-500' : undefined} />
+            </button>
+          </span>
 
           {/* Connection Status - only show in online mode */}
           {!offlineMode && (
@@ -538,43 +546,47 @@ export default function MainHeader({
 
           {/* Alarm Bell Button - visible if alarm is enabled and match is active */}
           {alarmEnabled && onTriggerAlarm && matchId && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onTriggerAlarm()
-              }}
-              aria-label={t('header.alarmBellNotify')}
-              title={t('header.alarmBellNotify')}
-              className={cn(HEADER_BTN, HEADER_BTN_ON, 'w-9 px-0')}
-            >
-              <BellIcon size={14} />
-            </button>
+            <span className={KIT_SCOPE}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTriggerAlarm()
+                }}
+                aria-label={t('header.alarmBellNotify')}
+                title={t('header.alarmBellNotify')}
+                className={cn(HEADER_BTN, HEADER_BTN_ON, 'w-9 px-0')}
+              >
+                <BellIcon size={14} />
+              </button>
+            </span>
           )}
 
           {/* Dashboard Server Indicator */}
           {dashboardServer?.enabled && (
             <div ref={dashboardButtonRef} style={{ position: 'relative' }}>
-              <button
-                type="button"
-                onClick={openDashboardMenu}
-                aria-expanded={dashboardMenuOpen}
-                title={`${dashboardServer.dashboardCount || 0} dashboard(s) connected${dashboardServer.refereePin ? ` | PIN: ${dashboardServer.refereePin}` : ''}`}
-                className={cn(STATUS_PILL, FOCUS_RING, dashboardServer.dashboardCount > 0 ? STATUS_TONES.ok.pill : STATUS_TONES.info.pill)}
-              >
-                <SatelliteDishIcon size={12} />
-                {dashboardServer.dashboardCount > 0 ? (
-                  <span className="tabular-nums">{dashboardServer.dashboardCount}</span>
-                ) : (
-                  <span>{t('header.connectDevices')}</span>
-                )}
-                {dashboardServer.refereePin && dashboardServer.dashboardCount > 0 && (
-                  <span className="rounded bg-white/70 px-1.5 py-px font-mono text-[10px] tracking-[0.15em] text-stone-700">
-                    {dashboardServer.refereePin}
-                  </span>
-                )}
-                <ChevronDown size={12} aria-hidden="true" className={cn('transition-transform', dashboardMenuOpen && 'rotate-180')} />
-              </button>
+              <span className={KIT_SCOPE}>
+                <button
+                  type="button"
+                  onClick={openDashboardMenu}
+                  aria-expanded={dashboardMenuOpen}
+                  title={`${dashboardServer.dashboardCount || 0} dashboard(s) connected${dashboardServer.refereePin ? ` | PIN: ${dashboardServer.refereePin}` : ''}`}
+                  className={cn(STATUS_PILL, FOCUS_RING, dashboardServer.dashboardCount > 0 ? STATUS_TONES.ok.pill : STATUS_TONES.info.pill)}
+                >
+                  <SatelliteDishIcon size={12} />
+                  {dashboardServer.dashboardCount > 0 ? (
+                    <span className="tabular-nums">{dashboardServer.dashboardCount}</span>
+                  ) : (
+                    <span>{t('header.connectDevices')}</span>
+                  )}
+                  {dashboardServer.refereePin && dashboardServer.dashboardCount > 0 && (
+                    <span className="rounded bg-white/70 px-1.5 py-px font-mono text-[10px] tracking-[0.15em] text-stone-700">
+                      {dashboardServer.refereePin}
+                    </span>
+                  )}
+                  <ChevronDown size={12} aria-hidden="true" className={cn('transition-transform', dashboardMenuOpen && 'rotate-180')} />
+                </button>
+              </span>
 
               {/* Dashboard Connection Info Dropdown */}
               {dashboardMenuOpen && (
@@ -723,18 +735,20 @@ export default function MainHeader({
               {!offlineMode && <UserButton />}
 
               <div style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  aria-expanded={actionsMenuOpen}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setActionsMenuOpen(!actionsMenuOpen)
-                  }}
-                  className={cn(HEADER_BTN, actionsMenuOpen && HEADER_BTN_ON)}
-                >
-                  <span>{isFullscreen ? t('header.exit') : t('header.fullscreen')}</span>
-                  <ChevronDown size={12} aria-hidden="true" className={cn('transition-transform', actionsMenuOpen && 'rotate-180')} />
-                </button>
+                <span className={KIT_SCOPE}>
+                  <button
+                    type="button"
+                    aria-expanded={actionsMenuOpen}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActionsMenuOpen(!actionsMenuOpen)
+                    }}
+                    className={cn(HEADER_BTN, actionsMenuOpen && HEADER_BTN_ON)}
+                  >
+                    <span>{isFullscreen ? t('header.exit') : t('header.fullscreen')}</span>
+                    <ChevronDown size={12} aria-hidden="true" className={cn('transition-transform', actionsMenuOpen && 'rotate-180')} />
+                  </button>
+                </span>
 
                 {/* Expanded Actions Menu */}
                 {actionsMenuOpen && (
