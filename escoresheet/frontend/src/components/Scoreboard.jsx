@@ -85,6 +85,16 @@ function SbButton({ variant = 'secondary', className, ...rest }) {
   )
 }
 
+/** Kit SectionHeader inside a legacy dialog: the .ov-kit box keeps the legacy
+ *  h3/h4 margins and sizes off it. */
+function SbSection(props) {
+  return (
+    <div className="ov-kit">
+      <SectionHeader {...props} />
+    </div>
+  )
+}
+
 /** Footer of a non-courtside dialog (Edit PIN): cancel on the left, commit on
  *  the right (volleyui). The courtside dialogs keep the base order, commit
  *  first and centred, so the scorer's muscle memory holds; that deviation
@@ -101,6 +111,10 @@ const SB_DISCLOSURE = `w-full min-h-12 flex items-center justify-between gap-3 p
 /** Destructive row tool (Delete in Manual changes): outline, never a red fill (R4);
  *  h-11, since Manual changes is used on the courtside tablet (R12). */
 const SB_ROW_DELETE = `inline-flex items-center justify-center h-11 min-w-[64px] px-3 rounded-lg border border-red-200 bg-white text-xs font-medium tracking-normal text-red-700 hover:bg-red-50 transition-colors cursor-pointer ${FOCUS_RING}`
+
+/** Anchored action menu / dropdown beside a player (kit anchored menu). The
+ *  scale(1.5) and the position stay inline, so targets keep their size. */
+const SB_POPOVER = 'rounded-xl border border-stone-200 bg-white shadow-card-lg text-stone-800'
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -12717,7 +12731,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.5)',
+          backgroundColor: 'rgb(28 25 23 / 0.6)',
+          backdropFilter: 'blur(4px)',
           zIndex: 99999,
           display: 'flex',
           flexDirection: 'column',
@@ -12749,30 +12764,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </h2>
           <p style={{
             fontSize: '16px',
-            color: 'var(--muted)',
+            color: '#e7e5e4',
             maxWidth: '300px',
             lineHeight: 1.5,
             marginBottom: '24px'
           }}>
             The Scoreboard works best in landscape mode. Please rotate your device horizontally to continue.
           </p>
-          <div style={{
+          <div className="rounded-lg border border-sky-200 bg-sky-50" style={{
             padding: '12px 16px',
-            background: 'rgba(59, 130, 246, 0.15)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '8px',
             maxWidth: '320px'
           }}>
-            <p style={{
+            <p className="text-sky-800" style={{
               fontSize: '13px',
-              color: '#93c5fd',
               lineHeight: 1.4,
               margin: 0
             }}>
               <strong>Tip:</strong> For auto-backup features, use Chrome or Edge on a desktop/laptop computer.
             </p>
           </div>
-          <button
+          <SbButton
+            variant="dark"
+            className="mt-6 h-12 px-6 text-base"
             onClick={() => {
               if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen().catch(err => {
@@ -12780,27 +12793,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 })
               }
             }}
-            style={{
-              marginTop: '24px',
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: 600,
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
           >
             <span>⛶</span>
             <span>{t('scoreboard.enterFullscreen')}</span>
-          </button>
+          </SbButton>
           <p style={{
             fontSize: '12px',
-            color: 'var(--muted)',
+            color: '#d6d3d1',
             marginTop: '12px'
           }}>
             {t('scoreboard.buttons.fullscreenHint')}
@@ -13360,13 +13359,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           open={!!scoresheetErrorModal}
           onClose={() => setScoresheetErrorModal(null)}
         >
-          <div style={{ padding: '20px' }}>
-            <div style={{
-              color: '#ef4444',
-              fontSize: '16px',
-              fontWeight: 600,
-              marginBottom: '12px'
-            }}>
+          <div style={{ padding: '4px 0' }}>
+            <div className="text-sm font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2" style={{ marginBottom: '12px' }}>
               {scoresheetErrorModal.error}
             </div>
             {scoresheetErrorModal.details && (
@@ -13387,20 +13381,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </div>
             )}
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
+              <SbButton variant="dark"
                 onClick={() => setScoresheetErrorModal(null)}
-                style={{
-                  padding: '8px 16px',
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
               >
                 Close
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -13459,7 +13444,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Players Section */}
                 <div className="roster-tables">
                   <div className="roster-table-wrapper">
-                    <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.players')}</h3>
+                    <SbSection title={<>{data.homeTeam?.name || t('common.home')} {t('scoreboard.players')}</>} className="mb-2" />
                     <table className="roster-table">
                       <thead>
                         <tr>
@@ -13493,7 +13478,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </table>
                   </div>
                   <div className="roster-table-wrapper">
-                    <h3>{data.awayTeam?.name || t('common.away')} {t('scoreboard.players')}</h3>
+                    <SbSection title={<>{data.awayTeam?.name || t('common.away')} {t('scoreboard.players')}</>} className="mb-2" />
                     <table className="roster-table">
                       <thead>
                         <tr>
@@ -13532,7 +13517,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {(maxLiberos > 0) && (
                   <div className="roster-tables" style={{ marginTop: '24px' }}>
                     <div className="roster-table-wrapper">
-                      <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.liberos')}</h3>
+                      <SbSection title={<>{data.homeTeam?.name || t('common.home')} {t('scoreboard.liberos')}</>} className="mb-2" />
                       <table className="roster-table">
                         <thead>
                           <tr>
@@ -13568,7 +13553,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </table>
                     </div>
                     <div className="roster-table-wrapper">
-                      <h3>{data.awayTeam?.name || t('common.away')} {t('scoreboard.liberos')}</h3>
+                      <SbSection title={<>{data.awayTeam?.name || t('common.away')} {t('scoreboard.liberos')}</>} className="mb-2" />
                       <table className="roster-table">
                         <thead>
                           <tr>
@@ -13609,7 +13594,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div className="bench-officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
                   <div className="roster-tables">
                     <div className="roster-table-wrapper">
-                      <h3>{data.homeTeam?.name || t('common.home')} {t('scoreboard.benchOfficials')}</h3>
+                      <SbSection title={<>{data.homeTeam?.name || t('common.home')} {t('scoreboard.benchOfficials')}</>} className="mb-2" />
                       <table className="roster-table">
                         <thead>
                           <tr>
@@ -13641,7 +13626,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </table>
                     </div>
                     <div className="roster-table-wrapper">
-                      <h3>{data.awayTeam?.name || t('common.away')} {t('scoreboard.benchOfficials')}</h3>
+                      <SbSection title={<>{data.awayTeam?.name || t('common.away')} {t('scoreboard.benchOfficials')}</>} className="mb-2" />
                       <table className="roster-table">
                         <thead>
                           <tr>
@@ -13676,7 +13661,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
                 {(data?.match?.officials && data.match.officials.length > 0) && (
                   <div className="officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
-                    <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>Match Officials</h3>
+                    <SbSection title="Match officials" className="mb-3" />
                     <table className="roster-table">
                       <thead>
                         <tr>
@@ -13714,44 +13699,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--text)', lineHeight: 1.5 }}>
               {t('scoreboard.reopenRoster.confirmBody', 'Changes made after the coin toss will be automatically logged in the manual adjustments and remarks.')}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={() => {
                   setReopenRosterTeam(reopenRosterConfirm)
                   setReopenRosterConfirm(null)
                 }}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.reopenRoster.confirm', 'Reopen')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={() => setReopenRosterConfirm(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.reopenRoster.cancel', 'Cancel')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -13795,62 +13760,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         )
       })()}
 
-      {/* Display Mode Suggestion Banner */}
+      {/* Display Mode Suggestion Banner: a sky (info) kit banner, not a gradient */}
       {showDisplayModeSuggestion && displayModeSuggestion && (
-        <div style={{
+        <div className="no-print flex flex-wrap items-center justify-center gap-3 border-b border-sky-200 bg-sky-50 text-sky-900 shadow-lg" style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
-          background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-          color: '#fff',
-          padding: '12px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '16px',
-          zIndex: 1000,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          padding: '10px 20px',
+          zIndex: 1000
         }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+          <span className="inline-flex text-sky-700">
             {displayModeSuggestion === 'tablet' ? <TabletIcon size={20} /> : <PhoneIcon size={20} />}
           </span>
-          <span style={{ fontWeight: 600 }}>
+          <span className="text-sm font-semibold">
             Small screen detected! Enable {displayModeSuggestion} mode for a better experience?
           </span>
-          <button
-            onClick={() => enterDisplayMode(displayModeSuggestion)}
-            style={{
-              padding: '8px 16px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: '#fff',
-              color: '#3b82f6',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-          >
+          <SbButton variant="dark" onClick={() => enterDisplayMode(displayModeSuggestion)}>
             Enable {displayModeSuggestion} mode
-          </button>
-          <button
+          </SbButton>
+          <SbButton
             onClick={() => {
               setShowDisplayModeSuggestion(false)
               sessionStorage.setItem('displayModeSuggestionDismissed', 'true')
             }}
-            style={{
-              padding: '8px 16px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'transparent',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.5)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
           >
             Not now
-          </button>
+          </SbButton>
         </div>
       )}
 
@@ -22672,27 +22608,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setStopMatchModal(null)}
           width={400}
         >
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <button
-              className="secondary"
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <SbButton
+              block
+              className="h-12 justify-start text-base"
               onClick={() => {
                 setStopMatchModal(null)
                 setStopMatchTeamSelect({ pendingAction: 'forfeit' })
               }}
-              style={{ padding: '16px', fontSize: '16px' }}
             >
               {t('scoreboard.stopMatch.teamForfeits', 'A team forfeits')}
-            </button>
-            <button
-              className="secondary"
+            </SbButton>
+            <SbButton
+              block
+              className="h-12 justify-start text-base"
               onClick={() => {
                 setStopMatchModal(null)
                 setStopMatchConfirm({ type: 'impossibility' })
               }}
-              style={{ padding: '16px', fontSize: '16px' }}
             >
               {t('scoreboard.stopMatch.impossibilityToResume', 'Impossibility to resume')}
-            </button>
+            </SbButton>
           </div>
         </Modal>
       )}
@@ -22705,8 +22641,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setStopMatchTeamSelect(null)}
           width={400}
         >
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ marginBottom: '12px', color: 'var(--muted)' }}>
+          <div style={{ padding: '4px 0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="text-sm text-stone-600">
               {t('scoreboard.stopMatch.selectTeamPrompt', 'Which team is forfeiting?')}
             </div>
             <button
@@ -22757,7 +22693,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setStopMatchConfirm(null)}
           width={500}
         >
-          <div style={{ padding: '20px' }}>
+          <div style={{ padding: '4px 0' }}>
             {stopMatchConfirm.type === 'forfeit' ? (
               <>
                 <div style={{ marginBottom: '16px', fontSize: '16px' }}>
@@ -22781,10 +22717,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.stopMatch.addRemarksPrompt', 'Please record remarks explaining the match stoppage.')}
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button className="secondary" onClick={() => setStopMatchConfirm(null)}>
+              <SbButton variant="secondary" onClick={() => setStopMatchConfirm(null)}>
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="danger-soft"
                 onClick={() => {
                   // Move to remarks step
                   setStopMatchRemarksStep({
@@ -22794,10 +22730,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setStopMatchConfirm(null)
                   setShowRemarks(true) // Open the existing remarks modal
                 }}
-                style={{ background: '#ef4444', color: '#fff', border: 'none' }}
               >
                 {t('scoreboard.stopMatch.continueToRemarks', 'Continue to Remarks')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -22811,7 +22746,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setStopMatchRemarksStep(null)}
           width={400}
         >
-          <div style={{ padding: '20px' }}>
+          <div style={{ padding: '4px 0' }}>
             <div style={{ marginBottom: '16px', fontSize: '16px' }}>
               {stopMatchRemarksStep.type === 'forfeit'
                 ? t('scoreboard.stopMatch.finalConfirmForfeit', 'End match with {{winner}} as winner?', {
@@ -22822,15 +22757,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 : t('scoreboard.stopMatch.finalConfirmImpossibility', 'End match without a winner?')}
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button className="secondary" onClick={() => setStopMatchRemarksStep(null)}>
+              <SbButton variant="secondary" onClick={() => setStopMatchRemarksStep(null)}>
                 {t('common.cancel', 'Cancel')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="danger-soft"
                 onClick={completeStopMatchFlow}
-                style={{ background: '#ef4444', color: '#fff', border: 'none' }}
               >
                 {t('scoreboard.stopMatch.endMatch', 'End Match')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -22844,15 +22778,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setShowSanctions(false)}
           width={1000}
         >
-          <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <div style={{ padding: '4px 0' }}>
             <section className="panel">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', overflowX: 'auto' }}>
                 {/* Left half: Sanctions */}
                 <div>
-                  <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.sanctions')}</h4>
+                  <SbSection as="h4" title={t('matchEnd.sanctions')} className="mb-3" />
                   {/* Improper Request Row */}
                   <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '12px', minWidth: '100px' }}>Improper Request:</div>
+                    <div style={{ fontWeight: 600, fontSize: '12px', minWidth: '100px' }}>Improper request:</div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       {['A', 'B'].map(team => {
                         const teamKey = team === 'A' ? teamAKey : teamBKey
@@ -22990,7 +22924,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {/* Right half: Results */}
                 <div>
-                  <h4 style={{ marginBottom: '16px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.results')}</h4>
+                  <SbSection as="h4" title={t('matchEnd.results')} className="mb-3" />
                   {(() => {
                     // Get current left and right teams
                     const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
@@ -23190,21 +23124,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   <img src={homeCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
                                 </div>
                               ) : (
-                                <button
+                                <SbButton variant="secondary"
                                   onClick={() => setPostMatchSignature('home-captain')}
-                                  style={{
-                                    width: '100%',
-                                    padding: '8px',
-                                    fontSize: '9px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    cursor: 'pointer'
-                                  }}
+                                  style={{ width: '100%' }}
                                 >
                                   {t('scoreboard.sign')}
-                                </button>
+                                </SbButton>
                               )}
                             </div>
                             <div style={{ flex: 1 }}>
@@ -23216,21 +23141,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   <img src={awayCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
                                 </div>
                               ) : (
-                                <button
+                                <SbButton variant="secondary"
                                   onClick={() => setPostMatchSignature('away-captain')}
-                                  style={{
-                                    width: '100%',
-                                    padding: '8px',
-                                    fontSize: '9px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    cursor: 'pointer'
-                                  }}
+                                  style={{ width: '100%' }}
                                 >
                                   {t('scoreboard.sign')}
-                                </button>
+                                </SbButton>
                               )}
                             </div>
                           </div>
@@ -23355,7 +23271,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {/* Remarks section */}
               {data?.match?.remarks && (
                 <div style={{ marginTop: '24px' }}>
-                  <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>{t('matchEnd.remarks')}</h4>
+                  <SbSection as="h4" title={t('matchEnd.remarks')} className="mb-3" />
                   <div style={{
                     background: 'var(--panel-2)',
                     border: '1px solid var(--border)',
@@ -23383,7 +23299,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={cancelTimeout}
           width={400}
         >
-          <div style={{ textAlign: 'center', padding: '24px', fontSize: '16px' }}>
+          <div style={{ textAlign: 'center', padding: '4px 0', fontSize: '16px' }}>
             {/* Display current score - requesting team on left */}
             {(() => {
               const requestingTeamData = timeoutModal.team === 'home' ? data?.homeTeam : data?.awayTeam
@@ -23422,16 +23338,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
               )
             })()}
-            <p style={{ marginBottom: '24px', color: 'var(--muted)', fontSize: '16px' }}>
-              Confirm {(timeoutsUsed[timeoutModal.team] || 0) === 1 && <><span style={{ color: '#ef4444', fontWeight: 700 }}>2nd</span>{' '}</>}time-out request?
+            <p className="text-sm text-stone-600" style={{ marginBottom: '20px' }}>
+              Confirm {(timeoutsUsed[timeoutModal.team] || 0) === 1 && <><span className="font-bold text-red-700">2nd</span>{' '}</>}time-out request?
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button onClick={confirmTimeout} style={{ fontSize: '16px' }}>
+              <SbButton variant="positive" onClick={confirmTimeout}>
                 Confirm time-out
-              </button>
-              <button className="secondary" onClick={cancelTimeout} style={{ fontSize: '16px' }}>
+              </SbButton>
+              <SbButton onClick={cancelTimeout}>
                 Cancel
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -23570,13 +23486,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={menuStyle} className="modal-wrapper-roll-down">
               <div
                 data-player-action-menu
+                className={SB_POPOVER}
                 style={{
-                  background: 'var(--panel)',
-                  border: '2px solid var(--border)',
-                  borderRadius: '8px',
                   padding: '8px',
                   minWidth: '140px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
@@ -23603,9 +23516,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '8px 12px',
                         fontSize: '12px',
                         fontWeight: 600,
-                        background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                        color: '#000',
-                        border: '1px solid rgba(0, 0, 0, 0.2)',
+                        background: '#059669',
+                        color: '#fff',
+                        border: '1px solid #059669',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         textAlign: 'left',
@@ -23617,11 +23530,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         width: '100%'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #4ade80, #22c55e)'
+                        e.currentTarget.style.background = '#047857'
                         e.currentTarget.style.transform = 'scale(1.02)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)'
+                        e.currentTarget.style.background = '#059669'
                         e.currentTarget.style.transform = 'scale(1)'
                       }}
                     >
@@ -23641,21 +23554,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               padding: '6px 10px',
                               fontSize: '12px',
                               fontWeight: 700,
-                              background: 'rgba(34, 197, 94, 0.2)',
-                              color: '#22c55e',
-                              border: '1px solid rgba(34, 197, 94, 0.4)',
+                              background: '#ecfdf5',
+                              color: '#047857',
+                              border: '1px solid #a7f3d0',
                               borderRadius: '4px',
                               cursor: 'pointer',
                               transition: 'all 0.2s',
                               minWidth: '40px'
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.4)'
-                              e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)'
+                              e.currentTarget.style.background = '#d1fae5'
+                              e.currentTarget.style.borderColor = '#6ee7b7'
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
-                              e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)'
+                              e.currentTarget.style.background = '#ecfdf5'
+                              e.currentTarget.style.borderColor = '#a7f3d0'
                             }}
                           >
                             {sub.number}
@@ -23882,7 +23795,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }
                         }}
                       >
-                        Libero Out
+                        Libero out
                       </button>
                       {/* Exchange Libero button - only if 2 liberos */}
                       {liberos.length >= 2 && (
@@ -23922,7 +23835,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }
                           }}
                         >
-                          Exchange Libero
+                          Exchange libero
                         </button>
                       )}
                       {/* Unable to play - expandable */}
@@ -23933,9 +23846,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '8px 12px',
                             fontSize: '12px',
                             fontWeight: 600,
-                            background: '#ef4444',
-                            color: '#fff',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            background: '#fef2f2',
+                            color: '#b91c1c',
+                            border: '1px solid #fecaca',
                             borderRadius: '6px',
                             cursor: 'pointer',
                             textAlign: 'left',
@@ -23947,11 +23860,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             width: '100%'
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#dc2626'
+                            e.currentTarget.style.background = '#fee2e2'
                             e.currentTarget.style.transform = 'scale(1.02)'
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#ef4444'
+                            e.currentTarget.style.background = '#fef2f2'
                             e.currentTarget.style.transform = 'scale(1)'
                           }}
                         >
@@ -24012,9 +23925,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 padding: '6px 10px',
                                 fontSize: '11px',
                                 fontWeight: 600,
-                                background: 'rgba(239, 68, 68,1)',
-                                color: '#ffff',
-                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                background: '#fef2f2',
+                                color: '#b91c1c',
+                                border: '1px solid #fecaca',
                                 borderRadius: '4px',
                                 cursor: 'pointer',
                                 display: 'flex',
@@ -24167,9 +24080,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: '#dc2626',
-                      color: '#fff',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -24181,11 +24094,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       width: '100%'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#ef4444'
+                      e.currentTarget.style.background = '#fee2e2'
                       e.currentTarget.style.transform = 'scale(1.02)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#dc2626'
+                      e.currentTarget.style.background = '#fef2f2'
                       e.currentTarget.style.transform = 'scale(1)'
                     }}
                   >
@@ -24301,13 +24214,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-substitution-dropdown
+                className={SB_POPOVER}
                 style={{
-                  background: 'var(--panel)',
-                  border: '2px solid var(--border)',
-                  borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
@@ -24388,9 +24298,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '6px 8px',
                       fontSize: '11px',
                       fontWeight: 600,
-                      background: 'rgba(239, 68, 68, 0.15)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textAlign: 'center',
@@ -24398,15 +24308,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       width: '100%'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'
-                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.5)'
+                      e.currentTarget.style.background = '#fee2e2'
+                      e.currentTarget.style.borderColor = '#fca5a5'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'
-                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'
+                      e.currentTarget.style.background = '#fef2f2'
+                      e.currentTarget.style.borderColor = '#fecaca'
                     }}
                   >
-                    Cancel Sanction
+                    Cancel sanction
                   </button>
                 )}
               </div>
@@ -24630,7 +24540,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: '#000', textAlign: 'center', borderBottom: '1px solid rgba(0, 0, 0, 0.1)', paddingBottom: '8px' }}>
-                  Libero In
+                  Libero in
                 </div>
                 {eligiblePlayers.length === 0 ? (
                   <div style={{ padding: '8px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
@@ -24741,13 +24651,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={dropdownStyle} className="modal-wrapper-roll-up">
               <div
                 data-sanction-dropdown
+                className={SB_POPOVER}
                 style={{
-                  background: 'var(--panel)',
-                  border: '2px solid var(--border)',
-                  borderRadius: '8px',
                   padding: '8px',
                   minWidth: '160px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
@@ -25030,13 +24937,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={menuStyle} className="modal-wrapper-roll-down">
               <div
                 data-bench-player-action-menu
+                className={SB_POPOVER}
                 style={{
-                  background: 'var(--panel)',
-                  border: '2px solid var(--border)',
-                  borderRadius: '8px',
                   padding: '8px',
                   minWidth: '140px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
@@ -25067,9 +24971,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: canSubstitute ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'var(--panel-2)',
-                      color: canSubstitute ? '#000' : 'var(--muted)',
-                      border: canSubstitute ? '1px solid rgba(0, 0, 0, 0.2)' : '1px solid var(--border)',
+                      background: canSubstitute ? '#059669' : 'var(--panel-2)',
+                      color: canSubstitute ? '#fff' : 'var(--muted)',
+                      border: canSubstitute ? '1px solid #059669' : '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: canSubstitute ? 'pointer' : 'not-allowed',
                       textAlign: 'left',
@@ -25083,13 +24987,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                     onMouseEnter={(e) => {
                       if (canSubstitute) {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #4ade80, #22c55e)'
+                        e.currentTarget.style.background = '#047857'
                         e.currentTarget.style.transform = 'scale(1.02)'
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (canSubstitute) {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)'
+                        e.currentTarget.style.background = '#059669'
                         e.currentTarget.style.transform = 'scale(1)'
                       }
                     }}
@@ -25107,9 +25011,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '8px 12px',
                         fontSize: '12px',
                         fontWeight: 600,
-                        background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                        color: '#000',
-                        border: '1px solid rgba(0, 0, 0, 0.2)',
+                        background: '#059669',
+                        color: '#fff',
+                        border: '1px solid #059669',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         textAlign: 'left',
@@ -25121,11 +25025,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         width: '100%'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #4ade80, #22c55e)'
+                        e.currentTarget.style.background = '#047857'
                         e.currentTarget.style.transform = 'scale(1.02)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e, #16a34a)'
+                        e.currentTarget.style.background = '#059669'
                         e.currentTarget.style.transform = 'scale(1)'
                       }}
                     >
@@ -25152,21 +25056,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               padding: '6px 10px',
                               fontSize: '12px',
                               fontWeight: 700,
-                              background: 'rgba(34, 197, 94, 0.2)',
-                              color: '#22c55e',
-                              border: '1px solid rgba(34, 197, 94, 0.4)',
+                              background: '#ecfdf5',
+                              color: '#047857',
+                              border: '1px solid #a7f3d0',
                               borderRadius: '4px',
                               cursor: 'pointer',
                               transition: 'all 0.2s',
                               minWidth: '40px'
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.4)'
-                              e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)'
+                              e.currentTarget.style.background = '#d1fae5'
+                              e.currentTarget.style.borderColor = '#6ee7b7'
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
-                              e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)'
+                              e.currentTarget.style.background = '#ecfdf5'
+                              e.currentTarget.style.borderColor = '#a7f3d0'
                             }}
                           >
                             {cp.number}
@@ -25366,9 +25270,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '8px 12px',
                     fontSize: '12px',
                     fontWeight: 600,
-                    background: '#dc2626',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    background: '#fef2f2',
+                    color: '#b91c1c',
+                    border: '1px solid #fecaca',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     textAlign: 'left',
@@ -25380,11 +25284,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     width: '100%'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#ef4444'
+                    e.currentTarget.style.background = '#fee2e2'
                     e.currentTarget.style.transform = 'scale(1.02)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#dc2626'
+                    e.currentTarget.style.background = '#fef2f2'
                     e.currentTarget.style.transform = 'scale(1)'
                   }}
                 >
@@ -25460,13 +25364,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={dropdownStyle} className="modal-wrapper-roll-up">
               <div
                 data-injury-dropdown
+                className={SB_POPOVER}
                 style={{
-                  background: 'var(--panel)',
-                  border: '2px solid var(--border)',
-                  borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
                 }}
@@ -25483,9 +25384,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     padding: '6px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: '#f87171',
-                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    background: '#fef2f2',
+                    color: '#b91c1c',
+                    border: '1px solid #fecaca',
                     borderRadius: '4px',
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -25493,12 +25394,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)'
-                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)'
+                    e.currentTarget.style.background = '#fee2e2'
+                    e.currentTarget.style.borderColor = '#fca5a5'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'
-                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)'
+                    e.currentTarget.style.background = '#fef2f2'
+                    e.currentTarget.style.borderColor = '#fecaca'
                   }}
                 >
                   Substitute
@@ -25703,42 +25604,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </div>
             ))}
             <div style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'flex-end' }}>
-              <button
+              <SbButton variant="secondary"
                 onClick={() => {
                   setKeyBindings(defaultKeyBindings)
                   localStorage.setItem('keyBindings', JSON.stringify(defaultKeyBindings))
                 }}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.keybindings.resetToDefaults', 'Reset to Defaults')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="positive"
                 onClick={() => {
                   setKeybindingsModalOpen(false)
                   setEditingKey(null)
                 }}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.keybindings.done', 'Done')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -25753,7 +25634,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={320}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <div style={{ marginBottom: '16px', color: '#f59e0b' }}><WarningIcon size={48} /></div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
               {t('scoreboard.confirm.rallyStartedQuickly')}
@@ -25762,36 +25643,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.confirm.areYouSureRallyStarted')}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={accidentalRallyConfirmModal.onConfirm}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.confirm.yesStartRally')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={() => setAccidentalRallyConfirmModal(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('common.cancel')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -25806,7 +25667,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={320}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <div style={{ marginBottom: '16px', color: '#f59e0b' }}><WarningIcon size={48} /></div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
               {t('scoreboard.confirm.pointAwardedQuickly')}
@@ -25815,36 +25676,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.confirm.areYouSureAwardPoint', { team: accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={accidentalPointConfirmModal.onConfirm}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.confirm.yesAwardPoint')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={() => setAccidentalPointConfirmModal(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('common.cancel')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -25859,7 +25700,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={320}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <div style={{ marginBottom: '16px', color: 'var(--muted)' }}><TimerIcon size={48} /></div>
             <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
               {t('scoreboard.confirm.timeoutAlreadyTaken', 'Timeout already taken')}
@@ -25871,40 +25712,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={() => {
                   const team = duplicateTimeoutConfirm.team
                   setDuplicateTimeoutConfirm(null)
                   setTimeoutModal({ team, countdown: 30, started: false })
                 }}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('scoreboard.confirm.yesTimeout', 'Yes, Timeout')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={() => setDuplicateTimeoutConfirm(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 {t('common.cancel')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -25962,36 +25783,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {sanctionConfirmModal.sanctionType === 'disqualification' && 'Disqualification'}
               </p>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="positive"
                   onClick={confirmPlayerSanction}
-                  style={{
-                    padding: '8px 16px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: 'var(--accent)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Confirm
-                </button>
-                <button
+                </SbButton>
+                <SbButton variant="secondary"
                   onClick={cancelSanctionConfirm}
-                  style={{
-                    padding: '8px 16px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
-                </button>
+                </SbButton>
               </div>
             </div>
           </Modal>
@@ -26095,36 +25896,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="positive"
                   onClick={confirmSubstitution}
-                  style={{
-                    padding: '14px 29px',
-                    fontSize: '17px',
-                    fontWeight: 600,
-                    background: 'var(--accent)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '10px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Yes
-                </button>
-                <button
+                </SbButton>
+                <SbButton variant="secondary"
                   onClick={cancelSubstitutionConfirm}
-                  style={{
-                    padding: '14px 29px',
-                    fontSize: '17px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '10px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
-                </button>
+                </SbButton>
               </div>
             </div>
           </Modal>
@@ -26322,36 +26103,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Buttons */}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="positive"
                   onClick={confirmLibero}
-                  style={{
-                    padding: '12px 28px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: '#22c55e',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Confirm
-                </button>
-                <button
+                </SbButton>
+                <SbButton variant="secondary"
                   onClick={cancelLiberoConfirm}
-                  style={{
-                    padding: '12px 28px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: '#f3f4f6',
-                    color: '#374151',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
-                </button>
+                </SbButton>
               </div>
             </div>
           </div>
@@ -26550,36 +26311,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Buttons */}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="positive"
                   onClick={confirmLiberoReentry}
-                  style={{
-                    padding: '12px 28px',
-                    fontSize: '15px',
-                    fontWeight: 600,
-                    background: '#22c55e',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Confirm
-                </button>
-                <button
+                </SbButton>
+                <SbButton variant="secondary"
                   onClick={cancelLiberoReentry}
-                  style={{
-                    padding: '12px 28px',
-                    fontSize: '15px',
-                    fontWeight: 600,
-                    background: '#f3f4f6',
-                    color: '#374151',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
-                </button>
+                </SbButton>
               </div>
             </div>
           </div>
@@ -26606,62 +26347,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             width={480}
             hideCloseButton={true}
           >
-            <div style={{ padding: '29px' }}>
-              <p style={{ marginBottom: '29px', fontSize: '17px', color: 'var(--muted)' }}>
+            <div style={{ padding: '4px 0' }}>
+              <p className="mb-4 text-sm text-stone-600">
                 Select a player to re-designate as Libero:
               </p>
               {availablePlayers.length === 0 ? (
-                <p style={{ textAlign: 'center', color: 'var(--muted)', marginBottom: '29px', fontSize: '17px' }}>
+                <p className="mb-4 text-center text-sm text-stone-500">
                   No available players for re-designation
                 </p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '29px', maxHeight: '360px', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', maxHeight: '360px', overflowY: 'auto' }}>
                   {availablePlayers.map(player => (
-                    <button
+                    <SbButton variant="secondary"
                       key={player.id}
                       onClick={() => confirmLiberoRedesignation(player.number)}
-                      style={{
-                        padding: '14px',
-                        fontSize: '17px',
-                        fontWeight: 600,
-                        background: 'var(--panel-2)',
-                        color: 'var(--text)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '7px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--panel)'
-                        e.currentTarget.style.borderColor = 'var(--border)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--panel-2)'
-                        e.currentTarget.style.borderColor = 'var(--border)'
-                      }}
                     >
                       #{player.number} - {player.lastName || player.name} {player.firstName}
-                    </button>
+                    </SbButton>
                   ))}
                 </div>
               )}
               <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="secondary"
                   onClick={() => setLiberoRedesignationModal(null)}
-                  style={{
-                    padding: '14px 29px',
-                    fontSize: '17px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '10px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
-                </button>
+                </SbButton>
               </div>
             </div>
           </Modal>
@@ -26676,17 +26387,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '16px' }}>
               Reopen Set {reopenSetConfirm.setIndex}? This will delete all subsequent sets and their events.
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={async () => {
                   let reopenIndex = reopenSetConfirm.setIndex
                   let reopenSetId = reopenSetConfirm.setId
                   const matchRecord = await db.matches.get(matchId)
-
                   // A match forfeit is reversed as a whole: reopening any set it
                   // finished or created reopens the set the forfeit happened in
                   if (matchRecord?.forfeitTeam) {
@@ -26699,23 +26409,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       if (forfaitSet) { reopenIndex = forfaitIndex; reopenSetId = forfaitSet.id }
                     }
                   }
-
                   // Reverse a forfeit in this set or later: awarded points, created
                   // sets, forfeit set_end / forfait events, pre-forfeit score
                   await applyForfeitReversal(reopenIndex)
-
                   // Mark the set as not finished (and no longer ended)
                   await db.sets.update(reopenSetId, { finished: false, endTime: null })
                   confirmedSetEndRef.current.delete(reopenIndex)
                   matchEndingRef.current = false
-
                   // Remove what ending the set wrote: its set_end (and a forfait) event
                   const allEventsForReopen = await db.events.where('matchId').equals(matchId).toArray()
                   const removedEvents = allEventsForReopen.filter(e =>
                     (e.setIndex === reopenIndex && (e.type === 'set_end' || e.type === 'forfait' || e.type === 'match_stopped')) ||
                     e.setIndex > reopenIndex
                   )
-
                   // Delete all subsequent sets and their events (with their
                   // queued sync jobs and side effects such as remark lines)
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
@@ -26724,7 +26430,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   for (const s of setsToDelete) {
                     await db.sets.delete(s.id)
                   }
-
                   // The match is being played on: back to 'live' from any finished
                   // state (the scoreboard writes 'ended', MatchEnd 'approved'/'final').
                   // The result changes, so post-match signatures and forfeit/stop
@@ -26740,7 +26445,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ...clearedPostMatchSignatures()
                     })
                   }
-
                   if (matchRecord && !matchRecord.test && matchRecord.seed_key) {
                     await db.sync_queue.add({
                       resource: 'set',
@@ -26759,7 +26463,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       })
                     }
                   }
-
                   logManualChangeWithRemark('Set', 'Reopen', `Set ${reopenIndex} finished`, `Set ${reopenIndex} reopened`,
                     `Reopened set ${reopenIndex} (later sets deleted: ${setsToDelete.length})`)
                   syncToReferee()
@@ -26767,34 +26470,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   notifyScoresheetUpdate('reopen_set')
                   setReopenSetConfirm(null)
                 }}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 Yes, Reopen
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={() => setReopenSetConfirm(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 Cancel
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -26857,10 +26540,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               onClick={() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) }}
             />
             <div style={menuStyle}>
-              <div style={{
-                background: 'var(--panel)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
+              <div className={SB_POPOVER} style={{
                 padding: '8px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -26961,9 +26641,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: '#ef4444',
-                      color: '#fff',
-                      border: '1px solid var(--border)',
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -26975,11 +26655,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       width: '100%'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#dc2626'
+                      e.currentTarget.style.background = '#fee2e2'
                       e.currentTarget.style.transform = 'scale(1.02)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#ef4444'
+                      e.currentTarget.style.background = '#fef2f2'
                       e.currentTarget.style.transform = 'scale(1)'
                     }}
                   >
@@ -27034,9 +26714,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: '6px 10px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          background: 'rgba(239, 68, 68,1)',
-                          color: '#ffff',
-                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          background: '#fef2f2',
+                          color: '#b91c1c',
+                          border: '1px solid #fecaca',
                           borderRadius: '4px',
                           cursor: 'pointer',
                           display: 'flex',
@@ -27192,39 +26872,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     The libero is now unable to play. Do you want to redesignate a new libero now?
                   </div>
                   <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
+                    <SbButton variant="dark"
                       onClick={() => {
                         checkLiberoRedesignation(liberoUnableModal.team, liberoUnableModal.liberoNumber, liberoUnableModal.liberoType, liberoUnableModal.reason)
                         setLiberoUnableModal(null)
                       }}
-                      style={{
-                        padding: '12px 28px',
-                        fontSize: '15px',
-                        fontWeight: 600,
-                        background: '#3b82f6',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
                     >
                       Yes, Redesignate
-                    </button>
-                    <button
+                    </SbButton>
+                    <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
-                      style={{
-                        padding: '12px 28px',
-                        fontSize: '15px',
-                        fontWeight: 600,
-                        background: '#f3f4f6',
-                        color: '#374151',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
                     >
                       No, Later
-                    </button>
+                    </SbButton>
                   </div>
                 </>
               ) : !reasonSelected ? (
@@ -27290,21 +26950,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </button>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <button
+                    <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
-                      style={{
-                        padding: '10px 24px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        background: '#f3f4f6',
-                        color: '#374151',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
                     >
                       Cancel
-                    </button>
+                    </SbButton>
                   </div>
                 </>
               ) : (
@@ -27326,36 +26976,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })()}
                   </div>
                   <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                    <button
+                    <SbButton variant="danger-soft"
                       onClick={confirmLiberoUnable}
-                      style={{
-                        padding: '12px 28px',
-                        fontSize: '15px',
-                        fontWeight: 600,
-                        background: '#ef4444',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
                     >
                       Confirm
-                    </button>
-                    <button
+                    </SbButton>
+                    <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
-                      style={{
-                        padding: '12px 28px',
-                        fontSize: '15px',
-                        fontWeight: 600,
-                        background: '#f3f4f6',
-                        color: '#374151',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '8px',
-                        cursor: 'pointer'
-                      }}
                     >
                       Cancel
-                    </button>
+                    </SbButton>
                   </div>
                 </>
               )}
@@ -27374,12 +27004,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={480}
           hideCloseButton={true}
         >
-          <div style={{ padding: '29px', textAlign: 'center' }}>
-            <p style={{ marginBottom: '29px', fontSize: '19px' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
+            <p className="text-base font-medium text-stone-800" style={{ marginBottom: '8px' }}>
               Remember to insert the libero if available
             </p>
             {liberoReminder.teams.length > 1 && (
-              <p style={{ marginBottom: '19px', fontSize: '17px', color: 'var(--muted)' }}>
+              <p className="text-sm text-stone-500" style={{ marginBottom: '20px' }}>
                 {liberoReminder.teams.map((team, idx) => {
                   const teamName = team === 'home'
                     ? (data?.homeTeam?.name || t('common.home'))
@@ -27393,31 +27023,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 })}
               </p>
             )}
-            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
-              <button
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
+              <SbButton variant="secondary"
                 onClick={() => {
                   setLiberoReminder(null)
                 }}
-                style={{
-                  padding: '14px 29px',
-                  fontSize: '17px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '10px',
-                  cursor: 'pointer'
-                }}
               >
                 Back
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="positive"
                 onClick={async () => {
                   setLiberoReminder(null)
-
                   // Show set start time confirmation
                   let defaultTime = roundToMinute(new Date().toISOString())
-
                   if (data?.set?.index === 1) {
                     // Use scheduled time from match
                     if (data?.match?.scheduledAt) {
@@ -27434,22 +27052,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       defaultTime = prevEndTime.toISOString()
                     }
                   }
-
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
-                }}
-                style={{
-                  padding: '14px 29px',
-                  fontSize: '17px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '10px',
-                  cursor: 'pointer'
                 }}
               >
                 Continue
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -27537,7 +27144,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
           hideCloseButton={true}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '16px' }}>
               Apply {sanctionConfirm.type === 'improper_request' ? 'Improper Request' :
                 sanctionConfirm.type === 'delay_warning' ? 'Delay Warning' :
@@ -27552,36 +27159,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </p>
             )}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={confirmSanction}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 Yes
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={() => setSanctionConfirm(null)}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 No
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -27843,7 +27430,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           hideCloseButton={true}
           zIndex={2000}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
               {t('scoreboard.modals.teamsMustSwitchCourts')}
             </p>
@@ -27855,23 +27442,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <span style={{ background: data?.awayTeam?.color || '#3b82f6', color: isBrightColor(data?.awayTeam?.color || '#3b82f6') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={confirmCourtSwitch}
-                style={{
-                  flex: '1 1 0',
-                  padding: '12px 32px',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={{ flex: '1 1 0' }}
               >
                 {t('scoreboard.buttons.switchCourts')}
-              </button>
-              <button
+              </SbButton>
+              <SbButton
+                className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
                 onClick={() => {
                   // Find the last point event to open decision change modal
                   if (data?.events && data?.set) {
@@ -27887,20 +27465,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // Close court switch modal
                   setCourtSwitchModal(null)
                 }}
-                style={{
-                  flex: '1 1 0',
-                  padding: '12px 32px',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  background: '#facc15',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={{ flex: '1 1 0' }}
               >
                 {t('scoreboard.buttons.decisionChange')}
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -27927,7 +27495,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             width={500}
             hideCloseButton={true}
           >
-            <div style={{ padding: '24px', textAlign: 'center' }}>
+            <div style={{ padding: '4px 0', textAlign: 'center' }}>
               <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
                 Player #{playerOut} ({reasonText})
               </p>
@@ -27946,10 +27514,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '16px 24px',
                         fontSize: '16px',
                         fontWeight: 600,
-                        background: '#facc15',
-                        color: '#000',
-                        border: 'none',
-                        borderRadius: '8px',
+                        background: '#fffbeb',
+                        color: '#78350f',
+                        border: '1px solid #fcd34d',
+                        borderRadius: '12px',
                         cursor: 'pointer',
                         textAlign: 'left'
                       }}
@@ -27961,19 +27529,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.modals.substituteWithEligible')} (excluding liberos, expelled/disqualified players, and player #{playerOut}). Player #{playerOut} cannot take part in the game anymore.
                       </div>
                     </button>
-                    <button
+                    <SbButton variant="danger-soft"
                       onClick={() => handleExceptionalSubstitutionChoice('forfait')}
-                      style={{
-                        padding: '16px 24px',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        background: '#ef4444',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        textAlign: 'left'
-                      }}
                     >
                       <div style={{ fontWeight: 700, marginBottom: '4px' }}>
                         {forfaitScopeNow === 'match' ? 'Forfait (match)' : 'Forfait (set)'}
@@ -27981,7 +27538,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <div style={{ fontSize: '13px', opacity: 0.9 }}>
                         {forfaitText}
                       </div>
-                    </button>
+                    </SbButton>
                   </div>
                 </>
               ) : (
@@ -27992,38 +27549,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)' }}>
                     No eligible players available for exceptional substitution. {forfaitText}
                   </p>
-                  <button
+                  <SbButton variant="danger-soft"
                     onClick={() => handleExceptionalSubstitutionChoice('forfait')}
-                    style={{
-                      padding: '12px 24px',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      background: '#ef4444',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }}
                   >
                     {forfaitScopeNow === 'match' ? 'Confirm Forfait (match)' : 'Confirm Forfait (set)'}
-                  </button>
+                  </SbButton>
                 </div>
               )}
-              <button
+              <SbButton variant="secondary"
                 onClick={() => handleExceptionalSubstitutionChoice('cancel')}
-                style={{
-                  marginTop: '16px',
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                style={{ marginTop: '16px' }}
               >
                 Cancel (correct the sanction or injury first)
-              </button>
+              </SbButton>
             </div>
           </Modal>
         )
@@ -28046,7 +27584,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             hideCloseButton={true}
             zIndex={2000}
           >
-            <div style={{ padding: '16px', textAlign: 'center' }}>
+            <div style={{ padding: '4px 0', textAlign: 'center' }}>
               {/* Team badge */}
               <div style={{
                 display: 'inline-flex',
@@ -28100,27 +27638,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {availableSubs.map(sub => (
-                  <button
+                  <SbButton variant="positive"
                     key={sub.number}
                     onClick={() => handleSanctionSubstitution(sub.number)}
-                    style={{
-                      padding: '14px 16px',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      background: 'var(--accent)',
-                      color: '#000',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px'
-                    }}
                   >
                     <span style={{ fontSize: '18px', fontWeight: 700 }}>#{sub.number}</span>
                     {sub.name && <span style={{ opacity: 0.8 }}>{sub.name}</span>}
-                  </button>
+                  </SbButton>
                 ))}
               </div>
 
@@ -28142,7 +27666,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     cursor: 'pointer'
                   }}
                 >
-                  Declare Forfeit Instead
+                  Declare forfeit instead
                 </button>
               </div>
             </div>
@@ -28179,7 +27703,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             width={500}
             hideCloseButton={true}
           >
-            <div style={{ padding: '24px' }}>
+            <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
                 Configure teams and service for Set 5.
               </p>
@@ -28262,65 +27786,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {/* Switch Teams Button */}
                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
-                  <button
+                  <SbButton variant="secondary"
                     onClick={() => {
                       setSet5SelectedLeftTeam(set5SelectedLeftTeam === 'A' ? 'B' : 'A')
                     }}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      background: 'var(--panel)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
+                    style={{ whiteSpace: 'nowrap' }}
                   >
-                    Switch Teams
-                  </button>
+                    Switch teams
+                  </SbButton>
                 </div>
 
                 {/* Switch Serve Button */}
                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '12px' }}>
-                  <button
+                  <SbButton variant="secondary"
                     onClick={() => {
                       setSet5SelectedFirstServe(set5SelectedFirstServe === 'A' ? 'B' : 'A')
                     }}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      background: 'var(--panel)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
+                    style={{ whiteSpace: 'nowrap' }}
                   >
-                    Switch Serve
-                  </button>
+                    Switch serve
+                  </SbButton>
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="positive"
                   onClick={() => confirmSet5SideService(set5SelectedLeftTeam, set5SelectedFirstServe)}
-                  style={{
-                    padding: '12px 32px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: 'var(--accent)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Confirm
-                </button>
+                </SbButton>
               </div>
             </div>
           </Modal>
@@ -28473,21 +27967,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* OK Button */}
               <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <button
+                <SbButton variant="positive"
                   onClick={() => setLiberoRotationModal(null)}
-                  style={{
-                    padding: '12px 40px',
-                    fontSize: '16px',
-                    fontWeight: 600,
-                    background: '#22c55e',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   OK
-                </button>
+                </SbButton>
               </div>
             </div>
           </div>
@@ -28501,7 +27985,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={cancelUndo}
           width={400}
         >
-          <div style={{ padding: '24px', textAlign: 'center' }}>
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '16px', fontSize: '16px' }}>
               Do you want to undo action?
             </p>
@@ -28509,36 +27993,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {undoConfirm.description}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
+              <SbButton variant="positive"
                 onClick={handleUndo}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--accent)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 Yes
-              </button>
-              <button
+              </SbButton>
+              <SbButton variant="secondary"
                 onClick={cancelUndo}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
               >
                 Cancel
-              </button>
+              </SbButton>
             </div>
           </div>
         </Modal>
@@ -28604,7 +28068,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             onClose={cancelReplayRally}
             width={500}
           >
-            <div style={{ padding: '24px' }}>
+            <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
                 Last point was assigned to <strong><span style={{ background: oldTeamColor, color: isBrightColor(oldTeamColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
               </p>
@@ -28708,36 +28172,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Buttons */}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
+                <SbButton
+                  className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
                   onClick={handleDecisionChange}
-                  style={{
-                    padding: '12px 32px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: '#eab308',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Confirm
-                </button>
-                <button
+                </SbButton>
+                <SbButton variant="secondary"
                   onClick={cancelReplayRally}
-                  style={{
-                    padding: '12px 32px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: 'var(--panel)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
-                </button>
+                </SbButton>
               </div>
             </div>
           </Modal>
@@ -28753,7 +28198,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setPostMatchSignature(null)}
           width={500}
         >
-          <div style={{ padding: '24px' }}>
+          <div style={{ padding: '4px 0' }}>
             <SignaturePad
               onSave={async (signatureDataUrl) => {
                 const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
@@ -29954,8 +29399,8 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
       width={400}
       hideCloseButton={true}
     >
-      <div style={{ padding: '24px', textAlign: 'center' }}>
-        <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+      <div style={{ padding: '4px 0', textAlign: 'center' }}>
+        <p className="text-sm text-stone-600" style={{ marginBottom: '16px' }}>
           {t('scoreboard.confirmStartTimeForSet', { set: t('common.setIndex', { index: setIndex }) })}
         </p>
         <div
@@ -29970,36 +29415,12 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
           <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
         </div>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <button
-            onClick={handleConfirm}
-            style={{
-              padding: '12px 24px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
+          <SbButton variant="positive" onClick={handleConfirm}>
             Confirm
-          </button>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: '12px 24px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
+          </SbButton>
+          <SbButton onClick={onCancel}>
             Cancel
-          </button>
+          </SbButton>
         </div>
       </div>
     </Modal>
@@ -30014,7 +29435,7 @@ function ToSubDetailsModal({ type, side, timeoutDetails, substitutionDetails, te
       onClose={onClose}
       width={400}
     >
-      <div style={{ padding: '20px', maxHeight: '80vh', overflowY: 'auto' }}>
+      <div style={{ padding: '4px 0' }}>
         {type === 'timeout' ? (
           <div>
             {timeoutDetails && timeoutDetails.length > 0 ? (
@@ -30147,7 +29568,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
       width={400}
       hideCloseButton={true}
     >
-      <div style={{ padding: '24px', textAlign: 'center' }}>
+      <div style={{ padding: '4px 0', textAlign: 'center' }}>
         <div className="set-end-readout" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           <span style={{ fontSize: '18px', fontWeight: 700, color: leftColor }}>{leftLabel}</span>
           <span style={{ fontSize: '36px', fontWeight: 700 }}>{leftScore} : {rightScore}</span>
@@ -30165,7 +29586,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
         }}>
           {winnerTeamName} ({winnerLabel}) {isMatchEnd ? 'won the match' : 'won the set'}
         </p>
-        <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+        <p className="text-sm text-stone-600" style={{ marginBottom: '12px' }}>
           Confirm the end time:
         </p>
         <div
@@ -30180,40 +29601,18 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
           <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
         </div>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          <button
-            onClick={handleConfirm}
-            disabled={isConfirming}
-            style={{
-              padding: '12px 24px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: isConfirming ? 'var(--muted)' : 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: isConfirming ? 'not-allowed' : 'pointer',
-              opacity: isConfirming ? 0.7 : 1
-            }}
-          >
+          <SbButton variant="positive" onClick={handleConfirm} disabled={isConfirming}>
             {isConfirming ? 'Confirming...' : 'Confirm'}
-          </button>
-          <button
+          </SbButton>
+          {/* Amber = a decision is pending (kit semantic hue); same yellow family
+              as the frozen Decision Change rally button, never brand red. */}
+          <SbButton
             onClick={onDecisionChange}
             disabled={isConfirming}
-            style={{
-              padding: '12px 24px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: '#eab308',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: isConfirming ? 'not-allowed' : 'pointer',
-              opacity: isConfirming ? 0.7 : 1
-            }}
+            className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
           >
-            Decision Change
-          </button>
+            Decision change
+          </SbButton>
         </div>
       </div>
     </Modal>
@@ -30268,10 +29667,10 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
   }
 
   const inputStyle = {
-    background: 'var(--panel-2)',
-    border: '1px solid var(--border)',
-    borderRadius: '6px',
-    color: 'var(--text)',
+    background: '#fff',
+    border: '1px solid #d6d3d1',
+    borderRadius: '8px',
+    color: '#292524',
     fontSize: '13px',
     outline: 'none'
   }
@@ -30283,30 +29682,18 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
       onClose={onClose}
       width={700}
     >
-      <div style={{ padding: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+      <div style={{ padding: '4px 0', maxHeight: '70vh', overflowY: 'auto' }}>
         {/* Players Section */}
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{t('scoreboard.reopenRoster.players', 'Players')}</h3>
-            <button
-              onClick={addPlayer}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('scoreboard.reopenRoster.addPlayer', '+ Add Player')}
-            </button>
+            <h3 className="m-0 text-sm font-semibold text-stone-800">{t('scoreboard.reopenRoster.players', 'Players')}</h3>
+            <SbButton onClick={addPlayer}>
+              {t('scoreboard.reopenRoster.addPlayer', '+ Add player')}
+            </SbButton>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {editingPlayers.map((player, idx) => (
-              <div key={player.id || `new-${idx}`} style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+              <div key={player.id || `new-${idx}`} className={SB_BLOCK} style={{ padding: '10px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '50px 1fr 1fr 100px', gap: '6px', alignItems: 'center' }}>
                   <input
                     type="number"
@@ -30319,14 +29706,14 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     type="text"
                     value={player.firstName || ''}
                     onChange={(e) => updatePlayer(idx, 'firstName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.firstName', 'First Name')}
+                    placeholder={t('scoreboard.reopenRoster.firstName', 'First name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
                   <input
                     type="text"
                     value={player.lastName || ''}
                     onChange={(e) => updatePlayer(idx, 'lastName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.lastName', 'Last Name')}
+                    placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
                   <input
@@ -30367,9 +29754,9 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                       marginLeft: 'auto',
                       padding: '4px 8px',
                       fontSize: '11px',
-                      background: 'rgba(239,68,68,0.15)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239,68,68,0.3)',
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
                       borderRadius: '4px',
                       cursor: 'pointer'
                     }}
@@ -30385,26 +29772,14 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
         {/* Bench Officials Section */}
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{t('scoreboard.reopenRoster.benchOfficials', 'Bench Officials')}</h3>
-            <button
-              onClick={addBench}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                background: 'var(--accent)',
-                color: '#000',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              {t('scoreboard.reopenRoster.addBenchOfficial', '+ Add Bench Official')}
-            </button>
+            <h3 className="m-0 text-sm font-semibold text-stone-800">{t('scoreboard.reopenRoster.benchOfficials', 'Bench officials')}</h3>
+            <SbButton onClick={addBench}>
+              {t('scoreboard.reopenRoster.addBenchOfficial', '+ Add bench official')}
+            </SbButton>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {editingBench.map((staff, idx) => (
-              <div key={idx} style={{ padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+              <div key={idx} className={SB_BLOCK} style={{ padding: '8px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 100px 36px', gap: '6px', alignItems: 'center' }}>
                   <select
                     value={staff.role || 'Coach'}
@@ -30419,14 +29794,14 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     type="text"
                     value={staff.firstName || ''}
                     onChange={(e) => updateBench(idx, 'firstName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.firstName', 'First Name')}
+                    placeholder={t('scoreboard.reopenRoster.firstName', 'First name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
                   <input
                     type="text"
                     value={staff.lastName || ''}
                     onChange={(e) => updateBench(idx, 'lastName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.lastName', 'Last Name')}
+                    placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
                   <input
@@ -30440,9 +29815,9 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     style={{
                       padding: '4px 8px',
                       fontSize: '14px',
-                      background: 'rgba(239,68,68,0.15)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239,68,68,0.3)',
+                      background: '#fef2f2',
+                      color: '#b91c1c',
+                      border: '1px solid #fecaca',
                       borderRadius: '4px',
                       cursor: 'pointer'
                     }}
@@ -30456,37 +29831,16 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
         </div>
 
         {/* Save / Cancel buttons */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-          >
+        <div className={cn(SB_FOOTER, 'border-t border-stone-200 pt-4')}>
+          <SbButton onClick={onClose}>
             {t('scoreboard.reopenRoster.cancel', 'Cancel')}
-          </button>
-          <button
+          </SbButton>
+          <SbButton
+            variant="positive"
             onClick={() => onSave(teamKey, editingPlayers, editingBench, snapshotPlayers, snapshotBench)}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: 600,
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
           >
-            {t('scoreboard.reopenRoster.save', 'Save Changes')}
-          </button>
+            {t('scoreboard.reopenRoster.save', 'Save changes')}
+          </SbButton>
         </div>
       </div>
     </Modal>
