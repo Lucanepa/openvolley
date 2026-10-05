@@ -226,23 +226,6 @@ export default defineConfig({
             }
           },
           {
-            // Google Fonts (stylesheet + font files) - cache so the display fonts
-            // (Orbitron / Segment7) survive offline. The css2 URL has no extension
-            // so it matches none of the extension-based rules below.
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts',
-              expiration: {
-                maxEntries: 30,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
             // Static assets - cache first
             urlPattern: /\.(?:js|mjs|css|png|jpg|jpeg|svg|gif|webp|woff|woff2)$/,
             handler: 'CacheFirst',
