@@ -185,7 +185,7 @@ List all available leagues across federations (SV, SVRZ).
 
 Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its own Postgres (`DATABASE_URL`). Users stay in `auth.users` with their Supabase UUIDs and bcrypt hashes (`$2a$`/`$2b$`/`$2y$`), so old passwords keep working. Sessions are opaque 32-byte tokens; only `SHA-256(token)` is stored, in `auth.app_sessions`.
 
-**Database.** Run `db/002_app_sessions.sql` as the owner role after `000_prelude.sql` and before `roles.sql`. It is idempotent.
+**Database.** Run `db/002_app_sessions.sql` as the owner role after `000_prelude.sql` and before `roles.sql`. It is idempotent. It stops with a clear error if restored `auth.users` rows have emails that differ only in case, or if an index named `users_email_lower` exists that is not unique on `lower(email)`; sign-up depends on that unique index to detect concurrent duplicates.
 
 **Endpoints** (all `POST /api/auth/<action>`, JSON in, `{data, error:{message, code}}` out):
 
@@ -204,7 +204,13 @@ Sessions last 30 days, slide forward when fewer than 15 days remain, and never l
 
 **Protected routes** call `await auth.requireUser(req, res)` (writes the 401/503 itself) or `await auth.verifyToken(req)` (returns the user or `null`, throws on database errors).
 
-**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, and a lock for 15 min after 10 failures per email; sign-up 5/hour per IP; session checks 300/min per IP. Override with `createAuth({ limits, lockout })`.
+**Limits** (in-memory, per process): sign-in 60/min per IP, 10 per 15 min per email, 5/s for all sign-ins together, and a lock for 15 min after 10 failures per email (attempts still being checked count towards it, so parallel requests cannot overshoot); sign-up 5/hour per IP; session checks 300/min per IP. Per-IP buckets key IPv6 clients on their /64 (`ipBucketKey`), so pass the raw client IP. Override with `createAuth({ limits, lockout, ipKey })`.
+
+**CPU guard.** bcryptjs runs on the main event loop, which also serves the live-scoring relay. At most `bcryptMaxConcurrent` (2) bcrypt operations run at once and `bcryptMaxQueue` (16) wait; beyond that, and when the global sign-in bucket is empty, the answer is **503 `auth_busy`** with `Retry-After`, never a queued request. Existing sessions are unaffected.
+
+**Unconfirmed emails.** Users whose `email_confirmed_at` is NULL (possible in a Supabase import) cannot sign in, as under GoTrue. The owner can confirm one with `set-password.mjs <email> --confirm-email`; `createAuth({ requireConfirmedEmail: false })` turns the check off.
+
+**Contact address** in the reset-password message: `contactEmail` option, else `CONTACT_EMAIL`, else the same fallback as server.js.
 
 **Owner CLI.** Set a password and revoke all sessions (the password comes from a hidden prompt, or from stdin when piped, never from argv):
 
@@ -212,6 +218,7 @@ Sessions last 30 days, slide forward when fewer than 15 days remain, and never l
 DATABASE_URL=postgres://ov_owner@.../openvolley node scripts/set-password.mjs someone@example.com
 node scripts/set-password.mjs someone@example.com --generate     # prints a random password once
 node scripts/set-password.mjs someone@example.com --revoke-only  # sign out everywhere
+node scripts/set-password.mjs someone@example.com --confirm-email  # also mark the email confirmed
 ```
 
 **Tests.** `npm test` runs the unit tests; the Postgres suite in `tests/auth.test.js` skips unless `PG_TEST_URL` is set. It creates and drops its own database, so the URL needs a role that may `CREATE DATABASE`:

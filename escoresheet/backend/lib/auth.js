@@ -27,11 +27,21 @@
  *     auth.sweepExpiredSessions()      -> number
  *     auth.sweep()                     -> clears stale in-memory counters
  *     auth.limits / auth.lockout       -> the counters (inspect, reset, replace)
+ *     auth.bcryptGate                  -> { active, queued, peak } of the bcrypt limiter
  *   sendAuthResult(res, result), createRateLimiter(opts), createLockout(opts),
- *   hashToken(token), generateToken(), isWellFormedToken(token), AUTH_ACTIONS
+ *   createConcurrencyGate(opts), ipBucketKey(ip), hashToken(token),
+ *   generateToken(), isWellFormedToken(token), AUTH_ACTIONS
+ *
+ * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
+ * serves the live-scoring relay. Every bcrypt call goes through a small
+ * concurrency gate (bcryptMaxConcurrent, bcryptMaxQueue); when the queue is
+ * full the request gets 503 "auth_busy" at once instead of queueing. Sign-in
+ * also has a global bucket (limits.signInGlobal) next to the per-IP one, and
+ * per-IP buckets key IPv6 clients on their /64 (ipBucketKey).
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
 
 // ---------------------------------------------------------------------------
@@ -75,12 +85,28 @@ const DEFAULTS = Object.freeze({
   minPasswordLength: 6,
   bcryptCost: 10,
   maxBcryptCost: 15, // stored hashes above this are treated as invalid (DoS guard)
+  // At most this many bcrypt operations run (interleaved) at once; up to
+  // bcryptMaxQueue more wait, anything beyond gets 503 auth_busy.
+  bcryptMaxConcurrent: 2,
+  bcryptMaxQueue: 16,
 
-  contactEmail: 'info@openvolley.app',
+  // Refuse sign-in for users whose email_confirmed_at is NULL (when the column
+  // exists): GoTrue refused them too, and an unconfirmed row may belong to
+  // someone who registered another person's address.
+  requireConfirmedEmail: true,
+
+  // Default: process.env.CONTACT_EMAIL, then the same fallback as server.js.
+  contactEmail: null,
+
+  // Maps a client IP to its per-IP bucket key (IPv6 -> /64). Replaceable.
+  ipKey: null,
 
   limits: {
     signInIp: { max: 60, windowMs: 60 * 1000 },
     signInEmail: { max: 10, windowMs: 15 * 60 * 1000 },
+    // All sign-ins together, whatever their source. A cost-10 compare is
+    // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
+    signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
     sessionIp: { max: 300, windowMs: 60 * 1000 }
   },
@@ -143,6 +169,44 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
+/** Eight 16-bit groups of a valid IPv6 address (validated by the caller). */
+function ipv6Groups(addr) {
+  let s = addr
+  const lastColon = s.lastIndexOf(':')
+  const tail = s.slice(lastColon + 1)
+  if (tail.includes('.')) { // embedded IPv4, e.g. ::ffff:1.2.3.4
+    const [a, b, c, d] = tail.split('.').map(Number)
+    s = s.slice(0, lastColon + 1) + ((a << 8) | b).toString(16) + ':' + ((c << 8) | d).toString(16)
+  }
+  const parse = (part) => (part ? part.split(':') : []).map(h => parseInt(h, 16))
+  const dbl = s.indexOf('::')
+  if (dbl < 0) return parse(s)
+  const head = parse(s.slice(0, dbl))
+  const rest = parse(s.slice(dbl + 2))
+  return [...head, ...new Array(8 - head.length - rest.length).fill(0), ...rest]
+}
+
+/**
+ * Per-IP bucket key: IPv4 as is, IPv4-mapped IPv6 as the IPv4 address, any
+ * other IPv6 address as its /64 prefix. One subscriber usually holds a whole
+ * /64, so keying on the full address would let a single client rotate through
+ * 2^64 buckets.
+ */
+export function ipBucketKey(ip) {
+  if (typeof ip !== 'string') return 'unknown'
+  let s = ip.trim()
+  if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1)
+  const zone = s.indexOf('%')
+  if (zone >= 0) s = s.slice(0, zone)
+  if (isIPv4(s)) return s
+  if (!isIPv6(s)) return s || 'unknown'
+  const g = ipv6Groups(s)
+  if (g.slice(0, 5).every(x => x === 0) && g[5] === 0xffff) {
+    return [g[6] >> 8, g[6] & 255, g[7] >> 8, g[7] & 255].join('.')
+  }
+  return g.slice(0, 4).map(x => x.toString(16)).join(':') + '::/64'
+}
+
 // ---------------------------------------------------------------------------
 // Counters (exported so server.js can size buckets or plug in its own)
 // ---------------------------------------------------------------------------
@@ -183,15 +247,64 @@ export function createRateLimiter({ max, windowMs, now = Date.now } = {}) {
 }
 
 /**
+ * Limits how many async jobs run at once. run(fn) starts fn when a slot is
+ * free, waits in a FIFO queue of at most maxQueue otherwise, and rejects at
+ * once with err.code === 'AUTH_BUSY' when the queue is full.
+ */
+export function createConcurrencyGate({ maxConcurrent, maxQueue = 0 } = {}) {
+  if (!(maxConcurrent > 0) || !(maxQueue >= 0)) {
+    throw new Error('createConcurrencyGate: maxConcurrent (> 0) and maxQueue (>= 0) are required')
+  }
+  let active = 0
+  let peak = 0
+  const waiting = []
+  const release = () => {
+    const next = waiting.shift()
+    if (next) next() // the slot passes straight to the next job
+    else active--
+  }
+  return {
+    maxConcurrent,
+    maxQueue,
+    async run(fn) {
+      if (active < maxConcurrent) {
+        active++
+      } else if (waiting.length < maxQueue) {
+        await new Promise(resolve => waiting.push(resolve))
+      } else {
+        throw Object.assign(new Error('auth: bcrypt queue is full'), { code: 'AUTH_BUSY' })
+      }
+      if (active > peak) peak = active
+      try {
+        return await fn()
+      } finally {
+        release()
+      }
+    },
+    get active() { return active },
+    get queued() { return waiting.length },
+    get peak() { return peak },
+    resetPeak() { peak = active }
+  }
+}
+
+/**
  * Per-account lockout: maxFailures failed attempts within windowMs lock the key
  * for lockMs. Keyed by normalized email, so unknown emails lock exactly like
  * real ones and the lockout cannot be used to probe for accounts.
+ *
+ * begin(key) also counts attempts that are still being checked: failures plus
+ * in-flight attempts may never exceed maxFailures, so parallel requests cannot
+ * all pass the check before the first failure is recorded. Call fail() or
+ * succeed() with the outcome, then release() on the returned ticket.
  */
 export function createLockout({ maxFailures, windowMs, lockMs, now = Date.now } = {}) {
   if (!(maxFailures > 0) || !(windowMs > 0) || !(lockMs > 0)) {
     throw new Error('createLockout: maxFailures, windowMs and lockMs are required')
   }
   const entries = new Map()
+  const inFlight = new Map()
+  const NOOP_RELEASE = () => {}
   const current = (key, t) => {
     const e = entries.get(key)
     if (!e) return null
@@ -199,7 +312,7 @@ export function createLockout({ maxFailures, windowMs, lockMs, now = Date.now } 
     if (!e.lockedUntil && t - e.firstFailure >= windowMs) { entries.delete(key); return null }
     return e
   }
-  return {
+  const api = {
     maxFailures,
     windowMs,
     lockMs,
@@ -207,7 +320,27 @@ export function createLockout({ maxFailures, windowMs, lockMs, now = Date.now } 
       const t = now()
       const e = current(key, t)
       if (e?.lockedUntil) return { locked: true, retryAfterSec: Math.max(1, Math.ceil((e.lockedUntil - t) / 1000)) }
-      return { locked: false, retryAfterSec: 0, failures: e?.failures || 0 }
+      return { locked: false, retryAfterSec: 0, failures: e?.failures || 0, inFlight: inFlight.get(key) || 0 }
+    },
+    begin(key) {
+      const c = api.check(key)
+      if (c.locked) return { ...c, release: NOOP_RELEASE }
+      if (c.failures + c.inFlight >= maxFailures) {
+        // Enough attempts are already being checked to reach the lock.
+        return { locked: true, retryAfterSec: 5, release: NOOP_RELEASE }
+      }
+      inFlight.set(key, c.inFlight + 1)
+      let released = false
+      return {
+        ...c,
+        release() {
+          if (released) return
+          released = true
+          const n = (inFlight.get(key) || 1) - 1
+          if (n > 0) inFlight.set(key, n)
+          else inFlight.delete(key)
+        }
+      }
     },
     fail(key) {
       const t = now()
@@ -226,6 +359,7 @@ export function createLockout({ maxFailures, windowMs, lockMs, now = Date.now } 
     },
     get size() { return entries.size }
   }
+  return api
 }
 
 function resolveLimiter(spec) {
@@ -257,6 +391,8 @@ function rateLimited(retryAfterSec, code = 'rate_limited', message = 'Too many r
 const INVALID_TOKEN = () => fail(401, 'Invalid or expired session. Please sign in again.', 'invalid_token')
 const MISSING_TOKEN = () => fail(401, 'Authentication required', 'missing_token')
 const UNAVAILABLE = () => fail(503, 'Authentication service unavailable. Please try again.', 'auth_unavailable', { 'Retry-After': '5' })
+const BUSY = () => fail(503, 'Sign-in is busy right now. Please try again in a few seconds.', 'auth_busy', { 'Retry-After': '2' })
+const INVALID_CREDENTIALS = () => fail(400, 'Invalid login credentials', 'invalid_credentials')
 
 /** Writes a result from handleAuthRequest (or any auth helper) to a node:http response. */
 export function sendAuthResult(res, r) {
@@ -293,7 +429,14 @@ export function createAuth(options = {}) {
       : { ...DEFAULTS.lockout, ...(options.lockout || {}) }
   }
   if (cfg.sessionTtlSec > cfg.absoluteTtlSec) throw new Error('createAuth: sessionTtlSec exceeds absoluteTtlSec')
-  const bcrypt = options.bcrypt || { compare: bcryptjs.compare, hash: bcryptjs.hash }
+  cfg.contactEmail = cfg.contactEmail || process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+  const ipKey = typeof cfg.ipKey === 'function' ? cfg.ipKey : ipBucketKey
+  const rawBcrypt = options.bcrypt || { compare: bcryptjs.compare, hash: bcryptjs.hash }
+  const bcryptGate = createConcurrencyGate({ maxConcurrent: cfg.bcryptMaxConcurrent, maxQueue: cfg.bcryptMaxQueue })
+  const bcrypt = {
+    compare: (password, hash) => bcryptGate.run(() => rawBcrypt.compare(password, hash)),
+    hash: (password, cost) => bcryptGate.run(() => rawBcrypt.hash(password, cost))
+  }
   const log = options.logger || console
 
   const T = {
@@ -305,6 +448,7 @@ export function createAuth(options = {}) {
   const limits = {
     signInIp: resolveLimiter(cfg.limits.signInIp),
     signInEmail: resolveLimiter(cfg.limits.signInEmail),
+    signInGlobal: resolveLimiter(cfg.limits.signInGlobal),
     signUpIp: resolveLimiter(cfg.limits.signUpIp),
     sessionIp: resolveLimiter(cfg.limits.sessionIp)
   }
@@ -373,7 +517,8 @@ export function createAuth(options = {}) {
     let match = false
     try {
       match = await bcrypt.compare(password, target)
-    } catch {
+    } catch (err) {
+      if (err?.code === 'AUTH_BUSY') throw err // overload, not a wrong password
       match = false
     }
     return !!real && match === true
@@ -397,6 +542,11 @@ export function createAuth(options = {}) {
     if (u.deleted_at) return true
     if (u.banned_until && new Date(u.banned_until).getTime() > Date.now()) return true
     return false
+  }
+
+  /** True when the users table tracks confirmation and this user never confirmed. */
+  function isUnconfirmed(u, cols) {
+    return cfg.requireConfirmedEmail && cols.has('email_confirmed_at') && u?.email_confirmed_at == null
   }
 
   function stripMetadata(meta) {
@@ -437,14 +587,26 @@ export function createAuth(options = {}) {
   }
 
   // --- sessions --------------------------------------------------------------
-  async function createSession(userId, client = pool) {
+  /**
+   * Creates a session only if the user still has the password hash that was
+   * just verified. FOR SHARE makes this wait for a concurrent setPassword()
+   * transaction and then re-check the new row, so a sign-in that passed bcrypt
+   * with the old password cannot leave a session behind after "set password
+   * and revoke all sessions" (or account deletion) has run. Returns null when
+   * the hash changed or the user is gone.
+   */
+  async function createSession(userId, verifiedHash, client = pool) {
     const token = generateToken()
     const { rows } = await client.query(
       `INSERT INTO ${T.sessions} (token_hash, user_id, created_at, expires_at, last_seen_at)
-       VALUES ($1, $2, now(), now() + make_interval(secs => $3), now())
+       SELECT $1, u.id, now(), now() + make_interval(secs => $3), now()
+         FROM ${T.users} u
+        WHERE u.id = $2 AND u.encrypted_password = $4
+          FOR SHARE OF u
        RETURNING floor(extract(epoch FROM expires_at))::bigint AS expires_at`,
-      [hashToken(token), userId, Math.min(cfg.sessionTtlSec, cfg.absoluteTtlSec)]
+      [hashToken(token), userId, Math.min(cfg.sessionTtlSec, cfg.absoluteTtlSec), verifiedHash]
     )
+    if (!rows[0]) return null
     const expiresAt = Number(rows[0].expires_at)
     return { token, expiresAt }
   }
@@ -581,7 +743,7 @@ export function createAuth(options = {}) {
    * their sessions, in one transaction. Used by scripts/set-password.mjs and,
    * later, by a password-change endpoint.
    */
-  async function setPassword(emailOrId, newPassword, { skipPolicy = false } = {}) {
+  async function setPassword(emailOrId, newPassword, { skipPolicy = false, confirmEmail = false } = {}) {
     if (!skipPolicy) {
       const problem = validateNewPassword(newPassword)
       if (problem) throw new Error(problem)
@@ -590,11 +752,20 @@ export function createAuth(options = {}) {
     return withTransaction(async (client) => {
       const cols = await usersColumns(client)
       const { id, email } = await findUserId(emailOrId, { client, forUpdate: true })
-      const touch = writable(cols, 'updated_at') ? ', updated_at = now()' : ''
-      await client.query(`UPDATE ${T.users} SET encrypted_password = $2${touch} WHERE id = $1`, [id, hash])
+      const tracksConfirm = cols.has('email_confirmed_at')
+      let set = 'encrypted_password = $2'
+      if (writable(cols, 'updated_at')) set += ', updated_at = now()'
+      if (confirmEmail && writable(cols, 'email_confirmed_at')) {
+        set += ', email_confirmed_at = coalesce(email_confirmed_at, now())'
+      }
+      const upd = await client.query(
+        `UPDATE ${T.users} SET ${set} WHERE id = $1
+         RETURNING ${tracksConfirm ? 'email_confirmed_at IS NOT NULL' : 'true'} AS confirmed`,
+        [id, hash]
+      )
       const revokedSessions = await revokeUserSessions(id, client)
       lockout.reset(email)
-      return { userId: id, email, revokedSessions }
+      return { userId: id, email, revokedSessions, emailConfirmed: upd.rows[0].confirmed === true }
     })
   }
 
@@ -607,34 +778,49 @@ export function createAuth(options = {}) {
   }
 
   async function signIn(body, ctx) {
-    const blocked = limit('signInIp', ctx.ip)
+    const blocked = limit('signInIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const email = normalizeEmail(body.email)
     const password = body.password
     if (!email || typeof password !== 'string' || !password) {
       return fail(400, 'Missing email or password', 'validation_failed')
     }
-    if (email.length > 254 || password.length > 1024) {
-      return fail(400, 'Invalid login credentials', 'invalid_credentials')
-    }
-    const lock = lockout.check(email)
-    if (lock.locked) {
-      return rateLimited(lock.retryAfterSec, 'account_locked',
-        `Too many failed sign-in attempts. Try again in ${Math.ceil(lock.retryAfterSec / 60)} minutes.`)
-    }
-    const blockedEmail = limit('signInEmail', email)
-    if (blockedEmail) return blockedEmail
+    if (email.length > 254 || password.length > 1024) return INVALID_CREDENTIALS()
 
-    const user = await findUserByEmail(email)
-    const passwordOk = await checkPassword(password, user?.encrypted_password)
-    if (!passwordOk || isUserBlocked(user)) {
-      lockout.fail(email)
-      return fail(400, 'Invalid login credentials', 'invalid_credentials')
+    // Counts this attempt as in flight before any await, so parallel requests
+    // cannot all slip past the lockout before the first failure is recorded.
+    const attempt = typeof lockout.begin === 'function' ? lockout.begin(email) : lockout.check(email)
+    if (attempt.locked) {
+      const mins = Math.max(1, Math.ceil(attempt.retryAfterSec / 60))
+      return rateLimited(attempt.retryAfterSec, 'account_locked',
+        `Too many failed sign-in attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
     }
-    lockout.succeed(email)
+    try {
+      const blockedEmail = limit('signInEmail', email)
+      if (blockedEmail) return blockedEmail
+      // Last, so requests refused above never use up the global budget.
+      if (limits.signInGlobal?.hit('*').limited) return BUSY()
 
-    const cols = await usersColumns()
-    const { token, expiresAt } = await createSession(user.id)
+      const cols = await usersColumns()
+      const user = await findUserByEmail(email)
+      const passwordOk = await checkPassword(password, user?.encrypted_password)
+      if (!passwordOk || isUserBlocked(user) || isUnconfirmed(user, cols)) {
+        lockout.fail(email)
+        return INVALID_CREDENTIALS()
+      }
+      const session = await createSession(user.id, user.encrypted_password)
+      if (!session) { // password changed or account deleted while we were checking
+        lockout.fail(email)
+        return INVALID_CREDENTIALS()
+      }
+      lockout.succeed(email)
+      return await finishSignIn(user, cols, session)
+    } finally {
+      attempt.release?.()
+    }
+  }
+
+  async function finishSignIn(user, cols, { token, expiresAt }) {
     if (writable(cols, 'last_sign_in_at')) {
       const r = await pool.query(
         `UPDATE ${T.users} AS u SET last_sign_in_at = now() WHERE u.id = $1 RETURNING to_jsonb(u) AS u`,
@@ -657,7 +843,7 @@ export function createAuth(options = {}) {
   }
 
   async function signUp(body, ctx) {
-    const blocked = limit('signUpIp', ctx.ip)
+    const blocked = limit('signUpIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const email = normalizeEmail(body.email)
     if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
@@ -750,7 +936,7 @@ export function createAuth(options = {}) {
   }
 
   async function signOut(body, ctx) {
-    const blocked = limit('sessionIp', ctx.ip)
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const token = typeof body.access_token === 'string' ? body.access_token : bearerFromHeaders(ctx.headers)
     if (token) await revokeSession(token)
@@ -768,7 +954,7 @@ export function createAuth(options = {}) {
   }
 
   async function getUser(body, ctx) {
-    const blocked = limit('sessionIp', ctx.ip)
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
@@ -776,7 +962,7 @@ export function createAuth(options = {}) {
   }
 
   async function deleteAccount(body, ctx) {
-    const blocked = limit('sessionIp', ctx.ip)
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
@@ -795,7 +981,7 @@ export function createAuth(options = {}) {
   }
 
   async function profile(body, ctx) {
-    const blocked = limit('sessionIp', ctx.ip)
+    const blocked = limit('sessionIp', ipKey(ctx.ip))
     if (blocked) return blocked
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
@@ -837,7 +1023,7 @@ export function createAuth(options = {}) {
         case 'update-user':
           return fail(501, 'Email change is not available yet.', 'not_implemented')
         case 'reset-password': {
-          const blocked = limit('sessionIp', c.ip)
+          const blocked = limit('sessionIp', ipKey(c.ip))
           if (blocked) return blocked
           return fail(503,
             `Password reset is temporarily unavailable. Contact ${cfg.contactEmail}.`,
@@ -847,6 +1033,7 @@ export function createAuth(options = {}) {
           return fail(404, 'Invalid request', 'not_found')
       }
     } catch (err) {
+      if (err?.code === 'AUTH_BUSY') return BUSY() // expected under load; not logged per request
       log.error(`[auth] ${String(action).slice(0, 40)} failed:`, err.message)
       return UNAVAILABLE()
     }
@@ -870,8 +1057,9 @@ export function createAuth(options = {}) {
     sweep,
     limits,
     lockout,
+    bcryptGate,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
-      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout'].includes(k)))),
+      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */
     refreshCatalog() { catalog.clear() },
     // exposed for tests and scripts
