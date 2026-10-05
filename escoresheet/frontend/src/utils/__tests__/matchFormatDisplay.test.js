@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { displaySetNumber, setsWonWithFinishedSet, getNextSetIndex, isMatchFinished } from '../matchFormat'
+import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot, getNextSetIndex, isMatchFinished } from '../matchFormat'
 
 describe('displaySetNumber', () => {
   it('shows a best-of-3 decider (index 5) as set 3', () => {
@@ -49,5 +49,36 @@ describe('setsWonWithFinishedSet (live-state push at a set end / match end)', ()
     expect(setsWonWithFinishedSet(snap(), 'away', false)).toEqual({ a: 1, b: 0 })
     expect(setsWonWithFinishedSet(snap({ pointsA: 3, pointsB: 3 }), undefined, true)).toEqual({ a: 1, b: 0 })
     expect(setsWonWithFinishedSet(null, undefined, true)).toEqual({ a: 0, b: 0 })
+  })
+})
+
+describe('finishedSetMissingFromSnapshot (no double count after the finish)', () => {
+  it('a set_end push always adds the set (it runs before the set is marked finished)', () => {
+    expect(finishedSetMissingFromSnapshot({ setScoreA: 1, setScoreB: 0 }, 0, 'set_end')).toBe(true)
+    expect(finishedSetMissingFromSnapshot({ setScoreA: 1, setScoreB: 0 }, 2, 'set_end')).toBe(true)
+  })
+
+  it('match_end / end_interval on the last point\'s snapshot still add it', () => {
+    expect(finishedSetMissingFromSnapshot({ setScoreA: 1, setScoreB: 1 }, 3, 'match_end')).toBe(true)
+    expect(finishedSetMissingFromSnapshot({ setScoreA: 1, setScoreB: 0 }, 2, 'end_interval')).toBe(true)
+  })
+
+  it('a manual push after the match end (fresh snapshot) keeps 1:2, not 1:3', () => {
+    // Fresh snapshot of a finished 1:2 match: the current set is the last
+    // finished one (B won 15:10), and the counts already include it
+    const fresh = { teamAKey: 'home', setScoreA: 1, setScoreB: 2, pointsA: 10, pointsB: 15 }
+    for (const eventType of ['manual_score_update', 'undo', 'court_switch', 'manual_side_change']) {
+      const count = finishedSetMissingFromSnapshot(fresh, 3, eventType)
+      expect(count, eventType).toBe(false)
+      expect(setsWonWithFinishedSet(fresh, undefined, count)).toEqual({ a: 1, b: 2 })
+    }
+    // ...also when Team A won the last set (the case that double counted before)
+    const aWon = { teamAKey: 'away', setScoreA: 2, setScoreB: 1, pointsA: 15, pointsB: 9 }
+    expect(setsWonWithFinishedSet(aWon, undefined, finishedSetMissingFromSnapshot(aWon, 3, 'manual_score_update'))).toEqual({ a: 2, b: 1 })
+  })
+
+  it('handles missing snapshots', () => {
+    expect(finishedSetMissingFromSnapshot(null, 1, 'undo')).toBe(true)
+    expect(finishedSetMissingFromSnapshot(null, 0, 'undo')).toBe(false)
   })
 })

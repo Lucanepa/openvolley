@@ -44,7 +44,7 @@ import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
-import { displaySetNumber, setsWonWithFinishedSet } from '../utils/matchFormat'
+import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -1903,8 +1903,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Fallback: if eventData.winner is undefined, calculate from snapshot points
       // Increment set score for both set_end (isSetInterval) and match_end events
       // (Team B is derived there: snapshots carry teamAKey only)
+      // Only when the snapshot does not count that set yet: a fresh snapshot
+      // after the finish (manual change, undo, court switch) already does.
       const setWinner = eventData?.winner
-      const { a: updatedSetScoreA, b: updatedSetScoreB } = setsWonWithFinishedSet(snapshot, setWinner, isSetInterval || isMatchEnd)
+      let countFinishedSet = false
+      if (isSetInterval || isMatchEnd) {
+        const finishedSetCount = eventType === 'set_end'
+          ? 0
+          : (await db.sets.where({ matchId }).toArray()).filter(s => s.finished).length
+        countFinishedSet = finishedSetMissingFromSnapshot(snapshot, finishedSetCount, eventType)
+      }
+      const { a: updatedSetScoreA, b: updatedSetScoreB } = setsWonWithFinishedSet(snapshot, setWinner, countFinishedSet)
 
       // For set_end, we need to show the NEXT set state (interval between sets)
       // The snapshot still has the OLD set data, so we override for set_end.

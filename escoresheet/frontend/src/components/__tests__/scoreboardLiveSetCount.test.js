@@ -18,7 +18,10 @@ function syncLiveStateBody() {
 describe('Scoreboard live-state push', () => {
   it('counts the finished set through setsWonWithFinishedSet (Team B derived, not snapshot.teamBKey)', () => {
     const body = syncLiveStateBody()
-    expect(body).toMatch(/setsWonWithFinishedSet\(snapshot, setWinner, isSetInterval \|\| isMatchEnd\)/)
+    expect(body).toMatch(/setsWonWithFinishedSet\(snapshot, setWinner, countFinishedSet\)/)
+    // ...only when the snapshot does not count the finished set yet
+    expect(body).toMatch(/countFinishedSet = finishedSetMissingFromSnapshot\(snapshot, finishedSetCount, eventType\)/)
+    expect(body).toMatch(/if \(isSetInterval \|\| isMatchEnd\) \{/)
     // captureFullStateSnapshot never stores teamBKey: any use of it is the old bug
     expect(scoreboard).not.toMatch(/snapshot\.teamBKey/)
   })
@@ -37,5 +40,9 @@ describe('set number display', () => {
 
   it('the referee header maps its set index through displaySetNumber', () => {
     expect(referee).toMatch(/const displaySetIndex = displaySetNumber\(/)
+  })
+
+  it('the referee\'s last-event text shows the set end as the displayed set number', () => {
+    expect(referee).toMatch(/refereeDashboard\.events\.setEnd', \{ set: lastEvent\.data\?\.setIndex \? displaySetNumber\(lastEvent\.data\.setIndex, refBestOf\)/)
   })
 })

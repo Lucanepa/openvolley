@@ -50,6 +50,26 @@ export function displaySetNumber(setIndex, bestOf = 5) {
 }
 
 /**
+ * True when a live-state push between sets / after the match must still add
+ * the finished set to the snapshot's counts (setsWonWithFinishedSet).
+ * A set_end push always does: it runs before the set is marked finished, on
+ * the last point's snapshot. Any other push (match_end, end_interval, undo,
+ * manual_*, court_switch...) does only when its snapshot predates the finish,
+ * i.e. counts fewer sets than are finished: a snapshot captured afterwards
+ * already counts them (they come from the finished sets), and adding its
+ * current set's winner again turned a 1:2 into 1:3.
+ * @param {{setScoreA?: number, setScoreB?: number}|null} snapshot
+ * @param {number} finishedSetCount - sets marked finished in the database now
+ * @param {string} [eventType]
+ * @returns {boolean}
+ */
+export function finishedSetMissingFromSnapshot(snapshot, finishedSetCount, eventType) {
+  if (eventType === 'set_end') return true
+  const counted = (Number(snapshot?.setScoreA) || 0) + (Number(snapshot?.setScoreB) || 0)
+  return counted < (Number(finishedSetCount) || 0)
+}
+
+/**
  * Sets won by Team A and Team B once the set described by `snapshot` counts.
  * The live-state push at a set end (and at the match end) carries the set
  * counts from before that set; its winner is added here: `winner`
@@ -58,7 +78,8 @@ export function displaySetNumber(setIndex, bestOf = 5) {
  * only carry teamAKey).
  * @param {{teamAKey?: string, setScoreA?: number, setScoreB?: number, pointsA?: number, pointsB?: number}} snapshot
  * @param {string|null|undefined} winner - 'home' | 'away'
- * @param {boolean} countSet - true for set_end / match_end pushes
+ * @param {boolean} countSet - true when the snapshot does not count that set
+ *   yet (finishedSetMissingFromSnapshot)
  * @returns {{a: number, b: number}}
  */
 export function setsWonWithFinishedSet(snapshot, winner, countSet) {

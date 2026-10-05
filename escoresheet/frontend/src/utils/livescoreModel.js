@@ -98,12 +98,16 @@ export function hasMatchStarted(game) {
  * @param {object[]} games
  * @param {Set<string>} [shown]  match_ids already shown as started; updated in place
  * @param {number} [now]
+ * @param {Map<string, {stamp: string, changedAt: number|null}>} [seen]  per
+ *   match_id, the updated_at last seen and when (this page's clock) it last
+ *   changed; updated in place (noteRowChanges)
  * @returns {object[]}
  */
-export function listedGames(games, shown = new Set(), now = Date.now()) {
+export function listedGames(games, shown = new Set(), now = Date.now(), seen = null) {
+  if (seen) noteRowChanges(games, seen, now)
   return (games || []).filter((g) => {
     if (!g) return false
-    if (isStaleGame(g, now)) return false
+    if (isStaleGame(g, now, seen?.get(g.match_id)?.changedAt ?? null)) return false
     if (hasMatchStarted(g)) {
       shown.add(g.match_id)
       return true
@@ -215,7 +219,18 @@ export function applyMatchRowChange(games, payload) {
 export function liveBestOf(game) {
   const b = Number(game?.best_of)
   if (b === 3 || b === 5) return b
-  if (Number(game?.current_set) === 5 && num(game?.sets_won_a) + num(game?.sets_won_b) <= 3) return 3
+  // The joined match's own format, when the row carries it
+  const info = Number(joinedMatch(game)?.match_info?.best_of)
+  if (info === 3 || info === 5) return info
+  if (Number(game?.current_set) !== 5) return 5
+  // A best-of-3 decider is played at 1:1 and ends 2:1; a best-of-5 one at
+  // 2:2. Older scoreboards dropped Team B's set at the set_end push, so a
+  // best-of-5 interval before the decider could read 2:1: only a FINISHED
+  // 2:1 is a best-of-3.
+  const a = num(game?.sets_won_a)
+  const bb = num(game?.sets_won_b)
+  if (a + bb <= 2) return 3
+  if (a + bb === 3 && Math.max(a, bb) === 2 && isEndedStatus(game?.match_status)) return 3
   return 5
 }
 
@@ -314,13 +329,38 @@ export const LIVE_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000
  * True when a row should no longer be listed: finished more than
  * ENDED_LISTED_MS ago, or not finished and not updated for IDLE_LISTED_MS.
  * Rows without a timestamp are kept.
+ *
+ * updated_at comes from the scorer device's clock. A tablet or Pi without NTP
+ * that runs hours slow would make a match being played look abandoned, so a
+ * change this page saw itself (`changedAt`, this page's clock) counts too:
+ * the later of the two decides.
  * @param {object} game
  * @param {number} [now]
+ * @param {number|null} [changedAt]  when this page last saw the row change
  */
-export function isStaleGame(game, now = Date.now()) {
-  const t = Date.parse(game?.updated_at || game?.last_event_ts || '')
+export function isStaleGame(game, now = Date.now(), changedAt = null) {
+  const parsed = Date.parse(game?.updated_at || game?.last_event_ts || '')
+  const t = Math.max(Number.isFinite(parsed) ? parsed : -Infinity, Number.isFinite(changedAt) ? changedAt : -Infinity)
   if (!Number.isFinite(t)) return false
   return now - t > (isEndedStatus(game?.match_status) ? ENDED_LISTED_MS : IDLE_LISTED_MS)
+}
+
+/**
+ * Remember, per match_id, when this page saw a row's updated_at change. The
+ * first sighting records nothing (an old row is not news): only a later,
+ * different updated_at sets `changedAt` to `now`.
+ * @param {object[]} games
+ * @param {Map<string, {stamp: string, changedAt: number|null}>} seen  updated in place
+ * @param {number} now
+ */
+export function noteRowChanges(games, seen, now) {
+  for (const g of games || []) {
+    if (!g || g.match_id == null) continue
+    const stamp = String(g.updated_at ?? g.last_event_ts ?? '')
+    const prev = seen.get(g.match_id)
+    if (!prev) seen.set(g.match_id, { stamp, changedAt: null })
+    else if (prev.stamp !== stamp) seen.set(g.match_id, { stamp, changedAt: now })
+  }
 }
 
 /** Number of listed games still being played (FINAL ones are not live). */
