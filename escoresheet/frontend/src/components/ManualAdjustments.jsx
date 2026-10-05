@@ -7,6 +7,7 @@ import { validateManualSubstitution, validateManualTimeout } from '../domain/sub
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
 import { mergeOfficialsEdits } from '../domain/officials'
 import { apiFrom } from '../lib/apiClient'
+import { X } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 
 // Standard volleyball team colors - keys for translation
@@ -1116,7 +1117,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
-                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" className={`${ROW_TOOL} w-8 px-0 text-sm font-semibold`} onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')}>×</Button></span>
+                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')} /></span>
                   </div>
                 ))}
               </div>
@@ -1148,7 +1149,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
                     </span>
                     <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
-                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" className={`${ROW_TOOL} w-8 px-0 text-sm font-semibold`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')}>×</Button></span>
+                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')} /></span>
                   </div>
                 ))}
               </div>
@@ -1184,7 +1185,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     </span>
                     <span />
                     <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
-                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" className={`${ROW_TOOL} w-8 px-0 text-sm font-semibold`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')}>×</Button></span>
+                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')} /></span>
                   </div>
                 ))}
               </div>
