@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { apiFrom } from '../lib/apiClient'
+import { FOCUS_RING_INSET } from '../ui/Button.jsx'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
@@ -192,7 +193,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
                     setSearchQuery('') // Reset search for next use
                     onClose()
                   }}
-                  className="w-full min-h-11 rounded-lg bg-transparent px-3 text-left text-sm font-medium text-stone-800 hover:bg-stone-100 transition-colors"
+                  className={`w-full min-h-11 rounded-lg bg-transparent px-3 text-left text-sm font-medium text-stone-800 hover:bg-stone-100 transition-colors ${FOCUS_RING_INSET}`}
                   style={{
                     border: 'none',
                     cursor: 'pointer',

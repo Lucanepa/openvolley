@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FOCUS_RING_INSET } from '../ui/Button.jsx'
 
 /**
  * Official (referee/scorer) autocomplete with dropdown
@@ -137,7 +138,7 @@ export default function OfficialAutocomplete({
               key={index}
               type="button"
               onClick={() => handleSelectOfficial(official)}
-              className="flex w-full min-h-11 items-center justify-between gap-2 rounded-lg bg-transparent px-2.5 text-left text-stone-800 hover:bg-stone-100 transition-colors"
+              className={`flex w-full min-h-11 items-center justify-between gap-2 rounded-lg bg-transparent px-2.5 text-left text-stone-800 hover:bg-stone-100 transition-colors ${FOCUS_RING_INSET}`}
               style={{ border: 'none' }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>

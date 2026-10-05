@@ -33,7 +33,7 @@ const TOOLBAR_TRIGGER = 'inline-flex items-center justify-center gap-2 h-11 px-4
 const SECTION_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5 mb-2'
 const SECTION_TITLE = 'text-[11px] font-bold uppercase tracking-wider text-stone-800'
 // Row tool: a square icon button that turns red on hover (delete).
-const ROW_ICON_BTN = 'h-8 w-8 inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors'
+const ROW_ICON_BTN = 'relative after:absolute after:-inset-1.5 h-8 w-8 inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors'
 // Form label (one tone per form: the kit "form" label).
 const FIELD_LABEL = 'block text-xs font-medium text-stone-500 mb-1'
 // Neutral, labelled spinner ring (kit: spinners are stone and always labelled).
