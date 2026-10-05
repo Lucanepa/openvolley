@@ -17,7 +17,9 @@ const sync = vi.hoisted(() => ({ processJob: null }))
 vi.mock('../useSyncQueue', () => ({
   processJob: (job) => sync.processJob(job),
   errorBackoffMs: () => 30000,
-  DROP_JOB: 'drop'
+  DROP_JOB: 'drop',
+  AUTH_REQUIRED: 'auth_required',
+  PERMANENT_FAILURE: 'permanent'
 }))
 
 import { sendJobNow } from '../useSequentialSync'
@@ -80,6 +82,21 @@ describe('sendJobNow', () => {
     sync.processJob = async () => null
     const result = await sendJobNow(JOB)
     expect(result).toMatchObject({ success: false, offline: true })
+    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
+  })
+
+  it('a job the backend refuses (4xx) is parked as failed, not retried with backoff', async () => {
+    sync.processJob = async () => 'permanent'
+    const result = await sendJobNow(JOB)
+    expect(result).toMatchObject({ success: false })
+    expect(result.offline).toBeUndefined()
+    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'failed', attempts: 1 })
+  })
+
+  it('a missing session leaves the job queued and reports it as deferred', async () => {
+    sync.processJob = async () => 'auth_required'
+    const result = await sendJobNow(JOB)
+    expect(result).toMatchObject({ success: false, offline: true, authRequired: true })
     expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
   })
 

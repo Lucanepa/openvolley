@@ -403,6 +403,9 @@ async function authRequest(action, body = {}) {
 // Same-tab notification: the 'storage' event only fires in OTHER tabs, so without
 // this AuthContext keeps showing a signed-in user after the token is dropped here.
 const TOKEN_CHANGE_EVENT = 'api-auth-token-change'
+// Exported for listeners outside the auth context (the sync queue resumes on sign-in)
+export const AUTH_TOKEN_CHANGE_EVENT = TOKEN_CHANGE_EVENT
+export const AUTH_TOKEN_STORAGE_KEY = 'api_auth_token'
 function notifyTokenChange(session) {
   try {
     if (typeof window !== 'undefined') {
