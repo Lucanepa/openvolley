@@ -1,7 +1,8 @@
 /**
  * Cloud sync jobs for scoreboard writes that do not go through logEvent:
- * set_start and lineup events, the running score of the open set, and the
- * match row's current_set / set_results at every set end.
+ * set_start and lineup events, the running score of the open set, the
+ * match row's current_set / set_results at every set end, and the reverse of
+ * that when a set end is undone.
  *
  * Every job is an ordinary sync_queue row (offline-first: written to IndexedDB,
  * sent by useSyncQueue when the cloud is reachable). Test matches and matches
@@ -118,6 +119,77 @@ export function buildSetEndMatchPayload({ seedKey, finishedSets, isMatchEnd, nex
     id: seedKey,
     current_set: nextSetIndex,
     set_results: setResults
+  }
+}
+
+/**
+ * The matches row update sent when a set end is undone: the reopened set is the
+ * current one again and set_results lists only the sets still finished. When
+ * the undone set end had ended the match, the result fields are cleared too.
+ */
+export function buildSetReopenMatchPayload({ seedKey, finishedSets, reopenedSetIndex, wasMatchEnd = false }) {
+  const setResults = [...(finishedSets || [])]
+    .filter(s => s.index !== reopenedSetIndex)
+    .sort((a, b) => a.index - b.index)
+    .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
+  return {
+    id: seedKey,
+    current_set: reopenedSetIndex,
+    set_results: setResults,
+    ...(wasMatchEnd ? { status: 'live', winner: null, final_score: null } : {})
+  }
+}
+
+/**
+ * Queue the cloud side of an undone set end: the set row is open again (score,
+ * finished false, no end time) and the match row's current_set / set_results
+ * (written at every set end) go back. Call it after the local undo (the next
+ * set deleted, the reopened set unfinished).
+ * @returns {Promise<boolean>} true when the jobs were queued
+ */
+export async function queueSetReopenSync(db, { matchId, setIndex, wasMatchEnd = false }) {
+  try {
+    const match = await db.matches.get(matchId)
+    if (!match || match.test || !match.seed_key) return false
+    const sets = await db.sets.where('matchId').equals(matchId).toArray()
+    const set = sets.find(s => s.index === setIndex)
+    if (!set) return false
+    const externalId = setExtId(match.seed_key, set.id)
+    // The reopen update carries the score: older queued score-only ones go
+    const stale = await db.sync_queue.where('status').equals('queued')
+      .and(j => isScoreOnlySetUpdate(j, externalId))
+      .toArray()
+    if (stale.length > 0) await db.sync_queue.bulkDelete(stale.map(j => j.id))
+    const ts = Date.now()
+    await db.sync_queue.add({
+      resource: 'set',
+      action: 'update',
+      payload: {
+        external_id: externalId,
+        home_points: set.homePoints || 0,
+        away_points: set.awayPoints || 0,
+        finished: false,
+        end_time: null
+      },
+      ts,
+      status: 'queued'
+    })
+    await db.sync_queue.add({
+      resource: 'match',
+      action: 'update',
+      payload: buildSetReopenMatchPayload({
+        seedKey: match.seed_key,
+        finishedSets: sets.filter(s => s.finished),
+        reopenedSetIndex: setIndex,
+        wasMatchEnd
+      }),
+      ts,
+      status: 'queued'
+    })
+    return true
+  } catch (err) {
+    console.warn('[eventSync] could not queue the reopened set', matchId, setIndex, err?.message)
+    return false
   }
 }
 

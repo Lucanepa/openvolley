@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents } from '../corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, localIdOfExtId } from '../corrections'
 
 // Set 1 at 3-2 (home), then point 6 goes to AWAY by mistake: away (receiving)
 // sides out, so the point wrote away's rotation 6.1 and an auto libero_exit 6.2.
@@ -89,5 +89,31 @@ describe('syncJobsForEvents', () => {
     ]
     expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1])
     expect(syncJobsForEvents(jobs, [])).toEqual([])
+  })
+
+  it('matches the namespaced ids every job carries now (<seed>:e:<id>)', () => {
+    const jobs = [
+      { id: 1, resource: 'event', payload: { external_id: 'match_100_aaa:e:61' } },
+      { id: 2, resource: 'event', payload: { external_id: 'match_100_aaa:e:610' } },
+      { id: 3, resource: 'set', payload: { external_id: 'match_100_aaa:s:62' } },
+      { id: 4, resource: 'event', payload: { external_id: 'match_100_aaa:s:62' } },
+      { id: 5, resource: 'event', payload: { external_id: 'match_100_aaa:e:62' } },
+      { id: 6, resource: 'event', payload: { external_id: 'coin_toss_match_100_aaa' } }
+    ]
+    expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1, 5])
+  })
+})
+
+describe('syncJobsForSets', () => {
+  it('matches set jobs by namespaced or bare local id', () => {
+    const jobs = [
+      { id: 1, resource: 'set', payload: { external_id: 'match_100_aaa:s:7' } },
+      { id: 2, resource: 'set', payload: { external_id: '7' } },
+      { id: 3, resource: 'event', payload: { external_id: 'match_100_aaa:e:7' } },
+      { id: 4, resource: 'set', payload: { external_id: 'match_100_aaa:s:8' } }
+    ]
+    expect(syncJobsForSets(jobs, [7]).map(j => j.id)).toEqual([1, 2])
+    expect(localIdOfExtId('match_1_a:e:3', 'set')).toBeNull()
+    expect(localIdOfExtId(null, 'event')).toBeNull()
   })
 })
