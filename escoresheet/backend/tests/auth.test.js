@@ -303,6 +303,11 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
     u.pathname = '/' + dbName
     dbUrl = u.toString()
     pool = new pg.Pool({ connectionString: dbUrl, max: 5 })
+    // pool.end() resolves before every client socket has closed, so the final
+    // DROP DATABASE ... WITH (FORCE) can still terminate one ("terminating
+    // connection due to administrator command"). That error must not become an
+    // uncaught exception of whichever test created the client.
+    pool.on('connect', (client) => client.on('error', () => {}))
     await pool.query(await readFile(path.join(HERE, 'fixtures/synthetic_schema.sql'), 'utf8'))
     const migration = await readFile(path.join(BACKEND, 'db/002_app_sessions.sql'), 'utf8')
     await pool.query(migration)
