@@ -5,6 +5,7 @@ import {
   resolveSanction,
   isDelaySanction,
   awardsPoint,
+  deriveTeamSanctionFlags,
 } from '../sanctions'
 
 describe('nextDelaySanction (FIVB 16.2)', () => {
@@ -59,5 +60,28 @@ describe('helpers', () => {
     expect(awardsPoint('penalty')).toBe(true)
     expect(awardsPoint('delay_warning')).toBe(false)
     expect(awardsPoint('improper_request')).toBe(false)
+  })
+})
+
+describe('deriveTeamSanctionFlags', () => {
+  const sanc = (team, type) => ({ type: 'sanction', payload: { team, type } })
+  it('all false with no sanctions', () => {
+    expect(deriveTeamSanctionFlags([])).toEqual({ improperRequestHome: false, improperRequestAway: false, delayWarningHome: false, delayWarningAway: false })
+  })
+  it('flags follow the events per team', () => {
+    const flags = deriveTeamSanctionFlags([sanc('home', 'improper_request'), sanc('away', 'delay_warning')])
+    expect(flags).toEqual({ improperRequestHome: true, improperRequestAway: false, delayWarningHome: false, delayWarningAway: true })
+  })
+  it('a delay penalty also means the warning is used', () => {
+    expect(deriveTeamSanctionFlags([sanc('home', 'delay_penalty')]).delayWarningHome).toBe(true)
+  })
+  it('individual sanctions do not set team flags', () => {
+    const flags = deriveTeamSanctionFlags([sanc('home', 'warning'), sanc('away', 'penalty'), { type: 'timeout', payload: { team: 'home' } }])
+    expect(Object.values(flags).some(Boolean)).toBe(false)
+  })
+  it('removing the event (undo / manual delete) clears the flag', () => {
+    const events = [sanc('home', 'delay_warning')]
+    expect(deriveTeamSanctionFlags(events).delayWarningHome).toBe(true)
+    expect(deriveTeamSanctionFlags(events.slice(1)).delayWarningHome).toBe(false)
   })
 })

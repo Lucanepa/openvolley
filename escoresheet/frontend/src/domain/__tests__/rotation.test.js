@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rotateLineup, getServer, getExpectedServer, isRotationValid } from '../rotation'
+import { rotateLineup, getServer, getExpectedServer, isRotationValid, pointSubEventsForTeam } from '../rotation'
 
 const LU = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
 
@@ -42,5 +42,23 @@ describe('isRotationValid (serving-order Kontrolle)', () => {
   })
   it('rejects null', () => {
     expect(isRotationValid(null)).toBe(false)
+  })
+})
+
+describe('pointSubEventsForTeam', () => {
+  const point = { id: 'p', type: 'point', seq: 40, payload: { team: 'home' } }
+  const rot = { id: 'r', type: 'lineup', seq: 40.1, payload: { team: 'home', lineup: {}, liberoSubstitution: { position: 'VI', liberoNumber: 9, playerNumber: 4 } } }
+  const exit = { id: 'x', type: 'libero_exit', seq: 40.2, payload: { team: 'home', liberoOut: 9 } }
+  const nextLineup = { id: 'n', type: 'lineup', seq: 41.1, payload: { team: 'home', lineup: {} } }
+  const otherTeam = { id: 'o', type: 'lineup', seq: 40.3, payload: { team: 'away', lineup: {} } }
+  const earlier = { id: 'e', type: 'lineup', seq: 39.1, payload: { team: 'home', lineup: {} } }
+
+  it('returns the rotation lineup (even with a libero on court) and the auto libero exit', () => {
+    const ids = pointSubEventsForTeam([point, rot, exit, nextLineup, otherTeam, earlier], point, 'home').map(e => e.id)
+    expect(ids).toEqual(['r', 'x'])
+  })
+  it('never returns the point itself, other teams or other points', () => {
+    const ids = pointSubEventsForTeam([point, otherTeam, nextLineup, earlier], point, 'home').map(e => e.id)
+    expect(ids).toEqual([])
   })
 })

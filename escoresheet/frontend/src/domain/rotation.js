@@ -64,3 +64,31 @@ export function isRotationValid(lineup) {
   const distinct = new Set(players.map(p => String(p)))
   return distinct.size === POSITIONS.length
 }
+
+/**
+ * The events a point wrote for one team as SUB-EVENTS of the point (seq N.x,
+ * same base seq as the point): the sideout rotation lineup and an automatic
+ * libero_exit when the rotation took the libero to the front row. A decision
+ * change that moves the point to the other team must remove exactly these for
+ * the team that wrongly got the point — including a rotation lineup that
+ * carries a liberoSubstitution (a receiving team usually has its libero on
+ * court), which the old filter kept.
+ *
+ * Substitution lineups (fromSubstitution) are never sub-events of a point but
+ * are excluded defensively.
+ * @param {Array} events
+ * @param {object} pointEvent the point event (with seq)
+ * @param {'home'|'away'} teamKey
+ * @returns {Array} events to delete
+ */
+export function pointSubEventsForTeam(events, pointEvent, teamKey) {
+  const pointSeq = pointEvent?.seq || 0
+  const baseSeq = Math.floor(pointSeq)
+  return (events || []).filter(e =>
+    e.id !== pointEvent?.id &&
+    (e.seq || 0) !== pointSeq &&
+    Math.floor(e.seq || 0) === baseSeq &&
+    e.payload?.team === teamKey &&
+    ((e.type === 'lineup' && !e.payload?.fromSubstitution && !e.payload?.isInitial) || e.type === 'libero_exit')
+  )
+}

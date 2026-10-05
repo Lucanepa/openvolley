@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
-import { validateManualSubstitution } from '../domain/substitutions'
+import { validateManualSubstitution, validateManualTimeout } from '../domain/substitutions'
+import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
+import { mergeOfficialsEdits } from '../domain/officials'
 import { apiFrom } from '../lib/apiClient'
 
 // Standard volleyball team colors - keys for translation
@@ -204,12 +206,26 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     return change
   }, [])
 
+  // An edited "score at time of event": keep the rest of the stored snapshot (it
+  // also carries the full undo state) and update both score spellings it may use
+  // (full snapshots store pointsA/pointsB, manual entries scoreA/scoreB).
+  const mergeEditedScore = (snapshot, scoreA, scoreB) => {
+    const snap = snapshot || {}
+    return {
+      ...snap,
+      scoreA,
+      scoreB,
+      ...('pointsA' in snap ? { pointsA: scoreA } : {}),
+      ...('pointsB' in snap ? { pointsB: scoreB } : {})
+    }
+  }
+
   // ==================== SET FUNCTIONS ====================
   const updateSetScore = useCallback((setId, field, value) => {
     setEditedSets(prev => prev.map(s => {
       if (s.id === setId) {
         const oldValue = s[field]
-        const newValue = parseInt(value, 10) || 0
+        const newValue = Math.max(0, parseInt(value, 10) || 0)
         if (oldValue !== newValue) {
           recordChange('set', field, oldValue, newValue, `Set ${s.index} ${field}: ${oldValue} → ${newValue}`)
         }
@@ -245,44 +261,19 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     })
   }, [recordChange])
 
+  // Swap only the A/B designation (which team is A on the scoresheet). Home/away,
+  // team IDs, players, set scores and events are NOT touched: they are keyed by
+  // home/away, so they stay correct. The A/B-labelled fields (serve flags, set 5
+  // choices) are swapped together so the first server and set 5 sides keep
+  // referring to the same teams.
   const swapTeamDesignation = useCallback(() => {
-    // Swap home and away teams entirely
-    recordChange('match', 'teamDesignation', 'original', 'swapped', 'Swapped team A/B designation')
-
-    // Swap teams
-    const tempTeam = editedHomeTeam
-    setEditedHomeTeam(editedAwayTeam)
-    setEditedAwayTeam(tempTeam)
-
-    // Swap players
-    const tempPlayers = editedHomePlayers
-    setEditedHomePlayers(editedAwayPlayers)
-    setEditedAwayPlayers(tempPlayers)
-
-    // Swap bench officials
-    const tempBench = editedHomeBench
-    setEditedHomeBench(editedAwayBench)
-    setEditedAwayBench(tempBench)
-
-    // Swap team IDs in match
     setEditedMatch(prev => {
       if (!prev) return prev
-      return {
-        ...prev,
-        homeTeamId: prev.awayTeamId,
-        awayTeamId: prev.homeTeamId,
-        coinTossTeamA: prev.coinTossTeamB,
-        coinTossTeamB: prev.coinTossTeamA
-      }
+      const patch = swapTeamDesignationPatch(prev)
+      recordChange('match', 'teamDesignation', `A=${prev.coinTossTeamA || 'home'}`, `A=${patch.coinTossTeamA}`, 'Swapped team A/B designation')
+      return { ...prev, ...patch, _designationSwapped: !prev._designationSwapped }
     })
-
-    // Swap scores in sets
-    setEditedSets(prev => prev.map(set => ({
-      ...set,
-      homePoints: set.awayPoints,
-      awayPoints: set.homePoints
-    })))
-  }, [recordChange, editedHomeTeam, editedAwayTeam, editedHomePlayers, editedAwayPlayers, editedHomeBench, editedAwayBench])
+  }, [recordChange])
 
   // ==================== PLAYER FUNCTIONS ====================
   const updatePlayer = useCallback((playerId, field, value, isHome) => {
@@ -381,6 +372,12 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }, [allEvents, recordChange])
 
   const addTimeout = useCallback((team, setIndex, scoreA, scoreB) => {
+    // Max 2 timeouts per team per set (FIVB 15.4), as the live Scoreboard enforces
+    const { legal, reason } = validateManualTimeout(allEvents, team, setIndex)
+    if (!legal) {
+      showAlert(reason, 'error')
+      return false
+    }
     const newEvent = {
       id: `new_${Date.now()}`,
       matchId,
@@ -395,7 +392,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     recordChange('event', 'add', null, newEvent, `Added ${team} timeout in set ${setIndex}`)
     setNewEvents(prev => [...prev, newEvent])
     setAllEvents(prev => [...prev, newEvent].sort((a, b) => (a.seq || 0) - (b.seq || 0)))
-  }, [matchId, allEvents, recordChange])
+    return true
+  }, [matchId, allEvents, recordChange, showAlert])
 
   const addSubstitution = useCallback((team, setIndex, playerOut, playerIn, scoreA, scoreB) => {
     // Enforce substitution legality (FIVB 15.5-15.6) — manual entries previously
@@ -456,7 +454,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     setAllEvents(prev => prev.map(e => {
       if (e.id === editingSanction.id) {
         const newPayload = { ...e.payload, type: editingSanction.type, sanctionType: editingSanction.type }
-        const newSnapshot = { scoreA: editingSanction.scoreA, scoreB: editingSanction.scoreB }
+        // Merge: the stored snapshot also carries the full undo state
+        const newSnapshot = mergeEditedScore(e.stateSnapshot, editingSanction.scoreA, editingSanction.scoreB)
         recordChange('event', 'sanction', JSON.stringify(e), JSON.stringify({ ...e, payload: newPayload, setIndex: editingSanction.setIndex, stateSnapshot: newSnapshot }), `Modified sanction`)
         return { ...e, payload: newPayload, setIndex: editingSanction.setIndex, stateSnapshot: newSnapshot, isModified: true }
       }
@@ -468,7 +467,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   // Handle adding timeout from modal
   const handleAddTimeoutSubmit = useCallback(() => {
     const { team, setIndex, scoreA, scoreB } = newTimeoutData
-    addTimeout(team, setIndex, scoreA, scoreB)
+    const ok = addTimeout(team, setIndex, scoreA, scoreB)
+    if (ok === false) return // limit reached — keep the modal open
     setShowAddTimeout(false)
     setNewTimeoutData({ team: 'home', setIndex: 1, scoreA: 0, scoreB: 0 })
   }, [newTimeoutData, addTimeout])
@@ -486,17 +486,29 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   // Handle editing substitution
   const handleEditSubSubmit = useCallback(() => {
     if (!editingSub) return
+    // Same legality check as a new substitution, judged against the other subs
+    const original = allEvents.find(e => e.id === editingSub.id)
+    const otherEvents = allEvents.filter(e => e.id !== editingSub.id && !deletedEventIds.includes(e.id))
+    const { legal, reason } = validateManualSubstitution(
+      otherEvents, original?.payload?.team, editingSub.setIndex,
+      parseInt(editingSub.playerOut, 10), parseInt(editingSub.playerIn, 10)
+    )
+    if (!legal) {
+      showAlert(reason, 'error')
+      return
+    }
     setAllEvents(prev => prev.map(e => {
       if (e.id === editingSub.id) {
         const newPayload = { ...e.payload, playerOut: parseInt(editingSub.playerOut, 10), playerIn: parseInt(editingSub.playerIn, 10) }
-        const newSnapshot = { scoreA: editingSub.scoreA, scoreB: editingSub.scoreB }
+        // Merge: the stored snapshot also carries the full undo state
+        const newSnapshot = mergeEditedScore(e.stateSnapshot, editingSub.scoreA, editingSub.scoreB)
         recordChange('event', 'substitution', JSON.stringify(e), JSON.stringify({ ...e, payload: newPayload, setIndex: editingSub.setIndex, stateSnapshot: newSnapshot }), `Modified substitution`)
         return { ...e, payload: newPayload, setIndex: editingSub.setIndex, stateSnapshot: newSnapshot, isModified: true }
       }
       return e
     }))
     setEditingSub(null)
-  }, [editingSub, recordChange])
+  }, [editingSub, allEvents, deletedEventIds, recordChange, showAlert])
 
   const updateEventPayload = useCallback((eventId, field, value) => {
     setAllEvents(prev => prev.map(e => {
@@ -572,7 +584,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           match_type_2: editedMatch.match_type_2,
           coinTossTeamA: editedMatch.coinTossTeamA,
           coinTossTeamB: editedMatch.coinTossTeamB,
-          officials: editedOfficials,
+          // A/B-labelled fields move together with the designation (Swap A/B)
+          ...(editedMatch._designationSwapped ? {
+            coinTossServeA: editedMatch.coinTossServeA,
+            coinTossServeB: editedMatch.coinTossServeB,
+            set5LeftTeam: editedMatch.set5LeftTeam,
+            set5FirstServe: editedMatch.set5FirstServe,
+            setLeftTeamOverrides: editedMatch.setLeftTeamOverrides
+          } : {}),
+          // officials is an array of { role, ... } everywhere else: merge the
+          // edits into it (keeps line judges) instead of storing the editor object
+          officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials),
           bench_home: editedHomeBench,
           bench_away: editedAwayBench,
           manualChanges: [...existingChanges, ...changes]
@@ -630,11 +652,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         })
       }
 
-      // Update modified events
+      // Update modified events (set and score edits too, as recorded in the audit log)
       for (const event of allEvents) {
         if (event.isModified && !String(event.id).startsWith('new_')) {
           await db.events.update(event.id, {
-            payload: event.payload
+            payload: event.payload,
+            setIndex: event.setIndex,
+            stateSnapshot: event.stateSnapshot
           })
         }
       }
@@ -719,7 +743,16 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           players_away: playersAway,
           home_team: homeTeamData,
           away_team: awayTeamData,
-          officials: editedOfficials,
+          officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials, { snakeCase: true }),
+          ...(editedMatch._designationSwapped ? {
+            coin_toss: {
+              team_a: editedMatch.coinTossTeamA,
+              team_b: editedMatch.coinTossTeamB,
+              serve_a: editedMatch.coinTossServeA,
+              confirmed: true,
+              first_serve: editedMatch.firstServe || (editedMatch.coinTossServeA ? editedMatch.coinTossTeamA : editedMatch.coinTossTeamB)
+            }
+          } : {}),
           manual_changes: [...(editedMatch.manualChanges || []), ...changes]
         })
         .eq('external_id', editedMatch.seed_key)
@@ -982,7 +1015,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <div style={cardStyle}>
                   <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
-                    {t('manualAdjustmentsEditor.teamAHome', 'Team A (Home)')}
+                    {editedMatch?.coinTossTeamA === 'away'
+                      ? t('manualAdjustmentsEditor.teamBHome', 'Team B (Home)')
+                      : t('manualAdjustmentsEditor.teamAHome', 'Team A (Home)')}
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
@@ -1039,7 +1074,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 <div style={cardStyle}>
                   <h2 style={{ fontSize: '16px', marginBottom: '16px', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
-                    {t('manualAdjustmentsEditor.teamBAway', 'Team B (Away)')}
+                    {editedMatch?.coinTossTeamA === 'away'
+                      ? t('manualAdjustmentsEditor.teamAAway', 'Team A (Away)')
+                      : t('manualAdjustmentsEditor.teamBAway', 'Team B (Away)')}
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>

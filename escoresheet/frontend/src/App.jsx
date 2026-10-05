@@ -47,7 +47,8 @@ import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
-import { isMatchFinished as isMatchFinishedUtil } from './utils/matchFormat'
+import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
+import { getMatchWinner } from './domain/matchEnd'
 import { PhoneIcon } from './components/icons'
 
 function parseDateTime(dateTime) {
@@ -1502,8 +1503,11 @@ export default function App() {
     const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
     const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
 
-    // Check if either team has won enough sets (match win)
-    const isMatchEnd = isMatchFinishedUtil(homeSetsWon, awaySetsWon, matchRecord?.bestOf)
+    // Match end: a team has won enough sets, OR the scoreboard already ended the
+    // match (forfeit / impossibility to resume set status 'ended' without the
+    // sets being won). Either way no further set may be created.
+    const isMatchEnd = isMatchFinishedUtil(homeSetsWon, awaySetsWon, matchRecord?.bestOf) ||
+      matchRecord?.status === 'ended'
 
     if (isMatchEnd) {
       // IMPORTANT: When match ends, preserve ALL data in database:
@@ -1531,8 +1535,8 @@ export default function App() {
           .sort((a, b) => a.index - b.index)
           .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
 
-        // Determine winner
-        const winner = homeSetsWon > awaySetsWon ? 'home' : 'away'
+        // Determine winner (null for a match stopped without a winner)
+        const winner = getMatchWinner(sets, matchRecord?.bestOf, { forfeitTeam: matchRecord?.forfeitTeam })
         const finalScore = `${homeSetsWon}-${awaySetsWon}`
 
         await db.sync_queue.add({
@@ -1569,8 +1573,12 @@ export default function App() {
       return
     }
 
-    // Continue to next set (legacy logic - shouldn't reach here with new logic)
-    const setId = await db.sets.add({ matchId: cur.matchId, index: cur.index + 1, homePoints: 0, awayPoints: 0, finished: false })
+    // Continue to next set (legacy logic - shouldn't reach here with new logic;
+    // the Scoreboard creates the next set itself). Never duplicate a set, and keep
+    // the best-of-3 2 -> 5 jump.
+    const nextIndex = getNextSetIndex(cur.index, homeSetsWon, awaySetsWon, matchRecord?.bestOf)
+    if (sets.some(s => s.index === nextIndex)) return
+    const setId = await db.sets.add({ matchId: cur.matchId, index: nextIndex, homePoints: 0, awayPoints: 0, finished: false })
 
     // Only sync official matches with seed_key
     if (!isTestMatch && matchRecord?.seed_key) {
@@ -1580,7 +1588,7 @@ export default function App() {
         payload: {
           external_id: String(setId),
           match_id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-          index: cur.index + 1,
+          index: nextIndex,
           home_points: 0,
           away_points: 0,
           finished: false,
@@ -2756,7 +2764,8 @@ export default function App() {
         setShowMatchSetup(false)
         setShowCoinToss(false)
 
-        if ((existing.status === 'live' || existing.status === 'ended') && isMatchFinished && !existing.approved) {
+        // 'ended' without the sets won = forfeit or stopped match: also Match End
+        if (((existing.status === 'live' && isMatchFinished) || existing.status === 'ended') && !existing.approved) {
           // Match finished but not yet approved - go to MatchEnd
           setShowMatchEnd(true)
         } else {
@@ -2891,7 +2900,8 @@ export default function App() {
         setShowMatchSetup(false)
         setShowCoinToss(false)
 
-        if ((match.status === 'live' || match.status === 'ended') && isMatchFinished && !match.approved) {
+        // 'ended' without the sets won = forfeit or stopped match: also Match End
+        if (((match.status === 'live' && isMatchFinished) || match.status === 'ended') && !match.approved) {
           // Match finished but not yet approved - go to MatchEnd
           setShowMatchEnd(true)
         } else {
