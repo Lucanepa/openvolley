@@ -16,6 +16,7 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
+import { setExtId } from '../utils/syncIds'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 
 // Generate a placeholder signature image (wavy line) for test matches
@@ -807,7 +808,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         resource: 'set',
         action: 'insert',
         payload: {
-          external_id: String(firstSetId),
+          external_id: setExtId(match.seed_key, firstSetId),
           match_id: match.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: 1,
           home_points: 0,

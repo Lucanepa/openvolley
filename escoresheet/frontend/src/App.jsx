@@ -48,6 +48,7 @@ import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin 
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import { isMatchFinished as isMatchFinishedUtil } from './utils/matchFormat'
+import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
 
 function parseDateTime(dateTime) {
@@ -1578,7 +1579,7 @@ export default function App() {
         resource: 'set',
         action: 'insert',
         payload: {
-          external_id: String(setId),
+          external_id: setExtId(matchRecord.seed_key, setId),
           match_id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: cur.index + 1,
           home_points: 0,
