@@ -80,4 +80,16 @@ describe('volleyui kit wiring (P0)', () => {
     expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
   })
 
+  // The production subdomain builds (release workflow) write their own heads
+  // and manifests: same light-only shell as the vite-build entries above.
+  it('build-subdomains.js writes light-only heads and manifests', () => {
+    const src = read('scripts/build-subdomains.js')
+    const colors = [...src.matchAll(/themeColor: '([^']+)'/g)].map((m) => m[1])
+    expect(colors).toHaveLength(6)
+    expect(new Set(colors)).toEqual(new Set(['#ffffff']))
+    // both templates (createIndexHtml, createScoresheetHtml)
+    expect(src.match(/<meta name="color-scheme" content="light" \/>\s*<meta name="theme-color" content="\$\{config\.themeColor\}" \/>/g)).toHaveLength(2)
+    expect(src).toMatch(/theme_color: config\.themeColor/)
+    expect(src).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
+  })
 })
