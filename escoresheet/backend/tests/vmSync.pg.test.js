@@ -10,6 +10,12 @@
  * Each run creates its own database from tests/fixtures/svrz_schema.sql (the
  * production definitions) and drops it at the end. VolleyManager is the
  * in-memory fake: no network.
+ *
+ * With PG_TEST_TEMPLATE=<database> (a scrubbed rehearsal restore made by
+ * scripts/migrate/restore.sh; see tests/helpers/pgTestDb.js) the database is a
+ * copy of that one instead, and the sync runs as a login role that is only a
+ * member of the restored ov_app, i.e. with exactly the grants db/roles.sql
+ * gives the backend.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -18,6 +24,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { runVmSync, ADVISORY_LOCK_KEY } from '../lib/vmSync.js'
 import { createFakeVolleyManager, makeGame, FAKE_USER, FAKE_PASSWORD } from './helpers/fakeVolleyManager.js'
+import { PG_TEST_TEMPLATE, createDatabase } from './helpers/pgTestDb.js'
 
 const PG_TEST_URL = process.env.PG_TEST_URL || process.env.TEST_DATABASE_URL || ''
 const SKIP = PG_TEST_URL ? false : 'PG_TEST_URL not set (see the header of this file)'
@@ -46,24 +53,33 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     admin = new pg.Client({ connectionString: PG_TEST_URL })
     await admin.connect()
     dbName = `ov_test_vmsync_${process.pid}_${Date.now().toString(36)}`
-    await admin.query(`CREATE DATABASE "${dbName}"`)
+    await createDatabase(admin, dbName) // a copy of PG_TEST_TEMPLATE when set
     const u = new URL(PG_TEST_URL)
     u.pathname = '/' + dbName
     dbUrl = u.toString()
     const c = new pg.Client({ connectionString: dbUrl })
     await c.connect()
     // A DML-only login role like the production ov_app: the sync must not need
-    // more. svrz_games / svrz_sync_log have RLS enabled and no policies (as in
-    // production), so the role needs BYPASSRLS, as Supabase's service_role had;
-    // roles.sql has to give ov_app the same (or policies). See the
-    // 'without BYPASSRLS' test below for what happens otherwise.
+    // more. svrz_games / svrz_sync_log have RLS enabled and no policies (as on
+    // Supabase), so here the role needs BYPASSRLS, as Supabase's service_role
+    // had. On the self-hosted database db/001_post_restore.sql disables RLS
+    // instead (restore.sh verifies it) and ov_app has no BYPASSRLS. See the
+    // 'without BYPASSRLS' test below for what happens with RLS still on.
     appRole = `${dbName}_app`
     noRlsRole = `${dbName}_norls`
     try {
-      await c.query(SCHEMA_SQL)
-      await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS`)
+      if (PG_TEST_TEMPLATE) {
+        // The restored database: no RLS left (restore.sh checks that), and the
+        // app role is nothing but ov_app.
+        const { rows: [{ ok }] } = await admin.query(`SELECT count(*) = 1 AS ok FROM pg_roles WHERE rolname = 'ov_app'`)
+        assert.ok(ok, 'PG_TEST_TEMPLATE: role ov_app missing (run db/roles.sql)')
+        await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS INHERIT IN ROLE ov_app`)
+      } else {
+        await c.query(SCHEMA_SQL)
+        await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS`)
+      }
       await admin.query(`CREATE ROLE "${noRlsRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`)
-      for (const r of [appRole, noRlsRole]) {
+      for (const r of PG_TEST_TEMPLATE ? [noRlsRole] : [appRole, noRlsRole]) {
         await c.query(`GRANT USAGE ON SCHEMA public TO "${r}";
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${r}";
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${r}";`)
@@ -274,7 +290,9 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     assert.deepEqual(g.map((x) => [x.game_number, x.date, x.time]), [['7001', '29/03/2026', '20:00'], ['7005', '17/01/2026', '19:30']])
   })
 
-  it('without BYPASSRLS (RLS on, no policies) the run fails cleanly and releases the lock', async () => {
+  it('without BYPASSRLS (RLS on, no policies) the run fails cleanly and releases the lock', {
+    skip: PG_TEST_TEMPLATE ? 'restored database: restore.sh removes RLS, so ov_app needs no BYPASSRLS' : false
+  }, async () => {
     await reset()
     const u = new URL(dbUrl)
     u.username = noRlsRole

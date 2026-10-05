@@ -20,11 +20,12 @@
 --   ov_app    what the backend connects as (DATABASE_URL). No superuser, no DDL,
 --             no CREATE anywhere, no TRUNCATE/REFERENCES/TRIGGER, no function
 --             EXECUTE, 10 s statement timeout. Gets:
---               public  DML on every table except the NOT-for-the-app list
---                       below, USAGE+SELECT on sequences (no setval), and the
---                       same on future tables/sequences created by ov_owner;
---                       which tables clients may reach is decided by the
---                       allowlist in lib/pgQuery.js, these grants are the floor.
+--               public  DML on every table (svrz_games/svrz_sync_log too:
+--                       lib/vmSync.js runs inside the backend on its pool),
+--                       USAGE+SELECT on sequences (no setval), and the same on
+--                       future tables/sequences created by ov_owner; which
+--                       tables clients may reach is decided by the allowlist
+--                       in lib/pgQuery.js, these grants are the floor.
 --               auth    exactly what lib/auth.js needs:
 --                       auth.users         SELECT (to_jsonb of the whole row),
 --                                          INSERT (sign-up), DELETE
@@ -67,12 +68,21 @@ BEGIN
 END $$;
 
 \if :{?ov_app_pw}
+-- Keep every statement that carries the password out of the server log,
+-- whatever log_statement / log_min_duration_statement the cluster runs with
+-- and even if one fails. Superuser-only settings: this file runs as ov_owner.
+SET LOCAL log_statement = 'none';
+SET LOCAL log_min_duration_statement = -1;
+SET LOCAL log_min_error_statement = panic;
 SELECT length(:'ov_app_pw') >= 16 AS ov_pw_ok \gset
 \if :ov_pw_ok
 ALTER ROLE ov_app PASSWORD :'ov_app_pw';
 \else
 DO $$ BEGIN RAISE EXCEPTION 'ov_app_pw is shorter than 16 characters (generate it with: openssl rand -hex 32)'; END $$;
 \endif
+RESET log_statement;
+RESET log_min_duration_statement;
+RESET log_min_error_statement;
 \else
 \warn 'roles.sql: ov_app_pw not set; the password of ov_app is unchanged'
 \endif
@@ -156,20 +166,9 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, ov_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ov_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ov_app;
 
--- NOT for the app: tables the backend never touches.
---   svrz_sync_log  bookkeeping of the external svrz_games feeder
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['svrz_sync_log'] LOOP
-    IF to_regclass(format('public.%I', t)) IS NOT NULL THEN
-      EXECUTE format('REVOKE ALL ON public.%I FROM ov_app', t);
-    END IF;
-    IF to_regclass(format('public.%I', t || '_id_seq')) IS NOT NULL THEN
-      EXECUTE format('REVOKE ALL ON SEQUENCE public.%I FROM ov_app', t || '_id_seq');
-    END IF;
-  END LOOP;
-END $$;
+-- No public table is held back: the daily VolleyManager sync (lib/vmSync.js,
+-- scheduled by the backend in cloud mode) writes svrz_games and svrz_sync_log
+-- (INSERT ... RETURNING id, so it needs svrz_sync_log_id_seq too) as ov_app.
 
 -- Functions: nobody but the owner may call them. The restored Supabase
 -- functions include SECURITY DEFINER ones (delete_user, reset_test_match,
