@@ -166,6 +166,39 @@ describe('isSessionRejected', () => {
     expect(isSessionRejected({ error: { message: 'fetch failed', status: 200 } })).toBe(false)
     expect(isSessionRejected({ error: null })).toBe(false)
   })
+
+  it('HTTP 200 + error: only GoTrue token errors sign out, never gateway text', () => {
+    const at200 = (message) => isSessionRejected({ error: { message, status: 200 } })
+    expect(at200('invalid JWT: unable to parse or verify signature, token has invalid claims: token is expired')).toBe(true)
+    expect(at200('JWT expired')).toBe(true)
+    expect(at200('User from sub claim in JWT does not exist')).toBe(true)
+    expect(at200('Session from session_id claim in JWT does not exist')).toBe(true)
+    expect(at200('An invalid response was received from the upstream server')).toBe(false)
+    expect(at200('Not Found')).toBe(false)
+    expect(at200('Bad Gateway: upstream connect error or disconnect/reset before headers')).toBe(false)
+    expect(at200('Internal server error')).toBe(false)
+  })
+})
+
+describe('QueryBuilder transport failures', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('passes an abort signal so a stalled request cannot hang forever', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: [], error: null }))
+    await apiFrom('matches').select('id')
+    const opts = globalThis.fetch.mock.calls[0][1]
+    expect(opts.signal).toBeDefined()
+  })
+
+  it('a timeout or network failure resolves as a network error, never throws', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new DOMException('The operation timed out.', 'TimeoutError') })
+    const result = await apiFrom('sets').update({ home_points: 3 }).eq('external_id', 'm:s:1')
+    expect(result.data).toBeNull()
+    expect(result.error.network).toBe(true)
+    expect(result.error.status).toBe(0)
+  })
 })
 
 describe('storage upload encoding', () => {

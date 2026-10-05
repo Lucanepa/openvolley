@@ -42,6 +42,23 @@ function networkError(err) {
   return { message: err?.message || 'Network unavailable', status: 0, network: true }
 }
 
+// Upper bound for one /api/db round trip.
+export const DB_REQUEST_TIMEOUT_MS = 20000
+
+function requestTimeoutSignal(ms) {
+  try {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms)
+    }
+    if (typeof AbortController !== 'undefined') {
+      const ctrl = new AbortController()
+      setTimeout(() => ctrl.abort(), ms)
+      return ctrl.signal
+    }
+  } catch { /* no abort support: fall through */ }
+  return undefined
+}
+
 // ==================== Database (drop-in for supabase.from()) ====================
 
 class QueryBuilder {
@@ -150,15 +167,23 @@ class QueryBuilder {
       return { data: null, error: { message: 'Backend not available' } }
     }
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        table: this._table,
-        action: this._action,
-        params: this._params
+    let response
+    try {
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          table: this._table,
+          action: this._action,
+          params: this._params
+        }),
+        // A stalled request (captive portal, half-open TCP) must not hang the
+        // page-wide sync flush forever.
+        signal: requestTimeoutSignal(DB_REQUEST_TIMEOUT_MS)
       })
-    })
+    } catch (err) {
+      return { data: null, error: networkError(err), count: undefined, status: 0 }
+    }
 
     const result = await safeJsonResponse(response, 'Database operation failed')
     return { data: result.data ?? null, error: result.error ?? null, count: result.count, status: result.status }
@@ -381,6 +406,8 @@ function storeToken(session) {
  * keep the session: a scorer who opens the app without internet must stay
  * signed in.
  */
+const SESSION_REJECTED_MESSAGE = /\bjwt\b|token is expired|token has expired|token is malformed|(sub|session_id) claim/i
+
 export function isSessionRejected(result) {
   const err = result?.error
   if (!err) return false
@@ -388,8 +415,10 @@ export function isSessionRejected(result) {
   const status = err.status ?? result.status
   if (status === 401 || err.code === 'invalid_token') return true
   // The current proxy answers get-user with HTTP 200 + { error } when Supabase
-  // rejects the JWT (expired, bad signature, deleted user).
-  if (status === 200 && /invalid|expired|jwt|does not exist|not found|malformed/i.test(err.message || '')) return true
+  // rejects the JWT (expired, bad signature, deleted user). Match only GoTrue's
+  // token errors, never generic gateway text ('invalid response from upstream')
+  // seen during an outage.
+  if (status === 200 && SESSION_REJECTED_MESSAGE.test(err.message || '')) return true
   return false
 }
 
