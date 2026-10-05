@@ -3457,7 +3457,7 @@ export default function App() {
                               try {
                                 let cloudData
                                 if (backup.source === 'pocketbase') {
-                                  cloudData = await fetchPocketBaseMatch(backup.match_id)
+                                  cloudData = await fetchPocketBaseMatch(backup.match_id, cloudBackupPin)
                                 } else {
                                   cloudData = await fetchCloudBackup(backup.path)
                                 }

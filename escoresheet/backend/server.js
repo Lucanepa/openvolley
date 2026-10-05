@@ -153,6 +153,56 @@ function stripMatchSecrets(match) {
   return clean
 }
 
+// Room / activeMatches key: always String(matchId). The scoreboard sends the
+// numeric Dexie id, subscribers send a string; without this they ended up in
+// different rooms (Map treats 5 and "5" as different keys).
+function normalizeMatchId(id) {
+  if (id === undefined || id === null) return null
+  const s = String(id).trim()
+  return s && s.length <= 128 ? s : null
+}
+
+// The match's game PIN as a comparable string, or null (test matches have none).
+function gamePinOf(match) {
+  if (!match || typeof match !== 'object') return null
+  const v = match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin
+  if (v === undefined || v === null) return null
+  const s = String(v).trim()
+  return s || null
+}
+
+function safeEqualStr(a, b) {
+  const x = Buffer.from(String(a), 'utf8')
+  const y = Buffer.from(String(b), 'utf8')
+  return x.length === y.length && timingSafeEqual(x, y)
+}
+
+// The PIN-free bundle every match-full-data / match-data-update carries — the
+// same flat shape the LAN relays send (frontend/electron/lanRelayCore.cjs).
+function wireBundle(entry) {
+  const out = {
+    match: stripMatchSecrets(entry.match),
+    homeTeam: entry.homeTeam ?? null,
+    awayTeam: entry.awayTeam ?? null,
+    homePlayers: entry.homePlayers || [],
+    awayPlayers: entry.awayPlayers || [],
+    sets: entry.sets || [],
+    events: entry.events || []
+  }
+  if (entry.liveState !== undefined) out.liveState = entry.liveState
+  return out
+}
+
+// match-full-data / match-data-update. A stored liveState is mirrored under
+// `data` (and nothing else is) for the LedBox bridge, which reads
+// msg.data.liveState — same as the LAN relays.
+function matchDataMessage(type, matchId, entry, scoreboardTs) {
+  const now = Date.now()
+  const msg = { type, matchId, ...wireBundle(entry), _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
+  if (entry.liveState !== undefined) msg.data = { liveState: entry.liveState }
+  return msg
+}
+
 function redactSecrets(table, rows) {
   const secrets = SECRET_COLUMNS[table]
   if (!secrets || rows == null) return rows
@@ -296,6 +346,22 @@ const MAX_ROOMS = 500
 const MAX_CONNECTIONS = 2000
 const MAX_CONNECTIONS_PER_IP = 50
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+// Dexie match ids restart at 1 on every device, so ids collide across
+// devices/venues: a match nobody owns may be claimed by another scoreboard —
+// after ORPHAN_TAKEOVER_MS when it is finished, after STALE_TAKEOVER_MS when it
+// is still in play (a scorer offline through a set break keeps its match), and
+// then its own game PIN may reclaim it once. Same rules as the LAN relays
+// (frontend/electron/lanRelayCore.cjs).
+const ORPHAN_TAKEOVER_MS = 60 * 1000
+const STALE_TAKEOVER_MS = 10 * 60 * 1000
+// Wrong game-PIN claims per IP / per socket per minute before claims needing
+// proof are refused without comparing the PIN (no guessing oracle).
+const CLAIM_FAILURE_LIMIT = 5
+// Distinct match ids one IP's sockets may own at once / claim per minute
+// (higher than the LAN relays: a club's courts can share one NAT address).
+const MAX_OWNED_PER_IP = 20
+const NEW_CLAIM_LIMIT = 30
+const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 
 // --- PocketBase sync (5s trailing-edge debounce) ---
 const PB_SYNC_DEBOUNCE_MS = 5000
@@ -369,7 +435,9 @@ async function executePocketBaseSync(matchId, matchData) {
   }
 }
 
-async function deletePocketBaseMatch(matchId) {
+// Relay room cleanup must not destroy the backup: mark the record retired
+// (skipped by startup recovery) instead of deleting it.
+async function retirePocketBaseMatch(matchId) {
   // Cancel any pending debounced sync
   const pending = pbPendingSync.get(matchId)
   if (pending) { clearTimeout(pending.timer); pbPendingSync.delete(matchId) }
@@ -379,25 +447,20 @@ async function deletePocketBaseMatch(matchId) {
     const existing = await pbClient.collection('matches').getFirstListItem(
       pbClient.filter('match_id = {:id}', { id: String(matchId) })
     )
-    await pbClient.collection('matches').delete(existing.id)
-    console.log(`[PocketBase] Deleted match ${matchId}`)
+    try {
+      await pbClient.collection('matches').update(existing.id, { status: 'deleted', updated_at: new Date().toISOString() })
+    } catch (err) {
+      // executePocketBaseSync stores any match status ('unknown' included), so
+      // `status` is free text in practice; a deployment whose schema made it a
+      // select field would reject 'deleted'. 'final' is skipped by recovery too.
+      if (err.status !== 400) throw err
+      await pbClient.collection('matches').update(existing.id, { status: 'final', updated_at: new Date().toISOString() })
+    }
+    // Retired records stay in the restore list (with their status): retiring
+    // exists precisely so a cleared relay match can still be restored.
+    console.log(`[PocketBase] Retired match ${matchId}`)
   } catch (err) {
-    if (err.status !== 404) console.error(`[PocketBase] Delete failed for match ${matchId}:`, err.message)
-  }
-}
-
-async function clearAllPocketBaseMatches() {
-  // Cancel all pending debounced syncs
-  for (const [, entry] of pbPendingSync) clearTimeout(entry.timer)
-  pbPendingSync.clear()
-  pbSyncedMatches.clear()
-  if (!pbReady || !pbClient) return
-  try {
-    const records = await pbClient.collection('matches').getFullList({ fields: 'id' })
-    for (const record of records) await pbClient.collection('matches').delete(record.id)
-    console.log(`[PocketBase] Cleared all ${records.length} matches`)
-  } catch (err) {
-    console.error('[PocketBase] Clear all failed:', err.message)
+    if (err.status !== 404) console.error(`[PocketBase] Retire failed for match ${matchId}:`, err.message)
   }
 }
 
@@ -408,7 +471,7 @@ async function loadMatchesFromPocketBase() {
     let loaded = 0
     for (const record of records) {
       const matchId = record.match_id
-      if (!matchId || record.status === 'final' || activeMatches.has(matchId)) continue
+      if (!matchId || record.status === 'final' || record.status === 'deleted' || activeMatches.has(matchId)) continue
       activeMatches.set(matchId, {
         matchId,
         match: record.match_data || {},
@@ -420,7 +483,8 @@ async function loadMatchesFromPocketBase() {
         events: record.events || [],
         gameNumber: record.game_number || record.match_data?.gameN,
         updatedAt: record.updated_at || record.updated,
-        updatedBy: 'pocketbase-recovery'
+        updatedBy: 'pocketbase-recovery',
+        orphanedAt: Date.now() // no scoreboard connected yet
       })
       rooms.set(matchId, {
         matchId,
@@ -478,6 +542,7 @@ const CONTACT_RATE_LIMIT_MAX = 3
 // One Map per category so counters don't interfere across endpoint types
 const rateLimitMaps = {
   default: new Map(),   // validate-pin, etc.
+  relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, /api/pocketbase/*
   contact: new Map(),   // /api/contact
   email: new Map(),     // /api/match/send-info
   auth: new Map(),      // /api/auth/*, /api/verify-reopen-password
@@ -826,7 +891,7 @@ const server = createServer((req, res) => {
   // PocketBase matches list (for restore UI)
   if (url.pathname === '/api/pocketbase/matches' && req.method === 'GET') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'default')) {
+    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ data: [], error: 'Rate limited' }))
       return
@@ -871,7 +936,7 @@ const server = createServer((req, res) => {
   // PocketBase single match (full snapshot for restore)
   if (url.pathname.startsWith('/api/pocketbase/matches/') && req.method === 'GET') {
     const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'default')) {
+    if (isRateLimited(clientIp, DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
       return
@@ -887,13 +952,31 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ data: null, error: 'match_id required' }))
       return
     }
+    // The backup's match_data holds every connection PIN. Anonymous callers get
+    // it stripped; a restore that presents the match's game PIN gets it whole.
+    const proofPin = url.searchParams.get('gamePin')
+    if (proofPin && isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ data: null, error: 'Rate limited' }))
+      return
+    }
     ;(async () => {
       try {
         const record = await pbClient.collection('matches').getFirstListItem(
           pbClient.filter('match_id = {:id}', { id: String(matchId) })
         )
+        const storedPin = gamePinOf(record.match_data)
+        const proven = !!(proofPin && storedPin && safeEqualStr(String(proofPin).trim(), storedPin))
+        if (proofPin && storedPin && !proven) {
+          // A restore with the wrong game PIN gets a clear refusal, not a
+          // silently PIN-less match.
+          res.writeHead(403, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ data: null, error: 'Game PIN does not match this backup' }))
+          return
+        }
+        const data = proven ? record : { ...record, match_data: stripMatchSecrets(record.match_data) }
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ data: record }))
+        res.end(JSON.stringify({ data }))
       } catch (err) {
         if (err.status === 404) {
           res.writeHead(404, { 'Content-Type': 'application/json' })
@@ -998,6 +1081,11 @@ const server = createServer((req, res) => {
   // List active matches (ephemeral - just for current session)
   // Only return matches where refereeConnectionEnabled is true
   if (url.pathname === '/api/match/list') {
+    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ success: false, error: 'Rate limited', matches: [] }))
+      return
+    }
     try {
       const allMatches = Array.from(activeMatches.values())
       const filteredMatches = allMatches.filter(m => {
@@ -1063,7 +1151,13 @@ const server = createServer((req, res) => {
       url.pathname !== '/api/match/validate-pin' &&
       url.pathname !== '/api/match/by-game-number' &&
       req.method === 'GET') {
-    const matchId = url.pathname.replace('/api/match/', '')
+    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ success: false, error: 'Rate limited' }))
+      return
+    }
+    let matchId = null
+    try { matchId = normalizeMatchId(decodeURIComponent(url.pathname.replace('/api/match/', ''))) } catch { /* bad escape */ }
 
     if (!matchId) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -1071,16 +1165,8 @@ const server = createServer((req, res) => {
       return
     }
 
-    // Try to find match in activeMatches
-    let matchData = activeMatches.get(matchId)
-
-    // Also try with/without leading zeros or string conversion
-    if (!matchData) {
-      matchData = activeMatches.get(String(matchId))
-    }
-    if (!matchData) {
-      matchData = activeMatches.get(Number(matchId))
-    }
+    // activeMatches is keyed by String(matchId) everywhere
+    const matchData = activeMatches.get(matchId)
 
     if (matchData) {
       console.log(`[API] /api/match/${matchId} - Found match`)
@@ -1092,16 +1178,12 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({
         success: true,
         // Strip PINs — this endpoint is unauthenticated and PINs are the connection gate.
-        match: stripMatchSecrets(matchData.match),
+        ...wireBundle(matchData),
         homeTeam,
-        awayTeam,
-        homePlayers: matchData.homePlayers || [],
-        awayPlayers: matchData.awayPlayers || [],
-        sets: matchData.sets || [],
-        events: matchData.events || []
+        awayTeam
       }))
     } else {
-      console.log(`[API] /api/match/${sanitizeLog(matchId)} - Match not found. Active matches: ${Array.from(activeMatches.keys()).join(', ')}`)
+      console.log(`[API] /api/match/${sanitizeLog(matchId)} - Match not found (${activeMatches.size} active)`)
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         success: false,
@@ -1113,6 +1195,11 @@ const server = createServer((req, res) => {
 
   // Get detailed connection info for dashboard server UI
   if (url.pathname === '/api/server/connections') {
+    if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
+      res.end(JSON.stringify({ error: 'Rate limited' }))
+      return
+    }
     const matchId = url.searchParams.get('matchId')
 
     // Build client list (exclude WebSocket object and filter by matchId if provided)
@@ -1126,7 +1213,9 @@ const server = createServer((req, res) => {
       if (client.role && client.role !== 'scoreboard') {
         clients.push({
           id: client.id,
-          ip: client.ip,
+          // LAN scorers see which tablet is which; a public cloud relay must
+          // not hand every client's IP to anonymous callers.
+          ip: IS_CLOUD ? null : client.ip,
           role: client.role,
           team: client.team,
           matchId: client.matchId,
@@ -1652,6 +1741,8 @@ Generated by eScoresheet
             status: matchRow.status,
             scheduledAt: matchRow.scheduled_at,
             refereeConnectionEnabled: conns.referee_enabled,
+            homeTeamConnectionEnabled: conns.home_bench_enabled === true,
+            awayTeamConnectionEnabled: conns.away_bench_enabled === true,
             homeTeam: matchRow.home_team?.name || 'Home',
             awayTeam: matchRow.away_team?.name || 'Away',
             homeTeamColor: matchRow.home_team?.color,
@@ -2594,6 +2685,8 @@ wss.on('connection', (ws, req) => {
     matchId: null,
     role: null, // 'scoreboard', 'referee', 'bench'
     team: null, // 'home' or 'away' for bench clients
+    // Matches this socket proved the scoreboard role for (game PIN in sync-match-data)
+    ownedMatches: new Set(),
     connectedAt: new Date().toISOString()
   }
 
@@ -2652,6 +2745,11 @@ wss.on('connection', (ws, req) => {
           handleAction(clientInfo, message)
           break
 
+        case 'live-state-update':
+          // Scoreboard's computed live-state (same message as the LAN relays)
+          handleLiveStateUpdate(clientInfo, message)
+          break
+
         case 'clear-all-matches':
           // Clear all matches (or all except one)
           handleClearMatches(clientInfo, message)
@@ -2700,7 +2798,8 @@ wss.on('connection', (ws, req) => {
 
 // Handle client joining a match room
 function handleJoinMatch(clientInfo, message) {
-  const { matchId, role, pin, team } = message
+  const { pin, team } = message
+  const matchId = normalizeMatchId(message.matchId)
 
   if (!matchId) {
     clientInfo.ws.send(JSON.stringify({
@@ -2710,14 +2809,16 @@ function handleJoinMatch(clientInfo, message) {
     return
   }
 
-  // Validate role and team
-  const validatedRole = (role && VALID_ROLES.includes(role)) ? role : 'unknown'
+  // Validate role and team. 'scoreboard' cannot be self-declared: it is earned
+  // by proving the match's game PIN in sync-match-data.
+  const requestedRole = joinRole(message.role)
+  const validatedRole = (requestedRole && VALID_ROLES.includes(requestedRole)) ? requestedRole : 'unknown'
   const validatedTeam = (team && VALID_TEAMS.includes(team)) ? team : null
 
   // PIN enforcement for roles that require it
   if (ROLES_REQUIRING_PIN.includes(validatedRole)) {
-    const matchData = activeMatches.get(matchId) || activeMatches.get(String(matchId))
-    const match = matchData?.match || matchData
+    const matchData = activeMatches.get(matchId)
+    const match = matchData?.match
 
     if (!match) {
       // No match data yet — scoreboard hasn't connected
@@ -2753,11 +2854,7 @@ function handleJoinMatch(clientInfo, message) {
     }
 
     if (expectedPin != null && expectedPin !== '') {
-      const pinStr = String(pin || '').trim()
-      const expectedStr = String(expectedPin).trim()
-      const pinBuf = Buffer.from(pinStr, 'utf8')
-      const expectedBuf = Buffer.from(expectedStr, 'utf8')
-      if (pinBuf.length !== expectedBuf.length || !timingSafeEqual(pinBuf, expectedBuf)) {
+      if (!safeEqualStr(String(pin || '').trim(), String(expectedPin).trim())) {
         clientInfo.ws.send(JSON.stringify({
           type: 'error',
           message: 'Invalid PIN'
@@ -2811,6 +2908,13 @@ function handleJoinMatch(clientInfo, message) {
     roomSize: room.clients.size
   }))
 
+  // Initial snapshot, like the LAN relays: late subscribers don't wait for the
+  // scoreboard's next sync. PIN-free.
+  const stored = activeMatches.get(matchId)
+  if (stored?.match) {
+    clientInfo.ws.send(JSON.stringify(matchDataMessage('match-full-data', matchId, stored)))
+  }
+
   // Notify other clients in room
   broadcastToRoom(matchId, {
     type: 'client_joined',
@@ -2818,6 +2922,11 @@ function handleJoinMatch(clientInfo, message) {
     role: validatedRole,
     roomSize: room.clients.size
   }, clientInfo.id) // Exclude sender
+}
+
+// 'scoreboard' is never accepted from a join message
+function joinRole(requested) {
+  return requested === 'scoreboard' ? 'subscriber' : requested
 }
 
 // Handle client leaving match room
@@ -2850,9 +2959,25 @@ function handleLeaveMatch(clientInfo) {
   clientInfo.role = null
 }
 
-// Handle match update from scoreboard
+// Only the socket that proved the match's game PIN (see claimMatch) may
+// write to, act on or delete a match.
+function requireMatchOwner(clientInfo, matchId, what) {
+  if (matchId && clientInfo.ownedMatches.has(matchId)) return true
+  clientInfo.ws.send(JSON.stringify({
+    type: 'error',
+    code: 'not-match-owner',
+    message: `Only the match's scoreboard may send ${what}`,
+    ...(matchId ? { matchId } : {})
+  }))
+  return false
+}
+
+// Handle match update from scoreboard (legacy message; no current client sends
+// it). Relayed only from the match's proven scoreboard and never stored, so it
+// cannot replace the synced match (and its PINs / owner).
 function handleMatchUpdate(clientInfo, message) {
-  const { matchId, data } = message
+  const matchId = normalizeMatchId(message.matchId)
+  const { data } = message
 
   if (!matchId || !data || typeof data !== 'object') {
     clientInfo.ws.send(JSON.stringify({
@@ -2861,14 +2986,7 @@ function handleMatchUpdate(clientInfo, message) {
     }))
     return
   }
-
-  // Store match data (ephemeral)
-  activeMatches.set(matchId, {
-    matchId,
-    data,
-    updatedAt: new Date().toISOString(),
-    updatedBy: clientInfo.id
-  })
+  if (!requireMatchOwner(clientInfo, matchId, 'match_update')) return
 
   // Broadcast to all clients in the same room
   broadcastToRoom(matchId, {
@@ -2881,9 +2999,10 @@ function handleMatchUpdate(clientInfo, message) {
   console.log(`📤 Match update broadcasted to room ${matchId}`)
 }
 
-// Handle action (timeout, substitution, etc.)
+// Handle action (timeout, substitution, etc.) — legacy format
 function handleAction(clientInfo, message) {
-  const { matchId, action } = message
+  const matchId = normalizeMatchId(message.matchId)
+  const { action } = message
 
   if (!matchId || !action) {
     clientInfo.ws.send(JSON.stringify({
@@ -2892,6 +3011,7 @@ function handleAction(clientInfo, message) {
     }))
     return
   }
+  if (!requireMatchOwner(clientInfo, matchId, 'action')) return
 
   // Broadcast action to all clients in the room
   broadcastToRoom(matchId, {
@@ -2907,10 +3027,121 @@ function handleAction(clientInfo, message) {
 
 // Handle client disconnect
 function handleClientDisconnect(clientInfo) {
+  // Matches no other connected socket owns become claimable after a grace period
+  for (const matchId of clientInfo.ownedMatches) {
+    const entry = activeMatches.get(matchId)
+    const stillOwned = [...connections.values()].some(c => c !== clientInfo && c.ownedMatches.has(matchId))
+    if (entry && !stillOwned) entry.orphanedAt = Date.now()
+  }
   handleLeaveMatch(clientInfo)
   connections.delete(clientInfo.id)
   wsRateLimitMap.delete(clientInfo.id)
+  claimFailures.delete(`ws:${clientInfo.id}`)
   console.log(`❌ Client disconnected: ${clientInfo.id} (Total: ${connections.size})`)
+}
+
+// Per-IP / per-socket bookkeeping for scoreboard claims (see claimMatch)
+const claimFailures = new Map() // key -> { count, windowStart }
+const newClaims = new Map() // ip -> { count, windowStart }
+const displacedPins = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
+
+function windowEntry(map, key) {
+  const e = map.get(key)
+  if (e && Date.now() - e.windowStart <= RATE_LIMIT_WINDOW_MS) return e
+  map.delete(key)
+  return null
+}
+function bumpWindow(map, key) {
+  if (map.size > 50000) map.clear() // bound memory under a flood
+  const e = windowEntry(map, key)
+  if (e) e.count++
+  else map.set(key, { count: 1, windowStart: Date.now() })
+  return e ? e.count : 1
+}
+setInterval(() => {
+  for (const map of [claimFailures, newClaims]) for (const key of [...map.keys()]) windowEntry(map, key)
+}, 5 * 60 * 1000).unref()
+
+const isFinishedMatch = (match) => !!match && FINISHED_STATUSES.has(String(match.status || '').toLowerCase())
+const isLoopbackIp = (ip) => ip === '::1' || /^(::ffff:)?127\./.test(String(ip || ''))
+
+function ownersOf(matchId) {
+  return [...connections.values()].filter(c => c.ownedMatches.has(matchId))
+}
+
+// Squatting limits for a socket about to own an id it did not own.
+function newClaimDenied(clientInfo, matchId) {
+  if (!clientInfo.ip || isLoopbackIp(clientInfo.ip)) return null
+  const ids = new Set()
+  for (const c of connections.values()) {
+    if (c.ip !== clientInfo.ip) continue
+    for (const id of c.ownedMatches) if (id !== matchId) ids.add(id)
+  }
+  if (ids.size >= MAX_OWNED_PER_IP) return 'too-many-matches'
+  if (bumpWindow(newClaims, clientInfo.ip) > NEW_CLAIM_LIMIT) return 'rate-limited'
+  return null
+}
+
+/**
+ * SECURITY: the scoreboard role is proved with the match's own game PIN, not
+ * self-declared. Returns { ok:true, kind } or { ok:false, code }.
+ * - a match new to the relay is claimed by its first scoreboard;
+ * - a stored match with a game PIN requires the same PIN;
+ * - a stored match without one (test match) may be written by anyone, but only
+ *   an existing owner may attach a game PIN to it;
+ * - a match nobody has owned for ORPHAN_TAKEOVER_MS (finished) or
+ *   STALE_TAKEOVER_MS (in play) may be taken over; an unfinished one taken
+ *   over with another PIN may be reclaimed once by its own PIN.
+ * Wrong-PIN claims are limited per IP and per socket; over the limit a claim
+ * needing proof is refused BEFORE the PIN is compared (no guessing oracle).
+ */
+function claimMatch(clientInfo, matchId, incomingMatch) {
+  const existing = activeMatches.get(matchId)
+  const wasOwner = clientInfo.ownedMatches.has(matchId)
+  const incomingPin = gamePinOf(incomingMatch)
+  const grant = (kind) => ({ ok: true, kind })
+  const denyNew = () => (wasOwner ? null : newClaimDenied(clientInfo, matchId))
+
+  if (!existing || !existing.match) {
+    const denied = denyNew()
+    return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'new')
+  }
+  const storedPin = gamePinOf(existing.match)
+  if (storedPin === null && (incomingPin === null || wasOwner)) {
+    const denied = denyNew()
+    return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'open')
+  }
+  // An owner re-sending its own PIN proved it already: never rate limited.
+  if (wasOwner && storedPin !== null && incomingPin !== null && safeEqualStr(incomingPin, storedPin)) return grant('owner')
+  const keys = [`ip:${clientInfo.ip}`, `ws:${clientInfo.id}`]
+  if (keys.some(k => (windowEntry(claimFailures, k)?.count || 0) >= CLAIM_FAILURE_LIMIT)) {
+    return { ok: false, code: 'rate-limited' }
+  }
+  if (storedPin !== null && incomingPin !== null && safeEqualStr(incomingPin, storedPin)) {
+    return grant(wasOwner ? 'owner' : 'proved')
+  }
+  const reclaimPin = displacedPins.get(matchId)
+  if (reclaimPin !== undefined && incomingPin !== null && safeEqualStr(incomingPin, reclaimPin)) {
+    displacedPins.delete(matchId)
+    for (const c of connections.values()) if (c !== clientInfo) c.ownedMatches.delete(matchId)
+    return grant('reclaim')
+  }
+  const grace = isFinishedMatch(existing.match) ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS
+  if (ownersOf(matchId).length === 0 && existing.orphanedAt && Date.now() - existing.orphanedAt >= grace) {
+    const denied = denyNew()
+    if (denied) return { ok: false, code: denied }
+    if (storedPin !== null && incomingPin !== storedPin && !isFinishedMatch(existing.match)) displacedPins.set(matchId, storedPin)
+    else displacedPins.delete(matchId)
+    return grant('takeover')
+  }
+  for (const k of keys) bumpWindow(claimFailures, k)
+  return { ok: false, code: 'not-match-owner' }
+}
+
+const CLAIM_ERRORS = {
+  'not-match-owner': 'Match is owned by another scoreboard (game PIN mismatch)',
+  'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
+  'too-many-matches': 'This address already drives the maximum number of matches'
 }
 
 // Handle sync-match-data from frontend scoreboard
@@ -2927,36 +3158,52 @@ function handleSyncMatchData(clientInfo, message) {
   // Support both formats:
   // Frontend format: { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
   // Legacy format: { matchId, match, teams, players, sets, events }
-  const { matchId, match, teams, players, sets, events } = message
+  const { match, teams, players, sets, events } = message
+  const matchId = normalizeMatchId(message.matchId)
   const homeTeam = message.homeTeam || teams?.[0]
   const awayTeam = message.awayTeam || teams?.[1]
   const homePlayers = message.homePlayers || players?.filter(p => p.teamId === match?.homeTeamId) || []
   const awayPlayers = message.awayPlayers || players?.filter(p => p.teamId === match?.awayTeamId) || []
 
-  if (!matchId) {
+  if (!matchId || !match || typeof match !== 'object') {
     clientInfo.ws.send(JSON.stringify({
       type: 'error',
-      message: 'Match ID required'
+      message: 'Match ID and match required'
     }))
     return
   }
 
-  // SECURITY: don't let a non-scoreboard/fresh socket overwrite a match that is
-  // still owned by another connected scoreboard (live match hijack). Reconnecting
-  // scoreboards and PocketBase-recovered matches (no active owner) are still allowed.
-  const existingMatch = activeMatches.get(String(matchId))
-  if (existingMatch && clientInfo.role !== 'scoreboard' && existingMatch.updatedBy !== clientInfo.id) {
-    const owner = connections.get(existingMatch.updatedBy)
-    const ownerActive = owner && owner.ws.readyState === 1 && owner.role === 'scoreboard'
-    if (ownerActive) {
-      clientInfo.ws.send(JSON.stringify({ type: 'error', message: 'Match already has an active scoreboard' }))
-      return
-    }
+  const claimed = claimMatch(clientInfo, matchId, match)
+  if (!claimed.ok) {
+    clientInfo.ws.send(JSON.stringify({
+      type: 'error',
+      code: claimed.code,
+      message: CLAIM_ERRORS[claimed.code] || 'Refused',
+      matchId
+    }))
+    return
   }
 
-  // Store/update match in activeMatches with all the data
-  activeMatches.set(String(matchId), {
-    matchId: String(matchId),
+  // Enforce room cap before storing anything
+  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
+    clientInfo.ws.send(JSON.stringify({ type: 'error', message: 'Server room limit reached' }))
+    return
+  }
+
+  // A scoreboard switching matches leaves its previous room first
+  if (clientInfo.matchId && clientInfo.matchId !== matchId) {
+    handleLeaveMatch(clientInfo)
+  }
+
+  // Store/update match in activeMatches with all the data. A sync carries no
+  // live-state: keep the last one pushed only while the same scoreboard / game
+  // PIN keeps the match — never across a takeover, reclaim or PIN change (it
+  // would describe another match: sides, sets won, 'ended', ...).
+  const previous = activeMatches.get(matchId)
+  const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
+    gamePinOf(previous?.match) === gamePinOf(match)
+  activeMatches.set(matchId, {
+    matchId,
     match,
     homeTeam,
     awayTeam,
@@ -2964,16 +3211,12 @@ function handleSyncMatchData(clientInfo, message) {
     awayPlayers,
     sets,
     events,
+    liveState: carryLiveState ? previous?.liveState : undefined,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
     updatedBy: clientInfo.id
   })
-
-  // Enforce room cap
-  if (!rooms.has(matchId) && rooms.size >= MAX_ROOMS) {
-    clientInfo.ws.send(JSON.stringify({ type: 'error', message: 'Server room limit reached' }))
-    return
-  }
+  clientInfo.ownedMatches.add(matchId)
 
   // Ensure room exists
   if (!rooms.has(matchId)) {
@@ -2988,108 +3231,114 @@ function handleSyncMatchData(clientInfo, message) {
   // Add client to room if not already there
   const room = rooms.get(matchId)
   room.lastActivity = Date.now()
-  if (!room.clients.has(clientInfo.id)) {
-    room.clients.add(clientInfo.id)
-    clientInfo.matchId = matchId
-    clientInfo.role = 'scoreboard'
-  }
+  room.clients.add(clientInfo.id)
+  clientInfo.matchId = matchId
+  clientInfo.role = 'scoreboard'
 
   // Broadcast to other clients in the room. Subscribers (referee/bench/livescore)
-  // must never receive the connection PINs — strip them from the broadcast match.
+  // must never receive the connection PINs — wireBundle strips them.
   broadcastToRoom(matchId, {
-    type: 'match-data-update',
-    matchId,
-    match: stripMatchSecrets(match),
-    homeTeam,
-    awayTeam,
-    homePlayers,
-    awayPlayers,
-    sets,
-    events,
+    ...matchDataMessage('match-data-update', matchId, activeMatches.get(matchId), message._timestamp),
     timestamp: new Date().toISOString()
   }, clientInfo.id)
 
   console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
 
   // Queue PocketBase backup sync (fire-and-forget, debounced)
-  syncToPocketBase(String(matchId), { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
+  syncToPocketBase(matchId, { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
 }
 
 // Handle match-action from frontend
 function handleMatchAction(clientInfo, message) {
-  const { matchId, action, actionData } = message
+  const matchId = normalizeMatchId(message.matchId)
+  const { action } = message
 
   if (!matchId || !action || typeof action !== 'string') {
     return
   }
+  if (!requireMatchOwner(clientInfo, matchId, 'match-action')) return
 
-  // Broadcast action to all clients in the room
+  // Broadcast action to all clients in the room. The scoreboard sends the
+  // payload as `data` (`actionData` is the legacy name).
+  const now = Date.now()
   broadcastToRoom(matchId, {
     type: 'match-action',
     matchId,
     action,
-    data: actionData,
-    timestamp: new Date().toISOString(),
+    data: message.data !== undefined ? message.data : message.actionData,
+    timestamp: message.timestamp ?? new Date().toISOString(),
+    _timestamp: now,
+    _scoreboardTimestamp: message._timestamp || message.timestamp || now,
     from: clientInfo.id
   }, clientInfo.id)
 
   console.log(`⚡ Match action broadcasted to room ${matchId}: ${action}`)
 }
 
-// Handle clear-all-matches
+// Handle live-state-update (scoreboard's computed live state)
+function handleLiveStateUpdate(clientInfo, message) {
+  const matchId = normalizeMatchId(message.matchId)
+  if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return
+  if (!message.liveState || typeof message.liveState !== 'object') return
+  const stored = activeMatches.get(matchId)
+  if (stored) stored.liveState = message.liveState
+  broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState: message.liveState }, clientInfo.id)
+}
+
+// Remove a match from the relay: tell its room first, then drop room + state.
+// The PocketBase backup is retired, not deleted.
+function removeMatch(matchId) {
+  broadcastToRoom(matchId, { type: 'match-deleted', matchId })
+  const room = rooms.get(matchId)
+  if (room) {
+    for (const id of room.clients) {
+      const member = connections.get(id)
+      if (member && member.matchId === matchId) member.matchId = null
+    }
+  }
+  rooms.delete(matchId)
+  activeMatches.delete(matchId)
+  displacedPins.delete(matchId)
+  for (const c of connections.values()) c.ownedMatches.delete(matchId)
+  retirePocketBaseMatch(matchId)
+}
+
+// Handle clear-all-matches: only ever the sender's OWN (proven) matches —
+// never other scoreboards' / venues' matches.
 function handleClearMatches(clientInfo, message) {
-  // Only a client that has acted as the scoreboard may destroy match state.
-  // A fresh/anonymous socket has role null and is rejected.
-  if (!clientInfo || clientInfo.role !== 'scoreboard') {
-    clientInfo?.ws?.send(JSON.stringify({ type: 'error', message: 'Not authorized to clear matches' }))
+  if (!clientInfo || clientInfo.ownedMatches.size === 0) {
+    clientInfo?.ws?.send(JSON.stringify({ type: 'error', code: 'not-scoreboard', message: 'Not authorized to clear matches' }))
     return
   }
-  const keepMatchId = message.keepMatchId
-
-  if (keepMatchId) {
-    // Clear all matches except the specified one
-    const keysToDelete = []
-    activeMatches.forEach((_, matchId) => {
-      if (String(matchId) !== String(keepMatchId)) {
-        keysToDelete.push(matchId)
-      }
-    })
-    keysToDelete.forEach(matchId => {
-      activeMatches.delete(matchId)
-      rooms.delete(matchId)
-      deletePocketBaseMatch(matchId)
-    })
-    console.log(`🗑️  Cleared ${keysToDelete.length} matches (kept ${keepMatchId})`)
-  } else {
-    // Clear all matches
-    const count = activeMatches.size
-    activeMatches.clear()
-    rooms.clear()
-    clearAllPocketBaseMatches()
-    console.log(`🗑️  Cleared all ${count} matches`)
+  const keepMatchId = normalizeMatchId(message.keepMatchId)
+  let cleared = 0
+  for (const matchId of [...clientInfo.ownedMatches]) {
+    if (matchId === keepMatchId) continue
+    // Another live socket still drives this match: just drop our claim.
+    const coOwned = [...connections.values()].some(c => c !== clientInfo && c.ws.readyState === 1 && c.ownedMatches.has(matchId))
+    if (coOwned) {
+      clientInfo.ownedMatches.delete(matchId)
+      continue
+    }
+    removeMatch(matchId)
+    cleared++
   }
+  console.log(`🗑️  Cleared ${cleared} match(es) owned by ${clientInfo.id}${keepMatchId ? ` (kept ${keepMatchId})` : ''}`)
 }
 
 // Handle delete-match
 function handleDeleteMatch(clientInfo, message) {
-  // Only a client that has acted as the scoreboard may delete a match.
-  if (!clientInfo || clientInfo.role !== 'scoreboard') {
-    clientInfo?.ws?.send(JSON.stringify({ type: 'error', message: 'Not authorized to delete match' }))
-    return
-  }
-  const { matchId } = message
-
+  const matchId = normalizeMatchId(message.matchId)
   if (!matchId) return
+  if (!requireMatchOwner(clientInfo, matchId, 'delete-match')) return
 
-  activeMatches.delete(matchId)
-  rooms.delete(matchId)
-  deletePocketBaseMatch(matchId)
+  removeMatch(matchId)
   console.log(`🗑️  Deleted match ${matchId}`)
 }
 
 // Broadcast message to all clients in a specific room
 function broadcastToRoom(matchId, message, excludeClientId = null) {
-  const room = rooms.get(matchId)
+  const room = rooms.get(normalizeMatchId(matchId))
   if (!room) return
 
   const data = JSON.stringify(message)

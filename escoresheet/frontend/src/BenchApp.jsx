@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
+import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
 import { getServerStatus } from './utils/networkInfo'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
@@ -429,9 +429,33 @@ export default function BenchApp() {
     }
 
     try {
-      // Validate PIN with server (no local IndexedDB)
+      // Validate PIN server-side (no local IndexedDB), like RefereeApp: the
+      // backend's Supabase check (the bench lists Supabase matches) and the LAN
+      // relay. LAN first when the user chose WebSocket mode or the match list
+      // came from the LAN relay; the Supabase check is skipped entirely in
+      // WebSocket mode and gives up after 3 s, so an offline venue never waits.
+      const pin = pinInput.trim()
       const pinType = selectedTeam === 'home' ? 'homeTeam' : 'awayTeam'
-      const result = await validatePin(pinInput.trim(), pinType)
+      const checkSupabase = async () => {
+        const r = await validatePinSupabase(pin, selectedTeam === 'home' ? 'bench_home' : 'bench_away')
+        if (!r.success || !r.match) return r
+        // The server only accepts a bench PIN while that bench is enabled; older
+        // backends don't echo the flag, which would trip the disconnect check.
+        const flag = selectedTeam === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
+        return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
+      }
+      const checkLan = () => validatePin(pin, pinType)
+      const ok = (r) => r?.success && r.match
+      let result
+      if (connectionMode === CONNECTION_MODES.WEBSOCKET) {
+        result = await checkLan()
+      } else if (activeConnection === 'websocket') {
+        result = await checkLan()
+        if (!ok(result) && connectionMode === CONNECTION_MODES.AUTO) result = await checkSupabase()
+      } else {
+        result = await checkSupabase()
+        if (!ok(result)) result = await checkLan()
+      }
 
       if (result.success && result.match) {
         setMatchId(result.match.id)

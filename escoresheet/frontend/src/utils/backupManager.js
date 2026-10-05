@@ -1243,12 +1243,16 @@ export async function listPocketBaseBackups(gameN) {
 /**
  * Fetch full match snapshot from PocketBase for restoration
  * @param {string} matchId - The PocketBase match_id
+ * @param {string} [gamePin] - The match's game PIN; the backend returns the
+ *   connection PINs (referee / bench) only to a caller that presents it.
  * @returns {Object} Match data in standard restore format
  */
-export async function fetchPocketBaseMatch(matchId) {
-  const url = getApiUrl(`/api/pocketbase/matches/${encodeURIComponent(matchId)}`)
+export async function fetchPocketBaseMatch(matchId, gamePin) {
+  const query = gamePin ? `?gamePin=${encodeURIComponent(String(gamePin).trim())}` : ''
+  const url = getApiUrl(`/api/pocketbase/matches/${encodeURIComponent(matchId)}${query}`)
   if (!url) throw new Error('Backend not available')
   const res = await fetch(url)
+  if (res.status === 403) throw new Error('The game PIN does not match this backup')
   if (!res.ok) throw new Error('PocketBase match not found')
   const { data } = await res.json()
   return {

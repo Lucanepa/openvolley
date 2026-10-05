@@ -1,36 +1,27 @@
 /**
- * lanRelayCore — shared helpers for the two frontend LAN-relay runtimes
- * (server.js, the standalone/prod static+WS server, and vite-plugin-api-routes.js,
- * the dev-server replica). Extracting these prevents the drift the review found,
- * where match-PIN redaction existed in one relay but not the other.
+ * lanRelayCore — ESM entry for the shared LAN relay protocol used by server.js
+ * (standalone/prod static+WS server) and vite-plugin-api-routes.js (dev-server
+ * replica). The implementation lives in ./electron/lanRelayCore.cjs so the
+ * packaged Electron relay can require() the very same code; see that file for
+ * the wire protocol. Extracting it prevents the drift the review found, where
+ * PIN redaction and message shapes differed between relays.
  */
+import core from './electron/lanRelayCore.cjs'
 
-// Secret fields on a match object that must never be returned to a client.
-// PINs are the connection gate for referee/bench, so they are stripped from
-// every match-returning response.
-export const MATCH_SECRET_FIELDS = [
-  'refereePin', 'homeTeamPin', 'awayTeamPin',
-  'homeTeamUploadPin', 'awayTeamUploadPin',
-  'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
-]
+export const {
+  MATCH_SECRET_FIELDS,
+  WS_MAX_PAYLOAD,
+  MAX_BODY_SIZE,
+  stripMatchSecrets,
+  stripMatchDataSecrets,
+  normalizeMatchId,
+  gamePinOf,
+  toWireBundle,
+  matchDataMessage,
+  createRateLimiter,
+  createLocalAddressCheck,
+  createMainInstanceGate,
+  createLanRelay,
+} = core
 
-/**
- * Return a shallow copy of a match object with all PIN/secret fields removed.
- * @param {any} match
- */
-export function stripMatchSecrets(match) {
-  if (!match || typeof match !== 'object') return match
-  const clean = { ...match }
-  for (const k of MATCH_SECRET_FIELDS) delete clean[k]
-  return clean
-}
-
-/**
- * Strip secrets from a stored match-data bundle ({ match, homeTeam, ... }),
- * redacting the nested `match` object which is where the PINs live.
- * @param {any} matchData
- */
-export function stripMatchDataSecrets(matchData) {
-  if (!matchData || typeof matchData !== 'object') return matchData
-  return { ...matchData, match: stripMatchSecrets(matchData.match) }
-}
+export default core
