@@ -9,9 +9,16 @@
 //!   - HTTP on 5173 (static site + API)
 //!   - WebSocket on 8080
 //!
-//! The WS message protocol and the `/api/*` shapes MUST stay in sync with
-//! `electron/relayServer.js` / `server.js` — clients talk to all of them
-//! interchangeably.
+//! The WS message protocol and the `/api/*` shapes are a port of
+//! `electron/lanRelayCore.cjs` (shared by `server.js`, the Electron relay and
+//! the Vite dev plugin) — clients talk to all of them interchangeably, so keep
+//! them in sync. In short:
+//!   - match-full-data / match-data-update are FLAT bundles with PIN-free `match`;
+//!   - match ids are always strings;
+//!   - a socket proves the scoreboard role for a match with the match's game PIN
+//!     (first sync of a new match claims it); only proven sockets may write,
+//!     send actions / live-state, delete or clear (their own) matches;
+//!   - PINs are validated by the relay from its own store, never by a WS client.
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -54,15 +61,31 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
     "gamePin",
 ];
 
+/// Same cap as the Node relays / cloud relay.
+const WS_MAX_MESSAGE: usize = 10 * 1024 * 1024;
+const MAX_MATCH_ID_LEN: usize = 128;
+
 type Tx = mpsc::UnboundedSender<Message>;
 
+/// A relay -> scoreboard request waiting for its answer.
+struct Pending {
+    tx: oneshot::Sender<Value>,
+    /// Response type that may answer it (e.g. "match-data-response").
+    response_type: String,
+    match_id: Option<String>,
+    /// Only these (proven scoreboard) connections were asked and may answer.
+    targets: HashSet<u64>,
+}
+
 pub struct AppState {
-    /// matchId -> bundle { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
+    /// matchId -> bundle { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, liveState? }
     matches: Mutex<HashMap<String, Value>>,
     main_instance: Mutex<Option<String>>,
     clients: Mutex<HashMap<u64, Tx>>,
     subs: Mutex<HashMap<String, HashSet<u64>>>,
-    pending: Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    /// connection id -> match ids it proved the scoreboard role for
+    owners: Mutex<HashMap<u64, HashSet<String>>>,
+    pending: Mutex<HashMap<String, Pending>>,
     next_id: AtomicU64,
     pub http_port: u16,
     pub ws_port: u16,
@@ -74,6 +97,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         main_instance: Mutex::new(None),
         clients: Mutex::new(HashMap::new()),
         subs: Mutex::new(HashMap::new()),
+        owners: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         http_port,
@@ -105,6 +129,94 @@ fn strip_bundle_secrets(bundle: &Value) -> Value {
         strip_secrets(m);
     }
     b
+}
+
+/// Room / store key for a match id: always a string (Dexie ids are numbers).
+fn norm_id(v: Option<&Value>) -> Option<String> {
+    let s = match v? {
+        Value::String(s) => s.trim().to_string(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    if s.is_empty() || s.len() > MAX_MATCH_ID_LEN {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// The match's game PIN as a comparable string; None for matches without one.
+fn game_pin_of(m: Option<&Value>) -> Option<String> {
+    let m = m?;
+    let v = match m.get("gamePin") {
+        Some(v) if !v.is_null() && v.as_str() != Some("") => v,
+        _ => m.get("game_pin")?,
+    };
+    let s = match v {
+        Value::String(s) => s.trim().to_string(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Build the stored bundle from a sync (flat or `{ matchData }`) or response payload.
+fn bundle_from(src: &Value) -> Option<Value> {
+    let src = match src.get("matchData") {
+        Some(md) if md.is_object() => md,
+        _ => src,
+    };
+    let m = src.get("match")?;
+    if !m.is_object() {
+        return None;
+    }
+    let arr = |k: &str| match src.get(k) {
+        Some(v) if v.is_array() => v.clone(),
+        _ => json!([]),
+    };
+    Some(json!({
+        "match": m.clone(),
+        "homeTeam": src.get("homeTeam").cloned().unwrap_or(Value::Null),
+        "awayTeam": src.get("awayTeam").cloned().unwrap_or(Value::Null),
+        "homePlayers": arr("homePlayers"),
+        "awayPlayers": arr("awayPlayers"),
+        "sets": arr("sets"),
+        "events": arr("events"),
+    }))
+}
+
+/// A flat, PIN-free match message: `{ type, matchId, match, homeTeam, ..., liveState? }`.
+fn bundle_message(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<Value>) -> Value {
+    let mut out = strip_bundle_secrets(bundle);
+    if let Some(obj) = out.as_object_mut() {
+        let now = now_ms();
+        obj.insert("type".into(), json!(msg_type));
+        obj.insert("matchId".into(), json!(match_id));
+        obj.insert("_timestamp".into(), json!(now));
+        obj.insert("_scoreboardTimestamp".into(), sb_ts.unwrap_or(json!(now)));
+    }
+    out
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Numeric ids stay numbers in HTTP responses (clients compare them to Dexie ids).
+fn public_id(key: &str) -> Value {
+    if !key.is_empty() && key.chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(n) = key.parse::<i64>() {
+            return json!(n);
+        }
+    }
+    json!(key)
 }
 
 fn json_response(status: StatusCode, value: Value) -> Response {
@@ -153,6 +265,7 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/match/list", get(match_list))
         .route("/api/match/by-game-number", get(by_game_number))
         .route("/api/match/:id", get(match_get).patch(match_patch))
+        .route("/api/server/connections", get(server_connections))
         .fallback(static_handler)
         .layer(middleware::from_fn(add_headers))
         .with_state(state)
@@ -312,58 +425,47 @@ async fn unregister_main(
 }
 
 async fn validate_pin(State(state): State<Arc<AppState>>, Json(body): Json<Value>) -> Response {
-    let pin = body.get("pin").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let pin = match body.get("pin") {
+        Some(Value::String(p)) => p.trim().to_string(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    };
     let typ = body.get("type").and_then(|v| v.as_str()).unwrap_or("referee").to_string();
     if pin.len() != 6 {
         return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid PIN format" }));
     }
+    let (pin_field, enabled_field) = match typ.as_str() {
+        "referee" => ("refereePin", "refereeConnectionEnabled"),
+        "homeTeam" => ("homeTeamPin", "homeTeamConnectionEnabled"),
+        "awayTeam" => ("awayTeamPin", "awayTeamConnectionEnabled"),
+        _ => return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid PIN type" })),
+    };
 
-    // Search the local store first.
-    {
-        let matches = state.matches.lock().await;
-        for (id, bundle) in matches.iter() {
-            let m = bundle.get("match").unwrap_or(bundle);
-            let (pin_field, enabled_field) = match typ.as_str() {
-                "homeTeam" => ("homeTeamPin", "homeTeamConnectionEnabled"),
-                "awayTeam" => ("awayTeamPin", "awayTeamConnectionEnabled"),
-                _ => ("refereePin", "refereeConnectionEnabled"),
-            };
-            let match_pin = m.get(pin_field).and_then(|v| v.as_str()).map(|s| s.trim().to_string());
-            let enabled = m.get(enabled_field).and_then(|v| v.as_bool()).unwrap_or(false);
-            let status = m.get("status").and_then(|v| v.as_str()).unwrap_or("");
-            if match_pin.as_deref() == Some(pin.as_str()) && enabled && status != "final" {
-                let mut found = m.clone();
-                if let Some(obj) = found.as_object_mut() {
-                    obj.insert("id".to_string(), json!(id.parse::<i64>().unwrap_or(0)));
-                }
-                return json_response(StatusCode::OK, json!({ "success": true, "match": found }));
+    // The relay answers from its own store (filled by the scoreboard's syncs).
+    // It never asks — or tells — a WS client about a PIN.
+    let matches = state.matches.lock().await;
+    for (id, bundle) in matches.iter() {
+        let Some(m) = bundle.get("match") else { continue };
+        let match_pin = match m.get(pin_field) {
+            Some(Value::String(p)) => Some(p.trim().to_string()),
+            Some(Value::Number(n)) => Some(n.to_string()),
+            _ => None,
+        };
+        let enabled = m.get(enabled_field).and_then(|v| v.as_bool()).unwrap_or(false);
+        let status = m.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        if match_pin.as_deref() == Some(pin.as_str()) && enabled && status != "final" {
+            let mut found = m.clone();
+            strip_secrets(&mut found);
+            if let Some(obj) = found.as_object_mut() {
+                obj.insert("id".to_string(), public_id(id));
             }
+            return json_response(StatusCode::OK, json!({ "success": true, "match": found }));
         }
     }
-
-    // Ask the main scoretable over WS.
-    let rid = format!("pin-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
-    let req_msg = json!({ "type": "pin-validation-request", "requestId": rid, "pin": pin, "pinType": typ, "timestamp": 0 });
-    match ws_roundtrip(&state, req_msg, &rid).await {
-        Some(v) if v.get("success").and_then(|s| s.as_bool()) == Some(true) && v.get("match").is_some() => {
-            let m = v.get("match").cloned().unwrap();
-            // Cache for future requests.
-            if let Some(id) = m.get("id") {
-                let key = id.to_string().trim_matches('"').to_string();
-                let bundle = v.get("fullData").cloned().unwrap_or_else(|| json!({ "match": m }));
-                state.matches.lock().await.insert(key, bundle);
-            }
-            json_response(StatusCode::OK, json!({ "success": true, "match": m }))
-        }
-        Some(v) => json_response(
-            StatusCode::NOT_FOUND,
-            json!({ "success": false, "error": v.get("error").and_then(|e| e.as_str()).unwrap_or("No match found with this PIN") }),
-        ),
-        None => json_response(
-            StatusCode::NOT_FOUND,
-            json!({ "success": false, "error": "No match found with this PIN. Make sure the main scoresheet is running and connected." }),
-        ),
-    }
+    json_response(
+        StatusCode::NOT_FOUND,
+        json!({ "success": false, "error": "No match found with this PIN. Make sure the main scoresheet is running and connected." }),
+    )
 }
 
 async fn match_get(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
@@ -380,10 +482,9 @@ async fn match_get(State(state): State<Arc<AppState>>, Path(id): Path<String>) -
     }
     let rid = format!("match-data-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
     let req_msg = json!({ "type": "match-data-request", "requestId": rid, "matchId": id });
-    match ws_roundtrip(&state, req_msg, &rid).await {
-        Some(v) if v.get("success").and_then(|s| s.as_bool()) == Some(true) && v.get("data").is_some() => {
-            let data = v.get("data").cloned().unwrap();
-            state.matches.lock().await.insert(id.clone(), data.clone());
+    // The WS side validates the answer (proven scoreboard, game PIN) and stores it.
+    match ws_roundtrip(&state, req_msg, &rid, "match-data-response", Some(id.clone())).await {
+        Some(data) => {
             let mut out = strip_bundle_secrets(&data);
             if let Some(obj) = out.as_object_mut() {
                 obj.insert("success".to_string(), json!(true));
@@ -416,7 +517,7 @@ async fn match_list(State(state): State<Arc<AppState>>) -> Response {
             .or_else(|| m.get("awayTeamName").and_then(|v| v.as_str()))
             .unwrap_or("Away");
         list.push(json!({
-            "id": id.parse::<i64>().unwrap_or(0),
+            "id": public_id(id),
             "gameNumber": m.get("gameNumber").cloned().or_else(|| m.get("game_n").cloned()).unwrap_or_else(|| json!(id)),
             "homeTeam": home,
             "awayTeam": away,
@@ -425,7 +526,12 @@ async fn match_list(State(state): State<Arc<AppState>>) -> Response {
             "refereeConnectionEnabled": true,
         }));
     }
-    // Only return the most recent open match.
+    // Only return the most recent open match (ISO dates sort lexically).
+    list.sort_by(|a, b| {
+        let ka = a.get("scheduledAt").and_then(|v| v.as_str()).unwrap_or("");
+        let kb = b.get("scheduledAt").and_then(|v| v.as_str()).unwrap_or("");
+        kb.cmp(ka)
+    });
     let active: Vec<Value> = list.into_iter().take(1).collect();
     json_response(StatusCode::OK, json!({ "success": true, "matches": active }))
 }
@@ -460,8 +566,8 @@ async fn by_game_number(
     }
     let rid = format!("game-number-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
     let req_msg = json!({ "type": "game-number-request", "requestId": rid, "gameNumber": game_number });
-    match ws_roundtrip(&state, req_msg, &rid).await {
-        Some(v) if v.get("success").and_then(|s| s.as_bool()) == Some(true) && v.get("match").is_some() => {
+    match ws_roundtrip(&state, req_msg, &rid, "game-number-response", None).await {
+        Some(v) if v.get("match").is_some() => {
             let mut m = v.get("match").cloned().unwrap();
             strip_secrets(&mut m);
             json_response(StatusCode::OK, json!({ "success": true, "match": m, "matchId": v.get("matchId").cloned().unwrap_or(Value::Null) }))
@@ -477,12 +583,13 @@ async fn match_patch(
 ) -> Response {
     let rid = format!("match-update-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
     let req_msg = json!({ "type": "match-update-request", "requestId": rid, "matchId": id, "updates": updates });
-    match ws_roundtrip(&state, req_msg, &rid).await {
-        Some(v) if v.get("success").and_then(|s| s.as_bool()) == Some(true) => {
-            if let Some(data) = v.get("data") {
-                state.matches.lock().await.insert(id.clone(), data.clone());
-            }
-            let mut out = v.get("data").cloned().unwrap_or_else(|| json!({}));
+    match ws_roundtrip(&state, req_msg, &rid, "match-update-response", Some(id.clone())).await {
+        Some(v) => {
+            // `data` was validated + stored by the WS side; never echo PINs.
+            let mut out = match v.get("data") {
+                Some(d) if d.is_object() => strip_bundle_secrets(d),
+                _ => json!({}),
+            };
             if let Some(obj) = out.as_object_mut() {
                 obj.insert("success".to_string(), json!(true));
             }
@@ -490,6 +597,44 @@ async fn match_patch(
         }
         _ => json_response(StatusCode::INTERNAL_SERVER_ERROR, json!({ "success": false, "error": "Update request timeout. Make sure the main scoresheet is running." })),
     }
+}
+
+async fn server_connections(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let filter = params.get("matchId").cloned();
+    let mut clients: Vec<Value> = Vec::new();
+    let mut counts = serde_json::Map::new();
+    {
+        let owners = state.owners.lock().await;
+        let subs = state.subs.lock().await;
+        for (match_id, set) in subs.iter() {
+            counts.insert(match_id.clone(), json!(set.len()));
+            if filter.as_deref().map_or(false, |f| f != match_id) {
+                continue;
+            }
+            for conn in set {
+                // Scoreboards are not dashboards.
+                if owners.get(conn).map_or(false, |o| !o.is_empty()) {
+                    continue;
+                }
+                clients.push(json!({ "id": format!("c{conn}"), "ip": Value::Null, "role": "subscriber", "team": Value::Null, "matchId": match_id }));
+            }
+        }
+    }
+    let total = state.clients.lock().await.len();
+    json_response(
+        StatusCode::OK,
+        json!({
+            "totalClients": total,
+            "dashboardClients": clients.len(),
+            "referees": 0,
+            "benches": 0,
+            "clients": clients,
+            "matchSubscriptions": counts,
+        }),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +647,11 @@ async fn static_handler(
     uri: Uri,
 ) -> Response {
     let path = uri.path();
+
+    // Unknown API routes get JSON, not the SPA's index.html with a 200.
+    if path.starts_with("/api/") {
+        return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Not found" }));
+    }
 
     // Single main-instance gate — skipped for the loopback desktop window.
     if (path == "/" || path == "/index.html") && !is_loopback(&addr) {
@@ -541,6 +691,11 @@ fn serve_asset(req_path: &str) -> Response {
         if let Some(r) = try_file(&format!("{}/index.html", p)) {
             return r;
         }
+    } else if let Some(stem) = p.strip_suffix(".html") {
+        // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
+        if let Some(r) = try_file(&format!("{}/index.html", stem)) {
+            return r;
+        }
     }
     // SPA fallback
     if let Some(r) = try_file("index.html") {
@@ -571,24 +726,57 @@ fn try_file(path: &str) -> Option<Response> {
 // ---------------------------------------------------------------------------
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    ws.max_message_size(WS_MAX_MESSAGE)
+        .on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn broadcast(state: &Arc<AppState>, msg: &Value, exclude: Option<u64>) {
-    let text = msg.to_string();
-    let clients = state.clients.lock().await;
-    for (id, tx) in clients.iter() {
-        if Some(*id) == exclude {
-            continue;
-        }
-        let _ = tx.send(Message::Text(text.clone()));
+async fn send_to(state: &Arc<AppState>, conn_id: u64, msg: &Value) {
+    if let Some(tx) = state.clients.lock().await.get(&conn_id) {
+        let _ = tx.send(Message::Text(msg.to_string()));
     }
 }
 
-async fn ws_roundtrip(state: &Arc<AppState>, request_msg: Value, request_id: &str) -> Option<Value> {
+fn send_error(tx: &Tx, code: &str, message: &str, match_id: Option<&str>) {
+    let mut err = json!({ "type": "error", "code": code, "message": message });
+    if let Some(id) = match_id {
+        err["matchId"] = json!(id);
+    }
+    let _ = tx.send(Message::Text(err.to_string()));
+}
+
+/// Connections that proved the scoreboard role for at least one match.
+async fn scoreboard_ids(state: &Arc<AppState>) -> HashSet<u64> {
+    state
+        .owners
+        .lock()
+        .await
+        .iter()
+        .filter(|(_, owned)| !owned.is_empty())
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// Ask the connected scoreboards; returns the validated result (see
+/// `on_response`) or None on timeout / no scoreboard / every one declined.
+async fn ws_roundtrip(
+    state: &Arc<AppState>,
+    request_msg: Value,
+    request_id: &str,
+    response_type: &str,
+    match_id: Option<String>,
+) -> Option<Value> {
+    let targets = scoreboard_ids(state).await;
+    if targets.is_empty() {
+        return None;
+    }
     let (tx, rx) = oneshot::channel();
-    state.pending.lock().await.insert(request_id.to_string(), tx);
-    broadcast(state, &request_msg, None).await;
+    state.pending.lock().await.insert(
+        request_id.to_string(),
+        Pending { tx, response_type: response_type.to_string(), match_id, targets: targets.clone() },
+    );
+    for id in targets {
+        send_to(state, id, &request_msg).await;
+    }
     match tokio::time::timeout(Duration::from_secs(5), rx).await {
         Ok(Ok(v)) => Some(v),
         _ => {
@@ -613,7 +801,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     });
 
     let _ = tx.send(Message::Text(
-        json!({ "type": "connected", "message": "Connected to eScoresheet WebSocket server", "timestamp": 0 }).to_string(),
+        json!({ "type": "connected", "message": "Connected to eScoresheet WebSocket server", "timestamp": now_ms() }).to_string(),
     ));
 
     while let Some(Ok(msg)) = stream.next().await {
@@ -625,109 +813,291 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     }
 
     state.clients.lock().await.remove(&conn_id);
-    let mut subs = state.subs.lock().await;
-    subs.retain(|_, set| {
-        set.remove(&conn_id);
-        !set.is_empty()
-    });
+    state.owners.lock().await.remove(&conn_id);
+    {
+        let mut subs = state.subs.lock().await;
+        subs.retain(|_, set| {
+            set.remove(&conn_id);
+            !set.is_empty()
+        });
+    }
+    // A scoreboard that left can no longer answer pending requests.
+    {
+        let mut pending = state.pending.lock().await;
+        pending.retain(|_, p| {
+            p.targets.remove(&conn_id);
+            !p.targets.is_empty()
+        });
+    }
     send_task.abort();
+}
+
+async fn is_owner(state: &Arc<AppState>, conn_id: u64, match_id: &str) -> bool {
+    state
+        .owners
+        .lock()
+        .await
+        .get(&conn_id)
+        .map_or(false, |o| o.contains(match_id))
+}
+
+/// Prove the scoreboard role for `match_id` with the match's own game PIN:
+/// a match new to the relay is claimed by its first scoreboard; a stored match
+/// with a game PIN needs the same PIN; a stored match without one (test match)
+/// may be written by anyone, but only an existing owner may attach a PIN to it.
+async fn claim(state: &Arc<AppState>, conn_id: u64, match_id: &str, incoming: Option<&Value>) -> bool {
+    let stored_pin = {
+        let matches = state.matches.lock().await;
+        matches.get(match_id).map(|b| game_pin_of(b.get("match")))
+    };
+    let mut owners = state.owners.lock().await;
+    let owned = owners.entry(conn_id).or_default();
+    if let Some(stored) = stored_pin {
+        let incoming_pin = game_pin_of(incoming);
+        match stored {
+            Some(p) => {
+                if incoming_pin.as_deref() != Some(p.as_str()) {
+                    return false;
+                }
+            }
+            None => {
+                if incoming_pin.is_some() && !owned.contains(match_id) {
+                    return false;
+                }
+            }
+        }
+    }
+    owned.insert(match_id.to_string());
+    true
+}
+
+/// Store a bundle, keeping the last pushed liveState (syncs don't carry one).
+async fn store_bundle(state: &Arc<AppState>, match_id: &str, mut bundle: Value) -> Value {
+    let mut matches = state.matches.lock().await;
+    if let Some(prev_live) = matches.get(match_id).and_then(|p| p.get("liveState")).cloned() {
+        if bundle.get("liveState").is_none() {
+            bundle["liveState"] = prev_live;
+        }
+    }
+    matches.insert(match_id.to_string(), bundle.clone());
+    bundle
+}
+
+async fn delete_match(state: &Arc<AppState>, match_id: &str) {
+    // Tell the subscribers BEFORE their room is dropped.
+    notify_subscribers(state, match_id, &json!({ "type": "match-deleted", "matchId": match_id }), None).await;
+    state.subs.lock().await.remove(match_id);
+    state.matches.lock().await.remove(match_id);
+    for owned in state.owners.lock().await.values_mut() {
+        owned.remove(match_id);
+    }
 }
 
 async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &str) {
     let data: Value = match serde_json::from_str(text) {
         Ok(v) => v,
-        Err(_) => return,
+        Err(_) => {
+            send_error(tx, "bad-request", "Invalid message format", None);
+            return;
+        }
     };
     let msg_type = data.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let match_id = norm_id(data.get("matchId"));
 
     match msg_type {
         "ping" => {
-            let _ = tx.send(Message::Text(json!({ "type": "pong", "timestamp": 0 }).to_string()));
+            let _ = tx.send(Message::Text(json!({ "type": "pong", "timestamp": now_ms() }).to_string()));
         }
         "sync-match-data" => {
-            let match_id = match data.get("matchId") {
-                Some(v) => v.to_string().trim_matches('"').to_string(),
-                None => return,
-            };
-            let bundle = if let Some(md) = data.get("matchData") {
-                md.clone()
-            } else if data.get("match").is_some() {
-                json!({
-                    "match": data.get("match").cloned().unwrap_or(Value::Null),
-                    "homeTeam": data.get("homeTeam").cloned().unwrap_or(Value::Null),
-                    "awayTeam": data.get("awayTeam").cloned().unwrap_or(Value::Null),
-                    "homePlayers": data.get("homePlayers").cloned().unwrap_or_else(|| json!([])),
-                    "awayPlayers": data.get("awayPlayers").cloned().unwrap_or_else(|| json!([])),
-                    "sets": data.get("sets").cloned().unwrap_or_else(|| json!([])),
-                    "events": data.get("events").cloned().unwrap_or_else(|| json!([])),
-                })
-            } else {
+            let (Some(match_id), Some(bundle)) = (match_id, bundle_from(&data)) else {
+                send_error(tx, "bad-request", "sync-match-data needs matchId and match", None);
                 return;
             };
-            state.matches.lock().await.insert(match_id.clone(), bundle.clone());
-
-            // Push to subscribers of this match.
-            let sub_ids: Vec<u64> = state
-                .subs
-                .lock()
-                .await
-                .get(&match_id)
-                .map(|s| s.iter().copied().collect())
-                .unwrap_or_default();
-            if !sub_ids.is_empty() {
-                let update = json!({ "type": "match-data-update", "matchId": match_id, "data": bundle }).to_string();
-                let clients = state.clients.lock().await;
-                for id in sub_ids {
-                    if id == conn_id {
-                        continue;
-                    }
-                    if let Some(ctx) = clients.get(&id) {
-                        let _ = ctx.send(Message::Text(update.clone()));
+            if !claim(state, conn_id, &match_id, bundle.get("match")).await {
+                send_error(tx, "not-match-owner", "Match is owned by another scoreboard (game PIN mismatch)", Some(&match_id));
+                return;
+            }
+            let stored = store_bundle(state, &match_id, bundle).await;
+            let update = bundle_message("match-data-update", &match_id, &stored, data.get("_timestamp").cloned());
+            notify_subscribers(state, &match_id, &update, Some(conn_id)).await;
+        }
+        "subscribe-match" => {
+            let Some(match_id) = match_id else {
+                send_error(tx, "bad-request", "subscribe-match needs matchId", None);
+                return;
+            };
+            state.subs.lock().await.entry(match_id.clone()).or_default().insert(conn_id);
+            let stored = state.matches.lock().await.get(&match_id).cloned();
+            if let Some(bundle) = stored {
+                let full = bundle_message("match-full-data", &match_id, &bundle, None);
+                let _ = tx.send(Message::Text(full.to_string()));
+            }
+        }
+        "unsubscribe-match" => {
+            if let Some(match_id) = match_id {
+                let mut subs = state.subs.lock().await;
+                if let Some(set) = subs.get_mut(&match_id) {
+                    set.remove(&conn_id);
+                    if set.is_empty() {
+                        subs.remove(&match_id);
                     }
                 }
             }
         }
-        "delete-match" => {
-            let match_id = data.get("matchId").map(|v| v.to_string().trim_matches('"').to_string()).unwrap_or_default();
-            state.matches.lock().await.remove(&match_id);
-            notify_subscribers(state, &match_id, &json!({ "type": "match-deleted", "matchId": match_id })).await;
-            state.subs.lock().await.remove(&match_id);
+        "match-action" | "live-state-update" | "delete-match" => {
+            let Some(match_id) = match_id else {
+                send_error(tx, "bad-request", "matchId required", None);
+                return;
+            };
+            if !is_owner(state, conn_id, &match_id).await {
+                send_error(tx, "not-match-owner", "Only the match's scoreboard may send this", Some(&match_id));
+                return;
+            }
+            match msg_type {
+                "match-action" => {
+                    let Some(action) = data.get("action").and_then(|v| v.as_str()) else { return };
+                    let now = now_ms();
+                    // Scoreboard sends the payload as `data`; `actionData` is the legacy name.
+                    let payload = match data.get("data") {
+                        Some(d) => d.clone(),
+                        None => data.get("actionData").cloned().unwrap_or(Value::Null),
+                    };
+                    let sb_ts = data
+                        .get("_timestamp")
+                        .or_else(|| data.get("timestamp"))
+                        .cloned()
+                        .unwrap_or(json!(now));
+                    let msg = json!({
+                        "type": "match-action",
+                        "matchId": match_id,
+                        "action": action,
+                        "data": payload,
+                        "timestamp": data.get("timestamp").cloned().unwrap_or(Value::Null),
+                        "_timestamp": now,
+                        "_scoreboardTimestamp": sb_ts,
+                    });
+                    notify_subscribers(state, &match_id, &msg, Some(conn_id)).await;
+                }
+                "live-state-update" => {
+                    let Some(live) = data.get("liveState").filter(|v| v.is_object()).cloned() else { return };
+                    if let Some(bundle) = state.matches.lock().await.get_mut(&match_id) {
+                        bundle["liveState"] = live.clone();
+                    }
+                    let msg = json!({ "type": "live-state-update", "matchId": match_id, "liveState": live });
+                    notify_subscribers(state, &match_id, &msg, Some(conn_id)).await;
+                }
+                _ => delete_match(state, &match_id).await,
+            }
         }
         "clear-all-matches" => {
-            let keep = data.get("keepMatchId").map(|v| v.to_string().trim_matches('"').to_string());
-            let ids: Vec<String> = state.matches.lock().await.keys().cloned().collect();
-            for id in ids {
+            let owned: Vec<String> = state
+                .owners
+                .lock()
+                .await
+                .get(&conn_id)
+                .map(|o| o.iter().cloned().collect())
+                .unwrap_or_default();
+            if owned.is_empty() {
+                send_error(tx, "not-scoreboard", "Only a scoreboard that synced its match may clear matches", None);
+                return;
+            }
+            let keep = norm_id(data.get("keepMatchId"));
+            for id in owned {
                 if keep.as_deref() == Some(id.as_str()) {
                     continue;
                 }
-                notify_subscribers(state, &id, &json!({ "type": "match-deleted", "matchId": id })).await;
-                state.matches.lock().await.remove(&id);
-                state.subs.lock().await.remove(&id);
-            }
-        }
-        "subscribe-match" => {
-            let match_id = data.get("matchId").map(|v| v.to_string().trim_matches('"').to_string()).unwrap_or_default();
-            state.subs.lock().await.entry(match_id.clone()).or_default().insert(conn_id);
-            if let Some(bundle) = state.matches.lock().await.get(&match_id) {
-                let _ = tx.send(Message::Text(
-                    json!({ "type": "match-full-data", "matchId": match_id, "data": bundle }).to_string(),
-                ));
-            }
-        }
-        "pin-validation-response" | "match-data-response" | "game-number-response" | "match-update-response" => {
-            if let Some(rid) = data.get("requestId").and_then(|v| v.as_str()) {
-                if let Some(sender) = state.pending.lock().await.remove(rid) {
-                    let _ = sender.send(data.clone());
+                // Another live socket still drives this match: just drop our claim.
+                let mut owners = state.owners.lock().await;
+                let co_owned = owners.iter().any(|(other, o)| *other != conn_id && o.contains(&id));
+                if co_owned {
+                    if let Some(o) = owners.get_mut(&conn_id) {
+                        o.remove(&id);
+                    }
+                } else {
+                    drop(owners);
+                    delete_match(state, &id).await;
                 }
             }
         }
-        _ => {
-            broadcast(state, &data, Some(conn_id)).await;
+        "match-data-response" | "game-number-response" | "match-update-response" => {
+            on_response(state, conn_id, msg_type, &data).await;
+        }
+        // The relay validates PINs itself, so pin-validation-response is ignored,
+        // and there is no catch-all rebroadcast of unknown types.
+        _ => {}
+    }
+}
+
+/// Resolve a pending relay request — only from a scoreboard that was asked.
+async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: &Value) {
+    let Some(rid) = data.get("requestId").and_then(|v| v.as_str()) else { return };
+    let expected_match = {
+        let pending = state.pending.lock().await;
+        match pending.get(rid) {
+            Some(p) if p.response_type == msg_type && p.targets.contains(&conn_id) => p.match_id.clone(),
+            _ => return,
+        }
+    };
+    let success = data.get("success").and_then(|v| v.as_bool()) == Some(true);
+    let match_id = norm_id(data.get("matchId")).or_else(|| expected_match.clone());
+
+    let mut result: Option<Value> = None;
+    if success {
+        if msg_type == "game-number-response" {
+            if let (Some(m), Some(id)) = (data.get("match"), &match_id) {
+                if is_owner(state, conn_id, id).await {
+                    result = Some(json!({ "match": m.clone(), "matchId": id }));
+                }
+            }
+        } else {
+            // match-data-response (App.jsx sends `matchData`, Scoreboard.jsx `data`)
+            // and match-update-response carry a full bundle.
+            let payload = data.get("data").or_else(|| data.get("matchData")).cloned().unwrap_or(Value::Null);
+            match (bundle_from(&payload), &match_id) {
+                (Some(bundle), Some(id)) if Some(id) == expected_match.as_ref() => {
+                    if claim(state, conn_id, id, bundle.get("match")).await {
+                        let stored = store_bundle(state, id, bundle).await;
+                        if msg_type == "match-update-response" {
+                            let update = bundle_message("match-data-update", id, &stored, None);
+                            notify_subscribers(state, id, &update, Some(conn_id)).await;
+                            result = Some(json!({ "data": stored }));
+                        } else {
+                            result = Some(stored);
+                        }
+                    }
+                }
+                (None, _) if msg_type == "match-update-response" => {
+                    result = Some(json!({ "data": Value::Null }));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut pending = state.pending.lock().await;
+    match result {
+        Some(v) => {
+            if let Some(p) = pending.remove(rid) {
+                let _ = p.tx.send(v);
+            }
+        }
+        None => {
+            // This scoreboard declined; give up once every asked one has.
+            let exhausted = match pending.get_mut(rid) {
+                Some(p) => {
+                    p.targets.remove(&conn_id);
+                    p.targets.is_empty()
+                }
+                None => false,
+            };
+            if exhausted {
+                pending.remove(rid);
+            }
         }
     }
 }
 
-async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value) {
+async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, exclude: Option<u64>) {
     let sub_ids: Vec<u64> = state
         .subs
         .lock()
@@ -741,6 +1111,9 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value) 
     let text = msg.to_string();
     let clients = state.clients.lock().await;
     for id in sub_ids {
+        if Some(id) == exclude {
+            continue;
+        }
         if let Some(tx) = clients.get(&id) {
             let _ = tx.send(Message::Text(text.clone()));
         }
