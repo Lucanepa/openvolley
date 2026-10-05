@@ -32,6 +32,7 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../doma
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon } from '../domain/matchEnd'
@@ -6606,6 +6607,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (removed.some(e => e.type === 'sanction')) await resyncTeamSanctionFlags()
   }, [matchId, resyncTeamSanctionFlags])
 
+  // Remove events from the log AND what they wrote elsewhere: their queued
+  // (not yet sent) cloud sync jobs and their side effects (auto remarks,
+  // libero flags, court captain, sanction flags). Every manual delete, the
+  // decision-change swap and undo go through here so none of them leaves a
+  // phantom remark line or a cloud row for an event that no longer exists.
+  const discardEvents = useCallback(async (eventsToRemove) => {
+    const rows = (eventsToRemove || []).filter(e => e && e.id != null)
+    if (rows.length === 0) return
+    await db.events.bulkDelete(rows.map(e => e.id))
+    const queued = await db.sync_queue.where('status').equals('queued').toArray()
+    const jobs = syncJobsForEvents(queued, rows.map(e => e.id))
+    if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
+    await reverseEventSideEffects(rows)
+  }, [reverseEventSideEffects])
+
   const handleUndo = useCallback(async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
@@ -6620,6 +6636,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     console.log('[handleUndo] Starting snapshot-based undo for event:', lastEvent.type, 'seq:', lastEventSeq)
 
     try {
+      // A decision change is reversed from its own undo record, not from a
+      // snapshot: the swapped point's snapshot was taken BEFORE the swap, so
+      // restoring it would revert the score but keep the swapped point team
+      // (serve) and the new team's rotation.
+      if (lastEvent.type === 'decision_change') {
+        const allEventsForDecision = await db.events.where('matchId').equals(matchId).toArray()
+        const plan = planDecisionChangeReversal(lastEvent, allEventsForDecision)
+        if (!plan) {
+          showAlert('This decision change cannot be undone automatically. Apply a second decision change to give the point back.', 'warning')
+          return
+        }
+        const deleteIdSet = new Set(plan.deleteEventIds)
+        await discardEvents(allEventsForDecision.filter(e => deleteIdSet.has(e.id)))
+        if (plan.restoreEvents.length > 0) await db.events.bulkPut(plan.restoreEvents)
+        await db.events.update(plan.pointEventId, { payload: plan.pointPayload })
+        // The set score follows the point events again (and is synced)
+        await resyncSetScoreFromEvents(plan.setIndex)
+        return
+      }
+
       // 1. Find and delete ALL events with the same base seq (main + sub-events)
       const allEvents = await db.events.where('matchId').equals(matchId).toArray()
       const eventsToDelete = allEvents.filter(e => Math.floor(e.seq || 0) === baseSeq)
@@ -6634,19 +6670,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // Delete them, drop their queued sync jobs and reverse what they wrote
+      // OUTSIDE the event log
       console.log('[handleUndo] Deleting', eventsToDelete.length, 'events')
-      for (const e of eventsToDelete) {
-        await db.events.delete(e.id)
-        // Also remove from sync_queue if pending
-        const syncItems = await db.sync_queue.where('status').equals('queued').toArray()
-        const matchingSyncItem = syncItems.find(s => s.payload?.external_id === String(e.id))
-        if (matchingSyncItem) {
-          await db.sync_queue.delete(matchingSyncItem.id)
-        }
-      }
-
-      // 1b. Reverse what the undone events wrote OUTSIDE the event log
-      await reverseEventSideEffects(eventsToDelete)
+      await discardEvents(eventsToDelete)
 
       // 2. Find the previous event's snapshot: the newest REMAINING event of the
       // same set that actually carries one (rally_start / raw rotation lineups
@@ -6729,7 +6756,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, reverseEventSideEffects, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -6910,9 +6937,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         })
 
-        // Log a decision_change event for the record
+        // Log a decision_change event for the record (its undo record is
+        // added below, once the swap's sub-event changes are known)
         const nextSeq = await getNextSeq()
-        await db.events.add({
+        const decisionEventId = await db.events.add({
           matchId,
           setIndex: data.set.index,
           type: 'decision_change',
@@ -6939,10 +6967,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // liberoSubstitution whenever the libero is on court, so it must not be
         // filtered on that (domain/rotation, tested).
         const oldTeamPointSubEvents = pointSubEventsForTeam(data.events, lastEvent, oldTeam)
-        for (const subEvent of oldTeamPointSubEvents) {
-          await db.events.delete(subEvent.id)
-        }
+        // (drops the auto libero_exit's queued cloud job too)
+        await discardEvents(oldTeamPointSubEvents)
         const deletedSubEventIds = new Set(oldTeamPointSubEvents.map(e => e.id))
+        const createdSubEventIds = []
 
         // Determine who had serve BEFORE the original point was awarded
         // This is needed to know if the new team should rotate (if they were receiving)
@@ -7035,7 +7063,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     // Log libero exit event (sub-event of the point, as handlePoint does)
                     const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(liberoNumber))
                     const liberoExitSeq = await getNextSubSeq(lastEventSeq)
-                    await db.events.add({
+                    const liberoExitId = await db.events.add({
                       matchId,
                       setIndex: data.set.index,
                       type: 'libero_exit',
@@ -7050,13 +7078,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ts: new Date().toISOString(),
                       seq: liberoExitSeq
                     })
+                    createdSubEventIds.push(liberoExitId)
                   }
                 }
 
                 // Log the rotation lineup event for the new team as a sub-event of the
                 // point (N.x): the serve indicator, undo and replay find it there
                 const rotationSeq = await getNextSubSeq(lastEventSeq)
-                await db.events.add({
+                const rotationId = await db.events.add({
                   matchId,
                   setIndex: data.set.index,
                   type: 'lineup',
@@ -7071,6 +7100,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   ts: new Date().toISOString(),
                   seq: rotationSeq
                 })
+                createdSubEventIds.push(rotationId)
 
                 console.log('[handleDecisionChange] Applied rotation to new team:', {
                   newTeam,
@@ -7081,6 +7111,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }
             }
           }
+        }
+
+        // Make the decision change reversible: undo puts the point's team back,
+        // removes the new team's sub-events and restores the old team's
+        // (domain/corrections, tested). The point's own snapshot predates the
+        // swap, so a snapshot restore cannot do this.
+        const decisionRow = await db.events.get(decisionEventId)
+        if (decisionRow) {
+          await db.events.update(decisionEventId, {
+            payload: {
+              ...decisionRow.payload,
+              ...decisionChangeUndoRecord(lastEvent, oldTeamPointSubEvents, createdSubEventIds)
+            }
+          })
         }
 
         // Sync to Supabase with fresh snapshot (data has changed)
@@ -7097,7 +7141,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate])
+  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
@@ -21066,7 +21110,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deletePointEvent'))) {
                                       const deletedTeam = team || '?'
-                                      await db.events.delete(event.id)
+                                      await discardEvents([event])
                                       await resyncSetScoreFromEvents(setIndex)
                                       logManualChangeWithRemark('Point', 'Delete',
                                         `${deletedTeam} point at ${homeScore}-${awayScore}`, null,
@@ -21179,7 +21223,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteTimeoutEvent'))) {
                                       const deletedTeam = team || '?'
-                                      await db.events.delete(event.id)
+                                      await discardEvents([event])
                                       logManualChangeWithRemark('Timeout', 'Delete',
                                         `${deletedTeam} timeout at ${homeScore}-${awayScore}`, null,
                                         `Deleted ${deletedTeam} timeout (Set ${setIndex}, ${homeScore}-${awayScore})`,
@@ -21458,8 +21502,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         for (const u of plan.updates) {
                                           await db.events.update(u.id, { payload: u.payload })
                                         }
-                                        await db.events.bulkDelete(plan.deleteIds)
                                       })
+                                      // Delete its events with their remark line and queued sync jobs
+                                      const deleteIdSet = new Set(plan.deleteIds)
+                                      await discardEvents(allEvents.filter(ev => deleteIdSet.has(ev.id)))
                                       logManualChangeWithRemark('Substitution', 'Delete',
                                         `Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position}`, null,
                                         `Deleted substitution (Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position})`,
@@ -21693,8 +21739,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteSanctionEvent'))) {
-                                      await db.events.delete(event.id)
-                                      await resyncTeamSanctionFlags()
+                                      // discardEvents re-derives the team-sanction flags
+                                      await discardEvents([event])
                                       logManualChangeWithRemark('Sanction', 'Delete',
                                         `${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`, null,
                                         `Deleted sanction ${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
@@ -22011,7 +22057,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
-                                      await db.events.delete(event.id)
+                                      await discardEvents([event])
                                       logManualChangeWithRemark('Libero', 'Delete',
                                         `${eventType} (Team ${teamLabel})`, null,
                                         `Deleted ${eventType} event (Team ${teamLabel})`,
@@ -22119,7 +22165,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteLineupEvent'))) {
-                                      await db.events.delete(event.id)
+                                      await discardEvents([event])
                                     }
                                   }}
                                   style={{
@@ -22475,7 +22521,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   className="danger"
                                   onClick={async () => {
                                     if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
-                                      await db.events.delete(event.id)
+                                      await discardEvents([event])
+                                      if (eventType === 'point') await resyncSetScoreFromEvents(setIndex)
                                       logManualChangeWithRemark('Event', 'Quick Delete',
                                         `${description} (Set ${setIndex})`, null,
                                         `Quick deleted ${description} (Set ${setIndex})`,
