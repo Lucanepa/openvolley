@@ -43,6 +43,8 @@ import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
+import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
+import { displaySetNumber, setsWonWithFinishedSet } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
@@ -1858,8 +1860,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Use cached snapshot if provided, otherwise fetch/compute
       let snapshot = cachedSnapshot
       if (!snapshot) {
-        if (eventType?.startsWith('manual_')) {
-          // Manual change - must capture fresh to reflect the change
+        if (liveStateNeedsFreshSnapshot(eventType)) {
+          // Manual change or court switch - must capture fresh to reflect the change
           const result = await captureFullStateSnapshot()
           snapshot = result?.snapshot || null
           console.log('[LiveState] Captured fresh snapshot for manual change')
@@ -1899,17 +1901,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Calculate updated set scores including the just-finished set
       // eventData.winner is 'home' or 'away' from the set_end event
       // Fallback: if eventData.winner is undefined, calculate from snapshot points
-      const setWinner = eventData?.winner
-        || (snapshot.pointsA > snapshot.pointsB ? snapshot.teamAKey : null)
-        || (snapshot.pointsB > snapshot.pointsA ? snapshot.teamBKey : null)
       // Increment set score for both set_end (isSetInterval) and match_end events
-      const shouldIncrementSetScore = (isSetInterval || isMatchEnd) && setWinner
-      const updatedSetScoreA = shouldIncrementSetScore
-        ? (setWinner === snapshot.teamAKey ? snapshot.setScoreA + 1 : snapshot.setScoreA)
-        : snapshot.setScoreA
-      const updatedSetScoreB = shouldIncrementSetScore
-        ? (setWinner === snapshot.teamBKey ? snapshot.setScoreB + 1 : snapshot.setScoreB)
-        : snapshot.setScoreB
+      // (Team B is derived there: snapshots carry teamAKey only)
+      const setWinner = eventData?.winner
+      const { a: updatedSetScoreA, b: updatedSetScoreB } = setsWonWithFinishedSet(snapshot, setWinner, isSetInterval || isMatchEnd)
 
       // For set_end, we need to show the NEXT set state (interval between sets)
       // The snapshot still has the OLD set data, so we override for set_end.
@@ -12836,7 +12831,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             fontSize: '1.28cqw'
           }}>
             <span style={{ color: 'var(--muted)', fontWeight: 600 }}>SET</span>
-            <span style={{ fontWeight: 700 }}>{data?.set?.index || 1}</span>
+            <span style={{ fontWeight: 700 }}>{displaySetNumber(data?.set?.index || 1, data?.match?.bestOf)}</span>
           </div>
           <span style={{
             padding: '0.26cqw 0.85cqw',

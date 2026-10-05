@@ -9,7 +9,7 @@ import mikasaVolleyball from '../mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
-import { setsToWin, isMatchFinished as isMatchFinishedUtil } from '../utils/matchFormat'
+import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } from '../utils/matchFormat'
 import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
 import WsDebugOverlay from './WsDebugOverlay'
@@ -1873,10 +1873,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const leftDisplayScore = isInSetInterval ? leftSetsWon : leftPoints
   const rightDisplayScore = isInSetInterval ? rightSetsWon : rightPoints
   // Display set index - during interval show the NEXT set, but never show more than Set 5
-  const displaySetIndex = Math.min(
+  // (a best-of-3 decider is stored as set 5 and shown as set 3)
+  const displaySetIndex = displaySetNumber(Math.min(
     isInSetInterval ? nextSetIndex : (data?.currentSet?.index || 1),
     5
-  )
+  ), refBestOf)
 
   // Check if this is the first rally of the set (no points scored yet)
   const isFirstRally = useMemo(() => {
