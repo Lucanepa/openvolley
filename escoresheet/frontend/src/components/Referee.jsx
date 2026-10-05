@@ -2180,7 +2180,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 fontWeight: 600,
                 background: 'var(--ov-card)',
                 color: 'var(--ov-danger-text)',
-                border: '1px solid #fecaca',
+                border: '1px solid var(--ov-danger-border)',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 lineHeight: 1
@@ -2193,8 +2193,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
 
         {/* Content */}
-        <div className="ov-kit flex flex-1 flex-col items-center justify-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6">
-          <Card stack={false} className="w-full max-w-md rounded-3xl p-6 text-center shadow-card-lg sm:p-8">
+        <div className="ov-kit flex flex-1 flex-col items-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6">
+          <Card stack={false} className="my-auto w-full max-w-md rounded-3xl p-6 text-center shadow-card-lg sm:p-8">
             {/* Team names if available */}
             {data?.homeTeam?.name && data?.awayTeam?.name && (
               <p className="mb-5 text-lg font-bold tracking-tight text-stone-900 sm:text-xl">
@@ -2659,7 +2659,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             style={{ minWidth: 'min(320px, 90vw)' }}
           >
             <h2 id="setter-modal-title" className="flex items-center justify-center gap-2 text-lg font-bold text-stone-900">
-              <VolleyballIcon size={18} /> Select Setter
+              <VolleyballIcon size={18} /> Select setter
             </h2>
             <p className="mt-1 mb-5 text-sm text-stone-500">
               {setterSelectionModal === 'left' ? leftTeamData?.name : rightTeamData?.name}
@@ -2701,6 +2701,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               })()}
             </div>
             <div className="flex gap-2">
+              <Button variant="secondary" size="xl" className="flex-1 font-medium" onClick={() => setSetterSelectionModal(null)}>
+                Cancel
+              </Button>
               <Button
                 variant="danger-outline"
                 size="xl"
@@ -2712,10 +2715,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   setSetterSelectionModal(null)
                 }}
               >
-                Exit Advanced
-              </Button>
-              <Button variant="secondary" size="xl" className="flex-1 font-medium" onClick={() => setSetterSelectionModal(null)}>
-                Cancel
+                Exit advanced
               </Button>
             </div>
           </div>
@@ -3032,13 +3032,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {refereeView === '2nd' && !leftServing && leftLineup && (
                 <button
                   onClick={() => setSetterSelectionModal('left')}
+                  // Hit-slop only: the box stays 22px so the court below does not move;
+                  // where the slop overlaps the court, the court (painted later) still wins.
+                  className="relative before:absolute before:-inset-x-3 before:-inset-y-3 before:content-['']"
                   style={{
                     padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: advancedMode.left ? 'var(--ov-selected)' : 'var(--ov-card)',
-                    color: advancedMode.left ? 'var(--ov-on-dark)' : 'var(--ov-text-secondary)',
-                    border: advancedMode.left ? '1px solid var(--ov-selected)' : '1px solid var(--ov-hairline)',
+                    background: advancedMode.left ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
+                    color: advancedMode.left ? '#6d28d9' : 'var(--ov-text-secondary)',
+                    border: advancedMode.left ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -3048,7 +3051,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 >
                   {advancedMode.left ? (
                     <>
-                      <span style={{ color: 'rgb(255 255 255 / 0.7)' }}>P{getSetterPosition(leftLineup, setterNumber.left) || '?'}</span>
+                      <span style={{ color: '#8b5cf6' }}>P{getSetterPosition(leftLineup, setterNumber.left) || '?'}</span>
                       <span>#{setterNumber.left}</span>
                     </>
                   ) : (
@@ -3062,13 +3065,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {refereeView === '2nd' && !rightServing && rightLineup && (
                 <button
                   onClick={() => setSetterSelectionModal('right')}
+                  // Hit-slop only: the box stays 22px so the court below does not move;
+                  // where the slop overlaps the court, the court (painted later) still wins.
+                  className="relative before:absolute before:-inset-x-3 before:-inset-y-3 before:content-['']"
                   style={{
                     padding: '4px 12px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    background: advancedMode.right ? 'var(--ov-selected)' : 'var(--ov-card)',
-                    color: advancedMode.right ? 'var(--ov-on-dark)' : 'var(--ov-text-secondary)',
-                    border: advancedMode.right ? '1px solid var(--ov-selected)' : '1px solid var(--ov-hairline)',
+                    background: advancedMode.right ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
+                    color: advancedMode.right ? '#6d28d9' : 'var(--ov-text-secondary)',
+                    border: advancedMode.right ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -3078,7 +3084,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 >
                   {advancedMode.right ? (
                     <>
-                      <span style={{ color: 'rgb(255 255 255 / 0.7)' }}>P{getSetterPosition(rightLineup, setterNumber.right) || '?'}</span>
+                      <span style={{ color: '#8b5cf6' }}>P{getSetterPosition(rightLineup, setterNumber.right) || '?'}</span>
                       <span>#{setterNumber.right}</span>
                     </>
                   ) : (
@@ -4051,7 +4057,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             <div className="ov-kit p-2 text-center sm:p-4">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600"><BellIcon size={36} /></div>
               <p role="alert" className="mb-5 font-bold text-red-700" style={{ fontSize: vmin(3) }}>
-                Scorer Needs Attention!
+                Scorer needs attention
               </p>
               <Button variant="dark" size="xl" block className="h-14 text-base" onClick={() => setAttentionModalOpen(false)}>
                 Acknowledge
