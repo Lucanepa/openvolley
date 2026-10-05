@@ -54,3 +54,18 @@ export function validateManualSubstitution(events, teamKey, setIndex, playerOut,
 
   return { legal: true }
 }
+
+/**
+ * Validate a manually added timeout: max 2 regular timeouts per team per set
+ * (FIVB 15.4.1), the same limit the live Scoreboard enforces.
+ * @returns {{legal: boolean, reason?: string}}
+ */
+export function validateManualTimeout(events, teamKey, setIndex, { maxPerSet = 2 } = {}) {
+  const used = (events || []).filter(e =>
+    e.type === 'timeout' &&
+    e.payload?.team === teamKey &&
+    (e.setIndex ?? 1) === setIndex
+  ).length
+  if (used >= maxPerSet) return { legal: false, reason: `Timeout limit reached (${maxPerSet} per team per set).` }
+  return { legal: true }
+}
