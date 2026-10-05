@@ -53,7 +53,7 @@ import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
 import { getRelayWebSocketUrl } from './utils/backendConfig'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
-import { createRelayPinTracker, isRelayErrorFor, relayReconnectDelay } from './utils/relayPublisher'
+import { createRelayPinTracker, isRelayErrorFor, relayReconnectDelay, relayConnectionStatus } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -479,32 +479,34 @@ export default function App() {
     }
   }, [])
 
-  // Check connection statuses — updates progressively as each check resolves
-  const checkConnectionStatuses = useCallback(async () => {
-    // Helper to update individual statuses as they resolve
-    const updateStatus = (key, status, debug) => {
-      setConnectionStatuses(prev => ({ ...prev, [key]: status }))
-      setConnectionDebugInfo(prev => ({ ...prev, [key]: debug }))
-    }
+  // One connection status entry; no re-render when it did not change
+  const updateConnectionStatus = useCallback((key, status, debug) => {
+    setConnectionStatuses(prev => (prev[key] === status ? prev : { ...prev, [key]: status }))
+    setConnectionDebugInfo(prev => {
+      const old = prev[key]
+      if (old && old.status === debug?.status && old.message === debug?.message && old.details === debug?.details) return prev
+      return { ...prev, [key]: debug }
+    })
+  }, [])
 
-    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
-    const isStaticDeployment = !import.meta.env.DEV && (
-      window.location.hostname.includes('github.io') ||
-      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
-    )
+  // Match and cloud sync statuses come from state this component already has:
+  // set on change, without the network checks below (a match write or a
+  // syncing/synced flip must not re-run those).
+  const hasCurrentMatch = !!currentMatch
+  const currentMatchStatus = currentMatch?.status
+  const currentMatchIsTest = !!currentMatch?.test
+  useEffect(() => {
+    const updateStatus = updateConnectionStatus
 
-    // Check if we have a configured backend URL (cloud backend)
-    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
-
-    // --- Check Match status (instant) ---
-    if (currentMatch) {
-      const matchStatus = currentMatch.status === 'live' ? 'live' : currentMatch.status === 'scheduled' ? 'scheduled' : currentMatch.status === 'final' ? 'final' : 'unknown'
-      updateStatus('match', matchStatus, { status: matchStatus, message: `Match status: ${matchStatus} (${currentMatch.test ? 'Test' : 'Official'} match)` })
+    // --- Match status ---
+    if (hasCurrentMatch) {
+      const matchStatus = currentMatchStatus === 'live' ? 'live' : currentMatchStatus === 'scheduled' ? 'scheduled' : currentMatchStatus === 'final' ? 'final' : 'unknown'
+      updateStatus('match', matchStatus, { status: matchStatus, message: `Match status: ${matchStatus} (${currentMatchIsTest ? 'Test' : 'Official'} match)` })
     } else {
       updateStatus('match', 'no_match', { status: 'no_match', message: 'No match found. Create a new match to start.' })
     }
 
-    // --- Check cloud sync status (instant — based on existing syncStatus state) ---
+    // --- Cloud sync status (from syncStatus) ---
     // (status key 'supabase' kept for the UI; the cloud is the OpenVolley backend now)
     if (syncStatus === 'synced' || syncStatus === 'syncing') {
       updateStatus('supabase', 'connected', { status: 'connected', message: 'Cloud backend is connected and syncing' })
@@ -533,6 +535,25 @@ export default function App() {
     } else {
       updateStatus('supabase', 'unknown', { status: 'unknown', message: 'Cloud backend status unknown' })
     }
+  }, [hasCurrentMatch, currentMatchStatus, currentMatchIsTest, syncStatus, updateConnectionStatus])
+
+  // The relay's WS port (Electron server status); the port, not serverStatus,
+  // which is a new object every 10 s
+  const relayWsPort = serverStatus?.wsPort ?? null
+
+  // Network checks (IndexedDB, API/server, relay): every 30 s and on demand,
+  // each status set as its check resolves
+  const checkConnectionStatuses = useCallback(async () => {
+    const updateStatus = updateConnectionStatus
+
+    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    const isStaticDeployment = !import.meta.env.DEV && (
+      window.location.hostname.includes('github.io') ||
+      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
+    )
+
+    // Check if we have a configured backend URL (cloud backend)
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
 
     // --- Run async checks in parallel ---
     const asyncChecks = []
@@ -608,35 +629,17 @@ export default function App() {
     }
     asyncChecks.push(checkApiServer())
 
-    // WebSocket check
+    // Relay check: the app's own relay socket when it is open, else an HTTP
+    // GET /api/server/status (as RefereeApp/BenchApp do); no probe socket
     const checkWebSocket = async () => {
-      const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
-      if (!wsUrl) {
-        updateStatus('websocket', 'not_available', {
-          status: 'not_available',
-          message: 'No WebSocket relay for this page (using local database only)'
-        })
-      } else {
-        // State of the app's own relay socket. No throwaway probe socket: this
-        // check runs every 30 s and on every match write.
-        const ws = typeof wsRef !== 'undefined' ? wsRef.current : null
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          updateStatus('websocket', 'connected', { status: 'connected', message: 'WebSocket server is reachable (active connection)' })
-        } else if (ws && ws.readyState === WebSocket.CONNECTING) {
-          updateStatus('websocket', 'connecting', { status: 'connecting', message: 'Connecting to the WebSocket server...' })
-        } else {
-          updateStatus('websocket', 'disconnected', {
-            status: 'disconnected',
-            message: 'Not connected to the WebSocket server (retrying in the background)',
-            details: `Relay: ${wsUrl}`
-          })
-        }
-      }
+      const wsUrl = getRelayWebSocketUrl({ wsPort: relayWsPort })
+      const debug = await relayConnectionStatus({ wsUrl, ws: wsRef.current })
+      updateStatus('websocket', debug.status, debug)
     }
     asyncChecks.push(checkWebSocket())
 
     await Promise.all(asyncChecks)
-  }, [currentMatch, syncStatus, serverStatus])
+  }, [updateConnectionStatus, relayWsPort])
 
   // Periodically check connection statuses
   useEffect(() => {
