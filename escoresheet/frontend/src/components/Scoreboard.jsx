@@ -25,6 +25,7 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { exportMatchData } from '../utils/backupManager'
+import { setExtId, eventExtId } from '../utils/syncIds'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
@@ -2333,7 +2334,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         resource: 'set',
         action: 'insert',
         payload: {
-          external_id: String(setId),
+          external_id: setExtId(match?.seed_key || String(matchId), setId),
           match_id: match?.seed_key || String(matchId),
           index: nextIndex,
           home_points: 0,
@@ -4304,7 +4305,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             resource: 'event',
             action: 'insert',
             payload: {
-              external_id: String(eventId),
+              external_id: eventExtId(match?.seed_key || String(matchId), eventId),
               match_id: match?.seed_key || String(matchId), // Use seed_key (external_id) for Supabase lookup
               set_index: setIndex,
               type,
@@ -5619,7 +5620,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Prepare set update payload
         const setPayload = {
-          external_id: String(setIdToUpdate),
+          external_id: setExtId(matchRecord.seed_key, setIdToUpdate),
           home_points: homePoints,
           away_points: awayPoints,
           finished: true,
@@ -5967,7 +5968,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               resource: 'set',
               action: 'insert',
               payload: {
-                external_id: String(newSetId),
+                external_id: setExtId(matchRecordForNewSet?.seed_key || String(matchId), newSetId),
                 match_id: matchRecordForNewSet?.seed_key || String(matchId),
                 index: newSetIndex,
                 home_points: 0,
@@ -6056,7 +6057,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           resource: 'set',
           action: 'insert',
           payload: {
-            external_id: String(newSetId),
+            external_id: setExtId(match?.seed_key || String(matchId), newSetId),
             match_id: match?.seed_key || String(matchId),
             index: setIndex,
             home_points: 0,
@@ -20377,7 +20378,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     if (data.match?.seed_key) {
                                       try {
                                         const sbUpdate = leftIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        await apiFrom('sets').update(sbUpdate).eq('external_id', String(data.set.id))
+                                        await apiFrom('sets').update(sbUpdate).eq('external_id', setExtId(data.match.seed_key, data.set.id))
                                       } catch (err) { /* ignore */ }
                                     }
 
@@ -20419,7 +20420,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     if (data.match?.seed_key) {
                                       try {
                                         const sbUpdate = rightIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        await apiFrom('sets').update(sbUpdate).eq('external_id', String(data.set.id))
+                                        await apiFrom('sets').update(sbUpdate).eq('external_id', setExtId(data.match.seed_key, data.set.id))
                                       } catch (err) { /* ignore */ }
                                     }
 
@@ -20567,7 +20568,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ home_points: newPoints, sport_type: 'indoor' }).eq('external_id', setExtId(data.match.seed_key, set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Home Points Set ${set.index}`, oldPoints, newPoints,
@@ -20600,7 +20601,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ away_points: newPoints, sport_type: 'indoor' }).eq('external_id', setExtId(data.match.seed_key, set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Away Points Set ${set.index}`, oldPoints, newPoints,
@@ -20631,7 +20632,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     // Sync to Supabase
                                     if (data.match?.seed_key) {
                                       try {
-                                        await apiFrom('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', String(set.id))
+                                        await apiFrom('sets').update({ finished: newFinished, sport_type: 'indoor' }).eq('external_id', setExtId(data.match.seed_key, set.id))
                                       } catch (err) { /* ignore */ }
                                     }
                                     logManualChangeWithRemark('Score', `Set ${set.index} Finished`, oldFinished, newFinished,

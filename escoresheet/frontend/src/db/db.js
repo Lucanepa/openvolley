@@ -1,4 +1,5 @@
 import Dexie from 'dexie'
+import { rewriteQueuedSyncJobs } from '../utils/syncIds'
 
 /**
  * ============================================================================
@@ -23,7 +24,8 @@ import Dexie from 'dexie'
  * - action: 'insert' | 'update' | 'delete' | 'restore' - determines operation
  * - payload: Data to sync, includes external_id for deduplication
  * - ts: Timestamp when queued (for ordering)
- * - status: 'queued' | 'sent' | 'error' - processing state
+ * - status: 'queued' | 'sending' | 'sent' | 'error' | 'superseded' | 'dropped' - processing state
+ *   ('sending': claimed by useSequentialSync; 'superseded'/'dropped': never sent)
  *
  * Processing order: match → set → event (respects foreign key dependencies)
  *
@@ -31,8 +33,8 @@ import Dexie from 'dexie'
  * -------------------
  * All synced resources use external_id as the stable identifier:
  * - Match: seed_key (format: match_{timestamp}_{random})
- * - Set: Local Dexie ID as string
- * - Event: Local Dexie ID as string
+ * - Set: `${seed_key}:s:${localSetId}` (utils/syncIds.js; bare ids collided across devices)
+ * - Event: `${seed_key}:e:${localEventId}`
  *
  * Why external_id?
  * - Supabase UUID isn't known until first sync
@@ -288,6 +290,21 @@ db.version(16).stores({
     if (match.bestOf === undefined) {
       match.bestOf = 5
     }
+  })
+})
+
+// Version 17: Namespace queued set/event external ids with the match seed_key.
+// Bare Dexie ids ('42') collide across devices and matches in the cloud upsert;
+// new jobs are written as `${seed}:s:${id}` / `${seed}:e:${id}` (utils/syncIds),
+// and this rewrites jobs that were already waiting in the queue. Jobs that cannot
+// be attributed to a match are marked 'dropped'. No schema change.
+db.version(17).stores({}).upgrade(tx => {
+  return rewriteQueuedSyncJobs({
+    queue: tx.table('sync_queue'),
+    sets: tx.table('sets'),
+    matches: tx.table('matches')
+  }).then(({ rewritten, dropped }) => {
+    if (rewritten || dropped) console.log(`[db] v17: namespaced ${rewritten} queued set/event jobs, dropped ${dropped}`)
   })
 })
 

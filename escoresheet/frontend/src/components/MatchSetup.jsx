@@ -22,6 +22,7 @@ import { generateMatchSeedKey } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
+import { setExtId } from '../utils/syncIds'
 import { FileTextIcon, ClipboardIcon } from './icons'
 
 // Date formatting helpers (outside component to avoid recreation)
@@ -2906,7 +2907,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         resource: 'set',
         action: 'insert',
         payload: {
-          external_id: String(firstSetId),
+          external_id: setExtId(matchForSet.seed_key, firstSetId),
           match_id: matchForSet.seed_key, // Use seed_key (external_id) for Supabase lookup
           index: 1,
           home_points: 0,
