@@ -32,11 +32,36 @@ export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}
     await c.connect()
     try { await c.query(schemaSql) } finally { await c.end() }
   }
+  let appRole = null
   return {
     name,
     url: url.toString(),
+    /**
+     * A login role with only what the app needs (like the production `ov_app`):
+     * USAGE on public, DML on its tables, USAGE on sequences. No DDL, no superuser,
+     * nothing on `auth` or on `internal_notes`. Returns its connection string.
+     */
+    async createAppRole () {
+      appRole = `${name}_app`
+      await admin.query(`CREATE ROLE "${appRole}" LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOCREATEROLE`)
+      const c = new pg.Client({ connectionString: url.toString() })
+      await c.connect()
+      try {
+        await c.query(`GRANT USAGE ON SCHEMA public TO "${appRole}";
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${appRole}";
+          REVOKE ALL ON public.internal_notes FROM "${appRole}";
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${appRole}";`)
+      } finally { await c.end() }
+      const u = new URL(url.toString())
+      u.username = appRole
+      u.password = 'app'
+      return u.toString()
+    },
     async drop () {
-      try { await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`) } finally { await admin.end() }
+      try {
+        await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
+        if (appRole) await admin.query(`DROP ROLE IF EXISTS "${appRole}"`)
+      } finally { await admin.end() }
     }
   }
 }
