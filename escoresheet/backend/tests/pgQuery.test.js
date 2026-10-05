@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
-import { createPgQuery, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent } from '../lib/pgQuery.js'
+import { createPgQuery, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus } from '../lib/pgQuery.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 // ---------------------------------------------------------------------------
@@ -690,6 +690,60 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       const row = (await raw.query('SELECT external_id, match_id FROM sets WHERE external_id = $1', [ext])).rows[0]
       assert.deepEqual(row, { external_id: ext, match_id: a.id })
     })
+
+    it('an upsert cannot overwrite or move a set/event of another match (by id, default key or collided external_id)', async () => {
+      const a = await newMatch(); const b = await newMatch()
+      const aSetExt = `${a.external_id}:s:1`
+      const aSet = (await q('sets', 'insert', { data: { external_id: aSetExt, match_id: a.id, home_points: 5 }, returning: 'id', single: true }, W)).body.data.id
+      for (const onConflict of ['id', undefined]) {
+        const r = await q('sets', 'upsert', { data: { id: aSet, external_id: `${b.external_id}:s:9`, match_id: b.id, home_points: 99 }, onConflict, returning: '*' }, W)
+        assert.equal(r.status, 400, `onConflict ${onConflict}: ${JSON.stringify(r.body)}`)
+        assert.equal(r.body.error.code, 'OV_UNSCOPED_WRITE')
+      }
+      assert.deepEqual((await raw.query('SELECT external_id, match_id, home_points FROM sets WHERE id = $1', [aSet])).rows[0],
+        { external_id: aSetExt, match_id: a.id, home_points: 5 })
+
+      const aEv = (await q('events', 'insert', { data: { external_id: `${a.external_id}:e:1`, match_id: a.id, type: 'point' }, returning: 'id', single: true }, W)).body.data.id
+      let r = await q('events', 'upsert', { data: { id: aEv, external_id: `${b.external_id}:e:1`, match_id: b.id, type: 'hijack' } }, W)
+      assert.equal(r.body.error.code, 'OV_UNSCOPED_WRITE')
+      assert.equal((await raw.query('SELECT match_id FROM events WHERE id = $1', [aEv])).rows[0].match_id, a.id)
+
+      // A row damaged by the historical collisions: it lives in match a but its
+      // external_id is in b's namespace. b's scorer upserting that id must not move it.
+      const collided = `${b.external_id}:e:7`
+      await raw.query("INSERT INTO events (external_id, match_id, type) VALUES ($1, $2, 'old')", [collided, a.id])
+      r = await q('events', 'upsert', { data: { external_id: collided, match_id: b.id, type: 'new' }, onConflict: 'external_id' }, W)
+      assert.equal(r.body.error.code, 'OV_UNSCOPED_WRITE')
+      // ... and a batch containing it writes nothing at all.
+      r = await q('events', 'upsert', { data: [{ external_id: `${b.external_id}:e:8`, match_id: b.id }, { external_id: collided, match_id: b.id }], onConflict: 'external_id' }, W)
+      assert.equal(r.body.error.code, 'OV_UNSCOPED_WRITE')
+      assert.deepEqual((await raw.query('SELECT external_id, match_id, type FROM events WHERE external_id = ANY($1) ORDER BY external_id', [[collided, `${b.external_id}:e:8`]])).rows,
+        [{ external_id: collided, match_id: a.id, type: 'old' }])
+
+      // Upserts within the same match keep working, by id and by external_id.
+      r = await q('sets', 'upsert', { data: { id: aSet, external_id: aSetExt, match_id: a.id, home_points: 6 }, onConflict: 'id', returning: 'home_points', single: true }, W)
+      assert.deepEqual(r.body.data, { home_points: 6 })
+      r = await q('sets', 'upsert', { data: { external_id: aSetExt, match_id: a.id, home_points: 7 }, onConflict: 'external_id', count: 'exact' }, W)
+      assert.equal(r.body.count, 1)
+    })
+  })
+
+  describe('error mapping', () => {
+    it('transient SQLSTATEs are 503 and retryable, timeouts 504, others 400', () => {
+      const mk = (code) => Object.assign(new pg.DatabaseError('boom', 0, 'error'), { code })
+      for (const code of ['40001', '40P01', '55P03', '57P01', '53300', '08006']) {
+        const r = db.toErrorResult(mk(code), { action: 'upsert', table: 'events' })
+        assert.equal(r.status, 503, code)
+        assert.deepEqual(r.body.error, { message: 'Database operation failed', code, retryable: true })
+      }
+      assert.equal(db.toErrorResult(mk('57014'), {}).status, 504)
+      for (const code of ['23505', '22P02', '23503', '42703']) {
+        const r = db.toErrorResult(mk(code), {})
+        assert.equal(r.status, 400, code)
+        assert.equal(r.body.error.retryable, undefined, code)
+      }
+      assert.equal(sqlstateStatus('40P01'), 503)
+    })
   })
 
   describe('owner scoping (opts.scope)', () => {
@@ -806,8 +860,33 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.body.count, 0)
     })
 
-    it('a filter value never reaches a secret column through contains/like on JSON', async () => {
-      const r = await q('matches', 'select', { filters: [{ type: 'contains', column: 'match_info', value: '{"x":1}) OR (game_pin LIKE \'1%\'' }] })
+    it('filter values that name a secret column are matched literally, never against the column', async () => {
+      const ext = uniq('SEC')
+      await q('matches', 'insert', { data: { external_id: ext, game_pin: '424242', winner: 'home', match_info: { hall: 'A' } } }, W)
+      const one = (probe) => q('matches', 'select', { columns: 'external_id', filters: [probe, eq('external_id', ext)] })
+      // Control: the same filter shapes do find the row with honest values.
+      for (const probe of [{ type: 'like', column: 'winner', value: 'ho*' }, { type: 'contains', column: 'match_info', value: { hall: 'A' } },
+        { type: 'eq', column: 'match_info->>hall', value: 'A' }]) {
+        assert.equal((await one(probe)).body.data.length, 1, JSON.stringify(probe))
+      }
+      const probes = [
+        { type: 'like', column: 'winner', value: "%' OR game_pin LIKE '4%" },
+        { type: 'ilike', column: 'winner', value: '%) OR (game_pin ILIKE 4*' },
+        { type: 'like', column: 'match_info->>hall', value: "A' OR game_pin LIKE '4%' --" },
+        { type: 'eq', column: 'match_info->>hall', value: "A' OR game_pin = '424242" },
+        { type: 'in', column: 'winner', value: ["x') OR game_pin LIKE ('4%"] },
+        { type: 'contains', column: 'match_info', value: { game_pin: '424242' } },
+        { type: 'contains', column: 'match_info', value: '{"hall":"A","game_pin":"424242"}' }
+      ]
+      for (const probe of probes) {
+        const r = await one(probe)
+        assert.equal(r.status, 200, JSON.stringify(probe))
+        assert.deepEqual(r.body.data, [], JSON.stringify(probe))
+      }
+      // A JSON path or contains value that names the secret column, and invalid JSON, are refused outright.
+      let r = await one({ type: 'eq', column: 'match_info->>game_pin', value: '424242' })
+      assert.equal(r.body.error.code, 'OV_SECRET_FILTER')
+      r = await one({ type: 'contains', column: 'match_info', value: '{"x":1}) OR (game_pin LIKE \'1%\'' })
       assert.equal(r.body.error.code, 'OV_INVALID_FILTER')
     })
 

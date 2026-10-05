@@ -22,6 +22,7 @@
  *   server, atomically: col = col || $value.
  * - sets/events: every external_id must start with its match's external_id
  *   followed by a separator, and update/delete must be scoped to one match.
+ *   An upsert never overwrites or moves a conflicting row of another match.
  * - Writes need X-OV-Proto >= 2 (426 otherwise).
  * - `internal: true` (trusted server code only) skips redaction, the secret
  *   bans and the protocol gate.
@@ -153,6 +154,25 @@ export function parseColumnList (raw, { what = 'select' } = {}) {
     if (p !== '*' && !IDENT_RE.test(p)) fail('OV_INVALID_SELECT', `unsupported ${what} item "${safeText(p)}"`)
   }
   return parts
+}
+
+// Transient SQLSTATEs: the same request can succeed when retried, so they are
+// 5xx (the sync queue keeps 5xx jobs queued and drops 4xx ones).
+const RETRYABLE_SQLSTATES = new Set([
+  '40001', // serialization_failure
+  '40P01', // deadlock_detected
+  '55P03', // lock_not_available
+  '57P01', // admin_shutdown
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now
+  '53300' // too_many_connections
+])
+
+/** HTTP status for a Postgres SQLSTATE: 504 timeout, 503 transient, 400 otherwise. */
+export function sqlstateStatus (code) {
+  if (code === '57014') return 504
+  if (RETRYABLE_SQLSTATES.has(code) || String(code).startsWith('08')) return 503
+  return 400
 }
 
 function isScalar (v) {
@@ -597,10 +617,24 @@ export function createPgQuery (options = {}) {
           if (!target.length) fail('OV_INVALID_CONFLICT', 'table has no primary key; onConflict is required')
         }
         const updatable = cols.filter(c => !target.includes(c))
-        const sets = (updatable.length ? updatable : [target[0]]).map(c => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`)
+        // Server code may ask for JSON objects to be merged into the stored ones
+        // (matchRestore: connection_pins), like `update` does for mergeJsonColumns.
+        const mergeOnUpsert = new Set(Array.isArray(opts.mergeOnUpsert) ? opts.mergeOnUpsert : [])
+        const sets = (updatable.length ? updatable : [target[0]]).map(c => {
+          const col = t.columns.get(c)
+          return mergeOnUpsert.has(c) && col.isJson
+            ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'EXCLUDED')}`
+            : `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`
+        })
         dml += ` ON CONFLICT (${target.map(quoteIdent).join(', ')}) DO UPDATE SET ${sets.join(', ')}`
+        const guards = []
         // A conflicting row owned by someone else is neither changed nor returned.
-        if (scope) dml += ` WHERE t.${quoteIdent(scope.column)} = ${ctx.p(scope.value)}`
+        if (scope) guards.push(`t.${quoteIdent(scope.column)} = ${ctx.p(scope.value)}`)
+        // A conflicting set/event of another match is never overwritten or moved
+        // (an upsert on id, or on an external_id that collided historically).
+        if (childSpec) guards.push(`t.${quoteIdent(childSpec.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(childSpec.fk)}`)
+        if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
+        if (childSpec) ctx.expectRows = rows.length
       }
       if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
     } else if (action === 'update') {
@@ -631,7 +665,12 @@ export function createPgQuery (options = {}) {
 
     // RETURNING: all visible columns when anything needs rows, else just a count.
     const needRows = wantReturning || collectChanges || postCheck
-    const retCols = needRows ? visibleColumns(t, secrets) : []
+    let retCols = needRows ? visibleColumns(t, secrets) : []
+    // Server code may narrow the change rows (e.g. a restore deleting thousands of events).
+    if (needRows && !wantReturning && !postCheck && Array.isArray(opts.changeColumns)) {
+      const narrowed = retCols.filter(c => opts.changeColumns.includes(c))
+      if (narrowed.length) retCols = narrowed
+    }
     if (postCheck) {
       for (const c of [childSpec.ext, childSpec.fk]) if (!retCols.includes(c)) retCols.push(c)
     }
@@ -647,6 +686,10 @@ export function createPgQuery (options = {}) {
       const res = await client.query(sql, ctx.values)
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
+      // Upsert rows skipped by the match guard: the conflicting row belongs to another match.
+      if (ctx.expectRows != null && n < ctx.expectRows) {
+        fail('OV_UNSCOPED_WRITE', `${ctx.expectRows - n} ${t.name} row(s) conflict with a row of another match`)
+      }
       if (postCheck) await assertChildrenScoped(client, cat, t.name, rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] })))
       let data = null
       if (wantReturning && !params.head) {
@@ -723,6 +766,8 @@ export function createPgQuery (options = {}) {
    * @param {{column:string, value:any}} [opts.scope]  owner scoping: forced eq filter + forced value on writes
    * @param {boolean} [opts.collectChanges] return `changes` for realtime (default: changeTables)
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
+   * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
+   * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)
    * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction
    * @returns {Promise<{status:number, body:{data:any, error:null|{message,code,details?}, count?:number}, changes?:Array}>}
    */
@@ -740,18 +785,23 @@ export function createPgQuery (options = {}) {
       if (err.status >= 500) log.warn?.(`[pgQuery] ${where}: ${err.code}`)
       const error = { message: err.message, code: err.code }
       if (err.details && err.status < 500) error.details = err.details
+      if (err.status >= 500) error.retryable = true
       return { status: err.status, body: { data: null, error } }
     }
     if (err instanceof pg.DatabaseError && /^[0-9A-Z]{5}$/.test(err.code || '')) {
       // A Postgres error: report the SQLSTATE, keep the server-side text in the log only.
       log.error?.(`[pgQuery] ${where} error ${err.code}: ${safeText(err.message)}`)
       if (DB_ERROR_INVALIDATES_CATALOG.has(err.code)) scheduleCatalogRefresh()
-      const status = err.code === '57014' ? 504 : (err.code.startsWith('08') || err.code === '57P01' || err.code === '53300') ? 503 : 400
-      return { status, body: { data: null, error: { message: GENERIC_MESSAGE, code: err.code } } }
+      const status = sqlstateStatus(err.code)
+      const error = { message: GENERIC_MESSAGE, code: err.code }
+      if (status >= 500) error.retryable = true
+      return { status, body: { data: null, error } }
     }
     log.error?.(`[pgQuery] ${where} failed: ${safeText(err?.message)}`)
     const unavailable = /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|timeout|terminated|Connection/i.test(String(err?.message))
-    return { status: unavailable ? 503 : 500, body: { data: null, error: { message: GENERIC_MESSAGE, code: unavailable ? 'OV_DB_UNAVAILABLE' : 'OV_INTERNAL' } } }
+    const error = { message: GENERIC_MESSAGE, code: unavailable ? 'OV_DB_UNAVAILABLE' : 'OV_INTERNAL' }
+    if (unavailable) error.retryable = true
+    return { status: unavailable ? 503 : 500, body: { data: null, error } }
   }
 
   async function ping () {
@@ -766,6 +816,7 @@ export function createPgQuery (options = {}) {
   return {
     runQuery,
     execute,
+    toErrorResult: errorResult,
     withTransaction,
     ensureCatalog,
     invalidateCatalog,
