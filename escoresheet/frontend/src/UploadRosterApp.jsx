@@ -1057,7 +1057,7 @@ export default function UploadRosterApp() {
                 <SkeletonRows rows={3} pill={false} />
               </div>
             ) : availableMatches.length > 0 ? (
-              <RowList>
+              <RowList soft>
                 {availableMatches.map((match) => (
                   <GameRow
                     key={match.id}
@@ -1067,7 +1067,6 @@ export default function UploadRosterApp() {
                     away={match.awayTeamName || t('common.away')}
                     gameLabel={`${t('uploadRoster.game')} ${match.gameNumber || match.id}`}
                     onOpen={() => handleMatchSelect(match)}
-                    label={`${t('uploadRoster.game')} ${match.gameNumber || match.id}`}
                     status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
                   />
                 ))}

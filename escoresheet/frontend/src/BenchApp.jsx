@@ -12,7 +12,7 @@ import mikasaVolleyball from './mikasa_v200w.png'
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
-import { CalendarX2, ChevronRight, RefreshCw } from 'lucide-react'
+import { CalendarX2, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from './ui/Button.jsx'
 import { IconButton } from './ui/IconButton.jsx'
 import { FormError } from './ui/Field.jsx'
@@ -897,7 +897,8 @@ export default function BenchApp() {
               action={
                 <IconButton
                   variant="outline"
-                  icon={RefreshCw}
+                  className="h-11 w-11"
+                  icon={loadingMatches ? <Loader2 size={16} className="animate-spin" aria-hidden /> : RefreshCw}
                   label={t('benchDashboard.loadGames', 'Load Games')}
                   onClick={loadMatches}
                   disabled={loadingMatches}
@@ -906,7 +907,7 @@ export default function BenchApp() {
             >
               {t('benchDashboard.selectGame')}
             </ListLabel>
-            <RowList className="max-h-[300px] overflow-y-auto">
+            <RowList soft className="max-h-[300px] overflow-y-auto">
               {availableMatches.map((m) => (
                 <GameRow
                   key={m.id}
@@ -916,7 +917,6 @@ export default function BenchApp() {
                   away={m.awayTeamName || t('common.away')}
                   gameLabel={`${t('benchDashboard.game')} ${m.gameNumber}`}
                   onOpen={() => handleMatchSelect(m)}
-                  label={`${t('benchDashboard.game')} ${m.gameNumber}`}
                   status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
                 />
               ))}

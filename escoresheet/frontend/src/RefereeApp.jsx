@@ -570,6 +570,7 @@ export default function RefereeApp() {
                   action={
                     <IconButton
                       variant="outline"
+                      className="h-11 w-11"
                       icon={loadingMatches ? <Loader2 size={16} className="animate-spin" aria-hidden /> : RefreshCw}
                       label={t('refereeDashboard.loadGames', 'Load Games')}
                       onClick={() => { loadMatches(); checkConnectionStatuses() }}
@@ -596,7 +597,7 @@ export default function RefereeApp() {
                   if (!selected) return null
 
                   return (
-                    <RowList framed className="rounded-lg">
+                    <RowList framed soft className="rounded-lg">
                       <GameRow
                         match={selected}
                         lang={i18n.language}
@@ -650,7 +651,7 @@ export default function RefereeApp() {
           ) : availableMatches.length === 0 ? (
             <EmptyInset className="text-center">{t('refereeDashboard.noAvailableGames')}</EmptyInset>
           ) : (
-            <RowList>
+            <RowList soft>
               {availableMatches.map((m) => (
                 <GameRow
                   key={m.id}
@@ -661,9 +662,9 @@ export default function RefereeApp() {
                   gameLabel={t('refereeDashboard.gameNumber', { number: m.gameNumber })}
                   noDate={m.dateTime || t('refereeDashboard.tbd')}
                   onOpen={() => handleSelectGame(m.gameNumber)}
-                  label={t('refereeDashboard.gameNumber', { number: m.gameNumber })}
+                  selectedLabel={selectedGameNumber === String(m.gameNumber) ? t('refereeDashboard.selected', 'Selected') : undefined}
                   status={selectedGameNumber === String(m.gameNumber)
-                    ? <Check size={16} className="text-stone-900" aria-label={t('refereeDashboard.selectGame')} />
+                    ? <Check size={16} className="text-stone-900" aria-hidden />
                     : <ChevronRight size={16} className="text-stone-400" aria-hidden />}
                 />
               ))}

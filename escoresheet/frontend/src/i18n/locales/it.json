@@ -1359,6 +1359,7 @@
     "selectGame": "Seleziona partita",
     "gamesAvailable": "{{count}} disponibile/i",
     "gameNumber": "Partita #{{number}}",
+    "selected": "Selezionata",
     "vs": "vs",
     "tbd": "Da definire",
     "connectionPin": "PIN di connessione",
