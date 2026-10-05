@@ -10,7 +10,14 @@ import { isServedFromLocalServer } from './utils/backendConfig'
 import { setBackendOverride } from './utils/backendConfig'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
-import { RefreshIcon } from './components/icons'
+import { Check, ChevronRight, CalendarX2, Loader2, RefreshCw } from 'lucide-react'
+import { Button } from './ui/Button.jsx'
+import { IconButton } from './ui/IconButton.jsx'
+import { Field, FormError } from './ui/Field.jsx'
+import { EmptyState, EmptyInset } from './ui/EmptyState.jsx'
+import { RowList } from './ui/Row.jsx'
+import { SkeletonRows } from './ui/Skeleton.jsx'
+import { EntryPage, EntryCard, PinInput, ListLabel, GameRow } from './components/dashboards/EntryKit.jsx'
 
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
@@ -32,7 +39,7 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
 }
 
 export default function RefereeApp() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   // Label this tablet on the relay (scorer's tablet status) before the
   // dashboard subscribes
   useState(() => setRelayDevice('referee'))
@@ -529,159 +536,76 @@ export default function RefereeApp() {
       />
 
       {/* Main content */}
-      <div style={{
-        flex: '1 1 auto',
-        display: 'flex',
-        width: 'auto',
-        maxWidth: '100vw',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        overflowY: 'hidden'
-      }}>
-        <div style={{
-          background: 'var(--bg-secondary)',
-          borderRadius: '12px',
-          padding: '40px',
-          width: 'auto',
-          textAlign: 'center'
-        }}>
-          <img 
-            src={refereeIcon} 
-            alt="Referee Icon" 
-            style={{ width: 'auto', height: 'auto', marginBottom: '20px' }} 
-          />
-          <h1 style={{ fontSize: '32px', fontWeight: 700, marginBottom: '12px' }}>
-            {t('refereeDashboard.dashboardTitle')}
-          </h1>
-
+      <EntryPage className="overflow-y-auto">
+        <EntryCard
+          art={<img src={refereeIcon} alt="Referee Icon" className="h-24 w-auto" />}
+          title={t('refereeDashboard.dashboardTitle')}
+        >
           {/* Show "no active game" when server is connected but no games available */}
           {serverConnected && availableMatches.length === 0 && !loadingMatches ? (
-            <div
-              onClick={handleTestModeClick}
-              style={{
-                padding: '24px',
-                width: 'auto',
-                background: 'var(--panel-2)',
-                borderRadius: '12px',
-                textAlign: 'center',
-                cursor: 'default',
-                userSelect: 'none'
-              }}
-            >
-              <div style={{
-                fontSize: '16px',
-                width: 'auto',
-                color: 'var(--muted)',
-                marginBottom: '8px'
-              }}>
-                {t('refereeDashboard.noActiveGame')}
-              </div>
-              <button
-                type="button"
-                onClick={() => { loadMatches(); checkConnectionStatuses() }}
-                disabled={loadingMatches}
-                style={{
-                  marginTop: '12px',
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  background: 'transparent',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--accent)',
-                  cursor: loadingMatches ? 'not-allowed' : 'pointer',
-                  opacity: loadingMatches ? 0.5 : 1
-                }}
-              >
-                {loadingMatches ? t('common.loading', 'Loading...') : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><RefreshIcon size={14} />{t('refereeDashboard.loadGames', 'Load Games')}</span>}
-              </button>
-            </div>
-          ) : (
-          <form onSubmit={handlePinSubmit} style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '16px',
-            width: '100%'
-          }}>
-            {availableMatches.length > 0 && (
-              <div style={{ width: '80%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{
-                    fontSize: '12px',
-                    color: 'var(--muted)',
-                    fontWeight: 600
-                  }}>
-                    {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
-                  </label>
-                  <button
-                    type="button"
+            <div onClick={handleTestModeClick} className="cursor-default select-none">
+              <EmptyState
+                icon={CalendarX2}
+                className="py-6"
+                action={
+                  <Button
+                    variant="secondary"
+                    size="xl"
+                    icon={RefreshCw}
                     onClick={() => { loadMatches(); checkConnectionStatuses() }}
                     disabled={loadingMatches}
-                    aria-label={t('refereeDashboard.loadGames', 'Load Games')}
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '12px',
-                      background: 'transparent',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      color: 'var(--accent)',
-                      cursor: loadingMatches ? 'not-allowed' : 'pointer',
-                      opacity: loadingMatches ? 0.5 : 1
-                    }}
                   >
-                    {loadingMatches ? '...' : <RefreshIcon size={14} />}
-                  </button>
-                </div>
-                <button
-                  type="button"
+                    {loadingMatches ? t('common.loading', 'Loading...') : t('refereeDashboard.loadGames', 'Load Games')}
+                  </Button>
+                }
+              >
+                {t('refereeDashboard.noActiveGame')}
+              </EmptyState>
+            </div>
+          ) : (
+          <form onSubmit={handlePinSubmit} className="flex flex-col gap-4 text-left">
+            {availableMatches.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <ListLabel
+                  action={
+                    <IconButton
+                      variant="outline"
+                      icon={loadingMatches ? <Loader2 size={16} className="animate-spin" aria-hidden /> : RefreshCw}
+                      label={t('refereeDashboard.loadGames', 'Load Games')}
+                      onClick={() => { loadMatches(); checkConnectionStatuses() }}
+                      disabled={loadingMatches}
+                    />
+                  }
+                >
+                  {t('refereeDashboard.selectGame')} ({t('refereeDashboard.gamesAvailable', { count: availableMatches.length })})
+                </ListLabel>
+
+                <Button
+                  variant="secondary"
+                  size="xl"
+                  block
+                  iconRight={ChevronRight}
                   onClick={() => setShowGameModal(true)}
                   disabled={isLoading}
-                  style={{
-                    width: 'auto',
-                    padding: '12px',
-                    fontSize: '16px',
-                    background: 'var(--bg)',
-                    border: '2px solid var(--border)',
-                    borderRadius: '8px',
-                    color: 'var(--text)',
-                    cursor: isLoading ? 'not-allowed' : 'pointer',
-                    fontWeight: 600
-                  }}
                 >
                   {t('refereeDashboard.selectGame')}
-                </button>
+                </Button>
 
                 {selectedGameNumber && (() => {
                   const selected = availableMatches.find(m => String(m.gameNumber) === String(selectedGameNumber))
                   if (!selected) return null
 
                   return (
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      width: '100%',
-                      marginTop: '12px'
-                    }}>
-                      <div style={{
-                        padding: '12px',
-                        width: '300px',
-                        background: 'var(--panel-2)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        borderRadius: '8px',
-                        textAlign: 'center'
-                      }}>
-                        <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>
-                          {t('refereeDashboard.gameNumber', { number: selected.gameNumber })}
-                        </div>
-                        <div style={{ fontSize: '14px', marginBottom: '4px' }}>
-                          {selected.homeTeam} <span style={{ color: 'var(--muted)' }}>{t('refereeDashboard.vs')}</span> {selected.awayTeam}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                          {selected.dateTime || t('refereeDashboard.tbd')}
-                        </div>
-                      </div>
-                    </div>
+                    <RowList framed className="rounded-lg">
+                      <GameRow
+                        match={selected}
+                        lang={i18n.language}
+                        home={selected.homeTeam}
+                        away={selected.awayTeam}
+                        gameLabel={t('refereeDashboard.gameNumber', { number: selected.gameNumber })}
+                        noDate={selected.dateTime || t('refereeDashboard.tbd')}
+                      />
+                    </RowList>
                   )
                 })()}
               </div>
@@ -689,135 +613,61 @@ export default function RefereeApp() {
 
             {/* Only show PIN input when offline OR when a game has been selected */}
             {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
-            <div style={{ width: '80%', maxWidth: '280px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '12px',
-                color: 'var(--muted)',
-                marginBottom: '8px',
-                fontWeight: 600
-              }}>
-                {t('refereeDashboard.connectionPin')}
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
-                placeholder="000000"
-                aria-label={t('refereeDashboard.connectionPin')}
-                maxLength={6}
-                disabled={isLoading}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  fontSize: '24px',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                  letterSpacing: '8px',
-                  background: 'var(--bg)',
-                  border: error ? '2px solid #ef4444' : '2px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--text)',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+              <Field label={t('refereeDashboard.connectionPin')} className="text-left">
+                <PinInput
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  aria-label={t('refereeDashboard.connectionPin')}
+                  maxLength={6}
+                  disabled={isLoading}
+                  invalid={!!error}
+                />
+              </Field>
             )}
 
-            {error && (
-              <div style={{
-                width: 'auto',
-                padding: '12px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid #ef4444',
-                borderRadius: '6px',
-                color: '#ef4444',
-                fontSize: '14px'
-              }}>
-                {error}
-              </div>
-            )}
+            <FormError size="md" className="text-center">{error}</FormError>
 
             {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
-            <button
-              type="submit"
-              disabled={isLoading}
-              style={{
-                width: '50%',
-                maxWidth: '200px',
-                padding: '16px',
-                fontSize: '16px',
-                fontWeight: 600,
-                background: isLoading ? 'var(--border)' : 'var(--accent)',
-                color: isLoading ? 'var(--muted)' : '#000',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: isLoading ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isLoading ? t('refereeDashboard.connecting') : t('refereeDashboard.enter')}
-            </button>
+              <Button type="submit" size="xl" block disabled={isLoading} loading={isLoading}>
+                {isLoading ? t('refereeDashboard.connecting') : t('refereeDashboard.enter')}
+              </Button>
             )}
           </form>
           )}
-        </div>
-      </div>
-      
+        </EntryCard>
+      </EntryPage>
+
       <Modal
         title={t('refereeDashboard.selectGameTitle')}
         open={showGameModal}
         onClose={() => setShowGameModal(false)}
         width={600}
       >
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-          maxHeight: '70vh',
-          overflowY: 'auto'
-        }}>
+        <div className="ov-kit max-h-[70vh] overflow-y-auto">
           {loadingMatches ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-              {t('refereeDashboard.loadingGames')}
-            </div>
+            <SkeletonRows rows={3} pill={false} />
           ) : availableMatches.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted)' }}>
-              {t('refereeDashboard.noAvailableGames')}
-            </div>
+            <EmptyInset className="text-center">{t('refereeDashboard.noAvailableGames')}</EmptyInset>
           ) : (
-            availableMatches.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => handleSelectGame(m.gameNumber)}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  background: selectedGameNumber === String(m.gameNumber) 
-                    ? 'rgba(59, 130, 246, 0.2)' 
-                    : 'var(--panel-2)',
-                  border: selectedGameNumber === String(m.gameNumber)
-                    ? '2px solid rgba(59, 130, 246, 0.5)'
-                    : '1px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  textAlign: 'left'
-                }}
-              >
-                <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px' }}>
-                  {t('refereeDashboard.gameNumber', { number: m.gameNumber })}
-                </div>
-                <div style={{ fontSize: '16px', marginBottom: '4px' }}>
-                  {m.homeTeam} <span style={{ color: 'var(--muted)' }}>{t('refereeDashboard.vs')}</span> {m.awayTeam}
-                </div>
-                <div style={{ fontSize: '14px', color: 'var(--muted)' }}>
-                  {m.dateTime || t('refereeDashboard.tbd')}
-                </div>
-              </button>
-            ))
+            <RowList>
+              {availableMatches.map((m) => (
+                <GameRow
+                  key={m.id}
+                  match={m}
+                  lang={i18n.language}
+                  home={m.homeTeam}
+                  away={m.awayTeam}
+                  gameLabel={t('refereeDashboard.gameNumber', { number: m.gameNumber })}
+                  noDate={m.dateTime || t('refereeDashboard.tbd')}
+                  onOpen={() => handleSelectGame(m.gameNumber)}
+                  label={t('refereeDashboard.gameNumber', { number: m.gameNumber })}
+                  status={selectedGameNumber === String(m.gameNumber)
+                    ? <Check size={16} className="text-stone-900" aria-label={t('refereeDashboard.selectGame')} />
+                    : <ChevronRight size={16} className="text-stone-400" aria-hidden />}
+                />
+              ))}
+            </RowList>
           )}
         </div>
       </Modal>
