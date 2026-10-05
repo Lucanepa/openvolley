@@ -1,53 +1,166 @@
 /**
- * Tailwind v4 + shadcn/ui design tokens — LIGHT MODE ONLY.
+ * Tailwind v4 + volleyui tokens: LIGHT MODE ONLY.
  *
- * Preflight (Tailwind's base reset) is intentionally NOT imported so this can
- * coexist with the legacy hand-written styles.css during the incremental
- * migration: legacy CSS is unlayered and therefore overrides Tailwind's layered
- * utilities, so enabling Tailwind does not restyle existing views. New/migrated
- * components use these utilities + tokens; dark mode is deliberately omitted.
+ * Cascade order (lowest to highest):
+ *   theme -> base -> legacy -> components -> utilities -> unlayered -> inline style
+ *
+ * - Preflight (Tailwind's element reset) is still NOT imported: the legacy
+ *   styles.css owns the element rules, and the app relies on them.
+ * - styles.css is imported here, demoted into the `legacy` layer. It sits above
+ *   the kit's `base` (so its body/background/text colours still win while the
+ *   migration runs) and BELOW `utilities`, so a volleyui class on a <button>,
+ *   <input> or <p> now beats the old element rules. Inline style={{}} still
+ *   beats everything.
+ * - src/ui/tokens.css (the volleyui kit) is the base: brand red, red-600/700 =
+ *   Swiss Volley red, shadow-card, Inter Variable at opsz 32, colour-scheme
+ *   light, print and reduced-motion rules.
  */
-@layer theme, base, components, utilities;
+@layer theme, base, legacy, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
-/* shadcn/ui CSS variables — light palette only (no .dark block on purpose). */
-:root {
-  --radius: 0.625rem;
+/* volleyui kit tokens (also pulls in @fontsource-variable/inter/opsz.css). */
+@import './ui/tokens.css';
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.21 0.02 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 260);
+/* User-selectable score fonts (Scoreboard / Referee / Scoreboard options),
+   self-hosted so they render offline. Latin only (digits and the colon), the
+   weights the former Google Fonts link asked for. Family names are unchanged,
+   so getScoreFont() and the options keep working as they are. */
+@import '@fontsource/orbitron/latin-400.css';
+@import '@fontsource/orbitron/latin-500.css';
+@import '@fontsource/orbitron/latin-600.css';
+@import '@fontsource/orbitron/latin-700.css';
+@import '@fontsource/orbitron/latin-800.css';
+@import '@fontsource/orbitron/latin-900.css';
+@import '@fontsource/roboto-mono/latin-400.css';
+@import '@fontsource/roboto-mono/latin-500.css';
+@import '@fontsource/roboto-mono/latin-600.css';
+@import '@fontsource/roboto-mono/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+@import '@fontsource/jetbrains-mono/latin-600.css';
+@import '@fontsource/jetbrains-mono/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-800.css';
+@import '@fontsource/space-mono/latin-400.css';
+@import '@fontsource/space-mono/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-700.css';
 
-  /* primary = blue #3b82f6 */
-  --primary: oklch(0.62 0.19 260);
-  --primary-foreground: oklch(0.98 0.01 260);
+/* The legacy stylesheet, demoted into its layer (was: import './styles.css'
+   in each *-main.jsx). */
+@import './styles.css' layer(legacy);
 
-  --secondary: oklch(0.97 0.01 260);
-  --secondary-foreground: oklch(0.21 0.02 260);
-  --muted: oklch(0.97 0.01 260);
-  --muted-foreground: oklch(0.55 0.02 260);
-  --accent: oklch(0.97 0.01 260);
-  --accent-foreground: oklch(0.21 0.02 260);
-
-  /* success / scoring accent = green #22c55e */
-  --success: oklch(0.72 0.19 149);
-  --success-foreground: oklch(0.98 0.02 149);
-
-  /* destructive = red #ef4444 */
-  --destructive: oklch(0.64 0.24 25);
-  --destructive-foreground: oklch(0.98 0.02 25);
-
-  --border: oklch(0.92 0.01 260);
-  --input: oklch(0.92 0.01 260);
-  --ring: oklch(0.62 0.19 260);
+@theme {
+  /* Hover/pressed brand, for non-class contexts (red-700 is the class form). */
+  --color-brand-hover: #be0014;
+  --color-brand-soft-border: #fee2e2;
 }
 
-/* Expose the tokens to Tailwind's utility engine (bg-background, text-foreground, …). */
+/* --ov-* tokens: the same palette for the inline style={{}} objects that
+   cannot use classes (RESTYLE-SPEC 1.2). The legacy names (--bg, --panel,
+   --text, --muted, --border, --accent ...) are still defined in styles.css and
+   keep their values until P1 re-points them at these. */
+:root {
+  /* ---- surfaces (stone neutrals) ---- */
+  --ov-page: #f5f5f4;            /* stone-100 page background */
+  --ov-page-top: #fafaf9;        /* stone-50  top of the page gradient */
+  --ov-card: #ffffff;            /* cards, modals, top bar */
+  --ov-sunken: #fafaf9;          /* stone-50  table heads, inset panels */
+  --ov-sunken-strong: #f5f5f4;   /* stone-100 hover rows, count pills */
+  --ov-hairline: #e7e5e4;        /* stone-200 card/table borders, dividers */
+  --ov-hairline-soft: rgb(231 229 228 / 0.7); /* stone-200/70 card edge */
+  --ov-hairline-strong: #d6d3d1; /* stone-300 input borders, outline buttons */
+  --ov-rule: #292524;            /* stone-800 1.5px section-head rule */
+
+  /* ---- text ---- */
+  --ov-text: #1c1917;            /* stone-900 headings, numbers */
+  --ov-text-body: #292524;       /* stone-800 body copy */
+  --ov-text-secondary: #57534e;  /* stone-600 secondary copy */
+  --ov-text-muted: #78716c;      /* stone-500 captions, labels (4.6:1 on white) */
+  --ov-text-faint: #a8a29e;      /* stone-400 placeholders, disabled, decorative only */
+  --ov-on-dark: #ffffff;
+
+  /* ---- brand / selection ---- */
+  --ov-brand: #e2001a;
+  --ov-brand-hover: #be0014;
+  --ov-brand-soft: #fef2f2;      /* red-50 */
+  --ov-brand-soft-border: #fee2e2; /* red-100 */
+  --ov-selected: #0f172a;        /* slate-900 active nav, segment on */
+  --ov-selected-hover: #1e293b;  /* slate-800 */
+
+  /* ---- focus ---- */
+  --ov-focus: #ef4444;           /* red-500, 2px ring */
+  --ov-focus-soft: rgb(190 0 20 / 0.20); /* red-700/20, large inputs */
+
+  /* ---- status ---- */
+  --ov-success: #059669;         /* emerald-600 confirm */
+  --ov-success-hover: #047857;   /* emerald-700 */
+  --ov-success-soft: #d1fae5;    /* emerald-100 */
+  --ov-success-text: #065f46;    /* emerald-800 */
+  --ov-warning-soft: #fffbeb;    /* amber-50 */
+  --ov-warning-border: #fef3c7;  /* amber-100 */
+  --ov-warning-strong: #fcd34d;  /* amber-300 */
+  --ov-warning-text: #92400e;    /* amber-800 */
+  --ov-danger: #e2001a;          /* = brand: one red for act and destroy */
+  --ov-danger-hover: #be0014;
+  --ov-danger-text: #b91c1c;     /* red-700 stock, inline errors */
+  --ov-danger-soft: #fef2f2;     /* red-50 */
+  --ov-danger-border: #fee2e2;   /* red-100 */
+  --ov-info-text: #0369a1;       /* sky-700 */
+  --ov-info-soft: #f0f9ff;       /* sky-50 */
+  --ov-info-border: #bae6fd;     /* sky-200 */
+
+  /* ---- overlays & elevation ---- */
+  --ov-overlay: rgb(28 25 23 / 0.60);      /* stone-900/60 + blur, decisions */
+  --ov-overlay-content: rgb(28 25 23 / 0.50); /* stone-900/50 + blur, content dialogs */
+  --ov-overlay-sheet: rgb(15 23 42 / 0.40);   /* slate-900/40, options sheet */
+  --ov-shadow-card: var(--shadow-card);
+  --ov-shadow-card-lg: var(--shadow-card-lg);
+  --ov-shadow-pop: 0 25px 50px -12px rgb(0 0 0 / 0.25); /* = shadow-2xl */
+  --ov-shadow-btn: 0 1px 2px 0 rgb(0 0 0 / 0.05);       /* = shadow-sm */
+
+  /* ---- radii (step down one size per nesting level) ---- */
+  --ov-radius-sm: 0.375rem;  /* rounded-md  chips, micro controls */
+  --ov-radius: 0.5rem;       /* rounded-lg  buttons, inputs, notices */
+  --ov-radius-lg: 0.75rem;   /* rounded-xl  inner blocks, toasts, h-11 controls */
+  --ov-radius-xl: 1rem;      /* rounded-2xl cards, modals */
+  --ov-radius-pill: 9999px;
+
+  /* ---- shadcn variables (src/components/ui/button.jsx and any later shadcn
+     primitive). RESTYLE-SPEC R3: --border, --muted and --accent are NOT
+     defined here. styles.css owns those names with a different meaning
+     (--muted is a TEXT colour, --accent the scoring green), and this unlayered
+     block would beat the layered legacy one. The Tailwind colour aliases below
+     map straight to --ov-* instead.
+     --primary, --foreground and --card keep their former values on purpose:
+     Scoreboard (var(--primary) fills in Manual Changes: no brand red on the
+     scoreboard, R4), MatchEnd (var(--foreground) on the frozen per-set
+     result) and CoinToss read them inline. Their owners convert those sites. */
+  --radius: 0.5rem;          /* rounded-lg/md/sm stay Tailwind's stock 8/6/4px */
+  --background: var(--ov-page);
+  --foreground: oklch(0.21 0.02 260);
+  --card: #ffffff;
+  --card-foreground: var(--ov-text-body);
+  --popover: var(--ov-card);
+  --popover-foreground: var(--ov-text-body);
+  --primary: oklch(0.62 0.19 260);
+  --primary-foreground: #ffffff;
+  --secondary: #ffffff;
+  --secondary-foreground: #44403c; /* stone-700 */
+  --muted-foreground: var(--ov-text-muted);
+  --accent-foreground: var(--ov-text);
+  --success: var(--ov-success);
+  --success-foreground: #ffffff;
+  --destructive: var(--ov-danger);
+  --destructive-foreground: #ffffff;
+  --input: var(--ov-hairline-strong);
+  --ring: var(--ov-focus);   /* legacy :focus-visible outline reads var(--ring) */
+}
+
+/* Expose the tokens to Tailwind's utility engine (bg-background, text-foreground, ...). */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -59,15 +172,16 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
+  /* R3: straight to --ov-*, never through the colliding legacy names. */
+  --color-muted: var(--ov-sunken);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
+  --color-accent: var(--ov-sunken-strong);
   --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
+  --color-border: var(--ov-hairline);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-lg: var(--radius);

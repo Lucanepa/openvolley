@@ -1,8 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import ScoresheetApp from './ScoresheetApp'
-import './tailwind.css'
-import './styles.css'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
 import ErrorBoundary from './components/ErrorBoundary'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 
