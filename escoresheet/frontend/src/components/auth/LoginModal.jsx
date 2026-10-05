@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
+import { Check, Lock, Mail, X } from 'lucide-react'
+import { Button, cn, FOCUS_RING, IconButton } from '../../ui'
 
 export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const { t } = useTranslation()
@@ -50,213 +52,134 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
     setLoading(false)
   }
 
-  const modalStyle = {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(15, 23, 42, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000
-  }
-
-  const contentStyle = {
-    width: 'min(90vw, 400px)',
-    background: 'var(--panel)',
-    border: '2px solid #3b82f6',
-    borderRadius: 12,
-    padding: 0,
-    overflow: 'hidden'
-  }
-
-  const headerStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 20px',
-    background: 'rgba(59, 130, 246, 0.1)',
-    borderBottom: '1px solid rgba(59, 130, 246, 0.3)'
-  }
-
-  const inputStyle = {
-    width: '100%',
-    padding: '12px 16px',
-    background: 'var(--panel-2)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    color: 'var(--text)',
-    fontSize: 16,
-    outline: 'none',
-    boxSizing: 'border-box'
-  }
-
-  const buttonStyle = {
-    width: '100%',
-    padding: '12px 16px',
-    background: '#3b82f6',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontWeight: 600,
-    fontSize: 16,
-    cursor: 'pointer'
-  }
+  // Kit auth recipes (svrz AuthGate): sunken field with a leading icon, hero submit.
+  const fieldCls = 'w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 text-base text-stone-800 bg-stone-50 placeholder:text-stone-400 focus:bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-red-500/70 focus:border-red-500'
+  const iconCls = 'absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none'
+  const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
 
   return (
-    <div style={modalStyle} onClick={onClose}>
-      <div style={contentStyle} onClick={e => e.stopPropagation()}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-modal-title"
+        className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white shadow-card-lg"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
         {/* Header */}
-        <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
+        <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-2">
+          <h2 id="login-modal-title" className="text-xl font-bold tracking-tight text-stone-900">
             {showForgotPassword
               ? t('auth.resetPassword', 'Reset Password')
               : t('auth.signIn', 'Sign In')}
           </h2>
-          <button
-            onClick={onClose}
-            aria-label={t('common.close', 'Close')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--muted)',
-              fontSize: 24,
-              cursor: 'pointer',
-              padding: 0,
-              lineHeight: 1
-            }}
-          >
-            x
-          </button>
+          <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
         </div>
 
         {/* Body */}
-        <div style={{ padding: 20 }}>
+        <div className="px-6 pb-6">
           {error && (
-            <div style={{
-              padding: '10px 14px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: 8,
-              color: '#ef4444',
-              marginBottom: 16,
-              fontSize: 14
-            }}>
+            <p role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
-            </div>
+            </p>
           )}
 
           {resetSent ? (
-            <div style={{ textAlign: 'center', color: '#22c55e', padding: '20px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
-              <p>{t('auth.resetEmailSent', 'Check your email for a password reset link')}</p>
-              <button
+            <div className="py-4 text-center">
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600">
+                <Check size={26} strokeWidth={2.25} aria-hidden="true" />
+              </div>
+              <p className="text-sm text-stone-700">{t('auth.resetEmailSent', 'Check your email for a password reset link')}</p>
+              <Button
+                variant="hero"
+                block
                 onClick={() => {
                   setShowForgotPassword(false)
                   setResetSent(false)
                 }}
-                style={{ ...buttonStyle, marginTop: 16 }}
+                className="mt-5"
               >
                 {t('auth.backToSignIn', 'Back to Sign In')}
-              </button>
+              </Button>
             </div>
           ) : showForgotPassword ? (
-            <form onSubmit={handleForgotPassword}>
-              <p style={{ color: 'var(--muted)', marginBottom: 16, fontSize: 14 }}>
+            <form onSubmit={handleForgotPassword} className="space-y-3">
+              <p className="text-sm text-stone-600">
                 {t('auth.resetInstructions', 'Enter your email and we\'ll send you a reset link')}
               </p>
-              <div style={{ marginBottom: 16 }}>
+              <div className="relative">
+                <Mail className={iconCls} aria-hidden="true" />
                 <input
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder={t('auth.email', 'Email')}
                   aria-label={t('auth.email', 'Email')}
-                  style={inputStyle}
+                  autoComplete="email"
+                  className={fieldCls}
                   required
                 />
               </div>
-              <button type="submit" style={buttonStyle} disabled={loading}>
+              <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
                 {loading ? t('auth.sending', 'Sending...') : t('auth.sendResetLink', 'Send Reset Link')}
-              </button>
+              </Button>
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(false)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  background: 'transparent',
-                  color: 'var(--muted)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  marginTop: 8
-                }}
+                className={quietLink}
               >
                 {t('auth.backToSignIn', 'Back to Sign In')}
               </button>
             </form>
           ) : (
             <>
-              <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: 12 }}>
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <div className="relative">
+                  <Mail className={iconCls} aria-hidden="true" />
                   <input
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder={t('auth.email', 'Email')}
                     aria-label={t('auth.email', 'Email')}
-                    style={inputStyle}
+                    autoComplete="email"
+                    className={fieldCls}
                     required
                   />
                 </div>
-                <div style={{ marginBottom: 16 }}>
+                <div className="relative">
+                  <Lock className={iconCls} aria-hidden="true" />
                   <input
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder={t('auth.password', 'Password')}
                     aria-label={t('auth.password', 'Password')}
-                    style={inputStyle}
+                    autoComplete="current-password"
+                    className={fieldCls}
                     required
                   />
                 </div>
-                <button type="submit" style={buttonStyle} disabled={loading}>
+                <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
                   {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign In')}
-                </button>
+                </Button>
               </form>
 
               <button
+                type="button"
                 onClick={() => setShowForgotPassword(true)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: 'transparent',
-                  color: '#3b82f6',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  marginTop: 8
-                }}
+                className={cn(quietLink, 'mt-1')}
               >
                 {t('auth.forgotPassword', 'Forgot password?')}
               </button>
 
-              <div style={{
-                marginTop: 20,
-                textAlign: 'center',
-                color: 'var(--muted)',
-                fontSize: 14
-              }}>
+              <div className="mt-3 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
                 {t('auth.noAccount', "Don't have an account?")}{' '}
                 <button
+                  type="button"
                   onClick={onSwitchToSignUp}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#3b82f6',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    textDecoration: 'underline'
-                  }}
+                  className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
                 >
                   {t('auth.signUp', 'Sign Up')}
                 </button>

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import LoginModal from './LoginModal'
 import SignUpModal from './SignUpModal'
+import { cn } from '../../ui'
 
 const DISMISS_KEY = 'ov_sync_signin_banner_dismissed'
 
@@ -52,69 +53,47 @@ export default function SyncSignInBanner({ syncStatus, compact = false }) {
         <div
           role="status"
           aria-live="polite"
+          // Kit amber banner (decide / stale), floating, no-print. Opened on the
+          // scoreboard too, so the action is dark, never a brand-red fill (R4).
+          className={cn(
+            'ov-kit no-print fixed flex items-center rounded-xl border border-amber-200 bg-amber-50 shadow-lg',
+            compact ? 'flex-nowrap gap-2 px-2.5 py-1.5' : 'flex-wrap gap-3 px-3.5 py-3'
+          )}
           style={{
-            position: 'fixed',
             left: '50%',
             transform: 'translateX(-50%)',
             // On the live scoreboard: one short line at the top, clear of the
             // scoring controls along the bottom
             ...(compact
-              ? { top: 'calc(env(safe-area-inset-top, 0px) + 6px)', width: 'min(460px, calc(100vw - 24px))', padding: '6px 10px', gap: 8, flexWrap: 'nowrap' }
-              : { bottom: 16, width: 'min(560px, calc(100vw - 32px))', padding: '12px 14px', gap: 12, flexWrap: 'wrap' }),
-            background: 'var(--panel)',
-            border: '1px solid rgba(245, 158, 11, 0.5)',
-            borderRadius: 10,
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
-            zIndex: 1500,
-            display: 'flex',
-            alignItems: 'center'
+              ? { top: 'calc(env(safe-area-inset-top, 0px) + 6px)', width: 'min(460px, calc(100vw - 24px))' }
+              : { bottom: 16, width: 'min(560px, calc(100vw - 32px))' }),
+            zIndex: 1500
           }}
         >
-          <div style={{ flex: compact ? '1 1 auto' : '1 1 260px', minWidth: 0 }}>
-            <div style={{
-              color: '#f59e0b',
-              fontWeight: 600,
-              fontSize: compact ? 12 : 14,
-              marginBottom: compact ? 0 : 2,
-              ...(compact ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {})
-            }}>
+          <div className={cn('min-w-0', compact ? 'flex-auto' : 'flex-[1_1_260px]')}>
+            <div className={cn('font-semibold text-amber-800', compact ? 'truncate text-xs' : 'mb-0.5 text-sm')}>
               {title}
             </div>
             {!compact && (
-              <div style={{ color: 'var(--muted)', fontSize: 12, lineHeight: 1.4 }}>
+              <div className="text-xs leading-snug text-stone-600">
                 {sessionExpired
                   ? t('syncBanner.expiredBody', 'Scoring keeps working. Sign in again to save it to the cloud; waiting changes are sent right after.')
                   : t('syncBanner.body', 'Scoring keeps working. Sign in to save it to the cloud (referee, livescore, backup); waiting changes are sent right after.')}
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: compact ? 6 : 8, flexShrink: 0 }}>
+          <div className={cn('flex shrink-0', compact ? 'gap-1.5' : 'gap-2')}>
             <button
+              type="button"
               onClick={dismiss}
-              style={{
-                padding: compact ? '4px 8px' : '6px 12px',
-                background: 'transparent',
-                color: 'var(--muted)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                fontSize: compact ? 12 : 13,
-                cursor: 'pointer'
-              }}
+              className={cn('inline-flex items-center rounded-lg border border-amber-200 bg-white font-medium text-amber-800 transition-colors hover:bg-amber-100', compact ? 'h-8 px-2.5 text-xs' : 'h-9 px-3 text-xs', 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1')}
             >
               {t('syncBanner.later', 'Later')}
             </button>
             <button
+              type="button"
               onClick={() => setShowLogin(true)}
-              style={{
-                padding: compact ? '4px 8px' : '6px 12px',
-                background: '#3b82f6',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 6,
-                fontSize: compact ? 12 : 13,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
+              className={cn('inline-flex items-center rounded-lg bg-slate-900 font-semibold text-white transition-colors hover:bg-slate-800', compact ? 'h-8 px-2.5 text-xs' : 'h-9 px-3 text-xs', 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1')}
             >
               {sessionExpired ? t('syncBanner.signInAgain', 'Sign in again') : t('auth.signIn', 'Sign In')}
             </button>

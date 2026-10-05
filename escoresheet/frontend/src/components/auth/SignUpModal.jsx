@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { needsEmailConfirmation } from './signUpResult'
+import { Check, X } from 'lucide-react'
+import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 
 export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const { t } = useTranslation()
@@ -66,245 +68,149 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
     }
   }
 
-  const modalStyle = {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(15, 23, 42, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000
-  }
-
-  const contentStyle = {
-    width: 'min(90vw, 440px)',
-    maxHeight: '90vh',
-    background: 'var(--panel)',
-    border: '2px solid #22c55e',
-    borderRadius: 12,
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column'
-  }
-
-  const headerStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 20px',
-    background: 'rgba(34, 197, 94, 0.1)',
-    borderBottom: '1px solid rgba(34, 197, 94, 0.3)'
-  }
-
-  const inputStyle = {
-    width: '100%',
-    padding: '12px 16px',
-    background: 'var(--panel-2)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    color: 'var(--text)',
-    fontSize: 16,
-    outline: 'none',
-    boxSizing: 'border-box'
-  }
-
-  const buttonStyle = {
-    width: '100%',
-    padding: '12px 16px',
-    background: '#22c55e',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontWeight: 600,
-    fontSize: 16,
-    cursor: 'pointer'
-  }
-
   return (
-    <div style={modalStyle} onClick={onClose}>
-      <div style={contentStyle} onClick={e => e.stopPropagation()}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signup-modal-title"
+        className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-stone-200/70 bg-white shadow-card-lg"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
         {/* Header */}
-        <div style={headerStyle}>
-          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 600 }}>
+        <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-2">
+          <h2 id="signup-modal-title" className="text-xl font-bold tracking-tight text-stone-900">
             {t('auth.createAccount', 'Create Account')}
           </h2>
-          <button
-            onClick={onClose}
-            aria-label={t('common.close', 'Close')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--muted)',
-              fontSize: 24,
-              cursor: 'pointer',
-              padding: 0,
-              lineHeight: 1
-            }}
-          >
-            x
-          </button>
+          <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
         </div>
 
         {/* Body */}
-        <div style={{ padding: 20, overflowY: 'auto' }}>
+        <div className="overflow-y-auto px-6 pb-6">
           {error && (
-            <div style={{
-              padding: '10px 14px',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: 8,
-              color: '#ef4444',
-              marginBottom: 16,
-              fontSize: 14
-            }}>
+            <p role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
-            </div>
+            </p>
           )}
 
           {success ? (
-            <div style={{ textAlign: 'center', color: '#22c55e', padding: '20px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
-              <p style={{ marginBottom: 8 }}>{t('auth.accountCreated', 'Account created successfully!')}</p>
-              <p style={{ color: 'var(--muted)', fontSize: 14 }}>
+            <div className="py-4 text-center">
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600">
+                <Check size={26} strokeWidth={2.25} aria-hidden="true" />
+              </div>
+              <p className="mb-1 text-sm font-semibold text-stone-900">{t('auth.accountCreated', 'Account created successfully!')}</p>
+              <p className="text-sm text-stone-600">
                 {confirmByEmail
                   ? t('auth.checkEmail', 'Check your email to confirm your account')
                   : t('auth.accountReady', 'Your account is ready. You can sign in now.')}
               </p>
-              <button
-                onClick={onSwitchToLogin}
-                style={{ ...buttonStyle, marginTop: 16 }}
-              >
+              <Button variant="hero" block onClick={onSwitchToLogin} className="mt-5">
                 {t('auth.signIn', 'Sign In')}
-              </button>
+              </Button>
             </div>
           ) : (
             <>
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} className="space-y-3">
                 {/* Name fields */}
-                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                      {t('auth.firstName', 'First name')}
-                    </label>
-                    <input
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label={t('auth.firstName', 'First name')}>
+                    <Input
+                      size="lg"
                       type="text"
                       value={firstName}
                       onChange={e => setFirstName(e.target.value)}
                       aria-label={t('auth.firstName', 'First name')}
-                      style={inputStyle}
+                      autoComplete="given-name"
                     />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                      {t('auth.lastName', 'Last name')}
-                    </label>
-                    <input
+                  </Field>
+                  <Field label={t('auth.lastName', 'Last name')}>
+                    <Input
+                      size="lg"
                       type="text"
                       value={lastName}
                       onChange={e => setLastName(e.target.value)}
                       aria-label={t('auth.lastName', 'Last name')}
-                      style={inputStyle}
+                      autoComplete="family-name"
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 {/* Country and DOB */}
-                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                      {t('auth.country', 'Country')}
-                    </label>
-                    <input
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label={t('auth.country', 'Country')}>
+                    <Input
+                      size="lg"
                       type="text"
                       value={country}
                       onChange={e => setCountry(e.target.value.toUpperCase())}
                       placeholder="CHE"
                       maxLength={3}
                       aria-label={t('auth.country', 'Country')}
-                      style={{ ...inputStyle, textTransform: 'uppercase' }}
+                      className="uppercase"
                     />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                      {t('auth.dob', 'Date of birth')}
-                    </label>
-                    <input
+                  </Field>
+                  <Field label={t('auth.dob', 'Date of birth')}>
+                    <Input
+                      size="lg"
                       type="date"
                       value={dob}
                       onChange={e => setDob(e.target.value)}
                       aria-label={t('auth.dob', 'Date of birth')}
-                      style={inputStyle}
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 {/* Email */}
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                    {t('auth.email', 'Email')} *
-                  </label>
-                  <input
+                <Field label={t('auth.email', 'Email')}>
+                  <Input
+                    size="lg"
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     aria-label={t('auth.email', 'Email')}
-                    style={inputStyle}
+                    autoComplete="email"
                     required
                   />
-                </div>
+                </Field>
 
                 {/* Password */}
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                    {t('auth.password', 'Password')} *
-                  </label>
-                  <input
+                <Field label={t('auth.password', 'Password')}>
+                  <Input
+                    size="lg"
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     aria-label={t('auth.password', 'Password')}
-                    style={inputStyle}
+                    autoComplete="new-password"
                     required
                   />
-                </div>
+                </Field>
 
                 {/* Confirm password */}
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4, display: 'block' }}>
-                    {t('auth.confirmPassword', 'Confirm password')} *
-                  </label>
-                  <input
+                <Field label={t('auth.confirmPassword', 'Confirm password')}>
+                  <Input
+                    size="lg"
                     type="password"
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
                     aria-label={t('auth.confirmPassword', 'Confirm password')}
-                    style={inputStyle}
+                    autoComplete="new-password"
                     required
                   />
-                </div>
+                </Field>
 
-                <button type="submit" style={buttonStyle} disabled={loading}>
+                <Button variant="hero" block type="submit" disabled={loading} loading={loading} className="!mt-5">
                   {loading ? t('auth.creatingAccount', 'Creating account...') : t('auth.createAccount', 'Create Account')}
-                </button>
+                </Button>
               </form>
 
-              <div style={{
-                marginTop: 20,
-                textAlign: 'center',
-                color: 'var(--muted)',
-                fontSize: 14
-              }}>
+              <div className="mt-4 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
                 {t('auth.haveAccount', 'Already have an account?')}{' '}
                 <button
+                  type="button"
                   onClick={onSwitchToLogin}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#22c55e',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    textDecoration: 'underline'
-                  }}
+                  className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
                 >
                   {t('auth.signIn', 'Sign In')}
                 </button>
