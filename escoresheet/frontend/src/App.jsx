@@ -2869,7 +2869,7 @@ export default function App() {
               Try rotating your device or entering fullscreen mode.
             </p>
             <Button variant="dark" size="xl" block icon={Maximize} onClick={toggleFullscreen} className="mt-6">
-              Enter Fullscreen
+              Enter fullscreen
             </Button>
             <p className="mt-3 text-xs text-stone-500">
               Fullscreen removes browser headers to maximize screen space.
@@ -3429,7 +3429,7 @@ export default function App() {
                             'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium',
                             restorePreviewData.source === 'database' ? 'bg-sky-100 text-sky-800' :
                               restorePreviewData.source === 'pocketbase' ? 'bg-emerald-100 text-emerald-800' :
-                              restorePreviewData.source === 'cloud' ? 'bg-violet-100 text-violet-800' : 'bg-orange-100 text-orange-800'
+                              restorePreviewData.source === 'cloud' ? 'bg-violet-100 text-violet-800' : 'bg-amber-100 text-amber-800'
                           )}>
                             {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From Database') :
                               restorePreviewData.source === 'pocketbase' ? 'PocketBase Backup' :
@@ -3577,6 +3577,29 @@ export default function App() {
                         {/* Actions */}
                         <div className="flex flex-wrap justify-end gap-2 border-t border-stone-100 pt-4">
                           <button
+                            onClick={() => {
+                              setRestorePreviewData(null)
+                              setRestoreMatchModal(false)
+                              setRestoreMatchIdInput('')
+                              setRestorePin('')
+                              setCloudBackups([])
+                              setCloudBackupPin('')
+                              setCloudBackupGameN('')
+                              setCloudBackupError('')
+                            }}
+                            disabled={restoreLoading}
+                            className="mr-auto inline-flex h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => setRestorePreviewData(null)}
+                            disabled={restoreLoading}
+                            className="inline-flex h-11 items-center justify-center rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                          >
+                            Select another
+                          </button>
+                          <button
                             onClick={async () => {
                               setRestoreLoading(true)
                               try {
@@ -3629,32 +3652,9 @@ export default function App() {
                             }}
                             disabled={restoreLoading}
                             aria-busy={restoreLoading || undefined}
-                            className="order-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                           >
-                            {restoreLoading ? 'Restoring...' : 'Confirm Restore'}
-                          </button>
-                          <button
-                            onClick={() => setRestorePreviewData(null)}
-                            disabled={restoreLoading}
-                            className="order-2 inline-flex h-11 items-center justify-center rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
-                          >
-                            Select Another
-                          </button>
-                          <button
-                            onClick={() => {
-                              setRestorePreviewData(null)
-                              setRestoreMatchModal(false)
-                              setRestoreMatchIdInput('')
-                              setRestorePin('')
-                              setCloudBackups([])
-                              setCloudBackupPin('')
-                              setCloudBackupGameN('')
-                              setCloudBackupError('')
-                            }}
-                            disabled={restoreLoading}
-                            className="order-1 mr-auto inline-flex h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
-                          >
-                            Cancel
+                            {restoreLoading ? 'Restoring...' : 'Confirm restore'}
                           </button>
                         </div>
                       </>

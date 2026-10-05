@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import UserButton from '../auth/UserButton'
 import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
-import { Button, Card, cn, FOCUS_RING } from '../../ui'
+import { Button, Card, cn, FOCUS_RING, FOCUS_RING_INSET } from '../../ui'
 
 const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
 const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
@@ -94,14 +94,15 @@ export default function HomePage({
             </Button>
 
             {newMatchMenuOpen && (
-              <div className="rounded-xl border border-stone-200 bg-white p-1.5 shadow-card-lg space-y-1.5">
+              // Flat sunken block under the CTA: no border, no shadow inside the Card.
+              <div className="overflow-hidden rounded-xl bg-stone-50 divide-y divide-stone-200/70">
                 <button
                   type="button"
                   onClick={() => {
                     setNewMatchMenuOpen(false)
                     createNewOfficialMatch()
                   }}
-                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-3 px-4 py-3 rounded-lg border border-stone-200 bg-white text-base font-semibold text-stone-800 hover:bg-stone-50 transition-colors', FOCUS_RING)}
+                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-3 px-4 py-3 text-base font-semibold text-stone-800 hover:bg-stone-100 transition-colors', FOCUS_RING_INSET)}
                 >
                   {t('home.officialMatch')}
                 </button>
@@ -113,7 +114,7 @@ export default function HomePage({
                   }}
                   disabled={testMatchLoading}
                   aria-busy={testMatchLoading || undefined}
-                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 text-base font-semibold text-amber-800 hover:bg-amber-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
+                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-2 px-4 py-3 text-base font-semibold text-amber-800 hover:bg-amber-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING_INSET)}
                 >
                   {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                   {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
@@ -206,9 +207,9 @@ export default function HomePage({
                 href={appHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={cn('inline-flex min-h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white/70 px-4 py-2 text-sm text-stone-600 hover:bg-white hover:text-stone-900 transition-colors', FOCUS_RING)}
+                className={cn('inline-flex min-h-11 max-w-full items-start gap-2 rounded-lg px-2 py-2.5 text-left text-sm text-stone-600 hover:text-stone-900 transition-colors', FOCUS_RING)}
               >
-                <Download size={16} aria-hidden="true" className="shrink-0 text-stone-400" />
+                <Download size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-stone-400" />
                 <span>{appLabel}</span>
               </a>
               {desktopOS === 'linux' && desktopApp?.deb && (
