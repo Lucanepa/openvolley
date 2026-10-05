@@ -234,10 +234,13 @@ p {
   }
 }
 
+/* Page card: the kit Card (white, rounded-2xl, stone-200/70 hairline,
+   shadow-card). Paddings keep the scale-factor steps. */
 .card {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: calc(12px * var(--scale-factor));
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
   padding: calc(16px * var(--scale-factor));
   display: flex;
   flex-direction: column;
@@ -258,6 +261,14 @@ p {
     padding: calc(24px * var(--scale-factor));
     gap: calc(14px * var(--scale-factor));
   }
+}
+
+/* Never a card in a card: inside the .setup page card (match setup, match end)
+   a .card is the kit Block, one radius step down, tinted, no shadow. */
+.setup .card {
+  background: rgb(250 250 249 / 0.6); /* stone-50/60 */
+  border-radius: var(--ov-radius-lg);
+  box-shadow: none;
 }
 
 .card h3 {
@@ -566,9 +577,11 @@ button:disabled {
   max-width: 100%;
   overflow: auto;
   box-sizing: border-box;
-  border: 1px solid var(--panel);
-  border-radius: calc(12px * var(--scale-factor));
-  background: var(--panel);
+  /* the page card around setup, coin toss and match end */
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  background: var(--ov-card);
+  box-shadow: var(--ov-shadow-card);
   padding: calc(16px * var(--scale-factor));
   margin: 0 auto;
   flex: 1 1 0;
