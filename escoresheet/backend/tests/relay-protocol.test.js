@@ -276,6 +276,68 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [courtA, courtB, referee, intruder]) c.ws.close()
   })
 
+  it('anonymous subscribers and GET /api/match/:id get no dates of birth, officials or signatures', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_privac'
+    const DOBS = ['2001-04-17', '1975-08-09', '1982-11-23']
+    const SIG = 'data:image/png;base64,SIGNATUREBYTES'
+    const leaks = (text) => DOBS.some((d) => text.includes(d)) || text.includes(SIG) || text.includes('NZL') ||
+      /"officials"|"signatures"|ignature"|"pendingHomeRoster"|"manual_changes"|"approval"/.test(text)
+    const match = makeMatch({
+      id: 41,
+      seed_key: seed,
+      gamePin: '414141',
+      officials: [{ role: '1st referee', lastName: 'Ref', country: 'NZL', dob: DOBS[2] }],
+      bench_home: [{ role: 'Coach', firstName: 'Cora', lastName: 'Coach', dob: DOBS[1] }],
+      players_home: [{ number: 7, lastName: 'Player', dob: DOBS[0] }],
+      homeCoachSignature: SIG,
+      awayCaptainSignature: SIG,
+      signatures: { home_coach: SIG },
+      approval: { approved: true, by: 'Ref' },
+      pendingHomeRoster: { players: [{ number: 3, dob: DOBS[0] }] },
+      manual_changes: [{ field: 'score' }]
+    })
+    const scoreboard = await openClient(wsUrl)
+    const livescore = await openClient(wsUrl)
+    const subscriber = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match, {
+      homePlayers: [{ id: 1, number: 7, lastName: 'Player', dob: DOBS[0], country: 'NZL', isCaptain: true }]
+    }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+
+    // Neither role needs a PIN: both are public viewers
+    livescore.send({ type: 'subscribe-match', matchId: seed, role: 'livescore' })
+    subscriber.send({ type: 'subscribe-match', matchId: seed })
+    const full = await subscriber.waitFor((m) => m.type === 'match-full-data')
+    await livescore.waitFor((m) => m.type === 'match-full-data')
+    // What the tablets render stays
+    assert.deepEqual(full.homePlayers[0], { id: 1, number: 7, lastName: 'Player', isCaptain: true })
+    assert.deepEqual(full.match.bench_home[0], { role: 'Coach', firstName: 'Cora', lastName: 'Coach' })
+    assert.equal(full.match.status, 'live')
+
+    scoreboard.send(syncMessage(match, { events: [{ id: 9 }], homePlayers: [{ number: 7, dob: DOBS[0] }] }))
+    await subscriber.waitFor((m) => m.type === 'match-data-update')
+    await livescore.waitFor((m) => m.type === 'match-data-update')
+
+    const viaHttp = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`)).text()
+    const validate = await (await fetch(`http://127.0.0.1:${port}/api/match/validate-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: PINS.refereePin, type: 'referee' })
+    })).text()
+    for (const [what, text] of [['subscriber', subscriber.raw.join('')], ['livescore', livescore.raw.join('')],
+      ['GET /api/match/:id', viaHttp], ['validate-pin', validate]]) {
+      assert.equal(leaks(text), false, `${what} leaks personal data: ${text.slice(0, 400)}`)
+      assert.equal(containsPin(text), false, what)
+    }
+    assert.match(viaHttp, /"lastName":"Player"/)
+
+    scoreboard.send({ type: 'delete-match', matchId: 41 })
+    await subscriber.waitFor((m) => m.type === 'match-deleted')
+    for (const c of [scoreboard, livescore, subscriber]) c.ws.close()
+  })
+
   it('stops game-PIN guessing without revealing a hit', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const scoreboard = await openClient(wsUrl)
