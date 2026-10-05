@@ -24,6 +24,10 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
+import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
+import { createRelayPinTracker, createLiveStateOrder, isRelayErrorFor, relayReconnectDelay } from '../utils/relayPublisher'
+import { getRelayWebSocketUrl } from '../utils/backendConfig'
+import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
@@ -372,6 +376,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The relay accepts actions / live-state only from the socket that already
   // synced (proved) the match: after a (re)connect they wait for that sync.
   const initialSyncRef = useRef(null)
+  // Relay room key of this match (its seed_key; the Dexie id when it has none)
+  const relayKeyRef = useRef(null)
+  // PINs go to the relay with the first sync on a socket and when they change
+  const relayPinsRef = useRef(null)
+  if (relayPinsRef.current === null) relayPinsRef.current = createRelayPinTracker()
+  // Live-state pushes and match_live_state upserts: never older over newer
+  const liveStateOrderRef = useRef(null)
+  if (liveStateOrderRef.current === null) liveStateOrderRef.current = createLiveStateOrder()
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -1296,91 +1308,59 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId])
 
-  // Connect to WebSocket server and sync match data
+  // Connect to WebSocket server and sync match data. Runs once the match has
+  // loaded (matchLoaded): it used to return early while `data` was loading and
+  // never re-ran, so this socket never opened — relay actions and live-state
+  // were dropped and the status check opened a throwaway socket every few
+  // seconds instead.
+  const matchLoaded = !!data?.match
   useEffect(() => {
-    // If no matchId, clear all matches from server (scoreboard is source of truth)
-    if (!matchId) {
-      const clearAllMatches = () => {
-        const ws = wsRef.current
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({
-              type: 'clear-all-matches'
-            }))
-          } catch (err) {
-            // Silently ignore
-          }
-        }
-      }
-
-      // Try to clear immediately if WebSocket is open
-      clearAllMatches()
-
-      // Also set up a connection to clear when WebSocket opens
-      // Use configured backend URL if available (Render/cloud)
-      const backendUrl = import.meta.env.VITE_BACKEND_URL
-      let wsUrl
-      if (backendUrl) {
-        const url = new URL(backendUrl)
-        const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        wsUrl = `${protocol}//${url.host}`
-      } else {
-        // Fallback to local WebSocket server
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const hostname = window.location.hostname
-        const wsPort = 8080
-        wsUrl = `${protocol}://${hostname}:${wsPort}`
-      }
-
-      const tempWs = new WebSocket(wsUrl)
-      tempWs.onopen = () => {
-        tempWs.send(JSON.stringify({ type: 'clear-all-matches' }))
-        tempWs.close()
-      }
-      tempWs.onerror = () => {
-        // Ignore - server might not be running
-      }
-
-      return () => {
-        if (tempWs.readyState === WebSocket.OPEN || tempWs.readyState === WebSocket.CONNECTING) {
-          tempWs.close()
-        }
-      }
-    }
+    // No match: nothing to publish. (A fresh socket owns no match, so the
+    // 'clear-all-matches' it used to send here was always refused.)
+    if (!matchId) return
 
     if (!data || !data.match) {
       // Data is still loading - this is expected, wait for it
       return
     }
 
+    // The relay the tablets use too (?server= / connection-screen override,
+    // VITE_BACKEND_URL, cloud relay, LAN relay WS port): see backendConfig.
+    // None (page opened from disk): nothing to publish to.
+    const wsUrl = getRelayWebSocketUrl({ wsPort: serverStatus?.wsPort })
+    if (!wsUrl) return
+
     let ws = null
     let reconnectTimeout = null
+    let reconnectAttempt = 0
+    let disposed = false
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimeout) return
+      reconnectTimeout = setTimeout(() => {
+        reconnectTimeout = null
+        connectWebSocket()
+      }, relayReconnectDelay(reconnectAttempt))
+      reconnectAttempt += 1
+    }
+
+    // Back online / tab visible again: reconnect now instead of after the backoff
+    const reconnectNow = () => {
+      if (disposed || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
+      const current = wsRef.current
+      if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) return
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout)
+        reconnectTimeout = null
+      }
+      connectWebSocket()
+    }
 
     const connectWebSocket = () => {
+      if (disposed) return
       try {
-        // Check if we have a configured backend URL (Render/cloud backend)
-        const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-        let wsUrl
-        if (backendUrl) {
-          // Use configured backend (Render cloud)
-          const url = new URL(backendUrl)
-          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-          wsUrl = `${protocol}//${url.host}`
-        } else {
-          // Fallback to local WebSocket server (development/Electron)
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-          const hostname = window.location.hostname
-          let wsPort = 8080
-          // Check if we have server status (from Electron or previous API call)
-          const currentServerStatus = serverStatus
-          if (currentServerStatus?.wsPort) {
-            wsPort = currentServerStatus.wsPort
-          }
-          wsUrl = `${protocol}://${hostname}:${wsPort}`
-        }
-
-        ws = new WebSocket(wsUrl)
+        const socket = new WebSocket(wsUrl)
+        ws = socket
         wsRef.current = ws // Store in ref for use in callbacks
 
         // Set error handler first to catch any immediate errors
@@ -1389,17 +1369,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         ws.onopen = () => {
+          reconnectAttempt = 0
           setRelayRejection(null)
-          // Clear all other matches first (scoreboard is source of truth - only current match should exist)
-          try {
-            ws.send(JSON.stringify({
-              type: 'clear-all-matches',
-              keepMatchId: String(matchId) // Keep only the current match
-            }))
-          } catch (err) {
-            // Silently ignore WebSocket errors
-          }
-
           // Send initial match data sync (this will overwrite/add the current match)
           // No periodic sync - data is synced only when actions occur.
           // Actions / live-state sent meanwhile wait for it (see sendRelayMessage):
@@ -1426,12 +1397,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               handleGameNumberRequest(message)
             } else if (message.type === 'pong') {
               // Heartbeat response
-            } else if (message.type === 'error' && ['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code) &&
-              (message.matchId === undefined || String(message.matchId) === String(matchId))) {
-              // The relay refused our scoreboard role: referee/bench/livescore
-              // get no updates from this device until it is resolved.
-              // Refused again on every sync; the banner expires when that stops.
-              setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
+            } else if (isRelayErrorFor(message, [matchId, relayKeyRef.current])) {
+              // Any error about this match: the next sync carries the PINs
+              // again (the relay may have lost or replaced what it stored)
+              relayPinsRef.current.reset()
+              if (message.code === 'pins-required') {
+                // The relay lost the match while this socket left the PINs out
+                if (syncFunctionRef.current) syncFunctionRef.current()
+              } else if (['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code)) {
+                // The relay refused our scoreboard role: referee/bench/livescore
+                // get no updates from this device until it is resolved.
+                // Refused again on every sync; the banner expires when that stops.
+                setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
+              }
             }
           } catch (err) {
             console.error('[WebSocket] Error parsing message:', err)
@@ -1440,15 +1418,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
         ws.onclose = (event) => {
+          // A socket already replaced (reconnectNow) schedules nothing
+          if (wsRef.current !== socket) return
           // Don't reconnect on normal closure (code 1000)
           if (event.code === 1000) {
             return
           }
-          // Reconnect after 5 seconds
-          reconnectTimeout = setTimeout(connectWebSocket, 5000)
+          // Back off while the relay is unreachable (5 s doubling to 60 s)
+          scheduleReconnect()
         }
       } catch (err) {
         console.error('[WebSocket] Connection error:', err)
+        scheduleReconnect()
       }
     }
 
@@ -1474,12 +1455,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ])
 
         // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
-        // The server will replace all data for this matchId with this data
+        // The relay keys the room by the seed_key: the id the tablets know.
+        // PINs only on this socket's first sync and when one changed.
+        relayKeyRef.current = relayMatchKey(freshMatch, matchId)
+        const { match: relayMatch, commit: commitPins } = relayPinsRef.current.payloadFor(currentWs, freshMatch)
         const sendTimestamp = Date.now()
         const syncPayload = {
           type: 'sync-match-data',
-          matchId: matchId,
-          match: freshMatch,
+          matchId: relayKeyRef.current,
+          match: relayMatch,
           homeTeam: freshHomeTeam || null,
           awayTeam: freshAwayTeam || null,
           homePlayers: freshHomePlayers || [],
@@ -1490,6 +1474,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
 
         currentWs.send(JSON.stringify(syncPayload))
+        commitPins()
       } catch (err) {
         console.error('[WebSocket] Error syncing match data:', err)
       }
@@ -1585,7 +1570,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       try {
         const { requestId, matchId: requestedMatchId } = request
 
-        if (String(requestedMatchId) !== String(matchId)) {
+        // Only by the relay room key (the seed_key; the Dexie id only for a match
+        // without one). A Dexie id is not unique across scorers: answering it
+        // would open a second, frozen room under that id.
+        const keyMatch = await db.matches.get(matchId)
+        if (String(requestedMatchId) !== relayMatchKey(keyMatch, matchId)) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
             requestId,
@@ -1621,10 +1610,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ws.send(JSON.stringify({
           type: 'match-data-response',
           requestId,
-          matchId: matchId,
+          matchId: requestedMatchId,
           success: true,
           data: {
-            match: freshMatch,
+            // Never game_pin / connection_pins (the relay needs only its PIN fields)
+            match: relayMatchPayload(freshMatch).match,
             homeTeam: freshHomeTeam || null,
             awayTeam: freshAwayTeam || null,
             homePlayers: freshHomePlayers || [],
@@ -1679,7 +1669,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               homeTeamConnectionEnabled: freshMatch.homeTeamConnectionEnabled,
               awayTeamConnectionEnabled: freshMatch.awayTeamConnectionEnabled
             },
-            matchId: matchId
+            // The id the relay stores the match under (this socket owns that key)
+            matchId: relayMatchKey(freshMatch, matchId)
           }))
         } else {
           ws.send(JSON.stringify({
@@ -1723,8 +1714,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Connect to WebSocket
     connectWebSocket()
+    window.addEventListener('online', reconnectNow)
+    document.addEventListener('visibilitychange', reconnectNow)
 
     return () => {
+      disposed = true
+      window.removeEventListener('online', reconnectNow)
+      document.removeEventListener('visibilitychange', reconnectNow)
       if (reconnectTimeout) clearTimeout(reconnectTimeout)
 
       // Close the socket cleanly on unmount, but DO NOT broadcast
@@ -1766,7 +1762,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // poll replaces serverStatus every 5s with a fresh object, which otherwise
     // re-runs this effect every tick — tearing down + rebuilding the socket
     // continuously for the whole match. Mirrors the App.jsx WS effect.
-  }, [matchId, serverStatus?.wsPort])
+    // matchLoaded flips once, when the match first loads (see above).
+  }, [matchId, matchLoaded, serverStatus?.wsPort])
 
   // Sync when connection settings change (e.g., referee dashboard enabled/disabled)
   useEffect(() => {
@@ -1822,7 +1819,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const sendTimestamp = Date.now()
     sendRelayMessage({
       type: 'match-action',
-      matchId: matchId,
+      matchId: relayKeyRef.current || matchId,
       action: actionType,
       data: actionData,
       timestamp: sendTimestamp,
@@ -1837,6 +1834,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const _tl = performance.now()
     console.log(`[PERF:liveState] START: ${eventType}, cachedSnapshot: ${!!cachedSnapshot}`)
     if (!matchId) return
+    // Call order decides which snapshot is newer (never the wall clock: an NTP
+    // step back at the venue would freeze the referee and the livescore)
+    const liveOrder = liveStateOrderRef.current
+    const liveSeq = liveOrder.next()
 
     try {
       // Get match to check if it's a test match
@@ -2065,7 +2066,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
-      sendRelayMessage({ type: 'live-state-update', matchId, liveState: { ...liveStateData } })
+      // Never an older state after a newer one: on a side-out the 'point' push
+      // (snapshot from before the rotation) and the 'rotation' push race.
+      if (liveOrder.shouldPush(liveSeq)) {
+        sendRelayMessage({ type: 'live-state-update', matchId: relayKeyRef.current || matchId, liveState: { ...liveStateData } })
+      }
 
       if (!supabaseMatchId) {
         const seedKey = match.seed_key || String(matchId)
@@ -2097,7 +2102,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Queuing would add 1s+ delay from the polling interval in useSyncQueue.
       // Note: current_set is already in liveStateData, so we don't need a separate matches.update().
       // The sync queue will update matches.current_set for persistence.
-      const liveStateResult = await apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' })
+      // One upsert at a time, and one older than the last written is dropped:
+      // concurrent upserts are last-write-wins on match_id, so the stale
+      // 'point' row of a side-out could overwrite the 'rotation' row.
+      const liveStateResult = await liveOrder.write(liveSeq,
+        () => apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }))
+      if (liveStateResult?.skipped) return
 
       if (liveStateResult.error) {
         console.error('[LiveState] Sync error:', liveStateResult.error)
@@ -2117,6 +2127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
   // Check connection statuses
+  const matchStatus = matchLoaded ? (data.match.status ?? null) : undefined
   const checkConnectionStatuses = useCallback(async () => {
     const statuses = {
       api: 'unknown',
@@ -2168,103 +2179,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       debugInfo.server = { status: 'disconnected', message: errMsg }
     }
 
-    // Check WebSocket connection
-    if (wsRef.current) {
-      const ws = wsRef.current
-      if (ws.readyState === WebSocket.OPEN) {
-        statuses.websocket = 'connected'
-      } else if (ws.readyState === WebSocket.CONNECTING) {
-        statuses.websocket = 'connecting'
-      } else {
-        statuses.websocket = 'disconnected'
-      }
+    // Relay socket state. No throwaway probe socket: this check used to open
+    // one whenever wsRef was empty (it always was, see the relay effect), on
+    // every heartbeat write and rally.
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      statuses.websocket = 'connected'
+    } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+      statuses.websocket = 'connecting'
     } else {
-      // Test if WebSocket server is available
-      try {
-        // Use configured backend URL if available (Render/cloud)
-        const backendUrlForWs = import.meta.env.VITE_BACKEND_URL
-        let wsUrl
-        if (backendUrlForWs) {
-          const url = new URL(backendUrlForWs)
-          const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-          wsUrl = `${protocol}//${url.host}`
-        } else {
-          // Fallback to local WebSocket server
-          const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-          const hostname = window.location.hostname
-          const wsPort = serverStatus?.wsPort || 8080
-          wsUrl = `${protocol}://${hostname}:${wsPort}`
-        }
-
-        const wsTest = new WebSocket(wsUrl)
-        let resolved = false
-
-        await new Promise((resolve) => {
-          const timeout = setTimeout(() => {
-            if (!resolved) {
-              resolved = true
-              try {
-                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                  wsTest.close()
-                }
-              } catch (e) {
-                // Ignore errors when closing
-              }
-              statuses.websocket = 'disconnected'
-              resolve()
-            }
-          }, 2000)
-
-          wsTest.onopen = () => {
-            if (!resolved) {
-              resolved = true
-              clearTimeout(timeout)
-              try {
-                wsTest.close()
-              } catch (e) {
-                // Ignore errors when closing
-              }
-              statuses.websocket = 'connected'
-              resolve()
-            }
-          }
-
-          wsTest.onerror = () => {
-            if (!resolved) {
-              resolved = true
-              clearTimeout(timeout)
-              try {
-                if (wsTest.readyState === WebSocket.CONNECTING || wsTest.readyState === WebSocket.OPEN) {
-                  wsTest.close()
-                }
-              } catch (e) {
-                // Ignore errors when closing
-              }
-              statuses.websocket = 'disconnected'
-              resolve()
-            }
-          }
-
-          wsTest.onclose = () => {
-            if (!resolved) {
-              resolved = true
-              clearTimeout(timeout)
-              statuses.websocket = 'disconnected'
-              resolve()
-            }
-          }
-        })
-      } catch (err) {
-        statuses.websocket = 'disconnected'
-      }
+      statuses.websocket = matchId ? 'connecting' : 'disconnected'
     }
 
     // Check Scoreboard connection (same as server for now)
     statuses.scoreboard = statuses.server
 
     // Check Match status
-    if (data?.match) {
-      statuses.match = data.match.status === 'live' ? 'live' : data.match.status === 'scheduled' ? 'scheduled' : data.match.status === 'final' ? 'final' : 'unknown'
+    if (matchStatus !== undefined) {
+      statuses.match = matchStatus === 'live' ? 'live' : matchStatus === 'scheduled' ? 'scheduled' : matchStatus === 'final' ? 'final' : 'unknown'
     } else {
       statuses.match = 'no_match'
     }
@@ -2278,7 +2210,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     setConnectionStatuses(statuses)
-  }, [data?.match, serverStatus])
+    // Primitives only: the heartbeat rewrites the match every 10 s, and a new
+    // match object re-ran this check (and its probes) each time.
+  }, [matchLoaded, matchStatus, matchId])
 
   // Periodically check connection statuses (60s interval to reduce console spam when server is down)
   useEffect(() => {
@@ -12184,14 +12118,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }), [])
 
-  // Check if referees are connected (heartbeat within last 15 seconds)
+  // Tablets the relay sees on this match's room (seed key). The heartbeat
+  // fields below are never written on this device, so they alone always read
+  // "not connected".
+  const relayTablets = useRelayTablets(
+    matchLoaded ? relayMatchKey(data.match, matchId) : null,
+    data?.match,
+    { enabled: !!(data?.match?.refereeConnectionEnabled || data?.match?.homeTeamConnectionEnabled || data?.match?.awayTeamConnectionEnabled) }
+  )
+
+  // Check if referees are connected (heartbeat within last 15 seconds, or on the relay)
   // Must be before any early returns to comply with Rules of Hooks
   const isReferee1Connected = useMemo(() => {
+    if (relayTablets.referee > 0) return true
     if (!data?.match?.lastReferee1Heartbeat) return false
     const lastHeartbeat = new Date(data.match.lastReferee1Heartbeat).getTime()
     const currentTime = new Date().getTime()
     return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastReferee1Heartbeat, now])
+  }, [data?.match?.lastReferee1Heartbeat, now, relayTablets.referee])
 
   const isReferee2Connected = useMemo(() => {
     if (!data?.match?.lastReferee2Heartbeat) return false
@@ -12244,18 +12188,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Check if bench teams are connected (heartbeat within last 15 seconds)
   const isHomeTeamConnected = useMemo(() => {
+    if (relayTablets.benchHome > 0) return true
     if (!data?.match?.lastHomeTeamHeartbeat) return false
     const lastHeartbeat = new Date(data.match.lastHomeTeamHeartbeat).getTime()
     const currentTime = new Date().getTime()
     return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastHomeTeamHeartbeat, now])
+  }, [data?.match?.lastHomeTeamHeartbeat, now, relayTablets.benchHome])
 
   const isAwayTeamConnected = useMemo(() => {
+    if (relayTablets.benchAway > 0) return true
     if (!data?.match?.lastAwayTeamHeartbeat) return false
     const lastHeartbeat = new Date(data.match.lastAwayTeamHeartbeat).getTime()
     const currentTime = new Date().getTime()
     return (currentTime - lastHeartbeat) < 15000 // 15 seconds threshold
-  }, [data?.match?.lastAwayTeamHeartbeat, now])
+  }, [data?.match?.lastAwayTeamHeartbeat, now, relayTablets.benchAway])
 
   // Helper function to get connection status and color
   const getConnectionStatus = useCallback((type) => {

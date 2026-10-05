@@ -4,7 +4,7 @@
  */
 
 import { apiFrom } from '../lib/apiClient'
-import { getApiUrl } from './backendConfig'
+import { getApiUrl, getBackendUrl, getRelayWebSocketUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
 
 /**
@@ -19,19 +19,16 @@ export function generateMatchSeedKey() {
   return `match_${timestamp}_${randomPart}`
 }
 
-// Get server URL - checks for configured backend first, then falls back to current location
+// Server (relay) URL: the same backend every other module uses (backendConfig:
+// runtime override from ?server= / the connection screen, VITE_BACKEND_URL, the
+// cloud relay on *.openvolley.app, same origin on the LAN server). The old
+// local fallbacks remain for a desktop build without any backend config.
 function getServerUrl() {
-  // Check if we have a configured backend URL (Render/cloud backend)
-  const backendUrl = import.meta.env.VITE_BACKEND_URL
+  const configured = getBackendUrl()
+  if (configured) return configured.replace(/\/$/, '')
 
-  if (backendUrl) {
-    return backendUrl
-  }
-
-  // Fallback to local server (development or Electron)
   const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
   const hostname = window.location.hostname
-  // In production (HTTPS), use same origin without port (Cloudflare handles routing)
   if (window.location.protocol === 'https:') {
     return `${protocol}://${hostname}`
   }
@@ -39,26 +36,9 @@ function getServerUrl() {
   return `${protocol}://${hostname}:${port}`
 }
 
-// Get WebSocket URL - checks for configured backend first, then falls back to current location
+// Relay WebSocket: the same resolver the scorer publishes with (one relay for all)
 function getWebSocketUrl() {
-  // Check if we have a configured backend URL (Render/cloud backend)
-  const backendUrl = import.meta.env.VITE_BACKEND_URL
-
-  if (backendUrl) {
-    const url = new URL(backendUrl)
-    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${url.host}`
-  }
-
-  // Fallback to local WebSocket server (development or Electron)
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const hostname = window.location.hostname
-  // In production (HTTPS), use same origin without port (Cloudflare handles routing)
-  if (window.location.protocol === 'https:') {
-    return `${protocol}://${hostname}`
-  }
-  const wsPort = 8080 // Default WebSocket port for development
-  return `${protocol}://${hostname}:${wsPort}`
+  return getRelayWebSocketUrl()
 }
 
 /**
@@ -188,310 +168,7 @@ export async function getMatchData(matchId) {
         .eq('match_id', match.id)
         .maybeSingle()
 
-      // Build team info from matches table (prefer JSONB, fallback to old columns for transition)
-      const homeTeamName = match.home_team?.name || match.home_team_name || 'Home'
-      const awayTeamName = match.away_team?.name || match.away_team_name || 'Away'
-
-      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
-      // Determine coinTossTeamA: is Team A the home or away team?
-      let coinTossTeamA = null
-      let teamAIsHome = true
-
-      if (liveState?.team_a_name) {
-        // Compare live state team_a_name with matches table to determine if Team A is home
-        teamAIsHome = liveState.team_a_name === homeTeamName
-        coinTossTeamA = teamAIsHome ? 'home' : 'away'
-      } else {
-        // Fallback to coin_toss if live state doesn't have A/B data (prefer JSONB, fallback to old columns)
-        coinTossTeamA = match.coin_toss?.team_a || match.coin_toss_team_a || 'home'
-        teamAIsHome = coinTossTeamA === 'home'
-      }
-
-      // Determine which side is home based on side_a
-      // side_a = 'left' means Team A is on left, side_a = 'right' means Team A is on right
-      const sideA = liveState?.side_a || 'left'
-      const leftIsHome = (sideA === 'left') === teamAIsHome
-
-      // Build team info with live state colors
-      const homeColorFromLive = liveState ? (teamAIsHome ? liveState.team_a_color : liveState.team_b_color) : null
-      const awayColorFromLive = liveState ? (teamAIsHome ? liveState.team_b_color : liveState.team_a_color) : null
-
-      const homeTeam = {
-        name: homeTeamName,
-        shortName: match.home_team?.short_name || match.home_short_name || 'HOM',
-        color: homeColorFromLive || match.home_team?.color || '#ef4444'
-      }
-      const awayTeam = {
-        name: awayTeamName,
-        shortName: match.away_team?.short_name || match.away_short_name || 'AWY',
-        color: awayColorFromLive || match.away_team?.color || '#3b82f6'
-      }
-
-      // Build sets from live state using A/B model
-      let sets = []
-      if (liveState) {
-        // Convert A/B points to home/away
-        const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
-        const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
-
-        // Determine serving team - priority: serving_team field, then lineup isServing
-        let servingTeam = 'home'
-        let serverNumber = null
-
-        const lineupA = liveState.lineup_a
-        const lineupB = liveState.lineup_b
-
-        // First priority: use serving_team from live state (set by manual changes or score events)
-        // serving_team stores 'left' or 'right', convert to 'home'/'away'
-        if (liveState.serving_team) {
-          const servingSide = liveState.serving_team // 'left' or 'right'
-          // leftIsHome tells us if home is on left
-          servingTeam = (servingSide === 'left') === leftIsHome ? 'home' : 'away'
-          // Get server number from the serving team's lineup position I
-          // If serving home and Team A is home, use lineupA. Otherwise use lineupB.
-          const servingTeamIsA = (servingTeam === 'home') === teamAIsHome
-          const servingTeamLineup = servingTeamIsA ? lineupA : lineupB
-          serverNumber = servingTeamLineup?.I?.number || null
-          console.log('[serverDataSync] Using serving_team field:', { servingSide, leftIsHome, servingTeam, serverNumber })
-        } else if (lineupA?.I?.isServing) {
-          // Fallback: Rich format with serving info in position I (isServing field)
-          servingTeam = teamAIsHome ? 'home' : 'away'
-          serverNumber = lineupA.I.number
-          console.log('[serverDataSync] Using lineupA.I.isServing:', { servingTeam, serverNumber })
-        } else if (lineupB?.I?.isServing) {
-          servingTeam = teamAIsHome ? 'away' : 'home'
-          serverNumber = lineupB.I.number
-          console.log('[serverDataSync] Using lineupB.I.isServing:', { servingTeam, serverNumber })
-        } else {
-          console.log('[serverDataSync] No serving info found, defaulting to home')
-        }
-
-        const currentSet = {
-          index: liveState.current_set || 1,
-          homePoints: homePoints || 0,
-          awayPoints: awayPoints || 0,
-          finished: false,
-          servingTeam,
-          serverNumber
-        }
-        sets = [currentSet]
-
-        // Set scores
-        const homeSetsWon = teamAIsHome ? liveState.sets_won_a : liveState.sets_won_b
-        const awaySetsWon = teamAIsHome ? liveState.sets_won_b : liveState.sets_won_a
-        // We only have set counts, not individual set scores - this is a limitation
-      } else {
-        // No live state yet (before first point) - create empty set 1
-        sets = [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
-      }
-
-      // Build events array with lineup info from live state
-      let events = []
-
-      if (liveState) {
-        // Lineup events contain rich data (captain, libero, subs, sanctions embedded per position)
-        if (liveState.lineup_a) {
-          events.push({
-            type: 'lineup',
-            setIndex: liveState.current_set || 1,
-            seq: 1,
-            payload: {
-              team: teamAIsHome ? 'home' : 'away',
-              lineup: liveState.lineup_a,
-              isRichFormat: true
-            }
-          })
-        }
-        if (liveState.lineup_b) {
-          events.push({
-            type: 'lineup',
-            setIndex: liveState.current_set || 1,
-            seq: 1.1,
-            payload: {
-              team: teamAIsHome ? 'away' : 'home',
-              lineup: liveState.lineup_b,
-              isRichFormat: true
-            }
-          })
-        }
-
-        // Build sanction events from live state (team-level sanctions only)
-        if (liveState.sanctions_a) {
-          for (const sanction of liveState.sanctions_a) {
-            events.push({
-              type: 'sanction',
-              setIndex: liveState.current_set || 1,
-              ts: sanction.ts,
-              payload: {
-                team: teamAIsHome ? 'home' : 'away',
-                playerNumber: sanction.player,
-                type: sanction.type,
-                playerType: sanction.playerType, // 'player', 'bench', 'libero', 'official'
-                position: sanction.position,
-                role: sanction.role
-              }
-            })
-          }
-        }
-        if (liveState.sanctions_b) {
-          for (const sanction of liveState.sanctions_b) {
-            events.push({
-              type: 'sanction',
-              setIndex: liveState.current_set || 1,
-              ts: sanction.ts,
-              payload: {
-                team: teamAIsHome ? 'away' : 'home',
-                playerNumber: sanction.player,
-                type: sanction.type,
-                playerType: sanction.playerType,
-                position: sanction.position,
-                role: sanction.role
-              }
-            })
-          }
-        }
-
-        // Build substitution events from live state (if stored as JSONB arrays)
-        if (Array.isArray(liveState.subs_a)) {
-          for (const sub of liveState.subs_a) {
-            events.push({
-              type: 'substitution',
-              setIndex: liveState.current_set || 1,
-              ts: sub.ts,
-              payload: {
-                team: teamAIsHome ? 'home' : 'away',
-                playerIn: sub.playerIn,
-                playerOut: sub.playerOut,
-                position: sub.position,
-                exceptional: sub.exceptional || false
-              }
-            })
-          }
-        }
-        if (Array.isArray(liveState.subs_b)) {
-          for (const sub of liveState.subs_b) {
-            events.push({
-              type: 'substitution',
-              setIndex: liveState.current_set || 1,
-              ts: sub.ts,
-              payload: {
-                team: teamAIsHome ? 'away' : 'home',
-                playerIn: sub.playerIn,
-                playerOut: sub.playerOut,
-                position: sub.position,
-                exceptional: sub.exceptional || false
-              }
-            })
-          }
-        }
-
-        // Build timeout events from live state (if stored as JSONB arrays)
-        if (Array.isArray(liveState.timeouts_a)) {
-          for (const timeout of liveState.timeouts_a) {
-            events.push({
-              type: 'timeout',
-              setIndex: liveState.current_set || 1,
-              ts: timeout.ts,
-              payload: {
-                team: teamAIsHome ? 'home' : 'away'
-              }
-            })
-          }
-        } else if (typeof liveState.timeouts_a === 'number') {
-          // Backwards compatibility: if stored as number, create that many timeout events
-          for (let i = 0; i < liveState.timeouts_a; i++) {
-            events.push({
-              type: 'timeout',
-              setIndex: liveState.current_set || 1,
-              payload: {
-                team: teamAIsHome ? 'home' : 'away'
-              }
-            })
-          }
-        }
-        if (Array.isArray(liveState.timeouts_b)) {
-          for (const timeout of liveState.timeouts_b) {
-            events.push({
-              type: 'timeout',
-              setIndex: liveState.current_set || 1,
-              ts: timeout.ts,
-              payload: {
-                team: teamAIsHome ? 'away' : 'home'
-              }
-            })
-          }
-        } else if (typeof liveState.timeouts_b === 'number') {
-          // Backwards compatibility: if stored as number, create that many timeout events
-          for (let i = 0; i < liveState.timeouts_b; i++) {
-            events.push({
-              type: 'timeout',
-              setIndex: liveState.current_set || 1,
-              payload: {
-                team: teamAIsHome ? 'away' : 'home'
-              }
-            })
-          }
-        }
-      }
-
-      // Build players from matches table JSONB columns
-      const homePlayers = match.players_home || []
-      const awayPlayers = match.players_away || []
-
-      // Extract captain info from rich lineup format
-      let homeCaptain = null
-      let awayCaptain = null
-      let homeCourtCaptain = null
-      let awayCourtCaptain = null
-
-      const homeLineup = teamAIsHome ? liveState?.lineup_a : liveState?.lineup_b
-      const awayLineup = teamAIsHome ? liveState?.lineup_b : liveState?.lineup_a
-
-      for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
-        if (homeLineup?.[pos]?.isCaptain) homeCaptain = homeLineup[pos].number
-        if (homeLineup?.[pos]?.isCourtCaptain) homeCourtCaptain = homeLineup[pos].number
-        if (awayLineup?.[pos]?.isCaptain) awayCaptain = awayLineup[pos].number
-        if (awayLineup?.[pos]?.isCourtCaptain) awayCourtCaptain = awayLineup[pos].number
-      }
-
-      return {
-        success: true,
-        match: {
-          ...match,
-          id: matchId, // Use external_id as the reference ID
-          // Use liveState.match_status if available (reflects actual game state)
-          status: liveState?.match_status || match.status,
-          coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
-          coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
-          coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
-          firstServe: match.coin_toss?.first_serve || match.first_serve,
-          // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
-          coin_toss_confirmed: !!(liveState?.team_a_name),
-          // Get short names from JSONB, or fallback to old columns
-          homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
-          awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
-          homeName: homeTeam.name,
-          awayName: awayTeam.name,
-          homeColor: homeTeam.color,
-          awayColor: awayTeam.color,
-          // Captain info
-          homeCaptain: homeCaptain || null,
-          awayCaptain: awayCaptain || null,
-          homeCourtCaptain: homeCourtCaptain || null,
-          awayCourtCaptain: awayCourtCaptain || null,
-          // Also ensure gameNumber is set
-          gameNumber: match.game_n ? String(match.game_n) : null,
-          gameN: match.game_n
-        },
-        homeTeam,
-        awayTeam,
-        homePlayers,
-        awayPlayers,
-        sets,
-        events,
-        isRichFormat: true, // Always rich format now
-        liveState // Include raw live state for additional data
-      }
+      return buildLiveStateMatchData(match, liveState, matchId)
     } catch (apiError) {
       console.error('[getMatchData] API fallback error:', apiError)
       return { success: false, error: apiError.message }
@@ -501,11 +178,347 @@ export async function getMatchData(matchId) {
   return { success: false, error: 'No data source available' }
 }
 
+/**
+ * Is a match_live_state row newer than the last one applied (by updated_at)?
+ * Rows arrive twice per action (relay push and HTTP write-through) and the
+ * scorer's writes can land out of order; an older row must not roll the view
+ * back. Unknown timestamps count as newer.
+ * @param {object|null} row - live state row
+ * @param {string|null} lastTs - updated_at of the newest row applied
+ */
+export function isNewerLiveState(row, lastTs, { allowEqual = false } = {}) {
+  if (!lastTs) return true
+  const t = Date.parse(row?.updated_at)
+  const last = Date.parse(lastTs)
+  if (Number.isNaN(t) || Number.isNaN(last)) return true
+  return allowEqual ? t >= last : t > last
+}
+
+/**
+ * Build the referee/bench match payload ({ success, match, homeTeam, awayTeam,
+ * homePlayers, awayPlayers, sets, events, liveState }) from a `matches` row and
+ * its `match_live_state` row. Pure: getMatchData uses it after reading both
+ * rows, and the referee applies a pushed live_state row (db-change) with it
+ * directly instead of re-reading the database, which could still return the
+ * row from before the push.
+ * @param {object} match - matches row
+ * @param {object|null} liveState - match_live_state row
+ * @param {string} matchId - the id the caller knows the match by (seed key)
+ */
+export function buildLiveStateMatchData(match, liveState, matchId) {
+  // Build team info from matches table (prefer JSONB, fallback to old columns for transition)
+  const homeTeamName = match.home_team?.name || match.home_team_name || 'Home'
+  const awayTeamName = match.away_team?.name || match.away_team_name || 'Away'
+
+  // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+  // Determine coinTossTeamA: is Team A the home or away team?
+  let coinTossTeamA = null
+  let teamAIsHome = true
+
+  if (liveState?.team_a_name) {
+    // Compare live state team_a_name with matches table to determine if Team A is home
+    teamAIsHome = liveState.team_a_name === homeTeamName
+    coinTossTeamA = teamAIsHome ? 'home' : 'away'
+  } else {
+    // Fallback to coin_toss if live state doesn't have A/B data (prefer JSONB, fallback to old columns)
+    coinTossTeamA = match.coin_toss?.team_a || match.coin_toss_team_a || 'home'
+    teamAIsHome = coinTossTeamA === 'home'
+  }
+
+  // Determine which side is home based on side_a
+  // side_a = 'left' means Team A is on left, side_a = 'right' means Team A is on right
+  const sideA = liveState?.side_a || 'left'
+  const leftIsHome = (sideA === 'left') === teamAIsHome
+
+  // Build team info with live state colors
+  const homeColorFromLive = liveState ? (teamAIsHome ? liveState.team_a_color : liveState.team_b_color) : null
+  const awayColorFromLive = liveState ? (teamAIsHome ? liveState.team_b_color : liveState.team_a_color) : null
+
+  const homeTeam = {
+    name: homeTeamName,
+    shortName: match.home_team?.short_name || match.home_short_name || 'HOM',
+    color: homeColorFromLive || match.home_team?.color || '#ef4444'
+  }
+  const awayTeam = {
+    name: awayTeamName,
+    shortName: match.away_team?.short_name || match.away_short_name || 'AWY',
+    color: awayColorFromLive || match.away_team?.color || '#3b82f6'
+  }
+
+  // Build sets from live state using A/B model
+  let sets = []
+  if (liveState) {
+    // Convert A/B points to home/away
+    const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
+    const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
+
+    // Determine serving team - priority: serving_team field, then lineup isServing
+    let servingTeam = 'home'
+    let serverNumber = null
+
+    const lineupA = liveState.lineup_a
+    const lineupB = liveState.lineup_b
+
+    // First priority: use serving_team from live state (set by manual changes or score events)
+    // serving_team stores 'left' or 'right', convert to 'home'/'away'
+    if (liveState.serving_team) {
+      const servingSide = liveState.serving_team // 'left' or 'right'
+      // leftIsHome tells us if home is on left
+      servingTeam = (servingSide === 'left') === leftIsHome ? 'home' : 'away'
+      // Get server number from the serving team's lineup position I
+      // If serving home and Team A is home, use lineupA. Otherwise use lineupB.
+      const servingTeamIsA = (servingTeam === 'home') === teamAIsHome
+      const servingTeamLineup = servingTeamIsA ? lineupA : lineupB
+      serverNumber = servingTeamLineup?.I?.number || null
+    } else if (lineupA?.I?.isServing) {
+      // Fallback: Rich format with serving info in position I (isServing field)
+      servingTeam = teamAIsHome ? 'home' : 'away'
+      serverNumber = lineupA.I.number
+    } else if (lineupB?.I?.isServing) {
+      servingTeam = teamAIsHome ? 'away' : 'home'
+      serverNumber = lineupB.I.number
+    }
+
+    const currentSet = {
+      index: liveState.current_set || 1,
+      homePoints: homePoints || 0,
+      awayPoints: awayPoints || 0,
+      finished: false,
+      servingTeam,
+      serverNumber
+    }
+    sets = [currentSet]
+
+    // Set scores
+    const homeSetsWon = teamAIsHome ? liveState.sets_won_a : liveState.sets_won_b
+    const awaySetsWon = teamAIsHome ? liveState.sets_won_b : liveState.sets_won_a
+    // We only have set counts, not individual set scores - this is a limitation
+  } else {
+    // No live state yet (before first point) - create empty set 1
+    sets = [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
+  }
+
+  // Build events array with lineup info from live state
+  let events = []
+
+  if (liveState) {
+    // Lineup events contain rich data (captain, libero, subs, sanctions embedded per position)
+    if (liveState.lineup_a) {
+      events.push({
+        type: 'lineup',
+        setIndex: liveState.current_set || 1,
+        seq: 1,
+        payload: {
+          team: teamAIsHome ? 'home' : 'away',
+          lineup: liveState.lineup_a,
+          isRichFormat: true
+        }
+      })
+    }
+    if (liveState.lineup_b) {
+      events.push({
+        type: 'lineup',
+        setIndex: liveState.current_set || 1,
+        seq: 1.1,
+        payload: {
+          team: teamAIsHome ? 'away' : 'home',
+          lineup: liveState.lineup_b,
+          isRichFormat: true
+        }
+      })
+    }
+
+    // Build sanction events from live state (team-level sanctions only)
+    if (liveState.sanctions_a) {
+      for (const sanction of liveState.sanctions_a) {
+        events.push({
+          type: 'sanction',
+          setIndex: liveState.current_set || 1,
+          ts: sanction.ts,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away',
+            playerNumber: sanction.player,
+            type: sanction.type,
+            playerType: sanction.playerType, // 'player', 'bench', 'libero', 'official'
+            position: sanction.position,
+            role: sanction.role
+          }
+        })
+      }
+    }
+    if (liveState.sanctions_b) {
+      for (const sanction of liveState.sanctions_b) {
+        events.push({
+          type: 'sanction',
+          setIndex: liveState.current_set || 1,
+          ts: sanction.ts,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home',
+            playerNumber: sanction.player,
+            type: sanction.type,
+            playerType: sanction.playerType,
+            position: sanction.position,
+            role: sanction.role
+          }
+        })
+      }
+    }
+
+    // Build substitution events from live state (if stored as JSONB arrays)
+    if (Array.isArray(liveState.subs_a)) {
+      for (const sub of liveState.subs_a) {
+        events.push({
+          type: 'substitution',
+          setIndex: liveState.current_set || 1,
+          ts: sub.ts,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away',
+            playerIn: sub.playerIn,
+            playerOut: sub.playerOut,
+            position: sub.position,
+            exceptional: sub.exceptional || false
+          }
+        })
+      }
+    }
+    if (Array.isArray(liveState.subs_b)) {
+      for (const sub of liveState.subs_b) {
+        events.push({
+          type: 'substitution',
+          setIndex: liveState.current_set || 1,
+          ts: sub.ts,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home',
+            playerIn: sub.playerIn,
+            playerOut: sub.playerOut,
+            position: sub.position,
+            exceptional: sub.exceptional || false
+          }
+        })
+      }
+    }
+
+    // Build timeout events from live state (if stored as JSONB arrays)
+    if (Array.isArray(liveState.timeouts_a)) {
+      for (const timeout of liveState.timeouts_a) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          ts: timeout.ts,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away'
+          }
+        })
+      }
+    } else if (typeof liveState.timeouts_a === 'number') {
+      // Backwards compatibility: if stored as number, create that many timeout events
+      for (let i = 0; i < liveState.timeouts_a; i++) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away'
+          }
+        })
+      }
+    }
+    if (Array.isArray(liveState.timeouts_b)) {
+      for (const timeout of liveState.timeouts_b) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          ts: timeout.ts,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home'
+          }
+        })
+      }
+    } else if (typeof liveState.timeouts_b === 'number') {
+      // Backwards compatibility: if stored as number, create that many timeout events
+      for (let i = 0; i < liveState.timeouts_b; i++) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home'
+          }
+        })
+      }
+    }
+  }
+
+  // Build players from matches table JSONB columns
+  const homePlayers = match.players_home || []
+  const awayPlayers = match.players_away || []
+
+  // Extract captain info from rich lineup format
+  let homeCaptain = null
+  let awayCaptain = null
+  let homeCourtCaptain = null
+  let awayCourtCaptain = null
+
+  const homeLineup = teamAIsHome ? liveState?.lineup_a : liveState?.lineup_b
+  const awayLineup = teamAIsHome ? liveState?.lineup_b : liveState?.lineup_a
+
+  for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+    if (homeLineup?.[pos]?.isCaptain) homeCaptain = homeLineup[pos].number
+    if (homeLineup?.[pos]?.isCourtCaptain) homeCourtCaptain = homeLineup[pos].number
+    if (awayLineup?.[pos]?.isCaptain) awayCaptain = awayLineup[pos].number
+    if (awayLineup?.[pos]?.isCourtCaptain) awayCourtCaptain = awayLineup[pos].number
+  }
+
+  return {
+    success: true,
+    match: {
+      ...match,
+      id: matchId, // Use external_id as the reference ID
+      // Use liveState.match_status if available (reflects actual game state)
+      status: liveState?.match_status || match.status,
+      coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
+      coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
+      coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
+      firstServe: match.coin_toss?.first_serve || match.first_serve,
+      // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
+      coin_toss_confirmed: !!(liveState?.team_a_name),
+      // Get short names from JSONB, or fallback to old columns
+      homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
+      awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
+      homeName: homeTeam.name,
+      awayName: awayTeam.name,
+      homeColor: homeTeam.color,
+      awayColor: awayTeam.color,
+      // Captain info
+      homeCaptain: homeCaptain || null,
+      awayCaptain: awayCaptain || null,
+      homeCourtCaptain: homeCourtCaptain || null,
+      awayCourtCaptain: awayCourtCaptain || null,
+      // Also ensure gameNumber is set
+      gameNumber: match.game_n ? String(match.game_n) : null,
+      gameN: match.game_n
+    },
+    homeTeam,
+    awayTeam,
+    homePlayers,
+    awayPlayers,
+    sets,
+    events,
+    isRichFormat: true, // Always rich format now
+    liveState, // Include raw live state for additional data
+    // Built from the match_live_state row alone (no relay bundle): a pushed
+    // live_state row can be applied with this same function.
+    source: 'live_state'
+  }
+}
+
 // Global WebSocket connection manager to prevent multiple connections
 const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTimeout, reconnectAttempts, isIntentionallyClosed, pingInterval }>
 
 // Ping interval in ms - keeps connection alive on mobile networks (NAT timeout is usually 30-60s)
 const PING_INTERVAL = 25000
+// A socket that answers nothing (not even the pong) this long after a ping is
+// dead — e.g. the tablet's Wi-Fi dropped without a close frame — and is replaced.
+// The resubscribe brings a fresh match-full-data snapshot.
+const PONG_TIMEOUT = 10000
 
 // Debug info for mobile debugging
 const wsDebugInfo = {
@@ -616,6 +629,26 @@ export function forceReconnect(matchId) {
   return false
 }
 
+// What this tablet is, for the scorer's tablet status (relay
+// /api/server/connections). A label only: it grants nothing.
+let relayDevice = null
+
+/**
+ * Label this app's relay subscriptions (RefereeApp: 'referee', BenchApp:
+ * 'bench' + team). Applies to subscriptions opened from now on and to the
+ * re-subscribe after every reconnect.
+ * @param {'referee'|'bench'|'livescore'|null} device
+ * @param {'home'|'away'|null} [team]
+ */
+export function setRelayDevice(device, team = null) {
+  relayDevice = device ? { device, ...(team === 'home' || team === 'away' ? { team } : {}) } : null
+}
+
+/** The subscribe-match message for a match key, with this app's device label. */
+export function subscribeMessage(matchId) {
+  return { type: 'subscribe-match', matchId: String(matchId), ...(relayDevice || {}) }
+}
+
 /**
  * Subscribe to match data updates via WebSocket
  */
@@ -632,7 +665,10 @@ export function subscribeToMatchData(matchId, onUpdate) {
       reconnectTimeout: null,
       reconnectAttempts: 0,
       isIntentionallyClosed: false,
-      pingInterval: null
+      pingInterval: null,
+      pongTimer: null,
+      lastMessageAt: 0,
+      onWake: null
     }
     wsConnections.set(matchIdStr, connection)
   }
@@ -642,6 +678,64 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
   const maxReconnectDelay = 10000 // Max 10 seconds
 
+  // Drop a socket that stopped answering and connect a new one right away.
+  const replaceDeadSocket = () => {
+    const dead = connection.ws
+    if (!dead || connection.isIntentionallyClosed) return
+    try {
+      dead.onopen = null
+      dead.onmessage = null
+      dead.onerror = null
+      dead.onclose = null
+      dead.close(4000, 'No answer to ping')
+    } catch { /* already gone */ }
+    connection.ws = null
+    if (connection.pingInterval) {
+      clearInterval(connection.pingInterval)
+      connection.pingInterval = null
+    }
+    if (connection.reconnectTimeout) clearTimeout(connection.reconnectTimeout)
+    connection.reconnectTimeout = setTimeout(connect, 250)
+  }
+
+  // Ping and expect any message back within PONG_TIMEOUT. Never judged by the
+  // time of the last message alone, so a throttled background tab is not
+  // mistaken for a dead socket.
+  const probe = () => {
+    const ws = connection.ws
+    if (connection.isIntentionallyClosed) return
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      // Back online / visible with no socket: reconnect now, not after the backoff
+      if (connection.reconnectTimeout) clearTimeout(connection.reconnectTimeout)
+      connection.reconnectTimeout = null
+      connection.ws = null
+      connect()
+      return
+    }
+    if (ws.readyState !== WebSocket.OPEN) return
+    const sentAt = Date.now()
+    try {
+      wsDebugInfo.lastPingAt = sentAt
+      ws.send(JSON.stringify({ type: 'ping', timestamp: sentAt }))
+    } catch (err) {
+      console.warn('[ServerDataSync] Error sending ping:', err)
+    }
+    if (connection.pongTimer) clearTimeout(connection.pongTimer)
+    connection.pongTimer = setTimeout(() => {
+      connection.pongTimer = null
+      if (connection.ws === ws && connection.lastMessageAt < sentAt) replaceDeadSocket()
+    }, PONG_TIMEOUT)
+  }
+
+  if (!connection.onWake && typeof window !== 'undefined') {
+    connection.onWake = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      probe()
+    }
+    window.addEventListener('online', connection.onWake)
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', connection.onWake)
+  }
+
   const connect = () => {
     // Store this connect function for force reconnect
     connectFunctions.set(matchIdStr, connect)
@@ -650,10 +744,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
     if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
       // Already connected, just send subscription message
       try {
-        connection.ws.send(JSON.stringify({
-          type: 'subscribe-match',
-          matchId: matchIdStr
-        }))
+        connection.ws.send(JSON.stringify(subscribeMessage(matchIdStr)))
       } catch (err) {
         console.error('[ServerDataSync] Error sending subscription:', err)
       }
@@ -685,10 +776,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
         // Request match data subscription
         try {
-          connection.ws.send(JSON.stringify({
-            type: 'subscribe-match',
-            matchId: matchIdStr
-          }))
+          connection.ws.send(JSON.stringify(subscribeMessage(matchIdStr)))
         } catch (err) {
           // Error sending subscription
         }
@@ -697,16 +785,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
         if (connection.pingInterval) {
           clearInterval(connection.pingInterval)
         }
-        connection.pingInterval = setInterval(() => {
-          if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
-            try {
-              wsDebugInfo.lastPingAt = Date.now()
-              connection.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }))
-            } catch (err) {
-              console.warn('[ServerDataSync] Error sending ping:', err)
-            }
-          }
-        }, PING_INTERVAL)
+        connection.pingInterval = setInterval(probe, PING_INTERVAL)
       }
 
       connection.ws.onmessage = (event) => {
@@ -715,7 +794,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
         try {
           const message = JSON.parse(event.data)
-          wsDebugInfo.lastMessageAt = Date.now()
+          connection.lastMessageAt = Date.now()
+          wsDebugInfo.lastMessageAt = connection.lastMessageAt
           wsDebugInfo.messagesReceived++
 
           // Handle pong (heartbeat response)
@@ -850,10 +930,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
   } else if (connection.ws.readyState === WebSocket.OPEN) {
     // Already connected, send subscription immediately
     try {
-      connection.ws.send(JSON.stringify({
-        type: 'subscribe-match',
-        matchId: matchIdStr
-      }))
+      connection.ws.send(JSON.stringify(subscribeMessage(matchIdStr)))
     } catch (err) {
       console.error('[ServerDataSync] Error sending subscription:', err)
     }
@@ -874,6 +951,15 @@ export function subscribeToMatchData(matchId, onUpdate) {
       if (connection.pingInterval) {
         clearInterval(connection.pingInterval)
         connection.pingInterval = null
+      }
+      if (connection.pongTimer) {
+        clearTimeout(connection.pongTimer)
+        connection.pongTimer = null
+      }
+      if (connection.onWake) {
+        window.removeEventListener('online', connection.onWake)
+        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', connection.onWake)
+        connection.onWake = null
       }
       if (connection.ws) {
         connection.ws.close(1000, 'Unsubscribing') // Normal closure
@@ -908,6 +994,25 @@ export function getWebSocketStatus(matchId) {
       return 'disconnected'
     default:
       return 'unknown'
+  }
+}
+
+/**
+ * Is the relay this app talks to up? GET /api/server/status on the configured
+ * backend (every relay serves it), not on window.location — on a static
+ * deployment that answers with index.html.
+ * @returns {Promise<{ running: boolean }>}
+ */
+export async function getRelayServerStatus({ fetchImpl = fetch } = {}) {
+  try {
+    const response = await fetchImpl(`${getServerUrl()}/api/server/status`, { headers: { Accept: 'application/json' } })
+    if (!response.ok) return { running: false }
+    const type = response.headers?.get?.('content-type') || ''
+    if (type && !type.includes('json')) return { running: false }
+    const body = await response.json()
+    return { ...(body && typeof body === 'object' ? body : {}), running: true }
+  } catch {
+    return { running: false }
   }
 }
 
@@ -1232,5 +1337,149 @@ export async function validateUploadPinSupabase(team, pin) {
   } catch (error) {
     console.error('[validateUploadPinSupabase] Exception:', error)
     return { success: false, error: error.message }
+  }
+}
+
+/**
+ * The relay's view of who watches a match (GET /api/server/connections) on the
+ * same backend the app talks to — not window.location, which on a static
+ * deployment answers with the SPA's index.html. Null when unreachable.
+ * @param {string} matchKey - the relay room key (seed_key)
+ */
+const connectionsCache = new Map() // url -> { at, promise }
+const CONNECTIONS_TTL_MS = 4000
+
+export function fetchRelayConnections(matchKey, { fetchImpl = fetch, maxAgeMs = CONNECTIONS_TTL_MS } = {}) {
+  const url = getApiUrl(`/api/server/connections${matchKey ? `?matchId=${encodeURIComponent(matchKey)}` : ''}`)
+  if (!url) return Promise.resolve(null)
+  // Several views poll this (header chip, scoreboard, connection setup): one
+  // request serves them all for a few seconds.
+  const hit = connectionsCache.get(url)
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.promise
+  const promise = requestRelayConnections(url, fetchImpl)
+  connectionsCache.set(url, { at: Date.now(), promise })
+  if (connectionsCache.size > 20) connectionsCache.delete(connectionsCache.keys().next().value)
+  return promise
+}
+
+async function requestRelayConnections(url, fetchImpl) {
+  try {
+    const response = await fetchImpl(url, { headers: { Accept: 'application/json' } })
+    if (!response.ok) return null
+    const type = response.headers?.get?.('content-type') || ''
+    if (type && !type.includes('json')) return null
+    const body = await response.json()
+    return body && typeof body === 'object' && Array.isArray(body.clients) ? body : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Which tablets the relay sees on a match: { referee, benchHome, benchAway,
+ * watchers }. Counts only clients subscribed to matchKey. A bench that did not
+ * say which team it is counts for both benches only when one of them is enabled.
+ * @param {object|null} connections - fetchRelayConnections() result
+ * @param {string} matchKey
+ * @param {object} [match] - scorer's match (connection flags)
+ */
+export function summarizeRelayTablets(connections, matchKey, match = null) {
+  const out = { referee: 0, benchHome: 0, benchAway: 0, watchers: 0 }
+  if (!connections || !Array.isArray(connections.clients)) return out
+  const key = matchKey == null ? null : String(matchKey)
+  let benchUnknown = 0
+  for (const c of connections.clients) {
+    if (key && String(c.matchId) !== key) continue
+    out.watchers++
+    if (c.role === 'referee') out.referee++
+    else if (c.role === 'bench' && c.team === 'home') out.benchHome++
+    else if (c.role === 'bench' && c.team === 'away') out.benchAway++
+    else if (c.role === 'bench') benchUnknown++
+  }
+  if (benchUnknown > 0 && match) {
+    const home = match.homeTeamConnectionEnabled === true
+    const away = match.awayTeamConnectionEnabled === true
+    if (home && !away) out.benchHome += benchUnknown
+    else if (away && !home) out.benchAway += benchUnknown
+  }
+  return out
+}
+
+/**
+ * Merge what the relay sees (summarizeRelayTablets) into a heartbeat-based
+ * tablet summary (utils/connectionHealth getTabletStatusSummary): a role the
+ * relay has a subscriber for is connected.
+ */
+export function applyRelayTablets(summary, relay) {
+  if (!summary || !relay) return summary
+  const seen = { referee: relay.referee > 0, bench_home: relay.benchHome > 0, bench_away: relay.benchAway > 0 }
+  const roles = summary.roles.map((r) => (
+    seen[r.role] && r.status !== 'connected' ? { ...r, status: 'connected', color: '#22c55e', ageMs: null } : r
+  ))
+  const connectedCount = roles.filter((r) => r.status === 'connected').length
+  const issues = roles.some((r) => r.status !== 'connected')
+  return {
+    ...summary,
+    roles,
+    connectedCount,
+    overallStatus: summary.expectedCount > 0 ? (issues ? 'issues' : 'ok') : summary.overallStatus
+  }
+}
+
+/**
+ * Team names of a match object from any source: the scorer's Dexie match
+ * (homeName/awayName), a relay bundle, the cloud PIN check (homeTeam string),
+ * a matches row (home_team JSONB) or a match list entry (homeTeamName).
+ * @returns {{ home: string|null, away: string|null }}
+ */
+export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
+  const pick = (...vals) => {
+    for (const v of vals) {
+      if (typeof v === 'string' && v.trim()) return v.trim()
+      if (v && typeof v === 'object' && typeof v.name === 'string' && v.name.trim()) return v.name.trim()
+    }
+    return null
+  }
+  const m = match || {}
+  return {
+    home: pick(m.homeTeamName, m.homeName, m.home_team_name, m.home_team, m.homeTeam, homeTeam),
+    away: pick(m.awayTeamName, m.awayName, m.away_team_name, m.away_team, m.awayTeam, awayTeam)
+  }
+}
+
+// PIN fields the relay needs from the scorer: the game PIN proves the
+// scoreboard role, the connection PINs let the relay check referee/bench PINs
+// itself (LAN). Nothing else secret goes over the relay.
+const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
+const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
+
+/**
+ * The relay room key of a scorer's match: its seed_key (what the tablets know
+ * from the PIN check and the QR code), else the local id.
+ */
+export function relayMatchKey(match, localId) {
+  const seed = match?.seed_key
+  return typeof seed === 'string' && seed.trim() ? seed.trim() : String(localId ?? match?.id ?? '')
+}
+
+/**
+ * The match object a scorer sends in sync-match-data. PINs go only with the
+ * first sync on a socket and when one changes (the relay keeps the stored ones
+ * meanwhile); pass the signature returned last time for this socket, or null.
+ * @returns {{ match: object, pinSignature: string }}
+ */
+export function relayMatchPayload(match, lastPinSignature = null) {
+  const out = { ...(match || {}) }
+  const pins = {}
+  for (const f of RELAY_PIN_FIELDS) {
+    const v = f === 'gamePin' ? (out.gamePin ?? out.game_pin) : out[f]
+    pins[f] = v === undefined || v === '' ? null : v
+    delete out[f]
+  }
+  for (const f of NEVER_RELAYED) delete out[f]
+  const pinSignature = JSON.stringify(pins)
+  return {
+    match: pinSignature === lastPinSignature ? out : { ...out, ...pins },
+    pinSignature
   }
 }

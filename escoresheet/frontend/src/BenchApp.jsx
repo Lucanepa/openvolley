@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData } from './utils/serverDataSync'
-import { getServerStatus } from './utils/networkInfo'
+import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData, matchTeamNames, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
@@ -22,11 +21,66 @@ const CONNECTION_MODES = {
   WEBSOCKET: 'websocket'
 }
 
+// The connected bench survives a reload (like the referee's refereeMatchId /
+// refereePin): { matchId, team, pin, gameNumber, homeTeamName, awayTeamName }.
+// Re-validated against the server on load.
+const BENCH_SESSION_KEY = 'bench_session'
+
+export function readBenchSession() {
+  try {
+    const raw = localStorage.getItem(BENCH_SESSION_KEY)
+    const s = raw ? JSON.parse(raw) : null
+    if (!s || !s.matchId || (s.team !== 'home' && s.team !== 'away') || !/^\d{6}$/.test(String(s.pin || ''))) return null
+    return s
+  } catch {
+    return null
+  }
+}
+
+function writeBenchSession(session) {
+  try {
+    if (session) localStorage.setItem(BENCH_SESSION_KEY, JSON.stringify(session))
+    else localStorage.removeItem(BENCH_SESSION_KEY)
+  } catch { /* storage unavailable: the bench just asks again after a reload */ }
+}
+
+/**
+ * Validate a bench PIN server-side: the backend's database check (cloud) and
+ * the LAN relay, in the order the connection mode / match source suggests. The
+ * cloud check is skipped in WebSocket mode and gives up after 3 s, so an
+ * offline venue never waits.
+ */
+export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false } = {}) {
+  const pinType = team === 'home' ? 'homeTeam' : 'awayTeam'
+  const checkSupabase = async () => {
+    const r = await validatePinSupabase(pin, team === 'home' ? 'bench_home' : 'bench_away')
+    if (!r.success || !r.match) return r
+    // The server only accepts a bench PIN while that bench is enabled; older
+    // backends don't echo the flag, which would trip the disconnect check.
+    const flag = team === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
+    return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
+  }
+  const checkLan = () => validatePin(pin, pinType).catch((err) => ({ success: false, error: err.message }))
+  const ok = (r) => r?.success && r.match
+  let result
+  if (connectionMode === CONNECTION_MODES.WEBSOCKET) {
+    result = await checkLan()
+  } else if (preferLan) {
+    result = await checkLan()
+    if (!ok(result) && connectionMode === CONNECTION_MODES.AUTO) result = await checkSupabase()
+  } else {
+    result = await checkSupabase()
+    if (!ok(result)) result = await checkLan()
+  }
+  return result
+}
+
 export default function BenchApp() {
   const { t } = useTranslation()
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null)
   const [autoConnectTeam, setAutoConnectTeam] = useState(null)
+  const [restoringSession, setRestoringSession] = useState(false)
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
@@ -74,26 +128,74 @@ export default function BenchApp() {
         setAutoConnectTeam(teamParam)
       }
       setServerReady(true)
+    } else if (readBenchSession()) {
+      // Reconnect a bench that was connected before the reload
+      setRestoringSession(true)
+      setServerReady(true)
     }
   }, [])
+
+  // Restore the stored bench session: same PIN check as a fresh connect
+  useEffect(() => {
+    if (!restoringSession) return
+    const session = readBenchSession()
+    if (!session) {
+      setRestoringSession(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const result = await validateBenchPin(session.pin, session.team, { connectionMode })
+        if (cancelled) return
+        if (result?.success && result.match && String(result.match.id) === String(session.matchId)) {
+          const names = matchTeamNames(result.match)
+          setSelectedMatch({
+            id: result.match.id,
+            gameNumber: result.match.gameNumber || session.gameNumber,
+            homeTeamName: names.home || session.homeTeamName,
+            awayTeamName: names.away || session.awayTeamName
+          })
+          setSelectedTeam(session.team)
+          setRelayDevice('bench', session.team)
+          setMatchId(result.match.id)
+          setMatch(result.match)
+          setView('match')
+        } else {
+          writeBenchSession(null)
+        }
+      } catch {
+        // Server unreachable right now: keep the session for the next load
+      } finally {
+        if (!cancelled) setRestoringSession(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [restoringSession, connectionMode])
 
   // Auto-connect to match from URL params
   useEffect(() => {
     if (!autoConnectMatch || !serverReady) return
 
+    // A match link (QR code) preselects the match and, with team=, the team:
+    // the bench still enters its PIN (the link alone is no access, and the PIN
+    // check returns the match with its connection flags).
     const doAutoConnect = async () => {
+      let linked = { id: autoConnectMatch, gameNumber: null }
       try {
         const result = await getMatchData(autoConnectMatch)
         if (result.success && result.match) {
-          setMatchId(result.match.id || autoConnectMatch)
-          setMatch(result.match)
-          setSelectedMatch(result.match)
-          if (autoConnectTeam) {
-            setSelectedTeam(autoConnectTeam)
-            setView('match')
+          const names = matchTeamNames(result.match, { homeTeam: result.homeTeam, awayTeam: result.awayTeam })
+          linked = {
+            id: result.match.id || autoConnectMatch,
+            gameNumber: result.match.gameNumber || result.match.gameN || result.match.game_n || null,
+            homeTeamName: names.home,
+            awayTeamName: names.away
           }
         }
-      } catch { /* fall through to normal flow */ }
+      } catch { /* the PIN step still works without the details */ }
+      setSelectedMatch(linked)
+      if (autoConnectTeam) setSelectedTeam(autoConnectTeam)
       setAutoConnectMatch(null)
       setAutoConnectTeam(null)
     }
@@ -325,7 +427,7 @@ export default function BenchApp() {
 
     const checkConnections = async () => {
       try {
-        const serverStatus = await getServerStatus()
+        const serverStatus = await getRelayServerStatus()
         const wsStatus = matchId ? getWebSocketStatus(matchId) : 'no_match'
 
         const serverConnected = serverStatus?.running
@@ -385,7 +487,7 @@ export default function BenchApp() {
     }
 
     checkConnections()
-    const interval = setInterval(checkConnections, 5000) // Check every 5 seconds
+    const interval = setInterval(checkConnections, 15000) // Check every 15 seconds
 
     return () => clearInterval(interval)
   }, [matchId])
@@ -398,6 +500,7 @@ export default function BenchApp() {
         : match.awayTeamConnectionEnabled === true
       
       if (connectionEnabled === false) {
+        writeBenchSession(null)
         setMatchId(null)
         setMatch(null)
         setView(null)
@@ -432,34 +535,34 @@ export default function BenchApp() {
       // Validate PIN server-side (no local IndexedDB), like RefereeApp: the
       // backend's Supabase check (the bench lists Supabase matches) and the LAN
       // relay. LAN first when the user chose WebSocket mode or the match list
-      // came from the LAN relay; the Supabase check is skipped entirely in
-      // WebSocket mode and gives up after 3 s, so an offline venue never waits.
+      // came from the LAN relay.
       const pin = pinInput.trim()
-      const pinType = selectedTeam === 'home' ? 'homeTeam' : 'awayTeam'
-      const checkSupabase = async () => {
-        const r = await validatePinSupabase(pin, selectedTeam === 'home' ? 'bench_home' : 'bench_away')
-        if (!r.success || !r.match) return r
-        // The server only accepts a bench PIN while that bench is enabled; older
-        // backends don't echo the flag, which would trip the disconnect check.
-        const flag = selectedTeam === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
-        return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
-      }
-      const checkLan = () => validatePin(pin, pinType)
-      const ok = (r) => r?.success && r.match
-      let result
-      if (connectionMode === CONNECTION_MODES.WEBSOCKET) {
-        result = await checkLan()
-      } else if (activeConnection === 'websocket') {
-        result = await checkLan()
-        if (!ok(result) && connectionMode === CONNECTION_MODES.AUTO) result = await checkSupabase()
-      } else {
-        result = await checkSupabase()
-        if (!ok(result)) result = await checkLan()
-      }
+      const result = await validateBenchPin(pin, selectedTeam, {
+        connectionMode,
+        preferLan: activeConnection === 'websocket'
+      })
 
-      if (result.success && result.match) {
+      if (result?.success && result.match) {
+        const names = matchTeamNames(result.match)
+        const gameNumber = result.match.gameNumber || selectedMatch?.gameNumber || null
+        setSelectedMatch(prev => ({
+          ...(prev || {}),
+          id: result.match.id,
+          gameNumber,
+          homeTeamName: names.home || prev?.homeTeamName || null,
+          awayTeamName: names.away || prev?.awayTeamName || null
+        }))
+        setRelayDevice('bench', selectedTeam)
         setMatchId(result.match.id)
         setMatch(result.match)
+        writeBenchSession({
+          matchId: result.match.id,
+          team: selectedTeam,
+          pin,
+          gameNumber,
+          homeTeamName: names.home || selectedMatch?.homeTeamName || null,
+          awayTeamName: names.away || selectedMatch?.awayTeamName || null
+        })
         setView('match') // Go directly to match view (like RefereeApp)
       } else {
         setError('Invalid PIN code. Please check and try again.')
@@ -522,6 +625,8 @@ export default function BenchApp() {
 
   const handleBack = () => {
     if (view) {
+      // Leaving the match: no automatic reconnect after a reload
+      writeBenchSession(null)
       setView(null)
     } else if (matchId) {
       setMatchId(null)
@@ -540,9 +645,18 @@ export default function BenchApp() {
     setError('')
   }
 
-  // Get team names from selected match
-  const homeTeamName = selectedMatch?.homeTeamName || 'Home Team'
-  const awayTeamName = selectedMatch?.awayTeamName || 'Away Team'
+  // Get team names from selected match (list entries, PIN check and relay
+  // bundles name them differently)
+  const selectedNames = matchTeamNames(selectedMatch)
+  const homeTeamName = selectedNames.home || 'Home Team'
+  const awayTeamName = selectedNames.away || 'Away Team'
+
+  // Label this tablet on the relay (scorer's tablet status). Set before the
+  // match view mounts (PIN submit / restore): MatchEntry subscribes in its own
+  // effect, which runs before this component's effects.
+  useEffect(() => {
+    if (!matchId || !selectedTeam) setRelayDevice(null)
+  }, [matchId, selectedTeam])
 
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {

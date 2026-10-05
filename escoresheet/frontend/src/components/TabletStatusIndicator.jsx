@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getTabletStatusSummary, formatAge } from '../utils/connectionHealth'
+import { applyRelayTablets, relayMatchKey } from '../utils/serverDataSync'
+import { useRelayTablets } from '../hooks/useRealtimeConnection'
 
 export default function TabletStatusIndicator({ match }) {
   const { t } = useTranslation()
@@ -16,7 +18,11 @@ export default function TabletStatusIndicator({ match }) {
     return () => clearInterval(interval)
   }, [menuOpen])
 
-  const summary = getTabletStatusSummary(match)
+  // Heartbeats alone never reached the scorer device: the relay's subscriber
+  // list for this match (by seed key) says which tablets are actually there.
+  const anyEnabled = !!(match?.refereeConnectionEnabled || match?.homeTeamConnectionEnabled || match?.awayTeamConnectionEnabled)
+  const relayTablets = useRelayTablets(match ? relayMatchKey(match, match.id) : null, match, { enabled: anyEnabled })
+  const summary = applyRelayTablets(getTabletStatusSummary(match), relayTablets)
 
   const overallColor = summary.overallStatus === 'ok' ? '#22c55e'
     : summary.overallStatus === 'issues' ? '#eab308'
