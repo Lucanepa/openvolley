@@ -9,10 +9,19 @@
  * and drops it at the end. Without the variable the Postgres suites are skipped.
  *
  * PG_TEST_TEMPLATE=<database> (same server): copy that database instead of
- * loading the synthetic schema, e.g. one loaded by scripts/migrate/restore.sh,
- * so the suites run against the real production schema. Only the test-only
- * objects (TEMPLATE_EXTRAS_SQL) are added. Nothing may be connected to the
- * template while the tests create their copies (stop the backend first).
+ * loading the synthetic schema, so the suites run against the real production
+ * schema. Only the test-only objects (TEMPLATE_EXTRAS_SQL) are added, and
+ * nothing may be connected to the template while the copies are made.
+ *
+ * REHEARSAL OR THROWAWAY CONTAINERS ONLY, NEVER THE PRODUCTION CLUSTER: the
+ * suites create cluster-wide LOGIN roles with fixed passwords, add pgcrypto,
+ * copy whatever users and password hashes the template holds into scratch
+ * databases, and need the template idle (backend stopped). The template must
+ * therefore be a scrubbed rehearsal restore, i.e. one loaded by
+ *   scripts/migrate/restore.sh --scrub-except <email> ...
+ * whose database comment ends in "(rehearsal, scrubbed)"; anything else is
+ * refused. PG_TEST_TEMPLATE_UNSCRUBBED=1 lifts that check for a template you
+ * built yourself from synthetic data in a throwaway container.
  */
 
 import pg from 'pg'
@@ -36,11 +45,33 @@ export const TEMPLATE_EXTRAS_SQL = `
   CREATE TABLE IF NOT EXISTS public.internal_notes (id serial PRIMARY KEY, note text);
   INSERT INTO public.internal_notes (note) VALUES ('do not leak');`
 
+export const REHEARSAL_MARK = '(rehearsal, scrubbed)'
+
 /** CREATE DATABASE for a test database: a copy of PG_TEST_TEMPLATE when set. */
 export function createDatabaseSql (name, { useTemplate = true } = {}) {
   return useTemplate && PG_TEST_TEMPLATE
     ? `CREATE DATABASE "${name}" TEMPLATE "${PG_TEST_TEMPLATE}"`
     : `CREATE DATABASE "${name}"`
+}
+
+/** Throws unless PG_TEST_TEMPLATE is a scrubbed rehearsal restore (see the header). */
+export async function assertRehearsalTemplate (admin) {
+  if (!PG_TEST_TEMPLATE || process.env.PG_TEST_TEMPLATE_UNSCRUBBED === '1') return
+  const { rows } = await admin.query(
+    "SELECT coalesce(shobj_description(oid, 'pg_database'), '') AS mark FROM pg_database WHERE datname = $1",
+    [PG_TEST_TEMPLATE])
+  if (!rows.length) throw new Error(`PG_TEST_TEMPLATE: no database ${PG_TEST_TEMPLATE}`)
+  if (!rows[0].mark.endsWith(REHEARSAL_MARK)) {
+    throw new Error(`PG_TEST_TEMPLATE: ${PG_TEST_TEMPLATE} is not a scrubbed rehearsal restore ` +
+      `(its comment is ${JSON.stringify(rows[0].mark)}). Use restore.sh --scrub-except in a throwaway ` +
+      'container; never point the tests at the production cluster. See tests/helpers/pgTestDb.js.')
+  }
+}
+
+/** Creates a test database on `admin`'s server: a copy of PG_TEST_TEMPLATE when set (checked first). */
+export async function createDatabase (admin, name, { useTemplate = true } = {}) {
+  if (useTemplate && PG_TEST_TEMPLATE) await assertRehearsalTemplate(admin)
+  await admin.query(createDatabaseSql(name, { useTemplate }))
 }
 
 /** The schema SQL to load into a fresh test database (synthetic, or only the extras). */
@@ -54,7 +85,12 @@ export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}
   const name = `ov_test_${label}_${process.pid}_${Date.now().toString(36)}`.toLowerCase().replace(/[^a-z0-9_]/g, '_')
   // A copy of the template replaces the default synthetic schema only.
   const fromTemplate = !!PG_TEST_TEMPLATE && schemaSql === SCHEMA_SQL
-  await admin.query(createDatabaseSql(name, { useTemplate: fromTemplate }))
+  try {
+    await createDatabase(admin, name, { useTemplate: fromTemplate })
+  } catch (err) {
+    await admin.end().catch(() => {}) // an open client would keep the test process alive
+    throw err
+  }
   if (fromTemplate) schemaSql = TEMPLATE_EXTRAS_SQL
   const url = new URL(PG_TEST_URL)
   url.pathname = '/' + name

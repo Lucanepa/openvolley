@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import bcryptjs from 'bcryptjs'
-import { createDatabaseSql, testSchemaSql } from './helpers/pgTestDb.js'
+import { createDatabase, testSchemaSql } from './helpers/pgTestDb.js'
 import {
   createAuth, createRateLimiter, createLockout, createConcurrencyGate, ipBucketKey,
   sendAuthResult, hashToken, generateToken, isWellFormedToken, AUTH_ACTIONS
@@ -299,7 +299,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
     pg = (await import('pg')).default
     admin = new pg.Client({ connectionString: PG_TEST_URL })
     await admin.connect()
-    await admin.query(createDatabaseSql(dbName))
+    await createDatabase(admin, dbName)
     const u = new URL(PG_TEST_URL)
     u.pathname = '/' + dbName
     dbUrl = u.toString()
