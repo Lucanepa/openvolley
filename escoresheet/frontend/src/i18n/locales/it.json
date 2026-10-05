@@ -1623,7 +1623,10 @@
   "syncBanner": {
     "title": "Non hai effettuato l'accesso: questa partita è salvata solo su questo dispositivo",
     "body": "Il referto continua a funzionare. Accedi per salvarla nel cloud (arbitro, livescore, backup); le modifiche in attesa vengono inviate subito dopo.",
-    "later": "Più tardi"
+    "later": "Più tardi",
+    "expiredTitle": "Sessione scaduta: le modifiche sono salvate solo su questo dispositivo",
+    "expiredBody": "Il referto continua a funzionare. Accedi di nuovo per salvare nel cloud; le modifiche in attesa vengono inviate subito dopo.",
+    "signInAgain": "Accedi di nuovo"
   },
   "connectionStatus": {
     "syncing": "Sincronizzazione",

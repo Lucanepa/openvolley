@@ -40,6 +40,13 @@ describe('ConnectionStatus sync indicator', () => {
     expect(screen.queryByText('Error')).toBeNull()
   })
 
+  it('no external network but the local server/WebSocket connected (LAN) is not "Offline"', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    render(<ConnectionStatus connectionStatuses={{ ...ONLINE_STATUSES, supabase: 'offline', server: 'connected', websocket: 'connected' }} queueStats={{ pending: 3, error: 0, failed: 0 }} />)
+    expect(screen.queryByText(/^Offline/)).toBeNull()
+    expect(screen.getByText('Syncing...')).toBeInTheDocument()
+  })
+
   it('an unreachable cloud without a local server reads as offline', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     render(<ConnectionStatus connectionStatuses={{ ...ONLINE_STATUSES, supabase: 'offline' }} queueStats={{ pending: 0, error: 0, failed: 0 }} />)
@@ -95,9 +102,10 @@ describe('StartupConnectivityModal', () => {
 })
 
 describe('SyncSignInBanner', () => {
-  it('shows only when the backend asked for a session and nobody is signed in', () => {
+  it('shows only when the backend asked for a session', () => {
     expect(shouldShowSyncSignIn({ syncStatus: 'auth_required', user: null, loading: false, dismissed: false })).toBe(true)
-    expect(shouldShowSyncSignIn({ syncStatus: 'auth_required', user: { id: 'u' }, loading: false, dismissed: false })).toBe(false)
+    // a stored session the server revoked: the app still has a user
+    expect(shouldShowSyncSignIn({ syncStatus: 'auth_required', user: { id: 'u' }, loading: false, dismissed: false })).toBe(true)
     expect(shouldShowSyncSignIn({ syncStatus: 'auth_required', user: null, loading: true, dismissed: false })).toBe(false)
     expect(shouldShowSyncSignIn({ syncStatus: 'auth_required', user: null, loading: false, dismissed: true })).toBe(false)
     // offline, LAN server without a cloud, synced: never
@@ -116,6 +124,24 @@ describe('SyncSignInBanner', () => {
 
     rerender(<SyncSignInBanner syncStatus="synced" />)
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('a revoked or expired stored session asks to sign in again', () => {
+    auth.value = { user: { id: 'u' }, loading: false }
+    render(<SyncSignInBanner syncStatus="auth_required" />)
+    expect(screen.getByRole('status')).toHaveTextContent('Session expired')
+    fireEvent.click(screen.getByText('Sign in again'))
+    expect(screen.getByText('login-modal')).toBeInTheDocument()
+  })
+
+  it('is a single compact line on the scoreboard', () => {
+    auth.value = { user: null, loading: false }
+    render(<SyncSignInBanner syncStatus="auth_required" compact />)
+    const banner = screen.getByRole('status')
+    expect(banner).toHaveTextContent('saved on this device only')
+    expect(banner).not.toHaveTextContent('Scoring keeps working')
+    expect(banner.style.top).not.toBe('')
+    expect(banner.style.bottom).toBe('')
   })
 
   it('"Later" hides it', () => {

@@ -1464,7 +1464,10 @@
   "syncBanner": {
     "title": "Nicht angemeldet: Dieses Spiel ist nur auf diesem Gerät gespeichert",
     "body": "Die Erfassung funktioniert weiter. Melden Sie sich an, um es in der Cloud zu speichern (Schiedsrichter, Livescore, Backup); wartende Änderungen werden danach sofort gesendet.",
-    "later": "Später"
+    "later": "Später",
+    "expiredTitle": "Sitzung abgelaufen: Änderungen sind nur auf diesem Gerät gespeichert",
+    "expiredBody": "Die Erfassung funktioniert weiter. Melden Sie sich erneut an, um in der Cloud zu speichern; wartende Änderungen werden danach sofort gesendet.",
+    "signInAgain": "Erneut anmelden"
   },
   "connectionStatus": {
     "syncing": "Synchronisiere",

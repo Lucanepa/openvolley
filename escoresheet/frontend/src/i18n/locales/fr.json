@@ -1591,7 +1591,10 @@
   "syncBanner": {
     "title": "Non connecté : ce match est enregistré uniquement sur cet appareil",
     "body": "La saisie continue de fonctionner. Connectez-vous pour l'enregistrer dans le cloud (arbitre, livescore, sauvegarde) ; les modifications en attente sont envoyées aussitôt après.",
-    "later": "Plus tard"
+    "later": "Plus tard",
+    "expiredTitle": "Session expirée : les modifications sont enregistrées uniquement sur cet appareil",
+    "expiredBody": "La saisie continue de fonctionner. Reconnectez-vous pour enregistrer dans le cloud ; les modifications en attente sont envoyées aussitôt après.",
+    "signInAgain": "Se reconnecter"
   },
   "connectionStatus": {
     "syncing": "Synchronisation",
