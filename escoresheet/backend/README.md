@@ -377,3 +377,49 @@ Deployed on Infomaniak at `https://backend.openvolley.app`.
 1. Check logs in your Infomaniak hosting dashboard
 2. Verify `package.json` exists in backend folder
 3. Ensure environment variables are set correctly
+
+## Postgres data layer (`lib/pgQuery.js`, `lib/matchRestore.js`)
+
+Replacement for the Supabase/PostgREST calls behind `/api/db`, used when
+`DATABASE_URL` is set (not wired into `server.js` yet). Both modules are plain
+ESM with no side effects at import time. The catalog is read lazily from
+`information_schema` on first use and retried with backoff while the database
+is down.
+
+- `createPgQuery(options)` returns `{ runQuery, execute, withTransaction, ensureCatalog, catalogStatus, ping, close, ... }`.
+  `runQuery({table, action, params}, opts)` takes exactly what `apiClient.js` sends and
+  returns `{ status, body: { data, error, count }, changes? }`. It never throws.
+- `createMatchRestore(db)` returns `{ restoreMatch, restoreByPin }` for
+  `POST /api/match/restore` and `POST /api/match/restore-by-pin`.
+
+Error codes in `body.error.code`:
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `OV_CLIENT_TOO_OLD` | 426 | write without `X-OV-Proto: 2` |
+| `OV_SECRET_FILTER` | 400 | filter, order or onConflict on a secret column (also through an alias, cast or JSON path) |
+| `OV_UNSCOPED_EXTERNAL_ID` | 400 | set/event `external_id` does not start with its match's `external_id` plus `:` or `_` |
+| `OV_UNSCOPED_WRITE` | 400 | set/event update/delete without `eq` on `match_id` or on a non-numeric `external_id` |
+| `OV_UNFILTERED_WRITE` | 400 | update/delete without a filter |
+| `OV_TABLE_NOT_ALLOWED`, `OV_INVALID_*` | 400 | request outside the contract |
+| `PGRST204` | 400 | unknown column |
+| `PGRST116` | 406 | `single`/`maybeSingle` row-count mismatch (writes are rolled back) |
+| `OV_TOO_MANY_ATTEMPTS` | 429 | restore-by-pin: more than 5 attempts per caller and game in 10 min |
+| `OV_DB_UNAVAILABLE` | 503 | database down or catalog not loaded yet |
+| SQLSTATE (`22P02`, `23505`, `42P01`, ...) | 400 | Postgres error; the text stays in the server log |
+
+### Running the Postgres tests
+
+The suites in `tests/pgQuery.test.js` and `tests/matchRestore.test.js` need a
+throwaway Postgres. Without `PG_TEST_URL` they are skipped. Each test file
+creates its own database from `tests/fixtures/synthetic_schema.sql` and drops it.
+
+```bash
+docker run -d --rm --name ov-test-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:0:5432 postgres:17-alpine
+docker port ov-test-pg 5432          # e.g. 127.0.0.1:32768
+PG_TEST_URL=postgres://postgres:test@127.0.0.1:32768/postgres npm test
+docker stop ov-test-pg
+```
+
+The synthetic schema mirrors the 2026-10 inventory, not the real dump. Once
+`schema_public.sql` exists, run the suites against a scrubbed copy of it too.
