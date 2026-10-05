@@ -30577,12 +30577,12 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
       hideCloseButton={true}
     >
       <div style={{ padding: '24px', textAlign: 'center' }}>
-        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+        <div className="set-end-readout" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           <span style={{ fontSize: '18px', fontWeight: 700, color: leftColor }}>{leftLabel}</span>
           <span style={{ fontSize: '36px', fontWeight: 700 }}>{leftScore} : {rightScore}</span>
           <span style={{ fontSize: '18px', fontWeight: 700, color: rightColor }}>{rightLabel}</span>
         </div>
-        <p style={{
+        <p className="set-end-readout" style={{
           marginBottom: '24px',
           fontSize: '16px',
           fontWeight: 700,
