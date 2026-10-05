@@ -51,23 +51,56 @@ function getWebSocketUrl() {
 // fetch of that match carries them (subscribe-match pin/token, the
 // X-OV-Match-Pin / X-OV-Match-Token headers). In memory only: after a reload
 // the apps re-check their stored PIN, which remembers it again.
-const matchAccess = new Map() // String(match key) -> { pin, token }
+const matchAccess = new Map() // String(match key) -> { pin, token, type? }
 const MAX_MATCH_ACCESS = 16
 
-/** Remember what proves access to a match (after a successful PIN check). */
-export function rememberMatchAccess(matchId, { pin = null, token = null } = {}) {
+/**
+ * Remember what proves access to a match (after a successful PIN check).
+ * `type` is the cloud PIN check's type (referee / bench_home / bench_away):
+ * with it an expired match token can be renewed with the same PIN.
+ */
+export function rememberMatchAccess(matchId, { pin = null, token = null, type = null } = {}) {
   if (matchId === undefined || matchId === null || (!pin && !token)) return
   const key = String(matchId)
   const prev = matchAccess.get(key) || {}
   matchAccess.delete(key)
   if (matchAccess.size >= MAX_MATCH_ACCESS) matchAccess.delete(matchAccess.keys().next().value)
-  matchAccess.set(key, { pin: pin ? String(pin).trim() : prev.pin || null, token: token || prev.token || null })
+  const entry = { pin: pin ? String(pin).trim() : prev.pin || null, token: token || prev.token || null }
+  const kind = type || prev.type
+  if (kind) entry.type = kind
+  matchAccess.set(key, entry)
+}
+
+// Token renewals per match (at most one a minute)
+const TOKEN_RENEW_MS = 60 * 1000
+const tokenRenewedAt = new Map()
+
+/**
+ * The API fallback read a remembered match without its rosters: the match
+ * token expired (or the backend restarted without a fixed token secret).
+ * Renew it with the remembered PIN (cloud PIN check, at most once a minute).
+ * @returns {Promise<boolean>} true when a new token was remembered
+ */
+async function renewMatchToken(matchId, row) {
+  const a = matchAccessFor(matchId)
+  if (!a?.pin || !a.type || !row || typeof row !== 'object' || 'players_home' in row) return false
+  const key = String(matchId)
+  const last = tokenRenewedAt.get(key)
+  if (last !== undefined && Date.now() - last < TOKEN_RENEW_MS) return false
+  tokenRenewedAt.set(key, Date.now())
+  const r = await validatePinSupabase(a.pin, a.type)
+  return !!(r?.success && r.token && String(r.match?.id) === key)
 }
 
 /** Forget a match's access (exit, PIN no longer valid). No argument: all. */
 export function forgetMatchAccess(matchId) {
-  if (matchId === undefined) matchAccess.clear()
-  else matchAccess.delete(String(matchId))
+  if (matchId === undefined) {
+    matchAccess.clear()
+    tokenRenewedAt.clear()
+  } else {
+    matchAccess.delete(String(matchId))
+    tokenRenewedAt.delete(String(matchId))
+  }
 }
 
 /** The remembered access of a match, or null. */
@@ -186,12 +219,18 @@ export async function getMatchData(matchId) {
       // Try 1: Fetch match by external_id (seed_key)
       // The match token of the PIN check unlocks this match's rosters on an
       // anonymous read (other matches: public columns only).
-      const { data: matchByExtId, error: extIdError } = await apiFrom('matches')
+      const readByExtId = () => apiFrom('matches')
         .headers(matchAccessHeaders(matchId))
         .select('*')
         .eq('external_id', matchId)
         .eq('sport_type', 'indoor')
         .maybeSingle()
+      let { data: matchByExtId, error: extIdError } = await readByExtId()
+      // Rosters missing after the PIN step: renew the token once and read again
+      if (matchByExtId && await renewMatchToken(matchId, matchByExtId)) {
+        const again = await readByExtId()
+        if (again.data) matchByExtId = again.data
+      }
 
       if (matchByExtId) {
         match = matchByExtId
@@ -1511,7 +1550,7 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
       return { success: false, error: result?.error || 'Invalid PIN code' }
     }
 
-    if (result.match?.id != null) rememberMatchAccess(result.match.id, { pin: pinStr, token: result.token || null })
+    if (result.match?.id != null) rememberMatchAccess(result.match.id, { pin: pinStr, token: result.token || null, type })
     return { success: true, match: result.match, token: result.token || null }
   } catch (error) {
     if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out' }

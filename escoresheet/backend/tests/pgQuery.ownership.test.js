@@ -158,6 +158,29 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
     assert.equal((await q('matches', 'update', { data: { created_by: bob }, filters: [eq('id', theirs.id)] }, admin)).status, 400)
   })
 
+  it('readOwner marks every selected row with __owned; restrict matches owned rows only', async () => {
+    const mine = await matchOf(alice, { status: 'setup' })
+    const theirs = await matchOf(bob, { status: 'setup' })
+    await raw.query('INSERT INTO match_editors (match_id, user_id) VALUES ($1, $2)', [theirs.id, carol])
+    const ids = [mine.id, theirs.id]
+    const sel = (userId, params = {}, restrict = false) => q('matches', 'select', { columns: 'external_id', filters: [{ type: 'in', column: 'id', value: ids }], order: [{ column: 'external_id' }], ...params }, { readOwner: { userId, restrict } })
+    const owned = (r) => Object.fromEntries(r.body.data.map((x) => [x.external_id, x.__owned]))
+    assert.deepEqual(owned(await sel(alice)), { [mine.external_id]: true, [theirs.external_id]: false })
+    assert.deepEqual(owned(await sel(carol)), { [mine.external_id]: false, [theirs.external_id]: true }, 'an editor owns')
+    const restricted = await sel(alice, { count: true }, true)
+    assert.deepEqual(restricted.body.data.map((x) => x.external_id), [mine.external_id])
+    assert.equal(restricted.body.count, 1)
+    // children: by their match
+    await raw.query("INSERT INTO events (external_id, match_id, type) VALUES ($1, $2, 'point'), ($3, $4, 'point')", [`${mine.external_id}:e:1`, mine.id, `${theirs.external_id}:e:1`, theirs.id])
+    const ev = await q('events', 'select', { columns: 'external_id', filters: [{ type: 'in', column: 'match_id', value: ids }], order: [{ column: 'external_id' }] }, { readOwner: { userId: alice } })
+    assert.deepEqual(Object.fromEntries(ev.body.data.map((x) => [x.external_id, x.__owned])), { [`${mine.external_id}:e:1`]: true, [`${theirs.external_id}:e:1`]: false })
+    // a bad user id owns nothing; other tables are not marked
+    assert.deepEqual(Object.values(owned(await sel('nope'))), [false, false])
+    const prof = await q('profiles', 'select', { columns: '*', limit: 1 }, { readOwner: { userId: alice } })
+    assert.equal(prof.status, 200)
+    assert.equal(prof.body.data.some((x) => '__owned' in x), false)
+  })
+
   it('a bad user id never writes unguarded', async () => {
     assertNotOwner(await q('matches', 'insert', { data: { external_id: uniq('B') } }, { proto: 2, matchOwner: { userId: 'not-a-uuid' } }))
   })

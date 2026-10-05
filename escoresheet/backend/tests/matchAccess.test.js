@@ -6,8 +6,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createPinHasher, isHashedPin, pinHasherFromEnv } from '../lib/pinHash.js'
-import { createMatchTokens, pinGrantsAccess } from '../lib/matchAccess.js'
-import { relaySummaryBundle, projectAnonDbRows, hasAnonPolicy, anonSelectCheck } from '../lib/publicColumns.js'
+import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole } from '../lib/matchAccess.js'
+import { relaySummaryBundle, projectAnonDbRows, projectNonOwnerRows, hasAnonPolicy, anonSelectCheck } from '../lib/publicColumns.js'
 
 const SECRET = 'x'.repeat(40)
 
@@ -29,6 +29,15 @@ describe('pinHash', () => {
     assert.equal(h.matches('referee', '', stored), false)
     assert.equal(h.matches('referee', '314159', null), false)
     assert.deepEqual(h.candidates('game', '864201'), ['864201', h.hash('game', '864201')])
+    // matcher: the same answers, the typed PIN hashed once
+    const m = h.matcher('referee', '314159')
+    assert.equal(m(stored), true)
+    assert.equal(m('314159'), true)
+    assert.equal(m(h.hash('bench_home', '314159')), false)
+    assert.equal(m(null), false)
+    assert.equal(h.matcher('referee', '')(stored), false)
+    assert.equal(createPinHasher(null).matcher('referee', '314159')(stored), false)
+    assert.equal(createPinHasher(null).matcher('referee', '314159')('314159'), true)
   })
 
   it('hashMatchRow hashes game_pin and every connection_pins value, nothing else', () => {
@@ -81,12 +90,52 @@ describe('match access tokens', () => {
     assert.equal(tokens.issue({ matchKey: '' }), null)
   })
 
-  it('a random secret per process when none (or a short one) is configured', () => {
+  it('a random secret per process when none is configured; a short one is refused', () => {
     const a = createMatchTokens()
-    const b = createMatchTokens({ secret: 'short' })
+    const b = createMatchTokens()
     const tok = a.issue({ matchKey: 'm' })
     assert.equal(a.grants(tok, 'm'), true)
     assert.equal(b.grants(tok, 'm'), false)
+    assert.throws(() => createMatchTokens({ secret: 'short' }), /at least 32/)
+  })
+
+  it('the secret comes from OV_MATCH_TOKEN_SECRET, else from OV_PIN_SECRET; a short one throws', () => {
+    assert.equal(matchTokenSecretFromEnv({}), null)
+    assert.equal(matchTokenSecretFromEnv({ OV_MATCH_TOKEN_SECRET: SECRET }), SECRET)
+    assert.throws(() => matchTokenSecretFromEnv({ OV_MATCH_TOKEN_SECRET: 'short' }), /OV_MATCH_TOKEN_SECRET must be at least 32/)
+    const derived = matchTokenSecretFromEnv({ OV_PIN_SECRET: SECRET })
+    assert.equal(typeof derived, 'string')
+    assert.notEqual(derived, SECRET, 'derived, not the PIN secret itself')
+    assert.equal(matchTokenSecretFromEnv({ OV_PIN_SECRET: SECRET }), derived, 'stable across restarts')
+    // Tokens of one process are accepted by the next one
+    const tok = createMatchTokens({ secret: derived }).issue({ matchKey: 'm', role: 'referee' })
+    assert.equal(createMatchTokens({ secret: matchTokenSecretFromEnv({ OV_PIN_SECRET: SECRET }) }).grants(tok, 'm'), true)
+  })
+
+  it('a token is bound to its role: connection off or PIN changed = no access', () => {
+    const tokens = createMatchTokens({ secret: SECRET })
+    const match = { refereePin: '314159', refereeConnectionEnabled: true, homeTeamPin: '271828', homeTeamConnectionEnabled: true }
+    const ref = tokens.verify(tokens.issue({ matchKey: 'm', role: 'referee', pin: '314159' }))
+    assert.equal(typeof ref.f, 'string')
+    assert.equal(JSON.stringify(ref).includes('314159'), false, 'the fingerprint is not the PIN')
+    assert.equal(tokens.stillGrants(ref, match), true)
+    assert.equal(tokens.stillGrants(ref, { ...match, refereeConnectionEnabled: false }), false, 'referee disconnected')
+    assert.equal(tokens.stillGrants(ref, { ...match, refereePin: '999999' }), false, 'PIN regenerated')
+    const home = tokens.verify(tokens.issue({ matchKey: 'm', role: 'bench_home', pin: '271828' }))
+    assert.equal(tokens.stillGrants(home, match), true)
+    assert.equal(tokens.stillGrants(home, { ...match, homeTeamConnectionEnabled: false }), false)
+    const relayHome = tokens.verify(tokens.issue({ matchKey: 'm', role: 'homeTeam', pin: '271828' }))
+    assert.equal(tokens.stillGrants(relayHome, match), true)
+    // Roles that never get a token grant nothing
+    for (const role of ['viewer', 'upload_home', 'game']) {
+      assert.equal(isTokenRole(role), false)
+      assert.equal(tokens.stillGrants(tokens.verify(tokens.issue({ matchKey: 'm', role })), match), false, role)
+    }
+    // Database rows: the connection flag of the role
+    assert.equal(tokens.stillGrantsRow(ref, { connections: { referee_enabled: true } }), true)
+    assert.equal(tokens.stillGrantsRow(ref, { connections: { referee_enabled: false } }), false)
+    assert.equal(tokens.stillGrantsRow(ref, {}), false)
+    assert.equal(tokens.stillGrantsRow(null, { connections: { referee_enabled: true } }), false)
   })
 })
 
@@ -158,5 +207,22 @@ describe('public summary before the PIN step', () => {
     assert.deepEqual(ev, [{ id: 1, match_id: 'a', type: 'sanction' }])
     assert.equal(anonSelectCheck('events', { columns: '*', filters: [{ type: 'eq', column: 'match_id', value: 'a' }] }).badFilter, null)
     assert.equal(anonSelectCheck('events', { columns: 'id', filters: [{ type: 'contains', column: 'payload', value: '{}' }] }).badFilter, 'payload')
+    // grantRow: the token's role must still be connected
+    const flagged = [{ ...rows[0], connections: { referee_enabled: false } }]
+    assert.equal('players_home' in projectAnonDbRows('matches', flagged, { grantedExternalId: 'match_a', grantRow: (r) => r.connections.referee_enabled === true })[0], false)
+  })
+
+  it('signed-in non-owners: rows of other people\'s matches get the anonymous projection', () => {
+    const rows = [
+      { id: 'a', external_id: 'match_a', status: 'live', signatures: { home_coach: 'x' }, players_home: [{ number: 1, dob: '2001-01-01' }], __owned: true },
+      { id: 'b', external_id: 'match_b', status: 'live', signatures: { home_coach: 'y' }, officials: [{ name: 'R' }], players_home: [{ number: 2, dob: '2002-02-02' }], __owned: false }
+    ]
+    const out = projectNonOwnerRows('matches', rows)
+    assert.deepEqual(out[0], { id: 'a', external_id: 'match_a', status: 'live', signatures: { home_coach: 'x' }, players_home: [{ number: 1, dob: '2001-01-01' }] })
+    assert.deepEqual(out[1], { id: 'b', external_id: 'match_b', status: 'live' })
+    assert.equal(projectNonOwnerRows('matches', { ...rows[1] }).signatures, undefined, 'single row')
+    assert.equal(projectNonOwnerRows('matches', null), null)
+    const ev = projectNonOwnerRows('events', [{ id: 1, type: 'sanction', payload: { p: 7 }, __owned: false }, { id: 2, type: 'sanction', payload: { p: 8 }, __owned: true }])
+    assert.deepEqual(ev, [{ id: 1, type: 'sanction' }, { id: 2, type: 'sanction', payload: { p: 8 } }])
   })
 })

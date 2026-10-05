@@ -66,6 +66,22 @@ export function createPinHasher (secret) {
     return safeEqual(p, s)
   }
 
+  /**
+   * matches() for one typed PIN against many stored values: the HMAC is
+   * computed once (a scan of thousands of rows costs one hash, not one per row).
+   * @returns {(stored: any) => boolean}
+   */
+  function matcher (kind, pin) {
+    const p = pinText(pin)
+    const hashed = p && key ? hash(kind, p) : null
+    return (stored) => {
+      const s = pinText(stored)
+      if (!p || !s) return false
+      if (isHashedPin(s)) return hashed ? safeEqual(hashed, s) : false
+      return safeEqual(p, s)
+    }
+  }
+
   /** Every stored form `pin` may have (for an exact-match SQL filter). */
   function candidates (kind, pin) {
     const p = pinText(pin)
@@ -102,7 +118,7 @@ export function createPinHasher (secret) {
     return out
   }
 
-  return { enabled: !!key, hash, matches, candidates, hashMatchRow }
+  return { enabled: !!key, hash, matches, matcher, candidates, hashMatchRow }
 }
 
 /** The hasher for this process's environment (OV_PIN_SECRET). Throws on a too-short secret. */

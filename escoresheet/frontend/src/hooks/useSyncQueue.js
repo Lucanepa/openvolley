@@ -524,13 +524,58 @@ installAuthListener()
  * Returns true (sent), false (error), null (retry later), STOP_PASS,
  * STOP_NETWORK, STOP_ERROR, AUTH_REQUIRED, PERMANENT_FAILURE or DROP_JOB. The
  * failure reason is available once through takeJobError(job.id).
+ *
+ * A write refused as OV_NOT_MATCH_OWNER is taken over here (once per match
+ * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again, for the
+ * background queue and the direct set-end / match-end syncs (sendJobNow)
+ * alike. After a successful take-over the match's other parked jobs are
+ * queued again.
  */
 export async function processJob(job) {
+  let result = await processJobOnce(job)
+  if (result === PERMANENT_FAILURE && jobErrors.get(job?.id)?.code === 'OV_NOT_MATCH_OWNER') {
+    const matchKey = jobMatchKey(job)
+    if (matchKey && claimDue(matchKey) && await claimMatchWithLocalPin(matchKey)) {
+      result = await processJobOnce(job)
+      if (result === true) await requeueParkedJobsOf(matchKey, job.id)
+    }
+  }
+  return result
+}
+
+async function processJobOnce(job) {
   const ctx = { error: null }
   const result = await processJobInner(job, ctx)
   if (ctx.error && job?.id != null) jobErrors.set(job.id, ctx.error)
   else if (job?.id != null) jobErrors.delete(job.id)
   return result
+}
+
+// Take-overs tried per match key (one per CLAIM_RETRY_MS: a refused one is not
+// repeated by every job of the match)
+const CLAIM_RETRY_MS = 60 * 1000
+const claimAttempts = new Map()
+function claimDue(matchKey, now = Date.now()) {
+  const last = claimAttempts.get(matchKey)
+  if (last !== undefined && now - last < CLAIM_RETRY_MS) return false
+  if (claimAttempts.size >= 200) claimAttempts.delete(claimAttempts.keys().next().value)
+  claimAttempts.delete(matchKey)
+  claimAttempts.set(matchKey, now)
+  return true
+}
+
+/** After a take-over: the match's jobs parked as refused go back to the queue. */
+async function requeueParkedJobsOf(matchKey, exceptId) {
+  try {
+    const parked = await db.sync_queue.where('status').equals('failed').toArray()
+    for (const j of parked) {
+      if (j.id !== exceptId && jobMatchKey(j) === matchKey) {
+        await db.sync_queue.update(j.id, { status: 'queued', retry_count: 0 })
+      }
+    }
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not requeue the parked jobs of a match taken over:', err?.message)
+  }
 }
 
 async function processJobInner(job, ctx) {
@@ -991,8 +1036,6 @@ export async function runQueuePass() {
     safeLog.warn('[SyncQueue] Could not read pending jobs for ordering:', err?.message)
   }
   const isHeldBack = (key, jobId) => blocked.has(key) || (pendingBlocks.has(key) && pendingBlocks.get(key) < jobId)
-  // Matches a take-over was tried for in this pass (one claim per match and pass)
-  const claimTried = new Set()
 
   // Process in dependency order
   for (const resource of RESOURCE_ORDER) {
@@ -1007,15 +1050,9 @@ export async function runQueuePass() {
         continue
       }
 
-      let result = await processJob(job)
-      let jobError = takeJobError(job.id)
-      if (result === PERMANENT_FAILURE && jobError?.code === 'OV_NOT_MATCH_OWNER' && matchKey && !claimTried.has(matchKey)) {
-        claimTried.add(matchKey)
-        if (await claimMatchWithLocalPin(matchKey)) {
-          result = await processJob(job)
-          jobError = takeJobError(job.id)
-        }
-      }
+      // processJob takes the match over when the write is refused for ownership
+      const result = await processJob(job)
+      const jobError = takeJobError(job.id)
 
       if (result === true) {
         await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })
@@ -1142,6 +1179,7 @@ function isDue(last, interval, now) {
 export function resetQueueHousekeeping() {
   lastRequeueAt = 0
   lastPruneAt = 0
+  claimAttempts.clear()
 }
 
 // Sync status is shared by every mounted instance: whichever instance runs the

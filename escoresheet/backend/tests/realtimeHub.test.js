@@ -710,6 +710,21 @@ describe('createLiveStateRelay', () => {
     assert.equal(published[0].rows[0].match_id, MATCH_A)
   })
 
+  it('verifyMatch binds the synced relay entry to the looked-up row (pin_mismatch otherwise)', async () => {
+    const seen = []
+    const { relay, published, activeMatches } = setup({
+      lookupMatch: async () => ({ id: MATCH_A, sport_type: 'indoor', game_pin: 'stored' }),
+      verifyMatch: (row, synced) => { seen.push([row.game_pin, synced.match.gamePin]); return synced.match.gamePin === 'right' }
+    })
+    activeMatches.get('7').match.gamePin = 'wrong'
+    assert.equal((await relay.handle(scoreboard, message())).reason, 'pin_mismatch')
+    assert.equal(published.length, 0)
+    activeMatches.get('7').match.gamePin = 'right'
+    assert.equal((await relay.handle(scoreboard, message())).ok, true)
+    assert.equal('game_pin' in published[0].rows[0], false, 'the looked-up PIN is never published')
+    assert.deepEqual(seen, [['stored', 'wrong'], ['stored', 'right']])
+  })
+
   it('only accepts the room scoreboard that currently owns the synced match', async () => {
     const { relay, published, activeMatches } = setup()
     assert.equal((await relay.handle({ id: 'client-1', role: 'referee', matchId: 7 }, message())).reason, 'forbidden')

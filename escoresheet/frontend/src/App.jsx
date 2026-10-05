@@ -3146,15 +3146,27 @@ export default function App() {
                           setCloudBackupError('')
                           try {
                             const gameN = parseInt(cloudBackupGameN) || 1
-                            // Fetch from both Supabase cloud backups and PocketBase in parallel
-                            const [cloudResults, pbResults] = await Promise.all([
+                            // Fetch the cloud backups, PocketBase and the cloud match itself in parallel.
+                            // Backups are per account: a replacement tablet signed in with another
+                            // account lists none, but game number + game PIN still find the match
+                            // (restore-by-pin; signed in, it also makes this account an editor).
+                            const [cloudResults, pbResults, dbMatch] = await Promise.all([
                               listCloudBackups(cloudBackupPin, gameN).catch(() => []),
-                              listPocketBaseBackups(gameN).catch(() => [])
+                              listPocketBaseBackups(gameN).catch(() => []),
+                              fetchMatchByPin(cloudBackupPin, gameN).catch(() => null)
                             ])
                             // Tag cloud results with source
                             const taggedCloud = cloudResults.map(b => ({ ...b, source: b.source || 'cloud' }))
+                            const dbEntries = dbMatch?.match ? [{
+                              name: `database_g${gameN}`,
+                              source: 'database',
+                              gameN,
+                              status: dbMatch.match.status,
+                              updated_at: dbMatch.match.updated_at || dbMatch.match.created_at,
+                              cloudData: dbMatch
+                            }] : []
                             // Merge and sort by most recent first
-                            const merged = [...taggedCloud, ...pbResults].sort((a, b) => {
+                            const merged = [...dbEntries, ...taggedCloud, ...pbResults].sort((a, b) => {
                               const dateA = a.created || a.updated_at || ''
                               const dateB = b.created || b.updated_at || ''
                               return dateB.localeCompare(dateA)
@@ -3201,6 +3213,10 @@ export default function App() {
                               setRestoreLoading(true)
                               setRestoreError('')
                               try {
+                                if (backup.source === 'database') {
+                                  setRestorePreviewData({ data: backup.cloudData, source: 'database' })
+                                  return
+                                }
                                 let cloudData
                                 if (backup.source === 'pocketbase') {
                                   cloudData = await fetchPocketBaseMatch(backup.match_id, cloudBackupPin)

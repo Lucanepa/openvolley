@@ -129,6 +129,8 @@ import {
   queueUserMatchLinks,
   storedSessionUserId,
   useUserMatchLink,
+  processJob,
+  takeJobError,
   STOP_PASS
 } from '../useSyncQueue'
 
@@ -200,6 +202,44 @@ describe('runQueuePass', () => {
     await runQueuePass()
     expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(0)
     expect(fakeDb.sync_queue.map.get(3).status).toBe('failed')
+  })
+
+  it('processJob itself takes over (the direct set-end / match-end sync too) and requeues the match\'s parked jobs', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'failed', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'failed', payload: { external_id: 'match_other:e:1', match_id: 'match_other' } },
+      { id: 3, resource: 'set', action: 'insert', status: 'sending', payload: { external_id: 'match_100_aaa:s:2', match_id: 'match_100_aaa', index: 2 } }
+    ])
+    let claimed = false
+    api.respond = (call) => {
+      if (call.table === '__claim') {
+        claimed = true
+        return { data: { role: 'editor' }, error: null, status: 200 }
+      }
+      if (call.action === 'upsert' && !claimed) return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    const job = fakeDb.sync_queue.map.get(3)
+    expect(await processJob(job)).toBe(true)
+    expect(takeJobError(3)).toBeNull()
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('failed', 'another match stays parked')
+
+    // A refused take-over is not repeated by every job within the minute
+    claimed = false
+    api.calls = []
+    api.respond = (call) => {
+      if (call.table === '__claim') return { data: null, error: { code: 'OV_NOT_FOUND', status: 404 }, status: 404 }
+      if (call.action === 'upsert') return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    resetQueueHousekeeping()
+    const other = { id: 9, resource: 'event', action: 'insert', status: 'sending', payload: { external_id: 'match_100_aaa:e:9', match_id: 'match_100_aaa' } }
+    await processJob(other)
+    await processJob({ ...other, id: 10 })
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(1)
   })
 
   it('a 429 leaves the job queued untouched and stops the pass', async () => {

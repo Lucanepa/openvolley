@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
-import { SKIP, bootServer, api, openSocket, provisionDatabase } from './helpers/e2eServer.js'
+import { SKIP, bootServer, api, openSocket, provisionDatabase, subscribe, sleep } from './helpers/e2eServer.js'
 
 const PIN_SECRET = randomBytes(32).toString('base64url')
 const GAME_PIN = '824613'
@@ -334,6 +334,176 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
       statuses.push((await api(srv.base, '/api/auth/sign-up', { headers: { 'cf-connecting-ip': nextIp() }, body: { email, password: 'correct-horse-battery' } })).status)
     }
     assert.deepEqual(statuses, [200, 422, 422, 429])
+  })
+
+  it('relay: a referee/bench role on join_match proves nothing; wrong PINs share the /64 budget with the HTTP checks', async () => {
+    const room = `relay_guess_${randomBytes(3).toString('hex')}`
+    const scoreboard = await openSocket(srv.wsUrl)
+    const sockets = []
+    const from = async (ip) => {
+      const c = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': ip } })
+      sockets.push(c)
+      return c
+    }
+    try {
+      scoreboard.send({
+        type: 'sync-match-data',
+        matchId: 11,
+        match: { id: 11, seed_key: room, status: 'live', gamePin: '913524', refereePin: '642097', homeTeamPin: '305718', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true },
+        homePlayers: [{ number: 9, lastName: 'Geheim' }],
+        sets: [],
+        events: []
+      })
+      scoreboard.send({ type: 'ping' })
+      await scoreboard.waitFor((m) => m.type === 'pong')
+
+      // The old role check is gone: a role alone joins with the summary only
+      const labelled = await from('2001:db8:77::1')
+      labelled.send({ type: 'join_match', matchId: room, role: 'referee' })
+      assert.equal((await labelled.waitFor((m) => m.type === 'match-full-data')).access, 'summary')
+
+      // Wrong PINs through join_match / subscribe-match with a role: counted
+      // per socket (5) ...
+      const guesser = await from('2001:db8:77::2')
+      for (let i = 0; i < 5; i++) {
+        guesser.send({ type: i % 2 ? 'subscribe-match' : 'join_match', matchId: room, role: i % 2 ? undefined : 'referee', team: 'home', pin: String(100000 + i) })
+      }
+      for (let i = 0; i < 5; i++) await guesser.waitFor((m) => m.type === 'error' && m.code === 'pin-invalid' && guesser.messages.filter((x) => x.code === 'pin-invalid').length > i)
+      guesser.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })
+      await guesser.waitFor((m) => m.type === 'error' && m.code === 'rate-limited')
+      assert.equal(guesser.messages.some((m) => m.access === 'full'), false, 'over the limit the right PIN must not be compared')
+      // ... and per IPv6 /64 across sockets, in the budget the HTTP PIN checks use
+      for (let s = 3; s <= 5; s++) {
+        const c = await from(`2001:db8:77::${s}`)
+        for (let i = 0; i < 5; i++) c.send({ type: 'join_match', matchId: room, role: 'bench', team: 'home', pin: String(200000 + s * 10 + i) })
+        await c.waitFor(() => c.messages.filter((x) => x.type === 'error').length >= 5)
+      }
+      const late = await from('2001:db8:77::99')
+      late.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })
+      assert.equal((await late.waitFor((m) => m.type === 'error')).code, 'rate-limited')
+      assert.equal(late.messages.some((m) => m.access === 'full'), false)
+      const http = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abcd' }, body: { pin: PINS.referee, type: 'referee' } })
+      assert.equal(http.status, 429, 'the relay guesses used up the HTTP budget of the /64')
+      const validate = await api(srv.base, '/api/match/validate-pin', { proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abce' }, body: { pin: '642097', type: 'referee' } })
+      assert.equal(validate.status, 429)
+      // Another network is not affected; the right PIN joins with the bundle
+      const ref = await from('203.0.113.77')
+      ref.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })
+      const full = await ref.waitFor((m) => m.type === 'match-full-data' && m.access === 'full')
+      assert.equal(full.homePlayers[0].lastName, 'Geheim')
+    } finally {
+      for (const c of [scoreboard, ...sockets]) c.ws.close()
+    }
+  })
+
+  it('relay: no socket speaks for a database match without its game PIN (claims, squatting, live state)', async () => {
+    const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
+    const attacker = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': '198.18.0.66' } })
+    const scorer = await openSocket(srv.wsUrl)
+    try {
+      await subscribe(live, 'ls', [{ table: 'match_live_state', event: '*', column: 'match_id', value: matchUuid }])
+      // Its own room, pointing at the victim's row by the public uuid: refused
+      attacker.send({ type: 'sync-match-data', matchId: 'x1', match: { id: 'x1', seed_key: `squat_${randomBytes(3).toString('hex')}`, externalId: matchUuid, gamePin: '111111', status: 'live' }, sets: [], events: [] })
+      assert.equal((await attacker.waitFor((m) => m.type === 'error')).code, 'not-match-owner')
+      // Squatting the victim's room key before the scorer syncs: refused
+      attacker.send({ type: 'sync-match-data', matchId: 'x2', match: { id: 'x2', seed_key: ext, gamePin: '222222', status: 'live' }, sets: [], events: [] })
+      await attacker.waitFor(() => attacker.messages.filter((m) => m.code === 'not-match-owner').length >= 2)
+      // A room of its own (not in the database) is fine; re-pointing it at the
+      // victim afterwards publishes nothing
+      const own = `own_${randomBytes(3).toString('hex')}`
+      attacker.send({ type: 'sync-match-data', matchId: 'x3', match: { id: 'x3', seed_key: own, gamePin: '333333', status: 'live' }, sets: [], events: [] })
+      attacker.send({ type: 'sync-match-data', matchId: 'x3', match: { id: 'x3', seed_key: own, externalId: matchUuid, status: 'live' }, sets: [], events: [] })
+      attacker.send({ type: 'live-state-update', matchId: 'x3', liveState: { points_a: 99, points_b: 0 } })
+      attacker.send({ type: 'ping' })
+      await attacker.waitFor((m) => m.type === 'pong')
+      // The real scorer: its room, its PIN, published
+      scorer.send({ type: 'sync-match-data', matchId: 5, match: { id: 5, seed_key: ext, gamePin: GAME_PIN, status: 'live' }, sets: [], events: [] })
+      scorer.send({ type: 'live-state-update', matchId: 5, liveState: { points_a: 12, points_b: 10 } })
+      await live.waitFor((m) => m.type === 'db-change' && m.table === 'match_live_state' && m.new?.points_a === 12, 5000, 'scorer live state')
+      await sleep(200)
+      assert.equal(live.messages.some((m) => m.type === 'db-change' && m.new?.points_a === 99), false, 'a forged live state was published')
+      assert.equal(scorer.messages.some((m) => m.type === 'error'), false, JSON.stringify(scorer.messages))
+    } finally {
+      for (const c of [live, attacker, scorer]) c.ws.close()
+    }
+  })
+
+  it('signed-in non-owners read other people\'s matches like anonymous readers', async () => {
+    const erin = await account('erin')
+    const sel = (u, params) => dbCall(u, 'matches', 'select', { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], ...params })
+    const owner = await sel(users.alice)
+    assert.equal(owner.json.data[0].players_home[0].dob, '2002-03-04')
+    assert.equal(owner.json.data[0].signatures.home_coach, 'data:image/png;base64,COACH')
+    const other = await sel(erin)
+    assert.equal(other.status, 200, other.text)
+    const row = other.json.data[0]
+    assert.equal(row.home_team.name, 'Home VC')
+    for (const k of ['players_home', 'signatures', 'officials', 'created_by', 'manual_changes', 'approval', '__owned']) assert.equal(k in row, false, k)
+    assert.deepEqual(Object.keys(row.connections).sort(), ['away_bench_enabled', 'home_bench_enabled', 'referee_enabled'])
+    // Admins read everything
+    assert.equal((await sel(users.carol)).json.data[0].signatures.home_coach, 'data:image/png;base64,COACH')
+    // A filter on a hidden column only matches the reader's own rows (no probing)
+    const probe = (u) => sel(u, { filters: [{ type: 'eq', column: 'external_id', value: ext }, { type: 'eq', column: 'signatures->>home_coach', value: 'data:image/png;base64,COACH' }] })
+    assert.deepEqual((await probe(erin)).json.data, [])
+    assert.equal((await probe(users.alice)).json.data.length, 1)
+    // Event payloads likewise
+    const ev = await dbCall(erin, 'events', 'select', { columns: '*', filters: [{ type: 'eq', column: 'match_id', value: matchUuid }] })
+    assert.ok(ev.json.data.length >= 1)
+    assert.equal(ev.text.includes('Muster'), false, 'an event payload reached a non-owner')
+    const evOwn = await dbCall(users.alice, 'events', 'select', { columns: '*', filters: [{ type: 'eq', column: 'match_id', value: matchUuid }] })
+    assert.equal(evOwn.text.includes('Muster'), true)
+  })
+
+  it('reference tables: read-only for accounts; the referee directory takes new referees and sports', async () => {
+    const { rows: [game] } = await sql.query("INSERT INTO svrz_games (game_number, team_home) VALUES ('77001', 'A') RETURNING id")
+    const svrz = (u, action, params) => dbCall(u, 'svrz_games', action, params)
+    for (const [action, params] of [
+      ['update', { data: { team_home: 'X' }, filters: [{ type: 'neq', column: 'id', value: -1 }] }],
+      ['delete', { filters: [{ type: 'neq', column: 'id', value: -1 }] }],
+      ['insert', { data: { game_number: '1' } }]
+    ]) {
+      const r = await svrz(users.bob, action, params)
+      assert.equal(r.status, 403, `${action}: ${r.text}`)
+      assert.equal(r.json.error.code, 'OV_READ_ONLY_TABLE')
+    }
+    assert.equal((await svrz(users.carol, 'update', { data: { team_home: 'B' }, filters: [{ type: 'eq', column: 'id', value: game.id }] })).status, 200)
+    const { rows: [after] } = await sql.query('SELECT team_home FROM svrz_games WHERE id = $1', [game.id])
+    assert.equal(after.team_home, 'B')
+
+    const ins = await dbCall(users.bob, 'referee_database', 'insert', { data: { first_name: 'Rita', last_name: 'Ref', sport_type: ['indoor'] }, returning: 'id', single: true })
+    assert.equal(ins.status, 200, ins.text)
+    const id = ins.json.data.id
+    assert.equal((await dbCall(users.bob, 'referee_database', 'update', { data: { sport_type: ['indoor', 'beach'] }, filters: [{ type: 'eq', column: 'id', value: id }] })).status, 200)
+    for (const [action, params] of [
+      ['update', { data: { last_name: 'X' }, filters: [{ type: 'eq', column: 'id', value: id }] }],
+      ['update', { data: { sport_type: [] }, filters: [{ type: 'neq', column: 'id', value: id }] }],
+      ['delete', { filters: [{ type: 'eq', column: 'id', value: id }] }],
+      ['upsert', { data: { id, first_name: 'X' } }]
+    ]) {
+      const r = await dbCall(users.bob, 'referee_database', action, params)
+      assert.equal(r.status, 403, `${action}: ${r.text}`)
+    }
+    assert.equal((await dbCall(users.carol, 'referee_database', 'delete', { filters: [{ type: 'eq', column: 'id', value: id }] })).status, 200)
+    // beach_competition_matches is not reachable through /api/db at all
+    const beach = await api(srv.base, '/api/db', { proto: null, body: { table: 'beach_competition_matches', action: 'select', params: { columns: '*' } } })
+    assert.equal(beach.status, 400)
+  })
+
+  it('a legacy match is taken over inline by a scorer upsert carrying its game PIN', async () => {
+    const legacy = `legacy_pin_${randomBytes(3).toString('hex')}`
+    await sql.query("INSERT INTO matches (external_id, status, sport_type, game_pin) VALUES ($1, 'live', 'indoor', '579135')", [legacy])
+    const upsert = (u, pin, headers = {}) => dbCall(u, 'matches', 'upsert', { data: { external_id: legacy, game_pin: pin, status: 'live', current_set: 2 }, onConflict: 'external_id' }, { headers })
+    expectNotOwner(await upsert(users.bob, '000001', { 'cf-connecting-ip': nextIp() }))
+    const ok = await upsert(users.dave, '579135')
+    assert.equal(ok.status, 200, ok.text)
+    const { rows } = await sql.query('SELECT e.user_id, m.current_set, m.created_by, m.game_pin FROM match_editors e JOIN matches m ON m.id = e.match_id WHERE m.external_id = $1', [legacy])
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].user_id, users.dave.id)
+    assert.equal(rows[0].current_set, 2)
+    assert.equal(rows[0].created_by, null, 'the legacy row keeps no creator')
+    assert.match(rows[0].game_pin, /^h1:/)
+    // An update without the PIN stays refused for others
+    expectNotOwner(await dbCall(users.bob, 'matches', 'update', { data: { status: 'final' }, filters: [{ type: 'eq', column: 'external_id', value: legacy }] }))
   })
 
   it('never logged a PIN', () => {
