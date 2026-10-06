@@ -8,6 +8,7 @@
         "provides": ["openvolley-e-scoresheet", "openvolley"],
         "conflicts": ["openvolley-e-scoresheet", "openvolley"],
         "replaces": ["openvolley-e-scoresheet", "openvolley"],
+        "depends": ["libayatana-appindicator3-1 | libappindicator3-1"],
         "desktopTemplate": "openvolley-escoresheet.desktop"
       }
     }
