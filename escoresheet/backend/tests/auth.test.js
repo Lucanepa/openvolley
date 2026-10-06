@@ -760,7 +760,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
            FROM public.profiles WHERE user_id = $1`, [user.id])
       assert.deepEqual({ ...p }, {
         first_name: 'Ada', last_name: 'Lovelace', country: 'CHE', dob: '1990-02-03',
-        roles: ['scorer'], sport_type: 'indoor'
+        roles: [], sport_type: 'indoor' // new accounts are pending (db/007)
       })
 
       assert.equal((await signIn(auth, 'new.scorer@example.ch', 'pw123456')).status, 200)
@@ -806,9 +806,9 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.equal(r.status, 200)
       assert.equal(r.body.data.user_id, su.body.data.user.id)
       assert.equal(r.body.data.first_name, 'Pat')
-      assert.deepEqual(r.body.data.roles, ['scorer'])
+      assert.deepEqual(r.body.data.roles, [])
       const { rows } = await pool.query('SELECT roles FROM public.profiles WHERE user_id = $1', [su.body.data.user.id])
-      assert.deepEqual(rows[0].roles, ['scorer'])
+      assert.deepEqual(rows[0].roles, [])
       const noTok = await auth.handleAuthRequest('profile', { access_token: generateToken() }, { ip: nextIp() })
       assert.equal(noTok.status, 401)
     })
