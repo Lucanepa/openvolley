@@ -1379,9 +1379,9 @@
     }
   },
   "auth": {
-    "deleteAccountWhatStays": "Die Spiele, die Sie geschrieben haben, und ihre Matchblätter: Sie sind die offiziellen Spielberichte der Vereine, und Ihr Name bleibt darauf als Schreiber. Auf diesem Gerät wird nichts gelöscht.",
+    "deleteAccountWhatStays": "Die Spiele, die Sie geschrieben haben, und ihre Matchblätter: Sie sind die offiziellen Spielberichte der Vereine, und Ihr Name bleibt darauf als Schreiber. Auf diesem Gerät gespeicherte Spiele bleiben darauf.",
     "deleteAccountWhatStaysTitle": "Bleibt erhalten, ohne Ihr Konto",
-    "deleteAccountWhatGoes": "Ihr Konto und Profil, Ihre Anmeldungen, Ihre Liste «Meine Spiele», Ihre Bearbeitungsrechte an Spielen, Ihre Cloud-Backups und Protokolle sowie Ihr Zugriff auf die Matchblätter, die Sie hochgeladen haben.",
+    "deleteAccountWhatGoes": "Ihr Konto und Profil, Ihre Anmeldungen, Ihre Liste «Meine Spiele», Ihre Bearbeitungsrechte an Spielen, Ihre Cloud-Backups und Protokolle sowie Ihr Zugriff auf die Matchblätter, die Sie hochgeladen haben. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 7 Monaten.",
     "deleteAccountWhatGoesTitle": "Vom Server gelöscht",
     "signIn": "Anmelden",
     "signUp": "Registrieren",

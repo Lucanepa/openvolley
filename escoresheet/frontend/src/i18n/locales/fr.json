@@ -1506,9 +1506,9 @@
     }
   },
   "auth": {
-    "deleteAccountWhatStays": "Les matchs que vous avez marqués et leurs feuilles de match : ce sont les procès-verbaux officiels des clubs, et votre nom y reste comme marqueur. Rien n’est supprimé sur cet appareil.",
+    "deleteAccountWhatStays": "Les matchs que vous avez marqués et leurs feuilles de match : ce sont les procès-verbaux officiels des clubs, et votre nom y reste comme marqueur. Les matchs enregistrés sur cet appareil y restent.",
     "deleteAccountWhatStaysTitle": "Conservé, sans votre compte",
-    "deleteAccountWhatGoes": "Votre compte et votre profil, vos connexions, votre liste « Mes matchs », vos droits d’édition sur des matchs, vos sauvegardes et journaux dans le cloud, et votre accès aux feuilles de match que vous avez téléversées.",
+    "deleteAccountWhatGoes": "Votre compte et votre profil, vos connexions, votre liste « Mes matchs », vos droits d’édition sur des matchs, vos sauvegardes et journaux dans le cloud, et votre accès aux feuilles de match que vous avez téléversées. Les sauvegardes chiffrées du serveur en gardent une copie jusqu’à leur expiration, au plus tard après environ 7 mois.",
     "deleteAccountWhatGoesTitle": "Supprimé du serveur",
     "signIn": "Se connecter",
     "signUp": "S'inscrire",

@@ -1507,9 +1507,9 @@
     }
   },
   "auth": {
-    "deleteAccountWhatStays": "D Spiil, wo Sie gschribe händ, und ihri Matchblätter: Das sind di offizielle Spielbricht vo de Verein, und Ihre Name blibt druff als Schriber. Uf däm Grät wird nüt glöscht.",
+    "deleteAccountWhatStays": "D Spiil, wo Sie gschribe händ, und ihri Matchblätter: Das sind di offizielle Spielbricht vo de Verein, und Ihre Name blibt druff als Schriber. Spiil, wo uf däm Grät gspeicheret sind, bliibed druff.",
     "deleteAccountWhatStaysTitle": "Blibt erhalte, ohni Ihres Konto",
-    "deleteAccountWhatGoes": "Ihres Konto und Profil, Ihri Aamäldige, Ihri Liste «Mini Spiil», Ihri Bearbeitigsrächt a Spiil, Ihri Cloud-Backups und Protokoll und Ihre Zuegriff uf d Matchblätter, wo Sie uueglade händ.",
+    "deleteAccountWhatGoes": "Ihres Konto und Profil, Ihri Aamäldige, Ihri Liste «Mini Spiil», Ihri Bearbeitigsrächt a Spiil, Ihri Cloud-Backups und Protokoll und Ihre Zuegriff uf d Matchblätter, wo Sie uueglade händ. Verschlüsseleti Server-Backups bhaltet e Kopie, bis sie ablaufed, spöötischtens nach öppe 7 Mönet.",
     "deleteAccountWhatGoesTitle": "Vom Server glöscht",
     "signIn": "Aamälde",
     "signUp": "Registriere",
