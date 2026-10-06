@@ -855,7 +855,7 @@ export default function BenchApp() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     }}>
       {/* Narrow screen blocking overlay */}
-      {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
+      {viewportWidth < 357 && <NarrowScreenOverlay t={t} />}
 
       <UpdateBanner />
 

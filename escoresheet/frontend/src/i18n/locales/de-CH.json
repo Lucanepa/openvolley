@@ -408,7 +408,9 @@
       "syncing": "Synchronisieren...",
       "error": "Sync-Fehler",
       "clickToRetry": "Klicken Sie auf , um die Synchronisierung zu wiederholen"
-    }
+    },
+    "captainToggle": "Mannschaftscaptain #{{number}}",
+    "captainToggleNew": "Mannschaftscaptain (neue Spieler)"
   },
   "scoreboard": {
     "set": "Satz",
@@ -449,7 +451,8 @@
       "validationError": "Bitte überprüefe: Alli Nummere müend im Kader sii, kei Liberos sii und nöd dopplet.",
       "confirm": "Bestätige",
       "close": "Schliesse",
-      "modify": "Bearbeite"
+      "modify": "Bearbeite",
+      "positionInput": "Spieler auf Position {{pos}}"
     },
     "lastAction": "Letschti Aktion:",
     "keybindings": {
@@ -1375,7 +1378,8 @@
       "invalidPin": "Ungültige PIN-Code. Bitte überprüefe und nomal probiere.",
       "connectionLost": "Verbindig verlore. Bitte neu verbinde.",
       "matchEnded": "S Spiil isch beendet.",
-      "connectionDisabled": "D Verbindig isch deaktiviert worde."
+      "connectionDisabled": "D Verbindig isch deaktiviert worde.",
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
     },
     "connection": {
       "title": "Verbindig",
@@ -1502,7 +1506,9 @@
       "failedToFindMatch": "Spiil hät nöd chönne gfunde werde. Stelled Sie sicher, dass de HaupteScoresheet lauft.",
       "failedToLoadData": "Date händ nöd chönne glade werde",
       "failedToLoadDataConnection": "Date händ nöd chönne glade werde. Stelled Sie sicher, dass de HaupteScoresheet lauft."
-    }
+    },
+    "final": "Schlussstand",
+    "serving": "Ufschlag"
   },
   "auth": {
     "signIn": "Aamälde",
@@ -1565,7 +1571,14 @@
     "noMatches": "No kei Spiil",
     "noMatchesHint": "Spiil, wo Sie schribed, erschiined da",
     "unknown": "Unbekannt",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Matchblatt öffnen",
+    "status": {
+      "live": "Live",
+      "final": "Beendet",
+      "approved": "Genehmigt",
+      "setup": "Vorbereitung"
+    }
   },
   "backupTable": {
     "noActions": "Kei Aktione",

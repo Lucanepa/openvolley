@@ -407,7 +407,9 @@
       "syncing": "Synchronisation...",
       "error": "Erreur de synchronisation",
       "clickToRetry": "Cliquez sur pour réessayer la synchronisation"
-    }
+    },
+    "captainToggle": "Capitaine d'équipe #{{number}}",
+    "captainToggleNew": "Capitaine d'équipe (nouveau joueur)"
   },
   "scoreboard": {
     "set": "Set",
@@ -448,7 +450,8 @@
       "validationError": "Veuillez vérifier : Tous les numéros doivent exister dans la liste, ne pas être des libéros et ne pas être dupliqués.",
       "confirm": "Confirmer",
       "close": "Fermer",
-      "modify": "Modifier"
+      "modify": "Modifier",
+      "positionInput": "Joueur en position {{pos}}"
     },
     "lastAction": "Dernière action :",
     "keybindings": {
@@ -1374,7 +1377,8 @@
       "invalidPin": "Code PIN incorrect.",
       "connectionLost": "Connexion perdue. Reconnexion requise.",
       "matchEnded": "Le match est fini.",
-      "connectionDisabled": "Connexion désactivée."
+      "connectionDisabled": "Connexion désactivée.",
+      "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez."
     },
     "connection": {
       "title": "Connexion",
@@ -1501,7 +1505,9 @@
       "failedToFindMatch": "Impossible de trouver le match. Vérifiez que la eScoresheet principale est en cours.",
       "failedToLoadData": "Échec du chargement des données",
       "failedToLoadDataConnection": "Échec du chargement des données. Vérifiez que la eScoresheet principale est en cours."
-    }
+    },
+    "final": "Terminé",
+    "serving": "Au service"
   },
   "auth": {
     "signIn": "Se connecter",
@@ -1564,7 +1570,14 @@
     "noMatches": "Aucun match pour l'instant",
     "noMatchesHint": "Les matchs que vous marquez apparaîtront ici",
     "unknown": "Inconnu",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Ouvrir la feuille de match",
+    "status": {
+      "live": "En direct",
+      "final": "Terminé",
+      "approved": "Approuvé",
+      "setup": "Préparation"
+    }
   },
   "backupTable": {
     "noActions": "Aucune action",

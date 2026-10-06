@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Maximize, Menu, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, Maximize, Menu, X } from 'lucide-react'
 import i18n from '../i18n'
 import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, MonitorIcon, ClipboardIcon, TrashIcon } from './icons'
 import { clearCachesAndReload } from '../hooks/useServiceWorker'
@@ -65,8 +65,8 @@ const languages = [
 
 /**
  * DashboardHeader - 3-column header for dashboard views (Bench, Livescore)
- * Left: Title/version
- * Middle: Hamburger menu (collapsible)
+ * Left: Title/version (and, with backButton, a visible Back button)
+ * Middle: Hamburger menu (collapsible); menuAlign="end" puts it at the right
  * Right: Fullscreen button
  */
 export default function DashboardHeader({
@@ -88,6 +88,10 @@ export default function DashboardHeader({
   // Back button
   onBack,
   backLabel,
+  // Also show Back as a visible button in the left slot (not only in the menu)
+  backButton = false,
+  // 'center' (tablet dashboards) or 'end' (the public livescore: menu at the right)
+  menuAlign = 'center',
   // Options menu
   showOptionsMenu = true,
   connectionMode,
@@ -114,7 +118,7 @@ export default function DashboardHeader({
     }
   }
 
-  // Close menu on outside click
+  // Close menu on outside click and on Escape
   useEffect(() => {
     if (!menuOpen) return
     const handleClick = (e) => {
@@ -122,8 +126,15 @@ export default function DashboardHeader({
         setMenuOpen(false)
       }
     }
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
     document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [menuOpen])
 
   // Build menu items based on props
@@ -222,6 +233,159 @@ export default function DashboardHeader({
   const currentLanguage = languages.find(l => l.code === i18n.language)
   const CurrentFlag = currentLanguage ? currentLanguage.Flag : FlagGB
 
+  const menuBlock = (
+    <div className="dashboard-header-menu relative flex flex-none items-center justify-center">
+      {/* Always show hamburger - at minimum has language, version, and clear cache */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setMenuOpen(!menuOpen)
+        }}
+        aria-expanded={menuOpen}
+        className={cn(HEADER_BTN, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
+        aria-label={t('header.menu')}
+        title={t('header.menu')}
+      >
+        {menuOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
+      </button>
+
+      {/* Dropdown Menu */}
+      {menuOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0"
+            style={{ zIndex: 998 }}
+          />
+          <div
+            className={cn(
+              'absolute top-full mt-1.5 flex w-max min-w-[220px] max-w-[280px] flex-col',
+              menuAlign === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2',
+              MENU_PANEL
+            )}
+            style={{ zIndex: 1000 }}
+          >
+            {menuItems.map((item, index) => {
+              // Divider
+              if (item.divider) {
+                return <div key={`divider-${index}`} className={MENU_SEP} />
+              }
+
+              // Section header
+              if (item.header) {
+                return (
+                  <div key={`header-${index}`} className={MENU_SECTION}>
+                    {item.header}
+                  </div>
+                )
+              }
+
+              return <HeaderMenuItem key={index} item={item} onClose={() => setMenuOpen(false)} />
+            })}
+
+            {/* Language selector */}
+            {menuItems.length > 0 && <div className={MENU_SEP} />}
+            <button
+              type="button"
+              aria-expanded={languageExpanded}
+              onClick={(e) => {
+                e.stopPropagation()
+                setLanguageExpanded(!languageExpanded)
+              }}
+              className={cn(MENU_ROW, languageExpanded && 'bg-stone-100')}
+            >
+              <span className={MENU_ICON}><CurrentFlag /></span>
+              <span className="flex-1">{t('header.language', 'Language')}</span>
+              <ChevronDown size={14} aria-hidden="true" className={cn('text-stone-400 transition-transform', languageExpanded && 'rotate-180')} />
+            </button>
+
+            {/* Language options */}
+            {languageExpanded && (
+              <div className={MENU_NEST}>
+                {languages.map((lang) => (
+                  <button
+                    type="button"
+                    key={lang.code}
+                    aria-pressed={i18n.language === lang.code}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      i18n.changeLanguage(lang.code)
+                      setLanguageExpanded(false)
+                    }}
+                    className={cn(MENU_SUBROW, i18n.language === lang.code && MENU_ROW_ON)}
+                  >
+                    <span className="flex w-5 items-center justify-center"><lang.Flag /></span>
+                    <span>{lang.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Version info at bottom */}
+            <div className={MENU_SEP} />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setVersionExpanded(!versionExpanded)
+              }}
+              className={cn(MENU_ROW, 'text-stone-500')}
+            >
+              <span className={MENU_ICON}><ClipboardIcon size={13} /></span>
+              <span className="flex-1 tabular-nums">Version {currentVersion}</span>
+            </button>
+
+            {/* Clear Cache */}
+            <div className={MENU_SEP} />
+            {!confirmingClearCache ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setConfirmingClearCache(true)
+                }}
+                className={cn(MENU_ROW, MENU_ROW_DANGER)}
+              >
+                <span className={cn(MENU_ICON, 'text-red-500')}><TrashIcon size={13} /></span>
+                <span className="flex-1">{t('options.clearCache', 'Clear cache')}</span>
+              </button>
+            ) : (
+              <div className="px-3 py-2">
+                <div className="mb-2 text-sm font-medium text-stone-800">
+                  {t('options.clearCacheConfirm', 'Clear cache and reload?')}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setConfirmingClearCache(false)
+                    }}
+                    className={cn(HEADER_BTN, 'h-10 flex-1 border-stone-300 text-sm text-stone-700')}
+                  >
+                    {t('common.cancel', 'Cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleClearCache()
+                    }}
+                    className={cn(HEADER_BTN, 'h-10 flex-1 border-red-600 bg-red-600 text-sm font-semibold text-white hover:bg-red-700')}
+                  >
+                    {t('common.yes', 'Yes')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+
   // volleyui chrome: white bar with a stone hairline, kit header buttons and
   // the menu as a white anchored dropdown with 48 px rows.
   return (
@@ -231,6 +395,16 @@ export default function DashboardHeader({
     >
       {/* LEFT: Title/Version */}
       <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
+        {backButton && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className={cn(HEADER_BTN, 'gap-1 pl-1.5 pr-2.5')}
+          >
+            <ChevronLeft size={16} aria-hidden="true" />
+            <span>{backLabel || t('common.back', 'Back')}</span>
+          </button>
+        )}
         <span className={cn(HEADER_TITLE, 'min-w-0')}>
           {title}
         </span>
@@ -245,153 +419,7 @@ export default function DashboardHeader({
         </span>
       </div>
 
-      {/* MIDDLE: Hamburger Menu */}
-      <div className="dashboard-header-menu relative flex flex-none items-center justify-center">
-        {/* Always show hamburger - at minimum has language, version, and clear cache */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            setMenuOpen(!menuOpen)
-          }}
-          aria-expanded={menuOpen}
-          className={cn(HEADER_BTN, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
-          aria-label={t('header.menu')}
-          title={t('header.menu')}
-        >
-          {menuOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
-        </button>
-
-        {/* Dropdown Menu */}
-        {menuOpen && (
-          <>
-            {/* Backdrop */}
-            <div
-              onClick={() => setMenuOpen(false)}
-              className="fixed inset-0"
-              style={{ zIndex: 998 }}
-            />
-            <div
-              className={cn('absolute left-1/2 top-full mt-1.5 flex w-max min-w-[220px] max-w-[280px] -translate-x-1/2 flex-col', MENU_PANEL)}
-              style={{ zIndex: 1000 }}
-            >
-              {menuItems.map((item, index) => {
-                // Divider
-                if (item.divider) {
-                  return <div key={`divider-${index}`} className={MENU_SEP} />
-                }
-
-                // Section header
-                if (item.header) {
-                  return (
-                    <div key={`header-${index}`} className={MENU_SECTION}>
-                      {item.header}
-                    </div>
-                  )
-                }
-
-                return <HeaderMenuItem key={index} item={item} onClose={() => setMenuOpen(false)} />
-              })}
-
-              {/* Language selector */}
-              {menuItems.length > 0 && <div className={MENU_SEP} />}
-              <button
-                type="button"
-                aria-expanded={languageExpanded}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setLanguageExpanded(!languageExpanded)
-                }}
-                className={cn(MENU_ROW, languageExpanded && 'bg-stone-100')}
-              >
-                <span className={MENU_ICON}><CurrentFlag /></span>
-                <span className="flex-1">{t('header.language', 'Language')}</span>
-                <ChevronDown size={14} aria-hidden="true" className={cn('text-stone-400 transition-transform', languageExpanded && 'rotate-180')} />
-              </button>
-
-              {/* Language options */}
-              {languageExpanded && (
-                <div className={MENU_NEST}>
-                  {languages.map((lang) => (
-                    <button
-                      type="button"
-                      key={lang.code}
-                      aria-pressed={i18n.language === lang.code}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        i18n.changeLanguage(lang.code)
-                        setLanguageExpanded(false)
-                      }}
-                      className={cn(MENU_SUBROW, i18n.language === lang.code && MENU_ROW_ON)}
-                    >
-                      <span className="flex w-5 items-center justify-center"><lang.Flag /></span>
-                      <span>{lang.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Version info at bottom */}
-              <div className={MENU_SEP} />
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setVersionExpanded(!versionExpanded)
-                }}
-                className={cn(MENU_ROW, 'text-stone-500')}
-              >
-                <span className={MENU_ICON}><ClipboardIcon size={13} /></span>
-                <span className="flex-1 tabular-nums">Version {currentVersion}</span>
-              </button>
-
-              {/* Clear Cache */}
-              <div className={MENU_SEP} />
-              {!confirmingClearCache ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setConfirmingClearCache(true)
-                  }}
-                  className={cn(MENU_ROW, MENU_ROW_DANGER)}
-                >
-                  <span className={cn(MENU_ICON, 'text-red-500')}><TrashIcon size={13} /></span>
-                  <span className="flex-1">{t('options.clearCache', 'Clear cache')}</span>
-                </button>
-              ) : (
-                <div className="px-3 py-2">
-                  <div className="mb-2 text-sm font-medium text-stone-800">
-                    {t('options.clearCacheConfirm', 'Clear cache and reload?')}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setConfirmingClearCache(false)
-                      }}
-                      className={cn(HEADER_BTN, 'h-10 flex-1 border-stone-300 text-sm text-stone-700')}
-                    >
-                      {t('common.cancel', 'Cancel')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleClearCache()
-                      }}
-                      className={cn(HEADER_BTN, 'h-10 flex-1 border-red-600 bg-red-600 text-sm font-semibold text-white hover:bg-red-700')}
-                    >
-                      {t('common.yes', 'Yes')}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+      {menuAlign !== 'end' && menuBlock}
 
       {/* RIGHT: Fullscreen Button + Custom content */}
       <div className="flex flex-1 basis-0 items-center justify-end gap-2">
@@ -409,6 +437,8 @@ export default function DashboardHeader({
             <Maximize size={15} aria-hidden="true" />
           </button>
         )}
+
+        {menuAlign === 'end' && menuBlock}
       </div>
     </div>
   )
