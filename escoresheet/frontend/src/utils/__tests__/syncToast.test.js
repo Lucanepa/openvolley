@@ -48,7 +48,16 @@ describe('toastSyncOutcome', () => {
     expect(s.notify.success.mock.calls[0][1]).toEqual({ lang: 'DE' })
   })
 
-  it('signed out or offline: the pending notice at once, and never a later one', async () => {
+  it('signed out: no toast at all (the Not signed in banner says it), and no polling', async () => {
+    const s = setup({ jobs: { 7: { status: 'queued' } } })
+    toastSyncOutcome([7], { messages: MESSAGES, getJob: s.getJob, canSync: s.canSync, explained: () => true, notify: s.notify })
+    s.store[7] = { status: 'sent' }
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(shown(s.notify)).toEqual([])
+    expect(s.getJob).not.toHaveBeenCalled()
+  })
+
+  it('offline: the pending notice at once, and never a later one', async () => {
     const s = setup({ jobs: { 7: { status: 'queued' } }, canSync: () => false })
     toastSyncOutcome([7], { messages: MESSAGES, getJob: s.getJob, canSync: s.canSync, notify: s.notify })
     expect(shown(s.notify)).toEqual([['info', 'Match saved locally (sync pending)']])
