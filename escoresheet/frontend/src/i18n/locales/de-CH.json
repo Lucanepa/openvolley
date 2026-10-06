@@ -1504,7 +1504,9 @@
       "failedToFindMatch": "Spiil hät nöd chönne gfunde werde. Stelled Sie sicher, dass de HaupteScoresheet lauft.",
       "failedToLoadData": "Date händ nöd chönne glade werde",
       "failedToLoadDataConnection": "Date händ nöd chönne glade werde. Stelled Sie sicher, dass de HaupteScoresheet lauft."
-    }
+    },
+    "final": "Schlussstand",
+    "serving": "Ufschlag"
   },
   "auth": {
     "signIn": "Aamälde",

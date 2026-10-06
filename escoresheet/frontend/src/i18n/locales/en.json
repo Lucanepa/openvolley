@@ -1536,7 +1536,9 @@
       "failedToFindMatch": "Failed to find match. Make sure the main scoresheet is running.",
       "failedToLoadData": "Failed to load match data",
       "failedToLoadDataConnection": "Failed to load match data. Make sure the main scoresheet is running."
-    }
+    },
+    "final": "Final",
+    "serving": "Serving"
   },
   "auth": {
     "signIn": "Sign in",
