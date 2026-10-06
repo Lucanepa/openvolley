@@ -240,7 +240,7 @@ export default function DashboardHeader({
             {subtitle}
           </span>
         )}
-        <span className="hidden shrink-0 text-[10px] tabular-nums tracking-normal text-stone-400 sm:inline">
+        <span className="hidden shrink-0 text-[10px] tabular-nums tracking-normal text-stone-500 sm:inline">
           v{currentVersion}
         </span>
       </div>

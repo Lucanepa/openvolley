@@ -313,7 +313,7 @@ export default function ProfileModal({ open, onClose }) {
               aria-busy={loading || undefined}
               className={cn(
                 'inline-flex !mt-5 h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed',
-                success ? 'bg-emerald-600' : 'bg-red-600 hover:bg-red-700 disabled:bg-stone-300',
+                success ? 'bg-emerald-700' : 'bg-red-600 hover:bg-red-700 disabled:bg-stone-300',
                 loading && 'opacity-70',
                 FOCUS_RING
               )}

@@ -106,8 +106,8 @@
   --ov-focus-soft: rgb(190 0 20 / 0.20); /* red-700/20, large inputs */
 
   /* ---- status ---- */
-  --ov-success: #059669;         /* emerald-600 confirm */
-  --ov-success-hover: #047857;   /* emerald-700 */
+  --ov-success: #047857;         /* emerald-700 confirm (white text 5.5:1, AA) */
+  --ov-success-hover: #065f46;   /* emerald-800 */
   --ov-success-soft: #d1fae5;    /* emerald-100 */
   --ov-success-text: #065f46;    /* emerald-800 */
   --ov-warning-soft: #fffbeb;    /* amber-50 */

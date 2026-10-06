@@ -5,6 +5,7 @@ import { applyRelayTablets, relayMatchKey } from '../utils/serverDataSync'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
+import { StatusPill } from '../ui/StatusPill.jsx'
 import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 export default function TabletStatusIndicator({ match }) {
@@ -66,7 +67,7 @@ export default function TabletStatusIndicator({ match }) {
     none: 'border-stone-200 bg-stone-50 text-stone-600'
   }
 
-  // Per-device heartbeat state -> kit tone (dot + word).
+  // Per-device heartbeat state -> kit tone (a StatusPill per device).
   const roleTone = (status) => STATUS_TONES[status === 'connected' ? 'ok' : status === 'stale' ? 'warn' : 'error']
 
   return (
@@ -96,7 +97,7 @@ export default function TabletStatusIndicator({ match }) {
             zIndex: 1000
           }}
         >
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
             {t('tabletStatus.title', 'Tablet status')}
           </div>
 
@@ -105,16 +106,13 @@ export default function TabletStatusIndicator({ match }) {
               const tone = roleTone(role.status)
               return (
                 <div key={role.role} className="flex items-center justify-between gap-3 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className={cn('h-2 w-2 shrink-0 rounded-full', tone.dot)} />
-                    <span className="truncate text-sm font-medium text-stone-800">
-                      {t(`tabletStatus.role.${role.role}`, role.label)}
-                    </span>
-                  </div>
-                  <div className={cn('flex shrink-0 items-center gap-1.5 text-[11px] font-medium', tone.text)}>
-                    <span>{t(`tabletStatus.status.${role.status}`, role.status)}</span>
+                  <span className="min-w-0 truncate text-sm font-medium text-stone-800">
+                    {t(`tabletStatus.role.${role.role}`, role.label)}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <StatusPill className={tone.tint}>{t(`tabletStatus.status.${role.status}`, role.status)}</StatusPill>
                     {role.ageMs != null && (
-                      <span className="font-mono text-[10px] text-stone-400">
+                      <span className="font-mono text-[10px] text-stone-500">
                         {formatAge(role.ageMs)}
                       </span>
                     )}
