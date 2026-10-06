@@ -59,6 +59,7 @@ import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
+import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
@@ -937,15 +938,24 @@ export default function App() {
       history.pushState(null, '', window.location.href)
     }
 
-    // Push initial state to prevent back navigation
-    try {
-      history.pushState(null, '', window.location.href)
-    } catch (err) {
-      // Ignore history errors (e.g., older browsers or restricted environments)
-    }
+    // Android app: the Back button is MainActivity's (it goes back in real
+    // history, e.g. out of the scoresheet's in-app view, and on the first
+    // page asks "Exit OpenVolley?", utils/appLifecycle.js). An entry pushed
+    // here would make WebView.canGoBack() true, and Back then only replayed
+    // this block instead of asking.
+    const blockHistory = detectAppPlatform() !== 'capacitor'
 
-    // Prevent browser back/forward buttons
-    window.addEventListener('popstate', blockHistoryNavigation)
+    // Push initial state to prevent back navigation
+    if (blockHistory) {
+      try {
+        history.pushState(null, '', window.location.href)
+      } catch (err) {
+        // Ignore history errors (e.g., older browsers or restricted environments)
+      }
+
+      // Prevent browser back/forward buttons
+      window.addEventListener('popstate', blockHistoryNavigation)
+    }
 
     // Prevent refresh keyboard shortcuts
     window.addEventListener('keydown', disableRefreshKeys, { passive: false })
