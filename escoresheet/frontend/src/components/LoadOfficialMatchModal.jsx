@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { getApiUrl } from '../utils/backendConfig'
+import { getCloudApiUrl } from '../utils/backendConfig'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { apiFrom } from '../lib/apiClient'
@@ -207,7 +207,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   }
 
   const fetchLeaguesFromIcal = async () => {
-    const apiUrl = getApiUrl('/api/official-matches/leagues')
+    const apiUrl = getCloudApiUrl('/api/official-matches/leagues')
     if (!apiUrl) return null
     const response = await fetch(apiUrl)
     const data = await response.json()
@@ -284,7 +284,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   const fetchMatchesFromIcal = async () => {
     const leagueInfo = allLeagues.find(l => l.code === league)
     if (!leagueInfo) return null
-    const apiUrl = getApiUrl(`/api/official-matches?federation=${leagueInfo.federation}&league=${league}`)
+    const apiUrl = getCloudApiUrl(`/api/official-matches?federation=${leagueInfo.federation}&league=${league}`)
     if (!apiUrl) return null
     const response = await fetch(apiUrl)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)

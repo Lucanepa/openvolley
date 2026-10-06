@@ -67,7 +67,16 @@ describe('ConnectionStatus when the browser goes offline (LAN / local backend)',
     live.value = { pending: 3, error: 0, failed: 0 }
     render(<ConnectionStatus connectionStatuses={{ ...POLLED_ONLINE, supabase: 'offline' }} />)
     goOffline()
-    expect(screen.getByText('Syncing...')).toBeInTheDocument()
+    expect(screen.queryByText('Syncing...')).toBeNull()
+    expect(screen.getByText('Local only (3 waiting)')).toBeInTheDocument()
+  })
+
+  it('desktop app online but the cloud out of reach: Local only, then Connected once cloud sync answers', () => {
+    net.lan = true
+    const { rerender } = render(<ConnectionStatus connectionStatuses={{ ...POLLED_ONLINE, supabase: 'offline' }} />)
+    expect(screen.getByText('Local only')).toBeInTheDocument()
+    rerender(<ConnectionStatus connectionStatuses={POLLED_ONLINE} />)
+    expect(screen.getByText('Connected')).toBeInTheDocument()
   })
 
   it('is offline once the LAN server is not connected either', () => {

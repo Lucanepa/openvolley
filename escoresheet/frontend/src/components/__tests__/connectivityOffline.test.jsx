@@ -56,6 +56,25 @@ describe('StartupConnectivityModal while offline', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1) // only the click: it never closes by itself
   })
 
+  it('desktop app at a venue without internet: local server connected, cloud sync reads Offline (neutral) with a note', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'offline', websocket: 'connected' }} onDismiss={() => {}} onGoOffline={() => {}} />)
+    expect(screen.getByText('Connected via local server')).toBeInTheDocument()
+    expect(screen.getByText(/cloud sync starts as soon as this device is online/)).toBeInTheDocument()
+    const offline = screen.getByText('Offline')
+    expect(offline.className).toContain('text-stone-500')
+    expect(offline.className).not.toContain('text-red')
+    expect(screen.queryByText(/Scoring still works offline/)).toBeNull()
+  })
+
+  it('desktop app online: cloud sync Connected, no offline note', () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'connected' }} onDismiss={() => {}} onGoOffline={() => {}} />)
+    expect(screen.getByText('All services connected!')).toBeInTheDocument()
+    expect(screen.getByText('Cloud sync').parentElement).toHaveTextContent(/Connected/)
+    expect(screen.queryByText(/cloud sync starts as soon/)).toBeNull()
+  })
+
   it('synced: closes by itself after the countdown', () => {
     vi.useFakeTimers()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
@@ -157,7 +176,8 @@ describe('ConnectionStatus dropdown while offline', () => {
   it('keeps a local relay (offline desktop / LAN scoretable) shown as connected', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     render(<ConnectionStatus connectionStatuses={{ ...STATUSES, server: 'connected' }} queueStats={{ pending: 0, error: 0, failed: 0 }} />)
-    fireEvent.click(screen.getByText('Connected'))
+    // The pill: the venue works, the cloud waits
+    fireEvent.click(screen.getByText('Local only'))
     expect(screen.getByText('WebSocket:').parentElement).toHaveTextContent(/^WebSocket:\s*Connected$/)
   })
 })

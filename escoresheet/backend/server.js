@@ -1294,7 +1294,8 @@ const ALLOWED_ORIGINS = [
   'tauri://localhost',
   'http://tauri.localhost',
   'https://tauri.localhost',
-  // Local development
+  // The Tauri desktop app's window (served by its own LAN relay on :5173,
+  // cloud sync comes here) and local development
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',

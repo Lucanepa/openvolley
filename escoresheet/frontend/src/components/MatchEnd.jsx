@@ -18,7 +18,7 @@ import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
-import { getApiUrl } from '../utils/backendConfig'
+import { getCloudApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
@@ -1049,7 +1049,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     try {
       // Try server-side verification first (more secure)
-      const apiUrl = getApiUrl('/api/verify-reopen-password')
+      const apiUrl = getCloudApiUrl('/api/verify-reopen-password')
       if (apiUrl) {
         let response = null
         try {

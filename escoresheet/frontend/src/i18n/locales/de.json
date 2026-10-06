@@ -840,6 +840,7 @@
     "de-CH": "Schweizerdeutsch"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "Online",
     "notSynced": "Nicht synchronisiert",
     "supportAndFeedback": "Support & Feedback",
@@ -863,9 +864,9 @@
     "moreOptions": "Weitere Optionen...",
     "match": "Spiel",
     "notSet": "Nicht festgelegt",
-    "testMatch": "TESTSPIEL",
-    "matchNumber": "SPIEL #{{number}}",
-    "test": "TEST",
+    "testMatch": "Testspiel",
+    "matchNumber": "Spiel #{{number}}",
+    "test": "Test",
     "versionHistory": "Versionsverlauf",
     "current": "Aktuell",
     "exitFullscreen": "Vollbild beenden",
@@ -1495,6 +1496,8 @@
     "signInAgain": "Erneut anmelden"
   },
   "connectionStatus": {
+    "localOnly": "Nur lokal",
+    "localOnlyPending": "Nur lokal ({{count}} ausstehend)",
     "syncing": "Synchronisiere",
     "connected": "Verbunden",
     "error": "Fehler",
@@ -1528,7 +1531,22 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindungsproblem erkannt"
   },
+  "lanTablets": {
+    "title": "Tablets verbinden",
+    "description": "Tablets im selben WLAN öffnen diese Adressen im Browser. Kein Internet nötig.",
+    "scoretable": "eMatchblatt",
+    "referee": "Schiedsrichter",
+    "bench": "Bank",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "loading": "Lokaler Server wird abgefragt…",
+    "unavailable": "Der lokale Server antwortet nicht. App neu starten und erneut versuchen.",
+    "hint": "Das Tablet muss im selben WLAN sein wie dieser Computer. Die Kamera (QR-Kaderupload) funktioniert nur auf diesem Computer, nicht auf Tablets über http."
+  },
   "startupConnectivity": {
+    "cloudWaits": "Kein Internet: Die Cloud-Synchronisation startet, sobald dieses Gerät online ist. Spiele bleiben hier und auf dem lokalen Server gespeichert.",
     "connecting": "Verbindung wird hergestellt...",
     "goOffline": "Offline gehen",
     "continueAnyway": "Trotzdem fortfahren",

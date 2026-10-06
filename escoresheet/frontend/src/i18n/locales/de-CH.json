@@ -829,6 +829,7 @@
     "de-CH": "Schwiizerdütsch"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "Online",
     "notSynced": "Not synced",
     "supportAndFeedback": "Support & Feedback",
@@ -852,9 +853,9 @@
     "moreOptions": "Wiiteri Optione...",
     "match": "Spiil",
     "notSet": "Nöd feschtgleit",
-    "testMatch": "TESTSPIIL",
-    "matchNumber": "SPIIL #{{number}}",
-    "test": "TEST",
+    "testMatch": "Testspiil",
+    "matchNumber": "Spiil #{{number}}",
+    "test": "Test",
     "versionHistory": "Versionsverlauf",
     "current": "Aktuell",
     "exitFullscreen": "Vollbild verlah",
@@ -1623,6 +1624,8 @@
     "signInAgain": "Nomal aamälde"
   },
   "connectionStatus": {
+    "localOnly": "Nur lokal",
+    "localOnlyPending": "Nur lokal ({{count}} usstehend)",
     "syncing": "Synchronisiere",
     "connected": "Verbunde",
     "error": "Fähler",
@@ -1656,7 +1659,22 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindigsproblem erkannt"
   },
+  "lanTablets": {
+    "title": "Tablets verbinde",
+    "description": "Tablets im glyche WLAN öffned die Adresse im Browser. Kei Internet nötig.",
+    "scoretable": "eMatchblatt",
+    "referee": "Schiri",
+    "bench": "Bank",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Kopiere",
+    "copied": "Kopiert",
+    "loading": "Lokale Server wird abgfrögt…",
+    "unavailable": "De lokal Server antwortet nöd. App neu starte und nomal probiere.",
+    "hint": "S Tablet muess im glyche WLAN sii wie dä Computer. D Kamera (QR-Kaderupload) gaht nur uf däm Computer, nöd uf Tablets über http."
+  },
   "startupConnectivity": {
+    "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
     "connecting": "Verbindig wird hergstellt...",
     "goOffline": "Offline gah",
     "continueAnyway": "Trotzdem witerfahre",

@@ -48,9 +48,11 @@
  * sockets are opened to that URL until the backend URL changes.
  *
  * The backend URL is resolved on every connect attempt through
- * utils/backendConfig.js, so a runtime override takes effect on reconnect.
+ * utils/backendConfig.js (getCloudWebSocketUrl: the cloud backend, also in the
+ * desktop app whose own relay has no database), so a runtime override takes
+ * effect on reconnect.
  */
-import { getWebSocketUrl } from '../utils/backendConfig'
+import { getCloudWebSocketUrl } from '../utils/backendConfig'
 
 export const REALTIME_SUBSCRIBE_STATES = Object.freeze({
   SUBSCRIBED: 'SUBSCRIBED',
@@ -197,7 +199,7 @@ class RelayChannel {
 
 /**
  * @param {Object} [options]
- * @param {() => string|null} [options.getUrl]  WebSocket base URL (default: backendConfig.getWebSocketUrl)
+ * @param {() => string|null} [options.getUrl]  WebSocket base URL (default: backendConfig.getCloudWebSocketUrl)
  * @param {typeof WebSocket} [options.WebSocketImpl]  default: globalThis.WebSocket at connect time
  * @param {number} [options.subscribeTimeoutMs=10000]
  * @param {number} [options.reconnectBaseMs=1000]
@@ -210,7 +212,7 @@ class RelayChannel {
  */
 export function createRelayRealtime(options = {}) {
   const {
-    getUrl = getWebSocketUrl,
+    getUrl = getCloudWebSocketUrl,
     WebSocketImpl,
     subscribeTimeoutMs = 10000,
     reconnectBaseMs = 1000,

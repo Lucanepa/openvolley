@@ -829,6 +829,7 @@
     "de-CH": "Svizzero tedesco"
   },
   "header": {
+    "versionLabel": "Versione {{version}}",
     "online": "Online",
     "notSynced": "Non sincronizzato",
     "supportAndFeedback": "Supporto e feedback",
@@ -852,9 +853,9 @@
     "moreOptions": "Altre opzioni...",
     "match": "Partita",
     "notSet": "Non impostato",
-    "testMatch": "PARTITA TEST",
-    "matchNumber": "PARTITA #{{number}}",
-    "test": "TEST",
+    "testMatch": "Partita test",
+    "matchNumber": "Partita #{{number}}",
+    "test": "Test",
     "versionHistory": "Cronologia versioni",
     "current": "Attuale",
     "exitFullscreen": "Esci da schermo intero",
@@ -1654,6 +1655,8 @@
     "signInAgain": "Accedi di nuovo"
   },
   "connectionStatus": {
+    "localOnly": "Solo locale",
+    "localOnlyPending": "Solo locale ({{count}} in attesa)",
     "syncing": "Sincronizzazione",
     "connected": "Connesso",
     "error": "Errore",
@@ -1687,7 +1690,22 @@
     "messageLabel": "Messaggio:",
     "connectionIssueDetected": "Problema di connessione rilevato"
   },
+  "lanTablets": {
+    "title": "Collega tablet",
+    "description": "I tablet sulla stessa rete Wi-Fi aprono questi indirizzi nel browser. Internet non necessario.",
+    "scoretable": "Referto",
+    "referee": "Arbitro",
+    "bench": "Panchina",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "loading": "Lettura del server locale…",
+    "unavailable": "Il server locale non risponde. Riavvia l’app e riprova.",
+    "hint": "Il tablet deve essere sulla stessa rete Wi-Fi di questo computer. La fotocamera (caricamento roster via QR) funziona solo su questo computer, non sui tablet in http."
+  },
   "startupConnectivity": {
+    "cloudWaits": "Nessuna connessione internet: la sincronizzazione cloud parte appena questo dispositivo è online. Le partite restano qui e sul server locale.",
     "connecting": "Connessione in corso...",
     "goOffline": "Vai offline",
     "continueAnyway": "Continua comunque",

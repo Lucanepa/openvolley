@@ -313,6 +313,20 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(rpc.status, 404)
   })
 
+  it('CORS trusts the app shells (desktop window on its relay, Android, Tauri), not a LAN page', async () => {
+    const preflight = (origin) => fetch(`${srv.base}/api/db`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Headers': 'content-type,x-ov-proto,authorization' } })
+    // The desktop app's window loads from its own relay (http://localhost:5173)
+    // and sends cloud sync here; Android's WebView is https://localhost.
+    for (const origin of ['http://localhost:5173', 'https://localhost', 'tauri://localhost', 'http://tauri.localhost', 'https://app.openvolley.app']) {
+      const r = await preflight(origin)
+      assert.equal(r.headers.get('access-control-allow-origin'), origin, origin)
+      assert.equal(r.headers.get('access-control-allow-credentials'), 'true', origin)
+    }
+    // A page served on the venue LAN is not a trusted cloud origin
+    const lan = await preflight('http://192.168.1.20:5173')
+    assert.notEqual(lan.headers.get('access-control-allow-origin'), 'http://192.168.1.20:5173')
+  })
+
   it('signs up, then signs in with an opaque session token', async () => {
     const up = await api(srv.base, '/api/auth/sign-up', { body: { email, password, metadata: { first_name: 'E2E', roles: ['admin'] } } })
     assert.equal(up.status, 200, up.text)

@@ -30,8 +30,24 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
   the app from `http://localhost:5173`. Serving over `http://localhost` (a
   secure context) keeps the desktop's camera/QR working, and the app's normal
   LAN client code resolves its backend/WebSocket URLs correctly.
-- Data lives locally in IndexedDB (Dexie). Supabase cloud sync is optional and
-  degrades gracefully when offline.
+- Data lives locally in IndexedDB (Dexie). Cloud sync is optional and degrades
+  gracefully when offline: the relay has no database, so cloud calls (/api/db,
+  auth, storage, sync queue, restore, database realtime) go to
+  `https://backend.openvolley.app` (`getCloudApiUrl` in
+  `src/utils/backendConfig.js`; a build can set `VITE_CLOUD_API_URL`), while
+  the match relay WebSocket and the tablet endpoints stay on the local relay
+  (`ws://localhost:8080`, `http://<LAN-IP>:5173`). Online, the startup check
+  shows Cloud sync: Connected; without internet it shows Cloud sync: Offline
+  and the header pill reads **Local only** while the venue keeps running.
+  Nothing is uploaded without an account: with no sign-in the queue waits
+  ("Sign in to sync") and matches stay on this laptop.
+- Only the desktop window (loopback origin) talks to the cloud. Pages the
+  relay serves to the venue tablets from the LAN address
+  (`http://<LAN-IP>:5173/referee`, `/bench`, `/livescore`) keep cloud calls on
+  the relay itself: the cloud rejects LAN origins (CORS), and the relay
+  answers `/api/db` with an instant 404, so the tablets never wait on a hall
+  Wi-Fi without uplink. The referee and bench match lists ask the relay first
+  on a relay-served page (`src/utils/matchListSource.js`).
 - The desktop connects from loopback, so it bypasses the single-scoretable gate
   and can reload freely; a second device hitting the root over the LAN still
   gets the "one scoretable" protection.
@@ -99,7 +115,8 @@ npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
 ## Connect a tablet
 
 1. Make sure the tablet is on the **same Wi-Fi/LAN** as the computer.
-2. On the desktop, open **Help → Connect a Tablet…** to see the addresses, e.g.:
+2. On the desktop, open the header menu (☰) → **Connect tablets** to see the
+   addresses (with copy buttons and a QR code), e.g.:
    - Scoretable: `http://192.168.1.42:5173/`
    - Referee:    `http://192.168.1.42:5173/referee`
    - Bench:      `http://192.168.1.42:5173/bench`
@@ -124,5 +141,16 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
   release channel is chosen.
 - **electronAPI shim in Tauri** — inject `window.electronAPI` backed by Tauri
   commands so the in-app connection/QR panels (which check for Electron) light
-  up natively. Today the LAN addresses are shown via the native menu instead.
+  up natively. Today the LAN addresses are shown in the header menu
+  (**Connect tablets**, read from `/api/server/status`).
 - **Port-in-use UX** — surface a friendly message when the relay can't bind.
+
+## Window chrome
+
+- No native menu bar on Linux / Windows (it held only Help → Connect a Tablet
+  and rendered in the GTK system theme). Its items live in the app's header
+  menu: Connect tablets, help (?), version. macOS keeps Tauri's default app menu.
+- Light only: besides `Theme::Light`, the Linux build asks GTK for the light
+  variant of a dark system theme (`Yaru-dark` → `Yaru`), so the title bar,
+  pickers and scrollbars stay light on a dark desktop. A `GTK_THEME` set by the
+  user still wins. The app logs `[theme] GTK theme … -> …` when it switches.
