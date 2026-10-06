@@ -123,7 +123,7 @@ export default function StartupConnectivityModal({
       return <Loader2 size={18} className="animate-spin text-stone-400" aria-hidden="true" />
     }
     if (status === 'not_available' || status === 'not_configured') {
-      return <span className="text-base leading-none text-stone-400" aria-hidden="true">–</span>
+      return <span className="text-base leading-none text-stone-500" aria-hidden="true">–</span>
     }
     if (isStatusOk(status)) {
       return <Check size={18} strokeWidth={2.5} className="text-green-600" aria-hidden="true" />

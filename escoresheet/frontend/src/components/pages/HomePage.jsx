@@ -175,7 +175,7 @@ export default function HomePage({
           {/* Game PIN (if any) */}
           {currentOfficialMatch?.gamePin && (
             <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 px-4 py-3 text-center">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t('home.gamePin')}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('home.gamePin')}</div>
               <div className="mt-0.5 font-mono text-xl font-bold tracking-[0.3em] tabular-nums text-stone-900">
                 {currentOfficialMatch.gamePin}
               </div>
@@ -200,7 +200,7 @@ export default function HomePage({
             desktopApp?.page || RELEASES_PAGE
           const appLabel = t('home.downloadApp', 'Download the desktop app — offline scoretable + tablet server') +
             (desktopApp?.version ? ` (v${desktopApp.version})` : '')
-          const quietLink = 'text-xs text-stone-500 underline decoration-stone-300 underline-offset-2 hover:text-stone-800 hover:decoration-stone-500 transition-colors'
+          const quietLink = 'text-xs text-stone-600 underline decoration-stone-300 underline-offset-2 hover:text-stone-800 hover:decoration-stone-500 transition-colors'
           return (
             <div className="mt-5 flex flex-col items-center gap-2 text-center">
               <a

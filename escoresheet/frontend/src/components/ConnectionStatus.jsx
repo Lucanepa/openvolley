@@ -300,7 +300,7 @@ export default function ConnectionStatus({
             zIndex: 1000
           }}
         >
-          <div className="mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+          <div className="mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
             {t('connectionStatus.title', 'Connection Status')}
           </div>
           {Object.entries(shownStatuses).map(([key, status]) => {
