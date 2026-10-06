@@ -13,7 +13,14 @@
  *     stored in hashed form when a PIN secret is configured (lib/pinHash.js).
  *     With `matchOwner` (every non-admin session) the match must be new or
  *     owned by the caller (creator or editor), else 403 OV_NOT_MATCH_OWNER and
- *     nothing is written.
+ *     nothing is written; with `matchOwner.testOnly` (not an approved scorer)
+ *     only a test match, else 403 OV_SCORER_REQUIRED.
+ *     db/007: a closed match (approved/final reached the server) cannot be
+ *     restored over (409 OV_MATCH_CLOSED, nothing changes). A backup that is
+ *     itself approved/final is written as 'ended' first and gets its closing
+ *     status as the last step of the transaction, after its sets and events
+ *     (closing first would lock the match before its children are in).
+ *     `actorId` is the ov.user_id of the transaction (closed_by).
  *     -> 200 { data: { id, counts: { sets, events, liveState }, dropped: { match?, sets?, events?, liveState? } }, error: null }
  *
  *   POST /api/match/restore-by-pin { gameN, pin }                        (anonymous, attempt-limited)
@@ -61,6 +68,13 @@ export const RESTORE_DEFAULTS = Object.freeze({
   // Keys older clients still send, renamed when the table has the new column but not the old one.
   // backupManager.js builds the restore-in-place live state with `status`.
   legacyAliases: { match_live_state: { status: 'match_status' } },
+  // Columns only the server writes (db/005, db/007): dropped from a backup's match row.
+  serverOnlyColumns: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt'],
+  // Statuses that close a non-test match (db/007's trigger); a restore sets them last.
+  closingStatuses: ['approved', 'final'],
+  closingPlaceholderStatus: 'ended',
+  // Never in the match that restore-by-pin returns (closed_at stays).
+  restoreByPinHidden: ['created_by', 'closed_by', 'official_game_exempt'],
   // Only the key columns travel in the DELETE changes of a restore.
   deleteChangeColumns: ['id', 'external_id', 'match_id'],
   // restore-by-pin: per caller and game number, and per caller across all game numbers.
@@ -69,6 +83,7 @@ export const RESTORE_DEFAULTS = Object.freeze({
 })
 
 const PIN_RE = /^[A-Za-z0-9]{1,32}$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const quote = (name) => '"' + String(name).replace(/"/g, '""') + '"'
 
 /**
@@ -174,7 +189,7 @@ export function createMatchRestore (db, options = {}) {
     return null
   }
 
-  async function restoreMatch (payload, { proto, matchOwner } = {}) {
+  async function restoreMatch (payload, { proto, matchOwner, actorId } = {}) {
     if (!isPlainObject(payload)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const { match, sets = [], events = [], liveState = null } = payload
     const minProto = db.config.minWriteProto
@@ -211,9 +226,14 @@ export function createMatchRestore (db, options = {}) {
       for (const k of matchSecrets) {
         if (k in matchRow && (matchRow[k] == null || matchRow[k] === '')) delete matchRow[k]
       }
-      // The creator is the server's to set (pgQuery's ownership guard), never a backup's.
+      // The creator, the closing stamp and the exemption are the server's to set
+      // (pgQuery's ownership guard, db/007's triggers, the admin), never a backup's.
+      for (const k of cfg.serverOnlyColumns) delete matchRow[k]
       if (db.config.ownership?.ownerColumn) delete matchRow[db.config.ownership.ownerColumn]
       const storedMatchRow = pins.hashMatchRow(matchRow)
+      // A closing status goes in last (after the children), see the header.
+      const closingStatus = matchRow.test !== true && cfg.closingStatuses.includes(matchRow.status) ? matchRow.status : null
+      const upsertMatchRow = closingStatus ? { ...storedMatchRow, status: cfg.closingPlaceholderStatus } : storedMatchRow
       const sportType = typeof matchRow.sport_type === 'string' && matchRow.sport_type ? matchRow.sport_type : cfg.defaultSportType
       const childRows = (table, rows, label) => {
         const hasSport = cat.tables.get(table).columns.has('sport_type')
@@ -238,6 +258,9 @@ export function createMatchRestore (db, options = {}) {
 
       const changes = []
       const out = await db.withTransaction(async (client) => {
+        if (typeof actorId === 'string' && UUID_RE.test(actorId)) {
+          await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+        }
         const run = async (step, request, extra = {}) => {
           const r = await db.runQuery(request, { client, proto, collectChanges: true, ...(matchOwner ? { matchOwner } : {}), ...extra })
           if (r.body.error) throw new RestoreAbort(step, r)
@@ -247,7 +270,7 @@ export function createMatchRestore (db, options = {}) {
         const up = await run('match', {
           table: cfg.matchTable,
           action: 'upsert',
-          params: { data: storedMatchRow, onConflict: cfg.matchKey, returning: cfg.matchId, single: true }
+          params: { data: upsertMatchRow, onConflict: cfg.matchKey, returning: cfg.matchId, single: true }
         }, { mergeOnUpsert: matchSecrets })
         const matchUuid = up.body.data[cfg.matchId]
         const withFk = (row) => ({ ...row, [cfg.childFk]: matchUuid })
@@ -271,6 +294,13 @@ export function createMatchRestore (db, options = {}) {
         if (liveRow) {
           const r = await run('liveState', { table: cfg.liveStateTable, action: 'insert', params: { data: withFk(liveRow), count: 'exact' } })
           counts.liveState = r.body.count
+        }
+        if (closingStatus) {
+          await run('close', {
+            table: cfg.matchTable,
+            action: 'update',
+            params: { data: { status: closingStatus }, filters: [{ type: 'eq', column: cfg.matchId, value: matchUuid }] }
+          })
         }
         return { id: matchUuid, counts, dropped: droppedOut }
       }, { statementTimeoutMs: cfg.statementTimeoutMs })
@@ -407,7 +437,7 @@ export function createMatchRestore (db, options = {}) {
       const matchUuid = row[cfg.matchId]
       // A signed-in caller who proved the game PIN may now write the match.
       const editor = editorUserId ? await addEditor(matchUuid, editorUserId, 'restore-by-pin') : null
-      for (const k of ['created_by']) delete match[k]
+      for (const k of cfg.restoreByPinHidden) delete match[k]
       const byMatch = [{ type: 'eq', column: cfg.childFk, value: matchUuid }]
       const childOrder = (table, cols) => {
         const t = cat.tables.get(table)
