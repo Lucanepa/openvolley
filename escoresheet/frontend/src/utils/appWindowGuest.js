@@ -4,16 +4,9 @@
  * Android app.
  */
 
-import { APP_VIEW_ATTR, MSG_CLOSE, MSG_SAVE_PDF } from './openAppWindow'
+import { MSG_CLOSE, MSG_SAVE_PDF, isInAppView } from './openAppWindow'
 
-/** True inside the Android app's in-app view (an iframe of the app). */
-export function isInAppView(win = window) {
-  try {
-    return win.parent !== win && !!win.frameElement?.hasAttribute?.(APP_VIEW_ATTR)
-  } catch {
-    return false // a cross-origin parent: not ours
-  }
-}
+export { isInAppView }
 
 /** The window that opened this page: the opener, or the app under the in-app view. */
 export function getOpenerWindow(win = window) {
@@ -41,4 +34,52 @@ export async function savePdfThroughApp(blob, filename, win = window) {
   const arrayBuffer = await blob.arrayBuffer()
   win.parent.postMessage({ type: MSG_SAVE_PDF, arrayBuffer, filename }, win.location.origin)
   return true
+}
+
+/** Messages to the window that asked for the PDF (MatchEnd's approval). */
+export const MSG_PDF_BLOB = 'pdfBlob'
+export const MSG_PDF_BLOB_FAILED = 'pdfBlobFailed'
+
+/**
+ * The end of a getBlob scoresheet (the match-end approval): hands the PDF to
+ * the opener, or says it could not be made so the opener stops waiting, and
+ * closes this window / in-app view either way. Without an opener nobody
+ * waits: the page stays as it is.
+ * @param {{ blob: Blob, filename: string } | null | undefined} result
+ */
+export async function deliverPdfToOpener(result, win = window) {
+  const opener = getOpenerWindow(win)
+  if (!opener) return false
+  const origin = win.location.origin
+  try {
+    if (!result) throw new Error('no PDF')
+    const arrayBuffer = await result.blob.arrayBuffer()
+    opener.postMessage({ type: MSG_PDF_BLOB, arrayBuffer, filename: result.filename }, origin)
+  } catch {
+    // capture failed (e.g. the WebKitGTK data-URL limit of the desktop app)
+    try { opener.postMessage({ type: MSG_PDF_BLOB_FAILED }, origin) } catch { /* opener gone */ }
+  }
+  closeAppWindow(win)
+  return true
+}
+
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Whether an `ov-download-finished` event (desktop app, src-tauri/src/popups.rs)
+ * is about the file this page saved as `filename`. On Linux every window
+ * hears every download (the match-end ZIP of the scoretable too); the saved
+ * name may carry " (1)" when the file already existed. A failure without a
+ * path counts while this page waits for its own download.
+ * @param {{ path?: string|null, fileName?: string|null, success?: boolean }} detail
+ * @param {string|null|undefined} filename the name this page asked to save
+ */
+export function isOwnDownload(detail, filename) {
+  if (!filename || !detail) return false
+  const name = detail.fileName || (detail.path ? String(detail.path).split(/[\\/]/).pop() : '')
+  if (!name) return !detail.success
+  if (name === filename) return true
+  const dot = filename.lastIndexOf('.')
+  const [stem, ext] = dot > 0 ? [filename.slice(0, dot), filename.slice(dot)] : [filename, '']
+  return new RegExp(`^${escapeRegExp(stem)} \\(\\d+\\)${escapeRegExp(ext)}$`).test(name)
 }

@@ -10,8 +10,17 @@ import { describeScoresheetLoadError, findOwnScoresheet, parseScoresheetName, re
 // Initialize Dexie database (same as main app)
 import { db } from '../src/db/db';
 import { ClipboardIcon } from '../src/components/icons';
-import { closeAppWindow, getOpenerWindow } from '../src/utils/appWindowGuest';
+import { closeAppWindow, getOpenerWindow, isInAppView } from '../src/utils/appWindowGuest';
 import { openAppWindow } from '../src/utils/openAppWindow';
+
+// Opened by the scorer app (a popup / app window, or the Android in-app view)?
+const openedByTheApp = () => !!getOpenerWindow() || isInAppView();
+
+// Back to the scorer app that opened this page: focus it, close this one.
+const backToTheApp = () => {
+  try { getOpenerWindow()?.focus(); } catch { /* ignore */ }
+  closeAppWindow();
+};
 
 // Helper function to send errors to parent window
 const sendErrorToParent = (error: Error | string, details?: string) => {
@@ -413,7 +422,18 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
           {error.title}
         </div>
         <div style={{ color: '#666', maxWidth: '32rem', textAlign: 'center', padding: '0 16px' }}>{error.message}</div>
-        {error.kind === 'signin' && (
+        {error.kind === 'signin' && (openedByTheApp() ? (
+          // An app window / the Android in-app view over the scorer app: a
+          // link to "/" would load a second scorer app (relay, database) in
+          // here. Back to the app, which signs in.
+          <button
+            type="button"
+            onClick={backToTheApp}
+            style={{ display: 'inline-flex', alignItems: 'center', minHeight: '44px', padding: '0 20px', borderRadius: '12px', border: 0, background: '#0f172a', color: '#fff', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
+          >
+            Close and sign in in the scorer app
+          </button>
+        ) : (
           // Same origin as the scorer app: its sign-in gives this page the session
           <a
             href="/"
@@ -421,7 +441,7 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
           >
             Open the scorer app to sign in
           </a>
-        )}
+        ))}
       </div>
     );
   }

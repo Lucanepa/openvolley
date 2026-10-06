@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   APP_VIEW_ATTR,
   MSG_CLOSE,
+  MSG_OPEN,
   MSG_SAVE_PDF,
   currentInAppView,
   detectAppPlatform,
@@ -10,7 +11,17 @@ import {
   resolveAppUrl,
   writePdfNative,
 } from '../openAppWindow'
-import { closeAppWindow, getOpenerWindow, isInAppView, savePdfThroughApp } from '../appWindowGuest'
+import {
+  MSG_PDF_BLOB,
+  MSG_PDF_BLOB_FAILED,
+  closeAppWindow,
+  deliverPdfToOpener,
+  getOpenerWindow,
+  isInAppView,
+  isOwnDownload,
+  savePdfThroughApp,
+} from '../appWindowGuest'
+import { waitForScoresheetPdf } from '../scoresheetPdfRequest'
 
 const ORIGIN = 'http://localhost:5173'
 
@@ -170,6 +181,24 @@ describe('openAppWindow in the Android app (Capacitor)', () => {
     expect(views[0].querySelector('iframe').getAttribute('src')).toContain('action=save')
   })
 
+  it('opens what its page asks for (MSG_OPEN), in the same view, and only for its page', () => {
+    const r = open('/scoresheet/')
+    const bridge = window.Capacitor
+    window.Capacitor = { isNativePlatform: () => true }
+    try {
+      const msg = (data, extra = {}) => window.dispatchEvent(new MessageEvent('message', { data, origin: window.location.origin, source: r.window, ...extra }))
+      msg({ type: MSG_OPEN, href: 'javascript:alert(1)' })
+      msg({ type: MSG_OPEN, href: `${window.location.origin}/scoresheet/?game=3&action=save` }, { origin: 'https://evil.example' })
+      const frame = () => document.querySelector('[data-testid="app-window"] iframe')
+      expect(frame().getAttribute('src')).toBe(`${window.location.origin}/scoresheet/`)
+      msg({ type: MSG_OPEN, href: `${window.location.origin}/scoresheet/?game=3&action=save` })
+      expect(document.querySelectorAll('[data-testid="app-window"]')).toHaveLength(1)
+      expect(frame().getAttribute('src')).toBe(`${window.location.origin}/scoresheet/?game=3&action=save`)
+    } finally {
+      window.Capacitor = bridge
+    }
+  })
+
   it('sends external links to the system browser by navigation (Capacitor hands it to Android)', () => {
     const win = fakeWin({ extra: { Capacitor: { isNativePlatform: () => true } } })
     const r = openAppWindow('https://openvolley.app/help', { win })
@@ -232,7 +261,8 @@ describe('the page side (appWindowGuest)', () => {
     const win = {
       opener,
       close: vi.fn(),
-      location: { origin: ORIGIN },
+      open: vi.fn(() => null),
+      location: { origin: ORIGIN, href: `${ORIGIN}/scoresheet/?list=1` },
       frameElement: inView ? { hasAttribute: (a) => a === APP_VIEW_ATTR } : null,
     }
     win.parent = inView ? parent : win
@@ -277,5 +307,108 @@ describe('the page side (appWindowGuest)', () => {
     expect(msg.type).toBe(MSG_SAVE_PDF)
     expect(msg.filename).toBe('x.pdf')
     expect(new TextDecoder().decode(msg.arrayBuffer)).toBe('%PDF')
+  })
+
+  it('inside the in-app view, hands openAppWindow to the app under it (no bridge in the iframe)', () => {
+    const { win, parent } = frameWin()
+    const r = openAppWindow('?date=2026-10-06&game=3&action=save', { win, title: 'Scoresheet' })
+    expect(win.open).not.toHaveBeenCalled()
+    expect(parent.postMessage).toHaveBeenCalledWith(
+      { type: MSG_OPEN, href: `${ORIGIN}/scoresheet/?date=2026-10-06&game=3&action=save`, title: 'Scoresheet' },
+      ORIGIN,
+    )
+    expect(r).toMatchObject({ ok: true, mode: 'in-app', platform: 'capacitor' })
+    expect(openAppWindow('https://openvolley.app/help', { win })).toMatchObject({ ok: true, mode: 'external' })
+    expect(openAppWindow('javascript:alert(1)', { win })).toMatchObject({ ok: false, mode: 'blocked' })
+    expect(parent.postMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('getBlob: sends the PDF to the opener and closes', async () => {
+    const opener = { closed: false, postMessage: vi.fn() }
+    const { win } = frameWin({ inView: false, opener })
+    const blob = new Blob(['%PDF'], { type: 'application/pdf' })
+    expect(await deliverPdfToOpener({ blob, filename: '7.pdf' }, win)).toBe(true)
+    const [msg, origin] = opener.postMessage.mock.calls[0]
+    expect([msg.type, msg.filename, origin]).toEqual([MSG_PDF_BLOB, '7.pdf', ORIGIN])
+    expect(win.close).toHaveBeenCalled()
+  })
+
+  it('getBlob: a failed capture tells the opener (no 30 s wait) and still closes', async () => {
+    const opener = { closed: false, postMessage: vi.fn() }
+    const popup = frameWin({ inView: false, opener })
+    expect(await deliverPdfToOpener(null, popup.win)).toBe(true)
+    expect(opener.postMessage).toHaveBeenCalledWith({ type: MSG_PDF_BLOB_FAILED }, ORIGIN)
+    expect(popup.win.close).toHaveBeenCalled()
+
+    // the Android in-app view: told and closed through the app under it
+    const { win, parent } = frameWin()
+    await deliverPdfToOpener(undefined, win)
+    expect(parent.postMessage.mock.calls.map(c => c[0].type)).toEqual([MSG_PDF_BLOB_FAILED, MSG_CLOSE])
+
+    // nobody waiting: the page stays
+    const alone = frameWin({ inView: false })
+    expect(await deliverPdfToOpener(null, alone.win)).toBe(false)
+    expect(alone.win.close).not.toHaveBeenCalled()
+  })
+
+  it('keeps only its own download from the ones every window hears', () => {
+    const name = '7_HOME_AWAY_20261006.pdf'
+    expect(isOwnDownload({ path: `/home/s/Downloads/${name}`, fileName: name, success: true }, name)).toBe(true)
+    expect(isOwnDownload({ path: `/home/s/Downloads/7_HOME_AWAY_20261006 (2).pdf`, success: true }, name)).toBe(true)
+    expect(isOwnDownload({ path: 'C:\\Users\\s\\Downloads\\7_HOME_AWAY_20261006 (1).pdf', success: true }, name)).toBe(true)
+    // the scoretable's match-end ZIP, logs, another match's PDF
+    expect(isOwnDownload({ path: '/home/s/Downloads/Match_A_vs_B_06-10-2026.zip', success: true }, name)).toBe(false)
+    expect(isOwnDownload({ fileName: '8_HOME_AWAY_20261006.pdf', success: true }, name)).toBe(false)
+    expect(isOwnDownload({ fileName: '7_HOME_AWAY_20261006 (x).pdf', success: true }, name)).toBe(false)
+    // nothing saved here: nothing is ours
+    expect(isOwnDownload({ fileName: name, success: true }, null)).toBe(false)
+    // a failure without a path while this page waits for its file
+    expect(isOwnDownload({ path: null, success: false }, name)).toBe(true)
+  })
+})
+
+describe('waitForScoresheetPdf (the match-end approval)', () => {
+  const page = { origin: window.location.origin }
+  const answer = (data, origin = page.origin) => window.dispatchEvent(new MessageEvent('message', { data, origin }))
+
+  afterEach(() => vi.useRealTimers())
+
+  it('resolves with the PDF the scoresheet sends', async () => {
+    const p = waitForScoresheetPdf(() => ({ ok: true }))
+    answer({ type: MSG_PDF_BLOB, arrayBuffer: new TextEncoder().encode('%PDF').buffer, filename: '7.pdf' }, 'https://evil.example')
+    answer({ type: MSG_PDF_BLOB, arrayBuffer: new TextEncoder().encode('%PDF').buffer, filename: '7.pdf' })
+    const { blob, filename } = await p
+    expect(filename).toBe('7.pdf')
+    expect(blob.type).toBe('application/pdf')
+  })
+
+  it('stops waiting as soon as the scoresheet says the capture failed', async () => {
+    vi.useFakeTimers()
+    const p = waitForScoresheetPdf(() => ({ ok: true }))
+    answer({ type: MSG_PDF_BLOB_FAILED })
+    await expect(p).rejects.toThrow('could not create the PDF')
+  })
+
+  it('times out, and closes the window it opened', async () => {
+    vi.useFakeTimers()
+    const close = vi.fn()
+    const p = waitForScoresheetPdf(() => ({ ok: true, close }), { timeoutMs: 1000 })
+    const settled = expect(p).rejects.toThrow('timed out')
+    vi.advanceTimersByTime(1000)
+    await settled
+    expect(close).toHaveBeenCalled()
+
+    const w = { close: vi.fn() }
+    const q = waitForScoresheetPdf(() => ({ ok: true, window: w }), { timeoutMs: 1000 })
+    const settledQ = expect(q).rejects.toThrow('timed out')
+    vi.advanceTimersByTime(1000)
+    await settledQ
+    expect(w.close).toHaveBeenCalled()
+  })
+
+  it('fails at once when nothing opened', async () => {
+    vi.useFakeTimers()
+    await expect(waitForScoresheetPdf(() => ({ ok: false }))).rejects.toThrow('could not be opened')
+    await expect(waitForScoresheetPdf(() => { throw new Error('boom') })).rejects.toThrow('boom')
   })
 })
