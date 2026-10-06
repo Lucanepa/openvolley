@@ -4,12 +4,14 @@ import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import NativeServerSection from './NativeServerSection'
+import AndroidVersionRows from './AndroidVersionRows'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
 import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
 import { Info, LifeBuoy, X } from 'lucide-react'
 import { Button, cn, IconButton, SegmentedControl, Switch } from '../../ui'
+import { isAndroidApp } from '../../utils/androidUpdate'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -227,6 +229,7 @@ export default function HomeOptionsModal({
 }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const androidApp = isAndroidApp()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
@@ -894,6 +897,9 @@ export default function HomeOptionsModal({
         )}
 
         <Section title={t('options.appVersion')}>
+          {/* Android: the APK bundles version.json (always "latest"); it asks
+              the F-Droid index instead (AndroidVersionRows). */}
+          {androidApp ? <AndroidVersionRows /> : (
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div className="flex items-center justify-between">
               <div>
@@ -947,6 +953,7 @@ export default function HomeOptionsModal({
               </div>
             )}
           </Row>
+          )}
           {/* Licence + credits. The icons are the same packs as wiedisync:
               Lucide (ISC) for the UI glyphs and the whistle, Phosphor (MIT) for
               the volleyball (see components/icons and ui/AppSpinner.jsx). Both
