@@ -58,6 +58,8 @@ import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
+import ManageConsole from './components/manage/ManageConsole'
+import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
@@ -91,6 +93,30 @@ export default function App() {
   const [newMatchModal, setNewMatchModal] = useState(null)
   const [restoreMatchModal, setRestoreMatchModal] = useState(false)
   const [restoreMatchIdInput, setRestoreMatchIdInput] = useState('')
+  // Manage console (admins, competition managers): the open tab, or null
+  const [manageTab, setManageTab] = useState(null)
+  // utils/manageNav: the user menu opens the console; sync notices and
+  // MatchSetup open "restore a match" with the game number filled in (join
+  // an official game with its game PIN). The console never opens over a
+  // match in progress.
+  useEffect(() => {
+    const onManage = (e) => {
+      if (matchId) return
+      setManageTab(e?.detail?.tab || 'accounts')
+    }
+    const onRestore = (e) => {
+      const gameN = e?.detail?.gameN
+      setManageTab(null)
+      setRestoreMatchIdInput(gameN != null ? String(gameN) : '')
+      setRestoreMatchModal(true)
+    }
+    window.addEventListener(OPEN_MANAGE_EVENT, onManage)
+    window.addEventListener(OPEN_RESTORE_EVENT, onRestore)
+    return () => {
+      window.removeEventListener(OPEN_MANAGE_EVENT, onManage)
+      window.removeEventListener(OPEN_RESTORE_EVENT, onRestore)
+    }
+  }, [matchId])
   const [restorePin, setRestorePin] = useState('')
   const [restoreError, setRestoreError] = useState('')
   const [restoreLoading, setRestoreLoading] = useState(false)
@@ -3709,6 +3735,11 @@ export default function App() {
 
           </div>
         </>
+      )}
+
+      {/* Manage console (admins and competition managers), full screen */}
+      {manageTab && !matchId && (
+        <ManageConsole tab={manageTab} onTab={setManageTab} onClose={() => setManageTab(null)} />
       )}
     </div>
   )
