@@ -49,6 +49,8 @@ import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
+import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
+import { isNativeApp } from '../utils/backendConfig'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon, CardIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -729,9 +731,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Auto-lock orientation to landscape for scoreboard on mount
+  // Auto-lock orientation to landscape for scoreboard on mount. The Android
+  // app rotates freely everywhere else, so it locks natively here and unlocks
+  // when the scoreboard is left (its WebView ignores screen.orientation.lock).
   useEffect(() => {
-    const lockLandscape = async () => {
+    if (isNativeApp()) {
+      lockLandscape()
+      return () => { unlockOrientation() }
+    }
+    const lockLandscapeWeb = async () => {
       try {
         if (screen.orientation && screen.orientation.lock) {
           await screen.orientation.lock('landscape')
@@ -740,7 +748,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Orientation lock not supported
       }
     }
-    lockLandscape()
+    lockLandscapeWeb()
 
     return () => {
       // Unlock orientation when leaving scoreboard
