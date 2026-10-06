@@ -40,25 +40,29 @@ export default function AndroidUpdateNotice() {
   if (!update.active) return null
 
   if (showAsk) {
+    // .ov-kit around it: the legacy button and focus styles (styles.css)
+    // stay out of the kit's dialog
     return (
-      <Modal
-        open={askReady}
-        onClose={() => update.setNotify(false)}
-        title={t('update.askTitle')}
-        size="sm"
-        decision
-        closeLabel={t('common.close')}
-      >
-        <p className="text-sm leading-relaxed text-stone-600">{t('update.askBody')}</p>
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          <Button variant="secondary" size="xl" onClick={() => update.setNotify(false)} data-testid="update-ask-no">
-            {t('update.askNo')}
-          </Button>
-          <Button variant="secondary" size="xl" onClick={() => update.setNotify(true)} data-testid="update-ask-yes">
-            {t('update.askYes')}
-          </Button>
-        </div>
-      </Modal>
+      <div className="ov-kit">
+        <Modal
+          open={askReady}
+          onClose={() => update.setNotify(false)}
+          title={t('update.askTitle')}
+          size="sm"
+          decision
+          closeLabel={t('common.close')}
+        >
+          <p className="text-sm leading-relaxed text-stone-600">{t('update.askBody')}</p>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <Button variant="secondary" size="xl" onClick={() => update.setNotify(false)} data-testid="update-ask-no">
+              {t('update.askNo')}
+            </Button>
+            <Button variant="secondary" size="xl" onClick={() => update.setNotify(true)} data-testid="update-ask-yes">
+              {t('update.askYes')}
+            </Button>
+          </div>
+        </Modal>
+      </div>
     )
   }
 

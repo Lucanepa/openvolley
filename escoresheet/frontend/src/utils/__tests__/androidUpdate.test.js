@@ -1,4 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+// Capacitor's plugin proxy answers every property, `then` too
+const core = vi.hoisted(() => {
+  const plugin = {
+    then: () => { throw new Error('the plugin proxy was resolved as a promise') },
+    getInstallSource: async () => ({ family: 'sideload' }),
+  }
+  return { plugin, registerPlugin: vi.fn(() => plugin) }
+})
+vi.mock('@capacitor/core', () => ({ registerPlugin: core.registerPlugin }))
 import index from './fixtures/fdroid-index-v2.json'
 import {
   CHECK_INTERVAL_MS,
@@ -274,6 +284,15 @@ describe('the controller in the Android app', () => {
     expect(getAndroidUpdateSnapshot()).toMatchObject({ family: 'unknown', asking: false })
     expect(fetchImpl).not.toHaveBeenCalled()
     warn.mockRestore()
+  })
+
+  it('registers the plugin through @capacitor/core when it is not loaded yet', async () => {
+    // the native bridge's window.Capacitor has no registerPlugin before
+    // @capacitor/core is imported (the app imports it lazily)
+    installAndroidUpdates({ win, fetchImpl: vi.fn(), now: () => clock })
+    await flush()
+    expect(core.registerPlugin).toHaveBeenCalledWith('UpdateSource')
+    expect(getAndroidUpdateSnapshot()).toMatchObject({ family: 'sideload', asking: true })
   })
 
   it('reads a blocked storage as never asked', () => {

@@ -218,14 +218,22 @@ export function isAndroidApp(win = typeof window !== 'undefined' ? window : unde
   }
 }
 
-function pluginOf(win) {
-  const cap = win?.Capacitor
-  if (typeof cap?.registerPlugin !== 'function') return null
-  try {
-    return cap.registerPlugin('UpdateSource')
-  } catch {
-    return null
+/**
+ * The app's native plugin (UpdateSourcePlugin.java). window.Capacitor gets
+ * registerPlugin only once @capacitor/core is loaded, and the app loads it
+ * lazily (with the Filesystem plugin): at start it may not be there yet.
+ * The proxy answers every property, `then` too, so it is handed around in a
+ * box and never resolved from a promise.
+ * @returns {Promise<{plugin: any}>}
+ */
+async function pluginBox(me) {
+  if (!me.plugin) {
+    let register = me.win.Capacitor?.registerPlugin
+    if (typeof register !== 'function') register = (await import('@capacitor/core')).registerPlugin
+    // registerPlugin returns the registered proxy again on a second call
+    if (!me.plugin) me.plugin = register('UpdateSource')
   }
+  return { plugin: me.plugin }
 }
 
 const autoFamily = (family) => family === 'sideload' || family === 'other'
@@ -288,9 +296,10 @@ export function dismissAndroidUpdate() {
 }
 
 async function openStore(opts) {
-  const plugin = ctx?.plugin
+  if (!ctx) return false
   try {
-    const res = await plugin?.openStore?.(opts)
+    const { plugin } = await pluginBox(ctx)
+    const res = await plugin.openStore(opts)
     if (res?.opened) return true
   } catch (e) {
     console.warn('[update] openStore failed', e)
@@ -330,7 +339,7 @@ export function installAndroidUpdates({
   if (!win || isInAppView(win) || !isAndroidApp(win)) return () => {}
   const storage = storageOf(win)
   const doFetch = fetchImpl || ((...args) => win.fetch(...args))
-  const me = { win, storage, fetchImpl: doFetch, plugin: plugin ?? pluginOf(win), now, indexUrl }
+  const me = { win, storage, fetchImpl: doFetch, plugin: plugin ?? null, now, indexUrl }
   ctx = me
   update({ active: true, notify: readNotify(storage) })
 
@@ -341,8 +350,8 @@ export function installAndroidUpdates({
   win.addEventListener('ov-signed-in', auto)
   const offLive = onLiveMatchChange((live) => { if (live === 'none') auto() })
 
-  Promise.resolve()
-    .then(() => me.plugin?.getInstallSource?.())
+  pluginBox(me)
+    .then(({ plugin: p }) => p.getInstallSource())
     .then((src) => (FAMILIES.has(src?.family) ? src.family : src ? familyOf(src) : 'unknown'))
     .catch((e) => {
       console.warn('[update] install source unknown', e)
