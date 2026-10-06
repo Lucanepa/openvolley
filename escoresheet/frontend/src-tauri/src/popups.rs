@@ -13,14 +13,18 @@
 //! - anything else (file:, data:, custom schemes) is refused.
 //!
 //! New windows get labels "popup-<n>": the capabilities only name "main", so
-//! they have no app commands (backups) of their own.
+//! they have no app commands (backups) of their own (main.rs ipc_acl_tests
+//! checks that a "popup-1" window is refused them). They belong to the
+//! scoretable: when the main window goes, they are closed with it.
 //!
 //! Downloads (the scoresheet's "Save PDF" is a blob download) go to the
-//! user's Downloads folder under a free name; when one finishes, the app's
-//! windows receive an `ov-download-finished` DOM event with the path.
+//! user's Downloads folder under a free name; when one finishes, the page
+//! hears where (`ov-download-finished` DOM event with the path and file name).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::webview::{DownloadEvent, NewWindowFeatures, NewWindowResponse};
 use tauri::{AppHandle, Manager, Runtime, Url, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -76,7 +80,32 @@ pub fn system_open_command(url: &str) -> std::process::Command {
     cmd
 }
 
+/// At most one link handed to the system per this interval. Scripts may open
+/// windows without a click on Linux (see let_scripts_open_windows), so this
+/// caps what a script could do with that: no burst of browser tabs / mail
+/// windows. A scorer never clicks two external links within a second.
+pub const SYSTEM_OPEN_MIN_INTERVAL: Duration = Duration::from_secs(1);
+
+static LAST_SYSTEM_OPEN: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Whether a system open at `now` is allowed after the last one at `last`.
+pub fn system_open_allowed(last: Option<Instant>, now: Instant, min_interval: Duration) -> bool {
+    match last {
+        Some(last) => now.saturating_duration_since(last) >= min_interval,
+        None => true,
+    }
+}
+
 fn open_in_system(url: &Url) {
+    {
+        let mut last = LAST_SYSTEM_OPEN.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        if !system_open_allowed(*last, now, SYSTEM_OPEN_MIN_INTERVAL) {
+            eprintln!("[popup] refused {url}: another link was opened less than a second ago");
+            return;
+        }
+        *last = Some(now);
+    }
     match system_open_command(url.as_str()).spawn() {
         Ok(mut child) => {
             std::thread::spawn(move || {
@@ -92,6 +121,21 @@ static POPUP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// A unique label for the next app window opened by window.open().
 pub fn next_popup_label() -> String {
     format!("popup-{}", POPUP_COUNTER.fetch_add(1, Ordering::Relaxed) + 1)
+}
+
+/// Whether a window label is one of the app windows opened by window.open().
+pub fn is_popup_label(label: &str) -> bool {
+    label.starts_with("popup-")
+}
+
+/// Closes every app window opened by window.open() (the scoresheet windows).
+/// Called when the main window goes: they belong to the scoretable.
+pub fn close_app_windows<R: Runtime>(app: &AppHandle<R>) {
+    for (label, window) in app.webview_windows() {
+        if is_popup_label(&label) {
+            let _ = window.destroy();
+        }
+    }
 }
 
 /// The window.open() handler for an app window (the main one and the popups).
@@ -126,7 +170,7 @@ fn build_popup<R: Runtime>(
     http_port: u16,
     features: NewWindowFeatures,
 ) -> tauri::Result<WebviewWindow<R>> {
-    let window = WebviewWindowBuilder::new(app, next_popup_label(), WebviewUrl::External("about:blank".parse().unwrap()))
+    let builder = WebviewWindowBuilder::new(app, next_popup_label(), WebviewUrl::External("about:blank".parse().unwrap()))
         .title("OpenVolley eScoresheet")
         .inner_size(1200.0, 900.0)
         .min_inner_size(600.0, 400.0)
@@ -137,8 +181,14 @@ fn build_popup<R: Runtime>(
         .on_document_title_changed(|window, title| {
             let _ = window.set_title(&title);
         })
-        .on_new_window(new_window_handler(app.clone(), http_port))
-        .build()?;
+        .on_new_window(new_window_handler(app.clone(), http_port));
+    // WebView2 (and WKWebView) report downloads per webview: the popup needs
+    // its own handler, or the scoresheet's "Save PDF" never says where the
+    // file went. On WebKitGTK the handler is on the web context the popups
+    // share with the main window: a second one would fire twice per download.
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.on_download(on_download);
+    let window = builder.build()?;
     let_scripts_open_windows(&window);
     close_on_window_close(&window);
     Ok(window)
@@ -149,6 +199,13 @@ fn build_popup<R: Runtime>(
 /// call window.open() after those awaits, which WebKit then blocked on its own
 /// (no handler call, null). The handler above decides what may open, so let
 /// scripts open windows. (WebView2 always asks the handler.)
+///
+/// The trade-off: any script in the app's windows may now open a window
+/// without a click. Only the app's own pages load in them, and the handler
+/// still decides: app pages as app windows, http(s) / mailto to the system at
+/// most once a second (SYSTEM_OPEN_MIN_INTERVAL), everything else refused. An
+/// injected script (e.g. through a team or player name) could at worst open
+/// one web / mail link per second, not a burst of them.
 #[cfg(target_os = "linux")]
 pub fn let_scripts_open_windows<R: Runtime>(window: &WebviewWindow<R>) {
     use webkit2gtk::{SettingsExt, WebViewExt};
@@ -187,9 +244,12 @@ fn close_on_window_close<R: Runtime>(window: &WebviewWindow<R>) {
 fn close_on_window_close<R: Runtime>(_window: &WebviewWindow<R>) {}
 
 /// The JS that tells a page where its download went (or that it failed).
+/// `fileName` lets a page tell its own download from another window's (the
+/// scoresheet ignores the match-end ZIP of the scoretable).
 pub fn download_finished_script(path: Option<&std::path::Path>, success: bool) -> String {
     let detail = serde_json::json!({
         "path": path.map(|p| p.to_string_lossy().into_owned()),
+        "fileName": path.and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()),
         "success": success,
     });
     format!("window.dispatchEvent(new CustomEvent('ov-download-finished', {{ detail: {detail} }}))")
@@ -222,11 +282,16 @@ pub fn free_path(dir: &Path, file_name: &str) -> PathBuf {
         .unwrap()
 }
 
-/// Downloads of the app's windows (the scoresheet's "Save PDF"). Registered on
-/// the main window only: popups share its web context, so one handler sees
-/// every download (one per window would fire once per window opened so far).
-/// The file goes to the Downloads folder; the app's windows then hear where
+/// Downloads of the app's windows (the scoresheet's "Save PDF", the match-end
+/// ZIP). The file goes to the Downloads folder; the page then hears where
 /// (`ov-download-finished`; the scoresheet window shows it).
+///
+/// WebKitGTK: the handler sits on the web context the popups share with the
+/// main window, so the one registered on the main window sees every download,
+/// and `webview` is always the main one, not the window that started it: the
+/// event goes to every window, and each page keeps only its own file (by
+/// `fileName`). WebView2 / WKWebView: one handler per webview (build_popup
+/// registers it on the popups too), and `webview` is the one that downloaded.
 pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) -> bool {
     match event {
         DownloadEvent::Requested { url, destination } => {
@@ -246,8 +311,12 @@ pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) ->
         DownloadEvent::Finished { url, path, success } => {
             eprintln!("[download] {} finished: {success} {:?}", short(&url), path);
             let script = download_finished_script(path.as_deref(), success);
-            for window in webview.app_handle().webview_windows().values() {
-                let _ = window.eval(&script);
+            if cfg!(target_os = "linux") {
+                for window in webview.app_handle().webview_windows().values() {
+                    let _ = window.eval(&script);
+                }
+            } else {
+                let _ = webview.eval(&script);
             }
             true
         }
@@ -341,6 +410,28 @@ mod tests {
         let js = download_finished_script(Some(std::path::Path::new("/home/a\"b/Downloads/x'.pdf")), true);
         assert!(js.contains(r#""path":"/home/a\"b/Downloads/x'.pdf""#), "{js}");
         assert!(js.contains(r#""success":true"#));
-        assert!(download_finished_script(None, false).contains(r#""path":null"#));
+        assert!(js.contains(r#""fileName":"x'.pdf""#), "{js}");
+        let failed = download_finished_script(None, false);
+        assert!(failed.contains(r#""path":null"#) && failed.contains(r#""fileName":null"#), "{failed}");
+    }
+
+    #[test]
+    fn popup_labels_are_recognised() {
+        assert!(is_popup_label(&next_popup_label()));
+        assert!(is_popup_label("popup-12"));
+        assert!(!is_popup_label("main"));
+        assert!(!is_popup_label("popup"));
+    }
+
+    #[test]
+    fn system_opens_are_rate_limited() {
+        let t0 = Instant::now();
+        let min = SYSTEM_OPEN_MIN_INTERVAL;
+        assert!(system_open_allowed(None, t0, min));
+        assert!(!system_open_allowed(Some(t0), t0, min));
+        assert!(!system_open_allowed(Some(t0), t0 + Duration::from_millis(999), min));
+        assert!(system_open_allowed(Some(t0), t0 + min, min));
+        // a clock that went backwards: refused, not a panic
+        assert!(!system_open_allowed(Some(t0 + min), t0, min));
     }
 }

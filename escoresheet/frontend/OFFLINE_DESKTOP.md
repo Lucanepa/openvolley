@@ -247,15 +247,29 @@ window and on the windows it opens):
   opener asked for: same web process and data store (the scoresheet reads the
   match from the same IndexedDB) and `window.opener` (the match-end approval
   PDF comes back by `postMessage`). `window.close()` in it closes the window.
+- The scoresheet windows belong to the scoretable: closing the main window
+  closes them and quits. (Otherwise a scoresheet left open kept the process,
+  the relay and ports 5173 / 8080 alive, and the next launch failed with
+  "Cannot bind HTTP port", silently in a release build.)
+- The match-end approval opens the scoresheet with `action=getBlob`. When the
+  PDF cannot be made (see below), the scoresheet tells the opener
+  (`pdfBlobFailed`) and closes; the approval goes on without the PDF at once
+  instead of waiting 30 s. On a timeout the window is closed as well.
 - Web links and `mailto:` go to the system browser / mail app (`xdg-open`,
-  `open`, `rundll32 url.dll,FileProtocolHandler`); other schemes are refused.
+  `open`, `rundll32 url.dll,FileProtocolHandler`), at most one per second;
+  other schemes are refused.
 - WebKitGTK only asks the handler about a `window.open` made during a click;
   the app's buttons first read IndexedDB, so scripts may open windows (the
-  handler decides what opens).
+  handler decides what opens). The price: a script in the app's pages could
+  open windows without a click; the one-per-second limit on system links
+  bounds what an injected script (e.g. via a team name) could do with that.
 - Downloads ("Save PDF" is a blob download) go to the Downloads folder
   (`~/Downloads` when there is no `user-dirs.dirs`) under a free name; the
-  windows get an `ov-download-finished` event and the scoresheet shows where
-  the file went. One handler on the main window: the popups share its context.
+  page gets an `ov-download-finished` event (path, file name) and the
+  scoresheet shows where its PDF went. WebKitGTK: one handler on the main
+  window (the popups share its context, and it cannot tell which window
+  downloaded), so every window hears every download and the scoresheet keeps
+  only its own file. WebView2: one handler per window, only that window hears.
 
 Known limits:
 
