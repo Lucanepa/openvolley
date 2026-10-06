@@ -58,6 +58,7 @@ public class UpdateSourcePlugin extends Plugin {
 
     /** {installer, updateOwner, family: 'fdroid' | 'sideload' | 'other'} */
     @PluginMethod
+    @SuppressWarnings("deprecation") // getInstallerPackageName: Android 10 and older only
     public void getInstallSource(PluginCall call) {
         Context context = getContext();
         PackageManager pm = context.getPackageManager();
@@ -136,6 +137,7 @@ public class UpdateSourcePlugin extends Plugin {
         return storeSchemes && (lower.startsWith("market://") || lower.startsWith("fdroidrepos://"));
     }
 
+    @SuppressWarnings("deprecation") // getInstallerPackageName: Android 10 and older only
     private String installerOf(String pkg) {
         PackageManager pm = getContext().getPackageManager();
         try {

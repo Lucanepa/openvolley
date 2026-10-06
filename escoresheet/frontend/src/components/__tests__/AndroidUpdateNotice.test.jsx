@@ -84,7 +84,10 @@ describe('AndroidUpdateNotice', () => {
     const notice = screen.getByTestId('android-update-notice')
     expect(notice).toHaveTextContent('update.available 2.2.0')
     expect(notice).toHaveTextContent('0.0.0-test')
-    fireEvent.click(screen.getByText('update.getFdroid'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('update.getFdroid'))
+      await flush()
+    })
     expect(plugin.openStore).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringMatching(/^fdroidrepos:\/\//) }))
     fireEvent.click(screen.getByText('common.later'))
     expect(screen.queryByTestId('android-update-notice')).not.toBeInTheDocument()
