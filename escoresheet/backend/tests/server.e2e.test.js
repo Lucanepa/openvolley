@@ -808,6 +808,20 @@ describe('server.js without a database (LAN relay mode)', () => {
     assert.equal(h.json.db, undefined)
   })
 
+  it("serves the status page at '/' with nothing loaded from elsewhere", async () => {
+    const r = await fetch(`${srv.base}/`)
+    assert.equal(r.status, 200)
+    assert.match(r.headers.get('content-type'), /^text\/html/)
+    const html = await r.text()
+    assert.match(html, /OpenVolley server/)
+    assert.match(html, /Server running/)
+    for (const path of ['/referee', '/bench?team=home', '/bench?team=away', '/roster', '/beach-referee', '/beach-scoreboard']) {
+      assert.ok(html.includes(`${srv.base}${path}`.replace(/&/g, '&amp;')), path)
+    }
+    assert.doesNotMatch(html, /<(script|link|img|iframe)\b|@import|url\(|\ssrc=/i)
+    assert.ok(html.includes('aria-hidden="true"'), 'icons are inline SVG')
+  })
+
   it('data endpoints answer 503', async () => {
     for (const path of ['/api/db', '/api/auth/sign-in', '/api/storage/list', '/api/match/restore', '/api/match/restore-by-pin', '/api/match/validate-connection-pin']) {
       const r = await api(srv.base, path, { body: {} })
