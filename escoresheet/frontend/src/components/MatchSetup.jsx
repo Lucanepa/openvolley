@@ -26,6 +26,7 @@ import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../consta
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
 import { setExtId } from '../utils/syncIds'
+import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
@@ -2584,10 +2585,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
     // Open scoresheet in new window with matchId parameter for reliable data loading
-    const scoresheetWindow = window.open(`/scoresheet/?matchId=${matchId}`, '_blank', 'width=1200,height=900')
+    const opened = openAppWindow(`/scoresheet/?matchId=${matchId}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
-    if (!scoresheetWindow) {
-      setNoticeModal({ message: t('matchSetup.allowPopups') })
+    if (!opened.ok) {
+      setNoticeModal({ message: t(openFailedMessageKey(opened, 'matchSetup.allowPopups')) })
     }
   }
 

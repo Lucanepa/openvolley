@@ -1268,7 +1268,8 @@
     "importJsonFile": "Importer fichier JSON",
     "backToScoresheet": "Retour à la eScoresheet",
     "lcs": "Feuille de contrôle des libéros",
-    "lcsTooltip": "Afficher la feuille de contrôle des libéros"
+    "lcsTooltip": "Afficher la feuille de contrôle des libéros",
+    "pdfFailed": "Le PDF n'a pas pu être créé sur cet appareil."
   },
   "supportFeedback": {
     "title": "Support & avis",
@@ -2102,6 +2103,8 @@
     "couldNotOpen": "La fenêtre n'a pas pu être ouverte. Veuillez réessayer.",
     "pdfSaved": "PDF enregistré dans {{path}}",
     "pdfSaveFailed": "Le PDF n'a pas pu être enregistré : {{error}}",
-    "savingPdf": "Enregistrement du PDF..."
+    "savingPdf": "Enregistrement du PDF...",
+    "downloadFailed": "Le téléchargement n'a pas abouti.",
+    "downloadsFolder": "Téléchargements"
   }
 }

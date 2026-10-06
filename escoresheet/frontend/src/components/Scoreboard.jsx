@@ -30,6 +30,7 @@ import { isRelayErrorFor, liveStateTargets, publishLiveState, scorerLiveOrder, s
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
+import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
@@ -13018,10 +13019,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
 
                     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const scoresheetWindow = window.open(`/scoresheet/?matchId=${match.id}`, '_blank', 'width=1200,height=900')
+                    const opened = openAppWindow(`/scoresheet/?matchId=${match.id}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
-                    if (!scoresheetWindow) {
-                      showAlert(t('header.allowPopups'), 'warning')
+                    if (!opened.ok) {
+                      showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
                       return
                     }
 
@@ -13066,10 +13067,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
 
                     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const scoresheetWindow = window.open(`/scoresheet/?matchId=${match.id}&action=print`, '_blank', 'width=1200,height=900')
+                    const opened = openAppWindow(`/scoresheet/?matchId=${match.id}&action=print`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
-                    if (!scoresheetWindow) {
-                      showAlert(t('header.allowPopups'), 'warning')
+                    if (!opened.ok) {
+                      showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
                       return
                     }
 
@@ -13114,10 +13115,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
 
                     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const scoresheetWindow = window.open(`/scoresheet/?matchId=${match.id}&action=save`, '_blank', 'width=1200,height=900')
+                    const opened = openAppWindow(`/scoresheet/?matchId=${match.id}&action=save`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
-                    if (!scoresheetWindow) {
-                      showAlert(t('header.allowPopups'), 'warning')
+                    if (!opened.ok) {
+                      showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
                       return
                     }
 
@@ -13844,7 +13845,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     sanctions: []
                   }
                   sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                  window.open(`/scoresheet/?matchId=${match.id}`, '_blank', 'width=1200,height=900')
+                  openAppWindow(`/scoresheet/?matchId=${match.id}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
                 }}
                 style={{
                   padding: '8px 12px',

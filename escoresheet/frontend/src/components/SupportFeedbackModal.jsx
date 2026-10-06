@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getCloudApiUrl } from '../utils/backendConfig'
+import { openAppWindow } from '../utils/openAppWindow'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { Check, Paperclip, Send, X } from 'lucide-react'
 import { Button, cn, FOCUS_RING, IconButton } from '../ui'
@@ -258,7 +259,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
 `.trim()
 
         const mailto = `mailto:volleyball@lucanepa.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-        window.open(mailto, '_blank')
+        openAppWindow(mailto)
       }
 
       setSent(true)

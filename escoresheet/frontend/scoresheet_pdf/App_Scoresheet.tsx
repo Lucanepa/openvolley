@@ -20,6 +20,7 @@ import {
   getFirstServeTeamKey
 } from './utils/scoresheetModel';
 import { PhoneIcon } from '../src/components/icons';
+import { closeAppWindow, getOpenerWindow, savePdfThroughApp } from '../src/utils/appWindowGuest';
 
 interface AppScoresheetProps {
   matchData: {
@@ -2366,6 +2367,28 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  // A line next to the buttons: where the PDF went (desktop app: a download
+  // into the Downloads folder, reported by src-tauri/src/popups.rs as
+  // ov-download-finished), or that it failed. Not alert(): in the desktop app
+  // the dialog plugin replaces it and this window may not call it.
+  const [pdfNotice, setPdfNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const showPdfNotice = (text: string) => {
+    setPdfNotice(text);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setPdfNotice(null), 10000);
+  };
+  useEffect(() => {
+    const onFinished = (e: Event) => {
+      const detail = (e as CustomEvent<{ path?: string | null; success?: boolean }>).detail || {};
+      showPdfNotice(detail.success
+        ? t('appWindow.pdfSaved', { path: detail.path || t('appWindow.downloadsFolder', 'Downloads') })
+        : t('appWindow.downloadFailed', 'The download did not finish.'));
+    };
+    window.addEventListener('ov-download-finished', onFinished);
+    return () => { window.removeEventListener('ov-download-finished', onFinished); clearTimeout(noticeTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
 
   const handleSavePdf = async (returnBlob = false): Promise<{ blob: Blob; filename: string } | void> => {
     if (!containerRef.current || isGeneratingPdf) return;
@@ -2429,15 +2452,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         // Return blob instead of saving
         const pdfBlob = pdf.output('blob');
         return { blob: pdfBlob, filename };
-      } else {
-        // Save PDF
+      } else if (!(await savePdfThroughApp(pdf.output('blob'), filename))) {
+        // Save PDF (a download). In the Android app's in-app view the WebView
+        // cannot download: savePdfThroughApp hands it to the app instead.
         pdf.save(filename);
       }
 
     } catch (error) {
       console.error('Error generating PDF:', error);
       if (!returnBlob) {
-        alert('Failed to generate PDF. Please try the Print/PDF option instead.');
+        showPdfNotice(t('scoresheetPdf.pdfFailed', 'The PDF could not be created on this device.'));
       }
     } finally {
       setIsGeneratingPdf(false);
@@ -2457,16 +2481,17 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       } else if (autoAction === 'getBlob') {
         // Generate PDF blob and send to parent window
         const result = await handleSavePdf(true);
-        if (result && window.opener) {
+        const opener = getOpenerWindow();
+        if (result && opener) {
           // Convert blob to ArrayBuffer for postMessage
           const arrayBuffer = await result.blob.arrayBuffer();
-          window.opener.postMessage({
+          opener.postMessage({
             type: 'pdfBlob',
             arrayBuffer,
             filename: result.filename
-          }, '*');
-          // Close this window after sending
-          window.close();
+          }, window.location.origin);
+          // Close this window (or the in-app view) after sending
+          closeAppWindow();
         }
       }
     }, 500);
@@ -2655,6 +2680,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             >
               {showLCS ? t('scoresheetPdf.backToScoresheet', 'Scoresheet') : t('scoresheetPdf.lcs', 'Libero Control Sheet')}
             </button>
+          )}
+
+          {pdfNotice && (
+            <span role="status" className="ml-2 max-w-[40ch] truncate text-sm text-gray-700" title={pdfNotice}>
+              {pdfNotice}
+            </span>
           )}
         </div>
       </div>
