@@ -410,6 +410,8 @@
     "awayCaptainRequired": "Das Gastteam muss mindestens einen Kapitän haben.",
     "matchPinRequired": "Spiel-PIN-Code ist erforderlich. Bitte geben Sie einen PIN-Code ein, um das Spiel zu erstellen.",
     "enterPinPrompt": "Geben Sie einen PIN-Code ein, um dieses Spiel zu schützen (erforderlich):",
+    "matchPinTitle": "Spiil-PIN-Code",
+    "matchPinLabel": "PIN-Code",
     "commandCopied": "Befehl in die Zwischenablage kopiert! Führen Sie \"npm run start:prod\" im Terminal des Frontend-Verzeichnisses aus.",
     "pleaseRunManually": "Bitte manuell im Terminal ausführen: npm run start:prod",
     "serverStartFailed": "Serverstart fehlgeschlagen: {{error}}",

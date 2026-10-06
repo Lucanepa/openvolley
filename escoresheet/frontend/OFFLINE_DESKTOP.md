@@ -286,7 +286,7 @@ Known limits:
   matches the full one (within 1/255) outside the pictures. Other engines
   (WebView2, Android, browsers) keep the full copy and use the lean one only
   if it fails.
-- **`alert()` / `confirm()` in the desktop app**: `tauri-plugin-dialog`
+- **`alert()` / `confirm()` / `prompt()` in the desktop app**: `tauri-plugin-dialog`
   replaces both with IPC calls (`plugin:dialog|message` / `|confirm`) that no
   capability allows, so `alert()` shows nothing and `confirm()` returns a
   Promise, which is truthy. The app therefore never calls them: every question
@@ -294,5 +294,6 @@ Known limits:
   the same in the browser, the desktop app and Android. A vitest guard
   (`src/utils/__tests__/noNativeDialogs.test.jsx`) fails on any bare
   `confirm(` / `alert(` and on an `askConfirm()` that is not awaited.
-  `prompt()` (the match PIN prompt in MatchSetup) is not replaced by the
-  plugin; it was not checked in the desktop app.
+  The same goes for `prompt()`: text is asked through `src/utils/askText.js`
+  (the same dialog with a text field; Cancel returns null), and the guard
+  catches `prompt(` too.

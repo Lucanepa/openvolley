@@ -35,6 +35,7 @@ import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
+import { askText } from '../utils/askText.js'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -2318,16 +2319,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       console.warn(`[MatchSetup] Players missing birthdate:\n${missingNames}${moreCount}`)
     }
 
+    // Match PIN code (for opening/continuing match). Asked before the
+    // transaction: awaiting the user inside it would commit it early, and a
+    // cancel must not leave the two teams behind. Cancel creates nothing.
+    const matchPin = await askText({
+      title: t('matchSetup.matchPinTitle'),
+      message: t('matchSetup.enterPinPrompt'),
+      label: t('matchSetup.matchPinLabel'),
+      confirmLabel: t('matchSetup.createMatch')
+    })
+    if (matchPin === null) return
+    if (matchPin.trim() === '') {
+      setNoticeModal({ message: t('matchSetup.matchPinRequired') })
+      return
+    }
+
     await db.transaction('rw', db.matches, db.teams, db.players, db.sync_queue, async () => {
       const homeId = await db.teams.add({ name: home, color: homeColor, shortName: homeShortName || home.substring(0, 8).toUpperCase(), benchStaff: benchHome, createdAt: new Date().toISOString() })
       const awayId = await db.teams.add({ name: away, color: awayColor, shortName: awayShortName || away.substring(0, 8).toUpperCase(), benchStaff: benchAway, createdAt: new Date().toISOString() })
-
-      // Generate match PIN code (for opening/continuing match)
-      const matchPin = prompt(t('matchSetup.enterPinPrompt'))
-      if (!matchPin || matchPin.trim() === '') {
-        setNoticeModal({ message: t('matchSetup.matchPinRequired') })
-        return
-      }
 
       // Auto-generate gamePin for official matches
       const generatedGamePin = generateSecurePin([])

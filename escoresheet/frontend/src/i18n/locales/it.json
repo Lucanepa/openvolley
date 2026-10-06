@@ -410,6 +410,8 @@
     "awayCaptainRequired": "La squadra ospite deve avere almeno un capitano.",
     "matchPinRequired": "Il codice PIN della partita è obbligatorio. Inserisci un codice PIN per creare la partita.",
     "enterPinPrompt": "Inserisci un codice PIN per proteggere questa partita (obbligatorio):",
+    "matchPinTitle": "Codice PIN della partita",
+    "matchPinLabel": "Codice PIN",
     "commandCopied": "Comando copiato negli appunti! Eseguire \"npm run start:prod\" nel terminale della directory frontend.",
     "pleaseRunManually": "Eseguire manualmente nel terminale: npm run start:prod",
     "serverStartFailed": "Avvio del server fallito: {{error}}",
