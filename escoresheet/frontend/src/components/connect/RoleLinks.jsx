@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { Check, Copy, QrCode } from 'lucide-react'
-import { Button, Switch, StatusPill, cn } from '../../ui'
+import { Check, Cloud, Copy, QrCode } from 'lucide-react'
+import { Button, Switch, StatusPill } from '../../ui'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { roleAccess } from '../../utils/tabletLinks'
 
@@ -60,6 +60,11 @@ export function RoleRows({ rows, match, qrRole, onPickQr, onToggleRole, noUrlTex
               </div>
               {row.url ? (
                 <div className="truncate font-mono text-xs text-stone-500" title={row.url}>{row.url}</div>
+              ) : row.note ? (
+                <div className="flex items-center gap-1 text-xs text-stone-500" data-testid={`role-note-${row.role}`}>
+                  <Cloud size={12} className="shrink-0 text-stone-400" aria-hidden="true" />
+                  {row.note}
+                </div>
               ) : (
                 <div className="text-xs text-stone-400">{noUrlText}</div>
               )}
@@ -70,7 +75,6 @@ export function RoleRows({ rows, match, qrRole, onPickQr, onToggleRole, noUrlTex
                 onCheckedChange={(next) => onToggleRole(row.role, next)}
                 aria-label={t('connectTablets.allowRole', 'Let {{role}} in', { role: labels[row.role] })}
                 title={t('connectTablets.allowRole', 'Let {{role}} in', { role: labels[row.role] })}
-                className={cn(!off && 'bg-slate-900')}
               />
             )}
             <Button

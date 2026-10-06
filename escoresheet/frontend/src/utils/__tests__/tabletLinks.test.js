@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  TABLET_ROLES, cloudRoleUrl, cloudScoretableBase, escapeWifiQr, firstOfKind, hallInterfaces, lanRoleUrl,
+  LAN_UNAVAILABLE_ROLES, TABLET_ROLES, cloudRoleUrl, cloudScoretableBase, escapeWifiQr, firstOfKind, hallInterfaces, lanRoleUrl,
   roleAccess, statusInterfaces, wifiQrString
 } from '../tabletLinks'
 
@@ -88,8 +88,10 @@ describe('status interfaces', () => {
     ]
   }
 
-  it('splits hall networks (Wi-Fi first) from the laptop\'s own ones', () => {
-    expect(hallInterfaces(STATUS).map(i => i.ip)).toEqual(['192.168.1.42', '10.0.0.5'])
+  it('lists hall networks (Wi-Fi first), then the laptop\'s hotspot, never Bluetooth', () => {
+    // a hotspot switched on outside the app is still a network tablets can be on
+    expect(hallInterfaces(STATUS).map(i => i.ip)).toEqual(['192.168.1.42', '10.0.0.5', '10.42.0.1'])
+    expect(hallInterfaces({ interfaces: [{ name: 'Local Area Connection* 10', ip: '192.168.137.1', kind: 'hotspot' }] }).map(i => i.ip)).toEqual(['192.168.137.1'])
     expect(firstOfKind(STATUS, 'hotspot').ip).toBe('10.42.0.1')
     expect(firstOfKind(STATUS, 'bluetooth').ip).toBe('10.42.1.1')
     expect(firstOfKind({ interfaces: [] }, 'hotspot')).toBeNull()
@@ -99,6 +101,13 @@ describe('status interfaces', () => {
     expect(statusInterfaces({ localIP: '192.168.1.20', port: 3000 })).toEqual([{ name: '', ip: '192.168.1.20', kind: 'other' }])
     expect(statusInterfaces({ localIP: '127.0.0.1' })).toEqual([])
     expect(statusInterfaces(null)).toEqual([])
+  })
+})
+
+describe('LAN_UNAVAILABLE_ROLES', () => {
+  it('keeps livescore off the local network until the relay has a live feed', () => {
+    expect(LAN_UNAVAILABLE_ROLES).toEqual({ livescore: 'needs-internet' })
+    for (const role of ['main', 'referee', 'bench_home', 'bench_away']) expect(LAN_UNAVAILABLE_ROLES[role]).toBeUndefined()
   })
 })
 

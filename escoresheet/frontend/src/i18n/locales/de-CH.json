@@ -1678,20 +1678,6 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindigsproblem erkannt"
   },
-  "lanTablets": {
-    "title": "Tablets verbinde",
-    "description": "Tablets im glyche WLAN öffned die Adresse im Browser. Kei Internet nötig.",
-    "scoretable": "eMatchblatt",
-    "referee": "Schiri",
-    "bench": "Bank",
-    "livescore": "Livescore",
-    "qr": "QR",
-    "copy": "Kopiere",
-    "copied": "Kopiert",
-    "loading": "Lokale Server wird abgfrögt…",
-    "unavailable": "De lokal Server antwortet nöd. App neu starte und nomal probiere.",
-    "hint": "S Tablet muess im glyche WLAN sii wie dä Computer. D Kamera (QR-Kaderupload) gaht nur uf däm Computer, nöd uf Tablets über http."
-  },
   "connectTablets": {
     "account": "Konto",
     "address": "Adresse",
@@ -1753,7 +1739,8 @@
     "kind": {
       "ethernet": "Ethernet",
       "other": "Netzwerk",
-      "wifi": "WLAN"
+      "wifi": "WLAN",
+      "hotspot": "Hotspot vo dem Computer"
     },
     "lanHall": "WLAN vo de Halle",
     "lanLaptop": "WLAN für Tablets erstelle",
@@ -1807,7 +1794,21 @@
     "travelRouter": "Kei WLAN i de Halle? En chline Reiserouter gaht au, ohni Internet: iischalte, dä Computer und d Tablets dermit verbinde, dänn «WLAN vo de Halle» wähle.",
     "wifiDirect": "De mobil Hotspot vo Windows isch da nöd verfüegbar: Statt dem wird es diräkts WLAN bruucht.",
     "networkName": "WLAN-Name",
-    "networkPassword": "Passwort"
+    "networkPassword": "Passwort",
+    "newPassword": "Neus Passwort",
+    "hotspotExternal": "De Hotspot vo dem Computer isch i de Systemiistellige iigschaltet worde. Tablets drin chönd d Links une bruuche; usschalte det.",
+    "windowsFirewall": "Tablets sind im WLAN, aber d Siite ladet nöd? Windows-Sicherheit › Firewall- & Netzwerkschutz › App durch Firewall zulassen › OpenVolley › «Öffentlich» aachrüüzle.",
+    "btExternal": "Das Bluetooth-Netz isch nöd vo dere App-Sitzig gstartet worde. Stopp es i de Netzwerkiistellige vom System.",
+    "livescoreNeedsInternet": "Bruucht Internet: Tab «Server» neh",
+    "confirm": {
+      "tabletsOn": "Jetzt verbundeni Tablets: {{count}}.",
+      "itsWifi": "sis WLAN",
+      "leaveTitle": "Halle-WLAN verlah?",
+      "leaveMessage": "Dä Computer verlaht {{network}}: Tablets drin verlüüred d Verbindig, und de Cloud-Sync pausiert, bis de Computer wieder drin isch (oder am Netzwerkchabel hanget).",
+      "stopWifiTitle": "WLAN vo de Tablets stoppe?",
+      "stopMessage": "D Tablets drin verlüüred d Verbindig.",
+      "stopBtTitle": "Bluetooth-Netz stoppe?"
+    }
   },
   "startupConnectivity": {
     "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
@@ -1870,12 +1871,6 @@
   },
   "officialAutocomplete": {
     "selectFromHistory": "Us Historie uswähle"
-  },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "Schiri QR-Code",
-    "cloudQRCodeAlt": "Cloud QR-Code"
   },
   "contextHelp": {
     "helpButton": "Hilfe",

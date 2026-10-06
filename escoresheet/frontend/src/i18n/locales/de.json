@@ -1550,20 +1550,6 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindungsproblem erkannt"
   },
-  "lanTablets": {
-    "title": "Tablets verbinden",
-    "description": "Tablets im selben WLAN öffnen diese Adressen im Browser. Kein Internet nötig.",
-    "scoretable": "eMatchblatt",
-    "referee": "Schiedsrichter",
-    "bench": "Bank",
-    "livescore": "Livescore",
-    "qr": "QR",
-    "copy": "Kopieren",
-    "copied": "Kopiert",
-    "loading": "Lokaler Server wird abgefragt…",
-    "unavailable": "Der lokale Server antwortet nicht. App neu starten und erneut versuchen.",
-    "hint": "Das Tablet muss im selben WLAN sein wie dieser Computer. Die Kamera (QR-Kaderupload) funktioniert nur auf diesem Computer, nicht auf Tablets über http."
-  },
   "connectTablets": {
     "account": "Konto",
     "address": "Adresse",
@@ -1625,7 +1611,8 @@
     "kind": {
       "ethernet": "Ethernet",
       "other": "Netzwerk",
-      "wifi": "WLAN"
+      "wifi": "WLAN",
+      "hotspot": "Hotspot dieses Computers"
     },
     "lanHall": "WLAN der Halle",
     "lanLaptop": "WLAN für Tablets erstellen",
@@ -1679,7 +1666,21 @@
     "travelRouter": "Kein WLAN in der Halle? Ein kleiner Reiserouter geht auch, ohne Internet: einschalten, diesen Computer und die Tablets damit verbinden, dann «WLAN der Halle» wählen.",
     "wifiDirect": "Der mobile Hotspot von Windows ist hier nicht verfügbar: Stattdessen wird ein direktes WLAN genutzt.",
     "networkName": "WLAN-Name",
-    "networkPassword": "Passwort"
+    "networkPassword": "Passwort",
+    "newPassword": "Neues Passwort",
+    "hotspotExternal": "Der Hotspot dieses Computers wurde in den Systemeinstellungen eingeschaltet. Tablets darin können die Links unten nutzen; ausschalten dort.",
+    "windowsFirewall": "Tablets sind im WLAN, aber die Seite lädt nicht? Windows-Sicherheit › Firewall- & Netzwerkschutz › App durch Firewall zulassen › OpenVolley › «Öffentlich» ankreuzen.",
+    "btExternal": "Dieses Bluetooth-Netz wurde nicht von dieser App-Sitzung gestartet. Stoppe es in den Netzwerkeinstellungen des Systems.",
+    "livescoreNeedsInternet": "Braucht Internet: Tab «Server» nehmen",
+    "confirm": {
+      "tabletsOn": "Jetzt verbundene Tablets: {{count}}.",
+      "itsWifi": "sein WLAN",
+      "leaveTitle": "Hallen-WLAN verlassen?",
+      "leaveMessage": "Dieser Computer verlässt {{network}}: Tablets darin verlieren die Verbindung, und der Cloud-Sync pausiert, bis der Computer wieder darin ist (oder am Netzwerkkabel hängt).",
+      "stopWifiTitle": "WLAN der Tablets stoppen?",
+      "stopMessage": "Die Tablets darin verlieren die Verbindung.",
+      "stopBtTitle": "Bluetooth-Netz stoppen?"
+    }
   },
   "startupConnectivity": {
     "cloudWaits": "Kein Internet: Die Cloud-Synchronisation startet, sobald dieses Gerät online ist. Spiele bleiben hier und auf dem lokalen Server gespeichert.",
@@ -1742,12 +1743,6 @@
   },
   "officialAutocomplete": {
     "selectFromHistory": "Aus Historie auswählen"
-  },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "Schiedsrichter QR-Code",
-    "cloudQRCodeAlt": "Cloud QR-Code"
   },
   "contextHelp": {
     "helpButton": "Hilfe",
