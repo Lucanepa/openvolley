@@ -54,6 +54,7 @@ import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
 import { getLocalServerStatusUrl, isStaticHost } from './utils/backendConfig'
+import { isViewportTooSmall } from './utils/formLayout'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
@@ -2672,7 +2673,7 @@ export default function App() {
       {/* Minimum screen size warning - block phones/small screens */}
       {/* Allow if at least one dimension >= 800 (tablet in any orientation), but enforce min 500 on both */}
       {/* Skip warning in fullscreen mode - trust user has adequate screen space */}
-      {!isFullscreen && ((viewportSize.width < 800 && viewportSize.height < 800) || viewportSize.width < 600 || viewportSize.height < 600) ? (
+      {!isFullscreen && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
         <div className="ov-kit flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
           <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
