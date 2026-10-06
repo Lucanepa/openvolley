@@ -315,6 +315,146 @@ export function liveSetResults(game) {
   }))
 }
 
+// ── What the score display shows ────────────────────────────────────────────
+
+/**
+ * The phase viewers see: 'final', 'set_break' (interval between sets),
+ * 'timeout' or 'play'.
+ * @param {object} game  a match_live_state row
+ */
+export function livePhase(game) {
+  if (isEndedStatus(game?.match_status)) return 'final'
+  if (game?.set_interval_active || game?.match_status === 'interval') return 'set_break'
+  if (game?.timeout_active || game?.match_status === 'timeout') return 'timeout'
+  return 'play'
+}
+
+/**
+ * Everything the list row and the fullscreen view show for one game, by side
+ * (side_a says where Team A plays now).
+ *
+ * Main digits: the set count once the match is final, otherwise the points of
+ * the set (during a set break: the next set's 0:0, with phase 'set_break' for
+ * the label, no longer the set count, which looked like points). Finished
+ * sets (setResults) are shown during the match too, not only at FINAL.
+ * @param {object} game
+ */
+export function liveScoreboard(game) {
+  const sideA = game.side_a || 'left' // default Team A on left
+  const isALeft = sideA === 'left'
+  const phase = livePhase(game)
+  const isMatchEnded = phase === 'final'
+
+  const setsWon = liveSetsWon(game)
+  const leftSets = isALeft ? setsWon.a : setsWon.b
+  const rightSets = isALeft ? setsWon.b : setsWon.a
+  const leftPoints = num(isALeft ? game.points_a : game.points_b)
+  const rightPoints = num(isALeft ? game.points_b : game.points_a)
+
+  // Set results (live-state row, else the joined matches row), as Team A /
+  // Team B (Team A is home or away), to left/right
+  const setResults = liveSetResults(game).map((s) => ({
+    set: s.set,
+    left: isALeft ? s.a : s.b,
+    right: isALeft ? s.b : s.a
+  }))
+
+  return {
+    leftName: isALeft ? (game.team_a_name || 'Team A') : (game.team_b_name || 'Team B'),
+    rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
+    leftScore: isMatchEnded ? leftSets : leftPoints,
+    rightScore: isMatchEnded ? rightSets : rightPoints,
+    leftSets,
+    rightSets,
+    leftPoints,
+    rightPoints,
+    phase,
+    isMatchEnded,
+    isInSetInterval: phase === 'set_break',
+    isTimeout: phase === 'timeout',
+    // Serving: already 'left' or 'right'
+    servingTeam: game.serving_team,
+    setResults
+  }
+}
+
+// ── Realtime frame ordering ─────────────────────────────────────────────────
+
+// Where the teams play and the running score: what a stray frame must not flip
+const LAYOUT_FIELDS = ['side_a', 'serving_team', 'points_a', 'points_b']
+
+/**
+ * updated_at is the scorer (or referee) device's clock. A value further ahead
+ * of this page's clock is not trusted for ordering (realtimeHub admitOrdered
+ * clamps the same way, maxFutureSkewMs).
+ */
+export const FRAME_MAX_FUTURE_SKEW_MS = 5 * 1000
+/**
+ * Out-of-order delivery (relay push vs HTTP write-through) is seconds apart.
+ * A frame older than the shown row by more than this is a device clock that
+ * runs behind (scorer moved to another device, NTP correction), not a late
+ * copy: it is applied, or that game would freeze until a reload.
+ */
+export const FRAME_REORDER_WINDOW_MS = 60 * 1000
+
+/**
+ * Is this frame a late copy of an older state (drop it)? Only when both
+ * stamps are plausible and the frame is older by at most
+ * FRAME_REORDER_WINDOW_MS. A shown row stamped further than
+ * FRAME_MAX_FUTURE_SKEW_MS ahead never blocks later frames; a frame's own
+ * future stamp is clamped to now + FRAME_MAX_FUTURE_SKEW_MS.
+ * @param {string|undefined} shownStamp  updated_at of the row on screen
+ * @param {string|undefined} frameStamp  updated_at of the incoming frame
+ * @param {number} [now]  this page's clock
+ */
+export function isLateFrame(shownStamp, frameStamp, now = Date.now()) {
+  const shownAt = Date.parse(shownStamp || '')
+  const rawAt = Date.parse(frameStamp || '')
+  if (!Number.isFinite(shownAt) || !Number.isFinite(rawAt)) return false
+  const ceiling = now + FRAME_MAX_FUTURE_SKEW_MS
+  if (shownAt > ceiling) return false
+  const frameAt = Math.min(rawAt, ceiling)
+  const behind = shownAt - frameAt
+  return behind > 0 && behind <= FRAME_REORDER_WINDOW_MS
+}
+
+/**
+ * Settle a realtime match_live_state change against the row already shown,
+ * before applyLiveChange merges it:
+ *   - a late copy of an older state (updated_at a little earlier than the
+ *     shown row: the relay and the HTTP write-through can deliver out of
+ *     order) is dropped (null). updated_at is a device clock, so a shown row
+ *     stamped in the future, or a frame far behind it, is not a reason to
+ *     drop anything (isLateFrame);
+ *   - at match end the scoreboard first pushes its set_end frame, already
+ *     'ended' but with the NEXT set's layout (sides swapped, points 0:0), and
+ *     the match_end frame with the real last-set layout ~1.5 s later. Any
+ *     'ended' frame that is not the match_end one keeps the shown row's
+ *     layout (side_a, serving team, points), so the FINAL view does not flip
+ *     its sides and set chips back and forth.
+ * @param {object[]} games  the list shown now
+ * @param {{eventType: string, new?: object}} payload
+ * @param {number} [now]  this page's clock
+ * @returns {object|null} the payload to apply, or null to ignore it
+ */
+export function settleLiveChange(games, payload, now = Date.now()) {
+  if (payload?.eventType !== 'INSERT' && payload?.eventType !== 'UPDATE') return payload
+  const row = payload.new
+  if (!row || row.match_id == null) return payload
+  const shown = (games || []).find((g) => g?.match_id === row.match_id)
+  if (!shown) return payload
+
+  if (isLateFrame(shown.updated_at, row.updated_at, now)) return null
+
+  if (!isEndedStatus(row.match_status) || row.last_event_type === 'match_end') return payload
+  const kept = {}
+  for (const k of LAYOUT_FIELDS) {
+    if (k in shown && shown[k] !== row[k]) kept[k] = shown[k]
+  }
+  if (Object.keys(kept).length === 0) return payload
+  return { ...payload, new: { ...row, ...kept } }
+}
+
 // ── Stale rows ──────────────────────────────────────────────────────────────
 
 /** A finished match stays listed this long after its last update. */

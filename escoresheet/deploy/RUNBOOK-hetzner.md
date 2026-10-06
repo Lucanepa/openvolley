@@ -318,6 +318,21 @@ Postgres minor bump (monthly, weekday): set `OV_POSTGRES_IMAGE=postgres:17.<n>-a
 `docker compose pull ov-postgres && docker compose up -d ov-postgres`, check `/health`, then run the
 restore test.
 
+## Apply a new db migration
+
+A new `escoresheet/backend/db/NNN_*.sql` (for example `006_matches_updated_at.sql`) reaches a
+running database only by hand; `restore.sh` runs them on a restore only. Each file is
+idempotent. Run the files the database does not have yet, in number order, as `ov_owner`, then
+`roles.sql`, before or together with the backend that expects them:
+
+```bash
+lenovo$  ssh hetzner 'cd /opt/openvolley && docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1' \
+           < escoresheet/backend/db/006_matches_updated_at.sql
+lenovo$  ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql   # "ok: ov_app logs in and sees N matches"
+```
+
+Do the same on the dev database.
+
 ## Rollback
 
 | Situation | Action |

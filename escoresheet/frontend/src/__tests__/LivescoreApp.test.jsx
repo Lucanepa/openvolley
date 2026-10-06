@@ -269,4 +269,48 @@ describe('LivescoreApp', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
     expect(api.calls).toBe(1)
   })
+
+  it('shows finished sets during the match and labels the set break', async () => {
+    const results = [{ set: 1, home: 25, away: 13 }]
+    api.responses = [[row('a', { current_set: 2, sets_won_a: 1, points_a: 0, points_b: 0, last_event_type: 'set_end', set_interval_active: true, matches: { set_results: results } })]]
+    render(<LivescoreApp />)
+    await flush()
+    // list: the chip and the break label, the main digits are the points (0 : 0), not the set count
+    expect(screen.getByText('25–13')).toBeInTheDocument()
+    expect(screen.getByText('Set break')).toBeInTheDocument()
+    expect(screen.getByText('Sets: 1 – 0')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Home a'))
+    expect(screen.getByText('25–13')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Set break')
+
+    // play resumes: no label, the chip stays
+    act(() => rt.handler({ eventType: 'UPDATE', new: { match_id: 'a', set_interval_active: false, points_a: 1, last_event_type: 'point' }, old: {} }))
+    expect(screen.queryByText('Set break')).toBeNull()
+    expect(screen.getByText('25–13')).toBeInTheDocument()
+
+    // a running timeout is labelled
+    act(() => rt.handler({ eventType: 'UPDATE', new: { match_id: 'a', timeout_active: true, match_status: 'timeout', last_event_type: 'timeout' }, old: {} }))
+    expect(screen.getByText('Timeout')).toBeInTheDocument()
+  })
+
+  it('match end: the set_end frame does not flip the sides before the match_end frame', async () => {
+    api.responses = [[row('a', {
+      current_set: 3, sets_won_a: 2, points_a: 24, points_b: 20, side_a: 'right', serving_team: 'right', last_event_type: 'point',
+      updated_at: '2026-10-06T08:31:07.000Z', matches: { set_results: [{ set: 1, home: 25, away: 10 }, { set: 2, home: 25, away: 12 }], coin_toss: { team_a: 'home' } }
+    })]]
+    render(<LivescoreApp />)
+    await flush()
+    fireEvent.click(screen.getByText('Home a'))
+    const sides = () => screen.getAllByText(/^(Home a|Away a)$/).map((n) => n.textContent)
+    expect(sides()).toEqual(['Away a', 'Home a'])
+
+    act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'set_end', points_a: 0, points_b: 0, sets_won_a: 3, side_a: 'left', serving_team: 'left', set_interval_active: true, updated_at: '2026-10-06T08:31:17.000Z' } }))
+    expect(screen.getByText('Final')).toBeInTheDocument()
+    expect(sides()).toEqual(['Away a', 'Home a'])
+    expect(screen.getAllByText(/^\d+–\d+$/).map((n) => n.textContent)).toEqual(['10–25', '12–25'])
+
+    act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'match_end', points_a: 25, points_b: 20, sets_won_a: 3, side_a: 'right', serving_team: 'right', set_interval_active: false, updated_at: '2026-10-06T08:31:18.000Z' } }))
+    expect(sides()).toEqual(['Away a', 'Home a'])
+  })
 })

@@ -89,6 +89,12 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
   // Tables whose writes produce `changes` (for the realtime write-through).
   changeTables: ['matches', 'sets', 'events', 'match_live_state'],
+  // Columns the server keeps current: a client value is dropped (a device
+  // clock can be hours off), every update / upsert-update sets now(), an
+  // insert keeps the column default. db/006_matches_updated_at.sql adds the
+  // same as a trigger. Not match_live_state: its client-set updated_at orders
+  // the realtime feed (lib/realtimeHub.js).
+  serverTimestamps: { matches: 'updated_at', sets: 'updated_at' },
   maxRows: 1000,
   minWriteProto: 2,
   statementTimeoutMs: 10000,
@@ -595,6 +601,22 @@ export function createPgQuery (options = {}) {
     if (!ok) fail('OV_UNSCOPED_WRITE', `${table} update/delete needs eq on ${spec.fk} or a scoped ${spec.ext}`)
   }
 
+  /** The server-kept timestamp column of this table (cfg.serverTimestamps), when it exists. */
+  function serverStampColumn (t) {
+    const c = cfg.serverTimestamps?.[t.name]
+    return c && t.columns.has(c) ? c : null
+  }
+
+  /** The write data without `col` (one row object or an array of them). */
+  function dropColumn (data, col) {
+    const strip = (r) => {
+      if (!isPlainObject(r) || !Object.prototype.hasOwnProperty.call(r, col)) return r
+      const { [col]: _dropped, ...rest } = r
+      return rest
+    }
+    return Array.isArray(data) ? data.map(strip) : strip(data)
+  }
+
   function mergeExpr (t, col, ref) {
     const c = quoteIdent(col.name)
     return `CASE WHEN jsonb_typeof(${ref}.${c}::jsonb) = 'object' AND jsonb_typeof(t.${c}::jsonb) = 'object' ` +
@@ -708,6 +730,11 @@ export function createPgQuery (options = {}) {
     const returningCols = wantReturning ? projection(t, params.returning === true ? '*' : params.returning, secrets, 'returning') : []
     const collectChanges = opts.collectChanges ?? cfg.changeTables.includes(t.name)
     const qt = qTable(t.name)
+    // updated_at of matches/sets: the server's clock, never the client's
+    const stampCol = serverStampColumn(t)
+    if (stampCol && !internal && action !== 'delete' && params.data != null) {
+      params = { ...params, data: dropColumn(params.data, stampCol) }
+    }
 
     let dml
     let postCheck = false
@@ -755,6 +782,7 @@ export function createPgQuery (options = {}) {
             ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'EXCLUDED')}`
             : `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`
         })
+        if (stampCol && !cols.includes(stampCol) && !target.includes(stampCol)) sets.push(`${quoteIdent(stampCol)} = now()`)
         dml += ` ON CONFLICT (${target.map(quoteIdent).join(', ')}) DO UPDATE SET ${sets.join(', ')}`
         const guards = []
         // A conflicting row owned by someone else is neither changed nor returned.
@@ -800,6 +828,7 @@ export function createPgQuery (options = {}) {
         const col = t.columns.get(c)
         return merge.has(c) && col.isJson ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'r')}` : `${quoteIdent(c)} = r.${quoteIdent(c)}`
       })
+      if (stampCol && !cols.includes(stampCol)) sets.push(`${quoteIdent(stampCol)} = now()`)
       dml = `UPDATE ${qt} AS t SET ${sets.join(', ')} FROM json_populate_record(NULL::${qt}, ${ctx.p(JSON.stringify(row))}::json) AS r${where.sql}`
     } else {
       const where = buildWhere(t, params, secrets, ctx, scope)

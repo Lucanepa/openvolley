@@ -675,6 +675,31 @@ describe('failure classes', () => {
     expect(api.calls.filter(c => c.action === 'upsert')).toHaveLength(1)
   })
 
+  it('logs a 401 as a warning, other refusals as errors', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      fakeDb.sync_queue.reset([
+        { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+      ])
+      api.respond = (call) => (call.action === 'upsert'
+        ? { data: null, error: { message: 'Authentication required', code: 'missing_token', status: 401 } }
+        : defaultRespond(call))
+      await runQueuePass()
+      expect(warn.mock.calls.some(c => String(c[0]).includes('Match insert error'))).toBe(true)
+      expect(error.mock.calls.some(c => String(c[0]).includes('Match insert error'))).toBe(false)
+
+      api.respond = (call) => (call.action === 'upsert'
+        ? { data: null, error: { message: 'bad', code: 'OV_INVALID_DATA', status: 400 } }
+        : defaultRespond(call))
+      await runQueuePass()
+      expect(error.mock.calls.some(c => String(c[0]).includes('Match insert error'))).toBe(true)
+    } finally {
+      warn.mockRestore()
+      error.mockRestore()
+    }
+  })
+
   it('logs match payloads without PINs', () => {
     expect(redactForLog({ external_id: 'm', game_pin: '123456', connection_pins: { referee: '1' }, home_team: { name: 'A' } }))
       .toEqual({ external_id: 'm', home_team: { name: 'A' } })
@@ -874,10 +899,44 @@ describe('useSyncQueue flush loop', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    // A stored session: without one the queue sends nothing (see below)
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't' }))
   })
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    localStorage.removeItem('api_auth_token')
+  })
+
+  it('sends nothing without a stored session, then resumes on sign-in', async () => {
+    localStorage.removeItem('api_auth_token')
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(result.current.syncStatus).toBe('auth_required')
+    // No write was even tried: no 401 in the console or the backend log
+    expect(api.calls.filter(c => c.action !== 'select')).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued' })
+
+    await act(async () => {
+      localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't' }))
+      window.dispatchEvent(new CustomEvent('api-auth-token-change', { detail: { access_token: 't' } }))
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(result.current.syncStatus).toBe('synced')
+    unmount()
+  })
+
+  it('reports synced while signed out with nothing waiting', async () => {
+    localStorage.removeItem('api_auth_token')
+    fakeDb.sync_queue.reset([])
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(result.current.syncStatus).toBe('synced')
+    unmount()
   })
 
   it('requeues an errored job once its backoff has passed, while the 5 s poll runs', async () => {
@@ -896,7 +955,7 @@ describe('useSyncQueue flush loop', () => {
     unmount()
   })
 
-  it('waits for a sign-in after a 401 (no request churn), then resumes at once', async () => {
+  it('waits for a sign-in after a 401 of a stored session (no request churn), then resumes at once', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
     ])
