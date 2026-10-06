@@ -63,7 +63,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         # No VITE_BACKEND_URL on purpose: the desktop window is served by the
         # app's own LAN relay, and a fixed backend URL would send the scorer's
-        # match relay to the cloud instead of to the venue tablets.
+        # match relay to the cloud instead of to the venue tablets. Cloud sync
+        # still works: cloud calls use their own base (backendConfig
+        # getCloudApiUrl), backend.openvolley.app by default on a page served
+        # by a local relay; set VITE_CLOUD_API_URL to point it elsewhere.
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
         with:
@@ -107,8 +110,8 @@ jobs:
 
             Runs the volleyball e-scoresheet **fully offline** and doubles as a LAN
             server: referee / bench / livescore tablets on the same Wi-Fi connect to
-            the addresses shown under **Help → Connect a Tablet…** — no internet, no
-            accounts.
+            the addresses shown under the header menu → **Connect tablets** — no
+            internet, no accounts. Online, matches also sync to the cloud.
 
             ### Install
             - **Windows**: download and run the `…x64-setup.exe` installer.
