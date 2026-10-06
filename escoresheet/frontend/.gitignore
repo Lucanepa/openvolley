@@ -9,14 +9,9 @@ lerna-debug.log*
 
 node_modules
 dist
-dist-electron
-dist-ssr
-dist-app
-dist-referee
-dist-bench
-dist-livescore
-dist-roster
-dist-scoresheet
+# every build output: dist-electron, dist-ssr and each subdomain's dist-<name>
+# (scripts/build-subdomains.js), dist-manager included
+dist-*
 dev-dist
 *.local
 _build_*.html

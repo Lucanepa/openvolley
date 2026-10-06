@@ -2260,6 +2260,25 @@
     "signUpPendingNote": "Les nouveaux comptes doivent être validés avant que les matchs officiels soient synchronisés dans le cloud. Demande un code d’invitation à ton club.",
     "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte comme marqueur."
   },
+  "managerSite": {
+    "eyebrow": "Gestion",
+    "signInHeading": "Gérer OpenVolley",
+    "signInBody": "Comptes, codes d’invitation, matchs officiels, matchs clôturés et équipes enregistrées – pour les admins et les responsables de compétition.",
+    "signIn": "Se connecter",
+    "noAccountYet": "Pas encore de compte ? Créez-en un dans l’application du marqueur.",
+    "openApp": "Application du marqueur",
+    "openAppLong": "Ouvrir l’application du marqueur",
+    "signOut": "Se déconnecter",
+    "signedInAs": "Connecté en tant que {{name}}",
+    "noAccessTitle": "Pas d’accès à la gestion",
+    "noAccessBody": "Votre compte n’a pas le rôle admin ou responsable de compétition. Demandez l’accès à un admin de votre club ou saisissez un code d’invitation reçu.",
+    "pendingBody": "Votre compte attend une validation. Demandez à un admin de votre club ou saisissez un code d’invitation reçu.",
+    "loadingAccount": "Chargement de votre compte…",
+    "accountNotLoaded": "Votre compte n’a pas pu être chargé – vérifiez la connexion et réessayez.",
+    "retry": "Réessayer",
+    "language": "Langue",
+    "openManager": "Ouvrir {{host}}"
+  },
   "manage": {
     "title": "Gestion",
     "backToApp": "Retour à l’app",

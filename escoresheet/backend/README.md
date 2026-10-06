@@ -189,9 +189,13 @@ Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
 
-CORS in cloud mode trusts `https://*.openvolley.app`, `PUBLIC_ORIGINS`, and the
+CORS in cloud mode trusts `https://*.openvolley.app` (the sites, the manager
+`https://manager.openvolley.app` included), `PUBLIC_ORIGINS`, and the
 native shells: Capacitor (`https://localhost`, `capacitor://localhost`) and
-Tauri (`tauri://localhost`, `http(s)://tauri.localhost`).
+Tauri (`tauri://localhost`, `http(s)://tauri.localhost`). The list lives in
+`lib/cors.js` (tests: `tests/cors.test.js`, no database needed). Cloudflare
+Pages previews (`https://dev.openvolley-<app>.pages.dev`) are trusted only
+when listed in `PUBLIC_ORIGINS`.
 
 ## Security model (Phase 7 security release)
 

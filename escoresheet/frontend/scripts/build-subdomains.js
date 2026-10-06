@@ -13,6 +13,7 @@
  *   dist-bench/     → bench.openvolley.app
  *   dist-livescore/ → livescore.openvolley.app
  *   dist-roster/    → roster.openvolley.app
+ *   dist-manager/   → manager.openvolley.app (admin console, no service worker)
  */
 
 import { build } from 'vite'
@@ -35,7 +36,7 @@ const appVersion = packageJson.version
 // Subdomain configurations.
 // themeColor: every app is light only (RESTYLE-SPEC 5), so the browser and
 // installed-PWA status bar is white on all of them, as in the vite-build heads.
-const subdomains = {
+export const subdomains = {
   app: {
     name: 'Open eScoresheet',
     shortName: 'eScoresheet',
@@ -84,10 +85,53 @@ const subdomains = {
     mainEntry: 'scoresheet-main',
     themeColor: '#ffffff',
     customHtml: true
+  },
+  // manager.openvolley.app: the manage console (admins, competition managers)
+  // on its own. Its page is manager.html (also what `vite` serves in dev). No
+  // service worker: nothing here works offline, and an admin console must
+  // never run a stale build from a cache. Kept out of search engines.
+  manager: {
+    name: 'OpenVolley Manager',
+    shortName: 'Manager',
+    description: 'Accounts, invite codes, official games and saved teams for OpenVolley admins and competition managers',
+    title: 'OpenVolley Manager',
+    mainEntry: 'manager-main',
+    themeColor: '#ffffff',
+    htmlFile: 'manager.html',
+    pwa: false,
+    noindex: true
   }
 }
 
-function createIndexHtml(config) {
+/** The page a subdomain is built from: its own .html file, or a generated one. */
+export function htmlFor(config) {
+  if (config.htmlFile) return readFileSync(resolve(frontendDir, config.htmlFile), 'utf-8')
+  return config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
+}
+
+/** Whether the build gets VitePWA (manifest + service worker). */
+export function usesPwa(config, pwaDisabled = disablePWA) {
+  return !pwaDisabled && config.pwa !== false
+}
+
+// Written into dist-<name> of a noindex subdomain (Cloudflare Pages reads
+// _headers from the output root).
+export const NOINDEX_FILES = Object.freeze({
+  'robots.txt': 'User-agent: *\nDisallow: /\n',
+  _headers: [
+    '/*',
+    '  X-Robots-Tag: noindex, nofollow',
+    '  X-Frame-Options: DENY',
+    '  Referrer-Policy: strict-origin-when-cross-origin',
+    ''
+  ].join('\n')
+})
+
+export function extraFilesFor(config) {
+  return config.noindex ? { ...NOINDEX_FILES } : {}
+}
+
+export function createIndexHtml(config) {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -205,9 +249,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
 
   console.log(`\n🔨 Building ${subdomain}.openvolley.app...${basePath !== '/' ? ` (base: ${basePath})` : ''}`)
 
-  // Create temp index.html in frontend root (use custom HTML for scoresheet)
-  const htmlContent = config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
-  writeFileSync(tempIndexPath, htmlContent)
+  // Create temp index.html in frontend root (custom HTML for scoresheet,
+  // manager.html for the manager)
+  writeFileSync(tempIndexPath, htmlFor(config))
 
   try {
     await build({
@@ -231,7 +275,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
         react(),
         // Tailwind used to reach these builds only via the merged vite.config.js
         tailwindcss(),
-        ...(!disablePWA ? [VitePWA({
+        ...(usesPwa(config) ? [VitePWA({
           registerType: 'prompt',
           includeAssets: ['openvolley_no_bg.png', 'favicon.ico', 'ball.png', 'fonts/*.woff2'],
           workbox: {
@@ -323,6 +367,10 @@ async function buildSubdomain(subdomain, basePath = '/') {
       renameSync(builtHtmlPath, finalHtmlPath)
     }
 
+    for (const [name, content] of Object.entries(extraFilesFor(config))) {
+      writeFileSync(resolve(outDir, name), content)
+    }
+
     // Create package.json for Render deployment
     const renderPackageJson = {
       name: `openvolley-${subdomain}`,
@@ -386,9 +434,12 @@ async function main() {
   }
 }
 
-main().then(() => {
-  process.exit(0)
-}).catch((err) => {
-  console.error('Build failed:', err)
-  process.exit(1)
-})
+// Run only as a script: tests import the subdomain table above.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().then(() => {
+    process.exit(0)
+  }).catch((err) => {
+    console.error('Build failed:', err)
+    process.exit(1)
+  })
+}
