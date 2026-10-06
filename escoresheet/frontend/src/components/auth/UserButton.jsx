@@ -28,8 +28,10 @@ const toBody = (node) => (typeof document !== 'undefined' ? createPortal(node, d
  *   clipped ('Sign out' cut off)
  * @param {() => void} [props.onAction] called when a row opens a dialog or
  *   signs out, so the surrounding menu can close
+ * @param {boolean} [props.inMatch] a match is open: the console rows (Admin,
+ *   Saved teams) are hidden, since the console never opens over a match
  */
-export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction }) {
+export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction, inMatch = false }) {
   const { t } = useTranslation()
   const { user, profile, access, loading, signOut } = useAuth()
 
@@ -137,22 +139,24 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
   </>)
 
   // Access rows: admin console, saved teams (competition managers) and the
-  // invite code for a pending account. Hiding them is cosmetic: the server
-  // refuses every action without the role.
+  // invite code for any account that cannot score yet (pending, or a referee
+  // or competition manager without the scorer role). Hiding them is cosmetic:
+  // the server refuses every action without the role. The console rows are
+  // left out while a match is open (App never opens the console over one).
   const accessRows = (rowClass, close) => (<>
-    {access?.isAdmin && (
+    {access?.isAdmin && !inMatch && (
       <button type="button" onClick={() => { close(); openManage('accounts') }} className={rowClass}>
         <ShieldCheck size={iconPx} aria-hidden="true" className="text-stone-400" />
         {t('manage.menuAdmin')}
       </button>
     )}
-    {access?.canManageTeams && (
+    {access?.canManageTeams && !inMatch && (
       <button type="button" onClick={() => { close(); openManage('teams') }} className={rowClass}>
         <Users size={iconPx} aria-hidden="true" className="text-stone-400" />
         {t('manage.menuSavedTeams')}
       </button>
     )}
-    {access?.known && access?.isPending && (
+    {access?.known && !access?.canScore && (
       <button type="button" onClick={() => { close(); setShowRedeem(true) }} className={rowClass}>
         <KeyRound size={iconPx} aria-hidden="true" className="text-amber-600" />
         {t('manage.menuInviteCode')}

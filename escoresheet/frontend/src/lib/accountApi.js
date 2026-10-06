@@ -31,9 +31,13 @@ export function redeemInvite(code) {
 }
 
 /** POST /api/match/official-check → { taken: false } | { taken: true, claim } */
-export function officialCheck({ game_n, scheduled_at = null, sport_type = 'indoor', external_id = null }) {
-  return apiRequest('POST', '/api/match/official-check', { game_n, scheduled_at, sport_type, external_id })
+export function officialCheck({ game_n, scheduled_at = null, sport_type = 'indoor', external_id = null }, { timeoutMs } = {}) {
+  return apiRequest('POST', '/api/match/official-check', { game_n, scheduled_at, sport_type, external_id }, timeoutMs ? { timeoutMs } : undefined)
 }
+
+// The courtesy check before creating a match: local-first creation never waits
+// longer than this on a slow venue network (a timeout counts as "unknown").
+export const OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS = 3500
 
 // ── Admin ──
 

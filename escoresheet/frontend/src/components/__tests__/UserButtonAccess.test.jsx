@@ -50,6 +50,23 @@ describe('UserButton access rows', () => {
     expect(screen.queryByText('manage.menuInviteCode')).toBeNull()
   })
 
+  it('a referee or competition manager without the scorer role can enter an invite code too', () => {
+    for (const roles of [['referee'], ['competition_manager']]) {
+      asUser(roles)
+      const { unmount } = render(<UserButton inline />)
+      expect(screen.queryByText('access.roles.pending')).toBeNull()
+      expect(screen.getByText('manage.menuInviteCode')).toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('while a match is open the console rows are hidden (the console never opens over a match)', () => {
+    asUser(['admin', 'competition_manager'])
+    render(<UserButton inline inMatch />)
+    expect(screen.queryByText('manage.menuAdmin')).toBeNull()
+    expect(screen.queryByText('manage.menuSavedTeams')).toBeNull()
+  })
+
   it('before the profile is known it shows no pending state', () => {
     asUser([], false)
     render(<UserButton inline />)

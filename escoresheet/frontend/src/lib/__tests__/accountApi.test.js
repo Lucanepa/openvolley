@@ -6,7 +6,7 @@ vi.mock('../../utils/backendConfig', () => ({
 }))
 
 import { apiRequest } from '../apiClient'
-import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode } from '../accountApi'
+import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../accountApi'
 
 function jsonResponse(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -49,6 +49,23 @@ describe('apiRequest', () => {
     const res = await apiRequest('GET', '/api/admin/invites')
     expect(res.status).toBe(0)
     expect(res.error.network).toBe(true)
+  })
+})
+
+describe('officialCheck timeout (the courtesy check before creating a match)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('gives up after timeoutMs with a network-style error, so creation is not held up', async () => {
+    // a stalled venue network: fetch only settles when its signal aborts
+    globalThis.fetch = vi.fn((url, init) => new Promise((resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    const started = Date.now()
+    const res = await officialCheck({ game_n: 5 }, { timeoutMs: 50 })
+    expect(Date.now() - started).toBeLessThan(2000)
+    expect(res.status).toBe(0)
+    expect(res.error.network).toBe(true)
+    expect(OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS).toBeLessThanOrEqual(4000)
   })
 })
 

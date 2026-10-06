@@ -763,7 +763,7 @@ export default function MainHeader({
               {helpButton}
 
               {/* User Button - hidden in offline mode */}
-              {!offlineMode && <UserButton />}
+              {!offlineMode && <UserButton inMatch={!!matchId} />}
 
               <div ref={actionsMenuRef} style={{ position: 'relative' }}>
                 <span className={KIT_SCOPE}>
@@ -974,7 +974,7 @@ export default function MainHeader({
                     {/* Login / account rows - hidden in offline mode. Inline, not a
                         nested dropdown: the panel's scroll box clipped it. */}
                     {!offlineMode && (
-                      <UserButton inline onAction={() => setActionsMenuOpen(false)} />
+                      <UserButton inline inMatch={!!matchId} onAction={() => setActionsMenuOpen(false)} />
                     )}
 
                     {/* Divider */}

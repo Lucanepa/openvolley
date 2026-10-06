@@ -2046,7 +2046,7 @@
       "pending": "Validation en attente"
     },
     "signUpPendingNote": "Les nouveaux comptes doivent être validés avant que les matchs officiels soient synchronisés dans le cloud. Demande un code d’invitation à ton club.",
-    "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte."
+    "officialMatchLocalOnly": "Ce match reste sur cet appareil jusqu’à la validation de ton compte comme marqueur."
   },
   "manage": {
     "title": "Gestion",

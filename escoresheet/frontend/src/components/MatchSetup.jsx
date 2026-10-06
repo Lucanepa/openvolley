@@ -36,7 +36,7 @@ import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
-import { officialCheck } from '../lib/accountApi'
+import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
 import { Users, Save as SaveIcon } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
@@ -694,6 +694,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [saveToTeam, setSaveToTeam] = useState(null) // 'home' | 'away' | null
   const [savedSuggestion, setSavedSuggestion] = useState(null) // { home, away } | null
   const [officialClaim, setOfficialClaim] = useState(null) // claim of another account | null
+  // confirmMatchInfo is running (button disabled, second taps ignored)
+  const [confirmingMatchInfo, setConfirmingMatchInfo] = useState(false)
+  const confirmingMatchInfoRef = useRef(false)
 
   // Show both rosters in match setup
   const [showBothRosters, setShowBothRosters] = useState(false)
@@ -1969,7 +1972,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }
 
   // Confirm match info - validates all required fields and creates/updates match
+  // One confirm at a time: a second tap while the first still runs (a slow
+  // official check, Dexie writes) would create the teams and the match twice.
   async function confirmMatchInfo() {
+    if (confirmingMatchInfoRef.current) return
+    confirmingMatchInfoRef.current = true
+    setConfirmingMatchInfo(true)
+    try {
+      await confirmMatchInfoOnce()
+    } finally {
+      confirmingMatchInfoRef.current = false
+      setConfirmingMatchInfo(false)
+    }
+  }
+
+  async function confirmMatchInfoOnce() {
     // Track if this is a create or update operation
     const isCreating = !matchInfoConfirmed
 
@@ -2016,7 +2033,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const gameChanged = isCreating || String(originalMatchInfoRef.current?.gameN ?? '') !== String(gameN ?? '')
     if (gameChanged && !match?.test) {
       let claim = null
-      try { claim = await checkOfficialGame({ gameNumber: gameN, dateValue: date, timeValue: time }) } catch { claim = null }
+      try { claim = await checkOfficialGame({ gameNumber: gameN, dateValue: date, timeValue: time, timeoutMs: OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS }) } catch { claim = null }
       if (claim) {
         const status = claim.status ? t(`manage.status.${claim.status}`, claim.status) : '–'
         const ok = await confirmDialog({
@@ -2946,13 +2963,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Is this official game already scored by another cloud match? null when
   // it cannot be asked (no game number, not a scorer, offline, network error).
-  const checkOfficialGame = async ({ gameNumber, dateValue, timeValue }) => {
+  const checkOfficialGame = async ({ gameNumber, dateValue, timeValue, timeoutMs }) => {
     const n = parseInt(gameNumber, 10)
     if (!access?.canScore || match?.test || !Number.isInteger(n) || n <= 0) return null
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null
     let scheduled = null
     try { scheduled = dateValue ? createScheduledAt(dateValue, timeValue, { allowEmpty: true }) : null } catch { scheduled = null }
-    const { data, error } = await officialCheck({ game_n: n, scheduled_at: scheduled, sport_type: 'indoor', external_id: match?.seed_key || null })
+    const { data, error } = await officialCheck({ game_n: n, scheduled_at: scheduled, sport_type: 'indoor', external_id: match?.seed_key || null }, { timeoutMs })
     if (error || !data) return null
     return data.taken ? (data.claim || { mine: false }) : false
   }
@@ -3864,7 +3881,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {t('matchSetup.scorerDobForCoinToss')}
             </p>
           )}
-          {access?.known && access.isPending && !match?.test && (
+          {access?.known && !access.canScore && !match?.test && (
             <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900" role="note" data-testid="pending-local-only">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
               {t('access.officialMatchLocalOnly')}
@@ -3885,7 +3902,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 confirmMatchInfo()
               }
             }}
-            disabled={!canConfirmMatchInfo}
+            disabled={!canConfirmMatchInfo || confirmingMatchInfo}
+            aria-busy={confirmingMatchInfo || undefined}
             title={!canConfirmMatchInfo ? getMissingFieldsTooltip() : ''}
           >
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
