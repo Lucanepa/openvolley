@@ -1,0 +1,4 @@
+OpenVolley 2.1.1
+- Back on the first screen asks before leaving the app; Back closes open dialogs first.
+- Saved teams cover beach pairs too (competition manager at manager.openvolley.app).
+- New icons (Lucide and Phosphor).
