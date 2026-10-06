@@ -1,5 +1,51 @@
-import { describe, it, expect } from 'vitest'
-import { FORM_STACK_QUERY, isFormStacked, isViewportTooSmall } from '../formLayout'
+import { describe, it, expect, vi } from 'vitest'
+import { FORM_STACK_CLASS, FORM_STACK_QUERY, isFormStacked, isViewportTooSmall, watchFormStack } from '../formLayout'
+
+// A MediaQueryList stand-in whose orientation the test turns.
+function fakeMatchMedia(initial) {
+  const listeners = new Set()
+  const mq = {
+    matches: initial,
+    addEventListener: (_t, fn) => listeners.add(fn),
+    removeEventListener: (_t, fn) => listeners.delete(fn),
+  }
+  const matchMedia = vi.fn(() => mq)
+  const turn = (matches) => { mq.matches = matches; listeners.forEach(fn => fn()) }
+  return { matchMedia, turn, listeners }
+}
+
+describe('watchFormStack', () => {
+  it('asks for the form-stack query', () => {
+    const { matchMedia } = fakeMatchMedia(false)
+    watchFormStack(document.createElement('div'), matchMedia)
+    expect(matchMedia).toHaveBeenCalledWith(FORM_STACK_QUERY)
+  })
+
+  it('never sets the class in landscape', () => {
+    const el = document.createElement('div')
+    watchFormStack(el, fakeMatchMedia(false).matchMedia)
+    expect(el.className).toBe('')
+  })
+
+  it('follows the device as it turns, and stops when unsubscribed', () => {
+    const el = document.createElement('div')
+    const { matchMedia, turn, listeners } = fakeMatchMedia(true)
+    const stop = watchFormStack(el, matchMedia)
+    expect(el.classList.contains(FORM_STACK_CLASS)).toBe(true)
+    turn(false)
+    expect(el.classList.contains(FORM_STACK_CLASS)).toBe(false)
+    turn(true)
+    expect(el.classList.contains(FORM_STACK_CLASS)).toBe(true)
+    stop()
+    expect(listeners.size).toBe(0)
+  })
+
+  it('does nothing without matchMedia', () => {
+    const el = document.createElement('div')
+    expect(() => watchFormStack(el, undefined)()).not.toThrow()
+    expect(el.className).toBe('')
+  })
+})
 
 // Portrait tablets the owner scores on (CSS px), plus a 1200x1920 panel at 2x.
 const PORTRAIT_TABLETS = [[800, 1280], [768, 1024], [834, 1194], [600, 960], [1200, 1920]]

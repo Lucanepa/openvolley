@@ -410,7 +410,8 @@
    display: none (a portrait-only label, so it takes no grid cell in landscape).
    The query is FORM_STACK_QUERY in src/utils/formLayout.js; the `stack:`
    variant is the same query for Tailwind classes (stack:grid-cols-1 ...).
-   Scope: .ov-scorer is the scorer app's <body> (main.jsx), so the referee,
+   Scope: .ov-form-stack sits on the scorer app's <body> only while the query
+   matches (watchFormStack in main.jsx; never set in landscape), so the referee,
    bench and livescore apps are not touched, and .match-record (the scoreboard,
    which shows its rotate-your-device overlay in portrait) is left out.
    --------------------------------------------------------------------------- */
@@ -428,14 +429,14 @@
   /* 44 px controls, 16 px text (no zoom-on-focus on tablets). Not the coin
      toss roster review (.roster-table): its cells are text-styled inline
      edits that fit 800 px as a table; its rows get the 44 px height instead. */
-  .ov-scorer :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]), select):not(:is(.match-record, .roster-table) *) {
+  .ov-form-stack :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]), select):not(:is(.match-record, .roster-table) *) {
     min-height: 44px;
     font-size: 16px;
   }
-  .ov-scorer textarea:not(.match-record *) {
+  .ov-form-stack textarea:not(.match-record *) {
     font-size: 16px;
   }
-  .ov-scorer .roster-table:not(.match-record *) td {
+  .ov-form-stack .roster-table:not(.match-record *) td {
     height: 44px;
   }
 
