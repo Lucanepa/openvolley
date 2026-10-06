@@ -872,15 +872,21 @@ export function createPgQuery (options = {}) {
         if (scope) guards.push(`t.${quoteIdent(scope.column)} = ${ctx.p(scope.value)}`)
         // A conflicting set/event of another match is never overwritten or moved
         // (an upsert on id, or on an external_id that collided historically).
+        // The same for every match-owned child under a guard (match_live_state
+        // too): an upsert never moves a conflicting row to another match. The
+        // new rows' match is the one checked (owned, test-only), so a row of
+        // another match must not be taken over through its id.
+        const moveGuard = !childSpec && guard && !guard.isParent && guard.fk
         if (childSpec) guards.push(`t.${quoteIdent(childSpec.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(childSpec.fk)}`)
+        else if (moveGuard) guards.push(`t.${quoteIdent(guard.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(guard.fk)}`)
         // A conflicting row of a match the caller does not own is never changed.
         if (enforce) guards.push(enforce.isParent ? ownedSql('t', ctx, enforce.userId) : childOwnedSql('t', enforce.fk, ctx, enforce.userId))
         if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
-        if (childSpec || enforce) {
+        if (childSpec || enforce || moveGuard) {
           ctx.expectRows = rows.length
-          // sets/events: the new rows' match is owned (checked first), so a
+          // children: the new rows' match is owned (checked first), so a
           // skipped row is one of another match; otherwise it is not owned.
-          ctx.expectRowsCode = childSpec ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
+          ctx.expectRowsCode = (childSpec || (moveGuard && !enforce)) ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
         }
       }
       if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
