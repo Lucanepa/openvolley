@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backup;
+mod firewall;
 mod netifs;
 mod netshare;
 mod popups;
@@ -163,8 +164,9 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 }
 
 /// The scoretable window's native commands: automatic match backups
-/// (backup.rs; ACL in capabilities/backup.json) and the networks the laptop
-/// creates for the tablets (netshare/; capabilities/netshare.json). One
+/// (backup.rs; ACL in capabilities/backup.json), the networks the laptop
+/// creates for the tablets (netshare/; capabilities/netshare.json) and the
+/// check of the installer's firewall rule (firewall.rs; same capability). One
 /// invoke handler: a second call would replace the first.
 fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.manage(netshare::NetShare::new()).invoke_handler(tauri::generate_handler![
@@ -179,7 +181,8 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         netshare::hotspot_stop,
         netshare::bluetooth_status,
         netshare::bluetooth_start,
-        netshare::bluetooth_stop
+        netshare::bluetooth_stop,
+        firewall::firewall_status
     ])
 }
 
@@ -302,7 +305,8 @@ mod ipc_acl_tests {
             "latest": true
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
-                    "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop"] {
+                    "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
+                    "firewall_status"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
             assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
@@ -330,8 +334,16 @@ mod ipc_acl_tests {
             .expect_err("name without password refused");
         assert_eq!(err["code"], "invalid-credentials", "got {err}");
 
+        // the firewall check answers the scoretable page (off Windows: nothing to check)
+        let fw = get_ipc_response(&window, request("firewall_status", "http://localhost:5173/", serde_json::json!({})))
+            .expect("firewall_status from the scoretable page")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(fw["supported"], cfg!(windows), "got {fw}");
+        assert!(fw.get("ready").is_some(), "got {fw}");
+
         // a tablet on the LAN, another site, a look-alike host: the ACL refuses
-        let cmds = ["hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop"];
+        let cmds = ["hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop", "firewall_status"];
         for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
             for cmd in cmds {
                 let err = get_ipc_response(&window, request(cmd, url, bad.clone()))
