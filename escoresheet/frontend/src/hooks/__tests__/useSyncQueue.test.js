@@ -131,6 +131,7 @@ import {
   useUserMatchLink,
   processJob,
   takeJobError,
+  probeErrorStatus,
   STOP_PASS
 } from '../useSyncQueue'
 
@@ -558,6 +559,14 @@ describe('helpers', () => {
 
   it('exports the stop marker', () => {
     expect(STOP_PASS).toBe('stop')
+  })
+
+  it('a probe 404 (LAN relay without /api/db) is "no cloud backend", not an error', () => {
+    expect(probeErrorStatus({ status: 404, message: 'Not found' })).toBe('online_no_supabase')
+    expect(probeErrorStatus({ network: true, status: 0 })).toBe('offline')
+    expect(probeErrorStatus({ code: '42P01', status: 400 })).toBe('online_no_supabase')
+    expect(probeErrorStatus({ status: 500, message: 'boom' })).toBe('error')
+    expect(probeErrorStatus({ status: 401, message: 'unauthorized' })).toBe('error')
   })
 })
 
