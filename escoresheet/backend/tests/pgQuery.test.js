@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
-import { createPgQuery, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus } from '../lib/pgQuery.js'
+import { createPgQuery, DEFAULT_CONFIG, parseColumnRef, parseColumnList, mentionsSecret, quoteIdent, sqlstateStatus } from '../lib/pgQuery.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,8 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
     })
 
     it('allowlisted table missing from the database gives 42P01', async () => {
-      const r = await q('teams', 'select')
+      const ghost = createPgQuery({ pool: db.pool, logger, allowedTables: [...DEFAULT_CONFIG.allowedTables, 'ghost_table'] })
+      const r = await ghost.runQuery({ table: 'ghost_table', action: 'select', params: {} })
       assert.equal(r.status, 400)
       assert.equal(r.body.error.code, '42P01')
     })
