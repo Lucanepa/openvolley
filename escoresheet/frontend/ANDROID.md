@@ -37,20 +37,26 @@ is set.
 
 ## Version rule
 
-- `versionName` = `version` in `package.json` (e.g. `1.48.19`).
+- `versionName` = `version` in `package.json` (e.g. `1.48.20`).
 - `versionCode` = `(MAJOR * 1000000 + MINOR * 1000 + PATCH) * 10 + androidBuild`,
-  e.g. 1.48.19 with `androidBuild = 2` → `10480192` (10480191 was the first
-  private-repo build; 10480192 adds the F-Droid preparation).
-- `androidBuild` (0–9, `android/app/build.gradle`) is for a native-only fix
-  without a web version bump: raise it for such a rebuild, reset it to 0 when
-  `package.json`'s version changes. F-Droid only offers an update when the
-  `versionCode` grows, so never publish the same code twice.
-- Monotonic while MINOR and PATCH stay below 1000.
+  e.g. 1.48.20 → `10480200`.
+- **Every Android release bumps PATCH** in `package.json`, a native-only fix
+  (Gradle, manifest, `MainActivity.java`) included. `androidBuild` in
+  `android/app/build.gradle` stays **0**. It was used only for 1.48.19
+  (10480191 = first private-repo build, 10480192 = never published) and is
+  kept so the codes keep growing. Reason: a release for F-Droid is the tag
+  `android-v<versionName>`. A native-only rebuild with the same versionName would
+  need that tag again, and a tag F-Droid has built must never move (and
+  `UpdateCheckMode` only matches `android-v<digits and dots>`). One version, one
+  tag, one versionCode.
+- F-Droid only offers an update when the `versionCode` grows, so never
+  publish the same code twice. Monotonic while MINOR and PATCH stay below 1000.
 - Both values are **literals** in `defaultConfig` of `android/app/build.gradle`
-  (`versionCode 10480192`, `versionName "1.48.19"`): F-Droid's update checker
+  (`versionCode 10480200`, `versionName "1.48.20"`): F-Droid's update checker
   reads them with a regex and cannot evaluate Groovy. The build fails if they
   do not match `package.json` + `androidBuild`, so update them together
-  (`scripts/bump-version.js` does it when it bumps `package.json`).
+  (`scripts/bump-version.js` does it when it bumps `package.json`; keep the
+  root `version` in `package-lock.json` in step too).
 
 ## F-Droid (official catalogue)
 
@@ -62,7 +68,8 @@ The app is prepared for f-droid.org, which builds it from source itself:
 - Recipe for fdroiddata: `android/fdroid/com.openvolley.escoresheet.yml`
   (reference copy; the live one is in gitlab.com/fdroid/fdroiddata).
 - A release for F-Droid = an annotated tag `android-v<versionName>` on the
-  commit whose `build.gradle` carries that version. F-Droid's checkupdates
+  commit whose `build.gradle` carries that version (a new PATCH version for
+  every release, see Version rule; never move or reuse a tag). F-Droid's checkupdates
   finds the tag, reads versionName/versionCode from `build.gradle` and builds
   it (no further action needed once the app is in the catalogue).
 - Reproducible builds (`Binaries` + `AllowedAPKSigningKeys` in the recipe):
@@ -79,6 +86,12 @@ The app is prepared for f-droid.org, which builds it from source itself:
   `release-android.sh` checks this after signing, like F-Droid does.
 - No Google services plugin, no proprietary libraries: keep it that way
   (Capacitor plugins that pull Firebase/Play Services would block inclusion).
+- No third-party artwork without a licence that allows redistribution. The
+  Swiss Volley logo in the scoresheet PDF header (`scoresheet_pdf/components/swissvolleylogo.jpg`)
+  is left out of this build: with `CAPACITOR=true`, `vite.config.js` aliases
+  it to `noFederationLogo.js` (null), and the header slot stays empty. Web and
+  desktop keep it. Icons come from Lucide (ISC) or Game Icons (CC BY 3.0,
+  credited under Options → App version).
 
 ## Signing key
 

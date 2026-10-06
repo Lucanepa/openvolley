@@ -7,8 +7,8 @@
 #
 # The APK bundles the web app (no live site): every web change that should
 # reach the tablets needs a version bump (package.json) and a new release.
-# versionName = package.json version, versionCode = MAJOR*1000000 + MINOR*1000
-# + PATCH (android/app/build.gradle).
+# versionName = package.json version, versionCode = (MAJOR*1000000 + MINOR*1000
+# + PATCH) * 10 (android/app/build.gradle, ANDROID.md "Version rule").
 #
 # Signing key: ~/.config/openvolley-android/ (release.p12 + signing.properties,
 # backed up in Vaultwarden "OpenVolley Android signing key") — updates must be
@@ -30,6 +30,12 @@ if [ "${1:-}" != --no-publish ]; then
     exit 1
   fi
   echo "building $(git describe --tags --always --dirty)"
+  # F-Droid builds the tag android-v<versionName>; the signed APK is only
+  # useful to it if it comes from that same commit (ANDROID.md, Version rule).
+  want="android-v$(sed -nE 's/^ +versionName "(.*)"$/\1/p' android/app/build.gradle)"
+  if ! git tag --points-at HEAD | grep -qx "$want"; then
+    echo "WARNING: HEAD is not tagged $want; F-Droid will build that tag, not this commit" >&2
+  fi
 fi
 
 # CAPACITOR=true: no service worker (vite.config.js). The WebView origin is
@@ -68,5 +74,8 @@ PY
     exit 1
   }
   echo "reproducible: signature of $SIGNED copies onto the unsigned build"
-  echo "attach it to the GitHub release: gh release create android-v$(sed -nE 's/^ +versionName \"(.*)\"$/\1/p' android/app/build.gradle) $SIGNED"
+  name=$(sed -nE 's/^ +versionName "(.*)"$/\1/p' android/app/build.gradle)
+  echo "attach it to the GitHub release (F-Droid downloads it from there, Binaries in the recipe):"
+  echo "  gh release create android-v$name $SIGNED --repo Lucanepa/openvolley --verify-tag --latest=false \\"
+  echo "    --title \"OpenVolley Android $name\" --notes-file $(git rev-parse --show-toplevel)/fastlane/metadata/android/en-US/changelogs/$code.txt"
 fi
