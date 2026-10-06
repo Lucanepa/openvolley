@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "netshare",
+  "description": "Networks for the tablets: the scoretable window (loaded from the built-in server on http://localhost) may read, start and stop the laptop's own Wi-Fi (hotspot) and Bluetooth network for the tablets. LAN tablets are plain browsers and never get these commands.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:*"]
+  },
+  "permissions": [
+    "allow-hotspot-status",
+    "allow-hotspot-start",
+    "allow-hotspot-stop",
+    "allow-bluetooth-status",
+    "allow-bluetooth-start",
+    "allow-bluetooth-stop"
+  ]
+}
