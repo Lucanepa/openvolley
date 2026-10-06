@@ -19,7 +19,7 @@
  * match_live_state row, so LivescoreApp's model (utils/livescoreModel) works
  * on it unchanged. match_id is the relay key (the match's seed key).
  */
-import { getBackendOverride, getLocalServerStatusUrl, getRelayWebSocketUrl, isLanBackendUrl } from './backendConfig'
+import { getBackendOverride, getLocalServerStatusUrl, getRelayWebSocketUrl, isLanBackendUrl, learnRelayWsPort, relayWsPortFor } from './backendConfig'
 import { newerLiveState } from './serverDataSync'
 import { settleLiveChange } from './livescoreModel'
 
@@ -129,12 +129,18 @@ export async function fetchRelayLivescoreList(listUrl, fetchImpl = typeof fetch 
  * The relay WebSocket for the livescore. A page served by the relay asks it
  * for its WS port first (/api/server/status `wsPort`: the desktop app moved
  * off 8080 with OPENVOLLEY_WS_PORT, the venue server's one port); a chosen
- * server (Android app, ?server=) uses what getRelayWebSocketUrl knows of it.
+ * LAN server (Android app, ?server=) is asked the same once, when its port
+ * is not known yet (learnRelayWsPort), and getRelayWebSocketUrl does the rest.
  * @param {{ fetchImpl?: typeof fetch }} [options]
  * @returns {Promise<string|null>}
  */
 export async function relayLivescoreWsUrl({ fetchImpl = typeof fetch === 'function' ? fetch : null } = {}) {
-  const statusUrl = getBackendOverride() ? null : getLocalServerStatusUrl()
+  const override = getBackendOverride()
+  if (override) {
+    if (fetchImpl && isLanBackendUrl(override) && !relayWsPortFor(override)) await learnRelayWsPort(override, { fetchImpl })
+    return getRelayWebSocketUrl()
+  }
+  const statusUrl = getLocalServerStatusUrl()
   if (statusUrl && fetchImpl) {
     try {
       const res = await fetchImpl(statusUrl)

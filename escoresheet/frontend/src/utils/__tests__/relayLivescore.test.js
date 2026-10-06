@@ -194,14 +194,25 @@ describe('relayLivescoreWsUrl', () => {
     await expect(relayLivescoreWsUrl({ fetchImpl: async () => { throw new Error('x') } })).resolves.toBe('ws://192.168.1.20:8080')
   })
 
+  it('asks a chosen LAN server for its port once (a ?server= link on another port)', async () => {
+    setLocation('http://localhost:5191/livescore')
+    setBackendOverride('http://192.168.1.20:5191')
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ wsPort: 8191 }) }))
+    await expect(relayLivescoreWsUrl({ fetchImpl })).resolves.toBe('ws://192.168.1.20:8191')
+    await expect(relayLivescoreWsUrl({ fetchImpl })).resolves.toBe('ws://192.168.1.20:8191')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledWith('http://192.168.1.20:5191/api/server/status', expect.anything())
+  })
+
   it('uses the chosen server of the Android app', async () => {
     setLocation('https://localhost/livescore/index.html')
     window.Capacitor = { isNativePlatform: () => true }
     try {
       setBackendOverride('http://192.168.1.20:5173')
-      const fetchImpl = vi.fn()
+      // The relay does not answer: the desktop default 5173 -> 8080
+      const fetchImpl = vi.fn(async () => { throw new Error('offline') })
       await expect(relayLivescoreWsUrl({ fetchImpl })).resolves.toBe('ws://192.168.1.20:8080')
-      expect(fetchImpl).not.toHaveBeenCalled()
+      expect(fetchImpl).toHaveBeenCalledWith('http://192.168.1.20:5173/api/server/status', expect.anything())
     } finally {
       delete window.Capacitor
     }
