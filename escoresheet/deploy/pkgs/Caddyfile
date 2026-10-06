@@ -1,0 +1,72 @@
+# ov-pkgs: static file server for https://get.openvolley.app
+#
+# Serves /srv/pkgs (read-only bind of /data/openvolley/pkgs, filled by
+# publish-pkgs.sh from lenovoserver):
+#   /               index.html (install instructions)
+#   /apt/           signed APT repository (dists/stable, pool/main, openvolley.gpg/.asc)
+#   /fdroid/repo/   signed F-Droid repository
+#
+# TLS ends at Cloudflare; ov-tunnel reaches this on http://ov-pkgs:80 over the
+# compose network ov-edge. No admin API, no ACME, no state on disk.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:80 {
+	root * /srv/pkgs
+
+	# Read-only site: anything but GET/HEAD is refused.
+	@write not method GET HEAD
+	respond @write 405
+
+	# Content types file_server would otherwise guess or leave generic.
+	@deb path *.deb
+	@apk path *.apk
+	@jar path *.jar
+	@json path *.json
+	@keyring path *.gpg
+	@armored path *.asc
+	@release path */InRelease */Release
+	@detached path */Release.gpg
+	header @deb Content-Type application/vnd.debian.binary-package
+	header @apk Content-Type application/vnd.android.package-archive
+	header @jar Content-Type application/java-archive
+	header @json Content-Type "application/json; charset=utf-8"
+	header @keyring Content-Type application/pgp-keys
+	header @armored Content-Type "text/plain; charset=utf-8"
+	header @release Content-Type "text/plain; charset=utf-8"
+	header @detached Content-Type application/pgp-signature
+
+	# Caching: packages are named by version and never rewritten, so they are
+	# immutable. Everything else (APT dists/, F-Droid index and entry files,
+	# keys, this page, listings) changes on every publish: 60 s, revalidate.
+	@immutable path *.deb *.apk
+	@mutable not path *.deb *.apk
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	header @mutable Cache-Control "public, max-age=60, must-revalidate"
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		-Server
+	}
+
+	encode zstd gzip
+	file_server browse {
+		hide .*
+	}
+
+	# Errors (404 and the like) bypass the header rules above.
+	handle_errors {
+		header {
+			Content-Type "text/plain; charset=utf-8"
+			Cache-Control "public, max-age=60"
+			X-Content-Type-Options nosniff
+			-Server
+		}
+		respond "{err.status_code} {err.status_text}"
+	}
+}

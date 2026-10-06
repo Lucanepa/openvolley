@@ -27,6 +27,8 @@ network, and carries `traefik.enable=false`.
  |      | network ov-internal (internal: true, no egress)                                  |
  |  ov-postgres  postgres:17.11-alpine             256 MB, 0.5 CPU, pids 128, read-only,  |
  |               uid 70, refuses to start without /ovpg/.ovdata                            |
+ |  ov-pkgs      caddy:2.11.7-alpine (ov-edge only) 64 MB, 0.25 CPU, read-only, nobody,   |
+ |               get.openvolley.app: static APT + F-Droid repos from /data/openvolley/pkgs |
  +----------------------------------------------------------------------------------------+
    /data/openvolley/pg       8 GB loop ext4  (.ovdata sentinel, data/ = PGDATA)
    /data/openvolley/storage 15 GB loop ext4  (.ovdata sentinel, scoresheets/, backup/)
@@ -43,7 +45,10 @@ network, and carries `traefik.enable=false`.
 |---|---|---|
 | `compose.yaml` | VM, `/opt/openvolley` | The three services, two networks, limits, bind mounts with `create_host_path: false` |
 | `env.example` | VM | Template for `/opt/openvolley/.env` (mode 600). Lists every variable; no real values |
-| `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`; everything else 404 |
+| `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
+| `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else |
+| `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`) |
+| `publish-pkgs.sh` | lenovoserver | Adds `.deb`/signed `.apk`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
@@ -94,9 +99,9 @@ Everything the kit does on `lucanepa-prod`, and nothing else:
 
 | Shared resource | What OpenVolley uses | Bound |
 |---|---|---|
-| Disk | `/var/lib/openvolley/{pg,storage}.img` (23 GB, allocated once), `/data/openvolley/backups`, `/opt/openvolley/images` + Docker images (~350 MB per backend tag), container logs | Loop images are hard caps: a runaway cannot grow past them. `host-prep.sh` refuses unless 20 GB stay free after allocation. The backups directory is on the root fs and **not** a loop image: `backup-openvolley.sh` estimates every output (db dump, each tar) before writing it and refuses when it would leave under 10 GB free (`OV_MIN_FREE_MB`) or push the directory past 20 GB (`OV_BACKUP_MAX_MB`); a refusal alerts through the Kuma push. Rollback images: `build-image.sh --ship` keeps the newest 5 archives and tags plus the deployed one. Logs `json-file` 5 x 10 MB per service |
-| RAM | 256 + 256 + 128 MB | `mem_limit` = `memswap_limit` (no swap, so KSCW's page cache is not pushed out), `oom_score_adj: 500` (on host OOM the kernel picks OpenVolley first) |
-| CPU / pids | 1.0 + 0.5 + 0.5 CPU, 256 / 128 / 64 pids | `cpus`, `pids_limit`; backups run `nice 10`, idle-ish I/O class |
+| Disk | `/var/lib/openvolley/{pg,storage}.img` (23 GB, allocated once), `/data/openvolley/backups`, `/data/openvolley/pkgs` (packages, tens of MB per release), `/opt/openvolley/images` + Docker images (~350 MB per backend tag), container logs | Loop images are hard caps: a runaway cannot grow past them. `host-prep.sh` refuses unless 20 GB stay free after allocation. The backups directory is on the root fs and **not** a loop image: `backup-openvolley.sh` estimates every output (db dump, each tar) before writing it and refuses when it would leave under 10 GB free (`OV_MIN_FREE_MB`) or push the directory past 20 GB (`OV_BACKUP_MAX_MB`); a refusal alerts through the Kuma push. Rollback images: `build-image.sh --ship` keeps the newest 5 archives and tags plus the deployed one. Logs `json-file` 5 x 10 MB per service |
+| RAM | 256 + 256 + 128 + 64 MB (`ov-pkgs`) | `mem_limit` = `memswap_limit` (no swap, so KSCW's page cache is not pushed out), `oom_score_adj: 500` (on host OOM the kernel picks OpenVolley first) |
+| CPU / pids | 1.0 + 0.5 + 0.5 + 0.25 CPU, 256 / 128 / 64 / 64 pids | `cpus`, `pids_limit`; backups run `nice 10`, idle-ish I/O class |
 | Docker daemon | Containers and networks labelled `com.docker.compose.project=openvolley` | No published ports, no `coolify` network, `traefik.enable=false`, bind mounts only (no named volumes, so `docker volume prune` cannot hit data) |
 | Network | Outbound only: Cloudflare (7844 udp/tcp, 443), Resend/SMTP | `ov-internal` is `internal: true`; Postgres has no route out |
 | `/etc/fstab` | Two appended lines, `nofail` | Backup copy written first. `nofail`: a broken image never blocks boot or Docker; the containers just restart until the mount is back |
@@ -125,6 +130,98 @@ systemctl list-timers 'openvolley-*'
 ```
 
 Complete removal (leaves no trace besides the fstab backup copies): RUNBOOK-hetzner.md, "Uninstall".
+
+## Public downloads: get.openvolley.app
+
+`https://get.openvolley.app` serves the public install routes from `ov-pkgs`, through the same
+tunnel as the backend:
+
+| Path | What | Signed by |
+|---|---|---|
+| `/` | Install page (`pkgs/index.html`, versions filled in at publish time) | n/a |
+| `/apt/` | APT repo: `dists/stable` (component `main`, arch `amd64`), `pool/main/*.deb`, `openvolley.gpg` (binary keyring), `openvolley.asc` | GPG key **OpenVolley packages <packages@openvolley.app>**, ed25519, no expiry, fingerprint `AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C` |
+| `/fdroid/repo/` | F-Droid repo **OpenVolley** with `com.openvolley.escoresheet` | Index: repo key `CN=openvolley, OU=F-Droid`, RSA 4096, to 2054, fingerprint `61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`. APKs: the OpenVolley app key (`frontend/ANDROID.md`), never re-signed |
+
+The Windows installer and an APK copy (`OpenVolley-<version>.apk`) are assets of the GitHub
+release `desktop-v<version>`; the page links there.
+
+User commands (also on the page):
+
+```bash
+curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
+sudo apt update && sudo apt install openvolley-e-scoresheet
+```
+
+F-Droid: add `https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`.
+
+**Package name.** The `.deb` is called `openvolley-e-scoresheet` because Tauri derives it from
+`productName` ("Openvolley eScoresheet"); the binary is `openvolley-escoresheet`. The CI `.deb`
+is published unchanged, so the name stays; renaming would mean a repack (a different file from
+the release asset) or changing `productName` in `tauri.conf.json`, which also renames the
+Windows installer and the window title.
+
+**Keys** (lenovoserver only, never on the VM, never in git), all under
+`~/.config/openvolley-pkgs/` (mode 700):
+
+- `gnupg/` + `gpg-passphrase`: the APT key. Vaultwarden, folder OpenVolley, **"OpenVolley APT
+  signing key"** (password = passphrase; notes = armored private key and how to restore).
+- `fdroid/config.yml` + `fdroid/keystore.p12`: the F-Droid repo key, created by `fdroid init`.
+  Vaultwarden **"OpenVolley F-Droid repo key"** (password = keystore password; notes = key
+  password, alias, base64 keystore). Losing it means every user must re-add the repo under a
+  new fingerprint; losing the APT key means everyone re-downloads `openvolley.gpg`.
+- `public/`: the served tree, rebuilt by `publish-pkgs.sh`. Only this directory is rsynced.
+
+This is separate from the owner's private F-Droid repo (`/srv/fdroid/desktop-calendar`), which
+stays private and is not touched by any of this.
+
+### Release procedure
+
+1. Desktop: tag `desktop-v<version>` (CI builds and creates the GitHub release), then
+   ```bash
+   gh release download desktop-v<version> --repo Lucanepa/openvolley --pattern '*.deb' -D /tmp/ovrel
+   ```
+2. Android: `escoresheet/frontend/scripts/release-android.sh` builds and signs the APK and puts
+   it in the private repo as `/srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk`
+   (`frontend/ANDROID.md`). Attach it to the release for direct download:
+   ```bash
+   cp /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk /tmp/ovrel/OpenVolley-<version>.apk
+   gh release upload desktop-v<version> --repo Lucanepa/openvolley /tmp/ovrel/OpenVolley-<version>.apk
+   ```
+3. Publish both (either may be left out):
+   ```bash
+   escoresheet/deploy/publish-pkgs.sh /tmp/ovrel/*.deb \
+     /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk
+   ```
+   It refuses an APK not signed by the OpenVolley app key and a package that would overwrite a
+   different file under the same version. `--no-sync` builds `~/.config/openvolley-pkgs/public`
+   without uploading. Clients see the new indexes within 60 s (cache), packages are immutable.
+4. Check: `curl -fsS https://get.openvolley.app/apt/dists/stable/InRelease | head` and the
+   version on the page.
+
+To withdraw a version: delete it from `~/.config/openvolley-pkgs/public/apt/pool/main/` or
+`~/.config/openvolley-pkgs/fdroid/repo/` and run `publish-pkgs.sh` again.
+
+### Deploy (owner, once)
+
+```bash
+# DNS (openvolley.app zone): CNAME get -> 10659462-0408-42a4-bdd9-fc890094954d.cfargotunnel.com, proxied
+lenovo$ ssh hetzner install -d -m 0755 -o root -g root /data/openvolley/pkgs     # or ./host-prep.sh
+lenovo$ escoresheet/deploy/publish-pkgs.sh                                      # fills it
+lenovo$ rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ hetzner:/opt/openvolley/
+lenovo$ ssh hetzner 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
+hetzner# cd /opt/openvolley && docker compose config -q && docker compose up -d ov-pkgs && docker compose restart ov-tunnel
+hetzner# docker compose ps ov-pkgs                                               # healthy
+```
+
+The `chmod 644` matters: the kit lands root-owned `640`, and `ov-pkgs` runs as `nobody` (as
+`ov-tunnel` runs as a non-root user), so without it Caddy cannot read its config. `publish-pkgs.sh`
+writes the public tree `D755,F644`.
+
+Hardening as for the other services (read-only root, `cap_drop: ALL`, `no-new-privileges`, limits,
+`ov-edge` only, no ports), with one capability kept: `/usr/bin/caddy` in the image has the file
+capability `cap_net_bind_service`, and the kernel refuses to exec it when that capability is not in
+the bounding set, so `cap_add: [NET_BIND_SERVICE]`.
 
 ## Deviations from the migration plan (and why)
 

@@ -308,6 +308,9 @@ apply() {
   done
 
   install -d -m 0755 -o root -g root "$OV_STATUS_DIR"
+  # get.openvolley.app tree (ov-pkgs, read-only bind), filled by publish-pkgs.sh.
+  # Small (packages only), so plain root fs, no loop image.
+  install -d -m 0755 -o root -g root "${OV_BASE}/pkgs"
 
   if ! id ovbackup >/dev/null 2>&1; then
     log "creating system user ovbackup"

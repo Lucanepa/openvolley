@@ -1,9 +1,17 @@
 # OpenVolley Android app
 
 The scorer app (plus the referee, bench and livescore views) as an Android app
-for the tablets, built with Capacitor from this frontend. It is published to
-the owner's private F-Droid repo **https://fdroid.lucanepa.com/repo** (basic
-auth; Vaultwarden item "Desktop Calendar F-Droid repo web login").
+for the tablets, built with Capacitor from this frontend. Published to:
+
+- the **public** OpenVolley F-Droid repo **https://get.openvolley.app/fdroid/repo**
+  (fingerprint `61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`),
+  install page **https://get.openvolley.app**;
+- the GitHub release `desktop-v<version>` as `OpenVolley-<version>.apk` (direct download);
+- the owner's private F-Droid repo **https://fdroid.lucanepa.com/repo** (basic
+  auth; Vaultwarden item "Desktop Calendar F-Droid repo web login"), where the
+  release script drops it first.
+
+All three carry the same file, signed once with the OpenVolley app key below.
 
 - Package: `com.openvolley.escoresheet`, name **OpenVolley**
 - The APK **bundles** the web app (`dist-capacitor/`): it works with no
@@ -30,6 +38,23 @@ and runs `publish.sh` (`fdroid update` + rsync to the served copy). The
 F-Droid metadata (name, summary, description, icon) is
 `/srv/fdroid/desktop-calendar/metadata/com.openvolley.escoresheet.yml` and
 `metadata/com.openvolley.escoresheet/en-US/icon.png`, outside this repo.
+
+Then make it public (the private repo is only the first stop):
+
+```bash
+v=$(node -p "require('./package.json').version"); code=<versionCode>   # e.g. 1.48.19 / 10480191
+apk=/srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_$code.apk
+# public F-Droid repo + install page (escoresheet/deploy/README.md, "Public downloads")
+../deploy/publish-pkgs.sh "$apk"
+# direct download on the GitHub release (after CI created desktop-v$v)
+cp "$apk" /tmp/OpenVolley-$v.apk && gh release upload desktop-v$v --repo Lucanepa/openvolley /tmp/OpenVolley-$v.apk
+```
+
+`publish-pkgs.sh` refuses an APK that is not signed with the OpenVolley app key
+and never re-signs it. The public repo has its own **repo** signing key (signs
+only the index): `~/.config/openvolley-pkgs/fdroid/`, Vaultwarden "OpenVolley
+F-Droid repo key". Its metadata is a copy of the yml and icon above, in
+`~/.config/openvolley-pkgs/fdroid/metadata/`: copy changes over when you edit them.
 
 Needs JDK 21 and the Android SDK in `~/Android/Sdk` (the script sets
 `ANDROID_HOME`). Gradle caches go to `~/.gradle` unless `GRADLE_USER_HOME`
