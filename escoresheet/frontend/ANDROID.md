@@ -142,14 +142,17 @@ The app is prepared for f-droid.org, which builds it from source itself:
 - **Back button**: goes back inside the app (referee view → scorer); on the
   first page it only sends the app to the background, so it never closes a
   running match.
-- **Orientation**: `sensorLandscape` (landscape, either way up). The scoring
-  screen is landscape-only and the WebView ignores `screen.orientation.lock()`;
-  a tablet tilted on the scorer's table would otherwise flip into the
-  "rotate your device" overlay mid-rally. Android 16 ignores orientation
-  requests on tablets unless the app opts out
-  (`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`, set). Tablets whose
-  launcher rotates the display anyway (Pixel Tablet) letterbox the app in
-  portrait instead of rotating it.
+- **Orientation**: the app rotates freely (`screenOrientation="unspecified"`):
+  home, match setup and the forms work in portrait (one field per row). Only
+  the scoreboard is landscape-only: while it is mounted it locks the activity
+  to landscape natively (`@capacitor/screen-orientation`,
+  `src/utils/nativeOrientation.js`; the WebView ignores
+  `screen.orientation.lock()`), on the side the tablet is already on, so a
+  tablet tilted on the scorer's table never flips into the "rotate your
+  device" overlay mid-rally; leaving it unlocks. Android 16 ignores
+  orientation requests on tablets unless the app opts out
+  (`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`, set). In a browser both
+  calls are no-ops.
 - **Screen stays on**: the scoreboard's Screen Wake Lock request works in the
   WebView (no extra native code).
 - **Venue mode (no internet)**: plain-http LAN relays are allowed:
