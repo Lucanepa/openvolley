@@ -140,7 +140,15 @@ export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log 
     async write(dir, name, text, { latest = true } = {}) {
       const d = await directory()
       await writeOne(d, `${BACKUP_SUBDIR}/${dir}/${name}`, text)
-      if (latest) await writeOne(d, `${BACKUP_SUBDIR}/${dir}/${LATEST_FILE}`, text)
+      if (latest) {
+        try {
+          await writeOne(d, `${BACKUP_SUBDIR}/${dir}/${LATEST_FILE}`, text)
+        } catch (e) {
+          // The event file is saved. On Android 11+ a latest.json left by a
+          // previous install of the app cannot be overwritten: not an error.
+          log.warn?.(`[NativeBackup] cannot update ${dir}/${LATEST_FILE}:`, e?.message || e)
+        }
+      }
     },
     async list() {
       const d = await directory()

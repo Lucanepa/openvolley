@@ -102,6 +102,20 @@ describe('createCapacitorStore', () => {
     expect(store.canOpenFolder).toBe(false)
   })
 
+  it('keeps the event file when latest.json cannot be overwritten (left by a previous install)', async () => {
+    const fs = fakeFilesystem()
+    const warn = vi.fn()
+    const store = createCapacitorStore(fs, { log: { warn } })
+    const realWrite = fs.Filesystem.writeFile.getMockImplementation()
+    fs.Filesystem.writeFile.mockImplementation(async (opts) => {
+      if (opts.path.endsWith('/latest.json')) throw new Error('EACCES')
+      return realWrite(opts)
+    })
+    await expect(store.write('game5-s', 'a.json', '{}')).resolves.toBeUndefined()
+    expect(fs.files.has(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/a.json`)).toBe(true)
+    expect(warn).toHaveBeenCalled()
+  })
+
   it('falls back to the app folder when Documents is refused', async () => {
     const fs = fakeFilesystem({ refuse: ['DOCUMENTS'] })
     const store = createCapacitorStore(fs, { log: { warn: () => {} } })
