@@ -1,0 +1,27 @@
+OpenVolley è un referto elettronico per la pallavolo indoor, pensato per il tavolo del segnapunti. Segue le regole FIVB e i regolamenti di Swiss Volley e sostituisce il referto cartaceo.
+
+Segnare
+- Preparazione della partita: squadre, elenchi giocatori, liberi, ufficiali, arbitri, dati della partita
+- Sorteggio, formazioni e rotazioni, ordine di servizio
+- Registrazione azione per azione, con annulla e cambio di decisione
+- Tempi di riposo, sostituzioni (regolari ed eccezionali), sostituzioni del libero
+- Richieste improprie, avvertimenti per ritardo e sanzioni
+- Intervalli tra i set, fine set e fine partita, firme
+- Referto in PDF a fine partita
+- Partite di prova con squadre di esempio per esercitarsi
+
+Prima di tutto offline
+Ogni partita è salvata sul tablet. La registrazione non aspetta mai la rete: l'app funziona senza alcuna connessione e si sincronizza appena torna online.
+
+Tablet intorno al campo
+La stessa app apre anche le viste arbitro, panchina (squadra) e livescore, così un secondo tablet segue la partita in diretta per il 2° arbitro, l'allenatore o il pubblico. Scelta nelle Opzioni.
+
+Server di palestra (senza internet)
+Nelle palestre senza internet i tablet si collegano a un server OpenVolley locale sulla stessa rete (app desktop OpenVolley, server autonomo o box di palestra). Inserire il suo indirizzo, per esempio 192.168.1.20:8080, in Opzioni, Server.
+
+Sincronizzazione cloud
+Con internet le partite vengono sincronizzate con il backend OpenVolley (backend.openvolley.app), così le viste su altri dispositivi seguono la partita. Il backend è software libero dello stesso repository e può essere ospitato in proprio. Le partite di prova non vengono mai caricate.
+
+Lingue: inglese, tedesco, svizzero tedesco, francese, italiano.
+
+Pensata per tablet in orientamento orizzontale.
