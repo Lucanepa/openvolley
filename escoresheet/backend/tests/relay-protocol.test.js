@@ -393,6 +393,61 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [fresh, second, third]) c.ws.close()
   })
 
+  it('GET /api/match/list: every published scheduled/live match, referee connection or not, public fields only', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const courtA = await openClient(wsUrl)
+    const beach = await openClient(wsUrl)
+    const rehearsal = await openClient(wsUrl)
+    const done = await openClient(wsUrl)
+    // Referee connection off: the default for a new match
+    courtA.send(syncMessage(makeMatch({ id: 1, seed_key: 'list-court-a', gamePin: '515151', status: 'scheduled', refereeConnectionEnabled: false, scheduledAt: '2026-10-05T17:00:00.000Z' })))
+    // openbeach: team1Team / team2Team
+    const beachSync = syncMessage(makeMatch({ id: 1, seed_key: 'list-beach', gamePin: '525252', scheduledAt: '2026-10-05T19:00:00.000Z' }))
+    delete beachSync.homeTeam
+    delete beachSync.awayTeam
+    beach.send({ ...beachSync, team1Team: { id: 1, name: 'Muster / Meier', color: '#e2001a' }, team2Team: { id: 2, name: 'Rossi / Bianchi' } })
+    // A rehearsal match (no game PIN) is listed by a venue relay
+    rehearsal.send(syncMessage({ id: 1, seedKey: 'list-test', test: true, status: 'live' }))
+    done.send(syncMessage(makeMatch({ id: 1, seed_key: 'list-final', gamePin: '535353', status: 'final' })))
+    for (const c of [courtA, beach, rehearsal, done]) {
+      c.send({ type: 'ping' })
+      await c.waitFor((m) => m.type === 'pong')
+      assert.equal(c.messages.some((m) => m.type === 'error'), false)
+    }
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/match/list`)
+    assert.equal(res.status, 200)
+    const text = await res.text()
+    const mine = JSON.parse(text).matches.filter((m) => String(m.id).startsWith('list-'))
+    assert.deepEqual(mine.map((m) => m.id), ['list-beach', 'list-court-a', 'list-test'])
+    assert.deepEqual(mine[1], {
+      id: 'list-court-a',
+      gameNumber: 4242,
+      homeTeam: 'Home VC',
+      awayTeam: 'Away VC',
+      scheduledAt: '2026-10-05T17:00:00.000Z',
+      dateTime: mine[1].dateTime,
+      status: 'scheduled',
+      test: false,
+      refereeConnectionEnabled: false
+    })
+    assert.equal(mine[0].homeTeam, 'Muster / Meier')
+    assert.equal(mine[0].awayTeam, 'Rossi / Bianchi')
+    assert.equal(mine[2].test, true)
+    assert.equal(containsPin(text), false)
+    assert.ok(!/dob|lastName|officials|ignature/.test(text))
+
+    // The beach teams also name the public summary an anonymous display gets
+    const display = await openClient(wsUrl)
+    display.send({ type: 'subscribe-match', matchId: 'list-beach' })
+    const summary = await display.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(summary.access, 'summary')
+    assert.deepEqual(summary.homeTeam, { name: 'Muster / Meier', color: '#e2001a' })
+    assert.deepEqual(summary.awayTeam, { name: 'Rossi / Bianchi' })
+
+    for (const c of [courtA, beach, rehearsal, done, display]) c.ws.close()
+  })
+
   it('stops game-PIN guessing without revealing a hit', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const scoreboard = await openClient(wsUrl)
@@ -419,5 +474,57 @@ describe('backend WebSocket relay protocol', () => {
     assert.equal(scoreboard.messages.some((m) => m.type === 'error'), false)
 
     for (const c of [scoreboard, guesser]) c.ws.close()
+  })
+})
+
+describe('backend relay in cloud mode (IS_CLOUD)', () => {
+  let child
+  let port
+
+  before(async () => {
+    port = await freePort()
+    const env = { ...process.env, PORT: String(port), IS_CLOUD: '1' }
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY']) delete env[k]
+    child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
+    const start = Date.now()
+    for (;;) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) break
+      } catch { /* not up yet */ }
+      if (Date.now() - start > 10000) throw new Error('backend did not start')
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  })
+
+  after(() => {
+    child?.kill('SIGKILL')
+  })
+
+  it('a test (rehearsal) match is neither listed nor fanned out live: it belongs to the venue relay', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const rehearsal = await openClient(wsUrl)
+    const official = await openClient(wsUrl)
+    rehearsal.send(syncMessage({ id: 1, seedKey: 'cloud-test', test: true, status: 'live' }))
+    official.send(syncMessage(makeMatch({ id: 1, seed_key: 'cloud-real', gamePin: '545454', refereeConnectionEnabled: false })))
+    for (const c of [rehearsal, official]) {
+      c.send({ type: 'ping' })
+      await c.waitFor((m) => m.type === 'pong')
+    }
+    const list = await (await fetch(`http://127.0.0.1:${port}/api/match/list`)).json()
+    assert.deepEqual(list.matches.map((m) => m.id), ['cloud-real'])
+
+    const display = await openClient(wsUrl)
+    display.send({ type: 'subscribe-match', matchId: 'cloud-test' })
+    display.send({ type: 'subscribe-match', matchId: 'cloud-real' })
+    await display.waitFor((m) => m.type === 'match-full-data' && m.matchId === 'cloud-real')
+    rehearsal.send({ type: 'live-state-update', matchId: 'cloud-test', liveState: { points_a: 1 } })
+    official.send({ type: 'live-state-update', matchId: 'cloud-real', liveState: { points_a: 2 } })
+    const live = await display.waitFor((m) => m.type === 'live-state-update')
+    assert.equal(live.matchId, 'cloud-real')
+    display.send({ type: 'ping' })
+    await display.waitFor((m) => m.type === 'pong')
+    assert.equal(display.messages.some((m) => m.type === 'live-state-update' && m.matchId === 'cloud-test'), false)
+
+    for (const c of [rehearsal, official, display]) c.ws.close()
   })
 })

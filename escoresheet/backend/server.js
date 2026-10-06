@@ -29,7 +29,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
+import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole } from './lib/matchAccess.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
@@ -1748,8 +1748,12 @@ const server = createServer((req, res) => {
     return
   }
 
-  // List active matches (ephemeral - just for current session)
-  // Only return matches where refereeConnectionEnabled is true
+  // List the matches scorers currently publish here (ephemeral, this session):
+  // every scheduled/live one, whatever its referee connection — display
+  // devices (the point-hub LedBox bridge) pick their match from it. Public
+  // fields only (relayMatchListRow). Not listed: a match whose scoreboard has
+  // been gone longer than the relay holds it for (STALE_TAKEOVER_MS), and on
+  // the cloud a test (rehearsal) match: those belong to the venue's relay.
   if (url.pathname === '/api/match/list') {
     if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
@@ -1757,54 +1761,24 @@ const server = createServer((req, res) => {
       return
     }
     try {
-      const allMatches = Array.from(activeMatches.values())
-      const filteredMatches = allMatches.filter(m => {
-        // Check if refereeConnectionEnabled is explicitly true
-        return m.match?.refereeConnectionEnabled === true
-      })
+      const now = Date.now()
+      const matches = []
+      for (const entry of activeMatches.values()) {
+        if (IS_CLOUD && entry.match?.test === true) continue
+        if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && ownersOf(entry.matchId).length === 0) continue
+        const row = relayMatchListRow(entry)
+        if (row) matches.push(row)
+      }
+      const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)
+      matches.sort((a, b) => at(b) - at(a))
       // Polled every few seconds by every referee/bench device: counted in the
       // per-minute [WS] summary, not logged per request.
       relaySummary.count('match-list polls')
       if (LOG_EACH_CONNECTION) {
-        console.log(`[API] /api/match/list - Total: ${allMatches.length}, Referee enabled: ${filteredMatches.length}`)
+        console.log(`[API] /api/match/list - Total: ${activeMatches.size}, Listed: ${matches.length}`)
       }
-
-      // Format response to match dev server (flat structure)
-      const formattedMatches = filteredMatches.map(m => {
-        // Format scheduled date/time
-        let dateTime = 'TBD'
-        if (m.match?.scheduledAt) {
-          try {
-            const scheduledDate = new Date(m.match.scheduledAt)
-            const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-            const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-            dateTime = `${dateStr} ${timeStr}`
-          } catch (e) {
-            dateTime = 'TBD'
-          }
-        }
-
-        // Get team names - handle both object format {name: 'Team'} and string format 'Team'
-        const homeTeamName = typeof m.homeTeam === 'object' ? m.homeTeam?.name : m.homeTeam
-        const awayTeamName = typeof m.awayTeam === 'object' ? m.awayTeam?.name : m.awayTeam
-
-        return {
-          id: m.matchId,
-          gameNumber: m.gameNumber || m.match?.gameNumber || m.match?.game_n || m.matchId,
-          homeTeam: homeTeamName || 'Home',
-          awayTeam: awayTeamName || 'Away',
-          scheduledAt: m.match?.scheduledAt,
-          dateTime,
-          status: m.match?.status || 'scheduled',
-          refereeConnectionEnabled: m.match?.refereeConnectionEnabled === true
-        }
-      })
-
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
-        success: true,
-        matches: formattedMatches
-      }))
+      res.end(JSON.stringify({ success: true, matches }))
     } catch (error) {
       console.error('[API] Error in /api/match/list:', error)
       res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -4066,8 +4040,9 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   let { match } = message
   const rawMatchId = normalizeMatchId(message.matchId)
   const matchId = relayKeyOf(rawMatchId, match)
-  const homeTeam = message.homeTeam || teams?.[0]
-  const awayTeam = message.awayTeam || teams?.[1]
+  // openbeach names its teams team1Team / team2Team (team1 / team2)
+  const homeTeam = message.homeTeam || message.team1Team || message.team1 || teams?.[0]
+  const awayTeam = message.awayTeam || message.team2Team || message.team2 || teams?.[1]
   const homePlayers = message.homePlayers || players?.filter(p => p.teamId === match?.homeTeamId) || []
   const awayPlayers = message.awayPlayers || players?.filter(p => p.teamId === match?.awayTeamId) || []
 
@@ -4223,6 +4198,9 @@ function handleLiveStateUpdate(clientInfo, message) {
   if (!requireMatchOwner(clientInfo, matchId, 'live-state-update')) return
   if (!message.liveState || typeof message.liveState !== 'object') return
   const stored = activeMatches.get(matchId)
+  // A test (rehearsal) match publishes its live state to the venue's relay
+  // only (the scorer never sends it here): the cloud drops it.
+  if (IS_CLOUD && stored?.match?.test === true) return
   if (stored) stored.liveState = message.liveState
   broadcastToRoom(matchId, { type: 'live-state-update', matchId, liveState: message.liveState }, clientInfo.id)
 }

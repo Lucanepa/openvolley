@@ -16,7 +16,8 @@ import {
   hasAnonPolicy,
   anonSelectCheck,
   publicRelayMatch,
-  publicPeople
+  publicPeople,
+  relayMatchListRow
 } from '../lib/publicColumns.js'
 import { createRealtimeHub } from '../lib/realtimeHub.js'
 import { redactSecrets } from '../lib/secrets.js'
@@ -206,6 +207,48 @@ describe('publicColumns: the match relay bundle', () => {
     })
     assert.deepEqual(publicPeople([{ number: 1, dob: DOB, country: 'SUI', email: 'a@b' }, null]), [{ number: 1 }, null])
     assert.equal(publicRelayMatch(null), null)
+  })
+
+  it('relayMatchListRow: scheduled/live matches whatever the referee connection, public fields only', () => {
+    const entry = {
+      matchId: 'seed-1',
+      match: {
+        status: 'scheduled',
+        gameNumber: 4711,
+        refereeConnectionEnabled: false,
+        refereePin: '314159',
+        gamePin: '987654',
+        scheduledAt: '2026-10-05T18:00:00.000Z',
+        officials: [{ lastName: 'Ref', dob: DOB }],
+        homeCoachSignature: SIGNATURE
+      },
+      homeTeam: { name: 'Home VC', players: [{ dob: DOB }] },
+      awayTeam: 'Away VC',
+      homePlayers: [{ number: 1, dob: DOB }]
+    }
+    const row = relayMatchListRow(entry)
+    assert.deepEqual(row, {
+      id: 'seed-1',
+      gameNumber: 4711,
+      homeTeam: 'Home VC',
+      awayTeam: 'Away VC',
+      scheduledAt: '2026-10-05T18:00:00.000Z',
+      dateTime: row.dateTime,
+      status: 'scheduled',
+      test: false,
+      refereeConnectionEnabled: false
+    })
+    assert.equal(typeof row.dateTime, 'string')
+    assert.ok(!/314159|987654|dob|Ref|data:image/.test(json(row)))
+    // No status counts as scheduled; finished matches are not listed
+    assert.equal(relayMatchListRow({ matchId: 'x', match: {} }).status, 'scheduled')
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { status: 'final' } }), null)
+    // Team names from the match when the bundle has none; defaults otherwise
+    assert.deepEqual(
+      [relayMatchListRow({ matchId: 'x', match: { homeTeamName: 'A' } }).homeTeam, relayMatchListRow({ matchId: 'x', match: {} }).awayTeam],
+      ['A', 'Away']
+    )
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { test: true, status: 'live' } }).test, true)
   })
 })
 
