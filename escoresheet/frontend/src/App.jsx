@@ -50,6 +50,7 @@ import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
+import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
@@ -2973,6 +2974,8 @@ export default function App() {
               ) : !matchId ? (
                 <>
                   <UpdateBanner showClearDataOption={true} />
+                  {/* the desktop app's own update (updater.rs): home screen only */}
+                  <DesktopUpdateNotice />
                   <HomePage
                     favicon={openvolleyLogo}
                     newMatchMenuOpen={newMatchMenuOpen}
