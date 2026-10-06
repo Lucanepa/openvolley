@@ -51,6 +51,13 @@ describe('subscribeMatchWrites', () => {
       db.create('events', undefined, { matchId: 7, type }).commit()
     }
     expect(onWrite).toHaveBeenCalledTimes(10)
+
+    // "rally started" alone is not backed up (the point right after is);
+    // undoing it is
+    db.create('events', undefined, { matchId: 7, type: 'rally_start' }).commit()
+    expect(onWrite).toHaveBeenCalledTimes(10)
+    db.remove('events', 2, { matchId: 7, type: 'rally_start' }).commit()
+    expect(onWrite).toHaveBeenCalledTimes(11)
   })
 
   it('fires for set writes and match row changes, ignoring other matches and bookkeeping', () => {
@@ -106,5 +113,24 @@ describe('isVolatileMatchUpdate', () => {
     expect(isVolatileMatchUpdate({ sessionId: 'a', status: 'ended' })).toBe(false)
     expect(isVolatileMatchUpdate({ sanctions: {} })).toBe(false)
     expect(isVolatileMatchUpdate({})).toBe(false)
+  })
+
+  it('ignores keys Dexie reports although their value did not change (arrays by reference)', () => {
+    const stored = { id: 7, officials: [{ role: 'referee', name: 'A' }], bench_home: [], coinToss: { team_a: 'home' }, updatedAt: 'old' }
+    // what Dexie passes for db.matches.update(7, { updatedAt }) (the heartbeat)
+    const heartbeat = { officials: [{ role: 'referee', name: 'A' }], bench_home: [], updatedAt: 'new' }
+    expect(isVolatileMatchUpdate(heartbeat, stored)).toBe(true)
+    expect(isVolatileMatchUpdate({ ...heartbeat, officials: [] }, stored)).toBe(false)
+    expect(isVolatileMatchUpdate({ 'coinToss.team_a': 'away', updatedAt: 'new' }, stored)).toBe(false)
+    expect(isVolatileMatchUpdate({ 'coinToss.team_a': 'home', updatedAt: 'new' }, stored)).toBe(true)
+  })
+
+  it('a heartbeat on the match row does not start a backup', () => {
+    const db = fakeDb()
+    const onWrite = vi.fn()
+    subscribeMatchWrites(db, 7, onWrite)
+    const stored = { id: 7, officials: [{ name: 'A' }], updatedAt: 'old' }
+    db.update('matches', 7, stored, { officials: [{ name: 'A' }], updatedAt: 'new' }).commit()
+    expect(onWrite).not.toHaveBeenCalled()
   })
 })
