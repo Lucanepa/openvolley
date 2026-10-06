@@ -1294,8 +1294,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       {/* Winner, Results and Sanctions - All side by side on larger screens */}
       <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
-        {/* Winner Card */}
-        <div className="card" style={{ flex: '1 1 280px', minWidth: '260px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: '20px', display: 'flex', flexDirection: 'column' }}>
+        {/* Winner Card (.match-end-winner: stays white, its frozen readouts have no ground of their own) */}
+        <div className="card match-end-winner" style={{ flex: '1 1 280px', minWidth: '260px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: '20px', display: 'flex', flexDirection: 'column' }}>
           <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.winner', 'Winner')}</h3></div>
           {/* Team Name with background */}
           <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>
