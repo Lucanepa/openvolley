@@ -20,8 +20,13 @@
  * The page inside the in-app view talks to it through appWindowGuest.js
  * (close, PDF blob for the opener, save a PDF to Documents). An
  * openAppWindow() made inside the in-app view is handed to the app under it
- * (MSG_OPEN): the iframe has no Capacitor bridge of its own, so it would take
- * the browser path, where window.open does nothing useful in a WebView.
+ * (MSG_OPEN), which shows the page in the same view. Capacitor injects its
+ * bridge into the iframe too (checked on the emulator), so on its own the
+ * page would open a second in-app view nested inside the first.
+ *
+ * Capacitor's local server (html5mode) answers a folder path such as
+ * /scoresheet/ with the ROOT index.html: the in-app view asks for
+ * /scoresheet/index.html (capacitorPageUrl).
  */
 
 import i18n from 'i18next'
@@ -120,7 +125,7 @@ function openOn(platform, url, { features, title, win }) {
       win.location.assign(href)
       return { ok: true, mode: 'external', window: null }
     }
-    const view = showInAppView(href, { title, win })
+    const view = showInAppView(capacitorPageUrl(href), { title, win })
     return { ok: true, mode: 'in-app', window: view.frame.contentWindow, close: view.close }
   }
 
@@ -137,6 +142,27 @@ function openOn(platform, url, { features, title, win }) {
   }
   const w = win.open(href, '_blank', features)
   return { ok: !!w, mode: w ? 'popup' : 'blocked', window: w || null }
+}
+
+/**
+ * The URL of an app page as Capacitor's local server must be asked for it.
+ * In html5mode it answers every path whose last segment has no "." with the
+ * ROOT index.html (WebViewLocalServer.handleLocalRequest), so /scoresheet/
+ * loaded a second scorer app inside the in-app view (seen on the emulator).
+ * A folder path gets its index.html: /scoresheet/?matchId=7 ->
+ * /scoresheet/index.html?matchId=7.
+ */
+export function capacitorPageUrl(href) {
+  try {
+    const u = new URL(href)
+    const last = u.pathname.split('/').pop()
+    if (u.pathname !== '/' && !last.includes('.')) {
+      u.pathname = u.pathname.endsWith('/') ? `${u.pathname}index.html` : `${u.pathname}/index.html`
+    }
+    return u.href
+  } catch {
+    return href
+  }
 }
 
 // ---------------------------------------------------------------------------

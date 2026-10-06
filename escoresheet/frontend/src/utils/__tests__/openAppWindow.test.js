@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   APP_VIEW_ATTR,
+  capacitorPageUrl,
   MSG_CLOSE,
   MSG_OPEN,
   MSG_SAVE_PDF,
@@ -135,7 +136,8 @@ describe('openAppWindow in the Android app (Capacitor)', () => {
     expect(view).not.toBeNull()
     const frame = view.querySelector('iframe')
     expect(frame.hasAttribute(APP_VIEW_ATTR)).toBe(true)
-    expect(frame.getAttribute('src')).toBe(`${window.location.origin}/scoresheet/?matchId=7`)
+    // Capacitor's local server answers /scoresheet/ with the ROOT index.html
+    expect(frame.getAttribute('src')).toBe(`${window.location.origin}/scoresheet/index.html?matchId=7`)
     expect(view.textContent).toContain('Scoresheet')
     expect(r.window).toBe(frame.contentWindow)
     spy.mockRestore()
@@ -190,10 +192,10 @@ describe('openAppWindow in the Android app (Capacitor)', () => {
       msg({ type: MSG_OPEN, href: 'javascript:alert(1)' })
       msg({ type: MSG_OPEN, href: `${window.location.origin}/scoresheet/?game=3&action=save` }, { origin: 'https://evil.example' })
       const frame = () => document.querySelector('[data-testid="app-window"] iframe')
-      expect(frame().getAttribute('src')).toBe(`${window.location.origin}/scoresheet/`)
+      expect(frame().getAttribute('src')).toBe(`${window.location.origin}/scoresheet/index.html`)
       msg({ type: MSG_OPEN, href: `${window.location.origin}/scoresheet/?game=3&action=save` })
       expect(document.querySelectorAll('[data-testid="app-window"]')).toHaveLength(1)
-      expect(frame().getAttribute('src')).toBe(`${window.location.origin}/scoresheet/?game=3&action=save`)
+      expect(frame().getAttribute('src')).toBe(`${window.location.origin}/scoresheet/index.html?game=3&action=save`)
     } finally {
       window.Capacitor = bridge
     }
@@ -205,6 +207,17 @@ describe('openAppWindow in the Android app (Capacitor)', () => {
     expect(win.location.assign).toHaveBeenCalledWith('https://openvolley.app/help')
     expect(win.open).not.toHaveBeenCalled()
     expect(r).toMatchObject({ ok: true, mode: 'external', platform: 'capacitor' })
+  })
+})
+
+describe('capacitorPageUrl', () => {
+  it('asks for the index.html of a folder page (html5mode serves the root one otherwise)', () => {
+    const o = 'https://localhost'
+    expect(capacitorPageUrl(`${o}/scoresheet/?matchId=7&action=getBlob`)).toBe(`${o}/scoresheet/index.html?matchId=7&action=getBlob`)
+    expect(capacitorPageUrl(`${o}/scoresheet?matchId=7`)).toBe(`${o}/scoresheet/index.html?matchId=7`)
+    expect(capacitorPageUrl(`${o}/scoresheet/index.html?list=1`)).toBe(`${o}/scoresheet/index.html?list=1`)
+    expect(capacitorPageUrl(`${o}/`)).toBe(`${o}/`)
+    expect(capacitorPageUrl('not a url')).toBe('not a url')
   })
 })
 
