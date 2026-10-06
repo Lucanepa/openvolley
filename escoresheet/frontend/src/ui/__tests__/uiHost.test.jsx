@@ -85,8 +85,10 @@ describe('volleyui kit wiring (P0)', () => {
   it('build-subdomains.js writes light-only heads and manifests', () => {
     const src = read('scripts/build-subdomains.js')
     const colors = [...src.matchAll(/themeColor: '([^']+)'/g)].map((m) => m[1])
-    expect(colors).toHaveLength(6)
+    expect(colors).toHaveLength(7)
     expect(new Set(colors)).toEqual(new Set(['#ffffff']))
+    // the manager builds from its own page, with the same light head
+    expect(read('manager.html')).toMatch(/<meta name="color-scheme" content="light" \/>\s*<meta name="theme-color" content="#ffffff" \/>/)
     // both templates (createIndexHtml, createScoresheetHtml)
     expect(src.match(/<meta name="color-scheme" content="light" \/>\s*<meta name="theme-color" content="\$\{config\.themeColor\}" \/>/g)).toHaveLength(2)
     expect(src).toMatch(/theme_color: config\.themeColor/)
