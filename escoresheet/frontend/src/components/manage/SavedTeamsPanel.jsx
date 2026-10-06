@@ -5,12 +5,21 @@ import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { storeSavedTeamsBundle } from '../../db/savedTeams'
 import { seasonOptions, seasonOf, seasonLabel } from '../../domain/season'
+import { sportOf, beachSeasonOptions } from '../../domain/savedTeams'
 import KitModal from './KitModal'
 import TeamEditor from './TeamEditor'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Field, Input, Select, Switch, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, FilterPill, confirmDialog, toast } from '../../ui'
+import { Button, Field, Input, Select, Switch, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, FilterPill, SegmentedControl, confirmDialog, toast } from '../../ui'
 
 const GENDERS = ['men', 'women', 'mixed']
+const SPORT_KEY = 'ov_saved_teams_sport'
+
+function readSport() {
+  try { return localStorage.getItem(SPORT_KEY) === 'beach' ? 'beach' : 'indoor' } catch { return 'indoor' }
+}
+function writeSport(sport) {
+  try { localStorage.setItem(SPORT_KEY, sport) } catch { /* private mode: not remembered */ }
+}
 const SVRZ_GENDER = {
   men: ['m', 'men', 'male', 'h', 'herren', 'hommes', 'uomini', 'masculin'],
   women: ['f', 'w', 'women', 'female', 'd', 'damen', 'dames', 'donne', 'feminin', 'féminin']
@@ -32,6 +41,11 @@ export function leaguesForGender(rows, gender) {
  * Saved teams (competition manager): competitions, their teams, and each
  * team's players and officials. Admins and competition managers; the server
  * enforces it. Every successful write also refreshes the offline cache.
+ *
+ * One console for indoor and beach (docs/beach-saved-teams-spec.md 3.5): it
+ * loads every sport and switches between them; the offline cache keeps only
+ * the indoor teams (storeSavedTeamsBundle filters), since beach teams are
+ * loaded by OpenBeach.
  */
 export default function SavedTeamsPanel({ userId }) {
   const { t } = useTranslation()
@@ -44,9 +58,15 @@ export default function SavedTeamsPanel({ userId }) {
   const [competitionForm, setCompetitionForm] = useState(null) // null | {} (new) | competition (edit)
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [sport, setSportState] = useState(readSport)
+  const setSport = (v) => {
+    setSportState(v)
+    setSeason('')
+    writeSport(v)
+  }
 
   const { data, error, loading, reload } = usePanelData(async () => {
-    const res = await savedTeamsApi.fetchBundle()
+    const res = await savedTeamsApi.fetchBundle({ sport: 'all' })
     if (!res.error && res.data && userId) {
       // The console's load is also the cache refresh for MatchSetup
       try { await storeSavedTeamsBundle(res.data, userId) } catch { /* cache is best effort */ }
@@ -56,8 +76,9 @@ export default function SavedTeamsPanel({ userId }) {
 
   const competitions = data?.competitions || []
   const teams = data?.teams || []
-  const seasons = useMemo(() => [...new Set(competitions.map(c => c.season))].sort().reverse(), [competitions])
-  const visible = competitions
+  const sportCompetitions = useMemo(() => competitions.filter(c => sportOf(c) === sport), [competitions, sport])
+  const seasons = useMemo(() => [...new Set(sportCompetitions.map(c => c.season))].sort().reverse(), [sportCompetitions])
+  const visible = sportCompetitions
     .filter(c => showArchived || !c.archived)
     .filter(c => !season || c.season === season)
     .sort((a, b) => (b.season || '').localeCompare(a.season || '') || a.name.localeCompare(b.name))
@@ -108,6 +129,7 @@ export default function SavedTeamsPanel({ userId }) {
   // ── Teams of one competition ──
   if (competition) {
     const compTeams = teams.filter(x => x.competition_id === competition.id).sort((a, b) => a.name.localeCompare(b.name))
+    const beach = sportOf(competition) === 'beach'
     return (
       <section>
         <div className="mb-2">
@@ -119,6 +141,7 @@ export default function SavedTeamsPanel({ userId }) {
         </PanelHead>
         <OfflineBanner online={online} />
         <div className="mb-3 flex flex-wrap gap-1.5">
+          {beach && <Chip tone="sky">{t('savedTeams.sportBeach')}</Chip>}
           <Chip>{competition.season}</Chip>
           {competition.gender && <Chip>{t(`savedTeams.gender${competition.gender[0].toUpperCase()}${competition.gender.slice(1)}`)}</Chip>}
           {competition.category && <Chip>{competition.category}</Chip>}
@@ -131,7 +154,7 @@ export default function SavedTeamsPanel({ userId }) {
         ) : (
           <RowList>
             {compTeams.map(x => {
-              const active = (x.players || []).filter(p => p.active !== false).length
+              const active = beach ? (x.players || []).length : (x.players || []).filter(p => p.active !== false).length
               return (
                 <Row
                   key={x.id}
@@ -155,7 +178,7 @@ export default function SavedTeamsPanel({ userId }) {
         <div className="mt-6 flex justify-end">
           <Button variant="danger-outline" size="sm" icon={Trash2} onClick={() => deleteCompetition(competition)} disabled={!online}>{t('savedTeams.deleteCompetition')}</Button>
         </div>
-        <CompetitionModal form={competitionForm} onClose={() => setCompetitionForm(null)} onSaved={() => { setCompetitionForm(null); afterWrite() }} />
+        <CompetitionModal form={competitionForm} sport={sportOf(competition)} onClose={() => setCompetitionForm(null)} onSaved={() => { setCompetitionForm(null); afterWrite() }} />
         <NewTeamModal
           open={teamFormOpen}
           competition={competition}
@@ -173,6 +196,17 @@ export default function SavedTeamsPanel({ userId }) {
         <Button icon={Plus} onClick={() => setCompetitionForm({})} disabled={!online}>{t('savedTeams.newCompetition')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />
+      <div className="mb-3">
+        <SegmentedControl
+          ariaLabel={t('savedTeams.sport')}
+          value={sport}
+          onChange={setSport}
+          options={[
+            { value: 'indoor', label: t('savedTeams.sportIndoor') },
+            { value: 'beach', label: t('savedTeams.sportBeach') }
+          ]}
+        />
+      </div>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <Select value={season} onChange={e => setSeason(e.target.value)} aria-label={t('savedTeams.season')} className="sm:w-48">
           <option value="">{t('savedTeams.season')}: –</option>
@@ -212,16 +246,20 @@ export default function SavedTeamsPanel({ userId }) {
           })}
         </RowList>
       )}
-      <CompetitionModal form={competitionForm} onClose={() => setCompetitionForm(null)} onSaved={() => { setCompetitionForm(null); afterWrite() }} />
+      <CompetitionModal form={competitionForm} sport={sport} onClose={() => setCompetitionForm(null)} onSaved={() => { setCompetitionForm(null); afterWrite() }} />
     </section>
   )
 }
 
-function CompetitionModal({ form, onClose, onSaved }) {
+/** A new competition takes the console's sport; an existing one keeps its own (never editable). */
+function CompetitionModal({ form, sport = 'indoor', onClose, onSaved }) {
   const { t } = useTranslation()
   const editing = !!form?.id
+  const compSport = editing ? sportOf(form) : sport
+  const beach = compSport === 'beach'
+  const defaultSeason = () => (beach ? beachSeasonOptions()[1] : seasonLabel(seasonOf(new Date())))
   const [name, setName] = useState('')
-  const [season, setSeason] = useState(seasonLabel(seasonOf(new Date())))
+  const [season, setSeason] = useState(defaultSeason)
   const [gender, setGender] = useState('')
   const [category, setCategory] = useState('')
   const [leagues, setLeagues] = useState([])
@@ -234,27 +272,28 @@ function CompetitionModal({ form, onClose, onSaved }) {
   useEffect(() => {
     if (!form) return
     setName(form.name || '')
-    setSeason(form.season || seasonLabel(seasonOf(new Date())))
+    setSeason(form.season || defaultSeason())
     setGender(form.gender || '')
     setCategory(form.category || '')
     setLeagues(form.vm_leagues || [])
     setArchived(!!form.archived)
     setFree('')
     setError('')
-  }, [form])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, compSport])
 
-  // League names known from the official schedule
+  // League names known from the official schedule (VolleyManager is indoor only)
   useEffect(() => {
-    if (!form) return undefined
+    if (!form || beach) return undefined
     let alive = true
     apiFrom('svrz_games').select('league, gender').limit(5000).then(({ data }) => {
       if (alive && Array.isArray(data)) setSvrzRows(data)
     })
     return () => { alive = false }
-  }, [form])
+  }, [form, beach])
 
   if (!form) return null
-  const seasons = [...new Set([...seasonOptions(new Date(), 1), ...(form.season ? [form.season] : [])])].sort()
+  const seasons = [...new Set([...(beach ? beachSeasonOptions() : seasonOptions(new Date(), 1)), ...(form.season ? [form.season] : [])])].sort()
   const known = leaguesForGender(svrzRows, gender)
   const allLeagues = [...new Set([...known, ...leagues])]
   const toggleLeague = (l) => setLeagues(list => (list.includes(l) ? list.filter(x => x !== l) : (list.length >= 20 ? list : [...list, l])))
@@ -269,8 +308,13 @@ function CompetitionModal({ form, onClose, onSaved }) {
     if (!name.trim() || busy) return
     setBusy(true)
     setError('')
-    const body = { name: name.trim(), season, gender: gender || null, category: category.trim() || null, vm_leagues: leagues }
+    const body = { name: name.trim(), season, gender: gender || null, category: category.trim() || null }
+    if (!beach) body.vm_leagues = leagues
     if (editing) body.archived = archived
+    else {
+      body.sport = compSport
+      if (beach) body.vm_leagues = []
+    }
     const res = editing ? await savedTeamsApi.updateCompetition(form.id, body) : await savedTeamsApi.createCompetition(body)
     setBusy(false)
     if (res.error) {
@@ -297,6 +341,9 @@ function CompetitionModal({ form, onClose, onSaved }) {
       </>}
     >
       <form onSubmit={submit} className="space-y-3">
+        <div>
+          <Chip tone={beach ? 'sky' : 'stone'}>{t(beach ? 'savedTeams.sportBeach' : 'savedTeams.sportIndoor')}</Chip>
+        </div>
         <Field label={t('savedTeams.competitionName')}>
           <Input value={name} onChange={e => setName(e.target.value)} maxLength={120} required autoFocus />
         </Field>
@@ -316,18 +363,22 @@ function CompetitionModal({ form, onClose, onSaved }) {
         <Field label={t('savedTeams.category')} hint={t('savedTeams.categoryHint')}>
           <Input value={category} onChange={e => setCategory(e.target.value)} maxLength={60} />
         </Field>
-        <Field label={t('savedTeams.vmLeagues')} hint={t('savedTeams.vmLeaguesHint')}>
-          <div className="flex gap-2">
-            <Input value={free} onChange={e => setFree(e.target.value)} maxLength={60} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addFree() } }} aria-label={t('savedTeams.vmLeagues')} />
-            <Button type="button" variant="secondary" onClick={addFree} disabled={!free.trim()}>{t('common.add', 'Add')}</Button>
-          </div>
-        </Field>
-        {allLeagues.length > 0 && (
-          <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
-            {allLeagues.map(l => (
-              <FilterPill key={l} active={leagues.includes(l)} onClick={() => toggleLeague(l)}>{l}</FilterPill>
-            ))}
-          </div>
+        {!beach && (
+          <>
+            <Field label={t('savedTeams.vmLeagues')} hint={t('savedTeams.vmLeaguesHint')}>
+              <div className="flex gap-2">
+                <Input value={free} onChange={e => setFree(e.target.value)} maxLength={60} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addFree() } }} aria-label={t('savedTeams.vmLeagues')} />
+                <Button type="button" variant="secondary" onClick={addFree} disabled={!free.trim()}>{t('common.add', 'Add')}</Button>
+              </div>
+            </Field>
+            {allLeagues.length > 0 && (
+              <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
+                {allLeagues.map(l => (
+                  <FilterPill key={l} active={leagues.includes(l)} onClick={() => toggleLeague(l)}>{l}</FilterPill>
+                ))}
+              </div>
+            )}
+          </>
         )}
         {editing && (
           <label className="inline-flex items-center gap-2 text-sm text-stone-700">

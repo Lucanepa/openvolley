@@ -2434,7 +2434,8 @@
     "errors": {
       "duplicateNumber": "Le numéro {{number}} est utilisé deux fois.",
       "twoCaptains": "Un seul capitaine par équipe.",
-      "lastNameRequired": "Le nom est obligatoire."
+      "lastNameRequired": "Le nom est obligatoire.",
+      "countryFormat": "Pays : 3 lettres, p. ex. CHE"
     },
     "load": "Charger une équipe enregistrée",
     "pickerTitle": "Charger une équipe enregistrée",
@@ -2460,7 +2461,18 @@
     "saveNew": "Nouvelle équipe",
     "saveConfirmTitle": "Écraser l’effectif enregistré de {{name}} ?",
     "saveConfirmBody": "Les joueurs et officiels enregistrés de cette équipe sont remplacés par cet effectif.",
-    "saved": "Enregistré dans {{name}}."
+    "saved": "Enregistré dans {{name}}.",
+    "sport": "Sport",
+    "sportIndoor": "Indoor",
+    "sportBeach": "Beach",
+    "beachPlayer": "Joueur/euse {{number}}",
+    "country": "Pays",
+    "countryHint": "Code à 3 lettres, p. ex. CHE",
+    "coach": "Entraîneur",
+    "addCoach": "Ajouter l'entraîneur",
+    "removeCoach": "Retirer l'entraîneur",
+    "clearPlayer": "Vider le joueur {{number}}",
+    "beachTeamHint": "Une équipe de beach est une paire : joueurs 1 et 2, entraîneur en option."
   },
   "cloudBlock": {
     "scorerRequired": "Non synchronisé : ton compte attend une validation. Le match est en sécurité sur cet appareil.",

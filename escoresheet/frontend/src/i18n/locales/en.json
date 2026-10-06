@@ -2463,7 +2463,8 @@
     "errors": {
       "duplicateNumber": "Number {{number}} is used twice.",
       "twoCaptains": "Only one captain per team.",
-      "lastNameRequired": "Last name is required."
+      "lastNameRequired": "Last name is required.",
+      "countryFormat": "Country: 3 letters, e.g. CHE"
     },
     "load": "Load saved team",
     "pickerTitle": "Load a saved team",
@@ -2489,7 +2490,18 @@
     "saveNew": "New team",
     "saveConfirmTitle": "Overwrite the saved roster of {{name}}?",
     "saveConfirmBody": "The saved players and officials of this team are replaced by this roster.",
-    "saved": "Saved to {{name}}."
+    "saved": "Saved to {{name}}.",
+    "sport": "Sport",
+    "sportIndoor": "Indoor",
+    "sportBeach": "Beach",
+    "beachPlayer": "Player {{number}}",
+    "country": "Country",
+    "countryHint": "3-letter code, e.g. CHE",
+    "coach": "Coach",
+    "addCoach": "Add coach",
+    "removeCoach": "Remove coach",
+    "clearPlayer": "Clear player {{number}}",
+    "beachTeamHint": "A beach team is a pair: player 1 and player 2, optionally with a coach."
   },
   "cloudBlock": {
     "scorerRequired": "Not synced: your account is waiting for approval. The match is safe on this device.",
