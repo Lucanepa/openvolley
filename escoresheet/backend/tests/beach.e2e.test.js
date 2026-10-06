@@ -11,7 +11,7 @@
  *   2. the match token of a beach PIN check grants the beach rosters
  *      (players_team1 / players_team2) on anonymous /api/db reads
  *   3. live subscribers filtered on sport_type=beach get beach rows only, with
- *      the beach team names and no rosters; the livescore embed with sport_type
+ *      the beach team names and no rosters; the livescore embed
  *   4. the relay keeps team1/team2 bundles (as home/away), strips the beach PIN
  *      fields, grants the beach PINs and tokens, carries sport_type on relayed
  *      live state
@@ -265,7 +265,7 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
     assert.equal(on.status, 200, on.text)
   })
 
-  it('livescore: live subscribers on sport_type=beach get beach rows only, without rosters; the embed with sport_type works', async () => {
+  it('livescore: live subscribers on sport_type=beach get beach rows only, without rosters; the livescore embed works', async () => {
     const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
     try {
       await subscribe(live, 'beach-ls', [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'beach' }])
@@ -289,16 +289,12 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
       live.ws.close()
     }
 
-    for (const columns of [
-      '*, matches!match_live_state_match_id_fkey_cascade(set_results)',
-      '*, matches!match_live_state_match_id_fkey_cascade(set_results, sport_type)'
-    ]) {
-      const r = await api(srv.base, '/api/db', { proto: null, body: { table: 'match_live_state', action: 'select', params: { columns, filters: [{ type: 'eq', column: 'sport_type', value: 'beach' }] } } })
-      assert.equal(r.status, 200, r.text)
-      assert.deepEqual(r.json.data.map((x) => x.match_id), [beachUuid])
-      assert.deepEqual(r.json.data[0].matches.set_results, [{ set: 1, team1: 21, team2: 18 }])
-      if (columns.includes('sport_type)')) assert.equal(r.json.data[0].matches.sport_type, 'beach')
-    }
+    // openbeach's livescore list: the one embed shape, filtered on the live
+    // state's own sport_type
+    const r = await api(srv.base, '/api/db', { proto: null, body: { table: 'match_live_state', action: 'select', params: { columns: '*, matches!match_live_state_match_id_fkey_cascade(set_results)', filters: [{ type: 'eq', column: 'sport_type', value: 'beach' }] } } })
+    assert.equal(r.status, 200, r.text)
+    assert.deepEqual(r.json.data.map((x) => x.match_id), [beachUuid])
+    assert.deepEqual(r.json.data[0].matches.set_results, [{ set: 1, team1: 21, team2: 18 }])
   })
 
   it('openbeach\'s whole live-state upsert (incl. tto_active / tto_started_at) is accepted and reaches live subscribers', async () => {
