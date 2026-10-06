@@ -1260,11 +1260,15 @@ export async function fetchCloudBackup(path) {
 }
 
 /**
- * Get backup settings from localStorage
+ * Get backup settings from localStorage. The apps (native: true) keep their own
+ * switch, on by default; browsers default to off.
  */
-export function getBackupSettings() {
+const autoBackupKey = (native) => (native ? 'nativeAutoBackupEnabled' : 'autoBackupEnabled')
+
+export function getBackupSettings({ native = false } = {}) {
+  const stored = localStorage.getItem(autoBackupKey(native))
   return {
-    autoBackupEnabled: localStorage.getItem('autoBackupEnabled') === 'true',
+    autoBackupEnabled: stored === null ? native : stored === 'true',
     backupFrequencyMinutes: parseInt(localStorage.getItem('backupFrequencyMinutes') || '5', 10)
   }
 }
@@ -1272,9 +1276,9 @@ export function getBackupSettings() {
 /**
  * Save backup settings to localStorage
  */
-export function saveBackupSettings(settings) {
+export function saveBackupSettings(settings, { native = false } = {}) {
   if (settings.autoBackupEnabled !== undefined) {
-    localStorage.setItem('autoBackupEnabled', String(settings.autoBackupEnabled))
+    localStorage.setItem(autoBackupKey(native), String(settings.autoBackupEnabled))
   }
   if (settings.backupFrequencyMinutes !== undefined) {
     localStorage.setItem('backupFrequencyMinutes', String(settings.backupFrequencyMinutes))
