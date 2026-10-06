@@ -29,8 +29,10 @@ export function manageTabsFor(access) {
  * The manage console (admins and competition managers), full screen inside
  * the main app. Hiding tabs is cosmetic: every action is refused by the
  * server without the role.
+ * `onClose` draws "Back to the app" (left out on manager.openvolley.app);
+ * `headerActions` go before it in the header.
  */
-export default function ManageConsole({ tab, onTab, onClose }) {
+export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
   const { t } = useTranslation()
   const { user, access } = useAuth()
   const allowed = useMemo(() => manageTabsFor(access), [access])
@@ -45,9 +47,11 @@ export default function ManageConsole({ tab, onTab, onClose }) {
     return (
       <div className="ov-kit flex min-h-screen flex-col items-center justify-center gap-4 bg-stone-100 p-6 text-center">
         <p className="text-sm text-stone-600">{t('manage.errors.forbidden')}</p>
-        <button type="button" className={consoleHeaderBtn} onClick={onClose}>
-          <ArrowLeft size={14} aria-hidden />{t('manage.backToApp')}
-        </button>
+        {onClose && (
+          <button type="button" className={consoleHeaderBtn} onClick={onClose}>
+            <ArrowLeft size={14} aria-hidden />{t('manage.backToApp')}
+          </button>
+        )}
       </div>
     )
   }
@@ -63,12 +67,15 @@ export default function ManageConsole({ tab, onTab, onClose }) {
       <ConsoleShell
         logo={<img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="h-7 w-auto" />}
         eyebrow={t('manage.title')}
-        actions={
-          <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')}>
-            <ArrowLeft size={14} aria-hidden />
-            <span className="hidden sm:inline">{t('manage.backToApp')}</span>
-          </button>
-        }
+        actions={<>
+          {headerActions}
+          {onClose && (
+            <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')}>
+              <ArrowLeft size={14} aria-hidden />
+              <span className="hidden sm:inline">{t('manage.backToApp')}</span>
+            </button>
+          )}
+        </>}
         tabs={tabs}
         current={current}
         onSelect={onTab}
