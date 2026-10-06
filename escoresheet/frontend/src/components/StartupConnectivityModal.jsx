@@ -29,14 +29,16 @@ export default function StartupConnectivityModal({
 }) {
   const { t } = useTranslation()
   const hasAutoDismissed = useRef(false)
+  // True only while a countdown interval runs, so a stale 0 left from an
+  // earlier opening can never dismiss a reopened modal at once.
+  const counting = useRef(false)
   const [countdown, setCountdown] = useState(AUTO_DISMISS_SECONDS)
 
-  // Reset when modal opens fresh
+  // Reset on every open/close: the component stays mounted while closed, so
+  // the countdown must not keep its 0 into the next opening.
   useEffect(() => {
-    if (open) {
-      hasAutoDismissed.current = false
-      setCountdown(AUTO_DISMISS_SECONDS)
-    }
+    if (open) hasAutoDismissed.current = false
+    setCountdown(AUTO_DISMISS_SECONDS)
   }, [open])
 
   // App is ready when DB works AND at least one sync path works (cloud backend OR WebSocket).
@@ -86,15 +88,19 @@ export default function StartupConnectivityModal({
     setCountdown(AUTO_DISMISS_SECONDS)
 
     const interval = setInterval(() => {
+      counting.current = true
       setCountdown(prev => (prev <= 1 ? 0 : prev - 1))
     }, 1000)
 
-    return () => clearInterval(interval)
-  }, [open, primaryOk, onDismiss])
+    return () => {
+      counting.current = false
+      clearInterval(interval)
+    }
+  }, [open, primaryOk])
 
   // Auto-dismiss when the countdown reaches 0 (once per opening)
   useEffect(() => {
-    if (open && primaryOk && countdown === 0 && !hasAutoDismissed.current) {
+    if (open && primaryOk && counting.current && countdown === 0 && !hasAutoDismissed.current) {
       hasAutoDismissed.current = true
       onDismiss?.()
     }

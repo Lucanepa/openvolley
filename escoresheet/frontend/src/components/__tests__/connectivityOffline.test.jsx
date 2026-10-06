@@ -85,6 +85,63 @@ describe('StartupConnectivityModal while offline', () => {
     const renderPhaseUpdates = consoleError.mock.calls.filter(args => String(args[0]).includes('Cannot update a component'))
     expect(renderPhaseUpdates).toHaveLength(0)
   })
+
+  it('synced: reopened after an auto-dismiss, it counts down 5 s again instead of closing at once', () => {
+    vi.useFakeTimers()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let reopen
+    function Parent() {
+      const [open, setOpen] = useState(true)
+      reopen = () => setOpen(true)
+      return (
+        <>
+          <span>{open ? 'modal open' : 'modal closed'}</span>
+          <StartupConnectivityModal open={open} connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'disconnected' }} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
+        </>
+      )
+    }
+    render(<Parent />)
+    act(() => { vi.advanceTimersByTime(6000) })
+    expect(screen.getByText('modal closed')).toBeInTheDocument()
+
+    act(() => { reopen() })
+    expect(screen.getByText('modal open')).toBeInTheDocument()
+    expect(screen.getByText('(5s)')).toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(screen.getByText('modal open')).toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(5000) })
+    expect(screen.getByText('modal closed')).toBeInTheDocument()
+  })
+
+  it('reopened with sync still connecting, it waits for sync and then counts down 5 s', () => {
+    vi.useFakeTimers()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let reopen, setStatuses
+    const SYNCED = { db: 'connected', supabase: 'connected', websocket: 'disconnected' }
+    function Parent() {
+      const [open, setOpen] = useState(true)
+      const [statuses, setS] = useState(SYNCED)
+      reopen = () => setOpen(true)
+      setStatuses = setS
+      return (
+        <>
+          <span>{open ? 'modal open' : 'modal closed'}</span>
+          <StartupConnectivityModal open={open} connectionStatuses={statuses} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
+        </>
+      )
+    }
+    render(<Parent />)
+    act(() => { vi.advanceTimersByTime(6000) })
+    expect(screen.getByText('modal closed')).toBeInTheDocument()
+
+    act(() => { setStatuses({ ...SYNCED, supabase: 'connecting' }); reopen() })
+    expect(screen.getByText('Connecting...')).toBeInTheDocument()
+    act(() => { setStatuses(SYNCED) })
+    act(() => { vi.advanceTimersByTime(1000) })
+    expect(screen.getByText('modal open')).toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(5000) })
+    expect(screen.getByText('modal closed')).toBeInTheDocument()
+  })
 })
 
 describe('ConnectionStatus dropdown while offline', () => {
