@@ -35,6 +35,8 @@ const BLUEZ: &str = "org.bluez";
 const BLUEZ_ADAPTER: &str = "org.bluez.Adapter1";
 
 const NM_DEVICE_TYPE_WIFI: u32 = 2;
+/// NM_802_11_MODE_AP: the card is an access point (a hotspot).
+const NM_WIFI_MODE_AP: u32 = 3;
 /// NM_WIFI_DEVICE_CAP_AP: the card can be an access point.
 const WIFI_CAP_AP: u32 = 0x40;
 const NM_DEVICE_STATE_ACTIVATED: u32 = 100;
@@ -115,12 +117,45 @@ struct WifiDevice {
     interface: String,
     /// Connected to a network right now (the hall Wi-Fi): it drops.
     in_use: bool,
+    /// The name of that connection (usually the hall Wi-Fi's name).
+    connection: Option<String>,
 }
 
 enum WifiProbe {
     Found(WifiDevice),
     NoWifi,
     NoApMode(String),
+}
+
+/// The name (connection id) of the device's active connection, if any.
+async fn active_connection_id(conn: &Connection, dev: &Proxy<'_>) -> Option<String> {
+    let active: OwnedObjectPath = dev.get_property("ActiveConnection").await.ok()?;
+    if active.as_str() == "/" {
+        return None;
+    }
+    let p = proxy(conn, NM, active.into_inner(), NM_ACTIVE).await.ok()?;
+    p.get_property::<String>("Id").await.ok().filter(|s| !s.is_empty())
+}
+
+/// A Wi-Fi card that is an access point right now although this run did not
+/// start one: a hotspot switched on in the system settings (GNOME "Turn On
+/// Wi-Fi Hotspot", nmcli). Its interface name.
+async fn system_hotspot(conn: &Connection, nm: &Proxy<'_>) -> zbus::Result<Option<String>> {
+    let devices: Vec<OwnedObjectPath> = nm.call("GetDevices", &()).await?;
+    for path in devices {
+        let dev = proxy(conn, NM, path.clone().into_inner(), NM_DEVICE).await?;
+        if dev.get_property::<u32>("DeviceType").await.unwrap_or(0) != NM_DEVICE_TYPE_WIFI {
+            continue;
+        }
+        if dev.get_property::<u32>("State").await.unwrap_or(0) != NM_DEVICE_STATE_ACTIVATED {
+            continue;
+        }
+        let wireless = proxy(conn, NM, path.into_inner(), NM_WIRELESS).await?;
+        if wireless.get_property::<u32>("Mode").await.unwrap_or(0) == NM_WIFI_MODE_AP {
+            return Ok(Some(dev.get_property("Interface").await.unwrap_or_default()));
+        }
+    }
+    Ok(None)
 }
 
 /// An AP-capable Wi-Fi card, preferring one that is not connected (a second
@@ -145,7 +180,9 @@ async fn find_wifi(conn: &Connection, nm: &Proxy<'_>) -> zbus::Result<WifiProbe>
             without_ap.push(interface);
             continue;
         }
-        capable.push(WifiDevice { path, interface, in_use: state == NM_DEVICE_STATE_ACTIVATED });
+        let in_use = state == NM_DEVICE_STATE_ACTIVATED;
+        let connection = if in_use { active_connection_id(conn, &dev).await } else { None };
+        capable.push(WifiDevice { path, interface, in_use, connection });
     }
     capable.sort_by_key(|d| d.in_use);
     Ok(match capable.into_iter().next() {
@@ -305,6 +342,15 @@ pub async fn hotspot_status(inner: &mut Inner) -> HotspotStatus {
             return st;
         }
     };
+    // A hotspot the system runs (not this app): the tablets on it can use it
+    if let Ok(Some(interface)) = system_hotspot(&conn, &nm).await {
+        st.supported = true;
+        st.active = true;
+        st.external = true;
+        st.gateway_ip = netifs::ip_of(&interface);
+        st.interface = Some(interface);
+        return st;
+    }
     let wifi = match find_wifi(&conn, &nm).await {
         Ok(w) => w,
         Err(e) => {
@@ -323,6 +369,7 @@ pub async fn hotspot_status(inner: &mut Inner) -> HotspotStatus {
             st.supported = true;
             st.interface = Some(dev.interface);
             st.takes_over_wifi = dev.in_use;
+            st.leaves_network = if dev.in_use { dev.connection } else { None };
             if !nm.get_property::<bool>("WirelessEnabled").await.unwrap_or(true) {
                 st.reason = Some("wifi-off");
             }
@@ -460,8 +507,10 @@ pub async fn bluetooth_status(inner: &mut Inner) -> BluetoothStatus {
         st.interface = Some(r.interface.clone());
         st.ip = netifs::ip_of(&r.interface);
     } else if let Some(ip) = netifs::ip_of(netifs::BT_BRIDGE_NAME) {
-        // started outside this run (or by hand with the same bridge name)
+        // started outside this run (or by hand with the same bridge name):
+        // its links work, but this run holds nothing to stop it with
         st.active = true;
+        st.external = true;
         st.interface = Some(netifs::BT_BRIDGE_NAME.into());
         st.ip = Some(ip);
     }

@@ -85,7 +85,15 @@ pub struct HotspotStatus {
     /// The laptop's Wi-Fi card becomes the access point: its own Wi-Fi
     /// connection (hall Wi-Fi, internet) drops while the hotspot runs.
     pub takes_over_wifi: bool,
+    /// The network the laptop leaves when `takes_over_wifi` (its connection
+    /// name, usually the hall Wi-Fi's name), for the confirmation.
+    pub leaves_network: Option<String>,
     pub active: bool,
+    /// On, but not started by this app run: switched on in the system's own
+    /// settings (Windows quick settings Mobile Hotspot, GNOME "Turn On Wi-Fi
+    /// Hotspot"). Its links work; the app does not stop it. `ssid` /
+    /// `password` are the system's when it tells them, else empty.
+    pub external: bool,
     pub ssid: String,
     pub password: String,
     /// The laptop's address on the new network: the tablet URLs use it.
@@ -110,6 +118,9 @@ pub struct BluetoothStatus {
     /// The Bluetooth name tablets see when pairing.
     pub adapter_name: Option<String>,
     pub active: bool,
+    /// Up, but not started by this app run (the bridge exists already): the
+    /// app does not stop it.
+    pub external: bool,
     pub interface: Option<String>,
     pub ip: Option<String>,
 }
@@ -144,7 +155,8 @@ impl Default for NetShare {
 }
 
 fn with_creds(mut status: HotspotStatus, c: &Credentials) -> HotspotStatus {
-    if status.ssid.is_empty() {
+    // Never put this run's name / password on a network someone else started
+    if status.ssid.is_empty() && !status.external {
         status.ssid = c.ssid.clone();
         status.password = c.password.clone();
     }
