@@ -38,7 +38,11 @@
     "servingTeam": "Serving team",
     "signature": "Signature",
     "timeLabel": "Time (24h, HH:mm)",
-    "dateFormatPlaceholder": "DD/MM/YYYY"
+    "dateFormatPlaceholder": "DD/MM/YYYY",
+    "invalid": "invalid",
+    "later": "Later",
+    "remove": "Remove",
+    "saving": "Saving..."
   },
   "alert": {
     "error": "Error",
@@ -77,7 +81,19 @@
     "initialized": "Match initialized",
     "initError": "Initialization error",
     "initializing": "Initializing match",
-    "confirmBirthdates": "Confirm birthdates"
+    "confirmBirthdates": "Confirm birthdates",
+    "checks": {
+      "websocket": "WebSocket server",
+      "supabase": "Cloud database",
+      "matchData": "Match data in cloud",
+      "devices": "Connected devices"
+    },
+    "runningChecks": "Running connection checks...",
+    "checksIssues": "Some checks reported issues",
+    "checksWarnings": "Checks completed with warnings",
+    "checksOk": "All checks passed",
+    "connectionChecks": "Connection checks",
+    "proceedAnyway": "Proceed anyway"
   },
   "roster": {
     "title": "Roster",
@@ -116,7 +132,9 @@
     "loadTestRoster": "Load TEST roster",
     "confirmLoadTestRoster": "Load test roster?",
     "confirmLoadTestRosterMessage": "This will replace the current roster with test data ({{team}}).",
-    "noBenchOfficials": "No bench officials"
+    "noBenchOfficials": "No bench officials",
+    "deleteOfficial": "Delete official",
+    "deletePlayer": "Delete player"
   },
   "benchRoles": {
     "coach": "Coach",
@@ -415,7 +433,15 @@
       "clickToRetry": "Click to retry sync"
     },
     "captainToggle": "Team captain #{{number}}",
-    "captainToggleNew": "Team captain (new player)"
+    "captainToggleNew": "Team captain (new player)",
+    "allowPopups": "Please allow popups to view the scoresheet",
+    "completeSignatures": "Please complete all signatures before confirming the coin toss.",
+    "libero": "Libero",
+    "matchNotFound": "Match not found",
+    "noMatchData": "No match data available",
+    "playerNumber": "Player number",
+    "teamNamesRequired": "Fill in the home and away team names",
+    "teamShortNamesRequired": "Fill in the short names of both teams"
   },
   "scoreboard": {
     "set": "Set",
@@ -683,7 +709,9 @@
       "clearAllOverrides": "Clear all overrides (use automatic)",
       "switchServe": "Switch serve:",
       "switchCurrentServe": "Switch current serve",
-      "switchSet5Serve": "Switch set 5 serve"
+      "switchSet5Serve": "Switch set 5 serve",
+      "approved": "Approved",
+      "ended": "Ended"
     },
     "eventTypes": {
       "liberoEntry": "Libero entry",
@@ -715,7 +743,8 @@
       "firstName": "First name",
       "lastName": "Last name",
       "players": "Players",
-      "benchOfficials": "Bench officials"
+      "benchOfficials": "Bench officials",
+      "liberoUnable": "Unable"
     },
     "help": {
       "recordingPoints": "Recording points",
@@ -759,7 +788,8 @@
       "playerCannotSubstitute": "This player cannot substitute for the selected court player",
       "setNotFound": "Could not find the correct set to update. Please refresh and try again.",
       "exportFailed": "Error exporting database data. Please try again.",
-      "setEndFailed": "Set end failed. Data saved locally."
+      "setEndFailed": "Set end failed. Data saved locally.",
+      "forfaitFailed": "Forfait could not be completed. Check the score and the sets in manual adjustments."
     },
     "noEventsRecorded": "No events recorded yet.",
     "captainOnCourt": {
@@ -798,6 +828,19 @@
       "deleteLineupEvent": "Delete this lineup event?",
       "setStart": "Set start",
       "setEnd": "Set end"
+    },
+    "deviceDisconnected": "{{device}} disconnected",
+    "pins": {
+      "noneSet": "No PINs are set for this match."
+    },
+    "relayRejected": {
+      "notOwner": "Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device's updates.",
+      "rateLimited": "Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).",
+      "tooMany": "Referee/bench link: this device already drives too many matches on the server."
+    },
+    "toolbar": {
+      "hide": "Hide toolbar",
+      "show": "Show toolbar"
     }
   },
   "settings": {
@@ -876,7 +919,9 @@
     "alarmBellNotify": "Alarm bell: notify referee",
     "clickToEditViewport": "Click to edit and resize viewport",
     "scale": "Scale",
-    "default": "Default"
+    "default": "Default",
+    "viewportWidth": "Viewport width",
+    "viewportHeight": "Viewport height"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -906,7 +951,10 @@
       "matchNotFound": "Match not found"
     },
     "exitFullscreen": "Exit fullscreen",
-    "fullscreen": "Fullscreen"
+    "fullscreen": "Fullscreen",
+    "downloadApp": "Download the desktop app — offline scoretable + tablet server",
+    "downloadAppDeb": "or get the .deb package",
+    "downloadServer": "Download server — referee without internet"
   },
   "options": {
     "title": "Options",
@@ -1114,7 +1162,14 @@
       "failedToClearCache": "Failed to clear cache: {{error}}",
       "clearCacheNeedsServer": "Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.",
       "someItemsFailedToClear": "Some items failed to clear: {{errors}}"
-    }
+    },
+    "nativeBench": "Bench",
+    "nativeOpenView": "Use this tablet as",
+    "nativeServerChange": "Change server",
+    "nativeServerCloud": "Cloud (backend.openvolley.app)",
+    "nativeServerLocal": "Local server",
+    "nativeServerOnline": "Online",
+    "nativeServerTitle": "Server"
   },
   "matchEnd": {
     "title": "Match complete",
@@ -1189,7 +1244,12 @@
       "penalty": "Penalty",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification"
-    }
+    },
+    "errorClosing": "Error closing match: ",
+    "noWinner": "No winner (match stopped)",
+    "pdfGenerationFailed": "Match approved, but the PDF could not be created. You can create it from the scoresheet button.",
+    "reopenMatch": "Reopen match",
+    "unlockTooManyAttempts": "Too many attempts. Please wait and try again."
   },
   "scoresheetPdf": {
     "zoomOut": "Zoom out",
@@ -1208,7 +1268,10 @@
     "generatingPdfMessage": "Please wait while the scoresheet is being converted to PDF. This may take a few seconds.",
     "importJson": "Import JSON",
     "importJsonTooltip": "Import match data from JSON file",
-    "importJsonFile": "Import JSON file"
+    "importJsonFile": "Import JSON file",
+    "backToScoresheet": "Back to scoresheet",
+    "lcs": "Libero control sheet",
+    "lcsTooltip": "View libero control sheet"
   },
   "supportFeedback": {
     "title": "Support & feedback",
@@ -1367,7 +1430,8 @@
     "back": "Back",
     "disconnect": "Disconnect",
     "awaitingCoinToss": "Awaiting coin toss",
-    "awaitingCoinTossDesc": "The match will begin once the coin toss has been confirmed."
+    "awaitingCoinTossDesc": "The match will begin once the coin toss has been confirmed.",
+    "loadGames": "Load games"
   },
   "refereeDashboard": {
     "linkDown": "Offline: no connection to the scoresheet. Score and server may be out of date.",
@@ -1506,7 +1570,8 @@
       "bench_home": "Home bench",
       "bench_away": "Away bench",
       "livescore": "Livescore"
-    }
+    },
+    "invalidUrl": "Invalid server URL"
   },
   "connectionSetup": {
     "lan": "LAN",
@@ -1733,7 +1798,9 @@
     "serverUnavailable": "Scoring works fully offline. Referee, bench, and livescore sync via Supabase — server is only needed as fallback.",
     "backgroundRetry": "Connection will keep retrying in the background.",
     "allConnected": "All services connected!",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "connectedViaServer": "Connected via local server",
+    "noConnection": "No server or cloud connection available. Scoring still works offline."
   },
   "dashboardOptions": {
     "supabase": "Supabase",
@@ -2031,7 +2098,14 @@
       "maroon": "Maroon",
       "teal": "Teal",
       "pink": "Pink"
-    }
+    },
+    "deleteSanction": "Delete sanction",
+    "deleteSubstitution": "Delete substitution",
+    "deleteTimeout": "Delete timeout",
+    "dob": "Date of birth",
+    "points": "points",
+    "teamAAway": "Team A (away)",
+    "teamBHome": "Team B (home)"
   },
   "warnings": {
     "clickForDetails": "Click to see what's missing",
@@ -2048,6 +2122,19 @@
     "homeCoachMissing": "Home team: no coach set",
     "awayCaptainMissing": "Away team: no captain assigned",
     "awayCoachMissing": "Away team: no coach set",
-    "selectGenderFirst": "Select a gender first"
+    "selectGenderFirst": "Select a gender first",
+    "awayTwoLiberosRequired": "Away: 2 liberos required for more than 12 players",
+    "homeTwoLiberosRequired": "Home: 2 liberos required for more than 12 players"
+  },
+  "tabletStatus": {
+    "title": "Tablet status",
+    "allConnected": "All devices connected",
+    "issuesDetected": "{{count}} device(s) with issues"
+  },
+  "appWindow": {
+    "couldNotOpen": "The window could not be opened. Please try again.",
+    "pdfSaved": "PDF saved to {{path}}",
+    "pdfSaveFailed": "The PDF could not be saved: {{error}}",
+    "savingPdf": "Saving the PDF..."
   }
 }

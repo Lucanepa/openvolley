@@ -38,7 +38,11 @@
     "servingTeam": "Aufschlagteam",
     "signature": "Unterschrift",
     "timeLabel": "Uhrzeit (24h, HH:mm)",
-    "dateFormatPlaceholder": "TT/MM/JJJJ"
+    "dateFormatPlaceholder": "TT/MM/JJJJ",
+    "invalid": "ungültig",
+    "later": "Spöter",
+    "remove": "Entferne",
+    "saving": "Speichere..."
   },
   "alert": {
     "error": "Fähler",
@@ -77,7 +81,19 @@
     "initialized": "Spiil initialisiert",
     "initError": "Initialisierigsfähler",
     "initializing": "Spiil wird initialisiert",
-    "confirmBirthdates": "Geburtsdaten bestätigen"
+    "confirmBirthdates": "Geburtsdaten bestätigen",
+    "checks": {
+      "websocket": "WebSocket-Server",
+      "supabase": "Cloud-Datebank",
+      "matchData": "Spiildate i de Cloud",
+      "devices": "Verbundeni Grät"
+    },
+    "runningChecks": "Verbindig wird prüeft...",
+    "checksIssues": "Es paar Prüefige händ Problem gmeldet",
+    "checksWarnings": "Prüefige mit Warnige abgschlosse",
+    "checksOk": "Alli Prüefige bestande",
+    "connectionChecks": "Verbindigsprüefig",
+    "proceedAnyway": "Glich wiitermache"
   },
   "roster": {
     "title": "Roster",
@@ -116,7 +132,9 @@
     "loadTestRoster": "TEST Kader lade",
     "confirmLoadTestRoster": "Test Kader lade?",
     "confirmLoadTestRosterMessage": "Das tuet s aktuelle Kader mit Testdate ersetze ({{team}}).",
-    "noBenchOfficials": "Keine Bankbeamten"
+    "noBenchOfficials": "Keine Bankbeamten",
+    "deleteOfficial": "Offizielle lösche",
+    "deletePlayer": "Spieler lösche"
   },
   "benchRoles": {
     "coach": "Trainer",
@@ -414,7 +432,15 @@
       "clickToRetry": "Klicken Sie auf , um die Synchronisierung zu wiederholen"
     },
     "captainToggle": "Mannschaftscaptain #{{number}}",
-    "captainToggleNew": "Mannschaftscaptain (neue Spieler)"
+    "captainToggleNew": "Mannschaftscaptain (neue Spieler)",
+    "allowPopups": "Bitte erlaubed Sie Popups zum s eMatchblatt aazeige",
+    "completeSignatures": "Bitte alli Underschrifte vor Bestätigung vo de Sitewahl vervollständige.",
+    "libero": "Libero",
+    "matchNotFound": "Spiil nöd gfunde",
+    "noMatchData": "Kei Spiildate verfüegbar",
+    "playerNumber": "Spielernummere",
+    "teamNamesRequired": "Bitte d Näme vo beide Teams iigäh",
+    "teamShortNamesRequired": "Bitte d Churznäme vo beide Teams iigäh"
   },
   "scoreboard": {
     "set": "Satz",
@@ -682,7 +708,9 @@
       "clearAllOverrides": "Alli Überschriibige lösche (automatisch)",
       "switchServe": "Ufschlag wächsle:",
       "switchCurrentServe": "Aktuelle Ufschlag wächsle",
-      "switchSet5Serve": "Satz 5 Ufschlag wächsle"
+      "switchSet5Serve": "Satz 5 Ufschlag wächsle",
+      "approved": "Gnehmigt",
+      "ended": "Fertig"
     },
     "eventTypes": {
       "liberoEntry": "Libero-Iitritt",
@@ -714,7 +742,8 @@
       "firstName": "Vorname",
       "lastName": "Nachname",
       "players": "Spiiler",
-      "benchOfficials": "Offizielle"
+      "benchOfficials": "Offizielle",
+      "liberoUnable": "Spiilunfähig"
     },
     "help": {
       "recordingPoints": "Pünkt erfasse",
@@ -758,7 +787,8 @@
       "playerCannotSubstitute": "Dä Spieler chan de gwählti Feldspieler nöd ersetze",
       "setNotFound": "Der richtige Satz für die Aktualisierung konnte nicht gefunden werden. Bitte aktualisieren Sie und versuchen Sie es erneut.",
       "exportFailed": "Fehler beim Exportieren von Datenbankdaten. Bitte versuchen Sie es erneut.",
-      "setEndFailed": "Ende setzen fehlgeschlagen. Daten lokal gespeichert."
+      "setEndFailed": "Ende setzen fehlgeschlagen. Daten lokal gespeichert.",
+      "forfaitFailed": "Forfait hät nöd chöne abgschlosse werde. Spiilstand und Sätz i de manuelle Aapassige prüefe."
     },
     "noEventsRecorded": "No kei Ereignis erfasst.",
     "captainOnCourt": {
@@ -797,6 +827,19 @@
       "deleteLineupEvent": "Dieses Aufstellungsereignis löschen?",
       "setStart": "Satzanfang",
       "setEnd": "Satzende"
+    },
+    "deviceDisconnected": "{{device}} trennt",
+    "pins": {
+      "noneSet": "Für das Spiil sind kei PINs gsetzt."
+    },
+    "relayRejected": {
+      "notOwner": "Verbindig Schiri/Bank: es anders eMatchblatt hebt das Spiil uf em Server. Schiri, Bank und Livescore überchömed d Updates vo dem Grät nöd.",
+      "rateLimited": "Verbindig Schiri/Bank: de Server hät das eMatchblatt für e Minute abglehnt (z vill Fehlversüech).",
+      "tooMany": "Verbindig Schiri/Bank: das Grät füehrt scho z vill Spiil uf em Server."
+    },
+    "toolbar": {
+      "hide": "Wärchzüügliischte uusblände",
+      "show": "Wärchzüügliischte iiblände"
     }
   },
   "settings": {
@@ -875,7 +918,9 @@
     "alarmBellNotify": "Alarmglocke: Schiedsrichter benachrichtigen",
     "clickToEditViewport": "Klicken um Fenstergrösse zu bearbeiten",
     "scale": "Skalierung",
-    "default": "Standard"
+    "default": "Standard",
+    "viewportWidth": "Breiti vo de Aasicht",
+    "viewportHeight": "Höchi vo de Aasicht"
   },
   "home": {
     "title": "Openvolley eScoresheet",
@@ -905,7 +950,10 @@
       "matchNotFound": "Spiil nöd gfunde"
     },
     "exitFullscreen": "Vollbildmodus beenden",
-    "fullscreen": "Vollbildschirm"
+    "fullscreen": "Vollbildschirm",
+    "downloadApp": "Desktop-App abelade — Offline-Schriibertisch + Tablet-Server",
+    "downloadAppDeb": "oder s .deb-Paket abelade",
+    "downloadServer": "Server abelade — Schiri ohni Internet"
   },
   "options": {
     "title": "Optione",
@@ -1112,7 +1160,14 @@
       "failedToClearCache": "Cache hät nöd chönne gleert werde: {{error}}",
       "clearCacheNeedsServer": "Dr Cache cha nöd gleert werde, solang dr Server nöd erreichbar isch: d App chönnti nachher nöd neu glade werde.",
       "someItemsFailedToClear": "Einigi Element händ nöd chönne glöscht werde: {{errors}}"
-    }
+    },
+    "nativeBench": "Bank",
+    "nativeOpenView": "Das Tablet bruuche als",
+    "nativeServerChange": "Server wächsle",
+    "nativeServerCloud": "Cloud (backend.openvolley.app)",
+    "nativeServerLocal": "Lokale Server",
+    "nativeServerOnline": "Online",
+    "nativeServerTitle": "Server"
   },
   "matchEnd": {
     "title": "Match beendet",
@@ -1187,7 +1242,12 @@
       "penalty": "Straaf",
       "expulsion": "Usschluss",
       "disqualification": "Disqualifikation"
-    }
+    },
+    "errorClosing": "Fehler bim Abschliesse vom Spiil: ",
+    "noWinner": "Kein Sieger (Spiil abbroche)",
+    "pdfGenerationFailed": "Spiil gnehmigt, aber s PDF hät nöd chöne erstellt werde. Sie chönd s über de Chnopf eMatchblatt erstelle.",
+    "reopenMatch": "Spiil wieder ufmache",
+    "unlockTooManyAttempts": "Z vill Versüech. Bitte warte und nomal probiere."
   },
   "scoresheetPdf": {
     "zoomOut": "Verchliinere",
@@ -1206,7 +1266,10 @@
     "generatingPdfMessage": "Bitte warte Si, während s Matchblatt i PDF umgwandlet wird. Das cha e paar Sekunde duure.",
     "importJson": "JSON importiere",
     "importJsonTooltip": "Spiildaate us JSON-Datei importiere",
-    "importJsonFile": "JSON-Datei importiere"
+    "importJsonFile": "JSON-Datei importiere",
+    "backToScoresheet": "Zrugg zum eMatchblatt",
+    "lcs": "Libero-Kontrollblatt",
+    "lcsTooltip": "Libero-Kontrollblatt aazeige"
   },
   "supportFeedback": {
     "title": "Support & Feedback",
@@ -1365,7 +1428,8 @@
     "back": "Zrugg",
     "disconnect": "Trenne",
     "awaitingCoinToss": "Warte uf Siitewahl",
-    "awaitingCoinTossDesc": "S Spiil fangt aa sobald d Siitewahl bestätigt worde isch."
+    "awaitingCoinTossDesc": "S Spiil fangt aa sobald d Siitewahl bestätigt worde isch.",
+    "loadGames": "Spiil lade"
   },
   "refereeDashboard": {
     "linkDown": "Offline: keine Verbindung zum Matchblatt. Spielstand und Aufschlag sind evtl. nicht aktuell.",
@@ -1478,7 +1542,8 @@
     "noCloudBackend": "Kei Cloud-Backend konfiguriert. VITE_BACKEND_URL Umgebigsvariable setze.",
     "shareWithRemote": "Mit entfernte Grät teile",
     "refereeUrl": "Schiri-URL",
-    "gamePin": "Spiil-PIN"
+    "gamePin": "Spiil-PIN",
+    "invalidUrl": "Ungültigi Server-URL"
   },
   "loadOfficialMatch": {
     "title": "Spiil us em Spiilplan lade",
@@ -1701,7 +1766,9 @@
     "serverUnavailable": "Punkteerfassig funktioniert vollständig offline. Schiedsrichter, Bank und Livescore synchronisiere über Supabase — de Server wird nur als Fallback brucht.",
     "backgroundRetry": "D'Verbindig wird im Hintergrund witer probiert.",
     "allConnected": "Alli Dienscht verbunde!",
-    "dismiss": "Schliesse"
+    "dismiss": "Schliesse",
+    "connectedViaServer": "Über de lokal Server verbunde",
+    "noConnection": "Kei Server- oder Cloud-Verbindig verfüegbar. S Schriibe gaht au offline."
   },
   "dashboardOptions": {
     "supabase": "Supabase",
@@ -1999,7 +2066,14 @@
       "maroon": "Wiirot",
       "teal": "Türkis",
       "pink": "Rosa"
-    }
+    },
+    "deleteSanction": "Sanktion lösche",
+    "deleteSubstitution": "Wächsel lösche",
+    "deleteTimeout": "Uszit lösche",
+    "dob": "Geburtsdatum",
+    "points": "Pünkt",
+    "teamAAway": "Team A (Gascht)",
+    "teamBHome": "Team B (Heim)"
   },
   "warnings": {
     "clickForDetails": "Klicke, zum Luege was fählt",
@@ -2016,6 +2090,19 @@
     "homeCoachMissing": "Heimteam: kein Trainer gsetzt",
     "awayCaptainMissing": "Gastteam: kein Kapitän zuegwiise",
     "awayCoachMissing": "Gastteam: kein Trainer gsetzt",
-    "selectGenderFirst": "Zerscht Gschlächt uswähle"
+    "selectGenderFirst": "Zerscht Gschlächt uswähle",
+    "awayTwoLiberosRequired": "Gascht: 2 Liberos nötig bi meh als 12 Spieler",
+    "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bi meh als 12 Spieler"
+  },
+  "tabletStatus": {
+    "title": "Tablet-Status",
+    "allConnected": "Alli Grät verbunde",
+    "issuesDetected": "{{count}} Grät mit Problem"
+  },
+  "appWindow": {
+    "couldNotOpen": "S Fänschter hät nöd chöne ufgah. Bitte nomal probiere.",
+    "pdfSaved": "PDF gspeicheret under {{path}}",
+    "pdfSaveFailed": "S PDF hät nöd chöne gspeicheret werde: {{error}}",
+    "savingPdf": "PDF wird gspeicheret..."
   }
 }

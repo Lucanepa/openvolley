@@ -38,7 +38,11 @@
     "servingTeam": "Équipe au service",
     "signature": "Signature",
     "timeLabel": "Heure (24h, HH:mm)",
-    "dateFormatPlaceholder": "JJ/MM/AAAA"
+    "dateFormatPlaceholder": "JJ/MM/AAAA",
+    "invalid": "invalide",
+    "later": "Plus tard",
+    "remove": "Supprimer",
+    "saving": "Enregistrement..."
   },
   "alert": {
     "error": "Erreur",
@@ -77,7 +81,19 @@
     "initialized": "Match initialisé",
     "initError": "Erreur d'initialisation",
     "initializing": "Initialisation du match",
-    "confirmBirthdates": "Confirmer les dates de naissance"
+    "confirmBirthdates": "Confirmer les dates de naissance",
+    "checks": {
+      "websocket": "Serveur WebSocket",
+      "supabase": "Base de données cloud",
+      "matchData": "Données du match dans le cloud",
+      "devices": "Appareils connectés"
+    },
+    "runningChecks": "Vérification des connexions...",
+    "checksIssues": "Certaines vérifications ont signalé des problèmes",
+    "checksWarnings": "Vérifications terminées avec des avertissements",
+    "checksOk": "Toutes les vérifications sont réussies",
+    "connectionChecks": "Vérification des connexions",
+    "proceedAnyway": "Continuer quand même"
   },
   "roster": {
     "title": "Effectif",
@@ -115,7 +131,9 @@
     "loadTestRoster": "Charger effectif TEST",
     "confirmLoadTestRoster": "Charger effectif test?",
     "confirmLoadTestRosterMessage": "Ceci remplacera l'effectif actuel par des données de test ({{team}}).",
-    "noBenchOfficials": "Pas de fonctionnaires du siège"
+    "noBenchOfficials": "Pas de fonctionnaires du siège",
+    "deleteOfficial": "Supprimer l'officiel",
+    "deletePlayer": "Supprimer le joueur"
   },
   "benchRoles": {
     "coach": "Entraîneur",
@@ -413,7 +431,15 @@
       "clickToRetry": "Cliquez sur pour réessayer la synchronisation"
     },
     "captainToggle": "Capitaine d'équipe #{{number}}",
-    "captainToggleNew": "Capitaine d'équipe (nouveau joueur)"
+    "captainToggleNew": "Capitaine d'équipe (nouveau joueur)",
+    "allowPopups": "Veuillez autoriser les popups pour afficher la eScoresheet",
+    "completeSignatures": "Signatures obligatoires avant de confirmer le tirage au sort.",
+    "libero": "Libéro",
+    "matchNotFound": "Match non trouvé",
+    "noMatchData": "Aucune donnée de match disponible",
+    "playerNumber": "Numéro du joueur",
+    "teamNamesRequired": "Remplir les noms des deux équipes",
+    "teamShortNamesRequired": "Remplir les noms courts des deux équipes"
   },
   "scoreboard": {
     "set": "Set",
@@ -681,7 +707,9 @@
       "clearAllOverrides": "Effacer tous les forçages (automatique)",
       "switchServe": "Changer le service :",
       "switchCurrentServe": "Changer le service actuel",
-      "switchSet5Serve": "Changer le service set 5"
+      "switchSet5Serve": "Changer le service set 5",
+      "approved": "Approuvé",
+      "ended": "Terminé"
     },
     "eventTypes": {
       "liberoEntry": "Entrée libéro",
@@ -713,7 +741,8 @@
       "firstName": "Prénom",
       "lastName": "Nom",
       "players": "Joueurs",
-      "benchOfficials": "Officiels de banc"
+      "benchOfficials": "Officiels de banc",
+      "liberoUnable": "Inapte"
     },
     "help": {
       "recordingPoints": "Enregistrer les points",
@@ -757,7 +786,8 @@
       "playerCannotSubstitute": "Ce joueur ne peut pas remplacer le joueur sélectionné",
       "setNotFound": "Impossible de trouver l'ensemble correct à mettre à jour. Veuillez actualiser et réessayer.",
       "exportFailed": "Erreur d'exportation des données de la base de données. Veuillez réessayer.",
-      "setEndFailed": "Échec de la fin de l'enregistrement. Données sauvegardées localement."
+      "setEndFailed": "Échec de la fin de l'enregistrement. Données sauvegardées localement.",
+      "forfaitFailed": "Le forfait n'a pas pu être finalisé. Vérifiez le score et les sets dans les ajustements manuels."
     },
     "noEventsRecorded": "Aucun événement enregistré.",
     "captainOnCourt": {
@@ -796,6 +826,19 @@
       "deleteLineupEvent": "Supprimer cet événement de composition ?",
       "setStart": "Début de set",
       "setEnd": "Fin de set"
+    },
+    "deviceDisconnected": "{{device}} déconnecté",
+    "pins": {
+      "noneSet": "Aucun PIN n'est défini pour ce match."
+    },
+    "relayRejected": {
+      "notOwner": "Lien arbitre/banc : une autre eScoresheet détient ce match sur le serveur. L'arbitre, le banc et le livescore ne reçoivent pas les mises à jour de cet appareil.",
+      "rateLimited": "Lien arbitre/banc : le serveur a refusé cette eScoresheet pendant une minute (trop de tentatives échouées).",
+      "tooMany": "Lien arbitre/banc : cet appareil gère déjà trop de matchs sur le serveur."
+    },
+    "toolbar": {
+      "hide": "Masquer la barre d'outils",
+      "show": "Afficher la barre d'outils"
     }
   },
   "settings": {
@@ -874,7 +917,9 @@
     "alarmBellNotify": "Cloche d'alarme : Notifier l'arbitre",
     "clickToEditViewport": "Cliquer pour modifier et redimensionner la fenêtre",
     "scale": "Échelle",
-    "default": "Par défaut"
+    "default": "Par défaut",
+    "viewportWidth": "Largeur de l'affichage",
+    "viewportHeight": "Hauteur de l'affichage"
   },
   "home": {
     "title": "Openvolley e-Feuille",
@@ -904,7 +949,10 @@
       "matchNotFound": "Match non trouvé"
     },
     "exitFullscreen": "Quitter le plein écran",
-    "fullscreen": "Plein écran"
+    "fullscreen": "Plein écran",
+    "downloadApp": "Télécharger l'application de bureau — table de marque hors ligne + serveur pour tablettes",
+    "downloadAppDeb": "ou télécharger le paquet .deb",
+    "downloadServer": "Télécharger le serveur — arbitre sans internet"
   },
   "options": {
     "title": "Options",
@@ -1111,7 +1159,14 @@
       "failedToClearCache": "Échec de l'effacement du cache : {{error}}",
       "clearCacheNeedsServer": "Impossible de vider le cache tant que le serveur est injoignable : l'application ne pourrait plus être rechargée.",
       "someItemsFailedToClear": "Certains éléments n'ont pas pu être effacés : {{errors}}"
-    }
+    },
+    "nativeBench": "Banc",
+    "nativeOpenView": "Utiliser cette tablette comme",
+    "nativeServerChange": "Changer de serveur",
+    "nativeServerCloud": "Cloud (backend.openvolley.app)",
+    "nativeServerLocal": "Serveur local",
+    "nativeServerOnline": "En ligne",
+    "nativeServerTitle": "Serveur"
   },
   "matchEnd": {
     "title": "Match terminé",
@@ -1186,7 +1241,12 @@
       "penalty": "Pénalité",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification"
-    }
+    },
+    "errorClosing": "Erreur lors de la clôture du match : ",
+    "noWinner": "Pas de vainqueur (match arrêté)",
+    "pdfGenerationFailed": "Match approuvé, mais le PDF n'a pas pu être créé. Vous pouvez le créer depuis le bouton eScoresheet.",
+    "reopenMatch": "Rouvrir le match",
+    "unlockTooManyAttempts": "Trop de tentatives. Veuillez patienter et réessayer."
   },
   "scoresheetPdf": {
     "zoomOut": "Réduire",
@@ -1205,7 +1265,10 @@
     "generatingPdfMessage": "Veuillez patienter pendant la conversion de la feuille de match en PDF. Cela peut prendre quelques secondes.",
     "importJson": "Importer JSON",
     "importJsonTooltip": "Importer les données du match depuis un fichier JSON",
-    "importJsonFile": "Importer fichier JSON"
+    "importJsonFile": "Importer fichier JSON",
+    "backToScoresheet": "Retour à la eScoresheet",
+    "lcs": "Feuille de contrôle des libéros",
+    "lcsTooltip": "Afficher la feuille de contrôle des libéros"
   },
   "supportFeedback": {
     "title": "Support & avis",
@@ -1364,7 +1427,8 @@
     "back": "Retour",
     "disconnect": "Déconnexion",
     "awaitingCoinToss": "En attente du tirage",
-    "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort."
+    "awaitingCoinTossDesc": "Le match commencera après la validation du tirage au sort.",
+    "loadGames": "Charger les matchs"
   },
   "refereeDashboard": {
     "linkDown": "Hors ligne : pas de connexion à la feuille de match. Le score et le service peuvent ne pas être à jour.",
@@ -1477,7 +1541,8 @@
     "noCloudBackend": "Aucun backend cloud configuré. Définir la variable VITE_BACKEND_URL.",
     "shareWithRemote": "Partager avec appareils distants",
     "refereeUrl": "URL arbitre",
-    "gamePin": "PIN du match"
+    "gamePin": "PIN du match",
+    "invalidUrl": "URL du serveur invalide"
   },
   "loadOfficialMatch": {
     "title": "Charger match depuis le calendrier",
@@ -1700,7 +1765,9 @@
     "serverUnavailable": "Le marquage fonctionne entièrement hors ligne. Arbitre, banc et livescore se synchronisent via Supabase — le serveur n'est nécessaire qu'en secours.",
     "backgroundRetry": "La connexion sera retentée en arrière-plan.",
     "allConnected": "Tous les services sont connectés !",
-    "dismiss": "Fermer"
+    "dismiss": "Fermer",
+    "connectedViaServer": "Connecté via le serveur local",
+    "noConnection": "Aucune connexion au serveur ou au cloud. La saisie du match fonctionne aussi hors ligne."
   },
   "dashboardOptions": {
     "supabase": "Supabase",
@@ -1998,7 +2065,14 @@
       "maroon": "Bordeaux",
       "teal": "Turquoise",
       "pink": "Rose"
-    }
+    },
+    "deleteSanction": "Supprimer la sanction",
+    "deleteSubstitution": "Supprimer le remplacement",
+    "deleteTimeout": "Supprimer le temps mort",
+    "dob": "Date de naissance",
+    "points": "points",
+    "teamAAway": "Équipe A (visiteur)",
+    "teamBHome": "Équipe B (domicile)"
   },
   "warnings": {
     "clickForDetails": "Cliquer pour voir ce qui manque",
@@ -2015,6 +2089,19 @@
     "homeCoachMissing": "Équipe domicile : aucun entraîneur défini",
     "awayCaptainMissing": "Équipe visiteur : aucun capitaine désigné",
     "awayCoachMissing": "Équipe visiteur : aucun entraîneur défini",
-    "selectGenderFirst": "Sélectionner d'abord le genre"
+    "selectGenderFirst": "Sélectionner d'abord le genre",
+    "awayTwoLiberosRequired": "Visiteur : 2 libéros requis pour plus de 12 joueurs",
+    "homeTwoLiberosRequired": "Domicile : 2 libéros requis pour plus de 12 joueurs"
+  },
+  "tabletStatus": {
+    "title": "État des tablettes",
+    "allConnected": "Tous les appareils sont connectés",
+    "issuesDetected": "{{count}} appareil(s) avec des problèmes"
+  },
+  "appWindow": {
+    "couldNotOpen": "La fenêtre n'a pas pu être ouverte. Veuillez réessayer.",
+    "pdfSaved": "PDF enregistré dans {{path}}",
+    "pdfSaveFailed": "Le PDF n'a pas pu être enregistré : {{error}}",
+    "savingPdf": "Enregistrement du PDF..."
   }
 }
