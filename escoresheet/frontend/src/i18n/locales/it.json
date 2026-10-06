@@ -1511,6 +1511,7 @@
     "failedToLoadLeagues": "Caricamento delle leghe fallito"
   },
   "livescore": {
+    "setBreak": "Pausa tra i set",
     "staleData": "Problema di connessione: vengono mostrati gli ultimi punteggi noti",
     "title": "Punteggio live",
     "loadingGames": "Caricamento partite disponibili...",
