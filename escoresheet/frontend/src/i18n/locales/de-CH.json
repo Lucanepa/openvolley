@@ -2502,6 +2502,22 @@
     "matchClosed": "Nicht synchronisiert: Dieses Spiel ist auf dem Server abgeschlossen. Nur ein Admin kann es wieder öffnen.",
     "joinWithPin": "Mit Spiel-PIN beitreten"
   },
+  "androidUpdate": {
+    "available": "OpenVolley {{version}} isch verfüegbar",
+    "fromFdroid": "Updates chömed über F-Droid.",
+    "openFdroid": "In F-Droid öffne",
+    "notFromFdroid": "Ohni F-Droid installiert, drum aktualisiert s sich nöd sälber.",
+    "notifyOption": "Über neui Versione benachrichtige",
+    "notifyHint": "Fragt öppe eimal am Tag bi get.openvolley.app nah, nie während emne Spiil. Susch wird nüt gschickt.",
+    "askTitle": "Über neui Versione informiere?",
+    "askBody": "OpenVolley würd öppe eimal am Tag bi get.openvolley.app nahfroge, öb s e neui Version git. Susch wird nüt gschickt. Du chasch das i de Optione ändere.",
+    "askYes": "Benachrichtige",
+    "askNo": "Nei, danke",
+    "getFdroid": "Über F-Droid hole (aktualisiert sich dänn sälber)",
+    "downloadApk": "APK abelade",
+    "fdroidRepoHint": "Im OpenVolley-Repo usecho. Wenn F-Droid no kes Update zeigt, füeg das Repo dezue: f-droid.org baut s erst es paar Täg spöter.",
+    "addRepo": "OpenVolley-Repo dezuefüege"
+  },
   "appLifecycle": {
     "trayTooltip": "OpenVolley eScoresheet",
     "trayShow": "OpenVolley aazeige",

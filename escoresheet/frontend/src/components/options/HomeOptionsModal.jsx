@@ -12,6 +12,8 @@ import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
 import { Info, LifeBuoy, X } from 'lucide-react'
 import { Button, cn, IconButton, SegmentedControl, Switch } from '../../ui'
+import { isAndroidApp } from '../../utils/androidUpdate'
+import AndroidVersionRows from './AndroidVersionRows'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -229,6 +231,7 @@ export default function HomeOptionsModal({
 }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
+  const androidApp = isAndroidApp()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
@@ -899,9 +902,11 @@ export default function HomeOptionsModal({
         )}
 
         <Section title={t('options.appVersion')}>
-          {/* The desktop app: its own update status (DesktopUpdateSection).
-              Elsewhere the web build's version check. */}
-          {desktopUpdate.active ? <DesktopUpdateSection update={desktopUpdate} /> : (
+          {/* Android: the APK bundles version.json (always "latest"); it asks
+              the F-Droid index instead (AndroidVersionRows). The desktop app:
+              its own update status (DesktopUpdateSection). Elsewhere the web
+              build's version check. */}
+          {androidApp ? <AndroidVersionRows /> : desktopUpdate.active ? <DesktopUpdateSection update={desktopUpdate} /> : (
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div className="flex items-center justify-between">
               <div>

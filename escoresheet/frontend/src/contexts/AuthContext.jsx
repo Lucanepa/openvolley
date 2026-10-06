@@ -124,8 +124,9 @@ export function AuthProvider({ children }) {
         }
         setLoading(false)
         // A sign-in is a moment the app is in use and online: the update
-        // checks listen for it (hooks/useDesktopUpdate.js in the desktop
-        // app) and throttle themselves. Fired once per sign-in, here only.
+        // checks listen for it (utils/androidUpdate.js in the Android app,
+        // hooks/useDesktopUpdate.js in the desktop app) and throttle
+        // themselves. Fired once per sign-in, here only.
         if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
           try { window.dispatchEvent(new CustomEvent('ov-signed-in')) } catch { /* no window events */ }
         }
