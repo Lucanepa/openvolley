@@ -133,6 +133,16 @@ describe('desktop app', () => {
     expect(invoke).toHaveBeenLastCalledWith('app_page_state', expect.objectContaining({ labels: expect.objectContaining({ show: 'OpenVolley anzeigen' }) }))
   })
 
+  it('reports again when a language loads after the switch (lazy bundles)', async () => {
+    const { win, invoke } = desktopWin()
+    uninstall = installAppLifecycle({ win, ask: vi.fn() })
+    await i18n.changeLanguage('it') // not loaded yet: English for now
+    expect(invoke).toHaveBeenLastCalledWith('app_page_state', expect.objectContaining({ labels: expect.objectContaining({ show: 'Show OpenVolley' }) }))
+    i18n.addResourceBundle('it', 'translation', { appLifecycle: { trayShow: 'Mostra OpenVolley' } })
+    expect(invoke).toHaveBeenLastCalledWith('app_page_state', expect.objectContaining({ labels: expect.objectContaining({ show: 'Mostra OpenVolley' }) }))
+    i18n.removeResourceBundle('it', 'translation')
+  })
+
   it('the first close shows the notice, then hides', async () => {
     const { win, invoke } = desktopWin()
     const ask = vi.fn().mockResolvedValue(true)
