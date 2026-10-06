@@ -64,8 +64,24 @@ const DEFAULTS = Object.freeze({
   // explicitly (in addition to any ON DELETE CASCADE) when they exist.
   ownedTables: [
     { table: 'public.profiles', column: 'user_id' },
-    { table: 'public.user_matches', column: 'user_id' }
+    { table: 'public.user_matches', column: 'user_id' },
+    { table: 'public.match_editors', column: 'user_id' }
   ],
+  // Rows that stay when the account goes (club records: the matches it scored,
+  // beach competition matches) but forget who it was: the column is set NULL
+  // explicitly (in addition to the ON DELETE SET NULL foreign keys) when the
+  // table and column exist. README "Deleting an account".
+  detachedColumns: [
+    { table: 'public.matches', column: 'created_by' },
+    { table: 'public.beach_competition_matches', column: 'created_by' },
+    { table: 'public.beach_competition_matches', column: 'claimed_by' }
+  ],
+  // async (userId) => counts: removes the account's files (server.js passes
+  // lib/storage.js deleteUserData: backup/<user>/ and scoresheet owner
+  // entries). Runs before the database rows go (a failure answers 503 and
+  // deletes no row, so the user can retry) and once more after the commit
+  // (an upload that was in flight). null: no files to remove.
+  onAccountDeleted: null,
   // Mirrors handle_new_user() from frontend/src/db/migrations/001_auth_profiles.sql.
   // `roles` is never taken from the client: it always gets defaultRoles.
   defaultRoles: ['scorer'],
@@ -1010,6 +1026,9 @@ export function createAuth(options = {}) {
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
     const userId = v.user.id
+    // Files first: when they cannot be removed nothing is deleted (503), so
+    // the account is never gone while its backups stay behind.
+    if (typeof cfg.onAccountDeleted === 'function') await cfg.onAccountDeleted(userId)
     await withTransaction(async (client) => {
       await revokeUserSessions(userId, client)
       for (const { table, column } of cfg.ownedTables) {
@@ -1017,9 +1036,23 @@ export function createAuth(options = {}) {
         if (!cols.has(column)) continue
         await client.query(`DELETE FROM ${qualify(table)} WHERE ${quoteIdent(column)} = $1`, [userId])
       }
+      for (const { table, column } of cfg.detachedColumns) {
+        const cols = await columnsOf(table, client)
+        if (!cols.has(column)) continue
+        await client.query(`UPDATE ${qualify(table)} SET ${quoteIdent(column)} = NULL WHERE ${quoteIdent(column)} = $1`, [userId])
+      }
       await client.query(`DELETE FROM ${T.users} WHERE id = $1`, [userId])
     })
     lockout.reset(normalizeEmail(v.user.email))
+    // Second pass: an upload that passed its session check before the
+    // sessions were revoked may have landed in between. Best effort.
+    if (typeof cfg.onAccountDeleted === 'function') {
+      try {
+        await cfg.onAccountDeleted(userId)
+      } catch (err) {
+        log.error('[auth] delete-account: file clean-up after the commit failed:', err.message)
+      }
+    }
     return ok(null)
   }
 
@@ -1102,7 +1135,7 @@ export function createAuth(options = {}) {
     lockout,
     bcryptGate,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
-      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey'].includes(k)))),
+      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */
     refreshCatalog() { catalog.clear() },
     // exposed for tests and scripts
