@@ -116,8 +116,9 @@ jobs:
             ### Install
             - **Windows**: download and run the `…x64-setup.exe` installer. It installs for all
               users and asks once for an administrator, so it can let the tablets on the local
-              network through Windows Firewall. An older per-user install is replaced; matches
-              and backups stay.
+              network through Windows Firewall. An older per-user install of the same Windows
+              account is replaced; matches and backups stay. (A standard account that types an
+              administrator's password keeps its older copy too: remove it in Settings › Apps.)
             - **Linux (AppImage)**: download, `chmod +x` it, run it.
             - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh`
               (signed APT repository, package `openvolley-escoresheet`; `sudo apt upgrade` keeps it current),
