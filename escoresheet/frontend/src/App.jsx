@@ -58,6 +58,7 @@ import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
+import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
 import ManageConsole from './components/manage/ManageConsole'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
@@ -449,6 +450,16 @@ export default function App() {
       return null
     }
   }, [])
+
+  // Closing / quitting the app: the desktop app hides to the tray and asks
+  // before it quits, Android's Back asks before it exits, a browser asks
+  // before it leaves a live match (utils/appLifecycle.js)
+  useEffect(() => installAppLifecycle(), [])
+  const activeMatchStatus = activeMatch?.status
+  const activeMatchIsTest = !!activeMatch?.test
+  useEffect(() => {
+    setLiveMatch(liveOf(activeMatchStatus ? { status: activeMatchStatus, test: activeMatchIsTest } : null))
+  }, [activeMatchStatus, activeMatchIsTest])
 
   // Get current match (most recent match that's not final)
   const currentMatch = useLiveQuery(async () => {
