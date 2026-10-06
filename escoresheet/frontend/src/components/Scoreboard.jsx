@@ -25,7 +25,7 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
-import { isRelayErrorFor, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
+import { isRelayErrorFor, liveStateTargets, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -1828,9 +1828,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const liveSeq = liveOrder.next()
 
     try {
-      // Get match to check if it's a test match
+      // A test (rehearsal) match publishes to a local relay only, never to
+      // the cloud (relay or database), so the LedBox can be rehearsed
       const match = await db.matches.get(matchId)
-      if (!match || match.test) return
+      if (!match) return
+      const isTest = match.test === true
+      if (isTest && !liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url }).relay) return
       console.log(`[PERF:liveState] After match.get: +${(performance.now() - _tl).toFixed(0)}ms`)
 
       // The Supabase match UUID when the match record already has it. A lookup
@@ -2061,13 +2064,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Only under the seed key (a Dexie id is no relay room). The push
       // carries the order (_seq, _session): the tablets compare it with the
       // bundle's _syncedSeq instead of the wall clock. Not in the database row.
-      if (relayKeyRef.current && liveOrder.shouldPush(liveSeq)) {
+      const targets = liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url })
+      if (targets.relay && liveOrder.shouldPush(liveSeq)) {
         sendRelayMessage({
           type: 'live-state-update',
           matchId: relayKeyRef.current,
           liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session }
         })
       }
+      // Test match: the local relay was all (no lookup, no upsert, no retry)
+      if (!targets.cloud) return
 
       // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
       // upsert per rally that would only get the same 401. Pushed again once
