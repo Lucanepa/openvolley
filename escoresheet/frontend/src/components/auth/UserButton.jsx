@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import LoginModal from './LoginModal'
@@ -13,7 +14,19 @@ import { cn, FOCUS_RING } from '../../ui'
 const HEADER_BTN = 'inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-medium text-stone-600 hover:bg-stone-100 transition-colors'
 const MENU_ROW = 'w-full min-h-11 inline-flex items-center gap-3 px-3 py-2.5 rounded-lg text-left font-medium transition-colors'
 
-export default function UserButton({ style = {}, fullWidth = false }) {
+// Modals go to <body>: they stay up when the menu that holds this button
+// closes (or is hidden), and no menu panel can clip them.
+const toBody = (node) => (typeof document !== 'undefined' ? createPortal(node, document.body) : node)
+
+/**
+ * @param {object} props
+ * @param {boolean} [props.inline] render the account rows in place (inside a
+ *   menu panel) instead of an anchored dropdown, which the panel's scroll box
+ *   clipped ('Sign out' cut off)
+ * @param {() => void} [props.onAction] called when a row opens a dialog or
+ *   signs out, so the surrounding menu can close
+ */
+export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction }) {
   const { t } = useTranslation()
   const { user, profile, loading, signOut } = useAuth()
 
@@ -40,6 +53,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
   }
 
   const handleSignOut = async () => {
+    onAction?.()
     await signOut()
     setShowDropdown(false)
   }
@@ -50,14 +64,22 @@ export default function UserButton({ style = {}, fullWidth = false }) {
       <>
         <button
           type="button"
-          onClick={() => setShowLogin(true)}
-          className={cn(HEADER_BTN, fullWidth && 'h-12 px-5 text-base rounded-xl', FOCUS_RING)}
+          onClick={() => {
+            setShowLogin(true)
+            onAction?.()
+          }}
+          className={cn(
+            inline ? cn(MENU_ROW, 'justify-between border-0 bg-transparent text-sm text-stone-700 hover:bg-stone-100') : HEADER_BTN,
+            fullWidth && 'h-12 px-5 text-base rounded-xl',
+            FOCUS_RING
+          )}
           style={style}
         >
           {t('auth.login', 'Login')}
           <ChevronRight size={fullWidth ? 16 : 13} aria-hidden="true" className="text-stone-400" />
         </button>
 
+        {toBody(<>
         <LoginModal
           open={showLogin}
           onClose={() => setShowLogin(false)}
@@ -75,6 +97,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
             setShowLogin(true)
           }}
         />
+        </>)}
       </>
     )
   }
@@ -85,6 +108,66 @@ export default function UserButton({ style = {}, fullWidth = false }) {
     : user?.email?.split('@')[0] || t('auth.user', 'User')
 
   const iconPx = fullWidth ? 18 : 16
+
+  const accountModals = toBody(<>
+    <ProfileModal
+      open={showProfile}
+      onClose={() => setShowProfile(false)}
+    />
+
+    <MatchHistory
+      open={showMatchHistory}
+      onClose={() => setShowMatchHistory(false)}
+    />
+  </>)
+
+  if (inline) {
+    // Account rows in the flow of the surrounding menu (no nested popover)
+    return (
+      <div className="ov-kit" style={style}>
+        <div className="flex items-center gap-3 px-3 pt-2 pb-2">
+          <span aria-hidden="true" className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 px-2 text-xs font-semibold text-white">
+            {getInitials()}
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-stone-900">{userName}</div>
+            <div className="truncate text-xs text-stone-500" title={user.email}>{user.email}</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowProfile(true)
+            onAction?.()
+          }}
+          className={cn(MENU_ROW, 'border-0 bg-transparent text-sm text-stone-700 hover:bg-stone-100', FOCUS_RING)}
+        >
+          <User size={iconPx} aria-hidden="true" className="text-stone-400" />
+          {t('auth.profile', 'Profile')}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShowMatchHistory(true)
+            onAction?.()
+          }}
+          className={cn(MENU_ROW, 'border-0 bg-transparent text-sm text-stone-700 hover:bg-stone-100', FOCUS_RING)}
+        >
+          <CalendarDays size={iconPx} aria-hidden="true" className="text-stone-400" />
+          {t('home.myMatches', 'My matches')}
+        </button>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className={cn(MENU_ROW, 'border-0 bg-transparent text-sm text-red-600 hover:bg-red-50', FOCUS_RING)}
+        >
+          <LogOut size={iconPx} aria-hidden="true" />
+          {t('auth.signOut', 'Sign out')}
+        </button>
+        {accountModals}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -184,15 +267,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
         )}
       </div>
 
-      <ProfileModal
-        open={showProfile}
-        onClose={() => setShowProfile(false)}
-      />
-
-      <MatchHistory
-        open={showMatchHistory}
-        onClose={() => setShowMatchHistory(false)}
-      />
+      {accountModals}
     </>
   )
 }
