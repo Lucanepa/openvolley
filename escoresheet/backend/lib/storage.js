@@ -12,7 +12,8 @@
  *   upload   {bucket, path, fileBase64, contentType, upsert} -> {data:{path,id,fullPath}, error:null}
  *   download {bucket, path}                                   -> {data:<base64>, error:null}
  *   list     {bucket, path, options:{limit,offset,sortBy,search}} -> {data:[{name,id,created_at,updated_at,last_accessed_at,metadata}], error:null}
- *   signed-url                                                -> 404 (removed, no caller)
+ *   remove   {bucket, paths:[...]}                            -> {data:[{name}], error:null} (own objects only; the owner record goes too)
+ *   signed-url                                               -> 404 (removed, no caller)
  * Errors come back as {data:null, error:{message, code}} with an HTTP status,
  * except a download of a missing object: 200 {data:null, error:{code:
  * 'OV_STORAGE_NOT_FOUND'}} (a normal answer, e.g. no log file or backup yet;
@@ -631,6 +632,180 @@ export function createStorage(options = {}) {
     return readOwners(rr, bucket, segs.join('/'))
   }
 
+  /**
+   * Unlink one object (a regular file, never a symlink or folder) and, in an
+   * uploader-only bucket, its owner record, under the key's owner lock. When
+   * `mayRemove(owners)` returns false nothing is touched (403). Returns the
+   * removed size in bytes, or null when there was no such object.
+   */
+  async function unlinkObject(rr, bucket, diskSegs, mayRemove = null) {
+    const key = diskSegs.join('/')
+    const uploaderOnly = uploaderReadBuckets.has(bucket)
+    const run = async () => {
+      const r = await resolve(bucket, diskSegs)
+      if (!r) return null
+      let st
+      try {
+        st = await fsp.lstat(r.target)
+      } catch (e) {
+        if (isCode(e, 'ENOENT', 'ENOTDIR')) return null
+        throw e
+      }
+      if (st.isSymbolicLink()) throw err.symlink()
+      if (!st.isFile()) return null
+      if (mayRemove && !(await mayRemove(uploaderOnly ? await readOwners(rr, bucket, key) : null))) throw err.forbidden()
+      try {
+        await fsp.unlink(r.target)
+      } catch (e) {
+        if (!isCode(e, 'ENOENT')) throw e
+        return null
+      }
+      // The record goes with the object (never left behind for sweep()).
+      if (uploaderOnly) await removeOwnersRecord(rr, bucket, key)
+      return st.size
+    }
+    return uploaderOnly ? withOwnerLock(ownerLockId(bucket, key), run) : run()
+  }
+
+  /** Delete the owner record of bucket/key, if any (caller holds the key's lock). */
+  async function removeOwnersRecord(rr, bucket, key) {
+    const file = await ownersFile(rr, bucket, key, false)
+    if (!file) return false
+    try {
+      await fsp.unlink(file)
+      return true
+    } catch (e) {
+      if (isCode(e, 'ENOENT')) return false
+      throw e
+    }
+  }
+
+  /**
+   * Delete objects (supabase-js `remove(paths)`): {bucket, paths:[...]} ->
+   * [{name}] of the objects removed; missing ones are skipped. Only where the
+   * caller's own objects can be told apart: in an uploader-only bucket an
+   * owner of the object, in an owner-scoped bucket the caller's own folder.
+   * In any other bucket nobody deletes over HTTP (403). The owner record of a
+   * removed object goes with it.
+   */
+  async function remove({ bucket, paths, userId } = {}) {
+    assertBucket(bucket)
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > 100) throw err.invalidRequest('paths must be a list of 1-100 paths')
+    const uploaderOnly = uploaderReadBuckets.has(bucket)
+    const scoped = !!ownerScope && ownerScopeBuckets.has(bucket)
+    if (!uploaderOnly && !scoped) throw err.forbidden()
+    if (typeof userId !== 'string' || !USER_ID_RE.test(userId)) throw err.forbidden()
+    const parsed = paths.map((p) => parse(p))
+    const rr = await assertWritable()
+    const removed = []
+    for (const segs of parsed) {
+      const diskSegs = await scope('write', bucket, segs, userId)
+      const size = await unlinkObject(rr, bucket, diskSegs, uploaderOnly ? (owners) => owners.includes(userId) : null)
+      if (size !== null) removed.push({ name: segs.join('/') })
+    }
+    return removed
+  }
+
+  /**
+   * Delete-account clean-up (lib/auth.js deleteAccount via server.js). For
+   * this user:
+   *   - every object under {bucket}/{userId}/ of the owner-scoped buckets
+   *     ('prefix'/'require' scope; backup/ by default: match backups and
+   *     interaction logs) is removed, with its folders;
+   *   - in the uploader-only buckets (scoresheets/) the user is dropped from
+   *     every owner record. A record left without owners is deleted; the
+   *     object itself stays (a scoresheet is the match's official record, like
+   *     the matches row) and is readable by nobody until an operator grants it
+   *     (scripts/storage-owner.mjs).
+   * Never follows symlinks. Idempotent. Returns counts.
+   */
+  async function deleteUserData(userId) {
+    if (typeof userId !== 'string' || !USER_ID_RE.test(userId)) throw err.invalidRequest('invalid user id')
+    const rr = await assertWritable()
+    const result = { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0, ownerRecordsUpdated: 0, ownerRecordsRemoved: 0 }
+    if (ownerScope === 'prefix' || ownerScope === 'require') {
+      for (const bucket of buckets) {
+        if (!ownerScopeBuckets.has(bucket)) continue
+        const top = await resolve(bucket, [userId], { isDir: true })
+        if (top) await removeTree(rr, bucket, [userId], result)
+      }
+    }
+    for (const bucket of uploaderReadBuckets) {
+      const dir = path.join(rr, OWNERS_DIR_NAME, bucket)
+      let names
+      try {
+        const st = await fsp.lstat(dir)
+        if (!st.isDirectory()) continue
+        names = await fsp.readdir(dir)
+      } catch {
+        continue
+      }
+      for (const name of names) {
+        if (!/^[0-9a-f]{64}\.json$/.test(name)) continue
+        const rec = await readRecordFile(path.join(dir, name))
+        if (!rec || !rec.owners.includes(userId)) continue
+        await withOwnerLock(ownerLockId(bucket, rec.key), async () => {
+          const owners = await readOwners(rr, bucket, rec.key)
+          if (!owners.includes(userId)) return
+          const rest = owners.filter((o) => o !== userId)
+          if (rest.length) {
+            await writeOwners(rr, bucket, rec.key, rest)
+            result.ownerRecordsUpdated++
+          } else if (await removeOwnersRecord(rr, bucket, rec.key)) {
+            result.ownerRecordsRemoved++
+          }
+        })
+      }
+    }
+    return result
+  }
+
+  /** {key, owners} of an owner record file whose name matches its key; null otherwise. */
+  async function readRecordFile(full) {
+    let rec
+    try {
+      const st = await fsp.lstat(full)
+      if (!st.isFile()) return null
+      rec = JSON.parse(await fsp.readFile(full, 'utf8'))
+    } catch {
+      return null
+    }
+    const key = typeof rec?.key === 'string' ? rec.key : null
+    if (!key || !parseStoragePath(key, pathLimits)) return null
+    if (crypto.createHash('sha256').update(key).digest('hex') !== path.basename(full, '.json')) return null
+    return { key, owners: Array.isArray(rec.owners) ? rec.owners.filter((o) => typeof o === 'string') : [] }
+  }
+
+  /** Remove every file below bucket/segs (owner records included) and the emptied folders. */
+  async function removeTree(rr, bucket, segs, result) {
+    const r = await resolve(bucket, segs, { isDir: true })
+    if (!r) return
+    let dirents
+    try {
+      dirents = await fsp.readdir(r.dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const d of dirents) {
+      if (d.isDirectory()) {
+        await removeTree(rr, bucket, [...segs, d.name], result)
+      } else if (d.isFile()) {
+        const size = await unlinkObject(rr, bucket, [...segs, d.name])
+        if (size !== null) {
+          result.objectsRemoved++
+          result.bytesRemoved += size
+        }
+      }
+      // symlinks and anything else: left alone, never followed
+    }
+    try {
+      await fsp.rmdir(r.dir)
+      result.foldersRemoved++
+    } catch {
+      // not empty (a symlink, or an upload that raced in)
+    }
+  }
+
   // ---------- operations ----------
 
   /**
@@ -986,7 +1161,9 @@ export function createStorage(options = {}) {
   }
 
   /**
-   * Remove owner records whose object no longer exists, so a stale record can
+   * Remove owner records ({root}/.owners/{bucket}/{sha256}.json sidecars) whose
+   * object no longer exists (deleted outside the API, a failed commit, an
+   * older server without remove()), so a stale record can
    * never hand read rights to an object written later at the same path (the
    * upload of a new object replaces the record anyway; this is the clean-up).
    * Records touched in the last sweepDirGraceMs are kept (an upload in flight
@@ -995,7 +1172,9 @@ export function createStorage(options = {}) {
    */
   async function sweepOwners(rr) {
     let removed = 0
-    for (const bucket of uploaderReadBuckets) {
+    // Every bucket, not only the uploader-only ones: records written while a
+    // bucket was uploader-only must not outlive their objects either.
+    for (const bucket of buckets) {
       const dir = path.join(rr, OWNERS_DIR_NAME, bucket)
       let names
       try {
@@ -1132,6 +1311,10 @@ export function createStorage(options = {}) {
         const data = await list({ bucket: body.bucket, path: body.path, options: body.options, userId })
         return { status: 200, body: { data, error: null } }
       }
+      if (action === 'remove') {
+        const data = await remove({ bucket: body.bucket, paths: body.paths, userId })
+        return { status: 200, body: { data, error: null } }
+      }
       return { status: 404, body: { data: null, error: { message: 'Not found', code: 'OV_STORAGE_UNKNOWN_ACTION' } } }
     } catch (e) {
       return errorResult(e, action)
@@ -1160,6 +1343,8 @@ export function createStorage(options = {}) {
     upload,
     download,
     list,
+    remove,
+    deleteUserData,
     sweep,
     health,
     handle,
