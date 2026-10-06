@@ -2097,7 +2097,17 @@
   "tabletStatus": {
     "title": "État des tablettes",
     "allConnected": "Tous les appareils sont connectés",
-    "issuesDetected": "{{count}} appareil(s) avec des problèmes"
+    "issuesDetected": "{{count}} appareil(s) avec des problèmes",
+    "role": {
+      "referee": "Arbitre",
+      "bench_home": "Banc recevant",
+      "bench_away": "Banc visiteur"
+    },
+    "status": {
+      "connected": "Connecté",
+      "stale": "En retard",
+      "disconnected": "Déconnecté"
+    }
   },
   "appWindow": {
     "couldNotOpen": "La fenêtre n'a pas pu être ouverte. Veuillez réessayer.",

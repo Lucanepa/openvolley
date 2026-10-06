@@ -2129,7 +2129,17 @@
   "tabletStatus": {
     "title": "Stato dei tablet",
     "allConnected": "Tutti i dispositivi connessi",
-    "issuesDetected": "{{count}} dispositivo/i con problemi"
+    "issuesDetected": "{{count}} dispositivo/i con problemi",
+    "role": {
+      "referee": "Arbitro",
+      "bench_home": "Panchina di casa",
+      "bench_away": "Panchina ospite"
+    },
+    "status": {
+      "connected": "Connesso",
+      "stale": "In ritardo",
+      "disconnected": "Disconnesso"
+    }
   },
   "appWindow": {
     "couldNotOpen": "Non è stato possibile aprire la finestra. Riprova.",

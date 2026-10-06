@@ -2130,7 +2130,17 @@
   "tabletStatus": {
     "title": "Tablet status",
     "allConnected": "All devices connected",
-    "issuesDetected": "{{count}} device(s) with issues"
+    "issuesDetected": "{{count}} device(s) with issues",
+    "role": {
+      "referee": "Referee",
+      "bench_home": "Home bench",
+      "bench_away": "Away bench"
+    },
+    "status": {
+      "connected": "Connected",
+      "stale": "Delayed",
+      "disconnected": "Disconnected"
+    }
   },
   "appWindow": {
     "couldNotOpen": "The window could not be opened. Please try again.",
