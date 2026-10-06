@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride } from '../utils/backendConfig'
+import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOverride, learnRelayWsPort } from '../utils/backendConfig'
 import { GlobeIcon, SatelliteDishIcon } from './icons'
 import { Loader2 } from 'lucide-react'
 import { Button, cn, FOCUS_RING, NOTICE } from '../ui'
@@ -83,6 +83,9 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
       clearTimeout(timeoutId)
 
       if (response.ok) {
+        // A desktop relay takes its WebSocket on another port than the page
+        // (5173 / 8080): ask it which, before the views connect.
+        await learnRelayWsPort(serverUrl)
         setStatus('connected')
         setBackendOverride(serverUrl)
         const label = serverUrl.includes('openvolley.app') ? 'Cloud' : 'Local'
@@ -216,7 +219,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
                 value={localAddress}
                 onChange={(e) => { setLocalAddress(e.target.value); setMode('local') }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleLocalConnect() }}
-                placeholder="192.168.1.42:8080"
+                placeholder="192.168.1.42:5173"
                 className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
               />
               <Button

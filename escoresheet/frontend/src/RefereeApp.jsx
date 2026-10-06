@@ -9,7 +9,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { isServedFromLocalServer } from './utils/backendConfig'
 import { loadMatchList } from './utils/matchListSource'
-import { setBackendOverride } from './utils/backendConfig'
+import { applyServerParam } from './utils/backendConfig'
 import { Whistle } from './ui/AppSpinner.jsx'
 import { db } from './db/db'
 import { Check, ChevronRight, CalendarX2, Loader2, RefreshCw } from 'lucide-react'
@@ -105,7 +105,7 @@ export default function RefereeApp() {
     const serverParam = params.get('server')
 
     if (serverParam) {
-      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+      applyServerParam(serverParam)
     }
 
     if (matchParam) {
