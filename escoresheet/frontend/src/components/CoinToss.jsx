@@ -1051,10 +1051,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
     // --- Pre-game connection checks (non-blocking, informational only) ---
     const checks = {
-      websocket: { status: 'pending', label: t('coinToss.checks.websocket', 'WebSocket Server') },
-      supabase: { status: 'pending', label: t('coinToss.checks.supabase', 'Cloud Database') },
-      matchData: { status: 'pending', label: t('coinToss.checks.matchData', 'Match Data in Cloud') },
-      devices: { status: 'pending', label: t('coinToss.checks.devices', 'Connected Devices') }
+      websocket: { status: 'pending', label: t('coinToss.checks.websocket', 'WebSocket server') },
+      supabase: { status: 'pending', label: t('coinToss.checks.supabase', 'Cloud database') },
+      matchData: { status: 'pending', label: t('coinToss.checks.matchData', 'Match data in cloud') },
+      devices: { status: 'pending', label: t('coinToss.checks.devices', 'Connected devices') }
     }
 
     setInitModal({ status: 'checking', message: t('coinToss.runningChecks', 'Running connection checks...'), checks })
@@ -2394,10 +2394,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       {/* Initialization Modal */}
       {initModal && (
         <Modal
-          title={initModal.status === 'success' ? t('coinToss.initialized', 'Match Initialized') :
-            initModal.status === 'error' ? t('coinToss.initError', 'Initialization Error') :
-            initModal.status === 'checking' || initModal.status === 'check_results' ? t('coinToss.connectionChecks', 'Connection Checks') :
-              t('coinToss.initializing', 'Initializing Match')}
+          title={initModal.status === 'success' ? t('coinToss.initialized', 'Match initialized') :
+            initModal.status === 'error' ? t('coinToss.initError', 'Initialization error') :
+            initModal.status === 'checking' || initModal.status === 'check_results' ? t('coinToss.connectionChecks', 'Connection checks') :
+              t('coinToss.initializing', 'Initializing match')}
           open={true}
           onClose={initModal.status === 'error' ? () => setInitModal(null) : undefined}
           width={450}
@@ -2524,7 +2524,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     if (window.__coinTossCheckResolve) window.__coinTossCheckResolve()
                   }}
                 >
-                  {t('coinToss.proceedAnyway', 'Proceed Anyway')}
+                  {t('coinToss.proceedAnyway', 'Proceed anyway')}
                 </Button>
               </div>
             )}

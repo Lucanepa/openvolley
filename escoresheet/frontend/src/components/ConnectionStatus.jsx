@@ -150,22 +150,22 @@ export default function ConnectionStatus({
       return { tone: 'error', text: t('connectionStatus.error', 'Error') }
     } else if (status === 'no_match') {
       // For websocket, "no_match" means waiting for a match to be selected - show as gray/ready
-      const text = key === 'websocket' ? t('connectionStatus.noMatch', 'No Match') : t('connectionStatus.ready', 'Ready')
+      const text = key === 'websocket' ? t('connectionStatus.noMatch', 'No match') : t('connectionStatus.ready', 'Ready')
       return { tone: 'neutral', text }
     } else if (status === 'offline') {
       return { tone: 'neutral', text: t('connectionStatus.offline', 'Offline') }
     } else if (status === 'disconnected' || status === 'error') {
       return { tone: 'error', text: status === 'error' ? t('connectionStatus.error', 'Error') : t('connectionStatus.disconnected', 'Disconnected') }
     } else if (status === 'not_configured' || status === 'not_applicable') {
-      return { tone: 'warn', text: t('connectionStatus.notConfigured', 'Not Configured') }
+      return { tone: 'warn', text: t('connectionStatus.notConfigured', 'Not configured') }
     } else if (status === 'not_available') {
-      return { tone: 'neutral', text: t('connectionStatus.naStatic', 'N/A (Static)') }
+      return { tone: 'neutral', text: t('connectionStatus.naStatic', 'N/A (static)') }
     } else if (status === 'connecting') {
       return { tone: 'warn', text: t('connectionStatus.connecting', 'Connecting') }
     } else if (status === 'auth_required') {
       return { tone: 'warn', text: t('connectionStatus.signInToSync', 'Sign in to sync') }
     } else if (status === 'test_mode') {
-      return { tone: 'violet', text: t('connectionStatus.testMode', 'Test Mode') }
+      return { tone: 'violet', text: t('connectionStatus.testMode', 'Test mode') }
     } else {
       return { tone: 'neutral', text: t('connectionStatus.unknown', 'Unknown') }
     }
@@ -301,7 +301,7 @@ export default function ConnectionStatus({
           }}
         >
           <div className="mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
-            {t('connectionStatus.title', 'Connection Status')}
+            {t('connectionStatus.title', 'Connection status')}
           </div>
           {Object.entries(shownStatuses).map(([key, status]) => {
             const itemStatusInfo = getStatusColor(status, key)
@@ -374,7 +374,7 @@ export default function ConnectionStatus({
                             }}
                             className={cn('inline-flex h-8 items-center rounded-lg border-0 bg-slate-900 px-2.5 text-[11px] font-semibold tracking-normal text-white hover:bg-slate-800 transition-colors cursor-pointer', FOCUS_RING)}
                           >
-                            {t('common.retryAll', 'Retry All')}
+                            {t('common.retryAll', 'Retry all')}
                           </button>
                         </div>
                       </div>
@@ -389,7 +389,7 @@ export default function ConnectionStatus({
                     className="mx-1.5 mb-2 break-words rounded-lg border border-stone-200 bg-stone-50 p-2.5 text-[11px] leading-relaxed text-stone-700"
                   >
                     <div className="mb-2 text-xs font-semibold text-red-700">
-                      {t('connectionStatus.statusInformation', 'Status Information')}
+                      {t('connectionStatus.statusInformation', 'Status information')}
                     </div>
                     <div className="mb-1.5">
                       <strong className="font-semibold text-stone-900">{t('connectionStatus.statusLabel', 'Status:')}</strong> {(() => {

@@ -95,7 +95,7 @@ export default function SyncSignInBanner({ syncStatus, compact = false }) {
               onClick={() => setShowLogin(true)}
               className={cn('inline-flex items-center rounded-lg bg-slate-900 font-semibold text-white transition-colors hover:bg-slate-800', compact ? 'h-8 px-2.5 text-xs' : 'h-9 px-3 text-xs', 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1')}
             >
-              {sessionExpired ? t('syncBanner.signInAgain', 'Sign in again') : t('auth.signIn', 'Sign In')}
+              {sessionExpired ? t('syncBanner.signInAgain', 'Sign in again') : t('auth.signIn', 'Sign in')}
             </button>
           </div>
         </div>

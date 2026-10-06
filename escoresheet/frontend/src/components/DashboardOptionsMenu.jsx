@@ -295,7 +295,7 @@ export function DashboardOptionsMenu({
                 color: 'var(--muted)',
                 marginBottom: '8px'
               }}>
-                {t('dashboardOptions.connectionType', 'Connection Type')}
+                {t('dashboardOptions.connectionType', 'Connection type')}
               </div>
               <div style={{
                 display: 'flex',
@@ -303,9 +303,9 @@ export function DashboardOptionsMenu({
                 gap: '6px'
               }}>
                 {[
-                  { type: CONNECTION_TYPES.AUTO, label: t('dashboardOptions.autoRecommended', 'Auto (Recommended)'), desc: t('dashboardOptions.supabasePrimaryFallback', 'Supabase primary, WebSocket fallback') },
-                  { type: CONNECTION_TYPES.SUPABASE, label: t('dashboardOptions.supabaseOnly', 'Supabase Only'), desc: t('dashboardOptions.databaseRealtimeOnly', 'Database realtime only') },
-                  { type: CONNECTION_TYPES.WEBSOCKET, label: t('dashboardOptions.webSocketOnly', 'WebSocket Only'), desc: t('dashboardOptions.directServerConnection', 'Direct server connection') }
+                  { type: CONNECTION_TYPES.AUTO, label: t('dashboardOptions.autoRecommended', 'Auto (recommended)'), desc: t('dashboardOptions.supabasePrimaryFallback', 'Supabase primary, WebSocket fallback') },
+                  { type: CONNECTION_TYPES.SUPABASE, label: t('dashboardOptions.supabaseOnly', 'Supabase only'), desc: t('dashboardOptions.databaseRealtimeOnly', 'Database realtime only') },
+                  { type: CONNECTION_TYPES.WEBSOCKET, label: t('dashboardOptions.webSocketOnly', 'WebSocket only'), desc: t('dashboardOptions.directServerConnection', 'Direct server connection') }
                 ].map(({ type, label, desc }) => (
                   <button
                     key={type}
@@ -434,7 +434,7 @@ export function DashboardOptionsMenu({
                 opacity: isClearing ? 0.6 : 1
               }}
             >
-              {isClearing ? t('dashboardOptions.clearing', 'Clearing...') : t('dashboardOptions.clearCacheAndData', 'Clear Cache & Data')}
+              {isClearing ? t('dashboardOptions.clearing', 'Clearing...') : t('dashboardOptions.clearCacheAndData', 'Clear cache & data')}
             </button>
             {clearResult && !clearResult.success && (
               <div style={{

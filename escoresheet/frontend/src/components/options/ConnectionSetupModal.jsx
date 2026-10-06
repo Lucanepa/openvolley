@@ -309,19 +309,19 @@ export default function ConnectionSetupModal({
 
   const renderConnections = () => (
     <div className="divide-y divide-stone-100">
-      {renderConnectionRow('referee', t('connection.role.referee', 'Referee Dashboard'), refereePin, '#3b82f6', {
+      {renderConnectionRow('referee', t('connection.role.referee', 'Referee dashboard'), refereePin, '#3b82f6', {
         enabled: match?.refereeConnectionEnabled === true,
         dbField: 'refereeConnectionEnabled',
         syncField: 'referee_enabled',
         pinSyncField: 'referee'
       })}
-      {renderConnectionRow('bench_home', t('connection.role.bench_home', 'Home Bench'), homeTeamPin, '#10b981', {
+      {renderConnectionRow('bench_home', t('connection.role.bench_home', 'Home bench'), homeTeamPin, '#10b981', {
         enabled: match?.homeTeamConnectionEnabled === true,
         dbField: 'homeTeamConnectionEnabled',
         syncField: 'home_bench_enabled',
         pinSyncField: 'bench_home'
       })}
-      {renderConnectionRow('bench_away', t('connection.role.bench_away', 'Away Bench'), awayTeamPin, '#ef4444', {
+      {renderConnectionRow('bench_away', t('connection.role.bench_away', 'Away bench'), awayTeamPin, '#ef4444', {
         enabled: match?.awayTeamConnectionEnabled === true,
         dbField: 'awayTeamConnectionEnabled',
         syncField: 'away_bench_enabled',

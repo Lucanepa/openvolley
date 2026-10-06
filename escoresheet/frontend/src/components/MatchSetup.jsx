@@ -4515,7 +4515,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Coach Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.coachSignature', 'Coach Signature')}
+                {t('rosterSetup.coachSignature', 'Coach signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('home-coach')}
@@ -4547,7 +4547,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Captain Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.captainSignature', 'Captain Signature')}
+                {t('rosterSetup.captainSignature', 'Captain signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('home-captain')}
@@ -5674,7 +5674,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Coach Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.coachSignature', 'Coach Signature')}
+                {t('rosterSetup.coachSignature', 'Coach signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('away-coach')}
@@ -5706,7 +5706,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Captain Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.captainSignature', 'Captain Signature')}
+                {t('rosterSetup.captainSignature', 'Captain signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('away-captain')}
@@ -6176,7 +6176,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const labels = {
       synced: t('matchSetup.syncStatus.synced', 'Synced'),
       syncing: t('matchSetup.syncStatus.syncing', 'Syncing...'),
-      error: t('matchSetup.syncStatus.error', 'Sync Error'),
+      error: t('matchSetup.syncStatus.error', 'Sync error'),
       idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced') : t('matchSetup.syncStatus.offline', 'Offline')
     }
     const c = tones[status] || tones.synced

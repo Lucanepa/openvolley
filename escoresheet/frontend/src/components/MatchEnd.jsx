@@ -180,7 +180,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
     <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Improper Request Row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#f0f0f0', borderRadius: '4px', marginBottom: '8px' }}>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000' }}>{t('matchEnd.improperRequest', 'Improper Request')}</span>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000' }}>{t('matchEnd.improperRequest', 'Improper request')}</span>
         <div style={{ display: 'flex', gap: '8px' }}>
           <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, position: 'relative', color: '#000' }}>
             A
@@ -239,9 +239,9 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
   const formatSanction = (sanction) => {
     const isDelay = sanction.playerNr === 'D'
     const typeLabel = sanction.type === 'warning'
-      ? (isDelay ? t('matchEnd.sanctionTypes.delayWarning', 'Delay Warning') : t('matchEnd.sanctionTypes.warning', 'Warning'))
+      ? (isDelay ? t('matchEnd.sanctionTypes.delayWarning', 'Delay warning') : t('matchEnd.sanctionTypes.warning', 'Warning'))
       : sanction.type === 'penalty'
-        ? (isDelay ? t('matchEnd.sanctionTypes.delayPenalty', 'Delay Penalty') : t('matchEnd.sanctionTypes.penalty', 'Penalty'))
+        ? (isDelay ? t('matchEnd.sanctionTypes.delayPenalty', 'Delay penalty') : t('matchEnd.sanctionTypes.penalty', 'Penalty'))
         : sanction.type === 'expulsion'
           ? t('matchEnd.sanctionTypes.expulsion', 'Expulsion')
           : sanction.type === 'disqualification'
@@ -682,10 +682,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // return `Captain B - ${team?.shortName || team?.name || 'Team B'}${captain ? ` (#${captain.number})` : ''}`
       return t('matchEnd.captainB', { team: team?.shortName || team?.name || 'Team B' }) + (captain ? ` (#${captain.number})` : '')
     }
-    if (role === 'asst-scorer') return t('matchEnd.assistantScorer', 'Assistant Scorer')
+    if (role === 'asst-scorer') return t('matchEnd.assistantScorer', 'Assistant scorer')
     if (role === 'scorer') return t('matchEnd.scorer', 'Scorer')
-    if (role === 'ref2') return t('matchEnd.referee2', '2nd Referee')
-    if (role === 'ref1') return t('matchEnd.referee1', '1st Referee')
+    if (role === 'ref2') return t('matchEnd.referee2', '2nd referee')
+    if (role === 'ref1') return t('matchEnd.referee1', '1st referee')
     return ''
   }
 
@@ -968,7 +968,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // Warn if PDF was not generated (approval still succeeded)
       if (!pdfResult) {
-        showAlert(t('matchEnd.pdfGenerationFailed', 'Match approved, but PDF generation failed. You can generate the PDF manually from the Scoresheet button.'), 'warning')
+        showAlert(t('matchEnd.pdfGenerationFailed', 'Match approved, but PDF generation failed. You can generate the PDF manually from the scoresheet button.'), 'warning')
       }
     } catch (error) {
       console.error('Error approving match:', error)
@@ -1286,7 +1286,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
           <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>{t('matchEnd.title', 'Match Complete')}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>{t('matchEnd.title', 'Match complete')}</h1>
           <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
         </div>
 
@@ -1367,7 +1367,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Captain Signatures */}
       {!isApproved && (
         <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
-          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.teamCaptains', 'Team Captains')}</h3></div>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.teamCaptains', 'Team captains')}</h3></div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <SignatureBox role="captain-a" />
             <SignatureBox role="captain-b" />
@@ -1389,7 +1389,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 setShowRemarksModal(true)
               }}
             >
-              {t('matchEnd.editRemarks', 'Edit Remarks')}
+              {t('matchEnd.editRemarks', 'Edit remarks')}
             </Button>
           )}
         </div>
@@ -1403,14 +1403,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         <div className="card" style={{ marginBottom: '16px' }}>
           <div className={SECTION_HEAD}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h3 className={SECTION_TITLE}>{t('matchEnd.officialSignatures', 'Official Signatures')}</h3>
+              <h3 className={SECTION_TITLE}>{t('matchEnd.officialSignatures', 'Official signatures')}</h3>
               {/* Whose turn it is: a state, so a round pill (sky = pending,
                   emerald once every signature is in). */}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${currentStep === 'complete' ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'}`}>
-                {currentStep === 'asst-scorer' && t('matchEnd.assistantScorer', 'Assistant Scorer')}
+                {currentStep === 'asst-scorer' && t('matchEnd.assistantScorer', 'Assistant scorer')}
                 {currentStep === 'scorer' && t('matchEnd.scorer', 'Scorer')}
-                {currentStep === 'ref2' && t('matchEnd.referee2', '2nd Referee')}
-                {currentStep === 'ref1' && t('matchEnd.referee1', '1st Referee')}
+                {currentStep === 'ref2' && t('matchEnd.referee2', '2nd referee')}
+                {currentStep === 'ref1' && t('matchEnd.referee1', '1st referee')}
                 {currentStep === 'complete' && t('matchEnd.allSignaturesCollected', 'All signatures collected')}
               </span>
             </div>
@@ -1450,7 +1450,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               onClick={handleCloseMatch}
               style={{ flex: 1, minWidth: '150px' }}
             >
-              {t('matchEnd.closeMatch', 'Close Match')}
+              {t('matchEnd.closeMatch', 'Close match')}
             </Button>
             <Button
               variant="danger-soft"
@@ -1471,7 +1471,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                   </svg>
                 )
               )}
-              {t('matchEnd.reopenMatch', 'Reopen Match')}
+              {t('matchEnd.reopenMatch', 'Reopen match')}
             </Button>
           </>
         ) : !showReopenConfirm && (
@@ -1487,7 +1487,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               className="disabled:cursor-not-allowed"
               style={{ flex: 1, minWidth: '150px' }}
             >
-              {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and Approve')}
+              {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and approve')}
             </Button>
             <Button
               variant="danger-soft"
@@ -1496,7 +1496,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               data-help-id="matchend-reopen-set"
               className="px-5"
             >
-              {t('matchEnd.reopenLastSet', 'Reopen Last Set')}
+              {t('matchEnd.reopenLastSet', 'Reopen last set')}
             </Button>
             <Button
               variant="secondary"
@@ -1504,7 +1504,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               onClick={onManualAdjustments}
               className="px-5 font-medium"
             >
-              {t('matchEnd.manualAdjustments', 'Manual Adjustments')}
+              {t('matchEnd.manualAdjustments', 'Manual adjustments')}
             </Button>
             <div data-help-id="matchend-export-pdf">
               <MenuList
@@ -1517,7 +1517,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                   { key: 'preview', icon: <SearchIcon />, label: t('matchEnd.preview', 'Preview'), onClick: () => handleShowScoresheet('preview') },
                   { key: 'print', icon: <PrinterIcon />, label: t('matchEnd.print', 'Print'), onClick: () => handleShowScoresheet('print') },
                   { key: 'save', icon: <SaveIcon />, label: t('matchEnd.savePdf', 'Save PDF'), onClick: () => handleShowScoresheet('save') },
-                  { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download Logs'), onClick: handleDownloadLogs }
+                  { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download logs'), onClick: handleDownloadLogs }
                 ]}
               />
             </div>
@@ -1544,7 +1544,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             width: '90%',
             textAlign: 'center'
           }}>
-            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing Match Export...')}</h3>
+            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing match export...')}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
               <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
                 <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
@@ -1552,7 +1552,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               </div>
               <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
                 <span className={downloadProgress.pdf ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
-                <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating Scoresheet (PDF)')}</span>
+                <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating scoresheet (PDF)')}</span>
               </div>
             </div>
             <p className="text-xs text-stone-500" style={{ margin: 0 }}>
@@ -1582,7 +1582,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             maxWidth: '450px',
             width: '90%'
           }}>
-            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 8px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen Last Set?')}</h3>
+            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 8px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen last set?')}</h3>
             <p className="text-sm text-stone-600" style={{ margin: '0 0 12px 0' }}>
               {t('matchEnd.reopenSetConfirmBody', 'This will reopen the last set for corrections and allow you to continue scoring.')}
             </p>
@@ -1606,7 +1606,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 onClick={handleReopenLastSet}
                 style={{ flex: 1 }}
               >
-                {t('matchEnd.yesReopen', 'Yes, Reopen Set')}
+                {t('matchEnd.yesReopen', 'Yes, reopen set')}
               </Button>
             </div>
           </div>
@@ -1692,7 +1692,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Remarks Modal */}
       {showRemarksModal && (
         <Modal
-          title={t('matchEnd.editRemarks', 'Edit Remarks')}
+          title={t('matchEnd.editRemarks', 'Edit remarks')}
           open={true}
           onClose={() => {
             setShowRemarksModal(false)
@@ -1767,7 +1767,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <h3 className={DIALOG_TITLE} style={{ margin: 0 }}>
-                {t('matchEnd.unlockReopen', 'Unlock Reopen')}
+                {t('matchEnd.unlockReopen', 'Unlock reopen')}
               </h3>
             </div>
             <p className="text-sm text-stone-600" style={{ margin: '0 0 16px 0' }}>

@@ -9650,7 +9650,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (onFinishSet) await onFinishSet(lastSet || data.set)
     } catch (error) {
       console.error('[handleForfait] Error:', error)
-      showAlert(t('scoreboard.errors.forfaitFailed', 'Forfait could not be completed. Check the score and the sets in Manual Adjustments.'), 'error')
+      showAlert(t('scoreboard.errors.forfaitFailed', 'Forfait could not be completed. Check the score and the sets in manual adjustments.'), 'error')
       // A match forfeit already marked the match ended: still open Match End
       // (App.finishSet treats status 'ended' as the match end)
       if (matchEndingRef.current && onFinishSet) {
@@ -13592,7 +13592,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Reopen Roster Confirmation Dialog */}
       {reopenRosterConfirm && (
         <Modal
-          title={t('scoreboard.reopenRoster.confirmTitle', 'Reopen Roster?')}
+          title={t('scoreboard.reopenRoster.confirmTitle', 'Reopen roster?')}
           open={true}
           onClose={() => setReopenRosterConfirm(null)}
           width={400}
@@ -13984,7 +13984,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginBottom: '4px'
                     }}
                   >
-                    {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
+                    {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                   </button>
                 )}
 
@@ -14670,7 +14670,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginBottom: '4px'
                     }}
                   >
-                    {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
+                    {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                   </button>
                 )}
 
@@ -16033,7 +16033,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         cursor: 'pointer'
                       }}
                     >
-                      {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
+                      {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                     </button>
                   ) : <div style={{ width: '80px' }} />}
 
@@ -16068,7 +16068,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         cursor: 'pointer'
                       }}
                     >
-                      {t('scoreboard.captainOnCourt.designate', 'Game Captain')}
+                      {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                     </button>
                   ) : <div style={{ width: '80px' }} />}
                 </div>
@@ -16727,7 +16727,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 cursor: 'pointer'
                               }}
                             >
-                              {t('scoreboard.showLineup', 'Show Line-up')}
+                              {t('scoreboard.showLineup', 'Show line-up')}
                             </button>
                             <button
                               onClick={() => setLineupModal({ team: leftIsHome ? 'home' : 'away', mode: 'initial' })}
@@ -16742,7 +16742,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 cursor: 'pointer'
                               }}
                             >
-                              {t('scoreboard.changeLineup', 'Change Line-up')}
+                              {t('scoreboard.changeLineup', 'Change line-up')}
                             </button>
                           </div>
                         </div>
@@ -17337,7 +17337,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 cursor: 'pointer'
                               }}
                             >
-                              {t('scoreboard.showLineup', 'Show Line-up')}
+                              {t('scoreboard.showLineup', 'Show line-up')}
                             </button>
                             <button
                               onClick={() => setLineupModal({ team: leftIsHome ? 'away' : 'home', mode: 'initial' })}
@@ -17352,7 +17352,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 cursor: 'pointer'
                               }}
                             >
-                              {t('scoreboard.changeLineup', 'Change Line-up')}
+                              {t('scoreboard.changeLineup', 'Change line-up')}
                             </button>
                           </div>
                         </div>
@@ -19191,16 +19191,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <div className="ov-kit" style={{ position: 'relative', zIndex: 1000 }}>
           <ActionSheet open={true} onClose={() => setMenuModal(false)} title={t('scoreboard.menu.menu')} closeLabel={t('common.close', 'Close')} railOffset={false}>
             <ActionSheetItem onClick={() => { setShowLogs(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showActionLog', 'Show Action Log')}
+              {t('scoreboard.menu.showActionLog', 'Show action log')}
             </ActionSheetItem>
             <ActionSheetItem onClick={() => { setShowSanctions(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showSanctionsResults', 'Show Sanctions and Results')}
+              {t('scoreboard.menu.showSanctionsResults', 'Show sanctions and results')}
             </ActionSheetItem>
             <ActionSheetItem onClick={() => { setShowManualPanel(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.manualChanges', 'Manual Changes')}
+              {t('scoreboard.menu.manualChanges', 'Manual changes')}
             </ActionSheetItem>
             <ActionSheetItem onClick={() => { setShowRemarks(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.openRemarksRecording', 'Open Remarks Recording')}
+              {t('scoreboard.menu.openRemarksRecording', 'Open remarks recording')}
             </ActionSheetItem>
             <ActionSheetItem onClick={() => { setShowRosters(true); setMenuModal(false) }}>
               {t('scoreboard.showRosters')}
@@ -19210,7 +19210,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </ActionSheetItem>
             {onOpenMatchSetup && (
               <ActionSheetItem onClick={() => { onOpenMatchSetup(); setMenuModal(false) }}>
-                {t('scoreboard.menu.showMatchSetup', 'Show Match Setup')}
+                {t('scoreboard.menu.showMatchSetup', 'Show match setup')}
               </ActionSheetItem>
             )}
             <div className="my-1 h-px bg-stone-100" role="separator" />
@@ -19255,7 +19255,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     showAlert(t('scoreboard.errors.exportFailed'), 'error')
                   }
                 }}>
-              {t('scoreboard.menu.downloadGameData', 'Download Game Data (JSON)')}
+              {t('scoreboard.menu.downloadGameData', 'Download game data (JSON)')}
             </ActionSheetItem>
             <ActionSheetItem icon={SettingsIcon} onClick={() => { setShowOptionsInMenu(true) }}>
               {t('scoreboard.menu.options', 'Options')}
@@ -19352,7 +19352,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Captain on Court Modal - Simplified */}
       {captainOnCourtModal && (
         <Modal
-          title={t('scoreboard.captainOnCourt.selectTitle', 'Game Captain')}
+          title={t('scoreboard.captainOnCourt.selectTitle', 'Game captain')}
           open={true}
           onClose={handleCancelCaptainOnCourt}
           width={360}
@@ -22502,7 +22502,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Stop Match Modal - Choose between Forfeit or Impossibility */}
       {stopMatchModal === 'select' && (
         <Modal
-          title={t('scoreboard.stopMatch.title', 'Stop the Match')}
+          title={t('scoreboard.stopMatch.title', 'Stop the match')}
           open={true}
           onClose={() => setStopMatchModal(null)}
           width={400}
@@ -22535,7 +22535,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Stop Match - Team Selection (for Forfeit) */}
       {stopMatchTeamSelect && (
         <Modal
-          title={t('scoreboard.stopMatch.selectForfeitingTeam', 'Select Forfeiting Team')}
+          title={t('scoreboard.stopMatch.selectForfeitingTeam', 'Select forfeiting team')}
           open={true}
           onClose={() => setStopMatchTeamSelect(null)}
           width={400}
@@ -22586,8 +22586,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {stopMatchConfirm && (
         <Modal
           title={stopMatchConfirm.type === 'forfeit'
-            ? t('scoreboard.stopMatch.confirmForfeitTitle', 'Confirm Forfeit')
-            : t('scoreboard.stopMatch.confirmImpossibilityTitle', 'Impossibility to Resume')}
+            ? t('scoreboard.stopMatch.confirmForfeitTitle', 'Confirm forfeit')
+            : t('scoreboard.stopMatch.confirmImpossibilityTitle', 'Impossibility to resume')}
           open={true}
           onClose={() => setStopMatchConfirm(null)}
           width={500}
@@ -22630,7 +22630,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setShowRemarks(true) // Open the existing remarks modal
                 }}
               >
-                {t('scoreboard.stopMatch.continueToRemarks', 'Continue to Remarks')}
+                {t('scoreboard.stopMatch.continueToRemarks', 'Continue to remarks')}
               </SbButton>
             </div>
           </div>
@@ -22640,7 +22640,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Stop Match - Final step after remarks (shown when remarks modal closes) */}
       {stopMatchRemarksStep && !showRemarks && (
         <Modal
-          title={t('scoreboard.stopMatch.finalConfirmTitle', 'End Match')}
+          title={t('scoreboard.stopMatch.finalConfirmTitle', 'End match')}
           open={true}
           onClose={() => setStopMatchRemarksStep(null)}
           width={400}
@@ -22662,7 +22662,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <SbButton variant="danger-soft"
                 onClick={completeStopMatchFlow}
               >
-                {t('scoreboard.stopMatch.endMatch', 'End Match')}
+                {t('scoreboard.stopMatch.endMatch', 'End match')}
               </SbButton>
             </div>
           </div>
@@ -25509,7 +25509,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   localStorage.setItem('keyBindings', JSON.stringify(defaultKeyBindings))
                 }}
               >
-                {t('scoreboard.keybindings.resetToDefaults', 'Reset to Defaults')}
+                {t('scoreboard.keybindings.resetToDefaults', 'Reset to defaults')}
               </SbButton>
               <SbButton variant="positive"
                 onClick={() => {
@@ -25593,7 +25593,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Duplicate Timeout Confirmation Modal */}
       {duplicateTimeoutConfirm && (
         <Modal
-          title={t('scoreboard.modals.confirmTimeout', 'Confirm Timeout')}
+          title={t('scoreboard.modals.confirmTimeout', 'Confirm timeout')}
           open={true}
           onClose={() => setDuplicateTimeoutConfirm(null)}
           width={320}
@@ -25618,7 +25618,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setTimeoutModal({ team, countdown: 30, started: false })
                 }}
               >
-                {t('scoreboard.confirm.yesTimeout', 'Yes, Timeout')}
+                {t('scoreboard.confirm.yesTimeout', 'Yes, timeout')}
               </SbButton>
               <SbButton variant="secondary"
                 onClick={() => setDuplicateTimeoutConfirm(null)}
@@ -28890,7 +28890,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             color: 'var(--muted)',
             marginBottom: '8px'
           }}>
-            {t('scoreboard.lineupModal.availablePlayers', 'Available Players:')}
+            {t('scoreboard.lineupModal.availablePlayers', 'Available players:')}
           </div>
           <div style={{
             display: 'flex',

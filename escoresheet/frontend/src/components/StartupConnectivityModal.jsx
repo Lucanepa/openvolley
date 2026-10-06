@@ -134,8 +134,8 @@ export default function StartupConnectivityModal({
   const getStatusText = (status) => {
     if (status === 'unknown' || status === 'connecting') return t('connectionStatus.connecting', 'Connecting')
     if (status === 'connected' || status === 'synced' || status === 'syncing' || status === 'live') return t('connectionStatus.connected', 'Connected')
-    if (status === 'not_available') return t('connectionStatus.naStatic', 'N/A (Static)')
-    if (status === 'not_configured') return t('connectionStatus.notConfigured', 'Not Configured')
+    if (status === 'not_available') return t('connectionStatus.naStatic', 'N/A (static)')
+    if (status === 'not_configured') return t('connectionStatus.notConfigured', 'Not configured')
     if (status === 'disconnected') return t('connectionStatus.disconnected', 'Disconnected')
     if (status === 'error') return t('connectionStatus.error', 'Error')
     if (status === 'offline') return t('connectionStatus.offline', 'Offline')
@@ -223,7 +223,7 @@ export default function StartupConnectivityModal({
               onClick={onGoOffline}
               className={cn('inline-flex h-11 w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50', FOCUS_RING)}
             >
-              {t('startupConnectivity.goOffline', 'Go Offline')}
+              {t('startupConnectivity.goOffline', 'Go offline')}
             </button>
           )}
         </div>

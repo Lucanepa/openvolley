@@ -130,7 +130,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
         {/* Header */}
         <div className="flex items-center justify-between gap-3 border-b border-stone-200/70 px-5 py-2 sm:px-6">
           <h2 id="match-history-title" className="text-lg font-bold text-stone-900">
-            {t('matchHistory.title', 'My Matches')}
+            {t('matchHistory.title', 'My matches')}
           </h2>
           <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
         </div>
