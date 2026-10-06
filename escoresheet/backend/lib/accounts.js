@@ -35,6 +35,9 @@ const INVITE_DEFAULT_TTL_MS = 30 * DAY_MS
 const GAME_TAKEN_DEDUP = '24 hours'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+const withoutUndefined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined))
+// The columns of the official-game key a matches update may change (created_at is server-only)
+const OFFICIAL_KEY_COLUMNS = ['game_n', 'scheduled_at', 'sport_type', 'test']
 export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v)
 
 export function ok (data, status = 200) {
@@ -635,17 +638,84 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
    * (with match_id; send publicClaim() to the client). Throws on a DB error.
    */
   async function findTakenGame ({ userId, rows }) {
-    for (const row of officialRowsOf(rows)) {
+    const list = (Array.isArray(rows) ? rows : [rows]).filter((r) => r && typeof r === 'object').slice(0, 50)
+    // A partial upsert keeps the stored values of the columns it leaves out,
+    // so the key is the stored row's with the payload over it.
+    const exts = [...new Set(list.map((r) => r.external_id).filter((v) => typeof v === 'string' && v && v.length <= 200))]
+    const stored = new Map()
+    if (exts.length) {
+      const { rows: found } = await pool.query(
+        `SELECT external_id, game_n, scheduled_at, created_at, sport_type::text AS sport_type, test
+           FROM public.matches WHERE external_id = ANY($1::text[])`, [exts])
+      for (const r of found) stored.set(r.external_id, r)
+    }
+    for (const payload of list) {
+      const old = typeof payload.external_id === 'string' ? stored.get(payload.external_id) : undefined
+      const row = old ? { ...old, ...withoutUndefined(payload) } : payload
+      if (officialRowsOf([row]).length === 0) continue
+      const ext = typeof row.external_id === 'string' ? row.external_id : null
+      // The season the index sees: scheduled_at, else created_at, else now
+      const declaredAt = row.scheduled_at ?? row.created_at ?? null
       const claim = await findClaim(pool, {
         gameN: row.game_n,
-        scheduledAt: row.scheduled_at ?? null,
+        scheduledAt: declaredAt,
         sportType: row.sport_type,
-        excludeExternalId: typeof row.external_id === 'string' ? row.external_id : null,
+        excludeExternalId: ext,
         callerId: userId
       })
       if (claim) return claim
+      const real = await vmSeasonClaim({ userId, row, old, declaredAt, ext })
+      if (real) return real
     }
     return null
+  }
+
+  /**
+   * The client declares the season (scheduled_at; created_at is server-only on
+   * /api/db). For an indoor game VolleyManager knows (svrz_games), a match
+   * that takes a NEW key in another season than VolleyManager's kick-off is
+   * also checked against the game's real season, so shifting the date cannot
+   * open a second cloud match for a claimed game. A stored match whose key
+   * does not change (an old season's match re-synced after its number was
+   * reused) is left alone. A friendly check, not a database guarantee.
+   */
+  async function vmSeasonClaim ({ userId, row, old, declaredAt, ext }) {
+    if (sportOf(row.sport_type) !== 'indoor') return null
+    const n = Number(row.game_n)
+    const declaredSeason = seasonOf(declaredAt ?? new Date())
+    if (old && old.test !== true && Number(old.game_n) === n && sportOf(old.sport_type) === 'indoor' &&
+        seasonOf(old.scheduled_at ?? old.created_at ?? new Date()) === declaredSeason) return null
+    let vmAt
+    try {
+      const { rows: games } = await pool.query(
+        'SELECT datetime FROM public.svrz_games WHERE game_number = $1 AND datetime IS NOT NULL ORDER BY id DESC LIMIT 1', [String(n)])
+      vmAt = games[0]?.datetime
+    } catch (err) {
+      // no VolleyManager table (a LAN or test database): the declared key only
+      if (err?.code === '42P01' || err?.code === '42703') return null
+      throw err
+    }
+    const vmSeason = seasonOf(vmAt)
+    if (vmSeason == null || vmSeason === declaredSeason) return null
+    return findClaim(pool, { gameN: n, scheduledAt: new Date(vmAt).toISOString(), sportType: 'indoor', excludeExternalId: ext, callerId: userId })
+  }
+
+  /**
+   * The friendly pre-check of a matches update that touches the official-game
+   * key (game_n, scheduled_at, sport_type, test): the stored rows the filters
+   * match, with the update over them. Throws on a DB error.
+   */
+  async function findTakenGameForUpdate ({ userId, filters, data }) {
+    if (!isPlainObject(data) || !OFFICIAL_KEY_COLUMNS.some((c) => c in data)) return null
+    const r = await db.runQuery({
+      table: 'matches',
+      action: 'select',
+      params: { columns: 'external_id', filters, limit: 50 }
+    }, { internal: true })
+    if (r.body.error) return null // a bad filter: the update itself answers it
+    const rows = (r.body.data || []).filter((m) => typeof m.external_id === 'string')
+      .map((m) => ({ ...data, external_id: m.external_id }))
+    return rows.length ? findTakenGame({ userId, rows }) : null
   }
 
   /** POST /api/match/official-check (the caller can score). */
@@ -717,6 +787,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     addMatchEditor,
     listAudit,
     findTakenGame,
+    findTakenGameForUpdate,
     officialCheck,
     auditGameTaken,
     auditClaimedGames,

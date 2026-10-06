@@ -73,6 +73,11 @@ The same expression is used in three places and must stay identical:
 
 ## 3. Migration `escoresheet/backend/db/007_scorer_accounts.sql` (exact text)
 
+> **After review the file in the repository is the reference, not this copy.** It
+> adds two things below: `ov_matches_guard` ends an exemption when the match's
+> official-game key changes, and `match_live_state_closed_guard` locks the live
+> state of a closed match.
+
 Copy it verbatim. It was verified on postgres:17-alpine against `tests/fixtures/synthetic_schema.sql` + 005 + 006:
 - It runs twice without errors.
 - `roles.sql` runs afterwards fine.
@@ -512,7 +517,7 @@ export function officialRowsOf(rows)  // rows with test !== true && Number.isInt
 | `getDataLayer()` | Create `access = createAccessResolver({ pool: db.pool })`, `accounts = createAccounts({ pool: db.pool, db, restore, access })` and `savedTeams = createSavedTeams({ pool: db.pool })`, and add them to `dataLayer`. |
 | `isAdminUser` | Delegates to `layer.access.get(userId).isAdmin`. Keep its catch-and-return-false behaviour for its current callers (referee directory, read paths). Remove the separate `adminCache`. |
 | `matchOwnerFor(layer, user)` | `const a = await layer.access.get(user.id)` (**throws** on a DB error), then `a.isAdmin ? { userId, admin: true } : { userId, testOnly: !a.canScore }`. |
-| `WRITE_DENYLIST.matches` | `['created_by', 'closed_at', 'closed_by', 'official_game_exempt']`. |
+| `WRITE_DENYLIST.matches` | `['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at']` (created_at added after review). |
 | `/api/db` write path | (a) A throw from the access resolver gives 503 `OV_DB_UNAVAILABLE` `retryable: true` (not 500). (b) `runOpts.actorId = authUser.id` for writes. (c) **Official-game pre-check**: when `table === 'matches'`, the action is `insert`/`upsert` and `access.canScore` is true, run `findClaim` for each `officialRowsOf(p.data)` row (sport from the row, default `'indoor'`; `excludeExternalId` = the row's `external_id`). On a hit, answer 409 `{ data: null, error: { code: 'OV_GAME_TAKEN', message, claim } }` and audit `match.game_taken` (at most once per actor + game_n + season per 24 h; check the last entry first). Pending accounts skip the pre-check: pgQuery answers 403 first, so scorer names never reach them. (d) After `runQuery`, a 409 `OV_GAME_TAKEN` (race or update path) is enriched with `claim` when the payload carries `game_n`, else `claim: null`. (e) On 200, for every `changes` entry `{ table:'matches', eventType:'INSERT', row }` with `row.test !== true && row.game_n > 0`, audit `match.claim_game` with `{ external_id, game_n }`. |
 | `claimByUpsertPin` | On success, audit `match.claim_pin` with `{ via: 'upsert-pin' }` per match. |
 | `/api/match/restore` | Same access 503 rule, the same official pre-check on `body.match`, and `restoreMatch(body, { proto, matchOwner, actorId: user.id })`. |
@@ -1030,7 +1035,8 @@ New suites:
 - **R2 Wrong game number or date.** A scorer who types a wrong `game_n` claims somebody else's game. The second scorer sees the claimant's name. An admin resolves it (release game, add editor).
 - **R3 Friendlies.** Matches without `game_n` are unconstrained (by design).
 - **R4 Order of jobs from old clients.** Clients without the 6.7(1) fix may send the approval before the last sets or events (`RESOURCE_ORDER` is match first). The late children then get 409 and park as `failed`. Ship the frontend with or before the backend, and the admin can reopen and let the client resync. A server-side grace window was considered and rejected (it weakens the lock).
-- **R5 `match_live_state` is not locked by closing.** It is ephemeral display data; only the approval rule applies to it. Say so in the README.
+- **R5 `match_live_state` is not locked by closing.** It is ephemeral display data; only the approval rule applies to it. Say so in the README. *Superseded after review:* 007 locks it with `match_live_state_closed_guard` (livescore must not show a closed match as live), and the relay publishes nothing for a closed match. The relay itself stays PIN-gated (sockets carry no session), outside the approved-scorer rule; it stores nothing.
+- **R6 (after review) the declared key.** The client declares the season through `scheduled_at`; `created_at` is server-only on `/api/db`. An exemption ends when the match's key changes (`ov_matches_guard`). For indoor games in `svrz_games` the server also checks VolleyManager's season for a new key. A match sent without `game_n` is not an official game for the server.
 - **R6 Pending accounts' queued jobs** are refused and retried hourly (up to 24 times). After approval, `ov-access-changed` requeues them. A device that stays offline across the approval needs one profile refresh first.
 - **R7 Personal data in Dexie** (DOB, licence) on shared venue tablets: cleared on sign-out and account switch only. Venue tablets should sign out after use (documented in the user guide).
 - **R8 Production migration.** It needs the 4 existing matches checked. If any is `approved`/`final` it becomes closed (intended). Duplicates are only reported. Roles are untouched: the one admin and one scorer keep theirs. Do not run it on production as part of this work (owner runs it).

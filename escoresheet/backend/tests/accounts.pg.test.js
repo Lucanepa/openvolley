@@ -318,6 +318,59 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
     })
   })
 
+  describe('findTakenGame (the friendly official-game check)', () => {
+    const asScorer = (id) => ({ proto: 2, matchOwner: { userId: id }, actorId: id })
+    const insert = (data, id = ids.scorer) => db.runQuery({ table: 'matches', action: 'insert', params: { data } }, asScorer(id))
+
+    it('checks the season VolleyManager knows, so a shifted date cannot open a second match', async () => {
+      const n = gameSeq++
+      await pool.query("INSERT INTO public.svrz_games (game_number, datetime, league) VALUES ($1, '2026-10-10T18:00:00', '2L')", [String(n)])
+      assert.equal((await insert({ external_id: `vm_a_${n}`, game_n: n, scheduled_at: '2026-10-10T16:00:00Z' })).status, 200)
+      const rival = await user(`rival${n}`, ['scorer'])
+      // same key: taken (as before)
+      assert.equal((await accounts.findTakenGame({ userId: rival, rows: [{ external_id: `vm_b_${n}`, game_n: n, scheduled_at: '2026-10-10T16:00:00Z' }] }))?.game_n, n)
+      // review: a date one season later, or no date and an old created_at
+      for (const row of [
+        { external_id: `vm_c_${n}`, game_n: n, scheduled_at: '2027-10-10T16:00:00Z' },
+        { external_id: `vm_d_${n}`, game_n: n, scheduled_at: null, created_at: '2024-10-10T16:00:00Z' }
+      ]) {
+        const claim = await accounts.findTakenGame({ userId: rival, rows: [row] })
+        assert.ok(claim, JSON.stringify(row))
+        assert.equal(claim.season, 2026)
+        assert.equal(claim.mine, false)
+      }
+      // beach, a test match: no claim
+      assert.equal(await accounts.findTakenGame({ userId: rival, rows: [{ external_id: `vm_e_${n}`, game_n: n, sport_type: 'beach', scheduled_at: '2027-10-10T16:00:00Z' }] }), null)
+      assert.equal(await accounts.findTakenGame({ userId: rival, rows: [{ external_id: `vm_f_${n}`, game_n: n, test: true }] }), null)
+    })
+
+    it('leaves a stored match whose key does not change alone (an old season re-synced), and merges partial upserts', async () => {
+      const n = gameSeq++
+      // last season's match, then the number comes back this season and is claimed
+      assert.equal((await insert({ external_id: `old_${n}`, game_n: n, scheduled_at: '2025-10-10T16:00:00Z' })).status, 200)
+      await pool.query("INSERT INTO public.svrz_games (game_number, datetime, league) VALUES ($1, '2026-11-10T18:00:00', '2L')", [String(n)])
+      const rival = await user(`now${n}`, ['scorer'])
+      assert.equal((await insert({ external_id: `new_${n}`, game_n: n, scheduled_at: '2026-11-10T16:00:00Z' }, rival)).status, 200)
+      // the old match's sync upserts (full, or partial without the date) pass
+      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, game_n: n, scheduled_at: '2025-10-10T16:00:00Z', status: 'live' }] }), null)
+      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, status: 'ended' }] }), null)
+      // moving it onto this season's game is caught
+      assert.ok(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, scheduled_at: '2026-11-10T16:00:00Z' }] }))
+    })
+
+    it('findTakenGameForUpdate checks the stored rows with the update over them', async () => {
+      const a = gameSeq++
+      const b = gameSeq++
+      assert.equal((await insert({ external_id: `upd_a_${a}`, game_n: a, scheduled_at: '2026-10-10T16:00:00Z' })).status, 200)
+      const rival = await user(`upd${b}`, ['scorer'])
+      assert.equal((await insert({ external_id: `upd_b_${b}`, game_n: b, scheduled_at: '2026-10-10T16:00:00Z' }, rival)).status, 200)
+      const filters = [{ type: 'eq', column: 'external_id', value: `upd_b_${b}` }]
+      assert.equal((await accounts.findTakenGameForUpdate({ userId: rival, filters, data: { game_n: a } }))?.game_n, a)
+      assert.equal(await accounts.findTakenGameForUpdate({ userId: rival, filters, data: { status: 'live' } }), null, 'not a key column')
+      assert.equal(await accounts.findTakenGameForUpdate({ userId: rival, filters, data: { scheduled_at: '2026-10-12T16:00:00Z' } }), null, 'same key')
+    })
+  })
+
   describe('audit log', () => {
     it('pages newest first with next_before and filters by action', async () => {
       const p1 = await accounts.listAudit({ limit: 3 })

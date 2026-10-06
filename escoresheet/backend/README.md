@@ -287,14 +287,26 @@ number + game PIN (`restore-by-pin` with a session makes it an editor), or an
 admin adds it as editor or releases the game. Matches without a game number
 (friendlies) are not covered. The migration exempts and reports pre-existing
 duplicates (the first created match keeps the claim) instead of failing.
+An exemption (release game, or a duplicate the migration exempted) holds for
+the key it was given for only: a write that changes the match's key (game
+number, season, beach or not, test) ends it, so the index applies again.
+`created_at` of a match is the server's (`/api/db` drops a client value), and
+the server also checks updates that touch the key. For an indoor game
+VolleyManager knows (`svrz_games`), a match that takes a new key in another
+season than VolleyManager's kick-off is also checked against that real
+season, so shifting the date cannot open a second match. This check is a
+friendly server check (the index covers the declared key only), and a match
+sent without `game_n` is simply not an official game for the server.
 
 **Closed matches are read-only.** The first write that puts a non-test match
 into `approved` or `final` stamps `closed_at` / `closed_by` (the acting account,
 `ov.user_id` of the write's transaction) and writes a `match.close` audit
 entry. From then on the match, its sets and its events refuse every change,
 for admins too (**409 `OV_MATCH_CLOSED`**, SQLSTATE `OVC01`); allowed are a
-no-op rewrite (a resent job) and `approved` -> `final`. `match_live_state` is
-not locked (ephemeral display data). Only `POST /api/admin/matches/:id/reopen`
+no-op rewrite (a resent job) and `approved` -> `final`. The stored
+`match_live_state` row is locked as well (livescore reads it), and the
+relay's `live-state-update` -> `db-change` publishes nothing for a closed
+match. Only `POST /api/admin/matches/:id/reopen`
 (reason required, audit-logged) lifts it; the old client reopen password and
 `/api/verify-reopen-password` are gone. A restore of a backup that is already
 `approved`/`final` writes the match as `ended`, then its sets and events, and
@@ -344,7 +356,10 @@ connection is on, a bench PIN while that bench is on, or the game PIN.
   (`not-match-owner` otherwise, a counted guess); a correct one also takes the
   room back from a squatter. The relay's `live-state-update` -> `db-change`
   publishes to a row only when the synced game PIN is that row's, so a socket
-  owning some room cannot speak for another match's Livescore or alarm.
+  owning some room cannot speak for another match's Livescore or alarm, and
+  never for a closed match. Sockets carry no session: the relay is gated by
+  the game PIN only, so the approved-scorer rule does not apply to it (it
+  stores nothing).
 - HTTP: `X-OV-Match-Pin` or `X-OV-Match-Token` on `GET /api/match/:id`.
 - Tokens: `validate-pin` and `validate-connection-pin` answer `token`, an HMAC
   capability for that one match (`lib/matchAccess.js`, 6 h; none for the

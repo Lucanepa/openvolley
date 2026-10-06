@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import pg from 'pg'
-import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
+import { SKIP, bootServer, api, provisionDatabase, sleep, openSocket, subscribe } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 
 const GAME_PIN = '583920'
@@ -250,6 +250,66 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
       const lst = await call(users.admin, 'GET', `/api/admin/matches?state=open&q=${n}`)
       assert.equal(lst.json.data.matches[0].editors, 1)
     })
+
+    it('a released match cannot be moved onto a claimed game, and an update gets the friendly 409', async () => {
+      // review: B's released match 74005 was PATCHed to game 74004 (Anna's)
+      const bExt = `match_${Date.now()}_rel`
+      const b = await dbCall(users.ben, 'matches', 'insert', { data: { external_id: bExt, game_n: gameSeq++, status: 'live', scheduled_at: '2026-10-10T16:00:00Z' }, returning: 'id', single: true })
+      assert.equal(b.status, 200, b.text)
+      assert.equal((await call(users.admin, 'POST', `/api/admin/matches/${b.json.data.id}/release-game`, { reason: 'Wrong number' })).status, 200)
+      const moved = await dbCall(users.ben, 'matches', 'update', { data: { game_n: n }, filters: [eq('id', b.json.data.id)] })
+      expectCode(moved, 409, 'OV_GAME_TAKEN')
+      assert.equal(moved.json.error.claim.scorer_name, 'Anna Muster')
+      // the database refuses it too, without the server's pre-check
+      await assert.rejects(() => sql.query('UPDATE matches SET game_n = $1 WHERE id = $2', [n, b.json.data.id]), (err) => err.code === '23505')
+      const { rows: [row] } = await sql.query('SELECT game_n, official_game_exempt FROM matches WHERE id = $1', [b.json.data.id])
+      assert.equal(row.official_game_exempt, true, 'unchanged')
+      assert.notEqual(row.game_n, n)
+    })
+
+    it('created_at is the server\'s, and a date shifted out of VolleyManager\'s season is still taken', async () => {
+      const g = gameSeq++
+      await sql.query("INSERT INTO public.svrz_games (game_number, datetime, league) VALUES ($1, '2026-10-17T18:00:00', '2L')", [String(g)])
+      const a = await dbCall(users.anna, 'matches', 'insert', { data: { external_id: `match_${Date.now()}_vm`, game_n: g, status: 'setup', scheduled_at: '2026-10-17T16:00:00Z', created_at: '2001-01-01T00:00:00Z' } })
+      assert.equal(a.status, 200, a.text)
+      const { rows: [row] } = await sql.query('SELECT created_at FROM matches WHERE game_n = $1', [g])
+      assert.ok(Date.now() - row.created_at.getTime() < 60000, 'created_at is now(), not the client\'s')
+      for (const data of [
+        { external_id: `match_${Date.now()}_vm2`, game_n: g, status: 'setup', scheduled_at: '2027-10-17T16:00:00Z' },
+        { external_id: `match_${Date.now()}_vm3`, game_n: g, status: 'setup', scheduled_at: null, created_at: '2024-10-17T16:00:00Z' }
+      ]) {
+        const r = await dbCall(users.carl, 'matches', 'upsert', { data, onConflict: 'external_id' })
+        expectCode(r, 409, 'OV_GAME_TAKEN')
+        assert.equal(r.json.error.claim.season, 2026)
+      }
+      assert.equal((await sql.query('SELECT count(*)::int n FROM matches WHERE game_n = $1 AND test IS NOT TRUE', [g])).rows[0].n, 1)
+    })
+  })
+
+  it('the PIN-gated relay publishes no live score for a closed match', async () => {
+    const ext = `match_${Date.now()}_relay`
+    const m = await dbCall(users.anna, 'matches', 'insert', { data: { external_id: ext, game_n: gameSeq++, status: 'live', game_pin: GAME_PIN, scheduled_at: '2026-10-10T16:00:00Z' }, returning: 'id', single: true })
+    assert.equal(m.status, 200, m.text)
+    const id = m.json.data.id
+    const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
+    const scoreboard = await openSocket(srv.wsUrl)
+    try {
+      await subscribe(live, 'relay-closed', [{ table: 'match_live_state', event: '*', column: 'match_id', value: id }])
+      scoreboard.send({ type: 'sync-match-data', matchId: 41, match: { id: 41, seed_key: ext, gamePin: GAME_PIN, status: 'live' }, sets: [], events: [] })
+      scoreboard.send({ type: 'ping' })
+      await scoreboard.waitFor((x) => x.type === 'pong')
+      const push = (points) => scoreboard.send({ type: 'live-state-update', matchId: 41, liveState: { points_a: points, points_b: 0, match_id: id, updated_at: new Date(Date.now() + points * 1000).toISOString() } })
+      push(3)
+      await live.waitFor((x) => x.type === 'db-change' && x.table === 'match_live_state' && x.new?.points_a === 3, 5000, 'open match relayed')
+      assert.equal((await dbCall(users.anna, 'matches', 'update', { data: { status: 'approved' }, filters: [eq('id', id)] })).status, 200)
+      push(9)
+      scoreboard.send({ type: 'ping' })
+      await sleep(1000)
+      assert.equal(live.messages.some((x) => x.type === 'db-change' && x.table === 'match_live_state' && x.new?.points_a === 9), false, 'closed: nothing relayed')
+    } finally {
+      scoreboard.ws.close()
+      live.ws.close()
+    }
   })
 
   it('the admin routes refuse non-admins (403) and anonymous callers (401)', async () => {
