@@ -1352,6 +1352,7 @@
     "failedToLoadLeagues": "Ligen konnten nicht geladen werden"
   },
   "livescore": {
+    "setBreak": "Satzpause",
     "staleData": "Verbindungsproblem: die zuletzt bekannten Ergebnisse werden angezeigt",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfügbare Spiele werden geladen...",

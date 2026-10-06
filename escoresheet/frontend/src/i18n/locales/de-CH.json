@@ -1480,6 +1480,7 @@
     "failedToLoadLeagues": "Lige händ nöd chönne glade werde"
   },
   "livescore": {
+    "setBreak": "Satzpause",
     "staleData": "Verbindigsproblem: di zletscht bekannte Ergebnis werdet aazeigt",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfüegbari Spiil werdet glade...",

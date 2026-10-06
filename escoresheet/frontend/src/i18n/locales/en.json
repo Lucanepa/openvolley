@@ -1512,6 +1512,7 @@
     "failedToLoadLeagues": "Failed to load leagues"
   },
   "livescore": {
+    "setBreak": "Set break",
     "staleData": "Connection problem: showing the last known scores",
     "title": "Live scoring",
     "loadingGames": "Loading available games...",
