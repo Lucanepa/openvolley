@@ -41,6 +41,15 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
   and the header pill reads **Local only** while the venue keeps running.
   Nothing is uploaded without an account: with no sign-in the queue waits
   ("Sign in to sync") and matches stay on this laptop.
+- Cloud sync needs the window on **port 5173** (`http://localhost:5173` or
+  `http://127.0.0.1:5173`): those are the only desktop origins the cloud
+  backend's CORS trusts (`ALLOWED_ORIGINS` in `backend/server.js`). If
+  `OPENVOLLEY_HTTP_PORT` moves the relay elsewhere (5173 taken by another
+  program), the venue runs as usual but cloud sync is off: the connection
+  status says "Cloud sync unavailable on port N"
+  (`isCloudBlockedOnThisPort` in `src/utils/backendConfig.js`) and the app
+  logs the same at start. The automatic backups do not depend on the port
+  (the `backup` capability allows the window on any loopback port).
 - Only the desktop window (loopback origin) talks to the cloud. Pages the
   relay serves to the venue tablets from the LAN address
   (`http://<LAN-IP>:5173/referee`, `/bench`, `/livescore`) keep cloud calls on
@@ -100,6 +109,7 @@ Headless / server-only (no window — a plain "server for tablets"):
 npx tauri build            # or use the debug binary
 ./src-tauri/target/release/openvolley-escoresheet --server-only
 # ports overridable: OPENVOLLEY_HTTP_PORT / OPENVOLLEY_WS_PORT
+# (cloud sync needs the default HTTP port 5173, see above)
 ```
 
 Installed from the APT repository it is `openvolley-escoresheet --server-only`.
