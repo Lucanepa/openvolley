@@ -65,6 +65,7 @@ The app supports deploying each role as a separate subdomain for cleaner URLs an
 | `bench.openvolley.app` | Bench dashboard | `npm run build:bench` |
 | `livescore.openvolley.app` | Live score display | `npm run build:livescore` |
 | `roster.openvolley.app` | Roster PDF upload | `npm run build:roster` |
+| `manager.openvolley.app` | Admin console and competition manager (no service worker, noindex; see `docs/manager-site-deploy.md`) | `node scripts/build-subdomains.js manager` |
 
 Build all at once:
 
