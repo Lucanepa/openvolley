@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "openvolley-escoresheet",
+  "mainBinaryName": "openvolley-escoresheet",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "provides": ["openvolley-e-scoresheet", "openvolley"],
+        "conflicts": ["openvolley-e-scoresheet", "openvolley"],
+        "replaces": ["openvolley-e-scoresheet", "openvolley"],
+        "desktopTemplate": "openvolley-escoresheet.desktop"
+      }
+    }
+  }
+}
