@@ -10,11 +10,13 @@ AutoName: OpenVolley
 
 RepoType: git
 Repo: https://github.com/Lucanepa/openvolley.git
+Binaries: 
+  https://github.com/Lucanepa/openvolley/releases/download/android-v%v/com.openvolley.escoresheet_%c.apk
 
 Builds:
   - versionName: 1.48.19
     versionCode: 10480192
-    commit: android-v1.48.19
+    commit: 0439ad0f6d4fb04e8d5ae4e964e36dc0108dd865
     subdir: escoresheet/frontend/android/app
     sudo:
       - curl -Lo node.tar.xz https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz
@@ -33,6 +35,8 @@ Builds:
       - npx cap sync android
     scandelete:
       - escoresheet/frontend/node_modules
+
+AllowedAPKSigningKeys: 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^android-v[\d.]+$
