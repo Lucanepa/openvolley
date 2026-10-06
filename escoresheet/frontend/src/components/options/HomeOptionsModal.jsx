@@ -92,6 +92,9 @@ function NativeBackupRow({ backup, onRestoreFromFile, t }) {
           {backup.platform === 'capacitor' && (
             <div className="mt-1.5 text-[11px] leading-snug text-stone-500">{t('options.nativeBackupCopyHint')}</div>
           )}
+          <div className="mt-1.5 text-[11px] leading-snug text-stone-500" data-testid="native-backup-privacy">
+            {t(backup.platform === 'capacitor' ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacy')}
+          </div>
         </div>
       ) : (
         <div className="text-xs text-stone-500">{t('options.nativeBackupOff')}</div>

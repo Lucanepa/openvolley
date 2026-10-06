@@ -743,6 +743,9 @@ export default function ScoreboardOptionsModal({
                   {backupPlatform === 'capacitor' && (
                     <div className="mt-1.5 text-[11px] leading-snug text-stone-500">{t('options.nativeBackupCopyHint')}</div>
                   )}
+                  <div className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                    {t(backupPlatform === 'capacitor' ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacy')}
+                  </div>
                 </div>
               ) : (
                 <div className="text-xs text-stone-500">{t('options.nativeBackupOff')}</div>

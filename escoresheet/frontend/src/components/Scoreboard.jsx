@@ -10,6 +10,7 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
+import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectionSetupModal from './options/ConnectionSetupModal'
 import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
 import { useSequentialSync } from '../hooks/useSequentialSync'
@@ -12715,6 +12716,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         {/* Column 1: Date/Time */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
           <span className="toolbar-clock" style={{ fontSize: '1.28cqw' }}>{formatTimestamp(now)}</span>
+          <NativeBackupAlert onOpen={() => setShowOptionsInMenu(true)} />
         </div>
 
         {/* Column 2: Left team OR Rally status (compact/laptop) */}
