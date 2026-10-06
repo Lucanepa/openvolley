@@ -55,6 +55,11 @@ CREATE TABLE public.matches (
   manual_changes json,
   set_results jsonb,
   sanctions json,
+  -- beach rows (sport_type 'beach'): teams are team1 / team2
+  team1_data jsonb DEFAULT '{}'::jsonb,
+  team2_data jsonb DEFAULT '{}'::jsonb,
+  players_team1 jsonb DEFAULT '[]'::jsonb,
+  players_team2 jsonb DEFAULT '[]'::jsonb,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -71,6 +76,8 @@ CREATE TABLE public.sets (
   start_time timestamptz,
   end_time timestamptz,
   sport_type public.sport_type,
+  team1_points integer DEFAULT 0,
+  team2_points integer DEFAULT 0,
   updated_at timestamptz DEFAULT now()
 );
 
@@ -121,6 +128,12 @@ CREATE TABLE public.match_live_state (
   league text,
   gender text,
   sport_type public.sport_type,
+  -- beach
+  challenges_used_a smallint DEFAULT 0 NOT NULL,
+  challenges_used_b smallint DEFAULT 0 NOT NULL,
+  server_number smallint DEFAULT 0 NOT NULL,
+  tto_active boolean DEFAULT false,      -- db/007_live_state_tto.sql
+  tto_started_at timestamptz,
   updated_at timestamptz DEFAULT now()
 );
 
