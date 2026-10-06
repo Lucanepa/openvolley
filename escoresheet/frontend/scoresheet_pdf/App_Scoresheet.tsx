@@ -10,6 +10,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { sanitizeSimple } from '../src/utils/stringUtils';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData } from './utils/extractLiberoData';
+import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitGtk, styleListFor, usedStyleProperties } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -2428,13 +2429,38 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
       // Capture using html-to-image toCanvas
       // pixelRatio: 2 provides good quality for A3 print (300 DPI equivalent) while keeping file size reasonable
-      const canvas = await htmlToImage.toCanvas(containerRef.current, {
+      const sheet = containerRef.current;
+      const capture = (props: string[]) => htmlToImage.toCanvas(sheet, {
         pixelRatio: 2,
         backgroundColor: '#ffffff',
         style: {
           transform: 'none',
         },
+        includeStyleProperties: styleListFor(props),
       });
+      // WebKitGTK (Linux desktop app) cannot load the full capture (an ~87 MB
+      // data URL): it copies only the properties the sheet uses, and draws
+      // the logos and signatures itself, as it paints pictures nested in the
+      // SVG only now and then (utils/pdfCapture.ts). Elsewhere the full copy
+      // as before, and the lean one only if that fails.
+      let canvas: HTMLCanvasElement;
+      if (isWebKitGtk()) {
+        const pictures = drawableImages(sheet);
+        const showPictures = hideImages(pictures);
+        try {
+          canvas = await capture(usedStyleProperties(sheet));
+        } finally {
+          showPictures();
+        }
+        drawImagesOnto(canvas, sheet, pictures);
+      } else {
+        try {
+          canvas = await capture(allStyleProperties());
+        } catch (err) {
+          console.warn('[Scoresheet] Full capture failed, retrying with the used styles only:', err);
+          canvas = await capture(usedStyleProperties(sheet));
+        }
+      }
 
       // Restore zoom
       setZoomLevel(savedZoomLevel);

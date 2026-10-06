@@ -273,13 +273,19 @@ window and on the windows it opens):
 
 Known limits:
 
-- **Save PDF on Linux fails**: html-to-image turns the scoresheet into a
-  ~73 MB `data:image/svg+xml` URL and WebKitGTK refuses data URLs above
-  ~64 MB ("Not allowed to load local resource"); a `blob:` URL loads but
-  taints the canvas. The scoresheet now says "The PDF could not be created on
-  this device". Windows (WebView2, Chromium) is not affected. Fix options: a
-  smaller SVG (html-to-image `includeStyleProperties`), capturing the sheet in
-  parts, or `window.print()` to the GTK print dialog (Print to file).
+- **Save PDF on Linux (WebKitGTK)**: html-to-image copies every computed
+  style property onto every cloned element and loads the result as a
+  `data:image/svg+xml` URL. On WebKitGTK that URL was ~73-87 MB (WebKit also
+  lists every Tailwind `--*` custom property), and WebKitGTK refuses data URLs
+  above ~64 MB; a `blob:` URL loads but taints the canvas. On WebKitGTK the
+  capture now copies only the properties the sheet actually uses (those that
+  differ somewhere from the browser's defaults for the same element;
+  `scoresheet_pdf/utils/pdfCapture.ts`), ~18 MB, and draws the logos and
+  signatures onto the canvas itself, because WebKitGTK paints pictures nested
+  in an SVG image only now and then. Checked under Xvfb: the lean capture
+  matches the full one (within 1/255) outside the pictures. Other engines
+  (WebView2, Android, browsers) keep the full copy and use the lean one only
+  if it fails.
 - **`alert()` / `confirm()` in the desktop app**: `tauri-plugin-dialog`
   replaces both with IPC calls (`plugin:dialog|message` / `|confirm`) that no
   capability allows, so `alert()` shows nothing and `confirm()` returns a
