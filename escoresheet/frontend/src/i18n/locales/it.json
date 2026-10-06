@@ -414,7 +414,10 @@
       "clickToRetry": "Fare clic per riprovare la sincronizzazione"
     },
     "captainToggle": "Capitano della squadra #{{number}}",
-    "captainToggleNew": "Capitano della squadra (nuovo giocatore)"
+    "captainToggleNew": "Capitano della squadra (nuovo giocatore)",
+    "gameTakenTitle": "La partita {{game}} è già refertata",
+    "gameTakenBody": "{{name}} sta refertando questa partita ({{status}}). È consentita una sola partita cloud per partita ufficiale: unisciti con il suo PIN, oppure continua e tieni questa partita solo su questo dispositivo.",
+    "continueLocalOnly": "Continua solo su questo dispositivo"
   },
   "scoreboard": {
     "set": "Set",
@@ -1175,12 +1178,6 @@
     "noSetsReopen": "Nessun set da riaprire",
     "setReopened": "Set {{index}} riaperto per correzioni",
     "errorReopening": "Errore riapertura: {{error}}",
-    "unlockReopen": "Sblocca riapertura",
-    "unlockReopenDescription": "Inserisci la password per sbloccare questa azione.",
-    "unlockPasswordPlaceholder": "Password",
-    "unlockPasswordRequired": "Inserisci la password",
-    "unlockPasswordWrong": "Password errata",
-    "unlockPasswordError": "Errore nella verifica della password",
     "sanctionTypes": {
       "delayWarning": "Avvertimento ritardo",
       "delayPenalty": "Penalità ritardo",
@@ -1188,7 +1185,15 @@
       "penalty": "Penalità",
       "expulsion": "Espulsione",
       "disqualification": "Squalifica"
-    }
+    },
+    "reopenAdminOnlyTitle": "Solo un admin può riaprire questa partita",
+    "reopenAdminOnlyBody": "La partita {{game}} è chiusa sul server. Chiedi a un admin di riaprirla, poi tocca di nuovo «Riapri partita».",
+    "reopenNeedsConnection": "Per riaprire una partita chiusa serve una connessione al server.",
+    "reopenAdminTitle": "Riaprire questa partita chiusa?",
+    "reopenAdminBody": "Torna a «terminata» sul server e può essere approvata di nuovo. Viene registrato nel registro.",
+    "reopenReason": "Motivo",
+    "reopenCheckFailed": "Impossibile verificare la partita sul server – riprova.",
+    "reopenMatch": "Riapri partita"
   },
   "scoresheetPdf": {
     "zoomOut": "Riduci",
@@ -1509,7 +1514,9 @@
   },
   "connectionSetup": {
     "lan": "LAN",
-    "internet": "Internet"
+    "internet": "Internet",
+    "refereeQRCodeAlt": "QR code arbitro",
+    "cloudQRCodeAlt": "QR code cloud"
   },
   "loadOfficialMatch": {
     "title": "Carica partita dal calendario",
@@ -1785,12 +1792,6 @@
   "officialAutocomplete": {
     "selectFromHistory": "Seleziona dalla cronologia"
   },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "QR code arbitro",
-    "cloudQRCodeAlt": "QR code cloud"
-  },
   "contextHelp": {
     "helpButton": "Aiuto",
     "showMe": "Mostrami",
@@ -2048,5 +2049,241 @@
     "awayCaptainMissing": "Squadra ospite: nessun capitano assegnato",
     "awayCoachMissing": "Squadra ospite: nessun allenatore impostato",
     "selectGenderFirst": "Selezionare prima il genere"
+  },
+  "access": {
+    "pendingTitle": "Il tuo account è in attesa di approvazione",
+    "pendingBody": "Puoi refertare partite di prova. Le partite ufficiali restano su questo dispositivo finché un admin non approva il tuo account o inserisci un codice d’invito del tuo club.",
+    "inviteCodeLabel": "Codice d’invito",
+    "inviteCodePlaceholder": "XXXX-XXXX-XXXX",
+    "redeem": "Usa il codice",
+    "redeeming": "Verifica…",
+    "redeemed": "Codice accettato. Ora puoi refertare partite ufficiali.",
+    "errors": {
+      "inviteInvalid": "Questo codice d’invito non è valido.",
+      "inviteExpired": "Questo codice d’invito è scaduto.",
+      "inviteUsedUp": "Questo codice d’invito è esaurito.",
+      "tooManyAttempts": "Troppi tentativi. Attendi qualche minuto.",
+      "offline": "Per usare un codice serve una connessione."
+    },
+    "roles": {
+      "scorer": "Segnapunti",
+      "referee": "Arbitro",
+      "competition_manager": "Responsabile competizione",
+      "admin": "Admin",
+      "super_admin": "Super admin",
+      "pending": "Approvazione in sospeso"
+    },
+    "signUpPendingNote": "I nuovi account devono essere approvati prima che le partite ufficiali vengano sincronizzate nel cloud. Chiedi un codice d’invito al tuo club.",
+    "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato."
+  },
+  "manage": {
+    "title": "Gestione",
+    "backToApp": "Torna all’app",
+    "nav": "Sezioni di gestione",
+    "menuAdmin": "Admin",
+    "menuSavedTeams": "Squadre salvate",
+    "menuInviteCode": "Inserisci codice d’invito",
+    "tabs": {
+      "accounts": "Account",
+      "invites": "Codici d’invito",
+      "games": "Partite ufficiali",
+      "matches": "Partite chiuse",
+      "audit": "Registro",
+      "teams": "Squadre salvate"
+    },
+    "status": {
+      "setup": "Preparazione",
+      "live": "In corso",
+      "ended": "Terminata",
+      "approved": "Approvata",
+      "final": "Chiusa"
+    },
+    "errors": {
+      "forbidden": "Non hai accesso a questa sezione.",
+      "generic": "Qualcosa è andato storto – riprova.",
+      "offline": "Serve una connessione al server."
+    },
+    "accounts": {
+      "filterPending": "In attesa",
+      "filterAll": "Tutti",
+      "search": "Cerca nome o e-mail",
+      "approve": "Approva come segnapunti",
+      "editRoles": "Ruoli",
+      "rolesTitle": "Ruoli di {{name}}",
+      "save": "Salva",
+      "saved": "Salvato.",
+      "empty": "Nessun account trovato.",
+      "emptyPending": "Nessun account è in attesa di approvazione.",
+      "created": "Creato il {{date}}",
+      "lastSignIn": "Ultimo accesso {{date}}",
+      "neverSignedIn": "Mai acceduto",
+      "selfDemote": "Non puoi rimuovere il tuo ruolo di admin.",
+      "superAdminOnly": "Solo un super admin può modificare questo account."
+    },
+    "invites": {
+      "new": "Nuovo codice d’invito",
+      "label": "Etichetta",
+      "labelHint": "Ad esempio club e stagione",
+      "club": "Club",
+      "role": "Ruolo",
+      "maxUses": "Utilizzi massimi",
+      "maxUsesHint": "Lascia vuoto per illimitato",
+      "expires": "Valido fino al",
+      "create": "Crea codice",
+      "createdTitle": "Codice d’invito creato",
+      "createdOnce": "Copialo ora – viene mostrato una sola volta.",
+      "copy": "Copia",
+      "copied": "Copiato.",
+      "uses": "{{uses}} / {{max}} utilizzati",
+      "usesUnlimited": "{{uses}} utilizzati",
+      "revoke": "Revoca",
+      "revokeConfirmTitle": "Revocare questo codice d’invito?",
+      "revokeConfirmBody": "Nessuno potrà più usarlo. Gli account che lo hanno già usato mantengono il loro ruolo.",
+      "state": {
+        "active": "Attivo",
+        "expired": "Scaduto",
+        "used_up": "Esaurito",
+        "revoked": "Revocato"
+      },
+      "empty": "Ancora nessun codice d’invito."
+    },
+    "games": {
+      "from": "Dal",
+      "to": "Al",
+      "search": "Cerca squadra o numero partita",
+      "notClaimed": "Non assegnata",
+      "scoredBy": "Refertata da {{name}}",
+      "unknownScorer": "Segnapunti sconosciuto",
+      "editors": "{{count}} editor",
+      "addEditor": "Aggiungi editor",
+      "addEditorTitle": "Aggiungi un editor alla partita {{game}}",
+      "editorEmail": "E-mail dell’account",
+      "add": "Aggiungi",
+      "editorAdded": "Editor aggiunto.",
+      "releaseGame": "Libera la partita",
+      "releaseConfirmTitle": "Liberare la partita {{game}}?",
+      "releaseConfirmBody": "La partita resta, ma un altro segnapunti potrà creare una nuova partita cloud per questo incontro.",
+      "reason": "Motivo",
+      "empty": "Nessuna partita ufficiale in questo periodo."
+    },
+    "matches": {
+      "filterClosed": "Chiuse",
+      "filterOpen": "Aperte",
+      "filterAll": "Tutte",
+      "search": "Cerca squadra o numero partita",
+      "closedAt": "Chiusa il {{date}}",
+      "closedBy": "da {{name}}",
+      "reopen": "Riapri",
+      "reopenTitle": "Riaprire la partita {{game}}?",
+      "reopenBody": "La partita torna a «terminata»: il segnapunti può correggerla e approvarla di nuovo. Viene registrato nel registro.",
+      "reopenReason": "Motivo",
+      "reopened": "Partita riaperta.",
+      "empty": "Nessuna partita trovata."
+    },
+    "audit": {
+      "loadMore": "Carica altro",
+      "empty": "Ancora nessuna voce.",
+      "actions": {
+        "account_roles": "Ruoli modificati",
+        "invite_create": "Codice d’invito creato",
+        "invite_revoke": "Codice d’invito revocato",
+        "invite_redeem": "Codice d’invito usato",
+        "match_claim_game": "Partita ufficiale assegnata",
+        "match_claim_pin": "Unito con il PIN della partita",
+        "match_game_taken": "Secondo segnapunti rifiutato",
+        "match_close": "Partita chiusa",
+        "match_reopen": "Partita riaperta",
+        "match_editor_add": "Editor aggiunto da un admin",
+        "match_release_game": "Partita liberata"
+      }
+    }
+  },
+  "savedTeams": {
+    "title": "Squadre salvate",
+    "competitions": "Competizioni",
+    "newCompetition": "Nuova competizione",
+    "competitionName": "Nome",
+    "season": "Stagione",
+    "gender": "Genere",
+    "genderMen": "Uomini",
+    "genderWomen": "Donne",
+    "genderMixed": "Misto",
+    "category": "Categoria",
+    "categoryHint": "Ad esempio attivi o U19",
+    "vmLeagues": "Leghe VolleyManager",
+    "vmLeaguesHint": "Le partite ufficiali di queste leghe propongono le squadre salvate",
+    "archived": "Archiviata",
+    "showArchived": "Mostra archiviate",
+    "teams": "Squadre",
+    "newTeam": "Nuova squadra",
+    "teamName": "Nome della squadra",
+    "shortName": "Nome breve",
+    "club": "Club",
+    "color": "Colore",
+    "svrzTeamName": "Nome della squadra in VolleyManager",
+    "svrzTeamNameHint": "Esattamente come nel calendario ufficiale",
+    "players": "Giocatrici e giocatori",
+    "staff": "Ufficiali di squadra",
+    "addPlayer": "Aggiungi giocatore",
+    "addStaff": "Aggiungi ufficiale",
+    "number": "N.",
+    "firstName": "Nome",
+    "lastName": "Cognome",
+    "dob": "Data di nascita",
+    "license": "Licenza",
+    "libero": "Libero",
+    "captain": "Capitano",
+    "active": "Attivo",
+    "role": "Funzione",
+    "saveRoster": "Salva la rosa",
+    "rosterSaved": "Rosa salvata.",
+    "deleteTeam": "Elimina squadra",
+    "deleteTeamConfirmTitle": "Eliminare {{name}}?",
+    "deleteTeamConfirmBody": "Anche i suoi giocatori e ufficiali vengono eliminati.",
+    "deleteCompetition": "Elimina competizione",
+    "deleteCompetitionConfirmTitle": "Eliminare {{name}}?",
+    "deleteCompetitionConfirmBody": "Anche tutte le sue squadre, giocatori e ufficiali vengono eliminati.",
+    "duplicateTeam": "In questa competizione esiste già una squadra con questo nome.",
+    "emptyCompetitions": "Ancora nessuna competizione.",
+    "emptyTeams": "Ancora nessuna squadra in questa competizione.",
+    "emptyRoster": "Ancora nessun giocatore.",
+    "errors": {
+      "duplicateNumber": "Il numero {{number}} è usato due volte.",
+      "twoCaptains": "Un solo capitano per squadra.",
+      "lastNameRequired": "Il cognome è obbligatorio."
+    },
+    "load": "Carica squadra salvata",
+    "pickerTitle": "Carica una squadra salvata",
+    "pickerSearch": "Cerca squadra o club",
+    "pickerCompetition": "Competizione",
+    "pickerAll": "Tutte le competizioni",
+    "pickerPlayers": "{{count}} giocatori",
+    "pickerEmpty": "Nessuna squadra salvata. Le squadre salvate sono disponibili dopo un caricamento online.",
+    "pickerOffline": "Offline – squadre salvate del {{date}}.",
+    "replaceConfirmTitle": "Sostituire la rosa?",
+    "replaceConfirmBody": "I giocatori e gli ufficiali attuali di {{team}} vengono sostituiti. Potrai ancora modificarli.",
+    "replace": "Sostituisci",
+    "loaded": "Rosa di {{name}} caricata.",
+    "tooManyLiberos": "{{name}} ha più di due liberi – solo i primi due sono segnati.",
+    "suggestionTitle": "Rose salvate trovate",
+    "suggestionHome": "Casa: {{name}}",
+    "suggestionAway": "Ospite: {{name}}",
+    "loadHome": "Carica rosa di casa",
+    "loadAway": "Carica rosa ospite",
+    "saveToTeam": "Salva la rosa in una squadra",
+    "saveTitle": "Salva la rosa in una squadra salvata",
+    "saveExisting": "Squadra esistente",
+    "saveNew": "Nuova squadra",
+    "saveConfirmTitle": "Sovrascrivere la rosa salvata di {{name}}?",
+    "saveConfirmBody": "I giocatori e gli ufficiali salvati di questa squadra vengono sostituiti da questa rosa.",
+    "saved": "Salvato in {{name}}."
+  },
+  "cloudBlock": {
+    "scorerRequired": "Non sincronizzata: il tuo account è in attesa di approvazione. La partita è al sicuro su questo dispositivo.",
+    "gameTaken": "Non sincronizzata: la partita {{game}} è già refertata da {{name}} ({{status}}). Unisciti a quella partita con il suo PIN o chiedi a un admin.",
+    "gameTakenMine": "Non sincronizzata: refertai già la partita {{game}} in un’altra partita. Apri quella partita con il suo PIN.",
+    "gameTakenUnknown": "Non sincronizzata: questa partita ufficiale è già refertata da un altro account.",
+    "matchClosed": "Non sincronizzata: questa partita è chiusa sul server. Solo un admin può riaprirla.",
+    "joinWithPin": "Unisciti con il PIN della partita"
   }
 }
