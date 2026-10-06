@@ -56,7 +56,7 @@ import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
-import { getBackendOverride, getLocalServerStatusUrl, isStaticHost } from './utils/backendConfig'
+import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
@@ -531,6 +531,13 @@ export default function App() {
       updateStatus('supabase', 'connected', {
         status: 'connected',
         message: 'Cloud backend is reachable. Sign in to sync this device\'s matches.'
+      })
+    } else if (syncStatus === 'online_no_supabase' && isCloudBlockedOnThisPort()) {
+      const port = window.location.port
+      updateStatus('supabase', 'not_configured', {
+        status: 'not_configured',
+        message: `Cloud sync unavailable on port ${port}`,
+        details: `The cloud accepts the desktop app only on port 5173; this window runs on port ${port} (OPENVOLLEY_HTTP_PORT). Free port 5173 and start the app without OPENVOLLEY_HTTP_PORT to sync. Matches stay on this computer and the tablets keep working through the relay.`
       })
     } else if (syncStatus === 'online_no_supabase') {
       updateStatus('supabase', 'not_configured', {

@@ -16,7 +16,8 @@ import {
   getCloudWebSocketUrl,
   isCloudApiSplit,
   isLanBackendUrl,
-  isServedFromLanOrigin
+  isServedFromLanOrigin,
+  isCloudBlockedOnThisPort
 } from '../backendConfig'
 
 beforeEach(() => {
@@ -257,6 +258,36 @@ describe('cloud API split from the relay', () => {
     expect(isServedFromLanOrigin()).toBe(false)
     expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
     expect(isCloudApiSplit()).toBe(true)
+  })
+
+  it('the desktop window off port 5173 (OPENVOLLEY_HTTP_PORT) has no cloud: the cloud CORS would reject it', () => {
+    setLocation('http://localhost:5174/')
+    expect(isCloudBlockedOnThisPort()).toBe(true)
+    expect(getCloudApiUrl('/api/db')).toBeNull()
+    expect(getCloudWebSocketUrl()).toBeNull()
+    expect(isCloudApiSplit()).toBe(false)
+    // the relay side is unchanged
+    expect(getApiUrl('/api/server/connections')).toBe('http://localhost:5174/api/server/connections')
+    setLocation('http://[::1]:5173/')
+    expect(isCloudBlockedOnThisPort()).toBe(true)
+    // the trusted loopback origins, a LAN tablet and a build naming its cloud are fine
+    for (const url of ['http://localhost:5173/', 'http://127.0.0.1:5173/', 'http://localhost:3000/', 'http://192.168.1.20:5174/referee']) {
+      setLocation(url)
+      expect(isCloudBlockedOnThisPort(), url).toBe(false)
+    }
+    setLocation('http://localhost:5174/')
+    vi.stubEnv('VITE_CLOUD_API_URL', 'https://cloud.example.org')
+    expect(isCloudBlockedOnThisPort()).toBe(false)
+    expect(getCloudApiUrl('/api/db')).toBe('https://cloud.example.org/api/db')
+  })
+
+  it('the dev server and a static deployment are never port-blocked', () => {
+    vi.stubEnv('DEV', true)
+    setLocation('http://localhost:5174/')
+    expect(isCloudBlockedOnThisPort()).toBe(false)
+    vi.stubEnv('DEV', false)
+    setLocation('https://app.openvolley.app/')
+    expect(isCloudBlockedOnThisPort()).toBe(false)
   })
 
   it('venue tablets served from a LAN address never try the cloud (it rejects LAN origins): cloud calls stay on their own relay', () => {

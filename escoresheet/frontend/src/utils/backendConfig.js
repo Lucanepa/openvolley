@@ -335,6 +335,37 @@ export function isServedFromLanOrigin() {
   return !isLoopbackHost(hostname)
 }
 
+/**
+ * Loopback origins the cloud backend's CORS trusts (ALLOWED_ORIGINS in
+ * backend/server.js): the desktop window on the relay's default port 5173 and
+ * a local server.js on 3000. Keep the two lists in step.
+ */
+const CLOUD_TRUSTED_LOOPBACK_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+]
+
+/**
+ * Is this the desktop window (a page a local relay serves on loopback) on a
+ * port the cloud does not trust? OPENVOLLEY_HTTP_PORT can move the relay off
+ * 5173 (when another program holds it); the cloud's CORS would then reject
+ * every call, so cloud sync is unavailable there and says so instead of
+ * failing as "Offline". A build or runtime override naming another cloud
+ * (VITE_CLOUD_API_URL / VITE_BACKEND_URL / a cloud ?server=) is not judged.
+ * @returns {boolean}
+ */
+export function isCloudBlockedOnThisPort() {
+  if (!isServedFromLocalServer() || isServedFromLanOrigin()) return false
+  if (import.meta.env.VITE_CLOUD_API_URL || import.meta.env.VITE_BACKEND_URL) return false
+  const override = getBackendOverride()
+  if (override && !isLanBackendUrl(override)) return false
+  const { protocol, origin } = window.location || {}
+  if (protocol !== 'http:' && protocol !== 'https:') return false
+  return !CLOUD_TRUSTED_LOOPBACK_ORIGINS.includes(origin)
+}
+
 const stripTrailingSlash = (url) => String(url).replace(/\/+$/, '')
 
 /**
@@ -361,7 +392,8 @@ const stripTrailingSlash = (url) => String(url).replace(/\/+$/, '')
  *   - A page served by a local relay on loopback (the Tauri desktop window
  *     at http://localhost:5173): that relay has no /api/db, so cloud calls go
  *     to backend.openvolley.app (which trusts that origin) whenever it is
- *     reachable, while the relay keeps the venue running offline.
+ *     reachable, while the relay keeps the venue running offline. On another
+ *     port (OPENVOLLEY_HTTP_PORT) the cloud would reject the origin: null.
  *   - Dev server: same as getBackendUrl (unchanged).
  * @returns {string|null}
  */
@@ -376,7 +408,9 @@ export function getCloudApiBaseUrl() {
   if (import.meta.env.VITE_BACKEND_URL) return stripTrailingSlash(import.meta.env.VITE_BACKEND_URL)
   if (override) return CLOUD_RELAY_URL
   if (isStaticDeployment()) return CLOUD_RELAY_URL
-  if (isServedFromLocalServer()) return CLOUD_RELAY_URL
+  // The desktop window off port 5173: the cloud would reject it (CORS), so
+  // there is no cloud here (isCloudBlockedOnThisPort) and the relay goes on
+  if (isServedFromLocalServer()) return isCloudBlockedOnThisPort() ? null : CLOUD_RELAY_URL
   const base = getBackendUrl()
   return base ? stripTrailingSlash(base) : null
 }
@@ -405,9 +439,10 @@ export function getCloudApiUrl(path) {
 /**
  * WebSocket base of the cloud database realtime (relayRealtime, ?purpose=live).
  * Same backend as the cloud API when the two are split; otherwise unchanged
- * (getWebSocketUrl).
+ * (getWebSocketUrl). None for the desktop window off port 5173.
  */
 export function getCloudWebSocketUrl() {
+  if (isCloudBlockedOnThisPort()) return null
   if (isCloudApiSplit()) {
     try { return httpToWsUrl(getCloudApiBaseUrl()) } catch { return null }
   }
