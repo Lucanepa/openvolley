@@ -11,6 +11,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# native "open file" picker for restoring a backup (backup.rs)
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
@@ -24,6 +26,10 @@ futures-util = "0.3"
 # in the tree through tauri (wry/tao), so this adds no new crate.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+
+[dev-dependencies]
+# mock runtime for the IPC/ACL test of the backup commands (main.rs)
+tauri = { version = "2", features = ["test"] }
 
 # Release profile tuned for a small, fast single binary.
 [profile.release]

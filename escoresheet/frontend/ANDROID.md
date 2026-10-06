@@ -122,6 +122,51 @@ LAN address (e.g. `192.168.1.20:8080`); the app checks `/health`, stores the
 address and reloads. **Options → Use this tablet as** opens the bundled
 referee, bench or livescore view; they share the chosen server.
 
+## Automatic backups
+
+The app saves the open match after every scoring event (same file format as
+the desktop app, see `OFFLINE_DESKTOP.md`) to the public
+**`Documents/OpenVolley/backups/<match>/`** folder
+(`/storage/emulated/0/Documents/...`), via `@capacitor/filesystem`.
+
+- Why Documents: it is visible in the Files app and over USB (MTP), so the
+  owner can copy the backups off the tablet, and the files **survive an
+  uninstall**. The app-private folders (`Directory.Data`, and
+  `Android/data/<package>` = `Directory.External`) are deleted on uninstall
+  and are hard to reach on Android 11+.
+- Permissions: Android 11+ needs none for files the app creates there.
+  Android 10 and older need storage access (`WRITE_EXTERNAL_STORAGE` and
+  `READ_EXTERNAL_STORAGE`, both maxSdk 29: the plugin asks for the pair; plus
+  `requestLegacyExternalStorage`); if it is refused the app falls
+  back to `Android/data/com.openvolley.escoresheet/files/OpenVolley/backups`.
+- After a reinstall on Android 11+, the old files belong to the previous
+  install: the new one cannot overwrite or delete them. New event files and
+  new matches are fine; a match continued across the reinstall keeps its old
+  `latest.json` (its newest event file is the current state and is never
+  rotated away), and rotation skips what it cannot delete. Folders are named
+  by the whole match seed, so a new install's matches never land in an old
+  match's folder.
+- **Personal data**: the files hold player names and birth dates, officials
+  and signature images. PINs and session ids are left out (the restore keeps
+  or regenerates them). Documents is readable by anyone who has the tablet
+  (Files app, USB), on Android 10 and older also by other apps with storage
+  permission, and the files **stay after an uninstall**; after a reinstall
+  the app can no longer delete them, so rotation stops for them. Options →
+  Backup says this to the user. Delete `Documents/OpenVolley` before a tablet
+  changes hands. *Owner decision pending*: keep Documents (copyable, survives
+  uninstall) or move to `Directory.External` (private to the app, deleted on
+  uninstall, hard to reach on Android 11+).
+- Cost: one file per event, each the whole match (a 5-set match ends near
+  0.7 MB). The event file crosses the WebView bridge once; `latest.json` is a
+  native `Filesystem.copy`. The engine waits for a 150 ms quiet window and an
+  idle moment before it reads IndexedDB. Each match keeps its newest files
+  within 64 MB, a match idle for 12 hours keeps its newest 10, files older
+  than 30 days go, and the newest file of every folder is always kept (also
+  when `latest.json` belongs to an earlier install).
+- **Options → Backup** shows the folder; **Restore from a backup file** opens
+  the system picker (browse to Documents → OpenVolley → backups). A failing
+  backup shows a red **Backup** badge next to the scoreboard clock.
+
 ## Icons and splash
 
 `python3 scripts/make-android-icons.py` regenerates the launcher icons

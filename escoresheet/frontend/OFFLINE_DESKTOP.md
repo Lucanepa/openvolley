@@ -143,6 +143,56 @@ npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
 - Each device's test match has its own relay room
   (`test-match-default-<random>`), so two scorers can rehearse on one relay.
 
+## Automatic backups (every event)
+
+The desktop app saves the open match after **every scoring event** (point,
+timeout, substitution, sanction, libero change, roster change, set start/end,
+match end, undo), on by default, no browser feature needed:
+
+- Linux: `~/.local/share/OpenVolley/backups/<match>/`
+- Windows: `%APPDATA%\OpenVolley\backups\<match>\`
+- (`OPENVOLLEY_BACKUP_DIR` overrides the folder.)
+
+Each match folder (`game<N>-<whole seed>`, `test-…` for test matches; without
+a seed `game<N>-local<id>`) holds one `<UTC time>-<event seq>.json` per event
+plus `latest.json`, in the same format as **Download backup** without the
+match PINs and session ids (`"secretsRemoved": true`), so **Options → Backup →
+Restore from a backup file** (or Restore match → local file) restores any of
+them; the restore keeps the PINs of the local copy it replaces or makes new
+ones. **Options → Backup → Open backup folder** opens it in the file manager.
+
+When it writes: after a write of the match, once nothing more was written for
+150 ms (at most 1.5 s later), on an idle moment, so a point (event, its state
+snapshot, the set score) is one consistent file and the scorer's taps go
+first. A state that only differs in heartbeats, sessions or `updatedAt` is not
+written again.
+
+Size and rotation: every file is the whole match, about 1.5 KB per event, so a
+5-set match ends near 0.7 MB and writes about 80 MB in total (measured with
+`src/utils/nativeBackup/__tests__/fullMatch.size.test.js`). So each match keeps
+its newest files within **64 MB** (and 500 files); a match nobody scored for
+**12 hours** is thinned to its newest **10** files; event files older than
+**30 days** are deleted; the newest event file of a match and `latest.json`
+are always kept. Older folders are rotated after the first backup of a
+session, in small chunks.
+
+Privacy: the files hold player names and birth dates, officials and signature
+images (no PINs). On Linux the folders are created `0700` and the files
+`0600`; on Windows `%APPDATA%` is private to the user account. If only
+`latest.json` cannot be replaced (Windows: a virus scan or the Explorer
+preview holds it), the event file is still saved and it is not an error. A
+failing backup shows a red **Backup** badge next to the scoreboard clock
+(tap: Options).
+
+The writes go through the app's `backup_*` Rust commands
+(`src-tauri/src/backup.rs`), which only accept a match folder and a file name
+inside that one folder; `capabilities/backup.json` grants them to the main
+window on `http://localhost` only. LAN tablets are plain browsers and keep the
+browser options (folder on Chrome/Edge, downloads elsewhere). The ACL is
+tested through Tauri's mock runtime with the app's real context
+(`ipc_acl_tests` in `src-tauri/src/main.rs`: `http://localhost:<port>` may
+write and list, a LAN address, another site or `localhost.evil.com` may not).
+
 ## Why plain HTTP (and the tablet-camera trade-off)
 
 Tablets connect over plain `http://<LAN-IP>` — simple, zero setup, no

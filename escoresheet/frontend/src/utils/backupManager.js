@@ -12,6 +12,8 @@ import { getCloudApiUrl } from './backendConfig'
 import { filterMatchPayload } from '../db/matchRepository'
 import { setExtId, eventExtId, jobMatchKey } from './syncIds'
 import { buildConnectionPins } from './connectionPins'
+import { missingConnectionPins } from './remoteRoster'
+import { generateSecurePin } from './stringUtils'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -273,6 +275,31 @@ export async function downloadMatchBackup(matchId) {
 // Local key of a match (seed_key; older rows used seedKey / externalId)
 const localMatchKey = (m) => m?.seed_key || m?.seedKey || m?.externalId || m?.external_id || null
 
+const LOCAL_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
+const hasValue = (v) => v !== undefined && v !== null && String(v).trim() !== ''
+
+/**
+ * The PINs of a match restored from an app backup file, which carries none
+ * (utils/nativeBackup/redact): those of the local copy it replaces, else new
+ * ones (a new game PIN only for an official match). {} for other backups.
+ * @param {object} jsonData the backup
+ * @param {object|null} previous the local copy being replaced
+ */
+export function pinsForRestore(jsonData, previous) {
+  if (!jsonData?.secretsRemoved) return {}
+  const match = jsonData.match || {}
+  const pins = {}
+  for (const f of LOCAL_PIN_FIELDS) {
+    if (!hasValue(match[f]) && hasValue(previous?.[f])) pins[f] = previous[f]
+  }
+  const merged = { ...match, ...pins }
+  Object.assign(pins, missingConnectionPins(merged))
+  if (!match.test && !hasValue(merged.gamePin) && !hasValue(match.game_pin)) {
+    pins.gamePin = generateSecurePin(Object.values(pins).map(String))
+  }
+  return pins
+}
+
 // Full connection_pins for the restore upsert, or nothing when the backup has no
 // PINs (an empty object would wipe the cloud PINs the referee/bench check reads).
 function restorePins(localMatch) {
@@ -291,7 +318,8 @@ export async function restoreMatchFromJson(jsonData) {
     throw new Error('Invalid backup file format')
   }
 
-  const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
+  const { homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
+  let match = jsonData.match
 
   // Get external_id for Supabase sync (seed_key in local, external_id in backup)
   const externalId = match.seed_key || match.seedKey || match.external_id
@@ -305,8 +333,10 @@ export async function restoreMatchFromJson(jsonData) {
   await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, db.sync_queue, async () => {
     // STEP A: remove THIS match's local copy (by seed_key) with its sets and
     // events. Other local matches, and teams/players/referees/scorers, are kept.
+    const previous = externalId ? await db.matches.filter(m => localMatchKey(m) === externalId).toArray() : []
+    // An app backup file has no PINs: keep the replaced copy's, or make new ones
+    match = { ...match, ...pinsForRestore(jsonData, previous[0] || null) }
     if (externalId) {
-      const previous = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
       for (const old of previous) {
         await db.events.where('matchId').equals(old.id).delete()
         await db.sets.where('matchId').equals(old.id).delete()
@@ -603,13 +633,14 @@ export async function restoreMatchInPlace(matchId, jsonData) {
         .map(j => j.id))
 
       // PINs from the local match after the update above (backup fields over the
-      // current ones, so PINs the backup lacks are still sent)
+      // current ones, so PINs the backup lacks - app backup files have none -
+      // are still sent)
       const restoredLocal = await db.matches.get(matchId)
 
       // Build match payload for Supabase
       const matchPayload = {
         external_id: externalId,
-        game_pin: match.gamePin || match.game_pin,
+        game_pin: match.gamePin || match.game_pin || restoredLocal?.gamePin,
         game_n: match.gameN || match.game_n,
         status: match.status || 'live',
         ...restorePins(restoredLocal || match),
@@ -1260,11 +1291,15 @@ export async function fetchCloudBackup(path) {
 }
 
 /**
- * Get backup settings from localStorage
+ * Get backup settings from localStorage. The apps (native: true) keep their own
+ * switch, on by default; browsers default to off.
  */
-export function getBackupSettings() {
+const autoBackupKey = (native) => (native ? 'nativeAutoBackupEnabled' : 'autoBackupEnabled')
+
+export function getBackupSettings({ native = false } = {}) {
+  const stored = localStorage.getItem(autoBackupKey(native))
   return {
-    autoBackupEnabled: localStorage.getItem('autoBackupEnabled') === 'true',
+    autoBackupEnabled: stored === null ? native : stored === 'true',
     backupFrequencyMinutes: parseInt(localStorage.getItem('backupFrequencyMinutes') || '5', 10)
   }
 }
@@ -1272,9 +1307,9 @@ export function getBackupSettings() {
 /**
  * Save backup settings to localStorage
  */
-export function saveBackupSettings(settings) {
+export function saveBackupSettings(settings, { native = false } = {}) {
   if (settings.autoBackupEnabled !== undefined) {
-    localStorage.setItem('autoBackupEnabled', String(settings.autoBackupEnabled))
+    localStorage.setItem(autoBackupKey(native), String(settings.autoBackupEnabled))
   }
   if (settings.backupFrequencyMinutes !== undefined) {
     localStorage.setItem('backupFrequencyMinutes', String(settings.backupFrequencyMinutes))
