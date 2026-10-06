@@ -2876,8 +2876,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         ]}
       />
 
-      {/* Main content wrapper - percentage-based heights */}
-      <div style={{
+      {/* Main content wrapper - percentage-based heights. `.referee-court` pins
+          the pre-restyle palette for the whole scoring view (styles.css, RESTYLE-SPEC 4). */}
+      <div className="referee-court" style={{
+        // The court floor is a translucent tint: paint the (pinned) page colour
+        // behind it here, so it does not show the stone page of the root.
+        background: 'var(--bg)',
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
