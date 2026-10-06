@@ -194,7 +194,9 @@ export default function BenchApp() {
         if (result.success && result.match) {
           const names = matchTeamNames(result.match, { homeTeam: result.homeTeam, awayTeam: result.awayTeam })
           linked = {
-            id: result.match.id || autoConnectMatch,
+            // The link's seed key: the relay copy's match.id is the scorer's
+            // Dexie id, which is no match key (every device's first match is 1)
+            id: autoConnectMatch,
             gameNumber: result.match.gameNumber || result.match.gameN || result.match.game_n || null,
             homeTeamName: names.home,
             awayTeamName: names.away

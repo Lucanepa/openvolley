@@ -46,6 +46,14 @@ export default function ConnectionStatus({
     }
   }, [])
 
+  // Offline as far as the browser knows: a socket to the cloud relay can stay
+  // OPEN without any data flowing (no close until a send times out), so a
+  // 'connected' WebSocket is not believed then, unless the local server answers
+  // too (offline desktop app / LAN scoretable, where the relay is local).
+  const shownStatuses = browserOffline && connectionStatuses.websocket === 'connected' && connectionStatuses.server !== 'connected'
+    ? { ...connectionStatuses, websocket: 'disconnected' }
+    : connectionStatuses
+
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, maxHeight: 0 })
@@ -295,7 +303,7 @@ export default function ConnectionStatus({
           <div className="mb-1 border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
             {t('connectionStatus.title', 'Connection Status')}
           </div>
-          {Object.entries(connectionStatuses).map(([key, status]) => {
+          {Object.entries(shownStatuses).map(([key, status]) => {
             const itemStatusInfo = getStatusColor(status, key)
             const itemTone = STATUS_TONES[itemStatusInfo.tone] || STATUS_TONES.neutral
 

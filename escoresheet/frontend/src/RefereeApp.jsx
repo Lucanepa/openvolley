@@ -45,6 +45,7 @@ export default function RefereeApp() {
   useState(() => setRelayDevice('referee'))
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
   const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
+  const [linkedMatch, setLinkedMatch] = useState(null) // { id: seed key, gameNumber } preselected by a link
   const [pinInput, setPinInput] = useState('')
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
@@ -88,29 +89,34 @@ export default function RefereeApp() {
     }
   }, [])
 
-  // Auto-connect to match from URL params
+  // A match link (QR code) only preselects the match: the referee still enters
+  // the PIN, like the bench (the link alone is no access). The PIN check
+  // returns the match's id (its seed key); the relay copy's match.id is the
+  // scorer's Dexie id, which is no match key.
   useEffect(() => {
     if (!autoConnectMatch || !serverReady) return
 
     const doAutoConnect = async () => {
-      setIsLoading(true)
+      let gameNumber = null
       try {
         const result = await getMatchData(autoConnectMatch)
-        if (result.success && result.match) {
-          setMatchId(result.match.id || autoConnectMatch)
-          setMatch(result.match)
-        } else {
-          setError(t('connection.matchNotFound', 'Match not found'))
+        if (result?.success && result.match) {
+          gameNumber = result.match.gameNumber ?? result.match.gameN ?? result.match.game_n ?? null
         }
-      } catch (err) {
-        setError(t('connection.connectionFailed', 'Could not connect to match'))
-      } finally {
-        setIsLoading(false)
-        setAutoConnectMatch(null)
-      }
+      } catch { /* the PIN step still works without the details */ }
+      setLinkedMatch({ id: String(autoConnectMatch), gameNumber })
+      if (gameNumber != null) setSelectedGameNumber(String(gameNumber))
+      setAutoConnectMatch(null)
     }
     doAutoConnect()
-  }, [autoConnectMatch, serverReady, t])
+  }, [autoConnectMatch, serverReady])
+
+  // The linked match in the game list (by its seed key) gives its game number
+  useEffect(() => {
+    if (!linkedMatch || selectedGameNumber) return
+    const listed = availableMatches.find(m => String(m.id) === linkedMatch.id)
+    if (listed?.gameNumber != null) setSelectedGameNumber(String(listed.gameNumber))
+  }, [linkedMatch, availableMatches, selectedGameNumber])
 
   // Handle server connection established
   const handleServerConnected = useCallback(() => {
@@ -414,6 +420,7 @@ export default function RefereeApp() {
 
       if (result.success && result.match) {
         console.log(`[RefereeApp] PIN validated via ${source}`)
+        setLinkedMatch(null)
         setMatchId(result.match.id)
         setMatch(result.match)
         localStorage.setItem('refereeMatchId', String(result.match.id))
@@ -542,7 +549,7 @@ export default function RefereeApp() {
           title={t('refereeDashboard.dashboardTitle')}
         >
           {/* Show "no active game" when server is connected but no games available */}
-          {serverConnected && availableMatches.length === 0 && !loadingMatches ? (
+          {serverConnected && availableMatches.length === 0 && !loadingMatches && !linkedMatch ? (
             <div onClick={handleTestModeClick} className="cursor-default select-none">
               <EmptyState
                 icon={CalendarX2}
@@ -613,7 +620,7 @@ export default function RefereeApp() {
             )}
 
             {/* Only show PIN input when offline OR when a game has been selected */}
-            {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
+            {(!serverConnected || linkedMatch || (availableMatches.length > 0 && selectedGameNumber)) && (
               <Field label={t('refereeDashboard.connectionPin')} className="text-left">
                 <PinInput
                   value={pinInput}
@@ -629,7 +636,7 @@ export default function RefereeApp() {
 
             <FormError size="md" className="text-center">{error}</FormError>
 
-            {(!serverConnected || (availableMatches.length > 0 && selectedGameNumber)) && (
+            {(!serverConnected || linkedMatch || (availableMatches.length > 0 && selectedGameNumber)) && (
               <Button type="submit" size="xl" block disabled={isLoading} loading={isLoading}>
                 {isLoading ? t('refereeDashboard.connecting') : t('refereeDashboard.enter')}
               </Button>

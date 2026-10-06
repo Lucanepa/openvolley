@@ -76,6 +76,17 @@ export const DEFAULT_CONFIG = Object.freeze({
       columns: ['set_results']
     }]
   },
+  // Match ownership (opts.matchOwner): who may write a match and its children.
+  // Owned = parent.ownerColumn is the caller, or an editors row names the
+  // caller. Applied only when the caller passes opts.matchOwner (server.js
+  // does for every non-admin session); never for other tables.
+  ownership: {
+    parent: 'matches',
+    key: 'id',
+    ownerColumn: 'created_by',
+    editors: { table: 'match_editors', matchColumn: 'match_id', userColumn: 'user_id' },
+    children: { sets: 'match_id', events: 'match_id', match_live_state: 'match_id' }
+  },
   // Tables whose writes produce `changes` (for the realtime write-through).
   changeTables: ['matches', 'sets', 'events', 'match_live_state'],
   maxRows: 1000,
@@ -93,6 +104,7 @@ const COMPARE_OPS = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<='
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/
 const COLUMN_REF_RE = /^([A-Za-z_][A-Za-z0-9_]{0,62})(?:->>([a-z0-9_]{1,63}))?$/
 const GENERIC_MESSAGE = 'Database operation failed'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DB_ERROR_INVALIDATES_CATALOG = new Set(['42P01', '42703'])
 
 // ---------------------------------------------------------------------------
@@ -503,6 +515,13 @@ export function createPgQuery (options = {}) {
       selectParts.push(`CASE WHEN e.${quoteIdent(fcol.name)} IS NULL THEN NULL ELSE json_build_object(${pairs.join(', ')}) END AS ${quoteIdent(embed.as)}`)
     }
     const where = buildWhere(t, params, secrets, ctx, opts.scope)
+    // Read ownership (opts.readOwner): every row says whether the user owns
+    // its match (__owned), and with restrict only owned rows match at all.
+    const owned = readOwnedSql(cat, t, opts.readOwner, ctx)
+    if (owned) {
+      selectParts.push(`${owned} AS "__owned"`)
+      if (opts.readOwner.restrict) where.sql += `${where.sql ? ' AND' : ' WHERE'} ${owned}`
+    }
     const order = buildOrder(t, params, secrets, ctx)
     // A validated integer, inlined: an unused bind parameter (head:true) could not be typed.
     const limit = String(effectiveLimit(params, opts))
@@ -582,12 +601,109 @@ export function createPgQuery (options = {}) {
       `THEN (t.${c}::jsonb || ${ref}.${c}::jsonb)::${col.typeSql} ELSE ${ref}.${c} END`
   }
 
+  // ------------------------------------------------------------ ownership
+  /**
+   * The ownership guard for this write, or null. opts.matchOwner = { userId }
+   * applies to the parent (matches) and its child tables only.
+   */
+  function ownershipGuard (cat, t, opts) {
+    const own = cfg.ownership
+    const mo = opts.matchOwner
+    if (!mo || !own) return null
+    const isParent = t.name === own.parent
+    const fk = own.children?.[t.name] || null
+    if (!isParent && !fk) return null
+    if (typeof mo.userId !== 'string' || !UUID_RE.test(mo.userId)) fail('OV_NOT_MATCH_OWNER', 'no user', 403)
+    const parent = cat.tables.get(own.parent)
+    const editors = cat.tables.get(own.editors.table)
+    if (!parent || !parent.columns.has(own.ownerColumn) || !parent.columns.has(own.key) || !editors ||
+        !editors.columns.has(own.editors.matchColumn) || !editors.columns.has(own.editors.userColumn)) {
+      // db/005_match_ownership.sql has not run: refuse (retryable), never write unguarded.
+      scheduleCatalogRefresh()
+      fail('OV_OWNERSHIP_UNAVAILABLE', 'match ownership columns missing (run db/005_match_ownership.sql)', 503)
+    }
+    if (fk) requireColumn(t, fk, 'match column')
+    // admin: the creator is still recorded on insert, but nothing is checked
+    return { userId: mo.userId, isParent, fk, parent, admin: mo.admin === true }
+  }
+
+  /**
+   * opts.readOwner = { userId, restrict? } on a select of the parent (matches)
+   * or a child table: the SQL boolean "the user owns this row's match", or
+   * null when the option does not apply. Without the ownership tables
+   * (005 not run) or a valid user id nothing is owned ('false'): a read never
+   * fails over it, it only sees less.
+   */
+  function readOwnedSql (cat, t, ro, ctx) {
+    const own = cfg.ownership
+    if (!ro || !own) return null
+    const isParent = t.name === own.parent
+    const fk = own.children?.[t.name] || null
+    if (!isParent && !fk) return null
+    const parent = cat.tables.get(own.parent)
+    const editors = cat.tables.get(own.editors.table)
+    const ready = parent && parent.columns.has(own.ownerColumn) && parent.columns.has(own.key) && editors &&
+      editors.columns.has(own.editors.matchColumn) && editors.columns.has(own.editors.userColumn) &&
+      (isParent || t.columns.has(fk))
+    if (!ready || typeof ro.userId !== 'string' || !UUID_RE.test(ro.userId)) return 'false'
+    return isParent ? ownedSql('t', ctx, ro.userId) : childOwnedSql('t', fk, ctx, ro.userId)
+  }
+
+  /** SQL: the match row `alias` is owned by the user (creator or editor). */
+  function ownedSql (alias, ctx, userId) {
+    const own = cfg.ownership
+    const u = ctx.p(userId)
+    // coalesce: a row without an owner (NULL) is owned by nobody, also under NOT
+    return `(coalesce(${alias}.${quoteIdent(own.ownerColumn)} = ${u}::uuid, false) OR EXISTS (SELECT 1 FROM ${qTable(own.editors.table)} AS oe ` +
+      `WHERE oe.${quoteIdent(own.editors.matchColumn)} = ${alias}.${quoteIdent(own.key)} AND oe.${quoteIdent(own.editors.userColumn)} = ${u}::uuid))`
+  }
+
+  /** SQL: the child row `alias` belongs to a match the user owns. */
+  function childOwnedSql (alias, fk, ctx, userId) {
+    const own = cfg.ownership
+    return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId)})`
+  }
+
+  const notOwner = (details) => fail('OV_NOT_MATCH_OWNER', details, 403)
+  const freshCtx = () => {
+    const values = []
+    return { values, p: (v) => { values.push(v); return '$' + values.length } }
+  }
+
+  /** Every match id in `ids` exists and is owned (null/unknown ids are not). */
+  async function assertMatchIdsOwned (client, guard, ids) {
+    const own = cfg.ownership
+    const c = freshCtx()
+    const pkey = requireColumn(guard.parent, own.key)
+    const arr = c.p([...new Set(ids.map(v => (v == null ? null : String(v))))])
+    const sql = `SELECT count(*)::int AS bad FROM unnest(${arr}::text[]) AS r(mid)
+      LEFT JOIN ${qTable(own.parent)} AS m ON m.${quoteIdent(own.key)} = r.mid::${pkey.typeSql}
+     WHERE m.${quoteIdent(own.key)} IS NULL OR NOT ${ownedSql('m', c, guard.userId)}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) notOwner(`${res.rows[0].bad} match(es) not owned`)
+  }
+
+  /** No row matched by `params` (update/delete) belongs to a match the user does not own. */
+  async function assertFilteredRowsOwned (client, t, params, secrets, guard) {
+    const c = freshCtx()
+    const where = buildWhere(t, params, secrets, c, null)
+    const owned = guard.isParent ? ownedSql('t', c, guard.userId) : childOwnedSql('t', guard.fk, c, guard.userId)
+    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} NOT ${owned}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) notOwner(`${res.rows[0].bad} ${t.name} row(s) of a match you do not own`)
+  }
+
   async function runWrite (cat, t, action, params, opts, ctx) {
     const internal = !!opts.internal
     const secrets = secretsFor(t.name, internal)
     const scope = opts.scope || null
     if (scope) requireColumn(t, scope.column, 'scope column')
     const childSpec = cfg.scopedChildren[t.name]
+    const guard = ownershipGuard(cat, t, opts)
+    // The checks (an admin's guard records the creator only)
+    const enforce = guard && !guard.admin ? guard : null
+    const ownerCol = cfg.ownership?.ownerColumn
+    let ownPre = null
     const wantReturning = params.returning != null && params.returning !== false
     const returningCols = wantReturning ? projection(t, params.returning === true ? '*' : params.returning, secrets, 'returning') : []
     const collectChanges = opts.collectChanges ?? cfg.changeTables.includes(t.name)
@@ -596,7 +712,19 @@ export function createPgQuery (options = {}) {
     let dml
     let postCheck = false
     if (action === 'insert' || action === 'upsert') {
+      if (guard?.isParent) {
+        // The creator is the caller, whatever the client sent.
+        const list = Array.isArray(params.data) ? params.data : [params.data]
+        if (list.length && list.every(isPlainObject)) {
+          const forced = list.map(r => ({ ...r, [ownerCol]: guard.userId }))
+          params = { ...params, data: Array.isArray(params.data) ? forced : forced[0] }
+        }
+      }
       const { rows, cols } = writeRows(t, params, scope)
+      if (enforce && !enforce.isParent) {
+        const ids = rows.map(r => r[enforce.fk])
+        ownPre = (client) => assertMatchIdsOwned(client, enforce, ids)
+      }
       const rowsParam = `${ctx.p(JSON.stringify(rows))}::json`
       const colSql = cols.map(quoteIdent).join(', ')
       dml = cols.length
@@ -616,7 +744,8 @@ export function createPgQuery (options = {}) {
           target = t.pk
           if (!target.length) fail('OV_INVALID_CONFLICT', 'table has no primary key; onConflict is required')
         }
-        const updatable = cols.filter(c => !target.includes(c))
+        // The creator of an existing match never changes through an upsert.
+        const updatable = cols.filter(c => !target.includes(c) && !(guard?.isParent && c === ownerCol))
         // Server code may ask for JSON objects to be merged into the stored ones
         // (matchRestore: connection_pins), like `update` does for mergeJsonColumns.
         const mergeOnUpsert = new Set(Array.isArray(opts.mergeOnUpsert) ? opts.mergeOnUpsert : [])
@@ -633,8 +762,15 @@ export function createPgQuery (options = {}) {
         // A conflicting set/event of another match is never overwritten or moved
         // (an upsert on id, or on an external_id that collided historically).
         if (childSpec) guards.push(`t.${quoteIdent(childSpec.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(childSpec.fk)}`)
+        // A conflicting row of a match the caller does not own is never changed.
+        if (enforce) guards.push(enforce.isParent ? ownedSql('t', ctx, enforce.userId) : childOwnedSql('t', enforce.fk, ctx, enforce.userId))
         if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
-        if (childSpec) ctx.expectRows = rows.length
+        if (childSpec || enforce) {
+          ctx.expectRows = rows.length
+          // sets/events: the new rows' match is owned (checked first), so a
+          // skipped row is one of another match; otherwise it is not owned.
+          ctx.expectRowsCode = childSpec ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
+        }
       }
       if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
     } else if (action === 'update') {
@@ -642,6 +778,15 @@ export function createPgQuery (options = {}) {
       const { rows: [row], cols } = writeRows(t, { data: params.data }, scope)
       const where = buildWhere(t, params, secrets, ctx, scope)
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'update needs a filter')
+      if (guard?.isParent && cols.includes(ownerCol)) fail('OV_INVALID_DATA', `${ownerCol} is set by the server`)
+      if (enforce) {
+        const moved = !enforce.isParent && cols.includes(enforce.fk) ? [row[enforce.fk]] : null
+        const p0 = params
+        ownPre = async (client) => {
+          await assertFilteredRowsOwned(client, t, p0, secrets, enforce)
+          if (moved) await assertMatchIdsOwned(client, enforce, moved)
+        }
+      }
       if (childSpec) {
         assertChildFilterScoped(t.name, where.filters)
         postCheck = cols.includes(childSpec.ext) || cols.includes(childSpec.fk)
@@ -660,6 +805,10 @@ export function createPgQuery (options = {}) {
       const where = buildWhere(t, params, secrets, ctx, scope)
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'delete needs a filter')
       if (childSpec) assertChildFilterScoped(t.name, where.filters)
+      if (enforce) {
+        const p0 = params
+        ownPre = (client) => assertFilteredRowsOwned(client, t, p0, secrets, enforce)
+      }
       dml = `DELETE FROM ${qt} AS t${where.sql}`
     }
 
@@ -683,11 +832,14 @@ export function createPgQuery (options = {}) {
 
     const run = async (client) => {
       if (ctx.preCheck) await assertChildrenScoped(client, cat, t.name, ctx.preCheck)
+      if (ownPre) await ownPre(client)
       const res = await client.query(sql, ctx.values)
       const rows = res.rows[0].rows || []
       const n = Number(res.rows[0].n)
-      // Upsert rows skipped by the match guard: the conflicting row belongs to another match.
+      // Upsert rows skipped by a guard: the conflicting row belongs to another
+      // match, or to a match the caller does not own.
       if (ctx.expectRows != null && n < ctx.expectRows) {
+        if (ctx.expectRowsCode === 'OV_NOT_MATCH_OWNER') notOwner(`${ctx.expectRows - n} ${t.name} row(s) of a match you do not own`)
         fail('OV_UNSCOPED_WRITE', `${ctx.expectRows - n} ${t.name} row(s) conflict with a row of another match`)
       }
       if (postCheck) await assertChildrenScoped(client, cat, t.name, rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] })))
@@ -764,7 +916,13 @@ export function createPgQuery (options = {}) {
    * @param {number|string} [opts.proto]   X-OV-Proto header value (writes need >= minWriteProto)
    * @param {boolean} [opts.internal]      trusted server code: no redaction, no secret bans, no proto gate
    * @param {{column:string, value:any}} [opts.scope]  owner scoping: forced eq filter + forced value on writes
+   * @param {{userId:string, admin?:boolean}} [opts.matchOwner] match ownership guard (matches + children):
+   *        inserts record the caller as creator; writes to rows of a match the caller neither created
+   *        nor edits get 403 OV_NOT_MATCH_OWNER. admin: true records the creator but checks nothing.
+   *        Omit for trusted server code.
    * @param {boolean} [opts.collectChanges] return `changes` for realtime (default: changeTables)
+   * @param {{userId:string, restrict?:boolean}} [opts.readOwner] selects of matches and its children:
+   *        each row gets `__owned` (the user created or edits its match); restrict: only owned rows match
    * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
    * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
    * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)

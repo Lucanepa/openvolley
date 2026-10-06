@@ -179,11 +179,18 @@ describe('helpers', () => {
   })
 
   it('storageOptionsFromEnv', () => {
-    assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage' })
+    // Phase 7 default: every account sees only its own backup/ objects
+    assert.deepEqual(storageOptionsFromEnv({}), { root: '/data/storage', ownerScope: 'prefix', ownerScopeBuckets: ['backup'], uploaderReadBuckets: ['scoresheets'] })
     const o = storageOptionsFromEnv({ STORAGE_DIR: '/x', STORAGE_BACKUP_MIN_FREE_MB: '100', STORAGE_SCORESHEETS_MIN_FREE_MB: '0', STORAGE_MAX_FILE_MB: '2', STORAGE_OWNER_SCOPE: 'Prefix' })
-    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix' })
+    assert.deepEqual(o, { root: '/x', minFreeBytes: { backup: 100 * 1024 * 1024, scoresheets: 0 }, maxFileBytes: 2 * 1024 * 1024, ownerScope: 'prefix', ownerScopeBuckets: ['backup'], uploaderReadBuckets: ['scoresheets'] })
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE_BUCKETS: 'all' }).ownerScopeBuckets, ['scoresheets', 'backup'])
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'require', STORAGE_OWNER_SCOPE_BUCKETS: 'backup, scoresheets' }).ownerScopeBuckets, ['backup', 'scoresheets'])
+    assert.throws(() => storageOptionsFromEnv({ STORAGE_OWNER_SCOPE_BUCKETS: 'logs' }), /STORAGE_OWNER_SCOPE_BUCKETS/)
+    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'off', STORAGE_OWNER_SCOPE_BUCKETS: 'logs' }).ownerScopeBuckets, undefined)
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: 'None' }).uploaderReadBuckets, [])
+    assert.deepEqual(storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: 'scoresheets, backup' }).uploaderReadBuckets, ['scoresheets', 'backup'])
     assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: 'off' }).ownerScope, undefined)
-    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: ' ' }).ownerScope, undefined)
+    assert.equal(storageOptionsFromEnv({ STORAGE_OWNER_SCOPE: ' ' }).ownerScope, 'prefix')
   })
 
   it('storageOptionsFromEnv throws on values it does not understand', () => {
@@ -193,6 +200,9 @@ describe('helpers', () => {
     assert.throws(() => storageOptionsFromEnv({ STORAGE_MAX_FILE_MB: '0' }), /STORAGE_MAX_FILE_MB/)
     assert.throws(() => storageOptionsFromEnv({ STORAGE_MAX_FILE_MB: 'lots' }), /STORAGE_MAX_FILE_MB/)
     assert.throws(() => storageOptionsFromEnv({ STORAGE_BACKUP_MIN_FREE_MB: '-1' }), /STORAGE_BACKUP_MIN_FREE_MB/)
+    for (const v of ['off', 'logs', 'scoresheets,nope', ',']) {
+      assert.throws(() => storageOptionsFromEnv({ STORAGE_UPLOADER_READ_BUCKETS: v }), /STORAGE_UPLOADER_READ_BUCKETS/, v)
+    }
   })
 
   it('maxBodyBytes leaves room for base64 of a maxFileBytes upload', () => {
@@ -205,6 +215,10 @@ describe('helpers', () => {
 
   it('createStorage rejects an unknown ownerScope', () => {
     assert.throws(() => createStorage({ root: '/tmp', ownerScope: 'everyone' }), TypeError)
+  })
+
+  it('createStorage rejects an uploader-only bucket it does not serve', () => {
+    assert.throws(() => createStorage({ root: '/tmp', uploaderReadBuckets: ['logs'] }), TypeError)
   })
 })
 
@@ -720,6 +734,156 @@ describe('quota and owner scoping hooks', () => {
   })
 })
 
+describe('uploader-only buckets (final scoresheets)', () => {
+  beforeEach(async () => makeRoot())
+  afterEach(async () => fs.rm(base, { recursive: true, force: true }))
+  const sheet = '2026-10-05/game991404_k0123456789abcdef0123456789abcdef_final.json'
+  const up = (s, userId, body, p = sheet, extra = {}) =>
+    s.upload({ bucket: 'scoresheets', path: p, fileBase64: b64(body), contentType: 'application/json', userId, ...extra })
+  const down = async (s, userId, p = sheet) => (await s.download({ bucket: 'scoresheets', path: p, userId })).toString()
+
+  it('only the account that created an object may download or replace it', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await up(s, 'alice', '{"a":1}')
+    assert.equal(await down(s, 'alice'), '{"a":1}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet }), 403, 'OV_STORAGE_FORBIDDEN')
+    // The owner re-approving (another device, same account) replaces it
+    await up(s, 'alice', '{"a":2}')
+    assert.equal(await down(s, 'alice'), '{"a":2}')
+    // Other buckets are unaffected
+    await s.upload({ bucket: 'backup', path: 'x.json', fileBase64: b64('{}'), userId: 'alice' })
+    assert.equal((await s.download({ bucket: 'backup', path: 'x.json', userId: 'mallory' })).toString(), '{}')
+  })
+
+  it('overwrite by a stranger: refused, the object and its owners stay as they were', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await up(s, 'alice', '{"real":true}')
+    await rejectsWith(up(s, 'mallory', '{"fake":true}'), 403, 'OV_STORAGE_FORBIDDEN')
+    // upsert:false does not let a stranger probe for the object either (403, not 409)
+    await rejectsWith(up(s, 'mallory', '{}', sheet, { upsert: false }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(up(s, 'alice', '{}', sheet, { upsert: false }), 409, 'OV_STORAGE_EXISTS')
+    assert.equal(await down(s, 'alice'), '{"real":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), ['alice'])
+  })
+
+  it('pre-squat: a stranger who uploads first owns only their own object, never the scorer\'s', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    // mallory guesses the legacy, key-less name days before the match
+    const legacy = '2026-10-05/game991404_final.json'
+    await up(s, 'mallory', '{"dummy":true}', legacy)
+    // the scorer's path has a random part mallory cannot know: no collision, no lock-out
+    await up(s, 'alice', '{"real":true}')
+    assert.equal(await down(s, 'alice'), '{"real":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    // and were alice to write mallory's squatted path, she is refused rather than sharing it
+    await rejectsWith(up(s, 'alice', '{"real":true}', legacy), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await down(s, 'mallory', legacy), '{"dummy":true}')
+    // listings show each account only its own objects (the random names never leak)
+    const names = async (userId) => (await s.list({ bucket: 'scoresheets', path: '2026-10-05', userId })).map((e) => e.name)
+    assert.deepEqual(await names('alice'), [path.basename(sheet)])
+    assert.deepEqual(await names('mallory'), [path.basename(legacy)])
+    assert.deepEqual(await names('eve'), [])
+    assert.deepEqual(await names(undefined), [])
+    assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '', userId: 'eve' })).map((e) => e.name), ['2026-10-05'])
+    const searched = await s.list({ bucket: 'scoresheets', path: '2026-10-05', userId: 'alice', options: { search: 'game991404_' } })
+    assert.deepEqual(searched.map((e) => e.name), [path.basename(sheet)])
+  })
+
+  it('race: concurrent uploads and downloads never let a stranger read or become an owner', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await up(s, 'alice', '{"v":0}')
+    const ops = []
+    for (let i = 1; i <= 20; i++) {
+      ops.push(up(s, 'alice', `{"v":${i}}`))
+      ops.push(up(s, 'mallory', '{"fake":true}').then(() => 'uploaded', (e) => e.code))
+      ops.push(s.download({ bucket: 'scoresheets', path: sheet, userId: 'mallory' }).then((b) => b.toString(), (e) => e.code))
+    }
+    const results = await Promise.all(ops)
+    for (let i = 0; i < results.length; i += 3) {
+      assert.equal(results[i + 1], 'OV_STORAGE_FORBIDDEN')
+      assert.equal(results[i + 2], 'OV_STORAGE_FORBIDDEN')
+    }
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), ['alice'])
+    assert.notEqual(await down(s, 'alice'), '{"fake":true}')
+  })
+
+  it('race: concurrent first uploads by two accounts leave exactly one owner, who reads its own bytes', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    const p = '2026-10-05/game7_k00000000000000000000000000000007_final.json'
+    const settled = await Promise.allSettled([up(s, 'alice', '{"by":"alice"}', p), up(s, 'bob', '{"by":"bob"}', p)])
+    const winners = ['alice', 'bob'].filter((_, i) => settled[i].status === 'fulfilled')
+    assert.equal(winners.length, 1)
+    const loser = winners[0] === 'alice' ? 'bob' : 'alice'
+    assert.equal(settled[winners[0] === 'alice' ? 1 : 0].reason.code, 'OV_STORAGE_FORBIDDEN')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: p }), winners)
+    assert.equal(await down(s, winners[0], p), `{"by":"${winners[0]}"}`)
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: p, userId: loser }), 403, 'OV_STORAGE_FORBIDDEN')
+  })
+
+  it('a missing object stays "not found" (404); an object stored before owners were recorded is readable and writable by nobody until an operator grants it', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'alice' }), 404, 'OV_STORAGE_NOT_FOUND')
+    const legacy = '2026-10-05/game991404_final.json'
+    await fs.mkdir(path.join(root, 'scoresheets', '2026-10-05'), { recursive: true })
+    await fs.writeFile(path.join(root, 'scoresheets', legacy), '{"legacy":true}')
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: legacy, userId: 'alice' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(up(s, 'mallory', '{}', legacy), 403, 'OV_STORAGE_FORBIDDEN')
+    // operator grant (scripts/storage-owner.mjs)
+    assert.deepEqual(await s.setOwners({ bucket: 'scoresheets', path: legacy, userIds: ['alice'] }), ['alice'])
+    assert.equal(await down(s, 'alice', legacy), '{"legacy":true}')
+    assert.deepEqual(await s.setOwners({ bucket: 'scoresheets', path: legacy, userIds: [], mode: 'set' }), [])
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: legacy, userId: 'alice' }), 403, 'OV_STORAGE_FORBIDDEN')
+    await rejectsWith(s.setOwners({ bucket: 'scoresheets', path: '2026-10-05/nope.json', userIds: ['alice'] }), 404, 'OV_STORAGE_NOT_FOUND')
+    await rejectsWith(s.setOwners({ bucket: 'backup', path: legacy, userIds: ['alice'] }), 400)
+    await rejectsWith(s.setOwners({ bucket: 'scoresheets', path: legacy, userIds: ['../x'] }), 400)
+  })
+
+  it('a stale owner record (object gone) never reaches a later object; sweep() removes it', async () => {
+    let t = Date.now()
+    const s = make({ uploaderReadBuckets: ['scoresheets'], now: () => t, sweepDirGraceMs: 1000 })
+    await up(s, 'mallory', '{"old":true}')
+    await fs.unlink(path.join(root, 'scoresheets', sheet))
+    // a new object at the same path belongs to its creator alone
+    await up(s, 'alice', '{"new":true}')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), ['alice'])
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: 'mallory' }), 403, 'OV_STORAGE_FORBIDDEN')
+    // sweep: a record whose object is gone goes (after the grace period), others stay
+    const other = '2026-10-06/game1_k11111111111111111111111111111111_final.json'
+    await up(s, 'bob', '{}', other)
+    await fs.unlink(path.join(root, 'scoresheets', other))
+    assert.equal((await s.sweep()).ownerRecordsRemoved, 0) // inside the grace period
+    t += 60_000
+    assert.equal((await s.sweep()).ownerRecordsRemoved, 1)
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: other }), [])
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), ['alice'])
+    assert.equal((await fs.readdir(path.join(root, '.owners', 'scoresheets'))).length, 1)
+  })
+
+  it('an upload without an account is refused, and owner records stay out of the bucket listing', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await rejectsWith(s.upload({ bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await exists(path.join(root, 'scoresheets', sheet)), false)
+    await up(s, 'u1', '{}')
+    assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '', userId: 'u1' })).map((e) => e.name), ['2026-10-05'])
+    assert.deepEqual((await s.list({ bucket: 'scoresheets', path: '2026-10-05', userId: 'u1' })).map((e) => e.name), [path.basename(sheet)])
+  })
+
+  it('handle: the HTTP adapter answers 403 to a non-owner and 200 + not-found for a missing object', async () => {
+    const s = make({ uploaderReadBuckets: ['scoresheets'] })
+    await s.handle('upload', { bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }, { userId: 'alice' })
+    assert.equal((await s.handle('download', { bucket: 'scoresheets', path: sheet }, { userId: 'alice' })).status, 200)
+    const other = await s.handle('download', { bucket: 'scoresheets', path: sheet }, { userId: 'mallory' })
+    assert.equal(other.status, 403)
+    assert.equal(other.body.error.code, 'OV_STORAGE_FORBIDDEN')
+    const overwrite = await s.handle('upload', { bucket: 'scoresheets', path: sheet, fileBase64: b64('{}'), contentType: 'application/json' }, { userId: 'mallory' })
+    assert.equal(overwrite.status, 403)
+    const missing = await s.handle('download', { bucket: 'scoresheets', path: '2026-10-05/game1_final.json' }, { userId: 'alice' })
+    assert.deepEqual(missing, { status: 200, body: { data: null, error: { message: 'Object not found', code: 'OV_STORAGE_NOT_FOUND' } } })
+  })
+})
+
 describe('sweep', () => {
   beforeEach(async () => makeRoot())
   afterEach(async () => fs.rm(base, { recursive: true, force: true }))
@@ -743,7 +907,7 @@ describe('sweep', () => {
     for (const d of ['backups/backup_g1', 'backups/backup_g2']) await fs.utimes(path.join(root, 'backup', d), old, old)
 
     const r = await s.sweep()
-    assert.deepEqual(r, { deletedFiles: 2, deletedBytes: 4, removedDirs: 1, tmpRemoved: 1 })
+    assert.deepEqual(r, { deletedFiles: 2, deletedBytes: 4, removedDirs: 1, tmpRemoved: 1, ownerRecordsRemoved: 0 })
     assert.equal(await exists(path.join(root, 'backup/backups/backup_g1/new.json')), true)
     assert.equal(await exists(path.join(root, 'backup/backups/backup_g2')), false)
     assert.equal(await exists(path.join(root, 'backup/logs/game_1/logs.txt')), true)
@@ -798,9 +962,38 @@ describe('sweep', () => {
     assert.deepEqual(await fs.readdir(path.join(root, TMP_DIR_NAME)), [])
   })
 
+  it("with the 'prefix' owner scope every account's backups are swept, and the older unprefixed ones", async () => {
+    const now = Date.UTC(2026, 9, 5)
+    const s = make({ now: () => now, ownerScope: 'prefix', ownerScopeBuckets: ['backup'] })
+    const old = new Date(now - 31 * 24 * 3600 * 1000)
+    const u1 = '11111111-2222-4333-8444-555555555555'
+    const u2 = '66666666-2222-4333-8444-555555555555'
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/old.json', fileBase64: b64('{}'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g1/new.json', fileBase64: b64('{}'), userId: u1 })
+    await s.upload({ bucket: 'backup', path: 'backups/backup_g2/old.json', fileBase64: b64('{}'), userId: u2 })
+    await s.upload({ bucket: 'backup', path: 'logs/game_1/logs.txt', fileBase64: b64('x'), userId: u2 })
+    // a file stored before the scope (no user folder)
+    await fs.mkdir(path.join(root, 'backup/backups/legacy'), { recursive: true })
+    await fs.writeFile(path.join(root, 'backup/backups/legacy/old.json'), '{}')
+    for (const p of [`${u1}/backups/backup_g1/old.json`, `${u2}/backups/backup_g2/old.json`, `${u2}/logs/game_1/logs.txt`, 'backups/legacy/old.json']) {
+      await fs.utimes(path.join(root, 'backup', p), old, old)
+    }
+    const r = await s.sweep()
+    assert.equal(r.deletedFiles, 3)
+    assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/new.json`)), true)
+    assert.equal(await exists(path.join(root, `backup/${u1}/backups/backup_g1/old.json`)), false)
+    assert.equal(await exists(path.join(root, `backup/${u2}/backups/backup_g2/old.json`)), false)
+    assert.equal(await exists(path.join(root, `backup/${u2}/logs/game_1/logs.txt`)), true)
+    assert.equal(await exists(path.join(root, 'backup/backups/legacy/old.json')), false)
+    // the owner still lists and downloads (restore); another account sees nothing
+    assert.deepEqual((await s.list({ bucket: 'backup', path: 'backups/backup_g1', userId: u1 })).map((e) => e.name), ['new.json'])
+    assert.deepEqual(await s.list({ bucket: 'backup', path: 'backups/backup_g1', userId: u2 }), [])
+    await rejectsWith(s.download({ bucket: 'backup', path: 'backups/backup_g1/new.json', userId: u2 }), 404)
+  })
+
   it('missing prefix is a no-op', async () => {
     const s = make()
-    assert.deepEqual(await s.sweep(), { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved: 0 })
+    assert.deepEqual(await s.sweep(), { deletedFiles: 0, deletedBytes: 0, removedDirs: 0, tmpRemoved: 0, ownerRecordsRemoved: 0 })
   })
 })
 
@@ -829,8 +1022,9 @@ describe('handle (HTTP adapter)', () => {
 
   it('maps errors to {data:null, error:{message,code}} with HTTP status', async () => {
     const s = make()
+    // A missing object is a normal answer (no backup / log file yet): 200 + error
     const r1 = await s.handle('download', { bucket: 'backup', path: 'nope.json' })
-    assert.deepEqual(r1, { status: 404, body: { data: null, error: { message: 'Object not found', code: 'OV_STORAGE_NOT_FOUND' } } })
+    assert.deepEqual(r1, { status: 200, body: { data: null, error: { message: 'Object not found', code: 'OV_STORAGE_NOT_FOUND' } } })
     const r2 = await s.handle('upload', { bucket: 'backup', path: '../x.json', fileBase64: '' })
     assert.equal(r2.status, 400)
     assert.equal(r2.body.error.code, 'OV_STORAGE_INVALID_PATH')

@@ -1,9 +1,25 @@
 import { apiStorage } from '../lib/apiClient'
+import { scoresheetGameId, scoresheetObjectPath, redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
+import { getScoresheetKey } from './scoresheetKey'
 
 /**
- * Upload scoresheet data as JSON to Supabase storage.
- * PDFs are generated on-demand at scoresheet.openvolley.app/storage
- * Uploads to: scoresheets/{scheduled_date}/game{n}.json (or game{n}_final.json if final=true)
+ * Where a match's scoresheet file goes in the 'scoresheets' bucket:
+ * {scheduled UTC date}/game{n}_{key}[_final].{json|pdf}, n = scoresheetGameId
+ * (game number, else external id), key = this device's random part for the
+ * match (scoresheetKey.js). null when the match has no game number or id.
+ */
+export function scoresheetUploadPath(match, { final = false, ext = 'json' } = {}) {
+  const game = scoresheetGameId(match)
+  if (!game) return null
+  const when = match.scheduledAt ? new Date(match.scheduledAt) : new Date()
+  const date = (Number.isNaN(when.getTime()) ? new Date() : when).toISOString().slice(0, 10)
+  return scoresheetObjectPath(date, game, getScoresheetKey(match), { final, ext })
+}
+
+/**
+ * Upload scoresheet data as JSON to the backend storage ('scoresheets' bucket).
+ * Only the signed-in account that uploads it can read it back (backend README
+ * "Who can read a scoresheet"). Path: see scoresheetUploadPath.
  *
  * @param {Object} options
  * @param {Object} options.match - Match data
@@ -55,21 +71,17 @@ export async function uploadScoresheet({
     const jsonString = JSON.stringify(scoresheetData)
     const jsonBlob = new Blob([jsonString], { type: 'application/json' })
 
-    // Determine storage path: {scheduled_date}/game{n}.json or game{n}_final.json
-    const scheduledDate = match.scheduledAt
-      ? new Date(match.scheduledAt).toISOString().slice(0, 10) // YYYY-MM-DD
-      : new Date().toISOString().slice(0, 10)
+    const storagePath = scoresheetUploadPath(match, { final })
+    if (!storagePath) {
+      console.warn('[scoresheetUploader] Skipping - match has no game number or id')
+      return { success: false, error: 'No game number' }
+    }
 
-    const gameNumber = match.gameNumber || match.externalId || match.game_n || 'unknown'
-    const suffix = final ? '_final' : ''
-    const storagePath = `${scheduledDate}/game${gameNumber}${suffix}.json`
-
-    // Upload to Supabase storage
     const { error: uploadError } = await apiStorage
       .from('scoresheets')
       .upload(storagePath, jsonBlob, {
         contentType: 'application/json',
-        upsert: true // Overwrite if exists
+        upsert: true // replaces this device's earlier upload of the same match
       })
 
     if (uploadError) {
@@ -77,7 +89,7 @@ export async function uploadScoresheet({
       return { success: false, error: uploadError.message }
     }
 
-    console.log('[scoresheetUploader] Uploaded successfully:', storagePath)
+    console.log('[scoresheetUploader] Uploaded successfully:', redactScoresheetPath(storagePath))
     return { success: true, path: storagePath }
 
   } catch (error) {
@@ -94,7 +106,7 @@ export function uploadScoresheetAsync(options) {
   uploadScoresheet(options)
     .then(result => {
       if (result.success) {
-        console.log('[scoresheetUploader] Background upload complete:', result.path)
+        console.log('[scoresheetUploader] Background upload complete:', redactScoresheetPath(result.path))
       } else {
         console.warn('[scoresheetUploader] Background upload failed:', result.error)
       }

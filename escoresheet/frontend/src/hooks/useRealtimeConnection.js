@@ -15,7 +15,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
-import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets } from '../utils/serverDataSync'
+import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets, createLiveStateTracker } from '../utils/serverDataSync'
 
 // Connection types
 export const CONNECTION_TYPES = {
@@ -99,6 +99,22 @@ export function useRealtimeConnection({
   const fetchSeqRef = useRef(0)
   const refetchTimerRef = useRef(null)
   const lastPushAtRef = useRef(0) // last relay bundle delivered
+  // Newest live state from any source (relay push, relay copy, database row):
+  // a newer one wins over an older relay copy's score, and a refetch answer
+  // never rolls back a newer push (createLiveStateTracker)
+  const liveTrackerRef = useRef(null)
+  if (liveTrackerRef.current === null) liveTrackerRef.current = createLiveStateTracker()
+  useEffect(() => {
+    liveTrackerRef.current.reset()
+  }, [matchId])
+  const deliverData = useCallback((result) => {
+    if (onDataRef.current) onDataRef.current(liveTrackerRef.current.bundle(result))
+  }, [])
+  // A match_live_state row (database): shown over the last relay copy when newer
+  const deliverLiveStateRow = useCallback((row) => {
+    const tracker = liveTrackerRef.current
+    if (tracker.liveState(row) && tracker.lastBundle) deliverData(tracker.lastBundle)
+  }, [deliverData])
 
   // Helper: fetch data and deliver to callback. Only the newest request
   // delivers: overlapping fetches can resolve out of order, and an older answer
@@ -110,13 +126,11 @@ export function useRealtimeConnection({
       if (seq !== fetchSeqRef.current || !isMountedRef.current) return
       // A relay push landed while this fetch was in flight: it is newer
       if (lastPushAtRef.current > startedAt) return
-      if (result.success && onDataRef.current) {
-        onDataRef.current(result)
-      }
+      if (result.success) deliverData(result)
     }).catch(err => {
       console.error(`[RealtimeConnection] Error fetching data after ${reason}:`, err)
     })
-  }, [matchId])
+  }, [matchId, deliverData])
 
   // Coalesce bursts (one point = live_state + event + set rows) into one refetch
   const scheduleRefetch = useCallback((reason) => {
@@ -140,7 +154,12 @@ export function useRealtimeConnection({
         .on('postgres_changes', { event: '*', schema: 'public', table: 'sets', filter: `match_id=eq.${supabaseMatchUuid}` },
           () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('set update') })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'match_live_state', filter: `match_id=eq.${supabaseMatchUuid}` },
-          () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('live state update') })
+          (payload) => {
+            if (!isMountedRef.current) return
+            setLastUpdate(Date.now())
+            deliverLiveStateRow(payload?.new)
+            fetchAndDeliver('live state update')
+          })
     }
 
     // Always subscribe to matches table (uses external_id, no UUID needed)
@@ -157,7 +176,7 @@ export function useRealtimeConnection({
         })
 
     return channel
-  }, [matchId, fetchAndDeliver])
+  }, [matchId, fetchAndDeliver, deliverLiveStateRow])
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -305,6 +324,7 @@ export function useRealtimeConnection({
         if (onDeletedRef.current) onDeletedRef.current()
         return
       }
+      if (payload?.table === 'match_live_state') deliverLiveStateRow(payload?.new)
       scheduleRefetch('db change')
     }
     const channel = supabase.channel(`match-db-${matchId}-${Date.now()}`)
@@ -341,7 +361,7 @@ export function useRealtimeConnection({
         if (isMountedRef.current && secondaryChannelRef.current === channel && !unsupported) watchDbChangesAlongside(attempt + 1)
       }, relayLive ? DB_WATCH_RETRY_MAX_MS : dbWatchRetryDelay(attempt))
     }
-  }, [matchId, scheduleRefetch])
+  }, [matchId, scheduleRefetch, deliverLiveStateRow])
 
   // Connect to WebSocket
   const connectWebSocket = useCallback(() => {
@@ -362,9 +382,7 @@ export function useRealtimeConnection({
           }
         } else if (data && data.match) {
           lastPushAtRef.current = Date.now()
-          if (onDataRef.current) {
-            onDataRef.current({ success: true, ...data })
-          }
+          deliverData({ success: true, ...data })
         }
       })
 
@@ -379,7 +397,7 @@ export function useRealtimeConnection({
       setError(err.message)
       return false
     }
-  }, [matchId]) // Removed onData, onAction from deps - using refs instead
+  }, [matchId, deliverData]) // Removed onData, onAction from deps - using refs instead
 
   // Switch connection type
   const switchConnection = useCallback((newType) => {

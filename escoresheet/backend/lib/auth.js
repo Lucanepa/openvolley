@@ -108,6 +108,15 @@ const DEFAULTS = Object.freeze({
     // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
     signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
+    // Sign-up is auto-confirmed (no email flow): per address (plus-tags
+    // removed, so one mailbox cannot be probed or flooded from many IPs), and
+    // all sign-ups together, so a spread-out burst cannot mass-create
+    // accounts. The global budget counts created accounts only: requests for
+    // existing addresses (or that fail) are refunded, so nobody can use it up
+    // without creating that many accounts; it is set well above a tournament
+    // morning's sign-ups.
+    signUpEmail: { max: 3, windowMs: 60 * 60 * 1000 },
+    signUpGlobal: { max: 300, windowMs: 60 * 60 * 1000 },
     sessionIp: { max: 300, windowMs: 60 * 1000 }
   },
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
@@ -236,6 +245,11 @@ export function createRateLimiter({ max, windowMs, now = Date.now } = {}) {
         remaining: Math.max(0, max - e.count),
         retryAfterSec: limited ? Math.max(1, Math.ceil((e.windowStart + windowMs - t) / 1000)) : 0
       }
+    },
+    /** Take one request back (it turned out not to use the budget). */
+    refund(key) {
+      const e = entries.get(key)
+      if (e && e.count > 0) e.count--
     },
     reset(key) { entries.delete(key) },
     clear() { entries.clear() },
@@ -451,6 +465,8 @@ export function createAuth(options = {}) {
     signInEmail: resolveLimiter(cfg.limits.signInEmail),
     signInGlobal: resolveLimiter(cfg.limits.signInGlobal),
     signUpIp: resolveLimiter(cfg.limits.signUpIp),
+    signUpEmail: resolveLimiter(cfg.limits.signUpEmail),
+    signUpGlobal: resolveLimiter(cfg.limits.signUpGlobal),
     sessionIp: resolveLimiter(cfg.limits.sessionIp)
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
@@ -771,6 +787,15 @@ export function createAuth(options = {}) {
   }
 
   // --- action handlers ---------------------------------------------------------
+  // The per-address sign-up bucket: name+tag@domain counts as name@domain.
+  function mailboxKey(email) {
+    const at = email.lastIndexOf('@')
+    if (at <= 0) return email
+    const local = email.slice(0, at)
+    const plus = local.indexOf('+')
+    return (plus > 0 ? local.slice(0, plus) : local) + email.slice(at)
+  }
+
   function limit(bucket, key) {
     const l = limits[bucket]
     if (!l) return null
@@ -852,6 +877,23 @@ export function createAuth(options = {}) {
     }
     const pwProblem = validateNewPassword(body.password)
     if (pwProblem) return fail(422, pwProblem, 'weak_password')
+    const blockedEmail = limit('signUpEmail', mailboxKey(email))
+    if (blockedEmail) return blockedEmail
+    // Last, so requests refused above never use up the global budget; and
+    // refunded below unless an account is created.
+    const blockedGlobal = limit('signUpGlobal', '*')
+    if (blockedGlobal) return blockedGlobal
+    let created = false
+    try {
+      const out = await createAccount(body, email)
+      created = out.status === 200
+      return out
+    } finally {
+      if (!created) limits.signUpGlobal?.refund?.('*')
+    }
+  }
+
+  async function createAccount(body, email) {
 
     const meta = stripMetadata(body.metadata ?? body.data)
     if (utf8Length(JSON.stringify(meta)) > cfg.maxMetadataBytes) {

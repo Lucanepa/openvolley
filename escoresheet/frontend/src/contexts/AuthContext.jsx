@@ -5,6 +5,18 @@ import { profileUpdateColumns, confirmedProfileRow, PROFILE_NOT_SAVED } from '..
 
 const AuthContext = createContext(null)
 
+// Same-tab notice that the signed-in account's profile was cached (the
+// 'storage' event only reaches other tabs). useUserMatchLink (hooks/useSyncQueue)
+// re-checks the My Matches roles then: they compare the profile name with the
+// match officials.
+export const PROFILE_CACHED_EVENT = 'ov-profile-cached'
+function cacheProfile(profile) {
+  try {
+    localStorage.setItem('cachedProfile', JSON.stringify(profile))
+    window.dispatchEvent(new Event(PROFILE_CACHED_EVENT))
+  } catch { /* storage full or blocked: offline auto-fill just has no profile */ }
+}
+
 // Check if backend proxy is available (for auth operations)
 const hasBackend = () => !!getApiUrl('/api/auth/sign-in')
 
@@ -58,7 +70,7 @@ export function AuthProvider({ children }) {
       setProfile(data)
       if (import.meta.env.DEV) console.log('[AuthContext] Profile set successfully:', data)
       // Cache profile in localStorage for offline auto-fill
-      localStorage.setItem('cachedProfile', JSON.stringify(data))
+      cacheProfile(data)
       return data
     } catch (err) {
       console.error('[AuthContext] Profile fetch error:', err.message, err)
@@ -205,7 +217,7 @@ export function AuthProvider({ children }) {
       return { data: null, error: { message: 'Your profile was not saved. Please reload the app and try again.', code: PROFILE_NOT_SAVED } }
     }
     setProfile(updatedProfile)
-    localStorage.setItem('cachedProfile', JSON.stringify(updatedProfile))
+    cacheProfile(updatedProfile)
 
     return { data: updatedProfile, error: null }
   }, [user])

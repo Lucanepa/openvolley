@@ -92,14 +92,21 @@ export function hasMatchStarted(game) {
 
 /**
  * The games the livescore list shows: started (or finished) matches, plus any
- * match already shown as started in this session.
+ * match already shown as started in this session; never stale ones
+ * (isStaleGame: finished hours ago, or abandoned).
  * @param {object[]} games
  * @param {Set<string>} [shown]  match_ids already shown as started; updated in place
+ * @param {number} [now]
+ * @param {Map<string, {stamp: string, changedAt: number|null}>} [seen]  per
+ *   match_id, the updated_at last seen and when (this page's clock) it last
+ *   changed; updated in place (noteRowChanges)
  * @returns {object[]}
  */
-export function listedGames(games, shown = new Set()) {
+export function listedGames(games, shown = new Set(), now = Date.now(), seen = null) {
+  if (seen) noteRowChanges(games, seen, now)
   return (games || []).filter((g) => {
     if (!g) return false
+    if (isStaleGame(g, now, seen?.get(g.match_id)?.changedAt ?? null)) return false
     if (hasMatchStarted(g)) {
       shown.add(g.match_id)
       return true
@@ -180,15 +187,198 @@ export function jitterDelay(ms, random = Math.random) {
 export function applyMatchRowChange(games, payload) {
   if (payload?.eventType !== 'UPDATE' && payload?.eventType !== 'INSERT') return games
   const row = payload.new
-  if (!row || row.id == null || !Array.isArray(row.set_results)) return games
+  if (!row || row.id == null) return games
+  // Columns of the (public) match row the livescore uses: the set chips, and
+  // who Team A is (coin toss, home team name) to put them on the right side.
+  const picked = {}
+  if (Array.isArray(row.set_results)) picked.set_results = row.set_results
+  if (row.coin_toss?.team_a === 'home' || row.coin_toss?.team_a === 'away') picked.coin_toss = { team_a: row.coin_toss.team_a }
+  if (typeof row.home_team?.name === 'string' && row.home_team.name) picked.home_team = { name: row.home_team.name }
+  if (Object.keys(picked).length === 0) return games
   const index = (games || []).findIndex((g) => g?.match_id === row.id)
   if (index === -1) return games
   const game = games[index]
   const joined = Array.isArray(game.matches) ? game.matches[0] : game.matches
-  if (JSON.stringify(joined?.set_results ?? null) === JSON.stringify(row.set_results)) return games
+  const changed = Object.keys(picked).some((k) => JSON.stringify(joined?.[k] ?? null) !== JSON.stringify(picked[k]))
+  if (!changed) return games
   const next = games.slice()
-  next[index] = { ...game, matches: { ...(joined || {}), set_results: row.set_results } }
+  next[index] = { ...game, matches: { ...(joined || {}), ...picked } }
   return next
+}
+
+// ── Set numbers, set counts and sides ───────────────────────────────────────
+
+/**
+ * best_of of a live-state row. Rows written before match_live_state.best_of
+ * existed have none: a decider (index 5) reached with at most 3 sets played is
+ * a best-of-3 one (a best-of-5 decider starts at 2:2).
+ * @param {object} game
+ * @returns {3|5}
+ */
+export function liveBestOf(game) {
+  const b = Number(game?.best_of)
+  if (b === 3 || b === 5) return b
+  // The joined match's own format, when the row carries it
+  const info = Number(joinedMatch(game)?.match_info?.best_of)
+  if (info === 3 || info === 5) return info
+  if (Number(game?.current_set) !== 5) return 5
+  // A best-of-3 decider is played at 1:1 and ends 2:1; a best-of-5 one at
+  // 2:2. Older scoreboards dropped Team B's set at the set_end push, so a
+  // best-of-5 interval before the decider could read 2:1: only a FINISHED
+  // 2:1 is a best-of-3.
+  const a = num(game?.sets_won_a)
+  const bb = num(game?.sets_won_b)
+  if (a + bb <= 2) return 3
+  if (a + bb === 3 && Math.max(a, bb) === 2 && isEndedStatus(game?.match_status)) return 3
+  return 5
+}
+
+/**
+ * The set number viewers see for the row's current set: a best-of-3 decider
+ * is stored as set 5 and is shown as set 3 (utils/matchFormat displaySetNumber).
+ * @param {object} game  a match_live_state row
+ */
+export function liveSetNumber(game) {
+  const index = num(game?.current_set) || 1
+  return liveBestOf(game) === 3 && index === 5 ? 3 : index
+}
+
+const joinedMatch = (game) => (Array.isArray(game?.matches) ? game.matches[0] : game?.matches) || null
+
+/**
+ * Is Team A (the live state's A/B model) the home team? set_results are
+ * stored as {home, away}. Known from the match row (coin toss, else the home
+ * team name against team_a_name); for a finished match without either, from
+ * the set results themselves: the live row's own Team A count matches the
+ * home or the away wins (older scoreboards only ever undercounted Team B).
+ * Defaults to true.
+ * @param {object} game
+ * @returns {boolean}
+ */
+export function teamAIsHome(game) {
+  const match = joinedMatch(game)
+  const tossA = match?.coin_toss?.team_a
+  if (tossA === 'home' || tossA === 'away') return tossA === 'home'
+  const homeName = match?.home_team?.name
+  if (homeName && game?.team_a_name && game.team_a_name !== game.team_b_name) return game.team_a_name === homeName
+  if (isEndedStatus(game?.match_status)) {
+    const wins = setWinsByTeam(getSetResults(game))
+    if (wins && wins.home !== wins.away) {
+      const a = num(game.sets_won_a)
+      if (a === wins.home) return true
+      if (a === wins.away) return false
+    }
+  }
+  return true
+}
+
+/** Sets won per team from set results ({set, home, away}), or null without any. */
+function setWinsByTeam(results) {
+  if (!Array.isArray(results) || results.length === 0) return null
+  let home = 0
+  let away = 0
+  for (const s of results) {
+    if (num(s?.home) > num(s?.away)) home++
+    else if (num(s?.away) > num(s?.home)) away++
+  }
+  return { home, away }
+}
+
+/**
+ * Sets won by Team A and Team B. A finished match counts its set results (the
+ * match row is written from the finished sets; live rows from older
+ * scoreboards missed every set Team B won: FINAL 1:1 for a 1:2). Otherwise
+ * the live row's own counts.
+ * @param {object} game
+ * @returns {{a: number, b: number}}
+ */
+export function liveSetsWon(game) {
+  const own = { a: num(game?.sets_won_a), b: num(game?.sets_won_b) }
+  if (!isEndedStatus(game?.match_status)) return own
+  const wins = setWinsByTeam(getSetResults(game))
+  if (!wins || wins.home + wins.away < own.a + own.b) return own
+  return teamAIsHome(game) ? { a: wins.home, b: wins.away } : { a: wins.away, b: wins.home }
+}
+
+/**
+ * Set results as Team A / Team B points: [{set, a, b}], set = the number
+ * viewers see (a best-of-3 decider stored as 5 is set 3).
+ * @param {object} game
+ */
+export function liveSetResults(game) {
+  const aIsHome = teamAIsHome(game)
+  const bestOf = liveBestOf(game)
+  return getSetResults(game).map((s) => ({
+    set: bestOf === 3 && num(s.set) === 5 ? 3 : s.set,
+    a: aIsHome ? s.home : s.away,
+    b: aIsHome ? s.away : s.home
+  }))
+}
+
+// ── Stale rows ──────────────────────────────────────────────────────────────
+
+/** A finished match stays listed this long after its last update. */
+export const ENDED_LISTED_MS = 3 * 60 * 60 * 1000
+/** A match not finished but silent this long is abandoned (never ended on the scorer). */
+export const IDLE_LISTED_MS = 3 * 60 * 60 * 1000
+/** The list query asks for rows updated within this window only. */
+export const LIVE_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * True when a row should no longer be listed: finished more than
+ * ENDED_LISTED_MS ago, or not finished and not updated for IDLE_LISTED_MS.
+ * Rows without a timestamp are kept.
+ *
+ * updated_at comes from the scorer device's clock. A tablet or Pi without NTP
+ * that runs hours slow would make a match being played look abandoned, so a
+ * change this page saw itself (`changedAt`, this page's clock) counts too:
+ * the later of the two decides.
+ * @param {object} game
+ * @param {number} [now]
+ * @param {number|null} [changedAt]  when this page last saw the row change
+ */
+export function isStaleGame(game, now = Date.now(), changedAt = null) {
+  const parsed = Date.parse(game?.updated_at || game?.last_event_ts || '')
+  const t = Math.max(Number.isFinite(parsed) ? parsed : -Infinity, Number.isFinite(changedAt) ? changedAt : -Infinity)
+  if (!Number.isFinite(t)) return false
+  return now - t > (isEndedStatus(game?.match_status) ? ENDED_LISTED_MS : IDLE_LISTED_MS)
+}
+
+/**
+ * Remember, per match_id, when this page saw a row's updated_at change. The
+ * first sighting records nothing (an old row is not news): only a later,
+ * different updated_at sets `changedAt` to `now`.
+ * @param {object[]} games
+ * @param {Map<string, {stamp: string, changedAt: number|null}>} seen  updated in place
+ * @param {number} now
+ */
+export function noteRowChanges(games, seen, now) {
+  for (const g of games || []) {
+    if (!g || g.match_id == null) continue
+    const stamp = String(g.updated_at ?? g.last_event_ts ?? '')
+    const prev = seen.get(g.match_id)
+    if (!prev) seen.set(g.match_id, { stamp, changedAt: null })
+    else if (prev.stamp !== stamp) seen.set(g.match_id, { stamp, changedAt: now })
+  }
+}
+
+/** Number of listed games still being played (FINAL ones are not live). */
+export function countLiveGames(games) {
+  return (games || []).filter((g) => g && !isEndedStatus(g.match_status)).length
+}
+
+// ── Live-state pushes (scoreboard side) ─────────────────────────────────────
+
+/**
+ * Must the scoreboard capture a fresh state snapshot for this live-state push
+ * instead of reusing the last event's? Manual changes, and the deciding-set
+ * court switch: it writes set5CourtSwitched without an event, so the last
+ * event's snapshot still has the old sides (livescore showed them until the
+ * next rally).
+ * @param {string|null|undefined} eventType
+ */
+export function liveStateNeedsFreshSnapshot(eventType) {
+  return typeof eventType === 'string' && (eventType.startsWith('manual_') || eventType === 'court_switch')
 }
 
 /**

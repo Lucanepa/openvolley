@@ -20,6 +20,11 @@ function fakeTable(rows = []) {
       for (const r of newRows) map.set(r.id, { ...r })
     },
     get: async (id) => map.get(id),
+    add: async (row) => {
+      const id = Math.max(0, ...map.keys()) + 1
+      map.set(id, { ...row, id })
+      return id
+    },
     update: async (id, changes) => {
       const row = map.get(id)
       if (!row) return 0
@@ -39,6 +44,24 @@ function fakeTable(rows = []) {
 // Module load installs a Dexie 'creating' hook on sync_queue
 const fakeDb = vi.hoisted(() => ({ sync_queue: { hook: () => {} } }))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
+
+// Dexie's live queries only observe real Dexie tables: run the query once per
+// dependency change against the fakes instead
+vi.mock('dexie-react-hooks', async () => {
+  const { useState, useEffect } = await import('react')
+  return {
+    useLiveQuery: (query, deps = [], initial) => {
+      const [value, setValue] = useState(initial)
+      useEffect(() => {
+        let alive = true
+        Promise.resolve(query()).then(v => { if (alive) setValue(v) })
+        return () => { alive = false }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, deps)
+      return value
+    }
+  }
+})
 
 // Every apiFrom call is recorded; `respond` decides the result.
 // apiMatchRestore (POST /api/match/restore) is recorded as a call on table '__restore'.
@@ -78,6 +101,11 @@ vi.mock('../../lib/apiClient', () => {
       const call = { table: '__restore', action: 'restore', data: payload, filters: [] }
       api.calls.push(call)
       return api.respond(call)
+    },
+    apiMatchClaim: async (externalId, pin) => {
+      const call = { table: '__claim', action: 'claim', data: { externalId, pin }, filters: [] }
+      api.calls.push(call)
+      return api.respond(call)
     }
   }
 })
@@ -98,6 +126,11 @@ import {
   pruneSyncQueue,
   hasApplicationErrorCode,
   useSyncQueue,
+  queueUserMatchLinks,
+  storedSessionUserId,
+  useUserMatchLink,
+  processJob,
+  takeJobError,
   STOP_PASS
 } from '../useSyncQueue'
 
@@ -122,6 +155,93 @@ beforeEach(() => {
 })
 
 describe('runQueuePass', () => {
+  it('a write refused as OV_NOT_MATCH_OWNER takes the match over with the local game PIN, then is sent', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:2', match_id: 'match_100_aaa' } }
+    ])
+    let claimed = false
+    api.respond = (call) => {
+      if (call.table === '__claim') {
+        claimed = true
+        return { data: { role: 'editor' }, error: null, status: 200 }
+      }
+      if (call.action === 'upsert' && !claimed) return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    const outcome = await runQueuePass()
+    const claims = api.calls.filter(c => c.table === '__claim')
+    expect(claims).toEqual([{ table: '__claim', action: 'claim', data: { externalId: 'match_100_aaa', pin: '864201' }, filters: [] }])
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(outcome.hasFailed).toBe(false)
+  })
+
+  it('without the game PIN, or when the take-over is refused, the job is parked as failed (one claim per pass)', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:2', match_id: 'match_100_aaa' } }
+    ])
+    api.respond = (call) => {
+      if (call.table === '__claim') return { data: null, error: { code: 'OV_NOT_FOUND', status: 404 }, status: 404 }
+      if (call.action === 'upsert') return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+
+    // No local game PIN: no claim at all
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa' }])
+    fakeDb.sync_queue.reset([
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa:e:3', match_id: 'match_100_aaa' } }
+    ])
+    api.calls = []
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('failed')
+  })
+
+  it('processJob itself takes over (the direct set-end / match-end sync too) and requeues the match\'s parked jobs', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'failed', payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'event', action: 'insert', status: 'failed', payload: { external_id: 'match_other:e:1', match_id: 'match_other' } },
+      { id: 3, resource: 'set', action: 'insert', status: 'sending', payload: { external_id: 'match_100_aaa:s:2', match_id: 'match_100_aaa', index: 2 } }
+    ])
+    let claimed = false
+    api.respond = (call) => {
+      if (call.table === '__claim') {
+        claimed = true
+        return { data: { role: 'editor' }, error: null, status: 200 }
+      }
+      if (call.action === 'upsert' && !claimed) return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    const job = fakeDb.sync_queue.map.get(3)
+    expect(await processJob(job)).toBe(true)
+    expect(takeJobError(3)).toBeNull()
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('failed', 'another match stays parked')
+
+    // A refused take-over is not repeated by every job within the minute
+    claimed = false
+    api.calls = []
+    api.respond = (call) => {
+      if (call.table === '__claim') return { data: null, error: { code: 'OV_NOT_FOUND', status: 404 }, status: 404 }
+      if (call.action === 'upsert') return { data: null, error: { message: 'Database operation failed', code: 'OV_NOT_MATCH_OWNER', status: 403 } }
+      return defaultRespond(call)
+    }
+    resetQueueHousekeeping()
+    const other = { id: 9, resource: 'event', action: 'insert', status: 'sending', payload: { external_id: 'match_100_aaa:e:9', match_id: 'match_100_aaa' } }
+    await processJob(other)
+    await processJob({ ...other, id: 10 })
+    expect(api.calls.filter(c => c.table === '__claim')).toHaveLength(1)
+  })
+
   it('a 429 leaves the job queued untouched and stops the pass', async () => {
     fakeDb.sync_queue.reset([
       { id: 1, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:1', match_id: 'match_100_aaa' } },
@@ -639,6 +759,114 @@ describe('getSyncQueueStats', () => {
       { id: 4, status: 'failed' }, { id: 5, status: 'sent' }, { id: 6, status: 'dropped' }
     ])
     expect(await getSyncQueueStats()).toEqual({ pending: 2, error: 1, failed: 1 })
+  })
+})
+
+describe('My Matches links (user_matches)', () => {
+  const ALICE = 'aaaaaaaa-0000-4000-8000-000000000001'
+  const BOB = 'bbbbbbbb-0000-4000-8000-000000000002'
+  const signIn = (id) => localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: Date.now() / 1000 + 3600, user: { id } }))
+  afterEach(() => {
+    localStorage.removeItem('api_auth_token')
+    localStorage.removeItem('cachedProfile')
+  })
+
+  it('reads the signed-in account from the stored session, ignoring an expired one', () => {
+    expect(storedSessionUserId()).toBe(null)
+    signIn(ALICE)
+    expect(storedSessionUserId()).toBe(ALICE)
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: 1, user: { id: ALICE } }))
+    expect(storedSessionUserId()).toBe(null)
+  })
+
+  it('queues a scorer link keyed by the seed key, once, only when signed in and never for test matches', async () => {
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa' })).toBe(0) // nobody signed in
+    signIn(ALICE)
+    expect(await queueUserMatchLinks({ seed_key: null })).toBe(0) // no seed key yet: no Dexie-id link
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa', test: true })).toBe(0)
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa' })).toBe(1)
+    expect(await queueUserMatchLinks({ seed_key: 'match_100_aaa' })).toBe(0) // already queued
+    const jobs = [...fakeDb.sync_queue.map.values()]
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({
+      resource: 'user_match',
+      action: 'upsert',
+      status: 'queued',
+      payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer', sport_type: 'indoor' }
+    })
+  })
+
+  it('adds the officials role carrying the account name', async () => {
+    signIn(ALICE)
+    localStorage.setItem('cachedProfile', JSON.stringify({ user_id: ALICE, first_name: 'Anna', last_name: 'Müller' }))
+    await queueUserMatchLinks({
+      seed_key: 'match_100_aaa',
+      officials: [
+        { role: '1st referee', firstName: 'anna', lastName: 'MULLER' },
+        { role: 'scorer', firstName: 'Other', lastName: 'Person' }
+      ]
+    })
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.payload.role)).toEqual(['scorer', '1st referee'])
+  })
+
+  it('sends the link after the match, as an owner-scoped upsert without user_id', async () => {
+    signIn(ALICE)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'user_match', action: 'upsert', status: 'queued', payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer', sport_type: 'indoor' } },
+      { id: 2, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    await runQueuePass()
+    expect(api.calls.map(c => c.table)).toEqual(['matches', 'user_matches'])
+    const link = api.calls[1]
+    expect(link).toMatchObject({ action: 'upsert', onConflict: 'user_id,match_external_id,role', data: { match_external_id: 'match_100_aaa', role: 'scorer', sport_type: 'indoor' } })
+    expect(link.data).not.toHaveProperty('user_id')
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+
+  it('waits behind a failed match insert of the same match', async () => {
+    signIn(ALICE)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'error', attempts: 1, next_attempt_at: Date.now() + 60000, payload: { external_id: 'match_100_aaa' } },
+      { id: 2, resource: 'user_match', action: 'upsert', status: 'queued', payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer' } }
+    ])
+    await runQueuePass()
+    expect(api.calls).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+  })
+
+  it('useUserMatchLink links the open match once it has a seed key, and re-checks when the profile arrives', async () => {
+    signIn(ALICE)
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', officials: [{ role: '2nd referee', firstName: 'Anna', lastName: 'Muster' }] }])
+    const { unmount } = renderHook(() => useUserMatchLink(1))
+    await vi.waitFor(() => expect(fakeDb.sync_queue.map.size).toBe(1))
+    expect([...fakeDb.sync_queue.map.values()][0].payload).toMatchObject({ match_external_id: 'match_100_aaa', role: 'scorer' })
+
+    localStorage.setItem('cachedProfile', JSON.stringify({ user_id: ALICE, first_name: 'Anna', last_name: 'Muster' }))
+    await act(async () => { window.dispatchEvent(new Event('ov-profile-cached')) })
+    await vi.waitFor(() => expect(fakeDb.sync_queue.map.size).toBe(2))
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.payload.role)).toEqual(['scorer', '2nd referee'])
+    unmount()
+  })
+
+  it('useUserMatchLink queues nothing for a match without a seed key or a test match', async () => {
+    signIn(ALICE)
+    fakeDb.matches.reset([{ id: 1, seed_key: null }, { id: 2, seed_key: 'match_200_bbb', test: true }])
+    const a = renderHook(() => useUserMatchLink(1))
+    const b = renderHook(() => useUserMatchLink(2))
+    await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+    expect(fakeDb.sync_queue.map.size).toBe(0)
+    a.unmount()
+    b.unmount()
+  })
+
+  it('never links the match to another account signed in meanwhile', async () => {
+    signIn(BOB)
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'user_match', action: 'upsert', status: 'queued', payload: { user_id: ALICE, match_external_id: 'match_100_aaa', role: 'scorer' } }
+    ])
+    await runQueuePass()
+    expect(api.calls).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
   })
 })
 

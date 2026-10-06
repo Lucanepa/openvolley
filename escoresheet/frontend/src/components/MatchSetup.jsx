@@ -14,11 +14,12 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { parseRosterPdf } from '../utils/parseRosterPdf'
-import { getWebSocketUrl, getBackendUrl } from '../utils/backendConfig'
+import { getBackendUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { apiFrom } from '../lib/apiClient'
-import { generateMatchSeedKey } from '../utils/serverDataSync'
+import { generateMatchSeedKey, relayMatchKey } from '../utils/serverDataSync'
+import { scorerLiveOrder, scorerRelay } from '../utils/relayPublisher'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
@@ -6289,14 +6290,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return generateSecurePin(existingPins)
   }
 
-  // Sync match data to server (for when Scoreboard is not mounted)
+  // Sync match data to the relay (for when Scoreboard is not mounted), on the
+  // scorer's one relay connection (App.jsx keeps it open) and under the seed
+  // key only: a Dexie id is no relay room (relayMatchKey), and a socket of its
+  // own would prove the match a second time. PINs as relayMatchPayload sends them.
   // If fullSync is true, fetches all data (teams, players, sets, events) from IndexedDB
   const syncMatchToServer = async (matchData, fullSync = false) => {
-    const wsUrl = getWebSocketUrl()
-    if (!wsUrl) return
+    const ws = scorerRelay.socket
+    const relayKey = relayMatchKey(matchData)
+    if (!ws || !scorerRelay.isOpen() || !relayKey) return
 
     try {
-      // For full sync, fetch all data from IndexedDB
+      const syncMark = scorerLiveOrder.mark()
       let homeTeam = null, awayTeam = null, homePlayers = [], awayPlayers = [], sets = [], events = []
 
       if (fullSync && matchData) {
@@ -6316,28 +6321,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         events = fetchedEvents
       }
 
-      // Create a temporary WebSocket connection to sync the data
-      const ws = new WebSocket(wsUrl)
-
-      ws.onopen = () => {
-        const syncPayload = {
-          type: 'sync-match-data',
-          matchId: matchData.id,
-          match: matchData,
-          homeTeam: homeTeam,
-          awayTeam: awayTeam,
-          homePlayers: homePlayers,
-          awayPlayers: awayPlayers,
-          sets: sets,
-          events: events,
-          _timestamp: Date.now()
-        }
-        ws.send(JSON.stringify(syncPayload))
-        // Close after a short delay to ensure message is sent
-        setTimeout(() => ws.close(), 500)
-      }
-
-      ws.onerror = () => { }
+      if (scorerRelay.socket !== ws) return
+      const { match, commit } = scorerRelay.pins.payloadFor(ws, matchData, relayKey, syncMark)
+      const sent = scorerRelay.send({
+        type: 'sync-match-data',
+        matchId: relayKey,
+        match,
+        homeTeam,
+        awayTeam,
+        homePlayers,
+        awayPlayers,
+        sets,
+        events,
+        _timestamp: Date.now()
+      })
+      if (sent) commit()
     } catch (error) {
       console.error('[MatchSetup] Failed to sync to server:', error)
     }
