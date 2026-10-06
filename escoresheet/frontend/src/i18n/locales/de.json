@@ -1869,7 +1869,7 @@
       "pending": "Freigabe ausstehend"
     },
     "signUpPendingNote": "Neue Konten brauchen eine Freigabe, bevor offizielle Spiele in die Cloud synchronisiert werden. Frage deinen Verein nach einem Einladungscode.",
-    "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto freigegeben ist."
+    "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto als Schreiber freigegeben ist."
   },
   "manage": {
     "title": "Verwaltung",

@@ -2074,7 +2074,7 @@
       "pending": "Approvazione in sospeso"
     },
     "signUpPendingNote": "I nuovi account devono essere approvati prima che le partite ufficiali vengano sincronizzate nel cloud. Chiedi un codice d’invito al tuo club.",
-    "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato."
+    "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato come segnapunti."
   },
   "manage": {
     "title": "Gestione",

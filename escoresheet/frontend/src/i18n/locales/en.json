@@ -2075,7 +2075,7 @@
       "pending": "Pending approval"
     },
     "signUpPendingNote": "New accounts need approval before official matches sync to the cloud. Ask your club for an invite code.",
-    "officialMatchLocalOnly": "This match stays on this device until your account is approved."
+    "officialMatchLocalOnly": "This match stays on this device until your account is approved as a scorer."
   },
   "manage": {
     "title": "Manage",

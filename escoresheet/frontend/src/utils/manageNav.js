@@ -16,3 +16,19 @@ export function openManage(tab = 'accounts') {
 export function openRestore({ gameN } = {}) {
   try { window.dispatchEvent(new CustomEvent(OPEN_RESTORE_EVENT, { detail: { gameN: gameN ?? null } })) } catch { /* no window */ }
 }
+
+/**
+ * The restore dialog's fields for an OPEN_RESTORE_EVENT: the game number goes
+ * into the cloud-backup game number field (the one the dialog reads), the PIN
+ * and any old error are cleared.
+ * @param {{gameN?: number|string|null}} [detail]
+ * @returns {{cloudBackupGameN: string, cloudBackupPin: string, cloudBackupError: string}}
+ */
+export function restorePrefill(detail) {
+  const gameN = detail?.gameN
+  return {
+    cloudBackupGameN: gameN != null && gameN !== '' ? String(gameN) : '',
+    cloudBackupPin: '',
+    cloudBackupError: ''
+  }
+}
