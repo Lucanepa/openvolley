@@ -580,8 +580,14 @@ Validate a 6-digit PIN for referee/bench access against the relay's copy. The
 answer carries the match (no PINs) and `token`, the match access token.
 
 ```json
-{ "pin": "123456", "type": "referee|homeTeam|awayTeam" }
+{ "pin": "123456", "type": "referee|homeTeam|awayTeam", "sport": "indoor|beach" }
 ```
+
+`sport` (default `indoor`) limits the search to rooms of that sport: a room is
+`beach` when its scoreboard syncs `team1Team`/`team2Team`/`team1Players`/
+`team2Players` (openbeach) or names `sportType`/`sport_type` `beach`. A beach
+answer carries `match.sportType: "beach"`; the indoor answer is unchanged. Any
+other `sport` is 400.
 
 ### `POST /api/match/claim` (cloud, session)
 
