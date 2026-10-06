@@ -79,6 +79,30 @@ npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
    - Livescore:  `http://192.168.1.42:5173/livescore`
 3. Type the address into the tablet's browser and enter the match PIN.
 
+## Automatic backups (every event)
+
+The desktop app saves the open match after **every scoring event** (point,
+timeout, substitution, sanction, libero change, set start/end, match end,
+undo), on by default, no browser feature needed:
+
+- Linux: `~/.local/share/OpenVolley/backups/<match>/`
+- Windows: `%APPDATA%\OpenVolley\backups\<match>\`
+- (`OPENVOLLEY_BACKUP_DIR` overrides the folder.)
+
+Each match folder (`game<N>-<seed>`, `test-…` for test matches) holds one
+`<UTC time>-<event seq>.json` per event plus `latest.json`, in the same format
+as **Download backup**, so **Options → Backup → Restore from a backup file**
+(or Restore match → local file) restores any of them. Each match keeps its
+last 500 event files; event files older than 30 days are deleted at the next
+start, `latest.json` is always kept. **Options → Backup → Open backup folder**
+opens it in the file manager.
+
+The writes go through the app's `backup_*` Rust commands
+(`src-tauri/src/backup.rs`), which only accept a match folder and a file name
+inside that one folder; `capabilities/backup.json` grants them to the main
+window on `http://localhost` only. LAN tablets are plain browsers and keep the
+browser options (folder on Chrome/Edge, downloads elsewhere).
+
 ## Why plain HTTP (and the tablet-camera trade-off)
 
 Tablets connect over plain `http://<LAN-IP>` — simple, zero setup, no

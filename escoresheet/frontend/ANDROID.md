@@ -122,6 +122,30 @@ LAN address (e.g. `192.168.1.20:8080`); the app checks `/health`, stores the
 address and reloads. **Options → Use this tablet as** opens the bundled
 referee, bench or livescore view; they share the chosen server.
 
+## Automatic backups
+
+The app saves the open match after every scoring event (same file format as
+the desktop app, see `OFFLINE_DESKTOP.md`) to the public
+**`Documents/OpenVolley/backups/<match>/`** folder
+(`/storage/emulated/0/Documents/...`), via `@capacitor/filesystem`.
+
+- Why Documents: it is visible in the Files app and over USB (MTP), so the
+  owner can copy the backups off the tablet, and the files **survive an
+  uninstall**. The app-private folders (`Directory.Data`, and
+  `Android/data/<package>` = `Directory.External`) are deleted on uninstall
+  and are hard to reach on Android 11+.
+- Permissions: Android 11+ needs none for files the app creates there.
+  Android 10 and older need storage access (`WRITE_EXTERNAL_STORAGE`
+  maxSdk 29, `requestLegacyExternalStorage`); if it is refused the app falls
+  back to `Android/data/com.openvolley.escoresheet/files/OpenVolley/backups`.
+- After a reinstall on Android 11+, the old files belong to the previous
+  install: the new one cannot overwrite or delete them. New event files and
+  new matches are fine; a match continued across the reinstall keeps its old
+  `latest.json` (its newest event file is the current state), and rotation
+  skips what it cannot delete.
+- **Options → Backup** shows the folder; **Restore from a backup file** opens
+  the system picker (browse to Documents → OpenVolley → backups).
+
 ## Icons and splash
 
 `python3 scripts/make-android-icons.py` regenerates the launcher icons
