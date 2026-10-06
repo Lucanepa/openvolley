@@ -3,7 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import { db } from '../../db/db'
-import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup } from '../../utils/backupManager'
+import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings } from '../../utils/backupManager'
+import {
+  detectBackupPlatform,
+  isNativeBackupPlatform,
+  useNativeBackupStatus,
+  openNativeBackupFolder,
+  pickNativeBackupFile
+} from '../../utils/nativeBackup'
 import BackupTable from '../BackupTable'
 import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
@@ -125,6 +132,9 @@ export default function ScoreboardOptionsModal({
   const [cloudBackups, setCloudBackups] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [restoreConfirm, setRestoreConfirm] = useState(null) // backup to confirm restore
+  const [backupPlatform] = useState(() => detectBackupPlatform())
+  const nativeBackup = isNativeBackupPlatform(backupPlatform)
+  const nativeBackupStatus = useNativeBackupStatus()
 
   // Load cloud backups
   const loadBackups = async () => {
@@ -153,34 +163,59 @@ export default function ScoreboardOptionsModal({
   // Restore from a cloud backup
   const handleRestore = async (backup) => {
     try {
-      const backupData = await fetchCloudBackup(backup.path)
-      if (!backupData) {
-        showAlert(t('options.alerts.failedToLoadBackupData'), 'error')
-        return
-      }
-      // The game-number folder is shared by every match with that number:
-      // never restore another match's backup onto the open one.
-      const current = await db.matches.get(matchId)
-      const currentKey = current?.seed_key || current?.externalId
-      const backupKey = backupData.match?.seed_key || backupData.match?.seedKey || backupData.match?.external_id
-      if (currentKey && backupKey && currentKey !== backupKey) {
-        showAlert(t('options.alerts.failedToRestoreBackup', { error: 'This backup belongs to a different match' }), 'error')
-        return
-      }
-      // Use the callback or in-place restore
-      if (onRestoreBackup) {
-        await onRestoreBackup(backupData)
-      } else {
-        await restoreMatchInPlace(matchId, backupData)
-      }
-      setShowCloudBackups(false)
-      setRestoreConfirm(null)
-      onClose?.()
-      window.location.reload()
+      // a local file was read already (handleRestoreFromFile); cloud: download it
+      const backupData = backup.fileData || await fetchCloudBackup(backup.path)
+      await restoreBackupData(backupData)
     } catch (err) {
       console.error('Failed to restore backup:', err)
       showAlert(t('options.alerts.failedToRestoreBackup', { error: err.message }), 'error')
     }
+  }
+
+  // Apps: restore the open match from a backup file on this device (after the
+  // same confirmation as a cloud backup)
+  const handleRestoreFromFile = async () => {
+    try {
+      const native = await pickNativeBackupFile()
+      const backupData = native === undefined ? await selectBackupFile() : native
+      if (!backupData) return // cancelled
+      const lastSet = [...(backupData.sets || [])].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
+      setRestoreConfirm({
+        fileData: backupData,
+        name: t('options.restoreFromBackupFile'),
+        ...(lastSet ? { setIndex: lastSet.index || 1, homePoints: lastSet.homePoints ?? 0, awayPoints: lastSet.awayPoints ?? 0 } : {}),
+        timestamp: backupData.lastUpdated ? new Date(backupData.lastUpdated).toLocaleString() : undefined
+      })
+    } catch (err) {
+      console.error('Failed to restore backup file:', err)
+      showAlert(t('options.alerts.failedToRestoreBackup', { error: err.message }), 'error')
+    }
+  }
+
+  const restoreBackupData = async (backupData) => {
+    if (!backupData) {
+      showAlert(t('options.alerts.failedToLoadBackupData'), 'error')
+      return
+    }
+    // The game-number folder is shared by every match with that number:
+    // never restore another match's backup onto the open one.
+    const current = await db.matches.get(matchId)
+    const currentKey = current?.seed_key || current?.externalId
+    const backupKey = backupData.match?.seed_key || backupData.match?.seedKey || backupData.match?.external_id
+    if (currentKey && backupKey && currentKey !== backupKey) {
+      showAlert(t('options.alerts.failedToRestoreBackup', { error: 'This backup belongs to a different match' }), 'error')
+      return
+    }
+    // Use the callback or in-place restore
+    if (onRestoreBackup) {
+      await onRestoreBackup(backupData)
+    } else {
+      await restoreMatchInPlace(matchId, backupData)
+    }
+    setShowCloudBackups(false)
+    setRestoreConfirm(null)
+    onClose?.()
+    window.location.reload()
   }
 
   const executeClearCache = async (includeLocalStorage) => {
@@ -688,6 +723,60 @@ export default function ScoreboardOptionsModal({
           </button>
 
         </div>
+
+        {nativeBackup && (
+          <Section title={t('options.backup')}>
+            <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+              <div className="flex items-center gap-1.5">
+                <div className="text-sm font-semibold text-stone-900">{t('options.autoBackup')}</div>
+                <InfoDot title={t('options.nativeBackupInfo')} />
+              </div>
+              {getBackupSettings({ native: true }).autoBackupEnabled ? (
+                <div>
+                  <div className="text-xs text-stone-600">{t('options.nativeBackupOn')}</div>
+                  <div
+                    className="mt-1.5 break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[11px] leading-snug text-stone-700"
+                    data-testid="native-backup-folder"
+                  >
+                    {nativeBackupStatus.folder || t('options.nativeBackupPreparing')}
+                  </div>
+                  {backupPlatform === 'capacitor' && (
+                    <div className="mt-1.5 text-[11px] leading-snug text-stone-500">{t('options.nativeBackupCopyHint')}</div>
+                  )}
+                  <div className="mt-1.5 text-[11px] leading-snug text-stone-500">
+                    {t(backupPlatform === 'capacitor' ? 'options.nativeBackupPrivacyAndroid' : 'options.nativeBackupPrivacy')}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-stone-500">{t('options.nativeBackupOff')}</div>
+              )}
+              {nativeBackupStatus.lastBackup && (
+                <div className="text-[11px] tabular-nums text-stone-500">
+                  {t('options.lastBackup')}: {nativeBackupStatus.lastBackup.toLocaleTimeString()}
+                </div>
+              )}
+              {nativeBackupStatus.error && (
+                <div role="status" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {t('options.nativeBackupFailed')} {nativeBackupStatus.error}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {backupPlatform === 'tauri' && (
+                  <button
+                    type="button"
+                    onClick={() => openNativeBackupFolder().catch(err => showAlert(err?.message || String(err), 'error'))}
+                    className={BTN_OUTLINE}
+                  >
+                    {t('options.openBackupFolder')}
+                  </button>
+                )}
+                <button type="button" onClick={handleRestoreFromFile} disabled={!matchId} className={BTN_OUTLINE}>
+                  {t('options.restoreFromBackupFile')}
+                </button>
+              </div>
+            </Row>
+          </Section>
+        )}
 
         <Section title={t('options.cloudBackup')}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
