@@ -2881,6 +2881,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       <div className="referee-court" style={{
         // The court floor is a translucent tint: paint the (pinned) page colour
         // behind it here, so it does not show the stone page of the root.
+        // Deliberately only this scoring view: the header and the page gutters
+        // outside the 800px column stay on the stone page. The faint
+        // slate-on-stone edge at the column sides is accepted, since pinning the
+        // root would carry the old palette into the restyled header.
         background: 'var(--bg)',
         flex: 1,
         display: 'flex',
