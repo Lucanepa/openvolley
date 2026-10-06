@@ -436,6 +436,8 @@ export function relaySummaryBundle(entry) {
 }
 
 const LISTED_STATUSES = new Set(['scheduled', 'live'])
+// Listed only on request (?finished=1, the livescore): same set as the relays'
+const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 
 /** A team's display name: a team object or plain string, else `fallback`. */
 function teamNameOf(team, fallback) {
@@ -460,13 +462,17 @@ function formatListDateTime(scheduledAt) {
  * awayTeam, gameNumber? }), or null when the match is not listed. Listed:
  * status 'scheduled' or 'live' (none counts as 'scheduled'), whatever the
  * referee connection — display devices (the point-hub LedBox bridge) need no
- * PIN and pick their match from this list. Public fields only: no PINs, no
- * people. Same rule as lanRelayCore matchListEntry and relay.rs match_list.
+ * PIN and pick their match from this list — and with `includeFinished`
+ * (?finished=1, the livescore on a venue relay) a finished one too. Public
+ * fields only: no PINs, no people. Same rule as lanRelayCore matchListEntry
+ * and relay.rs match_list_entry.
+ * @param {object} entry
+ * @param {{ includeFinished?: boolean }} [options]
  */
-export function relayMatchListRow(entry) {
+export function relayMatchListRow(entry, { includeFinished = false } = {}) {
   const match = (entry?.match && typeof entry.match === 'object') ? entry.match : {}
   const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
-  if (!LISTED_STATUSES.has(status)) return null
+  if (!LISTED_STATUSES.has(status) && !(includeFinished && FINISHED_STATUSES.has(status.toLowerCase()))) return null
   return {
     id: entry.matchId,
     gameNumber: entry.gameNumber || match.gameNumber || match.game_n || entry.matchId,
