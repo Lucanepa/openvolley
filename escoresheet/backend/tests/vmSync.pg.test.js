@@ -91,6 +91,9 @@ describe('vm-sync on Postgres', { skip: SKIP }, () => {
     appUrl = a.toString()
     pool = new pg.Pool({ connectionString: appUrl, max: 4 }) // what runVmSync uses
     ownerPool = new pg.Pool({ connectionString: dbUrl, max: 2 }) // test setup / assertions
+    // Teardown's DROP DATABASE ... WITH (FORCE) may terminate an idle client;
+    // pg-pool re-emits that on the pool, which throws without a listener.
+    for (const p of [pool, ownerPool]) p.on('error', () => {})
   })
 
   after(async () => {
