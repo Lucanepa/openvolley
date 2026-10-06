@@ -187,21 +187,28 @@ external files folder) and says where in the bar. The WebView has no print
 and cannot download a blob, so there is no print dialog. External links and
 `mailto:` are navigations Capacitor hands to Android's browser / mail app.
 
+The view loads `/scoresheet/index.html?…`, not `/scoresheet/?…`: Capacitor's
+local server (html5mode) answers every path whose last segment has no `.` with
+the root `index.html`, which put a second scorer app inside the view.
+
 A page in the view that opens another one (the scoresheet list's download)
-does not use its own `window.open`: the iframe has no Capacitor bridge, so
-`openAppWindow` hands the request to the app under it, which shows the page in
-the same view. When the approval PDF cannot be made, the scoresheet says so
+hands the request to the app under it, which shows the page in the same view.
+(Capacitor injects its bridge into the iframe too, so on its own the page
+would nest a second in-app view inside the first.) When the approval PDF cannot be made, the scoresheet says so
 and the view closes, back to match end. A sign-in error in the view offers
 "Close" (back to the scorer app) instead of a link that would load a second
 scorer app inside it.
 
-Checked in Chrome with a Capacitor stub, not yet on a device: the scoresheet
-shows the match, Back returns to match setup untouched, Save PDF reaches the
-Filesystem call. Still to check on a device (android-emulator): Back / Android
-Back, Save PDF of a full-size scoresheet, external and `mailto:` links being
-handed to Android (if Capacitor does not intercept `location.assign`, the
-scorer page would unload). The match-end ZIP and log downloads
-(`MatchEnd.jsx`) are still blob downloads and do nothing in the WebView.
+Checked on the emulator (Android 16, debug build, 2560×1600 tablet screen):
+Match setup → Scoresheet and Scoreboard → Preview show the scoresheet; the
+bar's Back and the Android Back button return to the screen underneath,
+unchanged; Save PDF writes the full sheet (~790 KB) to
+`Documents/OpenVolley/scoresheets/` and the bar says so; `location.assign` of
+an https link opens Chrome and of a `mailto:` link opens Gmail, the app page
+staying where it was; an open request from inside the view replaces the page
+in the same view. Not checked on a device: the match-end approval PDF
+(`action=getBlob`). The match-end ZIP and log downloads (`MatchEnd.jsx`) are
+still blob downloads and do nothing in the WebView.
 
 ## Servers in the app
 
