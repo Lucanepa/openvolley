@@ -2211,7 +2211,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       debugInfo.websocket = { status: 'n/a', message: 'Static hosting - no WebSocket configured' }
     } else try {
       // Use configured backend URL or relative URL
-      const apiUrl = backendUrl ? `${backendUrl}/api/match/list` : '/api/match/list'
+      // A health check: /api/server/status (every relay has it), not the
+      // match list, which grows with every published match
+      const apiUrl = backendUrl ? `${backendUrl}/api/server/status` : '/api/server/status'
       const response = await fetch(apiUrl)
       if (response.ok) {
         statuses.api = 'connected'

@@ -79,3 +79,11 @@ describe('Scoreboard live state: a test match stays out of the cloud', () => {
     expect(cloud).not.toContain("type: 'live-state-update'")
   })
 })
+
+describe('health checks', () => {
+  it('ask /api/server/status, never the match list (it grows with every published match and shares the LedBox rate limit)', () => {
+    for (const s of [src, scoreboardSrc]) expect(s).not.toMatch(/fetch\([^)]*\/api\/match\/list/)
+    expect(src).toMatch(/fetch\('\/api\/server\/status'/)
+    expect(scoreboardSrc).toMatch(/`\$\{backendUrl\}\/api\/server\/status` : '\/api\/server\/status'/)
+  })
+})
