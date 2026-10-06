@@ -106,6 +106,9 @@ describe('questions', () => {
       quitTestMatchBody: 'A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.',
       quitConfirm: 'Quit OpenVolley',
       keepRunning: 'Keep running',
+      // a downloaded update (updater.rs): {{version}} for the app to fill in
+      updateReady: 'Restart to update to {{version}}',
+      updateStatus: 'Update ready',
     })
   })
 
