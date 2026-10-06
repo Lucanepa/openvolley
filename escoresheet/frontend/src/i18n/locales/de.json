@@ -194,6 +194,8 @@
     "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Geben Sie Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Geburtsdatum des Schreibers: für die Auslosung nötig",
+    "dobRequiredForCoinToss": "Für die Auslosung erforderlich",
     "title": "Spieleinrichtung",
     "scoresheet": "eMatchblatt",
     "options": "Optionen",

@@ -272,10 +272,16 @@ const OfficialCard = memo(function OfficialCard({
   collapsible = false,
   defaultCollapsed = false,
   forceExpanded = false,
+  dobRequired = false,
   t
 }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const isCollapsed = collapsible && collapsed && !forceExpanded
+  // The coin toss needs this date of birth (scorer): flag it while it is
+  // missing or still the 01.01.1900 placeholder, which is shown as empty.
+  const dobMissing = dobRequired && !isKnownDob(dob)
+  const dobValue = dob && !(dobRequired && dobMissing) ? formatDateToISO(dob) : ''
+  const dobNoteId = `${officialKey || 'official'}-dob-required`
   return (
     <div className={isCollapsed ? OFFICIAL_BOX_COLLAPSED : OFFICIAL_BOX}>
       <div className={isCollapsed ? OFFICIAL_HEAD_COLLAPSED : OFFICIAL_HEAD}>
@@ -305,7 +311,24 @@ const OfficialCard = memo(function OfficialCard({
             <Field tone="compact" className={FIELD} label={t('matchSetup.lastName')}><Input aria-label={t('matchSetup.lastName')} className="capitalize" value={lastName} onChange={e => setLastName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.firstName')}><Input aria-label={t('matchSetup.firstName')} className="capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.country')}><Input aria-label={t('matchSetup.country')} value={country} onChange={e => setCountry(e.target.value)} /></Field>
-            <Field tone="compact" className={FIELD} label={t('matchSetup.dateOfBirth')}><Input aria-label={t('matchSetup.dateOfBirth')} className="tabular-nums" type="date" value={dob ? formatDateToISO(dob) : ''} onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} /></Field>
+            <div className="min-w-0">
+              <Field tone="compact" className={FIELD} required={dobRequired || undefined} label={dobRequired ? `${t('matchSetup.dateOfBirth')} *` : t('matchSetup.dateOfBirth')}>
+                <Input
+                  aria-label={t('matchSetup.dateOfBirth')}
+                  aria-describedby={dobMissing ? dobNoteId : undefined}
+                  className={cn('tabular-nums', dobMissing && 'border-amber-400')}
+                  type="date"
+                  value={dobValue}
+                  onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                />
+              </Field>
+              {dobMissing && (
+                <p id={dobNoteId} className="mt-1 flex items-start gap-1 text-[11px] font-medium leading-snug text-amber-800">
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden />
+                  <span>{t('matchSetup.dobRequiredForCoinToss')}</span>
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -582,6 +605,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [scorerLast, setScorerLast] = useState('')
   const [scorerCountry, setScorerCountry] = useState('CHE')
   const [scorerDob, setScorerDob] = useState('')
+  // Not needed to create the match, but the coin toss waits for it: shown
+  // next to Create match so it is filled in with the rest of the form.
+  const scorerDobMissing = !isKnownDob(scorerDob)
 
   const [asstFirst, setAsstFirst] = useState('')
   const [asstLast, setAsstLast] = useState('')
@@ -3421,6 +3447,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setFirstName={setScorerFirst}
               setCountry={setScorerCountry}
               setDob={setScorerDob}
+              dobRequired={true}
               hasDatabase={false}
               selectorKey="scorer"
               onOpenDatabase={handleOpenDatabase}
@@ -3705,13 +3732,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setScorerFirst(referee.firstName || '')
               setScorerLast(referee.lastName || '')
               setScorerCountry(referee.country || 'CHE')
-              setScorerDob(referee.dob || '01.01.1900')
+              setScorerDob(referee.dob || '')
             }
           }}
           position={refereeSelectorPosition}
         />
 
-        <div className="flex items-center justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+          {canConfirmMatchInfo && scorerDobMissing && (
+            <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800" role="note">
+              <AlertTriangle size={16} className="shrink-0" aria-hidden />
+              {t('matchSetup.scorerDobForCoinToss')}
+            </p>
+          )}
           <Button
             variant="positive"
             size="xl"
@@ -3733,7 +3766,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
             </Button>
           {!canConfirmMatchInfo && (
-            <WarningIndicator id="confirmMatchInfo" missingItems={getMissingFieldsList()} position="below" />
+            <WarningIndicator id="confirmMatchInfo" missingItems={[...getMissingFieldsList(), ...(scorerDobMissing ? [t('matchSetup.scorerDobForCoinToss')] : [])]} position="below" />
           )}
         </div>
 
@@ -6139,7 +6172,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Officials are complete if at least 1st referee and scorer are filled
   // 2nd referee and assistant scorer are optional
   const officialsConfigured =
-    !!(ref1Last && ref1First && scorerLast && scorerFirst && scorerDob && scorerDob !== '01.01.1900')
+    !!(ref1Last && ref1First && scorerLast && scorerFirst && isKnownDob(scorerDob))
   const matchInfoConfigured = !!(date || time || hall || city || league)
   // Basic roster configured (enough for saving)
   const homeRosterExists = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
@@ -6160,7 +6193,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!officialsConfigured) {
       if (!ref1Last || !ref1First) missing.push(t('warnings.firstRefereeMissing'))
       if (!scorerLast || !scorerFirst) missing.push(t('warnings.scorerNameMissing'))
-      if (!scorerDob || scorerDob === '01.01.1900') missing.push(t('warnings.scorerDobMissing'))
+      if (!isKnownDob(scorerDob)) missing.push(t('warnings.scorerDobMissing'))
     }
     if (!homeConfigured) {
       if (!home || homeRoster.length < 6) missing.push(t('warnings.homeRosterIncomplete', { count: homeRoster.length }))

@@ -184,6 +184,8 @@
     "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Scorer date of birth: needed for the coin toss",
+    "dobRequiredForCoinToss": "Required for the coin toss",
     "title": "Match setup",
     "scoresheet": "Scoresheet",
     "options": "Options",
