@@ -67,7 +67,7 @@ fn main() {
             // Load the desktop window from the local relay so window.location is
             // a real http origin (the existing LAN client code + the scoresheet
             // popups resolve correctly, and http://localhost keeps camera/QR).
-            WebviewWindowBuilder::new(
+            let main = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::External(format!("http://localhost:{http}/").parse().unwrap()),
@@ -82,8 +82,21 @@ fn main() {
             // the system browser (popups.rs); "Save PDF" into Downloads.
             .on_new_window(popups::new_window_handler(app.handle().clone(), http))
             .on_download(popups::on_download)
-            .build()
-            .map(|main| popups::let_scripts_open_windows(&main))?;
+            .build()?;
+            popups::let_scripts_open_windows(&main);
+            // The scoresheet windows belong to the scoretable: closing the
+            // scoretable closes them and quits. Tauri only exits when the last
+            // window is gone, so a scoresheet left open kept the process, the
+            // LAN relay and ports 5173 / 8080 alive, and the next launch then
+            // failed with "Cannot bind HTTP port" (no console in a release
+            // build: the app just did not start).
+            let handle = app.handle().clone();
+            main.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::Destroyed) {
+                    popups::close_app_windows(&handle);
+                    handle.exit(0);
+                }
+            });
 
             Ok(())
         })
@@ -246,5 +259,31 @@ mod ipc_acl_tests {
             }
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A scoresheet window (window.open of /scoresheet/, label "popup-<n>",
+    /// popups.rs) loads the same http://localhost origin as the scoretable,
+    /// so only the capabilities naming "main" keep the backup commands from
+    /// it. A later `"windows": ["*"]` or a new capability must fail here.
+    #[test]
+    fn scoresheet_windows_may_not_back_up() {
+        let app = super::with_backup_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let label = crate::popups::next_popup_label();
+        let popup = WebviewWindowBuilder::new(&app, label.as_str(), WebviewUrl::External("http://localhost:5173/scoresheet/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let body = serde_json::json!({
+            "matchDir": "game7-match_1759740000000_ab12cd",
+            "fileName": "20261006T100000.000Z-00001.json",
+            "contents": "{}",
+            "latest": true
+        });
+        for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file"] {
+            let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
+                .expect_err(&format!("{cmd} from {label} must be refused"));
+            assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
+        }
     }
 }
