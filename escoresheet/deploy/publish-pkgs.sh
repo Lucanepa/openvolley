@@ -8,10 +8,18 @@
 #   1. Adds the given packages: a .deb goes to the APT pool, a signed .apk to
 #      the F-Droid repo. An APK must already be signed with the OpenVolley app
 #      key (ANDROID.md); anything else is refused. Nothing is ever re-signed.
+#      The APT package is always openvolley-escoresheet (the command
+#      /usr/bin/openvolley-escoresheet). A .deb under any other Package name
+#      (openvolley-e-scoresheet: Tauri builds up to 1.48.19) is repacked first:
+#      same version, depends and files, plus Provides/Replaces/Conflicts:
+#      openvolley-e-scoresheet, openvolley (and its own old name), so
+#      `apt install openvolley-escoresheet` takes over an old install. Old-name
+#      files already in the pool are migrated the same way. Repacking is
+#      deterministic: the same input always gives the same bytes.
 #   2. Rebuilds the APT index (Packages, Release, InRelease, Release.gpg) and
 #      exports the public key as apt/openvolley.gpg and apt/openvolley.asc.
 #   3. Rebuilds the F-Droid index (fdroid update) and copies repo/ over.
-#   4. Copies the landing page (pkgs/index.html from this kit).
+#   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
 #   5. Refuses if anything key-like ended up in the public tree, then rsyncs
 #      that tree to ${OV_PKGS_DEST} (default hetzner:/data/openvolley/pkgs/),
 #      unless --no-sync.
@@ -22,7 +30,7 @@
 #   fdroid/           fdroid working dir: config.yml + keystore.p12 (repo signing
 #                     key, Vaultwarden: "OpenVolley F-Droid repo key"), metadata/, repo/
 #   public/           the served tree, rebuilt here and mirrored to the server:
-#                       index.html  apt/{dists,pool,openvolley.gpg,openvolley.asc}  fdroid/repo/
+#                       index.html  install.sh  apt/{dists,pool,openvolley.gpg,openvolley.asc}  fdroid/repo/
 #
 # Only public/ ever leaves this machine. Removing a .deb from public/apt/pool/main
 # or an .apk from fdroid/repo and re-running un-publishes it.
@@ -49,13 +57,13 @@ FILES=()
 for a in "$@"; do
   case "$a" in
     --no-sync) SYNC=0 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
     -*) die "unknown option $a" ;;
     *) FILES+=("$a") ;;
   esac
 done
 
-for t in dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync; do
+for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3; do
   command -v "$t" >/dev/null || die "$t not found"
 done
 [[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
@@ -69,19 +77,82 @@ build_tool() {
 }
 
 # --- 1. add packages --------------------------------------------------------
+APT_NAME=openvolley-escoresheet
+# Names the app was published under before; the package takes them over.
+LEGACY_NAMES=(openvolley-e-scoresheet openvolley)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
+# add_rel CONTROL FIELD NAME: append NAME to FIELD (creating it) unless listed.
+add_rel() {
+  local control=$1 field=$2 name=$3
+  if grep -q "^$field:" "$control"; then
+    grep -Eq "^$field:(.*[ ,])?$name( *(\(|,|$))" "$control" || sed -i "s/^$field: .*/&, $name/" "$control"
+  else
+    sed -i "/^Description:/i $field: $name" "$control"
+  fi
+}
+
+# repack_deb IN OUT: rewrite IN (an OpenVolley .deb under another Package name)
+# as $APT_NAME. Same version, depends, maintainer scripts and files; adds
+# Provides/Replaces/Conflicts for the legacy names and IN's own name, and makes
+# sure /usr/bin/$APT_NAME exists (a symlink to /usr/bin/openvolley if only that
+# is there). Every mtime is set to the newest one in IN and dpkg-deb builds with
+# fixed owner, compressor and thread count, so the same IN gives the same bytes.
+repack_deb() {
+  local in=$1 out=$2 root="$WORK/repack" old epoch f n
+  old=$(dpkg-deb -f "$in" Package)
+  rm -rf "$root"
+  dpkg-deb -R "$in" "$root"
+  if [[ ! -e "$root/usr/bin/$APT_NAME" ]]; then
+    [[ -e "$root/usr/bin/openvolley" ]] || die "$in: package $old has neither /usr/bin/$APT_NAME nor /usr/bin/openvolley; not an OpenVolley desktop .deb"
+  fi
+  # Newest mtime among the packaged files (tar restored them; the top dir and
+  # DEBIAN/ were created just now and do not count).
+  epoch=$(find "$root" -mindepth 1 ! -path "$root/DEBIAN" ! -path "$root/DEBIAN/*" -printf '%T@\n' | sort -n | tail -1)
+  epoch=${epoch%.*}
+  [[ "$epoch" =~ ^[0-9]+$ ]] || die "$in: no files to take a timestamp from"
+  for f in Provides Replaces Conflicts; do
+    for n in "${LEGACY_NAMES[@]}" "$old"; do
+      add_rel "$root/DEBIAN/control" "$f" "$n"
+    done
+  done
+  sed -i "s/^Package: .*/Package: $APT_NAME/" "$root/DEBIAN/control"
+  if [[ ! -e "$root/usr/bin/$APT_NAME" ]]; then
+    ln -s openvolley "$root/usr/bin/$APT_NAME"
+  fi
+  find "$root" -exec touch -h -d "@$epoch" {} +
+  SOURCE_DATE_EPOCH=$epoch dpkg-deb --root-owner-group --threads-max=1 -Zxz -z9 -b "$root" "$out" >/dev/null
+  rm -rf "$root"
+}
+
+# add_deb FILE: put FILE in the pool as ${APT_NAME}_<version>_amd64.deb.
+add_deb() {
+  local f=$1 pkg ver arch target files
+  pkg=$(dpkg-deb -f "$f" Package); ver=$(dpkg-deb -f "$f" Version); arch=$(dpkg-deb -f "$f" Architecture)
+  [[ -n "$pkg" && -n "$ver" && "$arch" == amd64 ]] || die "$f: not an amd64 .deb"
+  if [[ "$pkg" != "$APT_NAME" ]]; then
+    repack_deb "$f" "$WORK/repacked.deb"
+    echo "repacked $f ($pkg) as $APT_NAME $ver"
+    f="$WORK/repacked.deb"
+  fi
+  # Whole listing first: grep -q exiting early would kill dpkg-deb (pipefail).
+  files=$(dpkg-deb -c "$f") || die "$f: cannot list its files"
+  grep -Eq " (\./)?usr/bin/$APT_NAME( |$)" <<<"$files" || die "$f: no /usr/bin/$APT_NAME in the package"
+  target="$APT/pool/main/${APT_NAME}_${ver}_${arch}.deb"
+  if [[ -e "$target" ]] && ! cmp -s "$f" "$target"; then
+    die "$target exists with different content; bump the version instead (apt and caches treat versions as immutable)"
+  fi
+  install -m 644 "$f" "$target"
+  echo "added $target"
+}
+
 mkdir -p "$APT/pool/main" "$FD/repo"
 for f in "${FILES[@]}"; do
   [[ -f "$f" ]] || die "$f: no such file"
   case "$f" in
     *.deb)
-      pkg=$(dpkg-deb -f "$f" Package); ver=$(dpkg-deb -f "$f" Version); arch=$(dpkg-deb -f "$f" Architecture)
-      [[ -n "$pkg" && -n "$ver" && "$arch" == amd64 ]] || die "$f: not an amd64 .deb"
-      target="$APT/pool/main/${pkg}_${ver}_${arch}.deb"
-      if [[ -e "$target" ]] && ! cmp -s "$f" "$target"; then
-        die "$target exists with different content; bump the version instead (apt and caches treat versions as immutable)"
-      fi
-      install -m 644 "$f" "$target"
-      echo "added $target"
+      add_deb "$f"
       ;;
     *.apk)
       certs=$(build_tool apksigner verify --print-certs "$f") || die "$f: not a validly signed APK"
@@ -99,6 +170,20 @@ for f in "${FILES[@]}"; do
     *) die "$f: expected a .deb or .apk" ;;
   esac
 done
+# Old-name packages still in the pool: repack them (unless that version is
+# already there as $APT_NAME, which then wins), then drop the original.
+for f in "$APT/pool/main"/*.deb; do
+  [[ -e "$f" ]] || continue
+  pkg=$(dpkg-deb -f "$f" Package)
+  [[ "$pkg" != "$APT_NAME" ]] || continue
+  ver=$(dpkg-deb -f "$f" Version)
+  if [[ ! -e "$APT/pool/main/${APT_NAME}_${ver}_amd64.deb" ]]; then
+    cp "$f" "$WORK/old.deb"
+    add_deb "$WORK/old.deb"
+  fi
+  rm -f "$f"
+  echo "removed $f ($pkg $ver)"
+done
 
 # --- 2. APT -----------------------------------------------------------------
 mkdir -p "$DIST/main/binary-amd64"
@@ -115,8 +200,7 @@ gpg_sign() {
 )
 gzip -9nkf "$DIST/main/binary-amd64/Packages"
 
-conf=$(mktemp)
-trap 'rm -f "$conf"' EXIT
+conf="$WORK/apt-ftparchive.conf"
 cat > "$conf" <<'CONF'
 APT::FTPArchive::Release::Origin "OpenVolley";
 APT::FTPArchive::Release::Label "OpenVolley";
@@ -144,9 +228,10 @@ mkdir -p "$PUB/fdroid"
 # status/ is fdroidserver's run log (host OS, tool paths); clients never read it.
 rsync -a --delete --delete-excluded --exclude=/status/ "$FD/repo/" "$PUB/fdroid/repo/"
 
-# --- 4. landing page --------------------------------------------------------
+# --- 4. landing page and installer -----------------------------------------
 # Newest .deb and newest APK fill the version links in the template.
 read -r deb_pkg deb_ver < <(awk '/^Package:/{p=$2} /^Version:/{print p, $2}' "$DIST/main/binary-amd64/Packages" | sort -k2,2V | tail -1)
+[[ "${deb_pkg:-}" == "$APT_NAME" ]] || die "newest APT package is ${deb_pkg:-none}, expected $APT_NAME"
 read -r apk_ver apk_file < <(python3 - "$FD/repo/index-v2.json" <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
@@ -156,10 +241,21 @@ print(v["manifest"]["versionName"], v["file"]["name"].lstrip("/"))
 EOF
 )
 [[ -n "${deb_ver:-}" && -n "${apk_file:-}" ]] || die "need at least one .deb and one com.openvolley.escoresheet APK"
-sed -e "s|@DESKTOP_VERSION@|$deb_ver|g" -e "s|@DEB_PACKAGE@|$deb_pkg|g" \
+# The Windows installer is named after productName, so ask GitHub for the
+# release's -setup.exe; offline or not found, the button opens the release page.
+rel="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v$deb_ver"
+win_url=$(curl -fsS --max-time 20 "https://api.github.com/repos/Lucanepa/openvolley/releases/tags/desktop-v$deb_ver" 2>/dev/null |
+  python3 -c 'import json, sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].lower().endswith("-setup.exe")))' 2>/dev/null) || win_url=$rel
+[[ "$win_url" =~ ^https://github\.com/Lucanepa/openvolley/releases/[A-Za-z0-9._/%+-]+$ ]] || win_url=$rel
+sed -e "s|@DESKTOP_VERSION@|$deb_ver|g" -e "s|@DEB_PACKAGE@|$deb_pkg|g" -e "s|@WINDOWS_URL@|$win_url|g" \
     -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \
     "$KIT_DIR/pkgs/index.html" > "$PUB/index.html"
 ! grep -q '@[A-Z_]*@' "$PUB/index.html" || die "index.html has unfilled placeholders"
+# curl -fsSL https://get.openvolley.app/install.sh | sudo sh
+sh -n "$KIT_DIR/pkgs/install.sh" || die "pkgs/install.sh: syntax error"
+grep -q "^FPR=$APT_SIGNER_FPR\$" "$KIT_DIR/pkgs/install.sh" || die "pkgs/install.sh does not pin the APT key $APT_SIGNER_FPR"
+grep -q "^PKG=$APT_NAME\$" "$KIT_DIR/pkgs/install.sh" || die "pkgs/install.sh does not install $APT_NAME"
+install -m 644 "$KIT_DIR/pkgs/install.sh" "$PUB/install.sh"
 
 # --- 5. check and sync ------------------------------------------------------
 leak=$(find "$PUB" \( -iname '*.p12' -o -iname '*.jks' -o -iname '*.keystore' -o -iname 'config.yml' \
