@@ -111,7 +111,7 @@ export function ConfirmDialog() {
           {entry.title}
         </h3>
         {hasMessage && (
-          <div id={messageId} data-testid="confirm-message" className="text-sm text-stone-600 mb-6">
+          <div id={messageId} data-testid="confirm-message" className="text-sm text-stone-600 mb-6 whitespace-pre-line">
             {entry.message}
           </div>
         )}
