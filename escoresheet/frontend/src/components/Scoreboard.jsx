@@ -31,7 +31,8 @@ import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
-import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
+import { ACCESS_CHANGED_EVENT } from '../lib/access'
+import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime } from '../utils/setStartTime'
@@ -2094,6 +2095,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             setLiveStateDirty(matchId, true)
             return
           }
+          // The server refused this account's live state of this match (not
+          // approved, closed, another account's game): no lookup and no upsert
+          // per rally for a while; the match is scored locally all the same.
+          if (isLiveStateRefused(matchId)) return
 
           if (!supabaseMatchId) {
             const seedKey = match.seed_key || String(matchId)
@@ -2136,7 +2141,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             () => apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }))
           if (liveStateResult?.skipped) return
 
-          if (liveStateResult.error) {
+          if (liveStateResult.error && isLiveStateRefusal(liveStateResult.error)) {
+            // Never a dialog per rally: the cloud-block notice explains it
+            console.warn('[LiveState] Refused by the server:', liveStateResult.error.code)
+            markLiveStateRefused(matchId, liveStateResult.error.code)
+            setLiveStateDirty(matchId, false)
+          } else if (liveStateResult.error) {
             console.error('[LiveState] Sync error:', liveStateResult.error)
             setLiveStateDirty(matchId, true)
             // Offline, signed out or a backend hiccup is caught up later, not a dialog
@@ -2178,13 +2188,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     const onOnline = () => push()
     const onDrained = () => { if (isLiveStateDirty(matchId)) push() }
+    // Approved (or roles changed): try the cloud live state again at once
+    const onAccess = (e) => {
+      if (!e?.detail?.canScore) return
+      clearLiveStateRefused(matchId)
+      push()
+    }
     window.addEventListener('online', onOnline)
     window.addEventListener('sync-queue-drained', onDrained)
+    window.addEventListener(ACCESS_CHANGED_EVENT, onAccess)
     if (isLiveStateDirty(matchId) && navigator.onLine !== false) push()
     return () => {
       if (timer) clearTimeout(timer)
       window.removeEventListener('online', onOnline)
       window.removeEventListener('sync-queue-drained', onDrained)
+      window.removeEventListener(ACCESS_CHANGED_EVENT, onAccess)
     }
   }, [matchId])
 
