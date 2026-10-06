@@ -25,7 +25,7 @@ function flatten(obj, prefix = '', out = []) {
 // Words that keep their capital mid-label.
 const PROPER = new Set([
   'Chrome', 'Edge', 'Supabase', 'WebSocket', 'WiFi', 'German', 'English', 'French', 'Italian',
-  'Swiss', 'Escape', 'Enter', 'Space', 'Esc',
+  'Swiss', 'Escape', 'Enter', 'Space', 'Esc', 'Bluetooth',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

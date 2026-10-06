@@ -16,7 +16,7 @@ import MainHeader from './components/MainHeader'
 import BackupTable from './components/BackupTable'
 import HomePage from './components/pages/HomePage'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
-import ConnectionSetupModal from './components/options/ConnectionSetupModal'
+import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink } from './hooks/useSyncQueue'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
@@ -3610,7 +3610,7 @@ export default function App() {
             <HomeOptionsModal
               open={homeOptionsModal}
               onClose={() => setHomeOptionsModal(false)}
-              onOpenConnectionSetup={isElectron ? () => setConnectionSetupModal(true) : null}
+              onOpenConnectionSetup={() => setConnectionSetupModal(true)}
               matchOptions={{
                 checkAccidentalRallyStart,
                 setCheckAccidentalRallyStart,
@@ -3684,18 +3684,14 @@ export default function App() {
               />
             )}
 
-            {/* Connection Setup Modal */}
-            <ConnectionSetupModal
-              open={connectionSetupModal}
-              onClose={() => setConnectionSetupModal(false)}
-              matchId={matchId}
-              matchSeedKey={currentMatch?.seed_key || currentMatch?.externalId}
-              match={currentMatch}
-              refereePin={currentMatch?.refereePin}
-              homeTeamPin={currentMatch?.homeTeamPin}
-              awayTeamPin={currentMatch?.awayTeamPin}
-              gameNumber={currentMatch?.gameNumber}
-            />
+            {/* Connect tablets (Options > Connections) */}
+            {connectionSetupModal && (
+              <ConnectTabletsModal
+                open
+                onClose={() => setConnectionSetupModal(false)}
+                match={currentMatch || null}
+              />
+            )}
 
             <StartupConnectivityModal
               open={showStartupConnectivity && !offlineMode}
