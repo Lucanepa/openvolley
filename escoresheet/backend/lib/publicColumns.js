@@ -43,7 +43,9 @@ const PERSON_KEYS = Object.freeze([
   'libero', 'isLibero', 'liberoType', 'is_captain', 'isCaptain', 'captain', 'is_lfp', 'isLfp',
   'role', 'position'
 ])
-const CONNECTION_FLAG_KEYS = Object.freeze(['referee_enabled', 'home_bench_enabled', 'away_bench_enabled'])
+// Indoor home/away benches; beach (openbeach) names its teams team1 / team2.
+const CONNECTION_FLAG_KEYS = Object.freeze(['referee_enabled', 'home_bench_enabled', 'away_bench_enabled',
+  'team1_bench_enabled', 'team2_bench_enabled'])
 
 const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
   id: true,
@@ -126,6 +128,9 @@ const MATCHES_LIVE_COLUMNS = Object.freeze({
   winner: true,
   home_team: TEAM_KEYS,
   away_team: TEAM_KEYS,
+  // Beach rows (sport_type 'beach') keep their teams here
+  team1_data: TEAM_KEYS,
+  team2_data: TEAM_KEYS,
   match_info: MATCH_INFO_KEYS,
   coin_toss: COIN_TOSS_KEYS
 })
@@ -188,9 +193,7 @@ export const ANON_DB_COLUMNS = Object.freeze({
     bench_home: PERSON_KEYS,
     bench_away: PERSON_KEYS,
     players_team1: PERSON_KEYS,
-    players_team2: PERSON_KEYS,
-    team1_data: TEAM_KEYS,
-    team2_data: TEAM_KEYS
+    players_team2: PERSON_KEYS
   })
 })
 
