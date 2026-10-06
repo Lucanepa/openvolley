@@ -1622,6 +1622,8 @@
     "signInAgain": "Se reconnecter"
   },
   "connectionStatus": {
+    "localOnly": "Local uniquement",
+    "localOnlyPending": "Local uniquement ({{count}} en attente)",
     "syncing": "Synchronisation",
     "connected": "Connecté",
     "error": "Erreur",
@@ -1656,6 +1658,7 @@
     "connectionIssueDetected": "Problème de connexion détecté"
   },
   "startupConnectivity": {
+    "cloudWaits": "Pas d’internet : la synchronisation cloud démarre dès que cet appareil est en ligne. Les matchs restent ici et sur le serveur local.",
     "connecting": "Connexion en cours...",
     "goOffline": "Passer hors ligne",
     "continueAnyway": "Continuer quand même",

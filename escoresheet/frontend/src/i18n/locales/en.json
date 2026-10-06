@@ -1655,6 +1655,8 @@
     "signInAgain": "Sign in again"
   },
   "connectionStatus": {
+    "localOnly": "Local only",
+    "localOnlyPending": "Local only ({{count}} waiting)",
     "syncing": "Syncing",
     "connected": "Connected",
     "error": "Error",
@@ -1689,6 +1691,7 @@
     "connectionIssueDetected": "Connection issue detected"
   },
   "startupConnectivity": {
+    "cloudWaits": "No internet: cloud sync starts as soon as this device is online. Matches are kept here and on the local server.",
     "connecting": "Connecting...",
     "goOffline": "Go offline",
     "continueAnyway": "Continue anyway",

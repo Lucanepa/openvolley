@@ -1495,6 +1495,8 @@
     "signInAgain": "Erneut anmelden"
   },
   "connectionStatus": {
+    "localOnly": "Nur lokal",
+    "localOnlyPending": "Nur lokal ({{count}} ausstehend)",
     "syncing": "Synchronisiere",
     "connected": "Verbunden",
     "error": "Fehler",
@@ -1529,6 +1531,7 @@
     "connectionIssueDetected": "Verbindungsproblem erkannt"
   },
   "startupConnectivity": {
+    "cloudWaits": "Kein Internet: Die Cloud-Synchronisation startet, sobald dieses Gerät online ist. Spiele bleiben hier und auf dem lokalen Server gespeichert.",
     "connecting": "Verbindung wird hergestellt...",
     "goOffline": "Offline gehen",
     "continueAnyway": "Trotzdem fortfahren",

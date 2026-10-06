@@ -1623,6 +1623,8 @@
     "signInAgain": "Nomal aamälde"
   },
   "connectionStatus": {
+    "localOnly": "Nur lokal",
+    "localOnlyPending": "Nur lokal ({{count}} usstehend)",
     "syncing": "Synchronisiere",
     "connected": "Verbunde",
     "error": "Fähler",
@@ -1657,6 +1659,7 @@
     "connectionIssueDetected": "Verbindigsproblem erkannt"
   },
   "startupConnectivity": {
+    "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
     "connecting": "Verbindig wird hergstellt...",
     "goOffline": "Offline gah",
     "continueAnyway": "Trotzdem witerfahre",

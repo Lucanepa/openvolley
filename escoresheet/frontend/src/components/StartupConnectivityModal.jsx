@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Loader2, X } from 'lucide-react'
+import { Check, CloudOff, Loader2, X } from 'lucide-react'
 import { cn, FOCUS_RING } from '../ui'
 
 // All services shown to the user
@@ -128,6 +128,10 @@ export default function StartupConnectivityModal({
     if (status === 'unknown' || status === 'connecting') {
       return <Loader2 size={18} className="animate-spin text-stone-400" aria-hidden="true" />
     }
+    // Offline is a normal state in a hall without internet, not an error
+    if (status === 'offline') {
+      return <CloudOff size={18} className="text-stone-500" aria-hidden="true" />
+    }
     if (status === 'not_available' || status === 'not_configured') {
       return <span className="text-base leading-none text-stone-500" aria-hidden="true">–</span>
     }
@@ -151,7 +155,7 @@ export default function StartupConnectivityModal({
 
   const getTextClass = (status) => {
     if (status === 'unknown' || status === 'connecting') return 'text-stone-500'
-    if (status === 'not_available' || status === 'not_configured') return 'text-stone-500'
+    if (status === 'not_available' || status === 'not_configured' || status === 'offline') return 'text-stone-500'
     if (isStatusOk(status)) return 'text-green-700'
     return 'text-red-700'
   }
@@ -193,6 +197,13 @@ export default function StartupConnectivityModal({
             )
           })}
         </div>
+
+        {/* Venue mode: the local server carries the match, the cloud copy waits */}
+        {primaryOk && !supabaseOk && connectionStatuses.supabase === 'offline' && (
+          <p className="mt-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-center text-xs leading-snug text-stone-600">
+            {t('startupConnectivity.cloudWaits', 'No internet: cloud sync starts as soon as this device is online. Matches are kept here and on the local server.')}
+          </p>
+        )}
 
         {/* Info when some connections failed */}
         {hasErrors && (
