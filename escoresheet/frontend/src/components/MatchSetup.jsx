@@ -31,7 +31,15 @@ import { buildConnectionPins } from '../utils/connectionPins'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn } from '../ui'
+import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn, confirmDialog, toast } from '../ui'
+import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
+import SaveRosterToTeamModal from './SaveRosterToTeamModal'
+import CloudBlockNotice from './CloudBlockNotice'
+import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
+import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
+import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
+import { openRestore } from '../utils/manageNav'
+import { Users, Save as SaveIcon } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
@@ -379,6 +387,10 @@ const LineJudgesCard = memo(function LineJudgesCard({
   )
 })
 
+function isNavigatorOnline() {
+  return typeof navigator === 'undefined' || navigator.onLine !== false
+}
+
 // Helper to generate short name from team name (first 3-4 chars uppercase)
 function generateShortName(name) {
   if (!name) return ''
@@ -414,7 +426,7 @@ function formatDobForSync(dob) {
 export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false }) {
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
-  const { user, profile, getCachedProfile } = useAuth()
+  const { user, profile, getCachedProfile, access } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
   // Portrait: the libero select's empty option reads "No libero" (its column
   // head is hidden there); landscape keeps the blank option. The option is
@@ -677,6 +689,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [colorPickerModal, setColorPickerModal] = useState(null) // { team: 'home'|'away', position: { x, y } } | null
   const [noticeModal, setNoticeModal] = useState(null) // { message: string, type?: 'success' | 'error' } | null
   const [testRosterConfirm, setTestRosterConfirm] = useState(null) // 'home' | 'away' | null
+  // Saved teams (competition manager): picker / save dialog per side, the
+  // suggestions for a schedule game, and the official-game claim of another
+  // scorer (spec 6.5)
+  const [savedPicker, setSavedPicker] = useState(null) // 'home' | 'away' | null
+  const [saveToTeam, setSaveToTeam] = useState(null) // 'home' | 'away' | null
+  const [savedSuggestion, setSavedSuggestion] = useState(null) // { home, away } | null
+  const [officialClaim, setOfficialClaim] = useState(null) // claim of another account | null
+  // confirmMatchInfo is running (button disabled, second taps ignored)
+  const [confirmingMatchInfo, setConfirmingMatchInfo] = useState(false)
+  const confirmingMatchInfoRef = useRef(false)
 
   // Show both rosters in match setup
   const [showBothRosters, setShowBothRosters] = useState(false)
@@ -1952,7 +1974,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }
 
   // Confirm match info - validates all required fields and creates/updates match
+  // One confirm at a time: a second tap while the first still runs (a slow
+  // official check, Dexie writes) would create the teams and the match twice.
   async function confirmMatchInfo() {
+    if (confirmingMatchInfoRef.current) return
+    confirmingMatchInfoRef.current = true
+    setConfirmingMatchInfo(true)
+    try {
+      await confirmMatchInfoOnce()
+    } finally {
+      confirmingMatchInfoRef.current = false
+      setConfirmingMatchInfo(false)
+    }
+  }
+
+  async function confirmMatchInfoOnce() {
     // Track if this is a create or update operation
     const isCreating = !matchInfoConfirmed
 
@@ -1992,6 +2028,30 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!hasChanges) {
       setCurrentView('main')
       return
+    }
+
+    // One cloud match per official game: say so before creating a second one
+    // (the server refuses it with 409 OV_GAME_TAKEN either way)
+    const gameChanged = isCreating || String(originalMatchInfoRef.current?.gameN ?? '') !== String(gameN ?? '')
+    if (gameChanged && !match?.test) {
+      let claim = null
+      try { claim = await checkOfficialGame({ gameNumber: gameN, dateValue: date, timeValue: time, timeoutMs: OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS }) } catch { claim = null }
+      if (claim) {
+        const status = claim.status ? t(`manage.status.${claim.status}`, claim.status) : '–'
+        const ok = await confirmDialog({
+          title: t('matchSetup.gameTakenTitle', { game: gameN }),
+          message: claim.mine
+            ? t('cloudBlock.gameTakenMine', { game: gameN })
+            : t('matchSetup.gameTakenBody', { name: claim.scorer_name || t('manage.games.unknownScorer'), status }),
+          confirmLabel: t('matchSetup.continueLocalOnly'),
+          cancelLabel: t('common.cancel', 'Cancel'),
+          tone: 'danger'
+        })
+        if (!ok) return
+        if (!claim.mine) setOfficialClaim(claim)
+      } else if (claim === false) {
+        setOfficialClaim(null)
+      }
     }
 
     try {
@@ -2873,6 +2933,80 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }
 
   // Handler for Load Official Match modal selection
+  // ---- Saved teams and the one-cloud-match-per-official-game rule ----
+
+  // Fill a side's roster and team officials from a saved team. Name, short
+  // name and colour only where empty (the colour where it is the default).
+  // Everything stays editable.
+  const applySavedTeam = (side, team) => {
+    if (!team) return
+    const { roster, bench, meta, warnings } = savedTeamToRoster(team)
+    const sorted = [...roster].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
+    if (side === 'home') {
+      setHomeRoster(sorted)
+      setBenchHome(bench)
+      if (!home?.trim() || home === 'Home') setHome(meta.name)
+      if (!homeShortName && meta.shortName) setHomeShortName(meta.shortName)
+      if (meta.color && homeColor === '#ef4444') setHomeColor(meta.color)
+    } else {
+      setAwayRoster(sorted)
+      setBenchAway(bench)
+      if (!away?.trim() || away === 'Away') setAway(meta.name)
+      if (!awayShortName && meta.shortName) setAwayShortName(meta.shortName)
+      if (meta.color && awayColor === '#3b82f6') setAwayColor(meta.color)
+    }
+    toast.success(t('savedTeams.loaded', { name: team.name }))
+    for (const w of warnings) toast.info(t(w.key, w.params))
+  }
+
+  const loadSuggestedTeam = async (side) => {
+    const team = savedSuggestion?.[side]
+    if (!team) return
+    const ok = await confirmReplaceRoster({
+      roster: side === 'home' ? homeRoster : awayRoster,
+      bench: side === 'home' ? benchHome : benchAway,
+      teamLabel: (side === 'home' ? home : away) || team.name,
+      t
+    })
+    if (ok) applySavedTeam(side, team)
+  }
+
+  // Is this official game already scored by another cloud match? null when
+  // it cannot be asked (no game number, not a scorer, offline, network error).
+  const checkOfficialGame = async ({ gameNumber, dateValue, timeValue, timeoutMs }) => {
+    const n = parseInt(gameNumber, 10)
+    if (!access?.canScore || match?.test || !Number.isInteger(n) || n <= 0) return null
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return null
+    let scheduled = null
+    try { scheduled = dateValue ? createScheduledAt(dateValue, timeValue, { allowEmpty: true }) : null } catch { scheduled = null }
+    const { data, error } = await officialCheck({ game_n: n, scheduled_at: scheduled, sport_type: 'indoor', external_id: match?.seed_key || null }, { timeoutMs })
+    if (error || !data) return null
+    return data.taken ? (data.claim || { mine: false }) : false
+  }
+
+  // After a schedule load: saved-team suggestions and the game-taken check
+  const afterOfficialLoad = async (matchData) => {
+    try {
+      if (access?.canReadTeams) {
+        const teams = await getSavedTeams({ userId: user?.id ?? null })
+        const found = findSavedTeamSuggestions(teams, {
+          home: matchData.home,
+          away: matchData.away,
+          league: matchData.league,
+          gender: matchData.type2,
+          scheduledAt: matchData.date ? `${matchData.date}T${matchData.time || '12:00'}:00` : null
+        })
+        setSavedSuggestion(found.home || found.away ? found : null)
+      }
+    } catch (err) {
+      console.warn('[MatchSetup] Saved-team suggestions failed:', err?.message)
+    }
+    try {
+      const claim = await checkOfficialGame({ gameNumber: matchData.gameN, dateValue: matchData.date, timeValue: matchData.time })
+      setOfficialClaim(claim && !claim.mine ? claim : null)
+    } catch { /* the check is a courtesy: the server enforces the rule */ }
+  }
+
   const handleOfficialMatchSelect = (matchData) => {
     // Populate all the form fields from the selected official match
     setDate(matchData.date)
@@ -2917,6 +3051,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Line judges
     if (matchData.linesman1) setLineJudge1(matchData.linesman1)
     if (matchData.linesman2) setLineJudge2(matchData.linesman2)
+
+    // Saved rosters for these teams, and whether another scorer has the game
+    setSavedSuggestion(null)
+    setOfficialClaim(null)
+    afterOfficialLoad(matchData)
   }
 
   // PDF file handlers - must be defined before conditional returns
@@ -3752,6 +3891,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {t('matchSetup.scorerDobForCoinToss')}
             </p>
           )}
+          {access?.known && !access.canScore && !match?.test && (
+            <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900" role="note" data-testid="pending-local-only">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+              {t('access.officialMatchLocalOnly')}
+            </p>
+          )}
           <Button
             variant="positive"
             size="xl"
@@ -3767,7 +3912,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 confirmMatchInfo()
               }
             }}
-            disabled={!canConfirmMatchInfo}
+            disabled={!canConfirmMatchInfo || confirmingMatchInfo}
+            aria-busy={confirmingMatchInfo || undefined}
             title={!canConfirmMatchInfo ? getMissingFieldsTooltip() : ''}
           >
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
@@ -3875,6 +4021,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('home')}>
                   {t('roster.loadTestRoster')}
                 </Button>
+                {access?.canReadTeams && (
+                  <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('home')} data-testid="load-saved-team-home">
+                    {t('savedTeams.load')}
+                  </Button>
+                )}
+                {access?.canManageTeams && isNavigatorOnline() && (
+                  <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('home')}>
+                    {t('savedTeams.saveToTeam')}
+                  </Button>
+                )}
           </div>
         </div>
         {/* Upload Methods for Home Team + Player Stats */}
@@ -4940,6 +5096,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </Modal>
         )}
 
+        {/* Saved teams: load into this roster, or save it as a saved team */}
+        <SavedTeamPickerModal
+          open={savedPicker === 'home'}
+          onClose={() => setSavedPicker(null)}
+          onPick={(team) => { setSavedPicker(null); applySavedTeam('home', team) }}
+          userId={user?.id ?? null}
+          access={access}
+          defaultCompetitionId={savedSuggestion?.home?.competitionId || ''}
+          roster={homeRoster}
+          bench={benchHome}
+          teamLabel={home || t('matchSetup.homeTeam')}
+        />
+        <SaveRosterToTeamModal
+          open={saveToTeam === 'home'}
+          onClose={() => setSaveToTeam(null)}
+          userId={user?.id ?? null}
+          access={access}
+          roster={homeRoster}
+          bench={benchHome}
+          meta={{ name: home || '', shortName: homeShortName || '', color: homeColor }}
+          suggestedTeamId={savedSuggestion?.home?.id || null}
+        />
+
         {/* SignaturePad for home team view */}
         <SignaturePad
           open={openSignature !== null}
@@ -4982,6 +5161,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <Button variant="dark" size="xl" onClick={() => setTestRosterConfirm('away')}>
                   {t('roster.loadTestRoster')}
                 </Button>
+                {access?.canReadTeams && (
+                  <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('away')} data-testid="load-saved-team-away">
+                    {t('savedTeams.load')}
+                  </Button>
+                )}
+                {access?.canManageTeams && isNavigatorOnline() && (
+                  <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('away')}>
+                    {t('savedTeams.saveToTeam')}
+                  </Button>
+                )}
           </div>
         </div>
         {/* Upload Methods for Away Team + Player Stats */}
@@ -6051,6 +6240,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </Modal>
         )}
 
+        {/* Saved teams: load into this roster, or save it as a saved team */}
+        <SavedTeamPickerModal
+          open={savedPicker === 'away'}
+          onClose={() => setSavedPicker(null)}
+          onPick={(team) => { setSavedPicker(null); applySavedTeam('away', team) }}
+          userId={user?.id ?? null}
+          access={access}
+          defaultCompetitionId={savedSuggestion?.away?.competitionId || ''}
+          roster={awayRoster}
+          bench={benchAway}
+          teamLabel={away || t('matchSetup.awayTeam')}
+        />
+        <SaveRosterToTeamModal
+          open={saveToTeam === 'away'}
+          onClose={() => setSaveToTeam(null)}
+          userId={user?.id ?? null}
+          access={access}
+          roster={awayRoster}
+          bench={benchAway}
+          meta={{ name: away || '', shortName: awayShortName || '', color: awayColor }}
+          suggestedTeamId={savedSuggestion?.away?.id || null}
+        />
+
         {/* SignaturePad for away team view */}
         <SignaturePad
           open={openSignature !== null}
@@ -6484,6 +6696,42 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
       </div>
       <div className="setup-section">
+        {/* Why this match does not sync, if the server refused it for good */}
+        {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
+
+        {/* Another account already scores this official game */}
+        {officialClaim && !match?.cloudBlock && (
+          <div className="ov-kit mb-3">
+            <div role="status" data-testid="game-taken-banner" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+              <p className="text-sm font-semibold">{t('matchSetup.gameTakenTitle', { game: gameN })}</p>
+              <p className="mt-0.5 text-xs">{t('matchSetup.gameTakenBody', {
+                name: officialClaim.scorer_name || t('manage.games.unknownScorer'),
+                status: officialClaim.status ? t(`manage.status.${officialClaim.status}`, officialClaim.status) : '–'
+              })}</p>
+              <div className="mt-2">
+                <Button variant="secondary" size="md" onClick={() => openRestore({ gameN })}>{t('cloudBlock.joinWithPin')}</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Saved rosters for the teams of a schedule game */}
+        {savedSuggestion && (savedSuggestion.home || savedSuggestion.away) && (
+          <div className="ov-kit mb-3">
+            <div role="status" data-testid="saved-team-suggestion" className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sky-900">
+              <p className="text-sm font-semibold">{t('savedTeams.suggestionTitle')}</p>
+              <div className="mt-0.5 flex flex-col gap-0.5 text-xs">
+                {savedSuggestion.home && <span>{t('savedTeams.suggestionHome', { name: savedSuggestion.home.name })}</span>}
+                {savedSuggestion.away && <span>{t('savedTeams.suggestionAway', { name: savedSuggestion.away.name })}</span>}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {savedSuggestion.home && <Button variant="secondary" size="md" onClick={() => loadSuggestedTeam('home')}>{t('savedTeams.loadHome')}</Button>}
+                {savedSuggestion.away && <Button variant="secondary" size="md" onClick={() => loadSuggestedTeam('away')}>{t('savedTeams.loadAway')}</Button>}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Match Setup Summary Card */}
         <div
           data-help-id="setup-match-info-card"

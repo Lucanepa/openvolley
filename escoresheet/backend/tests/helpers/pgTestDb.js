@@ -39,10 +39,15 @@ const here = dirname(fileURLToPath(import.meta.url))
 // The backend's own migrations that the synthetic schema does not carry
 // (they run on the production database through restore.sh): applied after it,
 // and after a template copy (all of them are idempotent).
-export const MIGRATIONS_SQL = ['005_match_ownership.sql', '007_live_state_tto.sql']
+// 007 needs 006's ov_touch_updated_at().
+export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
   .join('\n')
-export const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8') + '\n' + MIGRATIONS_SQL
+const SYNTHETIC_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
+export const SCHEMA_SQL = SYNTHETIC_SQL + '\n' + MIGRATIONS_SQL
+// The synthetic schema with 005 only (no 006 trigger, no 007): for the suites
+// that test pgQuery's own behaviour without the later triggers.
+export const SCHEMA_SQL_005_ONLY = SYNTHETIC_SQL + '\n' + readFileSync(join(here, '..', '..', 'db', '005_match_ownership.sql'), 'utf8')
 
 // Test-only objects the synthetic schema has and a production copy does not:
 // pgcrypto (crypt() in the auth tests) and a table that is NOT on the allowlist.
@@ -145,4 +150,19 @@ export function quietLogger () {
   const lines = []
   const push = (lvl) => (...a) => lines.push(`${lvl} ${a.join(' ')}`)
   return { lines, log: push('log'), warn: push('warn'), error: push('error') }
+}
+
+/**
+ * Give an account roles directly in SQL (new accounts have none since db/007:
+ * they are pending and may only write test matches). Tests only.
+ * @param {{query: Function}} db  pg Client/Pool or a connection string
+ */
+export async function grantRoles (db, userId, roles = ['scorer']) {
+  if (typeof db === 'string') {
+    const c = new pg.Client({ connectionString: db })
+    await c.connect()
+    try { return await grantRoles(c, userId, roles) } finally { await c.end() }
+  }
+  const r = await db.query('UPDATE public.profiles SET roles = $2::text[] WHERE user_id = $1', [userId, roles])
+  if (r.rowCount === 0) await db.query('INSERT INTO public.profiles (user_id, roles) VALUES ($1, $2::text[])', [userId, roles])
 }

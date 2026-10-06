@@ -9,7 +9,13 @@ import MenuList from './MenuList'
 import Modal from './Modal'
 import ballFallback from '../ball_fallback.png'
 import JSZip from 'jszip'
-import { apiStorage } from '../lib/apiClient'
+import { apiStorage, apiFrom } from '../lib/apiClient'
+import { admin as adminApi } from '../lib/accountApi'
+import { useAuth } from '../contexts/AuthContext'
+import { planReopen } from '../utils/matchReopen'
+import KitModal from './manage/KitModal'
+import CloudBlockNotice from './CloudBlockNotice'
+import { Textarea } from '../ui/Textarea.jsx'
 import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
 import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { useComponentLogging } from '../contexts/LoggingContext'
@@ -17,8 +23,7 @@ import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
-import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
-import { getCloudApiUrl } from '../utils/backendConfig'
+import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { waitForScoresheetPdf } from '../utils/scoresheetPdfRequest'
@@ -341,12 +346,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const [remarksText, setRemarksText] = useState('')
   const remarksTextareaRef = useRef(null)
 
-  // Reopen password protection
-  const reopenPasswordHash = import.meta.env.VITE_REOPEN_PASSWORD_HASH || null
-  const [reopenUnlocked, setReopenUnlocked] = useState(false)
-  const [showUnlockModal, setShowUnlockModal] = useState(false)
-  const [unlockPasswordInput, setUnlockPasswordInput] = useState('')
-  const [unlockPasswordError, setUnlockPasswordError] = useState('')
+  // Reopen after approval: closing is locked on the server, so a match the
+  // server has closed is reopened by an admin (spec 6.8). null | { kind:
+  // 'admin', row } | { kind: 'adminOnly' }
+  let authCtx = null
+  try { authCtx = useAuth() } catch { authCtx = null }
+  const access = authCtx?.access
+  const [reopenDialog, setReopenDialog] = useState(null)
+  const [reopenReason, setReopenReason] = useState('')
+  const [reopenBusy, setReopenBusy] = useState(false)
+  const [reopenError, setReopenError] = useState('')
 
   // Prevent accidental navigation away before approval
   // Skip warning during save process (isSaving) to avoid dialog during PDF generation
@@ -1019,77 +1028,76 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
   }
 
-  // Gatekeeper: check if reopen requires a password
-  const handleReopenMatchClick = () => {
-    if (reopenPasswordHash && !reopenUnlocked) {
-      setUnlockPasswordInput('')
-      setUnlockPasswordError('')
-      setShowUnlockModal(true)
-    } else {
-      handleReopenMatch()
+  // Reopen after approval. Test matches and matches whose approval never
+  // reached the server reopen here; a match the server has closed needs an
+  // admin (server-side, audit-logged). See utils/matchReopen.
+  const handleReopenMatchClick = async () => {
+    const current = data?.match
+    let queue = []
+    try {
+      queue = await db.sync_queue.where('resource').equals('match').toArray()
+    } catch { queue = [] }
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    const plan = await planReopen({
+      match: current,
+      queue,
+      online,
+      access,
+      readServerMatch: (seedKey) => apiFrom('matches').select('id, status, closed_at').eq('external_id', seedKey).maybeSingle()
+    })
+    cLogger.logHandler('handleReopenMatchClick', { matchId, plan: plan.kind })
+    switch (plan.kind) {
+      case 'local':
+        return handleReopenMatch()
+      case 'localUnsynced':
+        try {
+          for (const id of plan.supersedeIds || []) await db.sync_queue.update(id, { status: 'superseded' })
+        } catch (err) {
+          console.warn('[MatchEnd] Could not supersede the unsent approval:', err?.message)
+        }
+        return handleReopenMatch({ queue: false })
+      case 'serverOpen':
+        return handleReopenMatch({ queue: false })
+      case 'needsConnection':
+        showAlert(t('matchEnd.reopenNeedsConnection'), 'error')
+        return
+      case 'checkFailed':
+        showAlert(t('matchEnd.reopenCheckFailed'), 'error')
+        return
+      case 'adminReopen':
+        setReopenReason('')
+        setReopenError('')
+        setReopenDialog({ kind: 'admin', row: plan.row })
+        return
+      default:
+        setReopenDialog({ kind: 'adminOnly' })
     }
   }
 
-  const handleUnlockSubmit = async () => {
-    if (!unlockPasswordInput.trim()) {
-      setUnlockPasswordError(t('matchEnd.unlockPasswordRequired', 'Please enter the password'))
+  const submitAdminReopen = async () => {
+    const row = reopenDialog?.row
+    const reason = reopenReason.trim()
+    if (!row?.id || reason.length < 3 || reopenBusy) return
+    setReopenBusy(true)
+    setReopenError('')
+    const { error } = await adminApi.reopenMatch(row.id, { reason })
+    setReopenBusy(false)
+    // Already open on the server (another admin was quicker): reopen here too
+    if (error && error.code !== 'OV_NOT_CLOSED') {
+      setReopenError(error.network || error.status === 0
+        ? t('matchEnd.reopenNeedsConnection')
+        : error.status === 403 ? t('manage.errors.forbidden') : t('matchEnd.reopenCheckFailed'))
       return
     }
-    try {
-      // Try server-side verification first (more secure)
-      const apiUrl = getCloudApiUrl('/api/verify-reopen-password')
-      if (apiUrl) {
-        let response = null
-        try {
-          response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: unlockPasswordInput.trim() })
-          })
-        } catch (networkError) {
-          // Backend configured but unreachable (offline venue): fall through to
-          // the local check below instead of blocking the reopen.
-          console.warn('[MatchEnd] Reopen password server unreachable, using local check:', networkError)
-        }
-        if (response) {
-          if (response.status === 429) {
-            setUnlockPasswordError(t('matchEnd.unlockTooManyAttempts', 'Too many attempts. Please wait and try again.'))
-            return
-          }
-          const result = await response.json().catch(() => ({}))
-          if (result.success) {
-            setShowUnlockModal(false)
-            setReopenUnlocked(true)
-            setUnlockPasswordInput('')
-            setUnlockPasswordError('')
-          } else {
-            setUnlockPasswordError(t('matchEnd.unlockPasswordWrong', 'Incorrect password'))
-            setUnlockPasswordInput('')
-          }
-          return
-        }
-      }
-
-      // Fallback to client-side verification (no backend, or backend unreachable)
-      const inputHash = await hashPassword(unlockPasswordInput.trim())
-      if (inputHash === reopenPasswordHash) {
-        setShowUnlockModal(false)
-        setReopenUnlocked(true)
-        setUnlockPasswordInput('')
-        setUnlockPasswordError('')
-      } else {
-        setUnlockPasswordError(t('matchEnd.unlockPasswordWrong', 'Incorrect password'))
-        setUnlockPasswordInput('')
-      }
-    } catch (error) {
-      console.error('[MatchEnd] Error verifying reopen password:', error)
-      setUnlockPasswordError(t('matchEnd.unlockPasswordError', 'Error verifying password'))
-    }
+    setReopenDialog(null)
+    await handleReopenMatch({ queue: false })
   }
 
   // Handle reopening match after approval - allows re-approval or adjustments
-  const handleReopenMatch = async () => {
-    cLogger.logHandler('handleReopenMatch', { matchId })
+  // queue: false when the server already has the match open (or never saw
+  // it closed): then nothing is sent.
+  const handleReopenMatch = async ({ queue = true } = {}) => {
+    cLogger.logHandler('handleReopenMatch', { matchId, queue })
 
     try {
       // Clear approval state in database
@@ -1100,7 +1108,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       })
 
       // Mirror the un-approval to the cloud (approve queued status 'approved')
-      if (!match?.test && match?.seed_key) {
+      if (queue && !match?.test && match?.seed_key) {
         await db.sync_queue.add({
           resource: 'match',
           action: 'update',
@@ -1424,6 +1432,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         </div>
       )}
 
+      {/* The server refused this match for good: say why it does not sync */}
+      {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
+
       {/* Action Buttons */}
       {/* Page actions: the emerald commit fills the line; the destructive
           reopen is the soft red; the rest are outline / toolbar. All h-11
@@ -1446,19 +1457,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               onClick={handleReopenMatchClick}
               className="px-5"
             >
-              {reopenPasswordHash && (
-                reopenUnlocked ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-                  </svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                )
-              )}
               {t('matchEnd.reopenMatch', 'Reopen match')}
             </Button>
           </>
@@ -1729,87 +1727,40 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         </Modal>
       )}
 
-      {/* Unlock Reopen Match Password Modal */}
-      {showUnlockModal && (
-        <div className={DIALOG_OVERLAY} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div role="dialog" aria-modal="true" className={DIALOG_PANEL} style={{
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
-            textAlign: 'center'
-          }}>
-            <div className="text-stone-900" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block' }}>
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              <h3 className={DIALOG_TITLE} style={{ margin: 0 }}>
-                {t('matchEnd.unlockReopen', 'Unlock reopen')}
-              </h3>
-            </div>
-            <p className="text-sm text-stone-600" style={{ margin: '0 0 16px 0' }}>
-              {t('matchEnd.unlockReopenDescription', 'Enter the reopen password to unlock this action.')}
-            </p>
-            <input
-              type="password"
-              value={unlockPasswordInput}
-              aria-label={t('matchEnd.unlockPasswordPlaceholder', 'Password')}
-              onChange={e => {
-                setUnlockPasswordInput(e.target.value)
-                setUnlockPasswordError('')
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') handleUnlockSubmit()
-              }}
-              placeholder={t('matchEnd.unlockPasswordPlaceholder', 'Password')}
-              autoComplete="off"
-              autoFocus
-              aria-invalid={unlockPasswordError ? true : undefined}
-              className={`w-full h-11 px-3 rounded-xl border text-base tracking-wide text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40 ${unlockPasswordError ? 'border-red-400 bg-red-50' : 'border-stone-200 bg-white'}`}
-              style={{ marginBottom: '8px' }}
-            />
-            {unlockPasswordError && (
-              <p className="text-xs font-medium text-red-600" style={{ margin: '0 0 12px 0', textAlign: 'left' }}>
-                {unlockPasswordError}
-              </p>
-            )}
-            {/* Footer: Cancel left, the neutral commit (unlock) right. */}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-              <Button
-                variant="secondary"
-                size="xl"
-                className="font-medium"
-                onClick={() => {
-                  setShowUnlockModal(false)
-                  setUnlockPasswordInput('')
-                  setUnlockPasswordError('')
-                }}
-                style={{ flex: 1 }}
-              >
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="dark"
-                size="xl"
-                onClick={handleUnlockSubmit}
-                style={{ flex: 1 }}
-              >
-                {t('common.confirm', 'Confirm')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Reopen a match the server has closed: admins give a reason */}
+      <KitModal
+        open={reopenDialog?.kind === 'admin'}
+        onClose={() => { if (!reopenBusy) setReopenDialog(null) }}
+        decision
+        dismissible={false}
+        title={t('matchEnd.reopenAdminTitle')}
+        closeLabel={t('common.close', 'Close')}
+        footer={<>
+          <Button variant="secondary" size="lg" onClick={() => setReopenDialog(null)} disabled={reopenBusy}>{t('common.cancel', 'Cancel')}</Button>
+          <Button variant="danger" size="lg" loading={reopenBusy} disabled={reopenReason.trim().length < 3 || reopenBusy} onClick={submitAdminReopen} data-testid="admin-reopen-confirm">
+            {t('manage.matches.reopen')}
+          </Button>
+        </>}
+      >
+        <p className="mb-3 text-sm text-stone-600">{t('matchEnd.reopenAdminBody')}</p>
+        <label className="mb-1 block text-xs font-medium text-stone-600" htmlFor="ov-reopen-reason">{t('matchEnd.reopenReason')}</label>
+        <Textarea id="ov-reopen-reason" rows={3} value={reopenReason} onChange={e => { setReopenReason(e.target.value); setReopenError('') }} maxLength={500} required />
+        {reopenError && <p role="alert" className="mt-1.5 text-xs font-medium text-red-600">{reopenError}</p>}
+      </KitModal>
+
+      {/* Closed on the server and this account is no admin */}
+      <KitModal
+        open={reopenDialog?.kind === 'adminOnly'}
+        onClose={() => setReopenDialog(null)}
+        decision
+        title={t('matchEnd.reopenAdminOnlyTitle')}
+        closeLabel={t('common.close', 'Close')}
+        footer={<Button variant="dark" size="lg" onClick={() => setReopenDialog(null)}>{t('common.close', 'Close')}</Button>}
+      >
+        <p className="text-sm text-stone-600" data-testid="reopen-admin-only">
+          {t('matchEnd.reopenAdminOnlyBody', { game: data?.match?.gameN ?? data?.match?.game_n ?? '' })}
+        </p>
+      </KitModal>
     </MatchEndPageView>
   )
 }

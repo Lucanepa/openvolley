@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, openSocket, provisionDatabase, subscribe, sleep } from './helpers/e2eServer.js'
+import { grantRoles } from './helpers/pgTestDb.js'
 
 const PIN_SECRET = randomBytes(32).toString('base64url')
 const GAME_PIN = '824613'
@@ -49,7 +50,11 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     const inn = await api(srv.base, '/api/auth/sign-in', { headers: { 'cf-connecting-ip': ip }, body: { email, password } })
     assert.equal(inn.status, 200, inn.text)
     const u = { id: inn.json.data.user.id, token: inn.json.data.session.access_token, email }
-    if (admin) await sql.query("UPDATE public.profiles SET roles = ARRAY['scorer','admin'] WHERE user_id = $1", [u.id])
+    // sign-up gives no role (db/007: pending), whatever roles the client sent
+    const { rows: [p] } = await sql.query('SELECT roles FROM public.profiles WHERE user_id = $1', [u.id])
+    assert.deepEqual(p.roles, [])
+    // these suites score official matches: approve the account
+    await grantRoles(sql, u.id, admin ? ['scorer', 'admin'] : ['scorer'])
     return u
   }
 
@@ -207,7 +212,7 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     const { rows: [p] } = await sql.query('SELECT roles, first_name FROM profiles WHERE user_id = $1', [users.bob.id])
     assert.deepEqual(p, { roles: ['scorer'], first_name: 'Bobby' })
     expectNotOwner(await dbCall(users.bob, 'matches', 'update', { data: { status: 'live' }, filters: [{ type: 'eq', column: 'id', value: id }] }))
-    // sign-up dropped the roles the client sent
+    // sign-up dropped the roles the client sent (account() checked [] before approving alice)
     const { rows: [a] } = await sql.query('SELECT roles FROM profiles WHERE user_id = $1', [users.alice.id])
     assert.deepEqual(a.roles, ['scorer'])
   })

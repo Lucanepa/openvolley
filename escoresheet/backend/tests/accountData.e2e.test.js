@@ -23,6 +23,7 @@ import { join } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, openSocket, provisionDatabase } from './helpers/e2eServer.js'
+import { grantRoles } from './helpers/pgTestDb.js'
 
 const PIN_SECRET = randomBytes(32).toString('base64url')
 const GAME_PIN = '615203'
@@ -45,6 +46,8 @@ describe('account deletion, storage remove, tablet list', { skip: SKIP }, () => 
     assert.equal(up.status, 200, up.text)
     const inn = await api(srv.base, '/api/auth/sign-in', { headers: { 'cf-connecting-ip': ip }, body: { email, password } })
     assert.equal(inn.status, 200, inn.text)
+    // an approved scorer (new accounts are pending since db/007)
+    await grantRoles(sql, inn.json.data.user.id, ['scorer'])
     return { id: inn.json.data.user.id, token: inn.json.data.session.access_token, email }
   }
   const dbCall = (user, table, action, params) =>

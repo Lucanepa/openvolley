@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createPgQuery } from '../lib/pgQuery.js'
-import { SKIP_PG, SCHEMA_SQL, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
+import { SKIP_PG, SCHEMA_SQL_005_ONLY, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const MIGRATION_006 = readFileSync(join(here, '..', 'db', '006_matches_updated_at.sql'), 'utf8')
@@ -18,6 +18,9 @@ const eq = (column, value) => ({ type: 'eq', column, value })
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 let seq = 0
 const uniq = (p) => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`
+// One cloud match per official game (db/007): each match its own game number
+let gameSeq = 1000
+const nextGameN = () => gameSeq++
 
 /** The pgQuery behaviour, run against a database with or without the 006 trigger. */
 function pgQuerySuite (label, schemaSql) {
@@ -43,7 +46,7 @@ function pgQuerySuite (label, schemaSql) {
 
     it('an insert keeps the server default, not a client-sent updated_at', async () => {
       const ext = uniq('M')
-      const r = await q('matches', 'insert', { data: { external_id: ext, game_n: 1, status: 'setup', updated_at: STALE } })
+      const r = await q('matches', 'insert', { data: { external_id: ext, game_n: nextGameN(), status: 'setup', updated_at: STALE } })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       const row = await stampOf('matches', 'external_id', ext)
       assert.notEqual(row.updated_at.toISOString(), STALE)
@@ -52,7 +55,7 @@ function pgQuerySuite (label, schemaSql) {
 
     it('an update moves updated_at to now, whatever the client sent', async () => {
       const ext = uniq('M')
-      await q('matches', 'insert', { data: { external_id: ext, game_n: 1, status: 'setup' } })
+      await q('matches', 'insert', { data: { external_id: ext, game_n: nextGameN(), status: 'setup' } })
       const before0 = await stampOf('matches', 'external_id', ext)
       await sleep(20)
       const r = await q('matches', 'update', { data: { status: 'live', updated_at: STALE }, filters: [eq('external_id', ext)] })
@@ -64,10 +67,10 @@ function pgQuerySuite (label, schemaSql) {
 
     it('an upsert that hits an existing match moves updated_at too', async () => {
       const ext = uniq('M')
-      await q('matches', 'upsert', { data: { external_id: ext, game_n: 1, status: 'setup' }, onConflict: 'external_id' })
+      await q('matches', 'upsert', { data: { external_id: ext, game_n: nextGameN(), status: 'setup' }, onConflict: 'external_id' })
       const first = await stampOf('matches', 'external_id', ext)
       await sleep(20)
-      const r = await q('matches', 'upsert', { data: { external_id: ext, game_n: 1, status: 'ended', updated_at: STALE }, onConflict: 'external_id' })
+      const r = await q('matches', 'upsert', { data: { external_id: ext, game_n: nextGameN(), status: 'ended', updated_at: STALE }, onConflict: 'external_id' })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       const second = await stampOf('matches', 'external_id', ext)
       assert.ok(second.updated_at > first.updated_at)
@@ -75,7 +78,7 @@ function pgQuerySuite (label, schemaSql) {
 
     it('an update that only carries updated_at changes nothing', async () => {
       const ext = uniq('M')
-      await q('matches', 'insert', { data: { external_id: ext, game_n: 1 } })
+      await q('matches', 'insert', { data: { external_id: ext, game_n: nextGameN() } })
       const first = await stampOf('matches', 'external_id', ext)
       const r = await q('matches', 'update', { data: { updated_at: STALE }, filters: [eq('external_id', ext)] })
       assert.equal(r.status, 200, JSON.stringify(r.body))
@@ -85,7 +88,7 @@ function pgQuerySuite (label, schemaSql) {
 
     it('sets get the same treatment', async () => {
       const ext = uniq('M')
-      const m = await q('matches', 'insert', { data: { external_id: ext, game_n: 1 }, returning: 'id', single: true })
+      const m = await q('matches', 'insert', { data: { external_id: ext, game_n: nextGameN() }, returning: 'id', single: true })
       const setExt = `${ext}:s:1`
       await q('sets', 'insert', { data: { external_id: setExt, match_id: m.body.data.id, index: 1, updated_at: STALE } })
       const first = await stampOf('sets', 'external_id', setExt)
@@ -99,7 +102,7 @@ function pgQuerySuite (label, schemaSql) {
 
     it('leaves match_live_state.updated_at to the client (the realtime feed orders by it)', async () => {
       const ext = uniq('M')
-      const m = await q('matches', 'insert', { data: { external_id: ext, game_n: 1 }, returning: 'id', single: true })
+      const m = await q('matches', 'insert', { data: { external_id: ext, game_n: nextGameN() }, returning: 'id', single: true })
       const r = await q('match_live_state', 'upsert', { data: { match_id: m.body.data.id, points_a: 1, updated_at: STALE }, onConflict: 'match_id' })
       assert.equal(r.status, 200, JSON.stringify(r.body))
       const row = (await raw.query('SELECT updated_at FROM public.match_live_state WHERE match_id = $1', [m.body.data.id])).rows[0]
@@ -108,20 +111,20 @@ function pgQuerySuite (label, schemaSql) {
 
     it('a trusted internal write may still set updated_at itself', async () => {
       const ext = uniq('M')
-      await q('matches', 'insert', { data: { external_id: ext, game_n: 1, updated_at: STALE } }, { ...W, internal: true })
+      await q('matches', 'insert', { data: { external_id: ext, game_n: nextGameN(), updated_at: STALE } }, { ...W, internal: true })
       const row = await stampOf('matches', 'external_id', ext)
       assert.equal(row.updated_at.toISOString(), STALE)
     })
   })
 }
 
-pgQuerySuite('no_trigger', SCHEMA_SQL)
-pgQuerySuite('trigger', SCHEMA_SQL + '\n' + MIGRATION_006)
+pgQuerySuite('no_trigger', SCHEMA_SQL_005_ONLY)
+pgQuerySuite('trigger', SCHEMA_SQL_005_ONLY + '\n' + MIGRATION_006)
 
 describe('db/006_matches_updated_at.sql', { skip: SKIP_PG }, () => {
   let tdb, raw
   before(async () => {
-    tdb = await createTestDatabase('mig006', { schemaSql: SCHEMA_SQL })
+    tdb = await createTestDatabase('mig006', { schemaSql: SCHEMA_SQL_005_ONLY })
     raw = new pg.Client({ connectionString: tdb.url })
     await raw.connect()
   })

@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import UserButton from '../auth/UserButton'
+import PendingApprovalBanner from '../auth/PendingApprovalBanner'
+import CloudBlockNotice from '../CloudBlockNotice'
 import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
 import { Button, Card, cn, FOCUS_RING, FOCUS_RING_INSET } from '../../ui'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
@@ -82,6 +84,8 @@ export default function HomePage({
           <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="Openvolley" className="h-28 w-auto sm:h-32" />
         </div>
 
+        <PendingApprovalBanner className="mb-4" />
+
         <Card className="w-full space-y-3">
           {/* New Match button with its menu (pushes the stack down) */}
           <div className="space-y-2">
@@ -145,6 +149,10 @@ export default function HomePage({
               {t('home.continueMatch')}
             </Button>
           )}
+
+          {/* The server refused this match for good (pending account, game
+              already scored by someone else, closed): say why */}
+          {currentOfficialMatch?.cloudBlock && <CloudBlockNotice match={currentOfficialMatch} />}
 
           {/* Delete Match - only when there is a match */}
           {(currentOfficialMatch || currentTestMatch) && (

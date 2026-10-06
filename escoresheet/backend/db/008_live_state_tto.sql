@@ -1,4 +1,4 @@
--- 007_live_state_tto.sql: match_live_state.tto_active / tto_started_at
+-- 008_live_state_tto.sql: match_live_state.tto_active / tto_started_at
 --
 -- openbeach (sport_type 'beach') writes the technical timeout into the live
 -- state (Scoreboard_beach.jsx syncLiveStateToSupabase: tto_active,
@@ -7,7 +7,7 @@
 -- same way). lib/publicColumns.js lets both through to live viewers, so the
 -- beach referee sees the TTO over the realtime relay.
 --
--- Run as ov_owner after 006 (restore.sh runs every db/NNN_*.sql with
+-- Run as ov_owner after 007 (restore.sh runs every db/NNN_*.sql with
 -- NNN >= 003 in numeric order), then roles.sql. Idempotent.
 
 ALTER TABLE public.match_live_state

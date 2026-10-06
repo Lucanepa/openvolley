@@ -4,10 +4,12 @@ import { useAuth } from '../../contexts/AuthContext'
 import { PROFILE_NOT_SAVED } from './profileWrite'
 import { X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import RoleChips from './RoleChips'
+import PendingApprovalBanner from './PendingApprovalBanner'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
-  const { user, profile, updateProfile, updateEmail, deleteAccount } = useAuth()
+  const { user, profile, access, updateProfile, updateEmail, deleteAccount } = useAuth()
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -126,8 +128,7 @@ export default function ProfileModal({ open, onClose }) {
       firstName,
       lastName,
       country,
-      dob: dob || null,
-      roles: profile?.roles || ['scorer']
+      dob: dob || null
     })
 
     if (updateError) {
@@ -250,12 +251,9 @@ export default function ProfileModal({ open, onClose }) {
             <div className={labelCls}>
               {t('auth.roles', 'Role')}
             </div>
-            <div className="flex gap-1.5">
-              <span className="inline-flex items-center whitespace-nowrap rounded border border-emerald-200 bg-emerald-50 px-1.5 py-[3px] text-[11px] font-semibold leading-none text-emerald-700">
-                {t('auth.roleScorer', 'Scorer')}
-              </span>
-            </div>
+            {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} /> : <span className="text-xs text-stone-400">–</span>}
           </div>
+          <PendingApprovalBanner className="mb-4" />
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name fields */}
