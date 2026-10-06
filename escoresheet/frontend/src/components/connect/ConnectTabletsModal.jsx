@@ -100,7 +100,8 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const [hs, setHs] = useState({ loading: desktop, status: null, busy: false, error: null })
   const [bt, setBt] = useState({ loading: desktop, status: null, busy: false, error: null })
   // Windows: is the installer's firewall rule for the tablets there?
-  const [fw, setFw] = useState(null)
+  // undefined = not answered yet (no step meanwhile), null = the check failed
+  const [fw, setFw] = useState(undefined)
   const [qrRole, setQrRole] = useState('referee')
   const [showLogin, setShowLogin] = useState(false)
   const [roleOverride, setRoleOverride] = useState({})

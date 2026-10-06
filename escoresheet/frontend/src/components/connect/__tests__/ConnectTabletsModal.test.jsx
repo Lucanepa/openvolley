@@ -340,6 +340,26 @@ describe('ConnectTabletsModal', () => {
     expect(screen.queryByTestId('firewall-step')).toBeNull()
   })
 
+  it('Windows: no firewall step while the check has not answered (no flash on every opening)', async () => {
+    let answer
+    const win = tauri({
+      firewall_status: () => new Promise(resolve => { answer = resolve }),
+      hotspot_status: () => ({ supported: true, active: true, platform: 'windows', method: 'mobile-hotspot', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', gatewayIp: '192.168.137.1' }),
+      bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
+    })
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win })
+    // the hotspot (platform windows) has answered, the firewall check not yet
+    await waitFor(() => expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument())
+    await waitFor(() => expect(answer).toBeTypeOf('function'))
+    expect(screen.queryByText(/tick “Public”/)).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Hall Wi-Fi' }))
+    await waitFor(() => expect(screen.getByText('http://192.168.1.42:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    expect(screen.queryByTestId('firewall-step')).toBeNull()
+    // then a Block rule for the app: the step
+    answer({ platform: 'windows', supported: true, ready: false, reason: 'blocked-by-rule' })
+    await waitFor(() => expect(screen.getByTestId('firewall-step')).toHaveTextContent('tick “Public”'))
+  })
+
   it('Windows without the rule (dev build, rule removed): the manual step on the hall Wi-Fi too', async () => {
     const win = tauri({
       firewall_status: () => ({ platform: 'windows', supported: true, ready: false, reason: 'rule-missing' }),
