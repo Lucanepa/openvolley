@@ -4,9 +4,11 @@ import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
 import UserButton from './auth/UserButton'
 import TabletStatusIndicator from './TabletStatusIndicator'
+import LanTabletsModal from './LanTabletsModal'
+import { getLocalServerStatusUrl } from '../utils/backendConfig'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { BellIcon, SatelliteDishIcon, ClipboardIcon, ZoomInIcon, HomeIcon } from './icons'
-import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Tablet, X } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { SwitchTrack } from '../ui/Switch.jsx'
 import {
@@ -144,6 +146,10 @@ export default function MainHeader({
   })
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
+  // The LAN addresses for tablets, where a local relay serves this page (the
+  // desktop app replaces its native Help menu with this row)
+  const [lanTabletsOpen, setLanTabletsOpen] = useState(false)
+  const showLanTablets = !!getLocalServerStatusUrl()
   const actionsMenuRef = useRef(null)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
@@ -797,6 +803,21 @@ export default function MainHeader({
                       <span>{isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}</span>
                     </button>
 
+                    {showLanTablets && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setLanTabletsOpen(true)
+                          setActionsMenuOpen(false)
+                        }}
+                        className={MENU_ROW}
+                      >
+                        <span className={MENU_ICON}><Tablet size={15} /></span>
+                        <span>{t('lanTablets.title', 'Connect tablets')}</span>
+                      </button>
+                    )}
+
                     {/* Version Action */}
                     <button
                       type="button"
@@ -968,6 +989,21 @@ export default function MainHeader({
                     {/* Divider */}
                     <div className={MENU_SEP} />
 
+                    {showLanTablets && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setLanTabletsOpen(true)
+                          setActionsMenuOpen(false)
+                        }}
+                        className={MENU_ROW}
+                      >
+                        <span className={MENU_ICON}><Tablet size={15} /></span>
+                        <span>{t('lanTablets.title', 'Connect tablets')}</span>
+                      </button>
+                    )}
+
                     {/* Language Selector */}
                     <button
                       type="button"
@@ -1044,6 +1080,7 @@ export default function MainHeader({
         </div>
 
       </div>
+      {showLanTablets && <LanTabletsModal open={lanTabletsOpen} onClose={() => setLanTabletsOpen(false)} />}
       {/* Show thin expand bar when header is collapsed */}
       {effectivelyCollapsed && (
         <div

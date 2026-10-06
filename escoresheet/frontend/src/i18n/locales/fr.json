@@ -1657,6 +1657,20 @@
     "messageLabel": "Message :",
     "connectionIssueDetected": "Problème de connexion détecté"
   },
+  "lanTablets": {
+    "title": "Connecter des tablettes",
+    "description": "Les tablettes sur le même Wi-Fi ouvrent ces adresses dans leur navigateur. Pas besoin d’internet.",
+    "scoretable": "Feuille de match",
+    "referee": "Arbitre",
+    "bench": "Banc",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Copier",
+    "copied": "Copié",
+    "loading": "Lecture du serveur local…",
+    "unavailable": "Le serveur local ne répond pas. Redémarrez l’app, puis réessayez.",
+    "hint": "La tablette doit être sur le même Wi-Fi que cet ordinateur. La caméra (import du roster par QR) fonctionne seulement sur cet ordinateur, pas sur les tablettes en http."
+  },
   "startupConnectivity": {
     "cloudWaits": "Pas d’internet : la synchronisation cloud démarre dès que cet appareil est en ligne. Les matchs restent ici et sur le serveur local.",
     "connecting": "Connexion en cours...",

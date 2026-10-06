@@ -1658,6 +1658,20 @@
     "messageLabel": "Nachricht:",
     "connectionIssueDetected": "Verbindigsproblem erkannt"
   },
+  "lanTablets": {
+    "title": "Tablets verbinde",
+    "description": "Tablets im glyche WLAN öffned die Adresse im Browser. Kei Internet nötig.",
+    "scoretable": "eMatchblatt",
+    "referee": "Schiri",
+    "bench": "Bank",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Kopiere",
+    "copied": "Kopiert",
+    "loading": "Lokale Server wird abgfrögt…",
+    "unavailable": "De lokal Server antwortet nöd. App neu starte und nomal probiere.",
+    "hint": "S Tablet muess im glyche WLAN sii wie dä Computer. D Kamera (QR-Kaderupload) gaht nur uf däm Computer, nöd uf Tablets über http."
+  },
   "startupConnectivity": {
     "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
     "connecting": "Verbindig wird hergstellt...",
