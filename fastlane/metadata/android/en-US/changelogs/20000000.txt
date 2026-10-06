@@ -1,6 +1,7 @@
 OpenVolley 2.0.0, first release on F-Droid.
+- Portrait everywhere except the scoreboard (locks to landscape).
 - Automatic backup of the open match after every scoring event; restore it under Options, Backup.
-- Venue mode: referee and bench tablets list only the matches they can join; LED scoreboards see every published match, test matches too on a local server.
+- Venue mode: referee and bench tablets list only the matches they can join; LED scoreboards see every published match.
 - Clearer connection status at a venue (Local only, Offline).
-- Licence and credits (GPL-3.0-or-later) under Options, App version.
-- No federation logo in the scoresheet PDF header on Android.
+- Licence and credits under Options, App version.
+- No federation logo in the PDF header.
