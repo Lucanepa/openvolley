@@ -45,7 +45,9 @@ const PERSON_KEYS = Object.freeze([
   'libero', 'isLibero', 'liberoType', 'is_captain', 'isCaptain', 'captain', 'is_lfp', 'isLfp',
   'role', 'position'
 ])
-const CONNECTION_FLAG_KEYS = Object.freeze(['referee_enabled', 'home_bench_enabled', 'away_bench_enabled'])
+// Indoor home/away benches; beach (openbeach) names its teams team1 / team2.
+const CONNECTION_FLAG_KEYS = Object.freeze(['referee_enabled', 'home_bench_enabled', 'away_bench_enabled',
+  'team1_bench_enabled', 'team2_bench_enabled'])
 
 const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
   id: true,
@@ -63,6 +65,9 @@ const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
   set_interval_started_at: true,
   timeout_active: true,
   timeout_started_at: true,
+  // Beach technical timeout (db/007_live_state_tto.sql)
+  tto_active: true,
+  tto_started_at: true,
   team_a_name: true,
   team_a_short: true,
   team_a_color: true,
@@ -128,6 +133,9 @@ const MATCHES_LIVE_COLUMNS = Object.freeze({
   winner: true,
   home_team: TEAM_KEYS,
   away_team: TEAM_KEYS,
+  // Beach rows (sport_type 'beach') keep their teams here
+  team1_data: TEAM_KEYS,
+  team2_data: TEAM_KEYS,
   match_info: MATCH_INFO_KEYS,
   coin_toss: COIN_TOSS_KEYS
 })
@@ -190,9 +198,7 @@ export const ANON_DB_COLUMNS = Object.freeze({
     bench_home: PERSON_KEYS,
     bench_away: PERSON_KEYS,
     players_team1: PERSON_KEYS,
-    players_team2: PERSON_KEYS,
-    team1_data: TEAM_KEYS,
-    team2_data: TEAM_KEYS
+    players_team2: PERSON_KEYS
   })
 })
 
@@ -360,12 +366,15 @@ export const PERSON_PRIVATE_FIELDS = Object.freeze([
 /** Match keys never relayed (besides any key containing "signature"). */
 export const MATCH_PRIVATE_FIELDS = Object.freeze([
   'officials', 'signatures', 'approval', 'manualChanges', 'manual_changes',
-  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster'
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  // openbeach's uploaded rosters waiting for the scorer (with dob)
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
 ])
 /** Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS. */
 export const MATCH_ROSTER_FIELDS = Object.freeze([
   'players_home', 'players_away', 'bench_home', 'bench_away',
-  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers'
+  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers',
+  'team1Players', 'team2Players'
 ])
 
 const isSignatureKey = (k) => /signature/i.test(k)

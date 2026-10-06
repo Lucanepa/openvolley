@@ -601,8 +601,14 @@ Validate a 6-digit PIN for referee/bench access against the relay's copy. The
 answer carries the match (no PINs) and `token`, the match access token.
 
 ```json
-{ "pin": "123456", "type": "referee|homeTeam|awayTeam" }
+{ "pin": "123456", "type": "referee|homeTeam|awayTeam", "sport": "indoor|beach" }
 ```
+
+`sport` (default `indoor`) limits the search to rooms of that sport: a room is
+`beach` when its scoreboard syncs `team1Team`/`team2Team`/`team1Players`/
+`team2Players` (openbeach) or names `sportType`/`sport_type` `beach`. A beach
+answer carries `match.sportType: "beach"`; the indoor answer is unchanged. Any
+other `sport` is 400.
 
 ### `POST /api/match/claim` (cloud, session)
 
@@ -703,6 +709,7 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `004_live_state_best_of.sql` | after 003 | `match_live_state.best_of` (written by the scoreboard, missing on Supabase) |
 | `005_match_ownership.sql` | after 004 | `matches.created_by` (FK `auth.users`, `ON DELETE SET NULL`) and `match_editors` (see "Security model"). Existing rows stay without an owner. Without it every guarded write answers 503 `OV_OWNERSHIP_UNAVAILABLE` (retryable), never an unguarded write. |
 | `006_matches_updated_at.sql` | after 005 | `BEFORE UPDATE` trigger: `matches.updated_at` (and `sets.updated_at` when the column exists) = `now()` on every update. Idempotent; the trigger function is `SECURITY INVOKER`, so `ov_app` needs no EXECUTE grant. Not on `match_live_state` (the realtime hub orders it by the scorer's `updated_at`). Without it, updates through `/api/db` still get a fresh `updated_at` (`lib/pgQuery.js` drops the client's value; the column keeps its old value only for writes that bypass the API). |
+| `007_live_state_tto.sql` | after 006 | `match_live_state.tto_active` / `tto_started_at` (openbeach's technical timeout, missing on Supabase; without them every beach live-state write fails). Idempotent. |
 | `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:
@@ -1053,7 +1060,14 @@ before the new rows.
 - `restoreByPin(body, { limitKey })` gets the client IP (`cf-connecting-ip`
   with `TRUST_PROXY=cloudflare`), IPv6 keyed by /64.
 - `validate-connection-pin` scans setup/live indoor matches with
-  `{ internal: true, maxRows: 20000 }`, newest `scheduled_at` first.
+  `{ internal: true, maxRows: 20000 }`, newest `scheduled_at` first. With
+  `sport: 'beach'` (openbeach) it scans the beach matches instead: types
+  `referee`, `bench_team1` / `bench_team2` (flags `team1_bench_enabled` /
+  `team2_bench_enabled`, PIN keys `bench_team1` / `bench_team2`, the old
+  `team1_data` / `team2_data` keys accepted), `upload_team1` / `upload_team2`;
+  the answer names the teams `team1Team` / `team2Team` and carries
+  `sportType: 'beach'`. A PIN never finds a match of the other sport
+  (`lib/matchAccess.js` `CONNECTION_PIN_TYPES`).
 - Successful writes publish their `changes` to `?purpose=live` subscribers.
 - `/api/db` writes on matches/sets/events/match_live_state and
   `/api/match/restore` pass `matchOwner: { userId }` (omitted for admins):

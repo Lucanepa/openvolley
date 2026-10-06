@@ -97,6 +97,14 @@ describe('publicColumns: live projection', () => {
     assert.deepEqual(live, expected)
   })
 
+  it('keeps the beach live-state columns (server, challenges, technical timeout)', () => {
+    const row = {
+      match_id: MATCH, sport_type: 'beach', points_a: 12, points_b: 9, server_number: 2,
+      challenges_used_a: 0, challenges_used_b: 1, tto_active: true, tto_started_at: '2026-10-06T10:00:00Z'
+    }
+    assert.deepEqual(projectLiveRow('match_live_state', row), row)
+  })
+
   it('events go out without payload or state snapshot; sets unchanged', () => {
     const ev = projectLiveRow('events', { id: 1, match_id: MATCH, external_id: 'seed-1:e:1', type: 'sanction', set_index: 1, payload: { playerName: 'Ana' }, state_snapshot: { x: 1 }, lineup_left: {} })
     assert.deepEqual(ev, { id: 1, match_id: MATCH, external_id: 'seed-1:e:1', type: 'sanction', set_index: 1 })
@@ -282,6 +290,27 @@ describe('publicColumns: the match relay bundle', () => {
     assert.equal(cloudListsMatch({ requesterIp: '172.18.0.5', requesterIpKey: '172.18.0.5', ownerIpKeys: ['172.18.0.5'] }), false)
     assert.equal(cloudListsMatch({ requesterIp: '127.0.0.1', requesterIpKey: '127.0.0.1', ownerIpKeys: ['127.0.0.1'] }), false)
     assert.equal(cloudListsMatch(), false)
+  })
+
+  it('publicRelayMatch drops openbeach\'s pending team1/team2 rosters and filters its team rosters', () => {
+    const roster = { players: [{ number: 1, lastName: 'Muster', dob: DOB }] }
+    const out = publicRelayMatch({
+      id: 3,
+      team1Name: 'Muster / Beispiel',
+      pendingTeam1Roster: roster,
+      pendingTeam2Roster: roster,
+      pending_team1_roster: roster,
+      pending_team2_roster: roster,
+      players_team1: [{ number: 1, lastName: 'Muster', dob: DOB }],
+      team2Players: [{ number: 2, lastName: 'Rossi', dateOfBirth: DOB }]
+    })
+    assert.deepEqual(out, {
+      id: 3,
+      team1Name: 'Muster / Beispiel',
+      players_team1: [{ number: 1, lastName: 'Muster' }],
+      team2Players: [{ number: 2, lastName: 'Rossi' }]
+    })
+    assert.equal(json(out).includes(DOB), false)
   })
 })
 

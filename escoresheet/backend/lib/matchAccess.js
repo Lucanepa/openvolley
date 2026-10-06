@@ -38,18 +38,77 @@ export const MIN_TOKEN_SECRET_LENGTH = 32
 /**
  * Token roles -> the relay match fields (scorer's Dexie match) and the
  * matches.connections flag that keep the role's access alive.
- * validate-connection-pin issues referee / bench_home / bench_away,
- * the relay's /api/match/validate-pin referee / homeTeam / awayTeam.
+ * validate-connection-pin issues referee / bench_home / bench_away (indoor)
+ * and referee / bench_team1 / bench_team2 (beach), the relay's
+ * /api/match/validate-pin referee / homeTeam / awayTeam.
+ *
+ * `enabled` and `pin` list the relay field names in order of preference: the
+ * first `enabled` key the relayed match carries decides, and the role's PIN is
+ * the first non-empty `pin` key. Beach (openbeach) names its teams team1 /
+ * team2 (team1TeamConnectionEnabled, team1Pin, older builds team1TeamPin);
+ * a beach scorer that sends the home/away wire names instead is covered by the
+ * home/away fallbacks.
  */
+const role = (enabled, pin, dbEnabled) => Object.freeze({ enabled: Object.freeze(enabled), pin: Object.freeze(pin), dbEnabled })
 const TOKEN_ROLES = Object.freeze({
-  referee: Object.freeze({ enabled: 'refereeConnectionEnabled', pin: 'refereePin', dbEnabled: 'referee_enabled' }),
-  bench_home: Object.freeze({ enabled: 'homeTeamConnectionEnabled', pin: 'homeTeamPin', dbEnabled: 'home_bench_enabled' }),
-  bench_away: Object.freeze({ enabled: 'awayTeamConnectionEnabled', pin: 'awayTeamPin', dbEnabled: 'away_bench_enabled' }),
-  homeTeam: Object.freeze({ enabled: 'homeTeamConnectionEnabled', pin: 'homeTeamPin', dbEnabled: 'home_bench_enabled' }),
-  awayTeam: Object.freeze({ enabled: 'awayTeamConnectionEnabled', pin: 'awayTeamPin', dbEnabled: 'away_bench_enabled' })
+  referee: role(['refereeConnectionEnabled'], ['refereePin'], 'referee_enabled'),
+  bench_home: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled'),
+  bench_away: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled'),
+  homeTeam: role(['homeTeamConnectionEnabled'], ['homeTeamPin'], 'home_bench_enabled'),
+  awayTeam: role(['awayTeamConnectionEnabled'], ['awayTeamPin'], 'away_bench_enabled'),
+  bench_team1: role(['team1TeamConnectionEnabled', 'homeTeamConnectionEnabled'], ['team1Pin', 'team1TeamPin', 'homeTeamPin'], 'team1_bench_enabled'),
+  bench_team2: role(['team2TeamConnectionEnabled', 'awayTeamConnectionEnabled'], ['team2Pin', 'team2TeamPin', 'awayTeamPin'], 'team2_bench_enabled')
 })
+
+const has = (obj, k) => Object.prototype.hasOwnProperty.call(obj, k)
+/** The first of `keys` the object carries (own property), else null. */
+const firstPresent = (obj, keys) => keys.find((k) => has(obj, k)) ?? null
+/** The first non-empty PIN among `keys`, as text ('' when none). */
+const firstPin = (obj, keys) => {
+  for (const k of keys) {
+    const s = pinText(obj[k])
+    if (s) return s
+  }
+  return ''
+}
 /** May a token be issued for this role (PIN check type)? Upload PINs get none. */
 export const isTokenRole = (role) => typeof role === 'string' && Object.prototype.hasOwnProperty.call(TOKEN_ROLES, role)
+
+/**
+ * POST /api/match/validate-connection-pin, per sport (matches.sport_type):
+ * PIN type -> the matches.connection_pins keys that may hold that PIN (first
+ * is the current one; the rest are older client spellings) and the
+ * matches.connections flag that must be on (null: no flag gates the type,
+ * the roster upload PINs).
+ *
+ * Beach: openbeach stores the bench PINs as bench_team1 / bench_team2
+ * (MatchSetup_beach wrote team1_data / team2_data before) and the flags as
+ * team1_bench_enabled / team2_bench_enabled.
+ */
+const pinType = (pinKeys, enabledKey) => Object.freeze({ pinKeys: Object.freeze(pinKeys), enabledKey })
+export const CONNECTION_PIN_TYPES = Object.freeze({
+  indoor: Object.freeze({
+    referee: pinType(['referee'], 'referee_enabled'),
+    bench_home: pinType(['bench_home'], 'home_bench_enabled'),
+    bench_away: pinType(['bench_away'], 'away_bench_enabled'),
+    upload_home: pinType(['upload_home'], null),
+    upload_away: pinType(['upload_away'], null)
+  }),
+  beach: Object.freeze({
+    referee: pinType(['referee'], 'referee_enabled'),
+    bench_team1: pinType(['bench_team1', 'team1_data'], 'team1_bench_enabled'),
+    bench_team2: pinType(['bench_team2', 'team2_data'], 'team2_bench_enabled'),
+    upload_team1: pinType(['upload_team1'], null),
+    upload_team2: pinType(['upload_team2'], null)
+  })
+})
+
+/** The validate-connection-pin config of (sport, type), or null for an unknown pair. */
+export function connectionPinType (sport, type) {
+  if (typeof sport !== 'string' || typeof type !== 'string') return null
+  const bySport = has(CONNECTION_PIN_TYPES, sport) ? CONNECTION_PIN_TYPES[sport] : null
+  return bySport && has(bySport, type) ? bySport[type] : null
+}
 
 /**
  * The match token secret of this environment: OV_MATCH_TOKEN_SECRET, else one
@@ -108,8 +167,9 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
   function stillGrants (payload, match) {
     const role = payload && isTokenRole(payload.r) ? TOKEN_ROLES[payload.r] : null
     if (!role || !match || typeof match !== 'object') return false
-    if (match[role.enabled] !== true) return false
-    const current = pinText(match[role.pin])
+    const enabledKey = firstPresent(match, role.enabled)
+    if (!enabledKey || match[enabledKey] !== true) return false
+    const current = firstPin(match, role.pin)
     if (payload.f && current && !safeEqual(fingerprint(current), payload.f)) return false
     return true
   }
@@ -149,8 +209,9 @@ export function createMatchTokens ({ secret = null, ttlMs = MATCH_TOKEN_TTL_MS, 
  * Does `pin` prove access to a relayed match (the scorer's Dexie match object)?
  * Accepted: the referee PIN while the referee connection is on, a team's bench
  * PIN while that bench connection is on, and the game PIN (the scorer's own
- * devices). Constant-time compares. A match without any of these PINs grants
- * nothing (there is no PIN step to have passed).
+ * devices). Beach matches name their teams team1 / team2 (see TOKEN_ROLES).
+ * Constant-time compares. A match without any of these PINs grants nothing
+ * (there is no PIN step to have passed).
  */
 export function pinGrantsAccess (match, pin) {
   const p = pinText(pin)
@@ -159,6 +220,8 @@ export function pinGrantsAccess (match, pin) {
   if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
   if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
   if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
+  if (match.team1TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team1Pin', 'team1TeamPin']))
+  if (match.team2TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team2Pin', 'team2TeamPin']))
   candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
   let ok = false
   for (const c of candidates) {
