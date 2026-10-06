@@ -20,6 +20,7 @@ const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
+import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
@@ -758,7 +759,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
     const url = action === 'preview' ? `/scoresheet/?matchId=${matchId}` : `/scoresheet/?matchId=${matchId}&action=${action}`
-    window.open(url, '_blank', 'width=1600,height=1200')
+    const opened = openAppWindow(url, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
+    if (!opened.ok) showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
   }
 
   // Handle downloading comprehensive interaction logs
@@ -842,7 +844,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       })
 
       // Open scoresheet window with getBlob action
-      window.open(`/scoresheet/?matchId=${matchId}&action=getBlob`, '_blank', 'width=1600,height=1200')
+      openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob`, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
 
       // Wait for PDF blob - but don't let failures block approval
       let pdfResult = null

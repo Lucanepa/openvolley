@@ -1968,7 +1968,8 @@
   "scoresheetPdf": {
     "backToScoresheet": "Zurück zum eMatchblatt",
     "lcs": "Libero-Kontrollblatt",
-    "lcsTooltip": "Libero-Kontrollblatt anzeigen"
+    "lcsTooltip": "Libero-Kontrollblatt anzeigen",
+    "pdfFailed": "Das PDF konnte auf diesem Gerät nicht erstellt werden."
   },
   "tabletStatus": {
     "title": "Tablet-Status",
@@ -1979,6 +1980,8 @@
     "couldNotOpen": "Das Fenster konnte nicht geöffnet werden. Bitte erneut versuchen.",
     "pdfSaved": "PDF gespeichert unter {{path}}",
     "pdfSaveFailed": "Das PDF konnte nicht gespeichert werden: {{error}}",
-    "savingPdf": "PDF wird gespeichert..."
+    "savingPdf": "PDF wird gespeichert...",
+    "downloadFailed": "Der Download wurde nicht abgeschlossen.",
+    "downloadsFolder": "Downloads"
   }
 }

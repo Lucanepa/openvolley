@@ -6,6 +6,7 @@ import { ClipboardIcon } from '../icons'
 import { ChevronRight, Loader2, X } from 'lucide-react'
 import { Button, cn, IconButton } from '../../ui'
 import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
+import { openAppWindow } from '../../utils/openAppWindow'
 
 /**
  * Status pill of a My matches row. The database says 'live', 'final',
@@ -114,7 +115,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const openMatch = (match) => {
     if (onSelectMatch) return onSelectMatch(match)
     const url = finalScoresheetUrl(match)
-    if (url) window.open(url, '_blank', 'noopener')
+    if (url) openAppWindow(url, { features: 'noopener' })
   }
   const canOpen = (match) => !!onSelectMatch || !!finalScoresheetUrl(match)
 

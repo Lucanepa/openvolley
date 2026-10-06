@@ -1271,7 +1271,8 @@
     "importJsonFile": "Import JSON file",
     "backToScoresheet": "Back to scoresheet",
     "lcs": "Libero control sheet",
-    "lcsTooltip": "View libero control sheet"
+    "lcsTooltip": "View libero control sheet",
+    "pdfFailed": "The PDF could not be created on this device."
   },
   "supportFeedback": {
     "title": "Support & feedback",
@@ -2135,6 +2136,8 @@
     "couldNotOpen": "The window could not be opened. Please try again.",
     "pdfSaved": "PDF saved to {{path}}",
     "pdfSaveFailed": "The PDF could not be saved: {{error}}",
-    "savingPdf": "Saving the PDF..."
+    "savingPdf": "Saving the PDF...",
+    "downloadFailed": "The download did not finish.",
+    "downloadsFolder": "Downloads"
   }
 }

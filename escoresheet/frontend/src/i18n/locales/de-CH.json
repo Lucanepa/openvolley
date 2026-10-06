@@ -1269,7 +1269,8 @@
     "importJsonFile": "JSON-Datei importiere",
     "backToScoresheet": "Zrugg zum eMatchblatt",
     "lcs": "Libero-Kontrollblatt",
-    "lcsTooltip": "Libero-Kontrollblatt aazeige"
+    "lcsTooltip": "Libero-Kontrollblatt aazeige",
+    "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde."
   },
   "supportFeedback": {
     "title": "Support & Feedback",
@@ -2103,6 +2104,8 @@
     "couldNotOpen": "S Fänschter hät nöd chöne ufgah. Bitte nomal probiere.",
     "pdfSaved": "PDF gspeicheret under {{path}}",
     "pdfSaveFailed": "S PDF hät nöd chöne gspeicheret werde: {{error}}",
-    "savingPdf": "PDF wird gspeicheret..."
+    "savingPdf": "PDF wird gspeicheret...",
+    "downloadFailed": "De Download isch nöd fertig worde.",
+    "downloadsFolder": "Downloads"
   }
 }

@@ -50,7 +50,7 @@ describe('MatchHistory (My Matches)', () => {
     expect(matchesQuery.filters).toContainEqual(['in', 'external_id', ['match_1_a']])
 
     fireEvent.click(screen.getByText('Home V'))
-    expect(open).toHaveBeenCalledWith('/scoresheet/?date=2026-10-05&game=991404', '_blank', 'noopener')
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/scoresheet/?date=2026-10-05&game=991404`, '_blank', 'noopener')
   })
 
   it('a final match is a keyboard-reachable row with a done (not amber) Final pill', async () => {
@@ -62,7 +62,7 @@ describe('MatchHistory (My Matches)', () => {
     expect(pill.className).toContain('emerald')
     expect(pill.className).not.toContain('amber')
     fireEvent.keyDown(row, { key: 'Enter' })
-    expect(open).toHaveBeenCalledWith('/scoresheet/?date=2026-10-05&game=991404', '_blank', 'noopener')
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/scoresheet/?date=2026-10-05&game=991404`, '_blank', 'noopener')
   })
 })
 

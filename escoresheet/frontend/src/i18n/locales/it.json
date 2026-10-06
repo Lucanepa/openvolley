@@ -1270,7 +1270,8 @@
     "importJsonFile": "Importa file JSON",
     "backToScoresheet": "Torna all'eScoresheet",
     "lcs": "Foglio di controllo libero",
-    "lcsTooltip": "Mostra il foglio di controllo libero"
+    "lcsTooltip": "Mostra il foglio di controllo libero",
+    "pdfFailed": "Non è stato possibile creare il PDF su questo dispositivo."
   },
   "supportFeedback": {
     "title": "Supporto & feedback",
@@ -2134,6 +2135,8 @@
     "couldNotOpen": "Non è stato possibile aprire la finestra. Riprova.",
     "pdfSaved": "PDF salvato in {{path}}",
     "pdfSaveFailed": "Non è stato possibile salvare il PDF: {{error}}",
-    "savingPdf": "Salvataggio del PDF..."
+    "savingPdf": "Salvataggio del PDF...",
+    "downloadFailed": "Il download non è stato completato.",
+    "downloadsFolder": "Download"
   }
 }

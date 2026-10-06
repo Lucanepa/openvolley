@@ -10,12 +10,16 @@ import { describeScoresheetLoadError, findOwnScoresheet, parseScoresheetName, re
 // Initialize Dexie database (same as main app)
 import { db } from '../src/db/db';
 import { ClipboardIcon } from '../src/components/icons';
+import { closeAppWindow, getOpenerWindow } from '../src/utils/appWindowGuest';
+import { openAppWindow } from '../src/utils/openAppWindow';
 
 // Helper function to send errors to parent window
 const sendErrorToParent = (error: Error | string, details?: string) => {
   try {
-    if (window.opener && !window.opener.closed) {
-      window.opener.postMessage({
+    // the opener (popup / desktop app window) or the app under the Android in-app view
+    const opener = getOpenerWindow();
+    if (opener) {
+      opener.postMessage({
         type: 'SCORESHEET_ERROR',
         error: typeof error === 'string' ? error : error.message,
         details: details || (error instanceof Error ? error.stack : ''),
@@ -451,7 +455,7 @@ const ScoresheetList: React.FC = () => {
 
   const handleDownload = async (item: ScoresheetItem) => {
     // Open in new tab with save action
-    window.open(`?date=${item.date}&game=${item.game}&action=save`, '_blank');
+    openAppWindow(`?date=${item.date}&game=${item.game}&action=save`);
   };
 
   // Group scoresheets by date
@@ -730,7 +734,7 @@ class ErrorBoundary extends React.Component<
             </details>
           )}
           <button
-            onClick={() => window.close()}
+            onClick={() => closeAppWindow()}
             style={{
               padding: '10px 20px',
               fontSize: '16px',
@@ -919,7 +923,7 @@ if (urlMatchId) {
           {error instanceof Error ? error.message : String(error)}
         </div>
         <button
-          onClick={() => window.close()}
+          onClick={() => closeAppWindow()}
           style={{
             padding: '10px 20px',
             fontSize: '16px',

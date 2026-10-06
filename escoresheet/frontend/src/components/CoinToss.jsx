@@ -17,6 +17,7 @@ import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
 import { setExtId, eventExtId } from '../utils/syncIds'
+import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
@@ -1733,10 +1734,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   }
 
                   sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                  const scoresheetWindow = window.open(`/scoresheet/?matchId=${matchId}`, '_blank', 'width=1200,height=900')
+                  const opened = openAppWindow(`/scoresheet/?matchId=${matchId}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
 
-                  if (!scoresheetWindow) {
-                    showAlert(t('coinToss.allowPopups'), 'warning')
+                  if (!opened.ok) {
+                    showAlert(t(openFailedMessageKey(opened, 'coinToss.allowPopups')), 'warning')
                   }
                 } catch (error) {
                   console.error('Error opening scoresheet:', error)
