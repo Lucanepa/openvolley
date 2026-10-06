@@ -13117,10 +13117,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }
             ]}
           />
+          {/* The match's own menu (logs, sanctions, manual changes): labelled
+              "Match" so it is never mistaken for the app header's menu */}
           <MenuList
-            buttonLabel="☰"
-            buttonTitle={t('header.menu')}
-            menuTitle={t('header.menu')}
+            buttonLabel={t('header.match', 'Match')}
+            buttonTitle={t('header.match', 'Match')}
+            menuTitle={t('header.match', 'Match')}
             buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
               width: 'auto',
@@ -13128,7 +13130,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               fontSize: '1.28cqw',
               textAlign: 'center'
             }}
-            showArrow={false}
             position="right"
             items={[
               {
