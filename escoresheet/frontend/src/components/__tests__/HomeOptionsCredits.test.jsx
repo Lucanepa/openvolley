@@ -43,17 +43,20 @@ function renderOptions() {
 }
 
 describe('HomeOptionsModal licence and credits', () => {
-  // The spinner's ball and whistle are Game Icons artwork (CC BY 3.0): the
-  // licence needs a visible credit in every build, including the Android app.
-  it('credits Game Icons with its licence and links the source code', () => {
+  // The icons are Lucide (ISC) and Phosphor (MIT), the packs wiedisync uses:
+  // both are credited in every build, including the Android app. The Game
+  // Icons (CC BY 3.0) artwork is gone, so its credit must be gone too.
+  it('credits the icon packs with their licences and links the source code', () => {
     renderOptions()
     const credits = screen.getByTestId('credits')
     expect(credits).toHaveTextContent('GPL-3.0')
-    expect(credits).toHaveTextContent('Game Icons')
-    expect(credits).toHaveTextContent('CC BY 3.0')
+    expect(credits).toHaveTextContent('Lucide (ISC)')
+    expect(credits).toHaveTextContent('Phosphor (MIT)')
+    expect(credits).not.toHaveTextContent('Game Icons')
     const hrefs = [...credits.querySelectorAll('a')].map((a) => a.getAttribute('href'))
-    expect(hrefs).toContain('https://game-icons.net/')
-    expect(hrefs).toContain('https://creativecommons.org/licenses/by/3.0/')
+    expect(hrefs).toContain('https://lucide.dev/license')
+    expect(hrefs).toContain('https://github.com/phosphor-icons/react/blob/master/LICENSE')
+    expect(hrefs).not.toContain('https://game-icons.net/')
     expect(hrefs).toContain('https://github.com/Lucanepa/openvolley')
   })
 })
