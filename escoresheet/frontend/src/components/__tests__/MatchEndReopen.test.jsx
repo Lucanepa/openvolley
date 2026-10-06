@@ -33,6 +33,20 @@ describe('planReopen', () => {
     expect(readServerMatch).not.toHaveBeenCalled()
   })
 
+  it('no closing job in the queue is no proof: the server is asked (pruned jobs, another tablet, a cloud restore)', async () => {
+    const row = { id: 'uuid-1', status: 'approved', closed_at: '2026-10-01T18:00:00Z' }
+    const readServerMatch = read(row)
+    // review: a match approved over a week ago (its sent job pruned) is closed on the server
+    expect(await planReopen({ match: match(), queue: [], online: true, access: { isAdmin: false }, readServerMatch })).toEqual({ kind: 'adminOnly', row })
+    expect(readServerMatch).toHaveBeenCalledWith(SEED)
+    // only superseded jobs left: still no proof
+    expect((await planReopen({ match: match(), queue: [closing(4, 'superseded')], online: true, readServerMatch })).kind).toBe('adminOnly')
+    // offline without proof: needs the connection, never a silent local reopen
+    expect(await planReopen({ match: match(), queue: [], online: false, readServerMatch: read(null) })).toEqual({ kind: 'needsConnection' })
+    // never in the cloud: the server has no row, so it reopens locally
+    expect((await planReopen({ match: match(), queue: [], online: true, readServerMatch: read(null) })).kind).toBe('serverOpen')
+  })
+
   it('a sent (or in-flight) approval needs the connection', async () => {
     for (const status of ['sent', 'sending']) {
       expect(await planReopen({ match: match(), queue: [closing(1, status)], online: false, readServerMatch: read(null) })).toEqual({ kind: 'needsConnection' })
