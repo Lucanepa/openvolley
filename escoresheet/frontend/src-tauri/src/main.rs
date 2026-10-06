@@ -44,9 +44,18 @@ fn main() {
     // scorer clicks its icon again) shows the running one and exits, before
     // it would fail on the relay's ports. Registered first, so it runs before
     // anything else.
+    //
+    // `--quit` (the Windows installer and uninstaller, windows/hooks.nsh,
+    // after they asked the user): the running app quits cleanly, so the
+    // tablets' Wi-Fi is switched off and the user's hotspot settings come
+    // back. Without it the installer ended the app with TerminateProcess.
     let mut builder = tauri::Builder::default();
     if single_instance_available() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if argv.iter().any(|a| a == lifecycle::QUIT_ARG) {
+                lifecycle::os_exit(app, "the installer asked (--quit)");
+                return;
+            }
             eprintln!("[app] started again: showing the running app");
             lifecycle::show_windows(app);
         }));
@@ -59,6 +68,15 @@ fn main() {
         // help and the version. macOS keeps Tauri's default app menu (quit,
         // copy / paste).
         .setup(move |app| {
+            // `--quit` and no running app to hand it to: only undo a tablet
+            // Wi-Fi a crashed run left on (Windows), then exit, before the
+            // ports are bound or a window opens.
+            if std::env::args().any(|a| a == lifecycle::QUIT_ARG) {
+                eprintln!("[app] --quit: OpenVolley is not running");
+                netshare::recover_now();
+                std::process::exit(0);
+            }
+
             // Bind the ports synchronously so the window can't race ahead of
             // the server (a queued connection is fine; a refused one would
             // blank the window). Here, after the single-instance check: a
@@ -251,8 +269,10 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         netshare::bluetooth_start,
         netshare::bluetooth_stop,
         lifecycle::app_page_state,
+        lifecycle::app_page_gone,
         lifecycle::app_hide,
-        lifecycle::app_quit
+        lifecycle::app_quit,
+        lifecycle::app_quit_ack
     ])
 }
 
@@ -376,7 +396,7 @@ mod ipc_acl_tests {
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
-                    "app_page_state", "app_hide", "app_quit"] {
+                    "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
             assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
@@ -394,15 +414,20 @@ mod ipc_acl_tests {
             .build()
             .unwrap();
 
-        let state = serde_json::json!({ "labels": { "show": "OpenVolley anzeigen" }, "live": "official" });
+        let state = serde_json::json!({ "handler": "h1", "labels": { "show": "OpenVolley anzeigen" }, "live": "official" });
         let info = get_ipc_response(&window, request("app_page_state", "http://localhost:5173/", state.clone()))
             .expect("the scoretable page reports its state")
             .deserialize::<serde_json::Value>()
             .unwrap();
         assert_eq!(info["tray"], false, "no tray icon in the mock app");
+        // the page's handler goes away (error screen) and takes a quit request
+        get_ipc_response(&window, request("app_quit_ack", "http://localhost:5173/", serde_json::json!({})))
+            .expect("the scoretable page acknowledges a quit request");
+        get_ipc_response(&window, request("app_page_gone", "http://localhost:5173/", serde_json::json!({ "handler": "h1" })))
+            .expect("the scoretable page says its handler is gone");
 
         for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
-            for cmd in ["app_page_state", "app_hide", "app_quit"] {
+            for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
                 let err = get_ipc_response(&window, request(cmd, url, state.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
                 assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");

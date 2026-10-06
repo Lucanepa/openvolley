@@ -17,6 +17,8 @@ import {
   trayLabels,
 } from '../appLifecycle'
 import { allowLeaving } from '../leaveGuard'
+import { askConfirm } from '../askConfirm'
+import { getConfirmSnapshot, settleConfirm } from '../../ui/uiStore'
 
 beforeAll(async () => {
   await i18n.init({ lng: 'en', fallbackLng: 'en', resources: { en: { translation: en }, de: { translation: de } } })
@@ -95,6 +97,15 @@ describe('questions', () => {
       tablets: '{{count}} tablets connected',
       matchLive: 'Match in progress',
       testMatchLive: 'Test match in progress',
+      // the app's native quit question, when the page cannot ask
+      quitTitle: 'Quit OpenVolley?',
+      quitTitleMatch: 'Quit OpenVolley during the match?',
+      quitTitleTestMatch: 'Quit OpenVolley during the test match?',
+      quitBody: "Tablets on this computer's network will disconnect.",
+      quitMatchBody: 'A match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.',
+      quitTestMatchBody: 'A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.',
+      quitConfirm: 'Quit OpenVolley',
+      keepRunning: 'Keep running',
     })
   })
 
@@ -126,7 +137,7 @@ describe('desktop app', () => {
   it('reports its tray texts and the live match, again when either changes', async () => {
     const { win, invoke } = desktopWin()
     uninstall = installAppLifecycle({ win, ask: vi.fn() })
-    expect(invoke).toHaveBeenLastCalledWith('app_page_state', { labels: trayLabels(), live: 'none' })
+    expect(invoke).toHaveBeenLastCalledWith('app_page_state', { handler: expect.any(String), labels: trayLabels(), live: 'none' })
     setLiveMatch('test')
     expect(invoke).toHaveBeenLastCalledWith('app_page_state', expect.objectContaining({ live: 'test' }))
     await i18n.changeLanguage('de')
@@ -203,6 +214,86 @@ describe('desktop app', () => {
     expect(ask).toHaveBeenCalledTimes(1)
   })
 
+  it('the tray quit is taken (app_quit_ack) before the question', async () => {
+    const { win, invoke } = desktopWin()
+    const ask = vi.fn().mockResolvedValue(false)
+    uninstall = installAppLifecycle({ win, ask })
+    fire(win, 'quit-requested')
+    expect(invoke).toHaveBeenCalledWith('app_quit_ack')
+    await flush(); await flush()
+    expect(ask).toHaveBeenCalledTimes(1)
+    // a second request while it asks is taken too (the question is on screen)
+    // and asks nothing new
+    let answer
+    ask.mockImplementation(() => new Promise((r) => { answer = r }))
+    fire(win, 'quit-requested')
+    await flush(); await flush()
+    invoke.mockClear()
+    fire(win, 'quit-requested')
+    expect(invoke).toHaveBeenCalledWith('app_quit_ack')
+    expect(ask).toHaveBeenCalledTimes(2)
+    answer(false)
+  })
+
+  it('without a dialog host it does not take the request (the app asks natively)', async () => {
+    const { win, invoke } = desktopWin()
+    const ask = vi.fn().mockResolvedValue(true)
+    expect(await requestDesktopQuit(win, ask, { canAsk: () => false })).toBe(false)
+    expect(invoke).not.toHaveBeenCalledWith('app_quit_ack')
+    expect(ask).not.toHaveBeenCalled()
+    // the real askConfirm with no <UiHost /> mounted: the same
+    expect(await requestDesktopQuit(win, askConfirm)).toBe(false)
+    expect(invoke).not.toHaveBeenCalledWith('app_quit_ack')
+    expect(getConfirmSnapshot()).toBeNull()
+  })
+
+  it('uninstalling (e.g. a crash into the error screen) tells the app its handler is gone', async () => {
+    const { win, invoke } = desktopWin()
+    const stop = installAppLifecycle({ win, ask: vi.fn() })
+    const { handler } = invoke.mock.calls.find(([cmd]) => cmd === 'app_page_state')[1]
+    stop()
+    expect(invoke).toHaveBeenLastCalledWith('app_page_gone', { handler })
+    // a reinstall (Try again, StrictMode) is a new handler
+    uninstall = installAppLifecycle({ win, ask: vi.fn() })
+    expect(invoke.mock.calls.at(-1)[1].handler).not.toBe(handler)
+  })
+
+  it('a tray quit while the first-close notice is open replaces the notice', async () => {
+    const { win, invoke } = desktopWin()
+    let noticeSignal
+    const ask = vi.fn((q) => {
+      if (q.signal) {
+        noticeSignal = q.signal
+        return new Promise((r) => q.signal.addEventListener('abort', () => r(false)))
+      }
+      return Promise.resolve(false)
+    })
+    uninstall = installAppLifecycle({ win, ask })
+    await flush()
+    fire(win, 'close-requested')
+    await flush()
+    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'OpenVolley keeps running in the tray' }))
+    fire(win, 'quit-requested')
+    await flush(); await flush()
+    expect(noticeSignal.aborted).toBe(true)
+    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Quit OpenVolley?' }))
+    expect(invoke).not.toHaveBeenCalledWith('app_hide')
+  })
+
+  it('with the real dialog: the notice is taken away for the quit question', async () => {
+    const { win } = desktopWin()
+    uninstall = installAppLifecycle({ win, ask: askConfirm })
+    fire(win, 'close-requested')
+    await flush()
+    expect(getConfirmSnapshot()).toMatchObject({ title: 'OpenVolley keeps running in the tray' })
+    const quitting = requestDesktopQuit(win, askConfirm, { canAsk: () => true })
+    await flush(); await flush()
+    expect(getConfirmSnapshot()).toMatchObject({ title: 'Quit OpenVolley?' })
+    settleConfirm(getConfirmSnapshot().id, false)
+    expect(await quitting).toBe(false)
+    expect(getConfirmSnapshot()).toBeNull()
+  })
+
   it('a scoresheet window installs nothing', () => {
     const { win, invoke } = desktopWin({ label: 'popup-2' })
     uninstall = installAppLifecycle({ win, ask: vi.fn() })
@@ -237,6 +328,70 @@ describe('Android app', () => {
     expect(exitApp).toHaveBeenCalled()
     uninstall()
     expect(win.__ovAndroidBack).toBeUndefined()
+  })
+
+  it('Back closes an open in-app confirm instead of asking to exit', async () => {
+    const { win, exitApp } = androidWin()
+    const ask = vi.fn().mockResolvedValue(true)
+    installAppLifecycle({ win, ask })
+    const endSet = askConfirm({ title: 'End set?' })
+    expect(getConfirmSnapshot()).toMatchObject({ title: 'End set?' })
+    expect(win.__ovAndroidBack()).toBe(true)
+    expect(await endSet).toBe(false) // cancelled, like Escape
+    expect(ask).not.toHaveBeenCalled()
+    expect(exitApp).not.toHaveBeenCalled()
+  })
+
+  it('Back on "Exit OpenVolley?" itself is Stay', async () => {
+    const { win, exitApp } = androidWin()
+    installAppLifecycle({ win, ask: askConfirm })
+    win.__ovAndroidBack()
+    await flush()
+    expect(getConfirmSnapshot()).toMatchObject({ title: 'Exit OpenVolley?' })
+    expect(win.__ovAndroidBack()).toBe(true)
+    await flush()
+    expect(getConfirmSnapshot()).toBeNull()
+    expect(exitApp).not.toHaveBeenCalled()
+    // and the next Back asks again
+    win.__ovAndroidBack()
+    await flush()
+    expect(getConfirmSnapshot()).toMatchObject({ title: 'Exit OpenVolley?' })
+    settleConfirm(getConfirmSnapshot().id, false)
+  })
+
+  it('Back closes an open modal (its × or Escape) instead of asking to exit', () => {
+    const { win } = androidWin()
+    win.document = document
+    win.KeyboardEvent = KeyboardEvent
+    const ask = vi.fn().mockResolvedValue(false)
+    installAppLifecycle({ win, ask })
+
+    // a legacy modal with its × (components/Modal.jsx)
+    const legacy = document.createElement('div')
+    legacy.innerHTML = '<div role="dialog" aria-modal="true"><button data-modal-close="">×</button></div>'
+    document.body.appendChild(legacy)
+    const close = vi.fn()
+    legacy.querySelector('button').addEventListener('click', close)
+    expect(win.__ovAndroidBack()).toBe(true)
+    expect(close).toHaveBeenCalledTimes(1)
+    legacy.remove()
+
+    // a kit modal: Escape
+    const kit = document.createElement('div')
+    kit.innerHTML = '<div role="dialog" aria-modal="true"><p>Substitution</p></div>'
+    document.body.appendChild(kit)
+    const keys = []
+    const onKey = (e) => keys.push(e.key)
+    document.addEventListener('keydown', onKey)
+    expect(win.__ovAndroidBack()).toBe(true)
+    expect(keys).toEqual(['Escape'])
+    document.removeEventListener('keydown', onKey)
+    kit.remove()
+
+    expect(ask).not.toHaveBeenCalled()
+    // nothing open: it asks
+    expect(win.__ovAndroidBack()).toBe(true)
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ title: 'Exit OpenVolley?' }))
   })
 
   it('a second Back while it asks does not stack questions', async () => {

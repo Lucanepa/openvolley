@@ -565,6 +565,8 @@ pub async fn bluetooth_stop(inner: &mut Inner) -> Result<(), NetError> {
 /// networks down.
 pub fn recover<R: Runtime>(_app: &AppHandle<R>) {}
 
+pub fn recover_now() {}
+
 #[cfg(test)]
 mod tests {
     /// Read-only probe of this machine (no network is started):

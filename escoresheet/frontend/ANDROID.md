@@ -146,6 +146,9 @@ The app is prepared for f-droid.org, which builds it from source itself:
   the device. Only **Exit** closes the app (the activity finishes, through the
   app's own one-method Capacitor plugin `OpenVolleyApp`,
   `AppExitPlugin.java`; no `@capacitor/app` dependency); **Stay** keeps it.
+  With a dialog open, Back closes it first and never asks: an in-app
+  confirm is cancelled (also "Exit OpenVolley?" itself, as Stay), a modal
+  gets Escape or its × (a decision modal without × stays until answered).
   MainActivity asks the page through `window.__ovAndroidBack`
   (`src/utils/appLifecycle.js`); a page without that handler (still loading)
   sends the app to the background as before. The scorer page does not push

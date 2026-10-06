@@ -21,7 +21,8 @@ public class MainActivity extends BridgeActivity {
         "return e.getBoundingClientRect().bottom;})()";
 
     // JS: the page's Back handler on its first page (src/utils/appLifecycle.js);
-    // "true" when it took the press (it asks "Exit OpenVolley?")
+    // "true" when it took the press (it closes an open dialog, or asks
+    // "Exit OpenVolley?")
     private static final String PAGE_BACK =
         "(function(){try{return !!(window.__ovAndroidBack&&window.__ovAndroidBack());}" +
         "catch(e){return false;}})()";

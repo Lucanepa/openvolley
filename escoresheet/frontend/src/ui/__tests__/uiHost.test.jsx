@@ -93,3 +93,21 @@ describe('volleyui kit wiring (P0)', () => {
     expect(src).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
   })
 })
+
+describe('confirmDialog signal', () => {
+  it('aborting the signal takes the dialog away as a cancel', async () => {
+    render(<UiHost />)
+    const controller = new AbortController()
+    let answer
+    await act(async () => {
+      confirmDialog({ title: 'Keeps running in the tray', lang: 'EN', signal: controller.signal }).then((a) => { answer = a })
+    })
+    expect(screen.getByText('Keeps running in the tray')).toBeInTheDocument()
+    await act(async () => { controller.abort() })
+    expect(answer).toBe(false)
+    expect(screen.queryByText('Keeps running in the tray')).toBeNull()
+    // an already aborted signal never shows the dialog
+    expect(await confirmDialog({ title: 'Never shown', signal: controller.signal })).toBe(false)
+    expect(screen.queryByText('Never shown')).toBeNull()
+  })
+})

@@ -468,12 +468,17 @@ pub async fn bluetooth_stop(_inner: &mut Inner) -> Result<(), NetError> {
 /// put back the user's own hotspot settings and the no-connections timeout
 /// the marker kept.
 pub fn recover<R: Runtime>(_app: &AppHandle<R>) {
+    tauri::async_runtime::spawn_blocking(recover_now);
+}
+
+/// The same, here and now (blocking): `--quit` when the app is not running,
+/// which the Windows installer and uninstaller run (windows/hooks.nsh), so an
+/// uninstall after a crash does not leave the tablets' Wi-Fi on for good.
+pub fn recover_now() {
     let Some(text) = marker().and_then(|m| std::fs::read_to_string(m).ok()) else { return };
     let (saved, restore_timeout) = parse_marker(&text);
-    tauri::async_runtime::spawn_blocking(move || {
-        stop_tethering(None, saved, restore_timeout);
-        remove_marker();
-    });
+    stop_tethering(None, saved, restore_timeout);
+    remove_marker();
 }
 
 #[cfg(test)]

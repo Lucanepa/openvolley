@@ -407,15 +407,37 @@ quit (`src-tauri/src/lifecycle.rs`, page side `src/utils/appLifecycle.js`):
   it); with a live match it says so (official or test match), that the match
   is saved on this computer and continues from the home screen. Only
   **Quit OpenVolley** exits, cleanly as before (the tablets' network is
-  stopped on `RunEvent::Exit`, the relay goes with the process).
+  stopped on `RunEvent::Exit`, the relay goes with the process). A quit
+  request while the first-close notice is open replaces the notice.
+- **When the page cannot ask**, the app asks itself: a native "Quit
+  OpenVolley?" (tauri-plugin-dialog, Quit OpenVolley / Keep running, in the
+  last language the page reported). That is the case when the page's
+  handler is gone (it crashed into its error screen and said so,
+  `app_page_gone`), the page is still loading, or it did not take the tray's
+  request within 2.5 s (`app_quit_ack`; e.g. a hung web process, where
+  sending the event still "succeeds"). A second tray Quit while a request is
+  unanswered asks natively at once. So the app can always be quit, and never
+  without a confirmation.
 - **Exit rules** (`ExitGate`, unit-tested): a close hides; an exit nobody
   confirmed (`RunEvent::ExitRequested` while the scoretable window exists) is
   prevented and turned into the question; a confirmed quit exits; the OS is
   never held up: Linux `SIGTERM` (logout, shutdown, `kill`), `SIGINT`,
   `SIGHUP` quit at once (a second signal, or 10 s without an exit, ends the
   process), Windows ends the event loop itself on `WM_ENDSESSION`. A window
-  with no loaded page (blank / broken) quits without asking, so the app can
-  never become impossible to quit.
+  with no page that answers gets the native question (above).
+- **Windows installer / uninstaller** (`src-tauri/windows/hooks.nsh`,
+  `bundle.windows.nsis.installerHooks`): Tauri's own check would end a
+  running app (usually in the tray) with `TerminateProcess`, skipping the
+  exit, so the tablets' Mobile Hotspot stayed on (after an uninstall for
+  good). Before that check the hooks ask "OpenVolley is running. Quit it
+  now?" (English, like the installer; silent / passive updates do not ask;
+  Cancel stops the installer) and run `openvolley-escoresheet.exe --quit`:
+  the running app gets it through the single-instance plugin and quits
+  cleanly (network stopped, the user's hotspot settings back); with no app
+  running, `--quit` only undoes a hotspot a crashed run left on (the
+  `tablet-wifi-on` marker) and exits. They wait up to 15 s; an app still
+  running then gets Tauri's own "click OK to kill it". Not yet run on
+  Windows (no NSIS here).
 - **One app per computer** (`tauri-plugin-single-instance`): starting it
   again while it runs (e.g. in the tray) shows the running window and the
   second process exits, instead of failing on the busy ports. The ports are
@@ -437,7 +459,9 @@ quit (`src-tauri/src/lifecycle.rs`, page side `src/utils/appLifecycle.js`):
   relay still serving; Show → back with its scoresheet window; Quit →
   question; Keep running → still running; Quit OpenVolley → exited, ports
   free; second launch → the first shows its window; SIGTERM → clean exit;
-  no StatusNotifier host → minimise fallback. Not yet on a real Windows
+  no StatusNotifier host → minimise fallback; `--quit` → the running app
+  exits cleanly, with none running it exits at once; tray Quit with the
+  page's handler gone → native question. Not yet on a real Windows
   desktop (type-checked with `cargo check --target x86_64-pc-windows-msvc`).
 
 ## Window chrome
