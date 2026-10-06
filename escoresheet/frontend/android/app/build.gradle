@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 
 // versionName = the web app version in package.json (MAJOR.MINOR.PATCH).
 // versionCode = (MAJOR * 1000000 + MINOR * 1000 + PATCH) * 10 + androidBuild
-//   1.48.20, androidBuild 0 -> 10480200
+//   1.48.20, androidBuild 0 -> 10480200; 2.0.0 -> 20000000
 // androidBuild stays 0 from 1.48.20 on: every Android release, a native-only
 // fix included, bumps PATCH in package.json, so each release has its own
 // android-v<versionName> tag (F-Droid builds tags, and a tag it has built must
@@ -25,8 +25,8 @@ android {
         applicationId "com.openvolley.escoresheet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10480200
-        versionName "1.48.20"
+        versionCode 20000000
+        versionName "2.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

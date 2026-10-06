@@ -1,6 +1,6 @@
 [package]
 name = "openvolley-escoresheet"
-version = "1.48.19"
+version = "2.0.0"
 description = "Openvolley eScoresheet — offline scoretable + LAN tablet server"
 authors = ["Luca Canepa"]
 edition = "2021"

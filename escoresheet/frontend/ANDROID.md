@@ -62,9 +62,9 @@ is set.
 
 ## Version rule
 
-- `versionName` = `version` in `package.json` (e.g. `1.48.20`).
+- `versionName` = `version` in `package.json` (e.g. `2.0.0`).
 - `versionCode` = `(MAJOR * 1000000 + MINOR * 1000 + PATCH) * 10 + androidBuild`,
-  e.g. 1.48.20 → `10480200`.
+  e.g. 1.48.20 → `10480200`, 2.0.0 → `20000000`.
 - **Every Android release bumps PATCH** in `package.json`, a native-only fix
   (Gradle, manifest, `MainActivity.java`) included. `androidBuild` in
   `android/app/build.gradle` stays **0**. It was used only for 1.48.19
@@ -77,7 +77,7 @@ is set.
 - F-Droid only offers an update when the `versionCode` grows, so never
   publish the same code twice. Monotonic while MINOR and PATCH stay below 1000.
 - Both values are **literals** in `defaultConfig` of `android/app/build.gradle`
-  (`versionCode 10480200`, `versionName "1.48.20"`): F-Droid's update checker
+  (`versionCode 20000000`, `versionName "2.0.0"`): F-Droid's update checker
   reads them with a regex and cannot evaluate Groovy. The build fails if they
   do not match `package.json` + `androidBuild`, so update them together
   (`scripts/bump-version.js` does it when it bumps `package.json`; keep the
