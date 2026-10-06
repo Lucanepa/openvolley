@@ -334,7 +334,18 @@ lenovo$ escoresheet/deploy/publish-pkgs.sh --desktop <version>             # eve
 lenovo$ curl -fsS https://get.openvolley.app/desktop/latest.json | head -3
 ```
 
-Details, the updater key and the kill switch: README.md, "Release procedure".
+Kill switch (bad desktop release rolling out), on lenovoserver:
+
+```bash
+lenovo$ D=~/.config/openvolley-pkgs/public/desktop
+lenovo$ cp $D/latest-<previous>.json $D/latest.json && cp $D/latest-<previous>.json $D/staging.json
+lenovo$ rm ~/.config/openvolley-pkgs/public/apt/pool/main/openvolley-escoresheet_<bad>_amd64.deb
+lenovo$ escoresheet/deploy/publish-pkgs.sh             # APT index follows latest.json; syncs
+lenovo$ gh release delete-asset desktop-v<bad> latest.json --repo Lucanepa/openvolley --yes
+lenovo$ gh release edit desktop-v<previous> --repo Lucanepa/openvolley --latest
+```
+
+Details, the updater key and the APT hold-back: README.md, "Release procedure".
 
 Postgres minor bump (monthly, weekday): set `OV_POSTGRES_IMAGE=postgres:17.<n>-alpine`,
 `docker compose pull ov-postgres && docker compose up -d ov-postgres`, check `/health`, then run the
