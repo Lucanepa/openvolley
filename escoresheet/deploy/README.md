@@ -175,7 +175,8 @@ F-Droid: add `https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E0
 alone). Tauri derives the `.deb` name from `productName` in kebab case, so
 `frontend/src-tauri/tauri.linux.conf.json` overrides `productName` (and pins `mainBinaryName`)
 to `openvolley-escoresheet` on Linux only; `tauri.conf.json` keeps "Openvolley eScoresheet" so
-the Windows installer still upgrades in place. That deb provides, replaces and conflicts with
+the Windows installer still finds the earlier install (after 2.1.0 it installs per machine and
+removes an older per-user copy itself, see `frontend/OFFLINE_DESKTOP.md`, Windows install). That deb provides, replaces and conflicts with
 `openvolley-e-scoresheet` (the name of the GitHub `.deb` up to 1.48.19) and `openvolley`.
 `publish-pkgs.sh` repacks any `.deb` published under another name the same way (same version,
 depends and files, deterministic bytes) and migrates old-name files left in the pool, so the
