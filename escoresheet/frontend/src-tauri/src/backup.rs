@@ -11,6 +11,9 @@
 //! against a strict character set, so no path from the page can leave that
 //! folder. Their ACL (build.rs app manifest + capabilities/backup.json) admits
 //! only the scoretable window loaded from http://localhost.
+//!
+//! On unix the folders are created 0700 and the files 0600: a backup holds
+//! player names and birth dates, and other local users must not read it.
 
 use serde::Serialize;
 use std::fs;
@@ -74,31 +77,67 @@ fn check_file(file_name: &str) -> Result<(), String> {
     }
 }
 
+/// Creates a folder (and its parents) readable by the owner only on unix.
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+        // a folder made by an older version (0755) is tightened too
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(dir)
+    }
+}
+
+fn create_private_file(path: &Path) -> std::io::Result<fs::File> {
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)
+}
+
 /// Write via a hidden temp file + rename, so a crash never leaves half a file
 /// (rename replaces an existing latest.json on Linux and Windows).
 fn write_atomic(dir: &Path, name: &str, contents: &[u8]) -> std::io::Result<()> {
     let tmp = dir.join(format!(".{name}.tmp"));
+    let _ = fs::remove_file(&tmp); // a leftover temp file keeps its old mode otherwise
     {
-        let mut f = fs::File::create(&tmp)?;
+        let mut f = create_private_file(&tmp)?;
         f.write_all(contents)?;
         f.sync_all()?;
     }
-    fs::rename(&tmp, dir.join(name))
+    fs::rename(&tmp, dir.join(name)).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
 }
 
-pub fn write_backup(root: &Path, match_dir: &str, file_name: &str, contents: &str, latest: bool) -> Result<(), String> {
+/// Writes one event backup (+ latest.json). Only a failed event file is an
+/// error; when just latest.json cannot be replaced (Windows: a virus scan or
+/// the Explorer preview pane holds it open) the event file is saved and the
+/// result is `Ok(Some(warning))`.
+pub fn write_backup(root: &Path, match_dir: &str, file_name: &str, contents: &str, latest: bool) -> Result<Option<String>, String> {
     check_dir(match_dir)?;
     check_file(file_name)?;
     if contents.len() > MAX_BACKUP_BYTES {
         return Err("backup too large".into());
     }
     let dir = root.join(match_dir);
-    fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    create_private_dir(root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
+    create_private_dir(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     write_atomic(&dir, file_name, contents.as_bytes()).map_err(|e| format!("cannot write {file_name}: {e}"))?;
     if latest && file_name != LATEST_FILE {
-        write_atomic(&dir, LATEST_FILE, contents.as_bytes()).map_err(|e| format!("cannot write {LATEST_FILE}: {e}"))?;
+        if let Err(e) = write_atomic(&dir, LATEST_FILE, contents.as_bytes()) {
+            return Ok(Some(format!("cannot update {match_dir}/{LATEST_FILE}: {e}")));
+        }
     }
-    Ok(())
+    Ok(None)
 }
 
 pub fn list_backups(root: &Path) -> Result<Vec<BackupDir>, String> {
@@ -180,7 +219,7 @@ pub async fn backup_write<R: Runtime>(
     file_name: String,
     contents: String,
     latest: bool,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let root = backup_root(&app)?;
     blocking(move || write_backup(&root, &match_dir, &file_name, &contents, latest)).await
 }
@@ -216,7 +255,7 @@ fn file_manager_command(dir: &Path) -> std::process::Command {
 #[tauri::command]
 pub async fn backup_open_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let root = backup_root(&app)?;
-    fs::create_dir_all(&root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
+    create_private_dir(&root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
     // spawn, never wait: explorer.exe exits 1 even on success
     let mut child = file_manager_command(&root)
         .spawn()
@@ -232,7 +271,7 @@ pub async fn backup_open_dir<R: Runtime>(app: AppHandle<R>) -> Result<(), String
 #[tauri::command]
 pub async fn backup_pick_file<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
     let root = backup_root(&app)?;
-    let _ = fs::create_dir_all(&root);
+    let _ = create_private_dir(&root);
     let dialog = app.dialog().clone();
     blocking(move || {
         let picked = dialog
@@ -293,6 +332,36 @@ mod tests {
         .unwrap();
         assert_eq!(removed, 1);
         assert!(root.join("game7-seed/latest.json").exists(), "latest.json is never deleted");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_stuck_latest_json_is_a_warning_not_an_error() {
+        let root = temp_root("stuck-latest");
+        // a folder named latest.json makes the rename fail, like a locked file on Windows
+        fs::create_dir_all(root.join("game7-seed/latest.json")).unwrap();
+        let warning = write_backup(&root, "game7-seed", "20261006T100000.000Z-00001.json", "{}", true).unwrap();
+        assert!(warning.unwrap().contains("latest.json"));
+        assert!(root.join("game7-seed/20261006T100000.000Z-00001.json").is_file(), "the event file is saved");
+        assert!(!root.join("game7-seed/.latest.json.tmp").exists(), "no temp file left behind");
+        assert_eq!(write_backup(&root, "game8-seed", "20261006T100000.000Z-00001.json", "{}", true).unwrap(), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backups_are_private_to_the_user() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_root("private");
+        // a folder left 0755 by an older version is tightened
+        fs::create_dir_all(root.join("game7-seed")).unwrap();
+        fs::set_permissions(root.join("game7-seed"), fs::Permissions::from_mode(0o755)).unwrap();
+        write_backup(&root, "game7-seed", "20261006T100000.000Z-00001.json", "{}", true).unwrap();
+        let mode = |p: PathBuf| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(root.clone()), 0o700);
+        assert_eq!(mode(root.join("game7-seed")), 0o700);
+        assert_eq!(mode(root.join("game7-seed/20261006T100000.000Z-00001.json")), 0o600);
+        assert_eq!(mode(root.join("game7-seed/latest.json")), 0o600);
         let _ = fs::remove_dir_all(&root);
     }
 
