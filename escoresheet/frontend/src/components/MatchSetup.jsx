@@ -1259,10 +1259,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         // A created match: make sure the server has every connection PIN
         // (roster upload validates the upload PIN there). Through the sync
         // queue, so it also works offline and after the match insert; it
-        // heals matches created before Create match carried the PINs.
-        if (match.seed_key && match.matchInfoConfirmedAt) {
+        // heals matches created before Create match carried the PINs. Once
+        // per match (connectionPinsQueuedAt), or when PINs were just added:
+        // every update is a server write and a realtime publish.
+        if (match.seed_key && match.matchInfoConfirmedAt && (Object.keys(updates).length > 0 || !match.connectionPinsQueuedAt)) {
           try {
             await db.sync_queue.add(connectionPinsSyncJob(match.seed_key, { ...match, ...updates }))
+            await db.matches.update(matchId, { connectionPinsQueuedAt: new Date().toISOString() })
           } catch (err) {
             console.warn('[MatchSetup] Failed to queue the connection PINs:', err)
           }
@@ -2077,6 +2080,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           { lj1: lineJudge1, lj2: lineJudge2, lj3: lineJudge3, lj4: lineJudge4 }
         ),
         matchInfoConfirmedAt: new Date().toISOString(),
+        // The insert below carries connection_pins: no separate PIN sync on the next open
+        connectionPinsQueuedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })
 
