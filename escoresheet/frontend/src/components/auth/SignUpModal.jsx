@@ -43,8 +43,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
       firstName,
       lastName,
       country,
-      dob: dob || null,
-      roles: ['scorer']
+      dob: dob || null
     })
 
     if (signUpError) {
@@ -204,6 +203,8 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                   {loading ? t('auth.creatingAccount', 'Creating account...') : t('auth.createAccount', 'Create account')}
                 </Button>
               </form>
+
+              <p className="mt-3 text-xs text-stone-500">{t('access.signUpPendingNote')}</p>
 
               <div className="mt-4 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
                 {t('auth.haveAccount', 'Already have an account?')}{' '}

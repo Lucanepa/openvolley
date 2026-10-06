@@ -53,7 +53,8 @@ export const NO_ACCESS = Object.freeze({
   canScore: false,
   canManageTeams: false,
   canReadTeams: false,
-  isPending: false
+  isPending: false,
+  known: false
 })
 
 /** Did anything that changes what the account may do change? */
