@@ -16,7 +16,10 @@ import {
   hasAnonPolicy,
   anonSelectCheck,
   publicRelayMatch,
-  publicPeople
+  publicPeople,
+  relayMatchListRow,
+  cloudListsMatch,
+  isPublicIp
 } from '../lib/publicColumns.js'
 import { createRealtimeHub } from '../lib/realtimeHub.js'
 import { redactSecrets } from '../lib/secrets.js'
@@ -206,6 +209,75 @@ describe('publicColumns: the match relay bundle', () => {
     })
     assert.deepEqual(publicPeople([{ number: 1, dob: DOB, country: 'SUI', email: 'a@b' }, null]), [{ number: 1 }, null])
     assert.equal(publicRelayMatch(null), null)
+  })
+
+  it('relayMatchListRow: scheduled/live matches whatever the referee connection, public fields only', () => {
+    const entry = {
+      matchId: 'seed-1',
+      match: {
+        status: 'scheduled',
+        gameNumber: 4711,
+        refereeConnectionEnabled: false,
+        refereePin: '314159',
+        gamePin: '987654',
+        scheduledAt: '2026-10-05T18:00:00.000Z',
+        officials: [{ lastName: 'Ref', dob: DOB }],
+        homeCoachSignature: SIGNATURE
+      },
+      homeTeam: { name: 'Home VC', players: [{ dob: DOB }] },
+      awayTeam: 'Away VC',
+      homePlayers: [{ number: 1, dob: DOB }]
+    }
+    const row = relayMatchListRow(entry)
+    assert.deepEqual(row, {
+      id: 'seed-1',
+      gameNumber: 4711,
+      homeTeam: 'Home VC',
+      awayTeam: 'Away VC',
+      scheduledAt: '2026-10-05T18:00:00.000Z',
+      dateTime: row.dateTime,
+      status: 'scheduled',
+      test: false,
+      refereeConnectionEnabled: false,
+      homeTeamConnectionEnabled: false,
+      awayTeamConnectionEnabled: false
+    })
+    assert.equal(typeof row.dateTime, 'string')
+    assert.deepEqual(
+      ['homeTeamConnectionEnabled', 'awayTeamConnectionEnabled'].map((k) => relayMatchListRow({ matchId: 'x', match: { homeTeamConnectionEnabled: true, awayTeamConnectionEnabled: 'yes' } })[k]),
+      [true, false]
+    )
+    assert.ok(!/314159|987654|dob|Ref|data:image/.test(json(row)))
+    // No status counts as scheduled; finished matches are not listed
+    assert.equal(relayMatchListRow({ matchId: 'x', match: {} }).status, 'scheduled')
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { status: 'final' } }), null)
+    // Team names from the match when the bundle has none; defaults otherwise
+    assert.deepEqual(
+      [relayMatchListRow({ matchId: 'x', match: { homeTeamName: 'A' } }).homeTeam, relayMatchListRow({ matchId: 'x', match: {} }).awayTeam],
+      ['A', 'Away']
+    )
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { test: true, status: 'live' } }).test, true)
+  })
+
+  it('isPublicIp: only routable internet addresses', () => {
+    for (const ip of ['203.0.113.9', '8.8.8.8', '::ffff:8.8.8.8', '2001:db8::1', '172.32.0.1', '100.128.0.1']) assert.equal(isPublicIp(ip), true, ip)
+    for (const ip of ['127.0.0.1', '::1', '10.0.0.5', '172.18.0.5', '192.168.1.20', '169.254.1.1', '100.100.1.1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1', '', null, 'unknown', 'x.y']) assert.equal(isPublicIp(ip), false, String(ip))
+  })
+
+  it('cloudListsMatch: referee connection on for everyone; otherwise only to its own venue (same public address)', () => {
+    // Referee connection on: listed for every caller (the referee tablets pick it)
+    assert.equal(cloudListsMatch({ refereeConnectionEnabled: true, requesterIp: '198.51.100.1', requesterIpKey: '198.51.100.1', ownerIpKeys: ['203.0.113.9'] }), true)
+    // Off: the venue's LedBox behind the same NAT as the scorer sees it ...
+    assert.equal(cloudListsMatch({ requesterIp: '203.0.113.9', requesterIpKey: '203.0.113.9', ownerIpKeys: ['198.51.100.7', '203.0.113.9'] }), true)
+    assert.equal(cloudListsMatch({ requesterIp: '2001:db8:1:2::99', requesterIpKey: '2001:db8:1:2::/64', ownerIpKeys: ['2001:db8:1:2::/64'] }), true)
+    // ... nobody else does
+    assert.equal(cloudListsMatch({ requesterIp: '198.51.100.1', requesterIpKey: '198.51.100.1', ownerIpKeys: ['203.0.113.9'] }), false)
+    assert.equal(cloudListsMatch({ requesterIp: '198.51.100.1', requesterIpKey: '198.51.100.1', ownerIpKeys: [] }), false)
+    // Behind a proxy that hides the caller every request comes from the proxy:
+    // a private address is no venue, even when the scoreboard shares it
+    assert.equal(cloudListsMatch({ requesterIp: '172.18.0.5', requesterIpKey: '172.18.0.5', ownerIpKeys: ['172.18.0.5'] }), false)
+    assert.equal(cloudListsMatch({ requesterIp: '127.0.0.1', requesterIpKey: '127.0.0.1', ownerIpKeys: ['127.0.0.1'] }), false)
+    assert.equal(cloudListsMatch(), false)
   })
 })
 

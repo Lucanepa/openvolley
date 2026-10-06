@@ -50,3 +50,40 @@ describe('App.jsx relay wiring', () => {
     expect(body).not.toMatch(/match: currentMatchData/)
   })
 })
+
+describe('Scoreboard live state: a test match stays out of the cloud', () => {
+  // Scoreboard cannot be mounted here either; publishLiveState and
+  // liveStateTargets are tested in relayPublisher.test.js. This pins that every
+  // cloud step of syncLiveStateToSupabase sits inside publishLiveState's toCloud.
+  const start = scoreboardSrc.indexOf('const syncLiveStateToSupabase = useCallback(')
+  const end = scoreboardSrc.indexOf('\n  }, [', start)
+  const body = scoreboardSrc.slice(start, end)
+  const cloudAt = body.indexOf('toCloud: async () => {')
+  const catchAt = body.lastIndexOf('} catch (err) {')
+
+  it('routes through publishLiveState with the targets of liveStateTargets', () => {
+    expect(start).toBeGreaterThan(-1)
+    expect(body).toMatch(/await publishLiveState\(\{\s*targets: routeOf\(\),/)
+    expect(body).toMatch(/const routeOf = \(\) => liveStateTargets\(\{ isTest, relayKey: relayKeyRef\.current, relayUrl: scorerRelay\.url \}\)/)
+    expect(cloudAt).toBeGreaterThan(-1)
+  })
+
+  it('looks up, upserts and marks for retry only inside toCloud', () => {
+    const before = body.slice(0, cloudAt)
+    const cloud = body.slice(cloudAt, catchAt)
+    for (const step of ['apiFrom(', 'setLiveStateDirty(', 'isAuthBlocked(', 'liveOrder.write(']) {
+      expect(before, step).not.toContain(step)
+      expect(cloud, step).toContain(step)
+    }
+    // The relay push is not in toCloud
+    expect(cloud).not.toContain("type: 'live-state-update'")
+  })
+})
+
+describe('health checks', () => {
+  it('ask /api/server/status, never the match list (it grows with every published match and shares the LedBox rate limit)', () => {
+    for (const s of [src, scoreboardSrc]) expect(s).not.toMatch(/fetch\([^)]*\/api\/match\/list/)
+    expect(src).toMatch(/fetch\('\/api\/server\/status'/)
+    expect(scoreboardSrc).toMatch(/`\$\{backendUrl\}\/api\/server\/status` : '\/api\/server\/status'/)
+  })
+})

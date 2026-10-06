@@ -123,6 +123,26 @@ npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
    - Livescore:  `http://192.168.1.42:5173/livescore`
 3. Type the address into the tablet's browser and enter the match PIN.
 
+## Display devices (LedBox) and rehearsals
+
+- Every relay lists all scheduled / live matches a scorer currently publishes
+  on `GET /api/match/list` (public fields only, no PINs), whatever their
+  referee connection: the point-hub LedBox bridge picks its match there. The
+  referee and bench apps still offer only the matches they can join.
+- A **test (rehearsal) match** sends its live state to a **local relay only**,
+  never to the cloud, so the board can be rehearsed in the hall. "Local" is
+  decided from the relay address the scorer is connected to
+  (`isLocalRelayUrl` in `src/utils/relayPublisher.js`): `localhost`, private
+  and link-local IPs (`10.x`, `172.16–31.x`, `192.168.x`, `169.254.x`,
+  Tailscale `100.64–127.x`, `fc00::/7`, `fe80::/10`), single-label host names
+  (`openvolley-pi`) and `.local` / `.lan` / `.home.arpa` / `.internal` names.
+  A venue relay reached through a **public domain name** (e.g.
+  `wss://scoreboard.myclub.ch` via split DNS or a reverse proxy on the Pi) does
+  not count: a rehearsal there sends no live state to the board. Connect the
+  scorer by the box's IP or `.local` name to rehearse.
+- Each device's test match has its own relay room
+  (`test-match-default-<random>`), so two scorers can rehearse on one relay.
+
 ## Why plain HTTP (and the tablet-camera trade-off)
 
 Tablets connect over plain `http://<LAN-IP>` — simple, zero setup, no

@@ -229,6 +229,8 @@ export function createScorerRelay({
 
   return {
     get socket() { return ws },
+    /** The relay URL the connection is attached to (null when detached). */
+    get url() { return url },
     get userCount() { return users.length },
     pins,
     isOpen,
@@ -345,6 +347,71 @@ export function createLiveStateOrder({ session = newLiveSession(), now = () => D
       return pending
     }
   }
+}
+
+/**
+ * Is this relay URL a venue / local relay (the desktop app, the Pi, a scorer
+ * laptop on the hall network, the dev server) rather than a cloud relay? Only
+ * hosts that cannot be the internet count: loopback, private and link-local
+ * addresses (RFC 1918, 169.254/16, 100.64/10 as Tailscale uses it, fc00::/7,
+ * fe80::/10), mDNS / home-network names (.local, .lan, .home.arpa, .internal,
+ * .localhost) and single-label host names. Anything else, the cloud relay
+ * (backend.openvolley.app) included, is not local.
+ * @param {string|null|undefined} url
+ */
+export function isLocalRelayUrl(url) {
+  if (!url || typeof url !== 'string') return false
+  let host
+  try {
+    host = new URL(url).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1)
+  if (!host) return false
+  if (host.includes(':')) {
+    // IPv6: loopback, unique local (fc00::/7), link-local (fe80::/10)
+    return host === '::1' || /^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)
+  }
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127)
+  }
+  if (host === 'localhost' || !host.includes('.')) return true
+  return /\.(local|lan|home\.arpa|internal|localhost)$/.test(host)
+}
+
+/**
+ * Where a live-state snapshot of the scorer goes. The relay gets it under the
+ * match's room key (the referee, the livescore and the LedBox bridge follow
+ * it); the database (match_live_state) only for an official match. A test
+ * (rehearsal) match stays out of the cloud: its live state goes to a local
+ * relay only (isLocalRelayUrl), so the LedBox can be rehearsed in the hall.
+ * @param {{ isTest?: boolean, relayKey?: string|null, relayUrl?: string|null }} args
+ * @returns {{ relay: boolean, cloud: boolean }}
+ */
+export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = null } = {}) {
+  return {
+    relay: !!relayKey && (!isTest || isLocalRelayUrl(relayUrl)),
+    cloud: !isTest
+  }
+}
+
+/**
+ * Publishes one live-state snapshot along liveStateTargets: the relay push
+ * first (so an offline hall or a slow cloud never holds up the referee and
+ * the LedBox), then the cloud work (lookup, upsert, retry marks), which runs
+ * only when `targets.cloud`. Everything that touches the cloud goes in
+ * `toCloud`: a test (rehearsal) match never reaches it.
+ * @param {{ targets: { relay: boolean, cloud: boolean }, toRelay: () => void, toCloud: () => Promise<any> }} args
+ * @returns {Promise<any>} what `toCloud` returned, or undefined when skipped
+ */
+export async function publishLiveState({ targets, toRelay, toCloud }) {
+  if (targets?.relay) toRelay()
+  if (!targets?.cloud) return undefined
+  return toCloud()
 }
 
 export const RELAY_RECONNECT_BASE_MS = 5000

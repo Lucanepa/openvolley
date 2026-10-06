@@ -1,5 +1,38 @@
 // Test Match Constants
 export const TEST_MATCH_SEED_KEY = 'test-match-default'
+
+/**
+ * A test (rehearsal) match's own seed key, which is also its relay room:
+ * `test-match-default-<random>`. Rehearsals publish their live state to the
+ * venue relay and show in its match list, so two scorers rehearsing on one
+ * relay must not share a room (the second got not-match-owner, or the LedBox
+ * mixed their live states).
+ */
+export function newTestMatchSeedKey() {
+  let suffix = ''
+  try {
+    const bytes = new Uint8Array(6)
+    globalThis.crypto.getRandomValues(bytes)
+    suffix = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  } catch {
+    suffix = Math.random().toString(16).slice(2, 14).padEnd(12, '0')
+  }
+  return `${TEST_MATCH_SEED_KEY}-${suffix}`
+}
+
+/** The seed key of a test match: the shared legacy one or a per-device one. */
+export function isTestMatchSeedKey(key) {
+  return typeof key === 'string' && (key === TEST_MATCH_SEED_KEY || key.startsWith(`${TEST_MATCH_SEED_KEY}-`))
+}
+
+/**
+ * The seed key a device's test match keeps: its own per-device key (the
+ * LedBox keeps following the same room when the rehearsal is restarted), or a
+ * new one in place of the shared legacy key or none.
+ */
+export function testMatchSeedKeyFor(existing) {
+  return isTestMatchSeedKey(existing) && existing !== TEST_MATCH_SEED_KEY ? existing : newTestMatchSeedKey()
+}
 export const TEST_MATCH_EXTERNAL_ID = 'test-match-default'
 export const TEST_HOME_TEAM_EXTERNAL_ID = 'test-team-alpha'
 export const TEST_AWAY_TEAM_EXTERNAL_ID = 'test-team-bravo'

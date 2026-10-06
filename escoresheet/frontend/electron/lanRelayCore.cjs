@@ -85,6 +85,19 @@
  *   connected, pong, error { type:'error', code, message, matchId? }
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
+ *   GET /api/match/list  { success, matches: [{ id, gameNumber, homeTeam, awayTeam, scheduledAt,
+ *                     dateTime, status, test, refereeConnectionEnabled,
+ *                     homeTeamConnectionEnabled, awayTeamConnectionEnabled }] }: every match a
+ *                     scorer currently publishes here (see matchListEntry), newest
+ *                     scheduledAt first, whatever its referee connection: display devices
+ *                     (the point-hub LedBox bridge) pick their match from it; the referee /
+ *                     bench apps filter it to what they can join (utils/relayMatchList).
+ *                     Public fields only, no PINs, no people. dateTime is a display
+ *                     string here (null on the Tauri relay: clients format scheduledAt).
+ *
+ * openbeach's scorer sends its teams as team1Team / team2Team (team1 / team2 in
+ * its periodic sync): the relay takes them as homeTeam / awayTeam.
+ *
  * Match ids are always String(matchId). PINs never leave the relay: PIN
  * validation is answered from the relay's own store, never by a WS client.
  */
@@ -345,8 +358,9 @@ function bundleFromMessage(msg) {
   if (!src || !src.match || typeof src.match !== 'object') return null
   return {
     match: src.match,
-    homeTeam: src.homeTeam ?? null,
-    awayTeam: src.awayTeam ?? null,
+    // openbeach names its teams team1Team / team2Team (team1 / team2)
+    homeTeam: src.homeTeam ?? src.team1Team ?? src.team1 ?? null,
+    awayTeam: src.awayTeam ?? src.team2Team ?? src.team2 ?? null,
     homePlayers: Array.isArray(src.homePlayers) ? src.homePlayers : [],
     awayPlayers: Array.isArray(src.awayPlayers) ? src.awayPlayers : [],
     sets: Array.isArray(src.sets) ? src.sets : [],
@@ -499,6 +513,42 @@ function formatDateTime(scheduledAt) {
     return `${dateStr} ${timeStr}`
   } catch {
     return 'TBD'
+  }
+}
+
+const LISTED_STATUSES = new Set(['scheduled', 'live'])
+
+/** A team's display name: the bundle's team (object or plain string), else `fallback`. */
+function teamNameOf(team, fallback) {
+  const name = typeof team === 'string' ? team : team && typeof team === 'object' ? team.name : null
+  return typeof name === 'string' && name.trim() ? name : fallback
+}
+
+/**
+ * One GET /api/match/list row for a stored bundle, or null when the match is
+ * not listed. Listed: status 'scheduled' or 'live' (none counts as
+ * 'scheduled'), whatever the referee connection — display devices (the LedBox
+ * bridge) need no PIN and pick their match from this list. Public fields only:
+ * no PINs, no people. Same rule in backend/server.js and src-tauri/src/relay.rs.
+ */
+function matchListEntry(key, bundle) {
+  const match = (bundle && bundle.match) || {}
+  const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
+  if (!LISTED_STATUSES.has(status)) return null
+  return {
+    id: publicMatchId(key),
+    gameNumber: match.gameNumber || match.game_n || key,
+    homeTeam: teamNameOf(bundle && bundle.homeTeam, teamNameOf(match.homeTeamName, 'Home')),
+    awayTeam: teamNameOf(bundle && bundle.awayTeam, teamNameOf(match.awayTeamName, 'Away')),
+    scheduledAt: match.scheduledAt ?? null,
+    dateTime: formatDateTime(match.scheduledAt),
+    status,
+    test: match.test === true,
+    // PINs intentionally NOT returned — validated via /api/match/validate-pin
+    refereeConnectionEnabled: match.refereeConnectionEnabled === true,
+    // The referee / bench apps offer only the matches they can join
+    homeTeamConnectionEnabled: match.homeTeamConnectionEnabled === true,
+    awayTeamConnectionEnabled: match.awayTeamConnectionEnabled === true,
   }
 }
 
@@ -697,10 +747,14 @@ function createLanRelay(options = {}) {
    * for a finished match, STALE_TAKEOVER_MS for one still in play.
    */
   function isAbandoned(matchId, existing) {
+    return isAbandonedFor(matchId, isFinishedMatch(existing && existing.match) ? orphanTakeoverMs : staleTakeoverMs)
+  }
+
+  /** No connected socket has owned matchId for `graceMs` or longer. */
+  function isAbandonedFor(matchId, graceMs) {
     const since = orphanedSince.get(matchId)
     if (since === undefined || ownersOf(matchId).length > 0) return false
-    const grace = isFinishedMatch(existing && existing.match) ? orphanTakeoverMs : staleTakeoverMs
-    return Date.now() - since >= grace
+    return Date.now() - since >= graceMs
   }
 
   const failureKeys = (meta) => (meta.ip ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
@@ -1129,26 +1183,21 @@ function createLanRelay(options = {}) {
     return { status: 200, body: { success: true, ...(full ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)) } }
   }
 
+  /**
+   * GET /api/match/list: every match a scorer currently publishes here
+   * (matchListEntry) — not one left without its scoreboard for longer than an
+   * unfinished match is held for it (staleTakeoverMs) — newest first.
+   */
   function listMatches() {
     const matches = []
     for (const [key, bundle] of store) {
-      const match = bundle.match || {}
-      const m = {
-        id: publicMatchId(key),
-        gameNumber: match.gameNumber || match.game_n || key,
-        homeTeam: bundle.homeTeam?.name || match.homeTeamName || 'Home',
-        awayTeam: bundle.awayTeam?.name || match.awayTeamName || 'Away',
-        scheduledAt: match.scheduledAt,
-        dateTime: formatDateTime(match.scheduledAt),
-        status: match.status,
-        // PINs intentionally NOT returned — validated via /api/match/validate-pin
-        refereeConnectionEnabled: match.refereeConnectionEnabled === true,
-      }
-      if (m.refereeConnectionEnabled && (m.status === 'scheduled' || m.status === 'live')) matches.push(m)
+      if (isAbandonedFor(key, staleTakeoverMs)) continue
+      const m = matchListEntry(key, bundle)
+      if (m) matches.push(m)
     }
-    // Most recent first; only the single most recent open match is offered.
-    matches.sort((a, b) => (b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0) - (a.scheduledAt ? new Date(a.scheduledAt).getTime() : 0))
-    return { status: 200, body: { success: true, matches: matches.slice(0, 1) } }
+    const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)
+    matches.sort((a, b) => at(b) - at(a))
+    return { status: 200, body: { success: true, matches } }
   }
 
   async function findByGameNumber(gameNumber) {
@@ -1323,6 +1372,7 @@ module.exports = {
   SUMMARY_MATCH_FIELDS,
   SUMMARY_TEAM_FIELDS,
   SUMMARY_SET_FIELDS,
+  matchListEntry,
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
