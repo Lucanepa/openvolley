@@ -415,7 +415,10 @@
       "clickToRetry": "Click to retry sync"
     },
     "captainToggle": "Team captain #{{number}}",
-    "captainToggleNew": "Team captain (new player)"
+    "captainToggleNew": "Team captain (new player)",
+    "gameTakenTitle": "Game {{game}} is already being scored",
+    "gameTakenBody": "{{name}} is scoring this game ({{status}}). Only one cloud match per official game is allowed: join it with its game PIN, or continue and keep this match on this device only.",
+    "continueLocalOnly": "Continue on this device only"
   },
   "scoreboard": {
     "set": "Set",
@@ -1176,12 +1179,6 @@
     "noSetsReopen": "No sets found to reopen",
     "setReopened": "Set {{index}} reopened for corrections",
     "errorReopening": "Error reopening last set: {{error}}",
-    "unlockReopen": "Unlock reopen",
-    "unlockReopenDescription": "Enter the reopen password to unlock this action.",
-    "unlockPasswordPlaceholder": "Password",
-    "unlockPasswordRequired": "Please enter the password",
-    "unlockPasswordWrong": "Incorrect password",
-    "unlockPasswordError": "Error verifying password",
     "sanctionTypes": {
       "delayWarning": "Delay warning",
       "delayPenalty": "Delay penalty",
@@ -1189,7 +1186,15 @@
       "penalty": "Penalty",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification"
-    }
+    },
+    "reopenAdminOnlyTitle": "Only an admin can reopen this match",
+    "reopenAdminOnlyBody": "Game {{game}} is closed on the server. Ask an admin to reopen it, then tap “Reopen match” again.",
+    "reopenNeedsConnection": "Reopening a closed match needs a connection to the server.",
+    "reopenAdminTitle": "Reopen this closed match?",
+    "reopenAdminBody": "It goes back to “ended” on the server and can be approved again. This is recorded in the audit log.",
+    "reopenReason": "Reason",
+    "reopenCheckFailed": "Could not check the match on the server – please try again.",
+    "reopenMatch": "Reopen match"
   },
   "scoresheetPdf": {
     "zoomOut": "Zoom out",
@@ -1510,7 +1515,9 @@
   },
   "connectionSetup": {
     "lan": "LAN",
-    "internet": "Internet"
+    "internet": "Internet",
+    "refereeQRCodeAlt": "Referee QR code",
+    "cloudQRCodeAlt": "Cloud QR code"
   },
   "loadOfficialMatch": {
     "title": "Load match from schedule",
@@ -1786,12 +1793,6 @@
   "officialAutocomplete": {
     "selectFromHistory": "Select from history"
   },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "Referee QR code",
-    "cloudQRCodeAlt": "Cloud QR code"
-  },
   "contextHelp": {
     "helpButton": "Help",
     "showMe": "Show me",
@@ -2049,5 +2050,241 @@
     "awayCaptainMissing": "Away team: no captain assigned",
     "awayCoachMissing": "Away team: no coach set",
     "selectGenderFirst": "Select a gender first"
+  },
+  "access": {
+    "pendingTitle": "Your account is waiting for approval",
+    "pendingBody": "You can score test matches. Official matches stay on this device until an admin approves your account or you enter an invite code from your club.",
+    "inviteCodeLabel": "Invite code",
+    "inviteCodePlaceholder": "XXXX-XXXX-XXXX",
+    "redeem": "Redeem code",
+    "redeeming": "Checking…",
+    "redeemed": "Code accepted. You can now score official matches.",
+    "errors": {
+      "inviteInvalid": "This invite code is not valid.",
+      "inviteExpired": "This invite code has expired.",
+      "inviteUsedUp": "This invite code has been used up.",
+      "tooManyAttempts": "Too many attempts. Please wait a few minutes.",
+      "offline": "Redeeming a code needs a connection."
+    },
+    "roles": {
+      "scorer": "Scorer",
+      "referee": "Referee",
+      "competition_manager": "Competition manager",
+      "admin": "Admin",
+      "super_admin": "Super admin",
+      "pending": "Pending approval"
+    },
+    "signUpPendingNote": "New accounts need approval before official matches sync to the cloud. Ask your club for an invite code.",
+    "officialMatchLocalOnly": "This match stays on this device until your account is approved."
+  },
+  "manage": {
+    "title": "Manage",
+    "backToApp": "Back to the app",
+    "nav": "Manage sections",
+    "menuAdmin": "Admin",
+    "menuSavedTeams": "Saved teams",
+    "menuInviteCode": "Enter invite code",
+    "tabs": {
+      "accounts": "Accounts",
+      "invites": "Invite codes",
+      "games": "Official games",
+      "matches": "Closed matches",
+      "audit": "Audit log",
+      "teams": "Saved teams"
+    },
+    "status": {
+      "setup": "Set-up",
+      "live": "Live",
+      "ended": "Ended",
+      "approved": "Approved",
+      "final": "Closed"
+    },
+    "errors": {
+      "forbidden": "You do not have access to this section.",
+      "generic": "Something went wrong – please try again.",
+      "offline": "This needs a connection to the server."
+    },
+    "accounts": {
+      "filterPending": "Pending",
+      "filterAll": "All",
+      "search": "Search name or email",
+      "approve": "Approve as scorer",
+      "editRoles": "Roles",
+      "rolesTitle": "Roles of {{name}}",
+      "save": "Save",
+      "saved": "Saved.",
+      "empty": "No accounts found.",
+      "emptyPending": "No accounts are waiting for approval.",
+      "created": "Created {{date}}",
+      "lastSignIn": "Last sign-in {{date}}",
+      "neverSignedIn": "Never signed in",
+      "selfDemote": "You cannot remove your own admin role.",
+      "superAdminOnly": "Only a super admin can change this account."
+    },
+    "invites": {
+      "new": "New invite code",
+      "label": "Label",
+      "labelHint": "For example club and season",
+      "club": "Club",
+      "role": "Role",
+      "maxUses": "Maximum uses",
+      "maxUsesHint": "Leave empty for unlimited",
+      "expires": "Expires on",
+      "create": "Create code",
+      "createdTitle": "Invite code created",
+      "createdOnce": "Copy it now – it is shown only once.",
+      "copy": "Copy",
+      "copied": "Copied.",
+      "uses": "{{uses}} / {{max}} used",
+      "usesUnlimited": "{{uses}} used",
+      "revoke": "Revoke",
+      "revokeConfirmTitle": "Revoke this invite code?",
+      "revokeConfirmBody": "Nobody can redeem it afterwards. Accounts that already used it keep their role.",
+      "state": {
+        "active": "Active",
+        "expired": "Expired",
+        "used_up": "Used up",
+        "revoked": "Revoked"
+      },
+      "empty": "No invite codes yet."
+    },
+    "games": {
+      "from": "From",
+      "to": "To",
+      "search": "Search team or game number",
+      "notClaimed": "Not claimed",
+      "scoredBy": "Scored by {{name}}",
+      "unknownScorer": "Unknown scorer",
+      "editors": "{{count}} editors",
+      "addEditor": "Add editor",
+      "addEditorTitle": "Add an editor to game {{game}}",
+      "editorEmail": "Account email",
+      "add": "Add",
+      "editorAdded": "Editor added.",
+      "releaseGame": "Release game",
+      "releaseConfirmTitle": "Release game {{game}}?",
+      "releaseConfirmBody": "The match stays, but another scorer can then create a new cloud match for this game.",
+      "reason": "Reason",
+      "empty": "No official games in this period."
+    },
+    "matches": {
+      "filterClosed": "Closed",
+      "filterOpen": "Open",
+      "filterAll": "All",
+      "search": "Search team or game number",
+      "closedAt": "Closed {{date}}",
+      "closedBy": "by {{name}}",
+      "reopen": "Reopen",
+      "reopenTitle": "Reopen game {{game}}?",
+      "reopenBody": "The match goes back to “ended”: the scorer can correct it and approve it again. This is recorded in the audit log.",
+      "reopenReason": "Reason",
+      "reopened": "Match reopened.",
+      "empty": "No matches found."
+    },
+    "audit": {
+      "loadMore": "Load more",
+      "empty": "No entries yet.",
+      "actions": {
+        "account_roles": "Roles changed",
+        "invite_create": "Invite code created",
+        "invite_revoke": "Invite code revoked",
+        "invite_redeem": "Invite code redeemed",
+        "match_claim_game": "Official game claimed",
+        "match_claim_pin": "Joined with game PIN",
+        "match_game_taken": "Second scorer refused",
+        "match_close": "Match closed",
+        "match_reopen": "Match reopened",
+        "match_editor_add": "Editor added by admin",
+        "match_release_game": "Game released"
+      }
+    }
+  },
+  "savedTeams": {
+    "title": "Saved teams",
+    "competitions": "Competitions",
+    "newCompetition": "New competition",
+    "competitionName": "Name",
+    "season": "Season",
+    "gender": "Gender",
+    "genderMen": "Men",
+    "genderWomen": "Women",
+    "genderMixed": "Mixed",
+    "category": "Category",
+    "categoryHint": "For example senior or U19",
+    "vmLeagues": "VolleyManager leagues",
+    "vmLeaguesHint": "Official games of these leagues suggest the saved teams",
+    "archived": "Archived",
+    "showArchived": "Show archived",
+    "teams": "Teams",
+    "newTeam": "New team",
+    "teamName": "Team name",
+    "shortName": "Short name",
+    "club": "Club",
+    "color": "Colour",
+    "svrzTeamName": "VolleyManager team name",
+    "svrzTeamNameHint": "Exactly as in the official schedule",
+    "players": "Players",
+    "staff": "Team officials",
+    "addPlayer": "Add player",
+    "addStaff": "Add official",
+    "number": "No.",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "dob": "Date of birth",
+    "license": "Licence",
+    "libero": "Libero",
+    "captain": "Captain",
+    "active": "Active",
+    "role": "Role",
+    "saveRoster": "Save roster",
+    "rosterSaved": "Roster saved.",
+    "deleteTeam": "Delete team",
+    "deleteTeamConfirmTitle": "Delete {{name}}?",
+    "deleteTeamConfirmBody": "Its players and officials are deleted too.",
+    "deleteCompetition": "Delete competition",
+    "deleteCompetitionConfirmTitle": "Delete {{name}}?",
+    "deleteCompetitionConfirmBody": "All its teams, players and officials are deleted too.",
+    "duplicateTeam": "A team with this name already exists in this competition.",
+    "emptyCompetitions": "No competitions yet.",
+    "emptyTeams": "No teams in this competition yet.",
+    "emptyRoster": "No players yet.",
+    "errors": {
+      "duplicateNumber": "Number {{number}} is used twice.",
+      "twoCaptains": "Only one captain per team.",
+      "lastNameRequired": "Last name is required."
+    },
+    "load": "Load saved team",
+    "pickerTitle": "Load a saved team",
+    "pickerSearch": "Search team or club",
+    "pickerCompetition": "Competition",
+    "pickerAll": "All competitions",
+    "pickerPlayers": "{{count}} players",
+    "pickerEmpty": "No saved teams. Saved teams are available after one online load.",
+    "pickerOffline": "Offline – showing saved teams from {{date}}.",
+    "replaceConfirmTitle": "Replace the roster?",
+    "replaceConfirmBody": "The current players and team officials of {{team}} are replaced. You can still edit them afterwards.",
+    "replace": "Replace",
+    "loaded": "Roster of {{name}} loaded.",
+    "tooManyLiberos": "{{name}} has more than two liberos – only the first two are marked.",
+    "suggestionTitle": "Saved rosters found",
+    "suggestionHome": "Home: {{name}}",
+    "suggestionAway": "Away: {{name}}",
+    "loadHome": "Load home roster",
+    "loadAway": "Load away roster",
+    "saveToTeam": "Save roster to team",
+    "saveTitle": "Save roster to a saved team",
+    "saveExisting": "Existing team",
+    "saveNew": "New team",
+    "saveConfirmTitle": "Overwrite the saved roster of {{name}}?",
+    "saveConfirmBody": "The saved players and officials of this team are replaced by this roster.",
+    "saved": "Saved to {{name}}."
+  },
+  "cloudBlock": {
+    "scorerRequired": "Not synced: your account is waiting for approval. The match is safe on this device.",
+    "gameTaken": "Not synced: game {{game}} is already scored by {{name}} ({{status}}). Join that match with its game PIN or ask an admin.",
+    "gameTakenMine": "Not synced: you already score game {{game}} in another match. Open that match with its game PIN.",
+    "gameTakenUnknown": "Not synced: this official game is already scored by another account.",
+    "matchClosed": "Not synced: this match is closed on the server. Only an admin can reopen it.",
+    "joinWithPin": "Join with game PIN"
   }
 }
