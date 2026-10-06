@@ -7,11 +7,14 @@
 // actions then ran without asking. This helper uses the app's own in-app
 // dialog (volleyui confirmDialog, rendered by <UiHost /> in every React root),
 // so it looks and behaves the same in the browser, the desktop app and
-// Android. Guarded by src/utils/__tests__/noNativeDialogs.test.js.
+// Android. Guarded by src/utils/__tests__/noNativeDialogs.test.jsx.
 //
 // For a message with only an OK button use the AlertContext (showAlert) or a
 // toast from src/ui, not window.alert.
-import i18n from '../i18n'
+
+// The app's i18next instance (src/i18n/index.js initialises it); imported
+// directly so this module has no side effects of its own.
+import i18n from 'i18next'
 import { confirmDialog } from '../ui/uiStore.js'
 
 /**
@@ -31,8 +34,8 @@ export async function askConfirm({ title, message, confirmLabel, cancelLabel, to
   const answer = await confirmDialog({
     title,
     message,
-    confirmLabel: confirmLabel ?? i18n.t('common.confirm'),
-    cancelLabel: cancelLabel ?? i18n.t('common.cancel'),
+    confirmLabel: confirmLabel ?? i18n.t('common.confirm', 'Confirm'),
+    cancelLabel: cancelLabel ?? i18n.t('common.cancel', 'Cancel'),
     tone,
   })
   return answer === true

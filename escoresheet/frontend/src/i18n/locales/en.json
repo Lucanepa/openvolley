@@ -411,6 +411,8 @@
     "awayCaptainRequired": "Away team must have at least one captain.",
     "matchPinRequired": "Match PIN code is required. Please enter a PIN code to create the match.",
     "enterPinPrompt": "Enter a PIN code to protect this match (required):",
+    "matchPinTitle": "Match PIN code",
+    "matchPinLabel": "PIN code",
     "commandCopied": "Command copied to clipboard! Run \"npm run start:prod\" in the frontend directory terminal.",
     "pleaseRunManually": "Please run manually in terminal: npm run start:prod",
     "serverStartFailed": "Failed to start server: {{error}}",

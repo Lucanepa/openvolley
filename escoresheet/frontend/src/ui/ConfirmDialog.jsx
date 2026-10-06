@@ -1,11 +1,15 @@
 // The promise-based confirm dialog. Faithful port of svrz_rc
 // src/components/ui/ConfirmDialog.tsx:1-148. Rendered by <UiHost />; opened with
 // `await confirmDialog({ title, message, confirmLabel, tone: 'danger' })`.
-import { useEffect, useId, useRef, useSyncExternalStore } from 'react';
+// With `input: { label, defaultValue, placeholder, type, inputMode }` it asks
+// for a line of text instead (window.prompt's replacement): the confirm button
+// and Enter resolve the typed string, Cancel / Escape / the backdrop false.
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { cn } from './cn.js';
 import { getConfirmSnapshot, settleConfirm, subscribeConfirm } from './uiStore.js';
 import { CONFIRM_ACCEPT } from './tones.js';
 import { FOCUS_RING } from './Button.jsx';
+import { Input } from './Input.jsx';
 
 // Everything a Tab can land on. The message is a ReactNode, so it may well
 // contain a link — trapping only the two buttons would skip it.
@@ -16,6 +20,8 @@ export function ConfirmDialog() {
   const entry = useSyncExternalStore(subscribeConfirm, getConfirmSnapshot, getConfirmSnapshot);
   const panelRef = useRef(null);
   const acceptRef = useRef(null);
+  const inputRef = useRef(null);
+  const [text, setText] = useState('');
   // Backdrop dismissal needs two guards: `pressedBackdrop` demands the press
   // START on the backdrop (a text selection dragged out of the panel does not
   // answer "no"); `openedAtRef` ignores the backdrop for 400ms after opening,
@@ -25,6 +31,7 @@ export function ConfirmDialog() {
   const baseId = useId();
   const titleId = `${baseId}-title`;
   const messageId = `${baseId}-message`;
+  const inputId = `${baseId}-input`;
   const open = !!entry;
   const id = entry ? entry.id : 0;
 
@@ -43,9 +50,18 @@ export function ConfirmDialog() {
     };
   }, [open]);
 
-  // Focus the confirm button per dialog, so a queued second one does not leave
-  // focus stranded on the first one's (now gone) button.
-  useEffect(() => { if (open) acceptRef.current?.focus(); }, [open, id]);
+  const asksText = !!entry?.input;
+  const defaultText = entry?.input?.defaultValue ?? '';
+  // A fresh field per dialog.
+  useEffect(() => { setText(defaultText); }, [id, defaultText]);
+
+  // Focus the field, or else the confirm button, per dialog, so a queued second
+  // one does not leave focus stranded on the first one's (now gone) button.
+  useEffect(() => {
+    if (!open) return;
+    if (asksText) inputRef.current?.focus();
+    else acceptRef.current?.focus();
+  }, [open, id, asksText]);
 
   useEffect(() => { if (open) { openedAtRef.current = Date.now(); pressedBackdrop.current = false; } }, [open, id]);
 
@@ -84,6 +100,7 @@ export function ConfirmDialog() {
   const confirmLabel = entry.confirmLabel ?? (de ? 'Bestätigen' : 'Confirm');
   const cancelLabel = entry.cancelLabel ?? (de ? 'Abbrechen' : 'Cancel');
   const hasMessage = entry.message !== undefined && entry.message !== null && entry.message !== '';
+  const accept = () => settleConfirm(entry.id, asksText ? text : true);
 
   return (
     <div
@@ -107,13 +124,37 @@ export function ConfirmDialog() {
         className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id={titleId} data-testid="confirm-title" className={cn('text-lg font-bold text-stone-900', hasMessage ? 'mb-3' : 'mb-6')}>
+        <h3 id={titleId} data-testid="confirm-title" className={cn('text-lg font-bold text-stone-900', hasMessage || asksText ? 'mb-3' : 'mb-6')}>
           {entry.title}
         </h3>
         {hasMessage && (
-          <div id={messageId} data-testid="confirm-message" className="text-sm text-stone-600 mb-6 whitespace-pre-line">
+          <div id={messageId} data-testid="confirm-message" className={cn('text-sm text-stone-600 whitespace-pre-line', asksText ? 'mb-3' : 'mb-6')}>
             {entry.message}
           </div>
+        )}
+        {asksText && (
+          <form
+            className="mb-6"
+            onSubmit={(e) => { e.preventDefault(); accept(); }}
+          >
+            {entry.input.label && (
+              <label htmlFor={inputId} className="mb-1.5 block text-sm font-medium text-stone-700">{entry.input.label}</label>
+            )}
+            <Input
+              ref={inputRef}
+              id={inputId}
+              data-testid="confirm-input"
+              type={entry.input.type ?? 'text'}
+              inputMode={entry.input.inputMode}
+              placeholder={entry.input.placeholder}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              aria-label={entry.input.label ? undefined : entry.title}
+            />
+          </form>
         )}
         <div className="flex justify-end gap-2">
           <button
@@ -128,7 +169,7 @@ export function ConfirmDialog() {
             type="button"
             ref={acceptRef}
             data-testid="confirm-accept"
-            onClick={() => settleConfirm(entry.id, true)}
+            onClick={accept}
             className={cn(
               'px-4 py-2 text-sm rounded-lg font-medium transition-colors text-white',
               FOCUS_RING,
