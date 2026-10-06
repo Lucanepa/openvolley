@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { queueSetStartTimeSync } from '../setStartTimeSync'
 import { isScoreOnlySetUpdate } from '../eventSync'
+import { setExtId } from '../syncIds'
 
 function fakeTable(rows = []) {
   const map = new Map(rows.map(r => [r.id, { ...r }]))
@@ -14,6 +15,7 @@ function fakeTable(rows = []) {
     get: async (id) => map.get(id),
     add: async (row) => { const id = nextId++; map.set(id, { ...row, id }); return id },
     bulkDelete: async (ids) => { for (const id of ids) map.delete(id) },
+    update: async (id, changes) => { map.set(id, { ...map.get(id), ...changes }) },
     where: (field) => ({ equals: (v) => collection(r => r[field] === v) })
   }
 }
@@ -33,6 +35,18 @@ beforeEach(() => {
 const jobs = () => [...db.sync_queue.map.values()]
 
 describe('queueSetStartTimeSync', () => {
+  it('also writes the confirmed time into the set insert job not sent yet', async () => {
+    const external = setExtId('match_100_aaa', 6)
+    db.sync_queue = fakeTable([
+      { id: 1, resource: 'set', action: 'insert', status: 'error', payload: { external_id: external, index: 2, start_time: '2026-10-06T08:00:00.000Z' } },
+      { id: 2, resource: 'set', action: 'insert', status: 'sent', payload: { external_id: external, start_time: '2026-10-06T08:00:00.000Z' } }
+    ])
+    await queueSetStartTimeSync(db, { matchId: 1, setId: 6, startTime: '2026-10-06T08:22:00.000Z' })
+    expect(db.sync_queue.map.get(1).payload).toEqual({ external_id: external, index: 2, start_time: '2026-10-06T08:22:00.000Z' })
+    // A sent insert is left alone (the update job covers it)
+    expect(db.sync_queue.map.get(2).payload.start_time).toBe('2026-10-06T08:00:00.000Z')
+  })
+
   it('queues a set update with the confirmed start time, scoped to the match', async () => {
     expect(await queueSetStartTimeSync(db, { matchId: 1, setId: 6, startTime: '2026-10-06T08:22:00.000Z' })).toBe(true)
     expect(jobs()).toEqual([expect.objectContaining({
