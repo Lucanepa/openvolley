@@ -6,6 +6,8 @@
 #   /install.sh     one-line installer (curl -fsSL https://get.openvolley.app/install.sh | sudo sh)
 #   /apt/           signed APT repository (dists/stable, pool/main, openvolley.gpg/.asc)
 #   /fdroid/repo/   signed F-Droid repository
+#   /desktop/       desktop updater manifests: latest.json, staging.json,
+#                   latest-<version>.json (publish-pkgs.sh --desktop)
 #
 # TLS ends at Cloudflare; ov-tunnel reaches this on http://ov-pkgs:80 over the
 # compose network ov-edge. No admin API, no ACME, no state on disk.
@@ -50,6 +52,12 @@
 	@mutable not path *.deb *.apk
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
 	header @mutable Cache-Control "public, max-age=60, must-revalidate"
+
+	# The Android app (sideloaded installs, opt-in) reads the F-Droid index to
+	# see whether a newer version is out; its WebView origin is not this host.
+	# A plain GET needs no preflight. Nothing else is readable cross-origin.
+	@fdroidindex path /fdroid/repo/index-v2.json
+	header @fdroidindex Access-Control-Allow-Origin *
 
 	header {
 		X-Content-Type-Options nosniff
