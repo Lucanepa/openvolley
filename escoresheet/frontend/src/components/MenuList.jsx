@@ -26,10 +26,16 @@ export default function MenuList({
       }
     }
 
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setShowMenu(false)
+    }
+
     if (showMenu) {
       document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleKeyDown)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
+        document.removeEventListener('keydown', handleKeyDown)
       }
     }
   }, [showMenu])
@@ -110,6 +116,9 @@ export default function MenuList({
     <div style={{ position: 'relative' }}>
       <button
         ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={showMenu}
         className={buttonClassName}
         title={buttonTitle || undefined}
         onClick={(e) => {

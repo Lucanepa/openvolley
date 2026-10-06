@@ -409,7 +409,9 @@
       "syncing": "Syncing...",
       "error": "Sync error",
       "clickToRetry": "Click to retry sync"
-    }
+    },
+    "captainToggle": "Team captain #{{number}}",
+    "captainToggleNew": "Team captain (new player)"
   },
   "scoreboard": {
     "set": "Set",
@@ -450,7 +452,8 @@
       "validationError": "Please check: All numbers must exist in roster, not be liberos, and not be duplicated.",
       "confirm": "Confirm",
       "close": "Close",
-      "modify": "Modify"
+      "modify": "Modify",
+      "positionInput": "Player at position {{pos}}"
     },
     "lastAction": "Last action:",
     "keybindings": {
@@ -1377,7 +1380,8 @@
       "invalidPin": "Invalid PIN code. Please check and try again.",
       "connectionLost": "Connection lost. Please reconnect.",
       "matchEnded": "Match has ended.",
-      "connectionDisabled": "Connection has been disabled."
+      "connectionDisabled": "Connection has been disabled.",
+      "serverUnreachable": "No connection to the server – check the Wi-Fi and try again."
     },
     "connection": {
       "title": "Connection",
@@ -1534,7 +1538,9 @@
       "failedToFindMatch": "Failed to find match. Make sure the main scoresheet is running.",
       "failedToLoadData": "Failed to load match data",
       "failedToLoadDataConnection": "Failed to load match data. Make sure the main scoresheet is running."
-    }
+    },
+    "final": "Final",
+    "serving": "Serving"
   },
   "auth": {
     "signIn": "Sign in",
@@ -1597,7 +1603,14 @@
     "noMatches": "No matches yet",
     "noMatchesHint": "Matches you score will appear here",
     "unknown": "Unknown",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Open scoresheet",
+    "status": {
+      "live": "Live",
+      "final": "Final",
+      "approved": "Approved",
+      "setup": "Setup"
+    }
   },
   "backupTable": {
     "noActions": "No actions",

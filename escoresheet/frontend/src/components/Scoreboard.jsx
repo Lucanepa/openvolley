@@ -12132,38 +12132,41 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     confirmSubstitution, confirmLibero, handleReplayRally, handleDecisionChange
   ])
 
-  const sanctionButtonStyles = useMemo(() => ({
-    improper: {
-      flex: 1,
-      fontSize: '4.65cqw',
-      padding: '2.5cqw 1.25cqw',
-      background: 'var(--panel)',
-      border: '1px solid var(--border)',
-      color: 'var(--text)',
-      fontWeight: 600,
-      boxShadow: '0 0 0 1px var(--panel-2)'
-    },
-    delayWarning: {
-      flex: 1,
-      fontSize: '4.65cqw',
-      padding: '2.5cqw 1.25cqw',
-      background: 'rgba(234, 179, 8, 0.2)',
-      border: '1px solid rgba(234, 179, 8, 0.4)',
-      color: '#facc15',
-      fontWeight: 600,
-      boxShadow: '0 0 0 1px rgba(250, 204, 21, 0.15)'
-    },
-    delayPenalty: {
-      flex: 1,
-      fontSize: '4.65cqw',
-      padding: '2.5cqw 1.25cqw',
-      background: 'rgba(239, 68, 68, 0.2)',
-      border: '1px solid rgba(239, 68, 68, 0.4)',
-      color: '#f87171',
-      fontWeight: 600,
-      boxShadow: '0 0 0 1px rgba(248, 113, 113, 0.2)'
+  // Courtside chips: px floors on the cqw sizes so a 200 px side column still
+  // gets 12 px text and a 44 px tap target, and light-theme amber / red pairs
+  // (AA) instead of the old dark-theme yellow-on-yellow.
+  const sanctionButtonStyles = useMemo(() => {
+    const base = {
+      flex: '1 1 0',
+      minWidth: 0,
+      minHeight: '44px',
+      fontSize: 'max(12px, 4.65cqw)',
+      lineHeight: 1.15,
+      whiteSpace: 'normal',
+      padding: 'max(4px, 1.25cqw) max(6px, 1.25cqw)',
+      fontWeight: 600
     }
-  }), [])
+    return {
+      improper: {
+        ...base,
+        background: 'var(--panel)',
+        border: '1px solid var(--ov-hairline-strong)',
+        color: 'var(--text)'
+      },
+      delayWarning: {
+        ...base,
+        background: '#fef3c7', // amber-100
+        border: '1px solid #f59e0b', // amber-500
+        color: '#92400e' // amber-800
+      },
+      delayPenalty: {
+        ...base,
+        background: '#fee2e2', // red-100
+        border: '1px solid #f87171', // red-400
+        color: '#991b1b' // red-800
+      }
+    }
+  }, [])
 
   // Tablets the relay sees on this match's room (seed key). The heartbeat
   // fields below are never written on this device, so they alone always read
@@ -14838,7 +14841,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
@@ -14871,7 +14874,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getSubstitutionDetails('left').length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
@@ -14913,9 +14916,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        borderColor: 'rgba(239, 68, 68, 0.4)',
-                        color: '#f87171'
+                        minHeight: '44px',
+                        background: '#fee2e2',
+                        borderColor: '#f87171',
+                        color: '#991b1b'
                       }}
                     >
                       Redesignate libero
@@ -15004,7 +15008,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {data?.match?.sanctions?.[leftIsHome ? 'improperRequestHome' : 'improperRequestAway'] && (
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
-                  fontSize: '5.6cqw',
+                  fontSize: 'max(12px, 5.6cqw)',
                   background: 'var(--panel)',
                   border: '1px solid var(--border)',
                   borderRadius: '1.25cqw',
@@ -15016,11 +15020,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {data?.match?.sanctions?.[leftIsHome ? 'delayWarningHome' : 'delayWarningAway'] && (
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
-                  fontSize: '5.6cqw',
-                  background: 'rgba(234, 179, 8, 0.15)',
-                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  fontSize: 'max(12px, 5.6cqw)',
+                  background: '#fffbeb', // amber-50
+                  border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#facc15'
+                  color: '#92400e' // amber-800
                 }}>
                   {t('scoreboard.sanctions.sanctionedDelayWarning')}
                 </div>
@@ -15028,11 +15032,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {teamHasFormalWarning(leftIsHome ? 'home' : 'away') && (
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
-                  fontSize: '5.6cqw',
-                  background: 'rgba(250, 204, 21, 0.15)',
-                  border: '1px solid rgba(250, 204, 21, 0.3)',
+                  fontSize: 'max(12px, 5.6cqw)',
+                  background: '#fffbeb', // amber-50
+                  border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#fde047'
+                  color: '#92400e' // amber-800
                 }}>
                   {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
                 </div>
@@ -15041,7 +15045,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
             {/* Bench Players, Liberos, and Bench Officials */}
-            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid var(--border)' }}>
+            <div style={{ marginTop: '3.75cqw', paddingTop: '3.75cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
               {leftTeamBench.benchPlayers.length > 0 && (
                 <div data-help-id="scoreboard-bench-left" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
@@ -15053,7 +15057,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       // the 1.5px rule is taken out of the margin.
                       margin: '0 0 calc(1.9cqw - 1.5px)',
                       paddingBottom: '0.6cqw',
-                      fontSize: '5.6cqw',
+                      fontSize: 'max(11px, 5.6cqw)',
                       cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
@@ -15215,6 +15219,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: '1.6cqw 3.1cqw',
+                              minWidth: '44px',
+                              minHeight: '44px',
+                              justifyContent: 'center',
                               touchAction: (canSubBenchPlayer || isSubstitutedByLibero) ? 'none' : undefined,
                               background: isTouchDropTarget
                                 ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
@@ -15226,21 +15233,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       ? 'var(--panel-2)'  // Black bg for substituted-out (only if can still sub back)
                                       : (hasComeBack || showX ? 'var(--panel-2)' : 'var(--panel-2)'),
                               borderRadius: '1.25cqw',
-                              fontSize: '6.6cqw',
+                              fontSize: 'max(15px, 6.6cqw)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.25cqw',
                               position: 'relative',
-                              border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #fde047' : undefined),
+                              border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
                               opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
-                              color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : undefined),
+                              color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : undefined),
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
                           >
                             <span style={{ fontWeight: 600 }}>{player.number}</span>
                             {player.isCaptain && (
-                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
+                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
                             )}
                             {isSubstitutedByLibero && (
                               <span style={{
@@ -15308,7 +15315,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: '3.3cqw',
+                                  fontSize: 'max(11px, 3.3cqw)',
                                   lineHeight: '1',
                                   display: 'flex',
                                   flexDirection: 'row',
@@ -15319,16 +15326,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderRadius: '0.6cqw',
                                   minHeight: '3.75cqw',
                                   justifyContent: 'center',
-                                  border: '1px solid var(--border)',
-                                  opacity: waitingForPoint ? 0.5 : 1
+                                  // Waiting for a point before the player may come back:
+                                  // a dashed outline instead of 50% opacity, so the
+                                  // incoming number stays readable.
+                                  border: waitingForPoint ? '1px dashed var(--ov-hairline-strong)' : '1px solid var(--border)'
                                 }}
                               >
-                                <span style={{ color: '#22c55e', fontWeight: 900 }}>↑</span>
-                                <span style={{ color: '#ef4444', fontWeight: 900 }}>↓</span>
+                                <span style={{ color: '#047857', fontWeight: 900 }}>↑</span>
+                                <span style={{ color: '#b91c1c', fontWeight: 900 }}>↓</span>
                                 {playerWhoReplacedThem && (
                                   <span style={{
                                     color: 'var(--text)',
-                                    fontSize: '5.6cqw',
+                                    fontSize: 'max(13px, 5.6cqw)',
                                     fontWeight: 600,
                                     marginLeft: '0.6cqw'
                                   }}>
@@ -15399,7 +15408,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       // the 1.5px rule is taken out of the margin.
                       margin: '0 0 calc(1.9cqw - 1.5px)',
                       paddingBottom: '0.6cqw',
-                      fontSize: '5.6cqw',
+                      fontSize: 'max(11px, 5.6cqw)',
                       cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
@@ -15471,12 +15480,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                               style={{
                                 padding: '1.6cqw 3.1cqw',
+                                minHeight: '44px',
+                                minWidth: '44px',
+                                justifyContent: 'center',
                                 touchAction: canDragLibero ? 'none' : undefined,
                                 background: isTouchDropTargetLibero
                                   ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
                                   : isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '1.25cqw',
-                                fontSize: '6.6cqw',
+                                fontSize: 'max(15px, 6.6cqw)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '1.25cqw',
@@ -15487,7 +15499,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                             >
                               <span style={{ fontWeight: 600 }}>{player.number}</span>
-                              <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '5.6cqw', fontWeight: 700 }}>
+                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}>
                                 {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                               </span>
                               {/* Captain badge for libero-captain on bench (left team) */}
@@ -15631,7 +15643,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       // the 1.5px rule is taken out of the margin.
                       margin: '0 0 calc(1.9cqw - 1.5px)',
                       paddingBottom: '0.6cqw',
-                      fontSize: '5.6cqw',
+                      fontSize: 'max(11px, 5.6cqw)',
                       cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
@@ -15669,9 +15681,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: '1.25cqw 2.5cqw',
+                              minHeight: '36px',
                               background: 'var(--panel-2)',
                               borderRadius: '1.25cqw',
-                              fontSize: '5.1cqw',
+                              fontSize: 'max(13px, 5.1cqw)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.9cqw',
@@ -15679,7 +15692,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: 'var(--muted)', minWidth: '9.4cqw' }}>
+                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '9.4cqw' }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -16022,16 +16035,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt ? (
                     <button
                       onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'home' : 'away' })}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        background: 'rgba(251, 191, 36, 0.2)',
-                        color: '#fbbf24',
-                        border: '1px solid rgba(251, 191, 36, 0.4)',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
+                      style={GAME_CAPTAIN_CHIP}
                     >
                       {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                     </button>
@@ -16057,22 +16061,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt ? (
                     <button
                       onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'away' : 'home' })}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        background: 'rgba(251, 191, 36, 0.2)',
-                        color: '#fbbf24',
-                        border: '1px solid rgba(251, 191, 36, 0.4)',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
+                      style={GAME_CAPTAIN_CHIP}
                     >
                       {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                     </button>
                   ) : <div style={{ width: '80px' }} />}
                 </div>
 
+                {/* The court takes the height left over by the score row and the rally
+                    controls (styles.css .court-slot), so 16:10 / 16:9 tablets keep
+                    Undo, Replay rally and Stop timeout on screen. */}
+                <div className="court-slot">
                 <div className="court" style={{ marginTop: isCompactMode ? '4px' : '2px', marginBottom: isCompactMode ? '2px' : '1px' }}>
                   <div className="court-attack-line court-attack-left" />
                   <div className="court-attack-line court-attack-right" />
@@ -17360,6 +17359,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   </div>
                 </div>
+                </div>
 
                 {/* LFP counters at bottom corners of court */}
                 {lfpTrackingEnabled && (leftTeamLineupSet || rightTeamLineupSet) && (
@@ -17546,12 +17546,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       fontWeight: 600,
                       color: 'var(--muted)',
                       textAlign: 'center',
-                      marginBottom: '8px'
+                      marginBottom: '4px'
                     }}>
                       Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
                     </div>
                     <div style={{
                       fontSize: '48px',
+                      lineHeight: 1.1,
                       fontWeight: 700,
                       color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
@@ -17566,8 +17567,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       background: 'var(--panel)',
                       borderRadius: '4px',
                       overflow: 'hidden',
-                      marginTop: '8px',
-                      marginBottom: '16px',
+                      marginTop: '6px',
+                      marginBottom: '10px',
                       marginLeft: 'auto',
                       marginRight: 'auto'
                     }}>
@@ -17583,7 +17584,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <button
                       className="secondary"
                       onClick={stopTimeout}
-                      style={{ width: 'auto' }}
+                      style={{ width: 'auto', minHeight: '44px', minWidth: '140px', alignSelf: 'center', fontSize: '15px' }}
                     >
                       {t('scoreboard.buttons.stopTimeout')}
                     </button>
@@ -17806,8 +17807,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         disabled={!canUndo}
                         style={{
                           flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none',
-                          padding: '8px 12px',
-                          fontSize: '13px'
+                          padding: '8px 16px',
+                          fontSize: '14px',
+                          minHeight: '44px'
                         }}
                       >
                         {t('scoreboard.buttons.undo')}
@@ -18218,7 +18220,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
@@ -18251,7 +18253,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   cursor: getSubstitutionDetails('right').length > 0 ? 'pointer' : 'default'
                 }}
               >
-                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : '5.1cqw', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
+                <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.sub')}</div>
                 <div className="to-sub-value" style={{
                   fontSize: (isCompactMode || isShortHeight) ? '6.6cqw' : '11.25cqw',
                   fontWeight: 700,
@@ -18293,9 +18295,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        borderColor: 'rgba(239, 68, 68, 0.4)',
-                        color: '#f87171'
+                        minHeight: '44px',
+                        background: '#fee2e2',
+                        borderColor: '#f87171',
+                        color: '#991b1b'
                       }}
                     >
                       Redesignate libero
@@ -18384,7 +18387,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {data?.match?.sanctions?.[leftIsHome ? 'improperRequestAway' : 'improperRequestHome'] && (
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
-                  fontSize: '5.6cqw',
+                  fontSize: 'max(12px, 5.6cqw)',
                   background: 'rgba(156, 163, 175, 0.15)',
                   border: '1px solid rgba(156, 163, 175, 0.3)',
                   borderRadius: '1.25cqw',
@@ -18396,11 +18399,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {data?.match?.sanctions?.[leftIsHome ? 'delayWarningAway' : 'delayWarningHome'] && (
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
-                  fontSize: '5.6cqw',
-                  background: 'rgba(234, 179, 8, 0.15)',
-                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  fontSize: 'max(12px, 5.6cqw)',
+                  background: '#fffbeb', // amber-50
+                  border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#facc15'
+                  color: '#92400e' // amber-800
                 }}>
                   {t('scoreboard.sanctions.sanctionedDelayWarning')}
                 </div>
@@ -18408,11 +18411,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {teamHasFormalWarning(leftIsHome ? 'away' : 'home') && (
                 <div style={{
                   padding: '1.25cqw 2.5cqw',
-                  fontSize: '5.6cqw',
-                  background: 'rgba(250, 204, 21, 0.15)',
-                  border: '1px solid rgba(250, 204, 21, 0.3)',
+                  fontSize: 'max(12px, 5.6cqw)',
+                  background: '#fffbeb', // amber-50
+                  border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#fde047'
+                  color: '#92400e' // amber-800
                 }}>
                   {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
                 </div>
@@ -18421,7 +18424,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
             {/* Bench Players, Liberos, and Bench Officials */}
-            <div style={{ marginTop: isCompactMode ? '3.75cqw' : '7.5cqw', paddingTop: isCompactMode ? '3.75cqw' : '7.5cqw', borderTop: '1px solid var(--border)' }}>
+            <div style={{ marginTop: '3.75cqw', paddingTop: '3.75cqw', borderTop: '1px solid var(--border)' }}>
               {/* Bench Players */}
               {rightTeamBench.benchPlayers.length > 0 && (
                 <div data-help-id="scoreboard-bench-right" style={{ marginBottom: isCompactMode ? '2.5cqw' : '5cqw' }}>
@@ -18433,7 +18436,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       // the 1.5px rule is taken out of the margin.
                       margin: '0 0 calc(1.9cqw - 1.5px)',
                       paddingBottom: '0.6cqw',
-                      fontSize: '5.6cqw',
+                      fontSize: 'max(11px, 5.6cqw)',
                       cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
@@ -18595,6 +18598,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: '1.6cqw 3.1cqw',
+                              minWidth: '44px',
+                              minHeight: '44px',
+                              justifyContent: 'center',
                               touchAction: (canSubBenchPlayer || isSubstitutedByLibero) ? 'none' : undefined,
                               background: isTouchDropTarget
                                 ? 'rgba(74, 222, 128, 0.4)'  // Green for valid touch drop target
@@ -18606,21 +18612,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       ? 'var(--panel-2)'  // Black bg for substituted-out (only if can still sub back)
                                       : (hasComeBack || showX ? 'var(--panel-2)' : 'var(--panel-2)'),
                               borderRadius: '1.25cqw',
-                              fontSize: '6.6cqw',
+                              fontSize: 'max(15px, 6.6cqw)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.25cqw',
                               position: 'relative',
-                              border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #fde047' : undefined),
+                              border: isDropTargetForCourt ? '2px solid #ef4444' : (wasSubstitutedOut && !isSubstitutedByLibero && !showX && !hasComeBack ? '2px solid #b45309' : '1px solid var(--ov-hairline)'),
                               boxShadow: isDropTargetForCourt ? '0 0 8px rgba(239, 68, 68, 0.5)' : undefined,
                               opacity: isDragging ? 0.5 : (hasComeBack || showX) ? 0.4 : 1,
-                              color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : undefined),
+                              color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : undefined),
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
                           >
                             <span style={{ fontWeight: 600 }}>{player.number}</span>
                             {player.isCaptain && (
-                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#fde047' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
+                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
                             )}
                             {isSubstitutedByLibero && (
                               <span style={{
@@ -18688,7 +18694,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             {(waitingForPoint || canComeBack) && !hasComeBack && !showX && (
                               <span
                                 style={{
-                                  fontSize: '3.3cqw',
+                                  fontSize: 'max(11px, 3.3cqw)',
                                   lineHeight: '1',
                                   display: 'flex',
                                   flexDirection: 'row',
@@ -18699,16 +18705,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderRadius: '0.6cqw',
                                   minHeight: '3.75cqw',
                                   justifyContent: 'center',
-                                  border: '1px solid var(--border)',
-                                  opacity: waitingForPoint ? 0.5 : 1
+                                  // Waiting for a point before the player may come back:
+                                  // a dashed outline instead of 50% opacity, so the
+                                  // incoming number stays readable.
+                                  border: waitingForPoint ? '1px dashed var(--ov-hairline-strong)' : '1px solid var(--border)'
                                 }}
                               >
-                                <span style={{ color: '#22c55e', fontWeight: 900 }}>↑</span>
-                                <span style={{ color: '#ef4444', fontWeight: 900 }}>↓</span>
+                                <span style={{ color: '#047857', fontWeight: 900 }}>↑</span>
+                                <span style={{ color: '#b91c1c', fontWeight: 900 }}>↓</span>
                                 {playerWhoReplacedThem && (
                                   <span style={{
                                     color: 'var(--text)',
-                                    fontSize: '5.6cqw',
+                                    fontSize: 'max(13px, 5.6cqw)',
                                     fontWeight: 600,
                                     marginLeft: '0.6cqw'
                                   }}>
@@ -18779,7 +18787,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       // the 1.5px rule is taken out of the margin.
                       margin: '0 0 calc(1.9cqw - 1.5px)',
                       paddingBottom: '0.6cqw',
-                      fontSize: '5.6cqw',
+                      fontSize: 'max(11px, 5.6cqw)',
                       cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
@@ -18838,10 +18846,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
                               }}
                               style={{
-                                padding: '1.6cqw 3.1cqw',
+                                padding: '1.6cqw 3.1cqw', minHeight: '44px', minWidth: '44px', justifyContent: 'center',
                                 background: isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '1.25cqw',
-                                fontSize: '6.6cqw',
+                                fontSize: 'max(15px, 6.6cqw)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '1.25cqw',
@@ -18852,7 +18860,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}
                             >
                               <span style={{ fontWeight: 600 }}>{player.number}</span>
-                              <span style={{ color: isUnable ? '#f87171' : '#60a5fa', fontSize: '5.6cqw', fontWeight: 700 }}>
+                              <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}>
                                 {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                               </span>
                               {/* Captain badge for libero-captain on bench (right team) */}
@@ -18996,7 +19004,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       // the 1.5px rule is taken out of the margin.
                       margin: '0 0 calc(1.9cqw - 1.5px)',
                       paddingBottom: '0.6cqw',
-                      fontSize: '5.6cqw',
+                      fontSize: 'max(11px, 5.6cqw)',
                       cursor: isCompactMode ? 'pointer' : 'default'
                     }}
                   >
@@ -19034,9 +19042,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                             style={{
                               padding: '1.25cqw 2.5cqw',
+                              minHeight: '36px',
                               background: 'var(--panel-2)',
                               borderRadius: '1.25cqw',
-                              fontSize: '5.1cqw',
+                              fontSize: 'max(13px, 5.1cqw)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '1.9cqw',
@@ -19044,7 +19053,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: 'var(--muted)', minWidth: '9.4cqw' }}>
+                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '9.4cqw' }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -28130,6 +28139,21 @@ function ScoreboardToolbar({ children, collapsed, onToggle }) {
   )
 }
 
+// 'Game captain' chip above the court (no captain on court): amber-800 on
+// amber-100, 13 px, 44 px tall (was #fbbf24 on a pale tint, 10 px, 21 px).
+const GAME_CAPTAIN_CHIP = {
+  padding: '6px 12px',
+  minHeight: '44px',
+  fontSize: '13px',
+  fontWeight: 600,
+  lineHeight: 1.15,
+  background: '#fef3c7',
+  color: '#92400e',
+  border: '1px solid #f59e0b',
+  borderRadius: '8px',
+  cursor: 'pointer'
+}
+
 function ScoreboardTeamColumn({ side, children }) {
   return (
     <aside
@@ -28696,6 +28720,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     inputMode="numeric"
                     min="1"
                     max="99"
+                    aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
                     value={lineup[idx]}
                     onChange={e => {
                       const val = e.target.value.replace(/[^0-9]/g, '')
@@ -28807,6 +28832,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     inputMode="numeric"
                     min="1"
                     max="99"
+                    aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
                     value={lineup[idx]}
                     onChange={e => {
                       const val = e.target.value.replace(/[^0-9]/g, '')

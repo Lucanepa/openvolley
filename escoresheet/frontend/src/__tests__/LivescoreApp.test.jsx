@@ -111,6 +111,20 @@ describe('LivescoreApp', () => {
     expect(screen.getByText('Home a')).toBeInTheDocument()
   })
 
+  it('never blocks the public viewer with "Screen too small" (laptops, short tablets, phones)', async () => {
+    api.responses = [[row('a', { points_a: 5, points_b: 3, last_event_type: 'point' })]]
+    for (const [w, h] of [[1366, 625], [1024, 600], [844, 390], [320, 568]]) {
+      window.innerWidth = w
+      window.innerHeight = h
+      const { unmount } = render(<LivescoreApp />)
+      await flush()
+      expect(screen.queryByText('Screen too small')).toBeNull()
+      fireEvent.click(screen.getByText('Home a'))
+      expect(screen.queryByText('Screen too small')).toBeNull()
+      unmount()
+    }
+  })
+
   it('a dev build with no stored server still asks', async () => {
     env.staticDeployment = false
     render(<LivescoreApp />)
@@ -147,13 +161,13 @@ describe('LivescoreApp', () => {
       new: { match_id: 'a', match_status: 'ended', sets_won_a: 3, points_a: 25, last_event_type: 'match_end', set_results: [] },
       old: {}
     }))
-    expect(screen.getByText('FINAL')).toBeInTheDocument()
-    expect(screen.queryByText('25-4')).toBeNull()
+    expect(screen.getByText('Final')).toBeInTheDocument()
+    expect(screen.queryByText('25–4')).toBeNull()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     expect(api.calls).toBe(2)
-    expect(screen.getByText('25-4')).toBeInTheDocument()
-    expect(screen.getAllByText('25-0')).toHaveLength(2)
+    expect(screen.getByText('25–4')).toBeInTheDocument()
+    expect(screen.getAllByText('25–0')).toHaveLength(2)
 
     // filled: no further refetches
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
@@ -183,13 +197,13 @@ describe('LivescoreApp', () => {
       new: { match_id: 'a', match_status: 'ended', sets_won_a: 3, points_a: 25, last_event_type: 'match_end', set_results: [] },
       old: {}
     }))
-    expect(screen.queryByText('25-4')).toBeNull()
+    expect(screen.queryByText('25–4')).toBeNull()
     act(() => rt.handlers.matches({
       eventType: 'UPDATE',
       new: { id: 'a', set_results: [{ set: 1, home: 25, away: 4 }, { set: 2, home: 25, away: 0 }, { set: 3, home: 25, away: 0 }] },
       old: {}
     }))
-    expect(screen.getByText('25-4')).toBeInTheDocument()
+    expect(screen.getByText('25–4')).toBeInTheDocument()
     expect(api.calls).toBe(1)
     // filled: the safety-net refetch never runs
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
@@ -239,10 +253,10 @@ describe('LivescoreApp', () => {
     expect(screen.queryByText('Home c')).toBeNull()
     expect(screen.getByTestId('header').textContent).toContain('1 game live')
     fireEvent.click(screen.getByText('Home b'))
-    expect(screen.getByText('FINAL')).toBeInTheDocument()
+    expect(screen.getByText('Final')).toBeInTheDocument()
     expect(screen.getByText('1')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
-    expect(screen.getByText('10-15')).toBeInTheDocument()
+    expect(screen.getByText('10–15')).toBeInTheDocument()
     fireEvent.click(screen.getByText('back'))
     fireEvent.click(screen.getByText('Home a'))
     expect(screen.getByText('SET').nextSibling.textContent).toBe('3')

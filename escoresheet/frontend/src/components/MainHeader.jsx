@@ -144,6 +144,7 @@ export default function MainHeader({
   })
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
+  const actionsMenuRef = useRef(null)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
   // Use version from package.json (injected by Vite at build time)
@@ -221,6 +222,31 @@ export default function MainHeader({
     window.addEventListener('resize', updateViewportSize)
     return () => window.removeEventListener('resize', updateViewportSize)
   }, [isEditing])
+
+  // The header menu closes on Escape, on a press outside it (a dialog opened
+  // from it counts as outside) and when the screen changes (new match, setup,
+  // home): it stayed open over Match setup and covered 'Create match'.
+  useEffect(() => {
+    if (!actionsMenuOpen) return
+    const handlePointerDown = (e) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target)) {
+        setActionsMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setActionsMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [actionsMenuOpen])
+
+  useEffect(() => {
+    setActionsMenuOpen(false)
+  }, [matchId, showMatchSetup, currentPage])
 
   // Close dashboard menu when clicking outside
   useEffect(() => {
@@ -734,7 +760,7 @@ export default function MainHeader({
               {/* User Button - hidden in offline mode */}
               {!offlineMode && <UserButton />}
 
-              <div style={{ position: 'relative' }}>
+              <div ref={actionsMenuRef} style={{ position: 'relative' }}>
                 <span className={KIT_SCOPE}>
                   <button
                     type="button"
@@ -891,7 +917,7 @@ export default function MainHeader({
               {helpButton}
 
               {/* Unified Menu Button (hamburger) */}
-              <div style={{ position: 'relative' }}>
+              <div ref={actionsMenuRef} style={{ position: 'relative' }}>
                 <button
                   type="button"
                   aria-expanded={actionsMenuOpen}
@@ -910,10 +936,11 @@ export default function MainHeader({
                 </button>
 
                 {/* Unified Actions Menu */}
-                {actionsMenuOpen && (
+                {/* Stays mounted while closed (hidden): the account dialogs opened from
+                    it (login, sign-up, profile, my matches) belong to its UserButton. */}
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className={cn('absolute right-0 top-full mt-1.5 flex min-w-[240px] max-h-[calc(100vh-56px)] flex-col overflow-y-auto', MENU_PANEL)}
+                    className={cn('absolute right-0 top-full mt-1.5 min-w-[240px] max-h-[calc(100vh-56px)] flex-col overflow-y-auto', actionsMenuOpen ? 'flex' : 'hidden', MENU_PANEL)}
                     style={{ zIndex: 1000 }}
                   >
                     {/* Home Action - only show when not on home screen */}
@@ -932,11 +959,10 @@ export default function MainHeader({
                       </button>
                     )}
 
-                    {/* Login / User Button - hidden in offline mode */}
+                    {/* Login / account rows - hidden in offline mode. Inline, not a
+                        nested dropdown: the panel's scroll box clipped it. */}
                     {!offlineMode && (
-                      <div style={{ padding: '2px 4px' }}>
-                        <UserButton />
-                      </div>
+                      <UserButton inline onAction={() => setActionsMenuOpen(false)} />
                     )}
 
                     {/* Divider */}
@@ -1011,7 +1037,7 @@ export default function MainHeader({
                       <span>{isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}</span>
                     </button>
                   </div>
-                )}
+
               </div>
             </>
           )}

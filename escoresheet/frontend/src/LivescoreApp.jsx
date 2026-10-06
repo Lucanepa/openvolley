@@ -20,7 +20,6 @@ import { Row, RowList, DateRail } from './ui/Row.jsx'
 import { Chip } from './ui/Chip.jsx'
 import { StatusPill } from './ui/StatusPill.jsx'
 import { SkeletonRows } from './ui/Skeleton.jsx'
-import { NarrowScreenOverlay } from './components/dashboards/EntryKit.jsx'
 
 function shouldAutoConnectNow() {
   if (typeof window === 'undefined') return false
@@ -56,8 +55,6 @@ export default function LivescoreApp() {
   const [stale, setStale] = useState(false)
   const hasLoadedRef = useRef(false)
   const channelRef = useRef(null)
-  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
-  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
   // Matches shown as started in this session (stay listed after an undo to
   // 0:0) and matches watched while they could still change their set results.
@@ -95,16 +92,6 @@ export default function LivescoreApp() {
     setStale(false)
     setLiveGames([])
     setServerReady(false)
-  }, [])
-
-  // Track viewport size for narrow screen blocking
-  useEffect(() => {
-    const handleResize = () => {
-      setViewportWidth(window.innerWidth)
-      setViewportHeight(window.innerHeight)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   // Fetch all live games from match_live_state
@@ -292,25 +279,39 @@ export default function LivescoreApp() {
     const league = selectedGameData.league || ''
     const gender = selectedGameData.gender || ''
 
+    // The public viewer works on any screen (no "screen too small" gate):
+    // laptops at 1366x768, 1024x600 tablets and phones in either orientation.
+    // Sizes follow the smaller viewport side, the scores also the width, so two
+    // digits and the serve ball fit a 360 px phone. Names sit in their own
+    // grid row: a name that wraps no longer lifts its score above the other.
+    const serveBall = (side) => (
+      <span aria-hidden={servingTeam !== side} style={{ display: 'flex', flex: '0 0 auto', width: 'clamp(32px, min(12vmin, 9vw), 200px)', justifyContent: 'center' }}>
+        {servingTeam === side && (
+          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt={t('livescore.serving', 'Serving')} style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1' }} />
+        )}
+      </span>
+    )
+    const scoreStyle = { fontSize: 'clamp(56px, min(30vmin, 19vw), 640px)', fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }
+    const nameStyle = { fontSize: 'clamp(16px, min(6vmin, 5vw), 130px)', fontWeight: 600, color: '#57534e', lineHeight: 1.2, textAlign: 'center', overflowWrap: 'anywhere', marginTop: '1vmin' }
+
     return (
-      <div style={{
+      <div className="ov-kit" style={{
         minHeight: '100dvh',
         background: 'var(--bg)',
         color: 'var(--text)',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         display: 'flex',
         flexDirection: 'column'
       }}>
         {staleNotice}
-        {/* Narrow screen blocking overlay */}
-        {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
 
-        {/* Header */}
+        {/* Header: visible Back on the left, menu on the right */}
         <DashboardHeader
           title={gameN ? `Game ${gameN}` : t('livescore.title', 'Live score')}
           subtitle={[league, gender].filter(Boolean).join(' • ') || null}
           onBack={() => setSelectedGame(null)}
           backLabel={t('common.back', 'Back')}
+          backButton
+          menuAlign="end"
           showOptionsMenu={false}
         />
 
@@ -321,126 +322,104 @@ export default function LivescoreApp() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px'
+          padding: 'clamp(12px, 3vmin, 40px) 16px'
         }}>
-          {/* Point Score */}
+          {/* Point score (sets once the match ended) */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: isMatchEnded ? '1fr auto 1fr' : 'auto 1fr auto 1fr auto',
+            gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
             alignItems: 'center',
-            gap: '2vmin',
+            columnGap: '2vmin',
             width: '100%',
-            maxWidth: 'min(96vw, 2600px)'
+            maxWidth: 'min(100%, 2600px)'
           }}>
-            {/* Left Ball - hidden when match ended */}
-            {!isMatchEnded && (
-              <div style={{ width: 'clamp(48px, 14vmin, 260px)', display: 'flex', justifyContent: 'center' }}>
-                {servingTeam === 'left' && (
-                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: 'clamp(36px, 11vmin, 200px)', height: 'clamp(36px, 11vmin, 200px)' }} />
-                )}
-              </div>
-            )}
-
-            {/* Left Score + Name */}
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'clamp(64px, 30vmin, 640px)', fontWeight: 700, lineHeight: 1 }}>
-                {leftScore}
-              </div>
-              <div style={{ fontSize: 'clamp(18px, 6vmin, 130px)', color: 'var(--muted)', marginTop: '1vmin' }}>
-                {leftName}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2vmin', minWidth: 0 }}>
+              {!isMatchEnded && serveBall('left')}
+              <span style={scoreStyle}>{leftScore}</span>
             </div>
-
-            {/* Colon */}
-            <div style={{ fontSize: 'clamp(40px, 20vmin, 400px)', color: 'var(--muted)', lineHeight: 1 }}>
+            <div aria-hidden="true" style={{ fontSize: 'clamp(36px, min(20vmin, 12vw), 400px)', color: 'var(--muted)', lineHeight: 1 }}>
               :
             </div>
-
-            {/* Right Score + Name */}
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 'clamp(64px, 30vmin, 640px)', fontWeight: 700, lineHeight: 1 }}>
-                {rightScore}
-              </div>
-              <div style={{ fontSize: 'clamp(18px, 6vmin, 130px)', color: 'var(--muted)', marginTop: '1vmin' }}>
-                {rightName}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2vmin', minWidth: 0 }}>
+              <span style={scoreStyle}>{rightScore}</span>
+              {!isMatchEnded && serveBall('right')}
             </div>
-
-            {/* Right Ball - hidden when match ended */}
-            {!isMatchEnded && (
-              <div style={{ width: 'clamp(48px, 14vmin, 260px)', display: 'flex', justifyContent: 'center' }}>
-                {servingTeam === 'right' && (
-                  <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Serve" style={{ width: 'clamp(36px, 11vmin, 200px)', height: 'clamp(36px, 11vmin, 200px)' }} />
-                )}
-              </div>
-            )}
+            <div style={{ ...nameStyle, alignSelf: 'start' }}>{leftName}</div>
+            <div />
+            <div style={{ ...nameStyle, alignSelf: 'start' }}>{rightName}</div>
           </div>
 
-          {/* Set Score or Final indicator */}
+          {/* Set score or the final result */}
           <div style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             gap: '12px',
-            marginTop: '40px'
+            marginTop: 'clamp(16px, 5vmin, 64px)'
           }}>
             {isMatchEnded ? (
-              /* Show FINAL badge and each set's final score */
+              /* Final badge and each set's score */
               <>
                 <div style={{
                   fontSize: 'clamp(28px, 10vmin, 220px)',
                   fontWeight: 800,
-                  color: '#22c55e'
+                  lineHeight: 1,
+                  color: '#047857' // emerald-700: done state, AA on the stone page
                 }}>
-                  {t('livescore.final', 'FINAL')}
+                  {t('livescore.final', 'Final')}
                 </div>
                 {setResults.length > 0 && (
                   <div style={{
                     display: 'flex',
-                    gap: '16px',
+                    gap: 'clamp(8px, 2vmin, 24px)',
                     flexWrap: 'wrap',
                     justifyContent: 'center'
                   }}>
                     {setResults.map((s) => (
                       <div key={s.set} style={{
-                        fontSize: 'clamp(14px, 4vmin, 64px)',
-                        color: 'var(--muted)',
-                        padding: '0.5vmin 1.5vmin',
-                        background: 'var(--panel-2)',
-                        borderRadius: '6px'
+                        fontSize: 'clamp(16px, 4vmin, 64px)',
+                        fontWeight: 600,
+                        fontVariantNumeric: 'tabular-nums',
+                        color: '#44403c', // stone-700
+                        padding: '0.6vmin 1.8vmin',
+                        background: '#ffffff',
+                        border: '1px solid #e7e5e4', // stone-200
+                        borderRadius: '8px'
                       }}>
-                        {s.left}-{s.right}
+                        {s.left}–{s.right}
                       </div>
                     ))}
                   </div>
                 )}
               </>
             ) : (
-              /* Show set scores during match */
-              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+              /* Sets won and the current set during the match */
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(12px, 3vmin, 40px)' }}>
                 <div style={{
                   fontSize: 'clamp(32px, 14vmin, 300px)',
                   fontWeight: 700,
-                  padding: '1vmin 2vmin',
-                  background: 'var(--panel)',
-                  borderRadius: '8px'
+                  lineHeight: 1.1,
+                  fontVariantNumeric: 'tabular-nums',
+                  padding: '1vmin 2.5vmin',
+                  background: '#ffffff',
+                  border: '1px solid #e7e5e4',
+                  borderRadius: '12px'
                 }}>
                   {leftSets}
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 'clamp(24px, 8vmin, 170px)', fontWeight: 800 }}>
-                    {t('livescore.set', 'SET')}
-                  </div>
-                  <div style={{ fontSize: 'clamp(24px, 8vmin, 170px)', fontWeight: 800 }}>
-                    {currentSet}
-                  </div>
+                <div style={{ textAlign: 'center', fontSize: 'clamp(22px, 7vmin, 170px)', fontWeight: 800, lineHeight: 1.05 }}>
+                  <div>{t('livescore.set', 'SET')}</div>
+                  <div style={{ fontVariantNumeric: 'tabular-nums' }}>{currentSet}</div>
                 </div>
                 <div style={{
                   fontSize: 'clamp(32px, 14vmin, 300px)',
                   fontWeight: 700,
-                  padding: '1vmin 2vmin',
-                  background: 'var(--panel)',
-                  borderRadius: '8px'
+                  lineHeight: 1.1,
+                  fontVariantNumeric: 'tabular-nums',
+                  padding: '1vmin 2.5vmin',
+                  background: '#ffffff',
+                  border: '1px solid #e7e5e4',
+                  borderRadius: '12px'
                 }}>
                   {rightSets}
                 </div>
@@ -459,15 +438,11 @@ export default function LivescoreApp() {
 
   // List view - show all games
   return (
-    <div style={{
+    <div className="ov-kit" style={{
       minHeight: '100dvh',
       background: 'var(--bg)',
-      color: 'var(--text)',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      color: 'var(--text)'
     }}>
-      {/* Narrow screen blocking overlay */}
-      {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
-
       <UpdateBanner />
       {staleNotice}
 
@@ -478,6 +453,7 @@ export default function LivescoreApp() {
         onLoadGames={fetchLiveGames}
         loadingMatches={loading}
         matchCount={shownGames.length}
+        menuAlign="end"
         showOptionsMenu={false}
       />
 
@@ -519,7 +495,7 @@ export default function LivescoreApp() {
                   : rawGender
               const tone = isMatchEnded ? 'emerald' : 'red'
               const serveBall = (
-                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" className="inline-block h-3.5 w-3.5 shrink-0" />
+                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt={t('livescore.serving', 'Serving')} className="inline-block h-5 w-5 shrink-0" />
               )
 
               return (
@@ -529,7 +505,7 @@ export default function LivescoreApp() {
                   onOpen={() => setSelectedGame(game.match_id)}
                   label={[
                     `${leftName} ${leftScore} – ${rightScore} ${rightName}`,
-                    isMatchEnded ? t('livescore.final', 'FINAL') : `Set ${liveSetNumber(game)}`,
+                    isMatchEnded ? t('livescore.final', 'Final') : `Set ${liveSetNumber(game)}`,
                     gameN ? t('livescore.game', { number: gameN }) : '',
                   ].filter(Boolean).join(', ')}
                   className="min-h-11"
@@ -561,7 +537,7 @@ export default function LivescoreApp() {
                     ? setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}–{r.right}</span></Chip>)
                     : undefined}
                   status={isMatchEnded
-                    ? <StatusPill tone="done">{t('livescore.final', 'FINAL')}</StatusPill>
+                    ? <StatusPill tone="done">{t('livescore.final', 'Final')}</StatusPill>
                     : <StatusPill tone="brand"><span className="tabular-nums">{`Set ${liveSetNumber(game)}`}</span></StatusPill>}
                 />
               )
