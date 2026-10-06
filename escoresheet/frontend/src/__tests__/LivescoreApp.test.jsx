@@ -295,9 +295,11 @@ describe('LivescoreApp', () => {
   })
 
   it('match end: the set_end frame does not flip the sides before the match_end frame', async () => {
+    // Recent timestamps: a row last updated hours ago no longer counts as live
+    const at = (s) => new Date(Date.now() - 60_000 + s * 1000).toISOString()
     api.responses = [[row('a', {
       current_set: 3, sets_won_a: 2, points_a: 24, points_b: 20, side_a: 'right', serving_team: 'right', last_event_type: 'point',
-      updated_at: '2026-10-06T08:31:07.000Z', matches: { set_results: [{ set: 1, home: 25, away: 10 }, { set: 2, home: 25, away: 12 }], coin_toss: { team_a: 'home' } }
+      updated_at: at(7), matches: { set_results: [{ set: 1, home: 25, away: 10 }, { set: 2, home: 25, away: 12 }], coin_toss: { team_a: 'home' } }
     })]]
     render(<LivescoreApp />)
     await flush()
@@ -305,12 +307,12 @@ describe('LivescoreApp', () => {
     const sides = () => screen.getAllByText(/^(Home a|Away a)$/).map((n) => n.textContent)
     expect(sides()).toEqual(['Away a', 'Home a'])
 
-    act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'set_end', points_a: 0, points_b: 0, sets_won_a: 3, side_a: 'left', serving_team: 'left', set_interval_active: true, updated_at: '2026-10-06T08:31:17.000Z' } }))
+    act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'set_end', points_a: 0, points_b: 0, sets_won_a: 3, side_a: 'left', serving_team: 'left', set_interval_active: true, updated_at: at(17) } }))
     expect(screen.getByText('Final')).toBeInTheDocument()
     expect(sides()).toEqual(['Away a', 'Home a'])
     expect(screen.getAllByText(/^\d+–\d+$/).map((n) => n.textContent)).toEqual(['10–25', '12–25'])
 
-    act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'match_end', points_a: 25, points_b: 20, sets_won_a: 3, side_a: 'right', serving_team: 'right', set_interval_active: false, updated_at: '2026-10-06T08:31:18.000Z' } }))
+    act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'match_end', points_a: 25, points_b: 20, sets_won_a: 3, side_a: 'right', serving_team: 'right', set_interval_active: false, updated_at: at(18) } }))
     expect(sides()).toEqual(['Away a', 'Home a'])
   })
 })
