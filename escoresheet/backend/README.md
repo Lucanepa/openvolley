@@ -327,7 +327,10 @@ characters are stored. Typing is forgiving (case, spaces, dashes, O/0, I/L/1).
 
 **Saved teams** (competitions, teams, players with dates of birth and licence
 numbers, officials) are served by `/api/saved-teams*` only: never on the
-`/api/db` allowlist, never anonymous, never in a public projection.
+`/api/db` allowlist, never anonymous, never in a public projection. Since
+`db/009` they cover indoor and beach (`competitions.sport`; the OpenVolley
+console manages both, OpenBeach only reads `?sport=beach`; see
+`../docs/beach-saved-teams-spec.md`).
 
 ### Match data before and after the PIN step (cloud and LAN)
 
@@ -729,10 +732,10 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 | `POST /api/admin/matches/:id/editors {email}` | admin | `{ role: 'editor'\|'creator' }` |
 | `POST /api/admin/matches/:id/release-game {reason}` | admin | `{ match: { id, official_game_exempt: true } }` (closed matches too) |
 | `GET /api/admin/audit?limit=&before=&action=` | admin | `{ entries, next_before }`, newest first |
-| `GET /api/saved-teams` | scorer, competition manager, admin | `{ version, fetched_at, competitions, teams: [{ …, players, staff }] }` (archived competitions included) |
-| `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades) |
+| `GET /api/saved-teams?sport=indoor\|beach\|all` | scorer, competition manager, admin | `{ version, fetched_at, sport, competitions, teams: [{ …, sport, players, staff }] }` (archived competitions included). No `sport` (or `''`) = **indoor only**, so a 2.1.0 client never sees a beach row; any other value is 400. `version` is the newest `updated_at` of the filtered rows (`'0'` when none). Every competition and team carries `sport`, every player `country` (`null` for indoor). |
+| `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades). Create takes `sport: 'indoor'\|'beach'` (absent/`null` = indoor); it is fixed: any `sport` in a PATCH is 400 `sport: cannot be changed`. Season: indoor `'2026/27'` (consecutive years), beach `'2026'` (2000-2100). `vm_leagues` (VolleyManager) is indoor only: a non-empty list on beach is 400. |
 | `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` |
-| `PUT /api/saved-teams/teams/:id/roster {players, staff}` | competition manager, admin | `{ team }`. At most 40 players and 10 officials; `last_name` required; numbers 0-99 unique among active players; one active captain; `dob` `YYYY-MM-DD`; staff roles `Coach`, `Assistant Coach 1/2`, `Physiotherapist`, `Medic`. Rows keep their `id`; an id of another team is 400. |
+| `PUT /api/saved-teams/teams/:id/roster {players, staff}` | competition manager, admin | `{ team }`. At most 40 players and 10 officials; `last_name` required; numbers 0-99 unique among active players; one active captain; `dob` `YYYY-MM-DD`; staff roles `Coach`, `Assistant Coach 1/2`, `Physiotherapist`, `Medic`; `country` must be empty. Rows keep their `id`; an id of another team is 400. **Beach team** (its competition's sport): a pair, at most 2 players numbered 1 and 2 (unique), no `is_libero`/`is_captain` `true` and no `active: false` (stored `false`/`false`/`true`), optional `country` of 3 letters (stored upper-case, `'CHE'`), staff at most one `Coach`. Every rule violation is 400 `OV_INVALID_REQUEST` with a `details` string. |
 
 ### `POST /api/match/send-info`
 
@@ -816,6 +819,7 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `006_matches_updated_at.sql` | after 005 | `BEFORE UPDATE` trigger: `matches.updated_at` (and `sets.updated_at` when the column exists) = `now()` on every update. Idempotent; the trigger function is `SECURITY INVOKER`, so `ov_app` needs no EXECUTE grant. Not on `match_live_state` (the realtime hub orders it by the scorer's `updated_at`). Without it, updates through `/api/db` still get a fresh `updated_at` (`lib/pgQuery.js` drops the client's value; the column keeps its old value only for writes that bypass the API). |
 | `007_scorer_accounts.sql` | after 006 | Approved scorers (`profiles.roles` default `'{}'`; existing roles untouched), `matches.closed_at/closed_by/official_game_exempt`, the official-game index (duplicates exempted and reported with NOTICEs), the closed-match triggers (existing non-test `approved`/`final` matches become closed), `audit_log`, `invite_codes`/`invite_redemptions`, and the saved-team tables. One transaction, idempotent; trigger functions need no EXECUTE for `ov_app`. Read its NOTICEs on production (duplicates) and check them in the admin page. |
 | `008_live_state_tto.sql` | after 007 | `match_live_state.tto_active` / `tto_started_at` (openbeach's technical timeout, missing on Supabase; without them every beach live-state write fails). Idempotent. |
+| `009_beach_saved_teams.sql` | after 008 | `competitions.sport`, season per sport, `competition_players.country`. Idempotent, no grants. Deploy order: 009, `roles.sql`, then the new backend, then the frontends (`../docs/beach-saved-teams-deploy.md`). |
 | `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:

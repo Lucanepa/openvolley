@@ -8,7 +8,7 @@
  *   POST   /api/account/redeem-invite                 any signed-in account
  *   POST   /api/match/official-check                  canScore (else 403 OV_SCORER_REQUIRED)
  *   *      /api/admin/*                               isAdmin  (else 403 OV_FORBIDDEN)
- *   GET    /api/saved-teams                           canReadTeams
+ *   GET    /api/saved-teams[?sport=indoor|beach|all]  canReadTeams (no sport = indoor)
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams
  *
  * route() returns { status, body, changes? } and never throws (the handlers
@@ -54,7 +54,7 @@ export function createManageApi ({ accounts, savedTeams }) {
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['GET', /^\/api\/admin\/audit$/, 'admin', (m, c) => accounts.listAudit({ limit: q(c.query, 'limit'), before: q(c.query, 'before'), action: q(c.query, 'action') })],
 
-    ['GET', /^\/api\/saved-teams$/, 'readTeams', () => savedTeams.getBundle()],
+    ['GET', /^\/api\/saved-teams$/, 'readTeams', (m, c) => savedTeams.getBundle({ sport: q(c.query, 'sport') })],
     ['POST', /^\/api\/saved-teams\/competitions$/, 'manageTeams', (m, c) => savedTeams.createCompetition({ actorId: c.user.id, body: c.body })],
     ['PATCH', new RegExp(`^/api/saved-teams/competitions/${ID}$`), 'manageTeams', (m, c) => savedTeams.updateCompetition({ id: m[1], body: c.body })],
     ['DELETE', new RegExp(`^/api/saved-teams/competitions/${ID}$`), 'manageTeams', (m) => savedTeams.deleteCompetition({ id: m[1] })],

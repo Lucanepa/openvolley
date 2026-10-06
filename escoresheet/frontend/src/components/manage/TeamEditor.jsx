@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, Trash2, X } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
-import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF } from '../../domain/savedTeams'
+import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { InlineError } from './common'
 import { Button, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
@@ -43,6 +43,71 @@ function toStaffDraft(s) {
     dob: s?.dob || '',
     license_number: s?.license_number || ''
   }
+}
+
+// ── Beach (docs/beach-saved-teams-spec.md 3.6): a pair in two fixed slots, plus an optional coach ──
+const BEACH_SLOTS = [1, 2]
+
+function toSlotDraft(p, number) {
+  return {
+    number,
+    id: p?.id,
+    first_name: p?.first_name || '',
+    last_name: p?.last_name || '',
+    dob: p?.dob || '',
+    license_number: p?.license_number || '',
+    country: p?.country || ''
+  }
+}
+
+/** Saved players → the two slots: the player numbered n fills slot n (others the first free slot). */
+export function beachSlotsFromPlayers(players) {
+  const list = Array.isArray(players) ? players.filter(Boolean) : []
+  const slots = BEACH_SLOTS.map(n => list.find(p => Number(p.number) === n) || null)
+  for (const p of list) {
+    if (slots.includes(p)) continue
+    const free = slots.indexOf(null)
+    if (free === -1) break
+    slots[free] = p
+  }
+  return BEACH_SLOTS.map((n, i) => toSlotDraft(slots[i], n))
+}
+
+function toCoachDraft(staff) {
+  const s = (Array.isArray(staff) ? staff : []).find(x => x?.role === 'Coach')
+  return s ? { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '', dob: s.dob || '', license_number: s.license_number || '' } : null
+}
+
+const emptyCoach = () => ({ first_name: '', last_name: '', dob: '', license_number: '' })
+
+/** Beach slots + coach → the PUT roster body: the slots with a name, and the coach when named. */
+export function draftToBeachRosterBody(slots, coach) {
+  const clean = (v) => String(v ?? '').trim()
+  const players = (slots || [])
+    .filter(p => clean(p.first_name) || clean(p.last_name))
+    .map(p => {
+      const row = {
+        number: p.number,
+        first_name: clean(p.first_name),
+        last_name: clean(p.last_name),
+        dob: clean(p.dob) || null,
+        license_number: clean(p.license_number) || null,
+        country: clean(p.country).toUpperCase() || null
+      }
+      if (p.id) row.id = p.id
+      return row
+    })
+  const staff = coach && (clean(coach.first_name) || clean(coach.last_name))
+    ? [{
+        ...(coach.id ? { id: coach.id } : {}),
+        role: 'Coach',
+        first_name: clean(coach.first_name),
+        last_name: clean(coach.last_name),
+        dob: clean(coach.dob) || null,
+        license_number: clean(coach.license_number) || null
+      }]
+    : []
+  return { players, staff }
 }
 
 /** Draft rows → the PUT roster body (sort_order is set by the server). */
@@ -90,6 +155,7 @@ const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-
  */
 export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted }) {
   const { t } = useTranslation()
+  const beach = sportOf(competition) === 'beach'
   const [fields, setFields] = useState(() => ({
     name: team.name || '',
     short_name: team.short_name || '',
@@ -99,6 +165,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   }))
   const [players, setPlayers] = useState(() => (team.players || []).map(toPlayerDraft))
   const [staff, setStaff] = useState(() => (team.staff || []).map(toStaffDraft))
+  const [slots, setSlots] = useState(() => beachSlotsFromPlayers(team.players))
+  const [coach, setCoach] = useState(() => toCoachDraft(team.staff))
   const [savingFields, setSavingFields] = useState(false)
   const [savingRoster, setSavingRoster] = useState(false)
   const [fieldsError, setFieldsError] = useState('')
@@ -107,7 +175,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   const [svrzNames, setSvrzNames] = useState([])
 
   // VolleyManager team names of the competition's leagues, for the datalist
-  const leagues = competition?.vm_leagues || []
+  const leagues = beach ? [] : (competition?.vm_leagues || [])
   useEffect(() => {
     if (!online || !leagues.length) return undefined
     let alive = true
@@ -125,7 +193,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   }, [online, leagues.join('|')])
 
   const setField = (k) => (e) => { setFields(f => ({ ...f, [k]: e.target.value })); setFieldsError('') }
-  const fieldsDirty = ['name', 'short_name', 'club', 'color', 'svrz_team_name'].some(k => (fields[k] || '') !== (team[k] || ''))
+  const fieldKeys = beach ? ['name', 'short_name', 'club', 'color'] : ['name', 'short_name', 'club', 'color', 'svrz_team_name']
+  const fieldsDirty = fieldKeys.some(k => (fields[k] || '') !== (team[k] || ''))
 
   const saveFields = async () => {
     if (!fields.name.trim() || savingFields) return
@@ -138,9 +207,9 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       name: fields.name.trim(),
       short_name: fields.short_name.trim() || null,
       club: fields.club.trim() || null,
-      color: fields.color ? fields.color.toLowerCase() : null,
-      svrz_team_name: fields.svrz_team_name.trim() || null
+      color: fields.color ? fields.color.toLowerCase() : null
     }
+    if (!beach) sent.svrz_team_name = fields.svrz_team_name.trim() || null
     const res = await savedTeamsApi.updateTeam(team.id, sent)
     setSavingFields(false)
     if (res.error) {
@@ -149,7 +218,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     }
     // Only this section takes the saved values; unsaved players and
     // officials stay as they are (the editor is not remounted).
-    setFields(Object.fromEntries(Object.entries(sent).map(([k, v]) => [k, v ?? ''])))
+    setFields(f => ({ ...f, ...Object.fromEntries(Object.entries(sent).map(([k, v]) => [k, v ?? ''])) }))
     toast.success(t('manage.accounts.saved'))
     onChanged?.()
   }
@@ -170,13 +239,29 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     setRowErrors({})
   }
 
+  const updateSlot = (number, patch) => {
+    setSlots(list => list.map(p => (p.number === number ? { ...p, ...patch } : p)))
+    setRosterError('')
+    setRowErrors({})
+  }
+  const updateCoach = (patch) => {
+    setCoach(c => ({ ...(c || emptyCoach()), ...patch }))
+    setRosterError('')
+    setRowErrors({})
+  }
+
   const saveRoster = async () => {
     if (savingRoster) return
-    const body = draftToRosterBody(players, staff)
-    const problems = validateSavedRoster(body)
+    const body = beach ? draftToBeachRosterBody(slots, coach) : draftToRosterBody(players, staff)
+    const problems = validateSavedRoster(body, { sport: beach ? 'beach' : 'indoor' })
     if (problems.length) {
       const map = {}
-      for (const pr of problems) if (pr.index !== null) map[`${pr.list}:${pr.index}`] = t(pr.key, pr.params)
+      for (const pr of problems) {
+        if (pr.index === null) continue
+        // beach: errors point at the slot (by number) and the coach, not the body index
+        const key = !beach ? `${pr.list}:${pr.index}` : pr.list === 'players' ? `slot:${body.players[pr.index]?.number}` : 'coach'
+        map[key] = t(pr.key, pr.params)
+      }
       setRowErrors(map)
       setRosterError(t(problems[0].key, problems[0].params))
       return
@@ -193,6 +278,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     if (saved) {
       setPlayers((saved.players || []).map(toPlayerDraft))
       setStaff((saved.staff || []).map(toStaffDraft))
+      setSlots(beachSlotsFromPlayers(saved.players))
+      setCoach(toCoachDraft(saved.staff))
     }
     onChanged?.()
   }
@@ -247,12 +334,14 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
             </div>
           </Field>
           {/* Field takes exactly one control (Children.only): the datalist sits beside it */}
-          <div className="min-w-0 sm:col-span-2">
-            <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
-              <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
-            </Field>
-            <datalist id={listId}>{svrzNames.map(n => <option key={n} value={n} />)}</datalist>
-          </div>
+          {!beach && (
+            <div className="min-w-0 sm:col-span-2">
+              <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
+                <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
+              </Field>
+              <datalist id={listId}>{svrzNames.map(n => <option key={n} value={n} />)}</datalist>
+            </div>
+          )}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button variant="positive" onClick={saveFields} loading={savingFields} disabled={!online || !fieldsDirty || !fields.name.trim() || savingFields}>{t('manage.accounts.save')}</Button>
@@ -261,124 +350,237 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         </div>
       </section>
 
+      {beach && (
+        <BeachRoster
+          slots={slots}
+          coach={coach}
+          rowErrors={rowErrors}
+          onSlot={updateSlot}
+          onClearSlot={(number) => updateSlot(number, { first_name: '', last_name: '', dob: '', license_number: '', country: '' })}
+          onCoach={updateCoach}
+          onAddCoach={() => setCoach(emptyCoach())}
+          onRemoveCoach={() => { setCoach(null); setRosterError(''); setRowErrors({}) }}
+        />
+      )}
+
       {/* Players */}
-      <section>
-        <SectionHeader title={t('savedTeams.players')} count={players.length} action={
-          <Button variant="ghost" size="sm" icon={Plus} disabled={players.length >= MAX_PLAYERS} onClick={() => setPlayers(list => [...list, toPlayerDraft(null)])}>{t('savedTeams.addPlayer')}</Button>
-        } />
-        {players.length === 0 ? (
-          <EmptyInset>{t('savedTeams.emptyRoster')}</EmptyInset>
-        ) : (
-          <div>
-            <div className={cn(HEAD, 'grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] gap-2 px-1 pb-1')}>
-              <span>{t('savedTeams.number')}</span>
-              <span>{t('savedTeams.firstName')}</span>
-              <span>{t('savedTeams.lastName')}</span>
-              <span>{t('savedTeams.dob')}</span>
-              <span>{t('savedTeams.license')}</span>
-              <span />
-            </div>
-            <div className="divide-y divide-stone-100">
-              {players.map((p, i) => (
-                <div key={p.key} className={cn('py-2', !p.active && 'opacity-60')} data-testid="player-row">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.number')}</span>
-                      <Input type="number" inputMode="numeric" numeric min={0} max={99} value={p.number} onChange={e => updatePlayer(p.key, { number: e.target.value })} aria-label={t('savedTeams.number')} className="tabular-nums" />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
-                      <Input value={p.first_name} onChange={e => updatePlayer(p.key, { first_name: e.target.value })} aria-label={t('savedTeams.firstName')} />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
-                      <Input value={p.last_name} onChange={e => updatePlayer(p.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`players:${i}`]} required />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                      <Input type="date" value={p.dob} onChange={e => updatePlayer(p.key, { dob: e.target.value })} aria-label={t('savedTeams.dob')} />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
-                      <Input value={p.license_number} onChange={e => updatePlayer(p.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
-                    </label>
-                    <div className="flex items-center justify-end">
-                      <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${p.last_name || ''}`.trim()} onClick={() => setPlayers(list => list.filter(x => x.key !== p.key))} />
+      {!beach && (
+        <section>
+          <SectionHeader title={t('savedTeams.players')} count={players.length} action={
+            <Button variant="ghost" size="sm" icon={Plus} disabled={players.length >= MAX_PLAYERS} onClick={() => setPlayers(list => [...list, toPlayerDraft(null)])}>{t('savedTeams.addPlayer')}</Button>
+          } />
+          {players.length === 0 ? (
+            <EmptyInset>{t('savedTeams.emptyRoster')}</EmptyInset>
+          ) : (
+            <div>
+              <div className={cn(HEAD, 'grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] gap-2 px-1 pb-1')}>
+                <span>{t('savedTeams.number')}</span>
+                <span>{t('savedTeams.firstName')}</span>
+                <span>{t('savedTeams.lastName')}</span>
+                <span>{t('savedTeams.dob')}</span>
+                <span>{t('savedTeams.license')}</span>
+                <span />
+              </div>
+              <div className="divide-y divide-stone-100">
+                {players.map((p, i) => (
+                  <div key={p.key} className={cn('py-2', !p.active && 'opacity-60')} data-testid="player-row">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.number')}</span>
+                        <Input type="number" inputMode="numeric" numeric min={0} max={99} value={p.number} onChange={e => updatePlayer(p.key, { number: e.target.value })} aria-label={t('savedTeams.number')} className="tabular-nums" />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                        <Input value={p.first_name} onChange={e => updatePlayer(p.key, { first_name: e.target.value })} aria-label={t('savedTeams.firstName')} />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                        <Input value={p.last_name} onChange={e => updatePlayer(p.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`players:${i}`]} required />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
+                        <Input type="date" value={p.dob} onChange={e => updatePlayer(p.key, { dob: e.target.value })} aria-label={t('savedTeams.dob')} />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                        <Input value={p.license_number} onChange={e => updatePlayer(p.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
+                      </label>
+                      <div className="flex items-center justify-end">
+                        <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${p.last_name || ''}`.trim()} onClick={() => setPlayers(list => list.filter(x => x.key !== p.key))} />
+                      </div>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <Checkbox variant="dense" label={t('savedTeams.libero')} checked={p.is_libero} onChange={e => updatePlayer(p.key, { is_libero: e.target.checked })} />
+                      <Checkbox variant="dense" label={t('savedTeams.captain')} checked={p.is_captain} onChange={e => updatePlayer(p.key, { is_captain: e.target.checked })} />
+                      <span className="inline-flex items-center gap-2 text-sm text-stone-700">
+                        <Switch checked={p.active} onCheckedChange={(v) => updatePlayer(p.key, { active: v, ...(v ? {} : { is_captain: false }) })} aria-label={t('savedTeams.active')} />
+                        {t('savedTeams.active')}
+                      </span>
+                      <InlineError error={rowErrors[`players:${i}`]} />
                     </div>
                   </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-                    <Checkbox variant="dense" label={t('savedTeams.libero')} checked={p.is_libero} onChange={e => updatePlayer(p.key, { is_libero: e.target.checked })} />
-                    <Checkbox variant="dense" label={t('savedTeams.captain')} checked={p.is_captain} onChange={e => updatePlayer(p.key, { is_captain: e.target.checked })} />
-                    <span className="inline-flex items-center gap-2 text-sm text-stone-700">
-                      <Switch checked={p.active} onCheckedChange={(v) => updatePlayer(p.key, { active: v, ...(v ? {} : { is_captain: false }) })} aria-label={t('savedTeams.active')} />
-                      {t('savedTeams.active')}
-                    </span>
-                    <InlineError error={rowErrors[`players:${i}`]} />
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
 
       {/* Team officials */}
-      <section>
-        <SectionHeader title={t('savedTeams.staff')} count={staff.length} action={
-          <Button variant="ghost" size="sm" icon={Plus} disabled={staff.length >= MAX_STAFF} onClick={() => setStaff(list => [...list, toStaffDraft(null)])}>{t('savedTeams.addStaff')}</Button>
-        } />
-        {staff.length > 0 && (
-          <div>
-            <div className={cn(HEAD, 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_auto] gap-2 px-1 pb-1')}>
-              <span>{t('savedTeams.role')}</span>
-              <span>{t('savedTeams.firstName')}</span>
-              <span>{t('savedTeams.lastName')}</span>
-              <span>{t('savedTeams.dob')}</span>
-              <span>{t('savedTeams.license')}</span>
-              <span />
-            </div>
-            <div className="divide-y divide-stone-100">
-              {staff.map((s, i) => (
-                <div key={s.key} className="py-2" data-testid="staff-row">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.role')}</span>
-                      <Select value={s.role} onChange={e => updateStaff(s.key, { role: e.target.value })} aria-label={t('savedTeams.role')}>
-                        {STAFF_ROLES.map(r => <option key={r} value={r}>{t(STAFF_ROLE_KEYS[r], r)}</option>)}
-                      </Select>
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
-                      <Input value={s.first_name} onChange={e => updateStaff(s.key, { first_name: e.target.value })} aria-label={t('savedTeams.firstName')} />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
-                      <Input value={s.last_name} onChange={e => updateStaff(s.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`staff:${i}`]} required />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                      <Input type="date" value={s.dob} onChange={e => updateStaff(s.key, { dob: e.target.value })} aria-label={t('savedTeams.dob')} />
-                    </label>
-                    <label className="block">
-                      <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
-                      <Input value={s.license_number} onChange={e => updateStaff(s.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
-                    </label>
-                    <div className="flex items-center justify-end">
-                      <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${s.last_name || ''}`.trim()} onClick={() => setStaff(list => list.filter(x => x.key !== s.key))} />
+      {!beach && (
+        <section>
+          <SectionHeader title={t('savedTeams.staff')} count={staff.length} action={
+            <Button variant="ghost" size="sm" icon={Plus} disabled={staff.length >= MAX_STAFF} onClick={() => setStaff(list => [...list, toStaffDraft(null)])}>{t('savedTeams.addStaff')}</Button>
+          } />
+          {staff.length > 0 && (
+            <div>
+              <div className={cn(HEAD, 'grid-cols-[11rem_1fr_1fr_9.5rem_8rem_auto] gap-2 px-1 pb-1')}>
+                <span>{t('savedTeams.role')}</span>
+                <span>{t('savedTeams.firstName')}</span>
+                <span>{t('savedTeams.lastName')}</span>
+                <span>{t('savedTeams.dob')}</span>
+                <span>{t('savedTeams.license')}</span>
+                <span />
+              </div>
+              <div className="divide-y divide-stone-100">
+                {staff.map((s, i) => (
+                  <div key={s.key} className="py-2" data-testid="staff-row">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.role')}</span>
+                        <Select value={s.role} onChange={e => updateStaff(s.key, { role: e.target.value })} aria-label={t('savedTeams.role')}>
+                          {STAFF_ROLES.map(r => <option key={r} value={r}>{t(STAFF_ROLE_KEYS[r], r)}</option>)}
+                        </Select>
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                        <Input value={s.first_name} onChange={e => updateStaff(s.key, { first_name: e.target.value })} aria-label={t('savedTeams.firstName')} />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                        <Input value={s.last_name} onChange={e => updateStaff(s.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`staff:${i}`]} required />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
+                        <Input type="date" value={s.dob} onChange={e => updateStaff(s.key, { dob: e.target.value })} aria-label={t('savedTeams.dob')} />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                        <Input value={s.license_number} onChange={e => updateStaff(s.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
+                      </label>
+                      <div className="flex items-center justify-end">
+                        <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${s.last_name || ''}`.trim()} onClick={() => setStaff(list => list.filter(x => x.key !== s.key))} />
+                      </div>
                     </div>
+                    <InlineError error={rowErrors[`staff:${i}`]} className="mt-1" />
                   </div>
-                  <InlineError error={rowErrors[`staff:${i}`]} className="mt-1" />
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="positive" onClick={saveRoster} loading={savingRoster} disabled={!online || savingRoster} data-testid="save-roster">{t('savedTeams.saveRoster')}</Button>
         <InlineError error={rosterError} />
       </div>
     </div>
+  )
+}
+
+/**
+ * The beach pair: two fixed slots (player 1 and player 2, no libero, captain
+ * or active flags; the captain is chosen per match in OpenBeach) and at most
+ * one coach. One input per row on phones, the indoor row grid from sm on.
+ */
+function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, onAddCoach, onRemoveCoach }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <section>
+        <SectionHeader title={t('savedTeams.players')} count={slots.filter(p => p.first_name.trim() || p.last_name.trim()).length} />
+        <p className="mb-1 mt-2 text-sm text-stone-500">{t('savedTeams.beachTeamHint')}</p>
+        <div className="divide-y divide-stone-100">
+          {slots.map(p => {
+            const error = rowErrors[`slot:${p.number}`]
+            const hintId = `beach-country-hint-${p.number}`
+            return (
+              <div key={p.number} className="py-2" data-testid="beach-slot">
+                <p className="mb-1 text-[13px] font-semibold text-stone-800">{t('savedTeams.beachPlayer', { number: p.number })}</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_9.5rem_8rem_5rem_auto] sm:items-center">
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                    <Input value={p.first_name} onChange={e => onSlot(p.number, { first_name: e.target.value })} aria-label={`${t('savedTeams.firstName')} ${p.number}`} maxLength={80} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                    <Input value={p.last_name} onChange={e => onSlot(p.number, { last_name: e.target.value })} aria-label={`${t('savedTeams.lastName')} ${p.number}`} maxLength={80} invalid={!!error} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
+                    <Input type="date" value={p.dob} onChange={e => onSlot(p.number, { dob: e.target.value })} aria-label={`${t('savedTeams.dob')} ${p.number}`} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                    <Input value={p.license_number} onChange={e => onSlot(p.number, { license_number: e.target.value })} aria-label={`${t('savedTeams.license')} ${p.number}`} maxLength={40} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.country')}</span>
+                    <Input
+                      value={p.country}
+                      onChange={e => onSlot(p.number, { country: e.target.value.toUpperCase() })}
+                      aria-label={`${t('savedTeams.country')} ${p.number}`}
+                      aria-describedby={hintId}
+                      title={t('savedTeams.countryHint')}
+                      placeholder="CHE"
+                      maxLength={3}
+                      className="font-mono uppercase"
+                    />
+                  </label>
+                  <div className="flex items-center justify-end">
+                    <IconButton icon={X} label={t('savedTeams.clearPlayer', { number: p.number })} onClick={() => onClearSlot(p.number)} />
+                  </div>
+                </div>
+                <p id={hintId} className="mt-1 text-[11px] text-stone-400">{t('savedTeams.countryHint')}</p>
+                <InlineError error={error} className="mt-1" />
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <SectionHeader title={t('savedTeams.coach')} action={!coach && (
+          <Button variant="ghost" size="sm" icon={Plus} onClick={onAddCoach}>{t('savedTeams.addCoach')}</Button>
+        )} />
+        {coach && (
+          <div className="py-2" data-testid="beach-coach">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_9.5rem_8rem_auto] sm:items-center">
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                <Input value={coach.first_name} onChange={e => onCoach({ first_name: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.firstName')}`} maxLength={80} />
+              </label>
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                <Input value={coach.last_name} onChange={e => onCoach({ last_name: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.lastName')}`} maxLength={80} invalid={!!rowErrors.coach} />
+              </label>
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
+                <Input type="date" value={coach.dob} onChange={e => onCoach({ dob: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.dob')}`} />
+              </label>
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                <Input value={coach.license_number} onChange={e => onCoach({ license_number: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.license')}`} maxLength={40} />
+              </label>
+              <div className="flex items-center justify-end">
+                <IconButton icon={X} label={t('savedTeams.removeCoach')} onClick={onRemoveCoach} />
+              </div>
+            </div>
+            <InlineError error={rowErrors.coach} className="mt-1" />
+          </div>
+        )}
+      </section>
+    </>
   )
 }

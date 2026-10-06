@@ -7,8 +7,13 @@ import {
   isoToDisplayDob,
   displayDobToIso,
   rosterHasContent,
-  normalizeName
+  normalizeName,
+  SPORTS,
+  sportOf,
+  bundleForSport,
+  beachSeasonOptions
 } from '../savedTeams'
+import { beachSavedTeamsBundle, mixedSavedTeamsBundle } from './fixtures/beachSavedTeamsBundle'
 
 const player = (over = {}) => ({
   id: over.id ?? null, number: 1, first_name: 'Anna', last_name: 'Muster', dob: '2001-03-04',
@@ -180,5 +185,56 @@ describe('helpers', () => {
     expect(rosterHasContent([{ number: 4 }], [])).toBe(true)
     expect(rosterHasContent([], [{ role: 'Coach', lastName: 'X' }])).toBe(true)
     expect(normalizeName('  A   b ')).toBe('a b')
+  })
+})
+
+describe('beach saved teams (docs/beach-saved-teams-spec.md 3.2)', () => {
+  it('sportOf: beach only when it says so', () => {
+    expect(sportOf({ sport: 'beach' })).toBe('beach')
+    expect(sportOf({ sport: 'indoor' })).toBe('indoor')
+    expect(sportOf({})).toBe('indoor')
+    expect(sportOf(null)).toBe('indoor')
+    expect(sportOf({ competition: { sport: 'beach' } }.competition)).toBe('beach')
+    expect(SPORTS).toEqual(['indoor', 'beach'])
+  })
+
+  it('bundleForSport keeps the competitions of a sport and their teams', () => {
+    const mixed = mixedSavedTeamsBundle()
+    const beach = bundleForSport(mixed, 'beach')
+    expect(beach.sport).toBe('beach')
+    expect(beach.version).toBe(mixed.version)
+    expect(beach.fetched_at).toBe(mixed.fetched_at)
+    expect(beach.competitions.map(c => c.name)).toEqual(['Coop Beachtour', 'Old tour'])
+    expect(beach.teams.map(t => t.name)).toEqual(['Müller / Weber', 'Rossi'])
+    const indoor = bundleForSport(mixed, 'indoor')
+    expect(indoor.competitions.map(c => c.name)).toEqual(['2. Liga Damen'])
+    expect(indoor.teams.map(t => t.name)).toEqual(['VBC Test'])
+    expect(mixed.competitions).toHaveLength(3) // the input is not changed
+    // a 2.1.0 bundle (no sport anywhere) is all indoor
+    const old = bundleForSport({ version: '1', competitions: [{ id: 'c' }], teams: [{ id: 't', competition_id: 'c' }] }, 'indoor')
+    expect(old.teams).toHaveLength(1)
+    expect(bundleForSport(beachSavedTeamsBundle(), 'indoor').teams).toEqual([])
+    expect(bundleForSport(null, 'indoor')).toMatchObject({ competitions: [], teams: [] })
+  })
+
+  it('beachSeasonOptions uses the Zurich calendar year', () => {
+    expect(beachSeasonOptions(new Date('2026-12-31T23:30:00Z'))).toEqual(['2026', '2027', '2028'])
+    expect(beachSeasonOptions(new Date('2026-06-15T12:00:00Z'))).toEqual(['2025', '2026', '2027'])
+  })
+
+  it('validateSavedRoster beach: last name, country, at most 2 players and 1 coach', () => {
+    const bp = (over = {}) => ({ number: 1, first_name: 'A', last_name: 'Müller', dob: null, license_number: null, country: null, ...over })
+    expect(validateSavedRoster({ players: [bp(), bp({ number: 2, country: 'ita' })], staff: [{ role: 'Coach', last_name: 'K' }] }, { sport: 'beach' })).toEqual([])
+    expect(validateSavedRoster({ players: [bp({ last_name: ' ' })], staff: [] }, { sport: 'beach' }))
+      .toEqual([{ index: 0, list: 'players', key: 'savedTeams.errors.lastNameRequired' }])
+    expect(validateSavedRoster({ players: [bp(), bp({ number: 2, country: 'CH' })], staff: [] }, { sport: 'beach' }))
+      .toEqual([{ index: 1, list: 'players', key: 'savedTeams.errors.countryFormat' }])
+    expect(validateSavedRoster({ players: [bp(), bp(), bp()], staff: [] }, { sport: 'beach' })[0]).toMatchObject({ list: 'players', key: 'manage.errors.generic' })
+    expect(validateSavedRoster({ players: [], staff: [{ role: 'Coach', last_name: 'A' }, { role: 'Coach', last_name: 'B' }] }, { sport: 'beach' })[0])
+      .toMatchObject({ list: 'staff', key: 'manage.errors.generic' })
+    expect(validateSavedRoster({ players: [], staff: [{ role: 'Coach', last_name: '' }] }, { sport: 'beach' }))
+      .toEqual([{ index: 0, list: 'staff', key: 'savedTeams.errors.lastNameRequired' }])
+    // indoor is unchanged (a duplicate number is still an error there)
+    expect(validateSavedRoster({ players: [bp(), bp()], staff: [] }).map(e => e.key)).toEqual(['savedTeams.errors.duplicateNumber'])
   })
 })

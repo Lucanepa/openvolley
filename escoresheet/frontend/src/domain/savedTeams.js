@@ -14,6 +14,34 @@ import { seasonOf, seasonLabel } from './season'
 export const STAFF_ROLES = ['Coach', 'Assistant Coach 1', 'Assistant Coach 2', 'Physiotherapist', 'Medic']
 export const MAX_PLAYERS = 40
 export const MAX_STAFF = 10
+export const SPORTS = ['indoor', 'beach']
+export const BEACH_MAX_PLAYERS = 2
+export const BEACH_MAX_STAFF = 1
+
+/**
+ * The sport of a competition, an API team or a cache row's competition:
+ * 'beach' only when it says so (2.1.0 data has no sport and is indoor).
+ */
+export function sportOf(x) {
+  return x?.sport === 'beach' ? 'beach' : 'indoor'
+}
+
+/**
+ * A copy of a GET /api/saved-teams bundle with only the competitions of
+ * `sport` and the teams of those competitions.
+ */
+export function bundleForSport(bundle, sport) {
+  const competitions = (Array.isArray(bundle?.competitions) ? bundle.competitions : []).filter(c => c && sportOf(c) === sport)
+  const ids = new Set(competitions.map(c => c.id))
+  const teams = (Array.isArray(bundle?.teams) ? bundle.teams : []).filter(t => t && ids.has(t.competition_id))
+  return { ...(bundle || {}), sport, competitions, teams }
+}
+
+/** The beach seasons to offer: last, this and next calendar year in Zurich, as strings. */
+export function beachSeasonOptions(now = new Date()) {
+  const y = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric' }).format(now))
+  return [String(y - 1), String(y), String(y + 1)]
+}
 
 /** Lowercase, trimmed, inner whitespace collapsed. */
 export function normalizeName(value) {
@@ -183,12 +211,26 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
 }
 
 /**
- * Client-side check of a roster body, mirroring the server's rules (spec 5.5),
- * so the editor can show the problem before the request.
+ * Client-side check of a roster body, mirroring the server's rules (spec 5.5;
+ * beach: docs/beach-saved-teams-spec.md 2.5), so the editor can show the
+ * problem before the request.
  * @returns {{index: number|null, list: 'players'|'staff', key: string, params?: object}[]}
  */
-export function validateSavedRoster({ players = [], staff = [] } = {}) {
+export function validateSavedRoster({ players = [], staff = [] } = {}, { sport = 'indoor' } = {}) {
   const errors = []
+  if (sport === 'beach') {
+    if (players.length > BEACH_MAX_PLAYERS) errors.push({ index: null, list: 'players', key: 'manage.errors.generic' })
+    if (staff.length > BEACH_MAX_STAFF) errors.push({ index: null, list: 'staff', key: 'manage.errors.generic' })
+    players.forEach((p, index) => {
+      if (!String(p.last_name || '').trim()) errors.push({ index, list: 'players', key: 'savedTeams.errors.lastNameRequired' })
+      const country = String(p.country ?? '').trim()
+      if (country && !/^[A-Z]{3}$/i.test(country)) errors.push({ index, list: 'players', key: 'savedTeams.errors.countryFormat' })
+    })
+    staff.forEach((s, index) => {
+      if (!String(s.last_name || '').trim()) errors.push({ index, list: 'staff', key: 'savedTeams.errors.lastNameRequired' })
+    })
+    return errors
+  }
   if (players.length > MAX_PLAYERS) errors.push({ index: null, list: 'players', key: 'manage.errors.generic' })
   if (staff.length > MAX_STAFF) errors.push({ index: null, list: 'staff', key: 'manage.errors.generic' })
   const numbers = new Map()
