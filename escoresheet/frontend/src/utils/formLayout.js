@@ -12,10 +12,12 @@
 // than 800 px only gets past the gate in fullscreen; it stacks too, since no
 // multi-column form fits that width.
 //
+// Screen only: printing on portrait paper must not stack a landscape page.
+//
 // The same query is the Tailwind `stack:` variant (src/tailwind.css) and the
 // portrait block at the end of that file. Keep the three in step.
 export const FORM_STACK_MAX_LANDSCAPE_WIDTH = 799.98
-export const FORM_STACK_QUERY = `(orientation: portrait), (max-width: ${FORM_STACK_MAX_LANDSCAPE_WIDTH}px)`
+export const FORM_STACK_QUERY = `screen and (orientation: portrait), screen and (max-width: ${FORM_STACK_MAX_LANDSCAPE_WIDTH}px)`
 
 /**
  * True when forms show one field per row for a viewport of this size

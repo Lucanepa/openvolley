@@ -484,7 +484,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                       }}
                       aria-expanded={showLeagueWarning}
                       aria-label={t('warnings.clickForDetails')}
-                      className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-amber-50', FOCUS_RING)}
+                      className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full stack:h-11 stack:w-11 text-amber-600 transition-colors hover:bg-amber-50', FOCUS_RING)}
                       title={t('warnings.clickForDetails')}
                     >
                       <AlertTriangle size={18} aria-hidden="true" />

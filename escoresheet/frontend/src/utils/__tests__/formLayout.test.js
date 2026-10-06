@@ -84,6 +84,6 @@ describe('isFormStacked (one field per row)', () => {
   })
 
   it('agrees with the media query a browser evaluates', () => {
-    expect(FORM_STACK_QUERY).toBe('(orientation: portrait), (max-width: 799.98px)')
+    expect(FORM_STACK_QUERY).toBe('screen and (orientation: portrait), screen and (max-width: 799.98px)')
   })
 })

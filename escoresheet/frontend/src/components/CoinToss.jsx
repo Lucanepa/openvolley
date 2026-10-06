@@ -20,6 +20,8 @@ import { setExtId, eventExtId } from '../utils/syncIds'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import StackLabel from './StackLabel'
+import { useFormStack } from '../hooks/useFormStack'
 
 // volleyui (RESTYLE-SPEC P3b). Sign A/B and the coach/captain sign buttons are
 // the kit outline button until signed, then the emerald success state: a
@@ -159,6 +161,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   const { t } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
+  // Portrait: the libero select's empty option reads "No libero" (its column
+  // head is hidden there); landscape keeps the blank option. The option is
+  // keyed on the orientation, so turning back replaces the node: a select
+  // keeps the width of a longer text when only its option's text changes.
+  const formStack = useFormStack()
 
   // Compact mode disabled - always use full layout
   const isCompact = false
@@ -1811,11 +1818,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div style={{ marginBottom: 16 }}>
                 <div className={`ov-kit ${SECTION_HEAD}`}>
                   <h4 className={SECTION_TITLE}>{t('roster.playersCount', { count: roster.length })}</h4>
-                  <Button variant="ghost" size="sm" className="bg-white font-medium" onClick={() => setAddPlayerModal(rosterModal)}>
+                  <Button variant="ghost" size="sm" className="bg-white font-medium stack:h-11 stack:px-4" onClick={() => setAddPlayerModal(rosterModal)}>
                     {t('roster.addPlayer')}
                   </Button>
                 </div>
-                <table className="roster-table" style={{ width: '100%' }}>
+                <table className="roster-table ct-cards" style={{ width: '100%' }}>
                   <thead>
                     <tr>
                       <th>{t('roster.number')}</th>
@@ -1831,10 +1838,22 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                       // Check for duplicate jersey number
                       const isDuplicate = p.number != null && p.number !== '' &&
                         roster.some((other, idx) => idx !== originalIdx && other.number === p.number)
+                      const toggleCaptain = () => {
+                        setRoster(roster.map((player, idx) => ({
+                          ...player,
+                          isCaptain: idx === originalIdx ? !player.isCaptain : false
+                        })))
+                      }
+                      const toggleLfp = () => {
+                        const updated = [...roster]
+                        updated[originalIdx] = { ...updated[originalIdx], isLfp: !p.isLfp }
+                        setRoster(updated)
+                      }
 
                       return (
                         <tr key={`roster-${originalIdx}`}>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-head" style={{ verticalAlign: 'middle', padding: '6px' }}>
+                            <StackLabel head>{t('roster.numberLabel')}</StackLabel>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <input
                                 aria-label={t('roster.numberLabel')}
@@ -1851,6 +1870,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 }}
                                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                                 title={isDuplicate ? t('roster.duplicateNumber') : ''}
+                                aria-invalid={isDuplicate || undefined}
+                                data-captain={p.isCaptain || undefined}
                                 style={{
                                   width: p.isCaptain ? '24px' : '28px',
                                   height: p.isCaptain ? '24px' : 'auto',
@@ -1863,13 +1884,14 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 }}
                               />
                               {p.libero && (
-                                <span style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>
+                                <span className="ct-libero" style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>
                                   {p.libero === 'libero1' ? 'L1' : 'L2'}
                                 </span>
                               )}
                             </div>
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                            <StackLabel>{t('roster.name')}</StackLabel>
                             <input
                               aria-label={t('roster.name')}
                               type="text"
@@ -1887,6 +1909,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             />
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                            <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
                             <input
                               aria-label={t('roster.dateOfBirth')}
                               type="date"
@@ -1903,7 +1926,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             />
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <StackLabel>{t('roster.libero')} · {t('matchSetup.captain')}</StackLabel>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: '1 1 0' }}>
                               <select
                                 aria-label={t('roster.libero')}
                                 value={p.libero || ''}
@@ -1924,7 +1948,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                                 className="coin-toss-select"
                               >
-                                <option value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}></option>
+                                <option key={formStack ? 'no-libero' : 'blank'} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{formStack ? t('matchSetup.noLibero') : ''}</option>
                                 {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
                                   <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
                                 )}
@@ -1933,13 +1957,14 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 )}
                               </select>
                               <div
-                                onClick={() => {
-                                  const updated = roster.map((player, idx) => ({
-                                    ...player,
-                                    isCaptain: idx === originalIdx ? !player.isCaptain : false
-                                  }))
-                                  setRoster(updated)
-                                }}
+                                role="button"
+                                tabIndex={0}
+                                aria-pressed={!!p.isCaptain}
+                                aria-label={t('matchSetup.captainToggle', { number: p.number ?? '', defaultValue: 'Team captain #{{number}}' })}
+                                title={t('matchSetup.captain')}
+                                className="ct-toggle"
+                                onClick={toggleCaptain}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCaptain() } }}
                                 style={{
                                   width: '20px',
                                   height: '20px',
@@ -1962,12 +1987,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           {lfpTrackingEnabled && (
                             <td style={{ verticalAlign: 'middle', padding: '4px', textAlign: 'center' }}>
+                              <StackLabel>LFP</StackLabel>
                               <div
-                                onClick={() => {
-                                  const updated = [...roster]
-                                  updated[originalIdx] = { ...updated[originalIdx], isLfp: !p.isLfp }
-                                  setRoster(updated)
-                                }}
+                                role="button"
+                                tabIndex={0}
+                                aria-pressed={!!p.isLfp}
+                                aria-label="LFP"
+                                className="ct-toggle"
+                                onClick={toggleLfp}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLfp() } }}
                                 style={{
                                   width: '20px',
                                   height: '20px',
@@ -1988,7 +2016,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               </div>
                             </td>
                           )}
-                          <td style={{ verticalAlign: 'middle', padding: '4px' }}>
+                          <td className="ct-action" style={{ verticalAlign: 'middle', padding: '4px' }}>
                             <button
                               type="button"
                               aria-label={t('roster.deletePlayer', 'Delete player')}
@@ -2011,11 +2039,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div style={{ paddingTop: 8 }}>
                 <div className={`ov-kit ${SECTION_HEAD}`}>
                   <h4 className={SECTION_TITLE}>{t('roster.benchOfficialsCount', { count: bench.length })}</h4>
-                  <Button variant="ghost" size="sm" className="bg-white font-medium" onClick={() => setBench([...bench, initBench('Coach')])}>
+                  <Button variant="ghost" size="sm" className="bg-white font-medium stack:h-11 stack:px-4" onClick={() => setBench([...bench, initBench('Coach')])}>
                     {t('roster.addBench')}
                   </Button>
                 </div>
-                <table className="roster-table" style={{ width: '100%' }}>
+                <table className="roster-table ct-cards" style={{ width: '100%' }}>
                   <thead>
                     <tr>
                       <th>{t('roster.role')}</th>
@@ -2029,7 +2057,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                       const originalIdx = bench.findIndex(b => b === official)
                       return (
                         <tr key={`bench-${originalIdx}`}>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-head" style={{ verticalAlign: 'middle', padding: '6px' }}>
+                            <StackLabel head>{t('roster.role')}</StackLabel>
                             <select
                               aria-label={t('roster.role')}
                               value={official.role || ''}
@@ -2049,6 +2078,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             </select>
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                            <StackLabel>{t('roster.name')}</StackLabel>
                             <input
                               aria-label={t('roster.name')}
                               type="text"
@@ -2065,6 +2095,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             />
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                            <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
                             <input
                               aria-label={t('roster.dateOfBirth')}
                               type="date"
@@ -2079,7 +2110,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '4px' }}>
+                          <td className="ct-action" style={{ verticalAlign: 'middle', padding: '4px' }}>
                             <button
                               type="button"
                               aria-label={t('roster.deleteOfficial', 'Delete official')}
@@ -2208,7 +2239,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             onClose={() => setAddPlayerModal(null)}
             width={500}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="ct-add-player" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.numberLabel')}</label>
                 <input
@@ -2281,7 +2312,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={!!captain}
+                  aria-label={t('coinToss.captain')}
+                  className="ct-toggle"
                   onClick={() => currentTeam === 'home' ? setHomeCaptain(!captain) : setAwayCaptain(!captain)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); currentTeam === 'home' ? setHomeCaptain(!captain) : setAwayCaptain(!captain) } }}
                   style={{
                     width: '28px',
                     height: '28px',
