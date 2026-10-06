@@ -47,7 +47,7 @@ network, and carries `traefik.enable=false`.
 | `env.example` | VM | Template for `/opt/openvolley/.env` (mode 600). Lists every variable; no real values |
 | `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
 | `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else |
-| `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`) |
+| `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`). Its `<!--per-machine-->` block (administrator prompt, firewall rule) is published only for a desktop version newer than 2.1.0, the last per-user Windows installer |
 | `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` |
 | `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
@@ -175,7 +175,8 @@ F-Droid: add `https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E0
 alone). Tauri derives the `.deb` name from `productName` in kebab case, so
 `frontend/src-tauri/tauri.linux.conf.json` overrides `productName` (and pins `mainBinaryName`)
 to `openvolley-escoresheet` on Linux only; `tauri.conf.json` keeps "Openvolley eScoresheet" so
-the Windows installer still upgrades in place. That deb provides, replaces and conflicts with
+the Windows installer still finds the earlier install (after 2.1.0 it installs per machine and
+removes an older per-user copy itself, see `frontend/OFFLINE_DESKTOP.md`, Windows install). That deb provides, replaces and conflicts with
 `openvolley-e-scoresheet` (the name of the GitHub `.deb` up to 1.48.19) and `openvolley`.
 `publish-pkgs.sh` repacks any `.deb` published under another name the same way (same version,
 depends and files, deterministic bytes) and migrates old-name files left in the pool, so the

@@ -13,6 +13,8 @@ const APP_COMMANDS: &[&str] = &[
     "bluetooth_status",
     "bluetooth_start",
     "bluetooth_stop",
+    // is the installer's firewall rule for the tablets there? (firewall.rs)
+    "firewall_status",
 ];
 
 fn main() {

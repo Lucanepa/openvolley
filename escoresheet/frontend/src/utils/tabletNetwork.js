@@ -104,6 +104,30 @@ export const hotspot = {
   stop: (win) => call('hotspot_stop', {}, win)
 }
 
+/**
+ * Windows: the firewall rule the installer adds for the tablets
+ * (src-tauri/src/firewall.rs). `{ platform, supported, ready, reason }`.
+ */
+export const firewall = {
+  status: (win) => call('firewall_status', {}, win)
+}
+
+/**
+ * Show the manual "tick Public" firewall step? Only in the Windows desktop
+ * app, and only while the installer's rule is not known to be there (a dev
+ * build, a copy run from elsewhere, a rule removed by IT, a Block rule for
+ * the app, or no answer). Not while the check is still running: the step
+ * would show and vanish again each time the dialog opens.
+ * @param {{ platform?: string, ready?: boolean }|null|undefined} fw firewall_status:
+ *   undefined = not answered yet, null = the check failed
+ * @param {{ platform?: string }|null} hotspotStatus hotspot_status (its platform, when the check failed)
+ */
+export function needsFirewallStep(fw, hotspotStatus) {
+  if (fw === undefined) return false
+  const platform = fw?.platform || hotspotStatus?.platform
+  return platform === 'windows' && fw?.ready !== true
+}
+
 export const bluetoothNetwork = {
   status: (win) => call('bluetooth_status', {}, win),
   start: (win) => call('bluetooth_start', {}, win),
