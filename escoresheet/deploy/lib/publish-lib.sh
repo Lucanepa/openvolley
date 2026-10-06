@@ -14,6 +14,10 @@
 #   desktop_manifest V DIR OUT  latest.json for the files desktop_fetch found
 #   desktop_publish_tree V STAGING MANIFEST PUBDIR
 #   desktop_upload V STAGING DIR   .sig files (+ latest.json) to the GitHub release
+# the APT hold-back (the index never runs ahead of desktop/latest.json):
+#   apt_hold_init PUBDIR [V STAGING]   which desktop versions APT must not list yet
+#   apt_held VER                       true if VER is held back
+#   apt_hold_packages PACKAGES         drops held-back stanzas from a Packages file
 # and the public-tree guard:
 #   refuse_key_material PUBDIR
 
@@ -216,9 +220,95 @@ desktop_upload() {
   [[ "$staging" == 1 ]] || files+=("$dir/latest.json")
   gh release upload "desktop-v$v" --repo "$OV_GH_REPO" --clobber "${files[@]}" || die "upload to desktop-v$v failed"
   echo "uploaded to desktop-v$v: ${files[*]##*/}"
+  [[ "$staging" != 1 ]] || return 0
+  # The fallback endpoint is releases/latest/download/latest.json: whatever
+  # release GitHub calls "Latest" (a server v* or Android release that took it,
+  # or a newer desktop-v* still on staging) must give way to the one
+  # desktop/latest.json now announces.
   latest=$(gh api "repos/$OV_GH_REPO/releases/latest" -q .tag_name 2>/dev/null || true)
-  [[ "$staging" == 1 || "$latest" == "desktop-v$v" ]] ||
-    echo "WARNING: GitHub's latest release is ${latest:-unknown}, not desktop-v$v: the updater's fallback endpoint serves that one (gh release edit desktop-v$v --latest)" >&2
+  [[ "$latest" != "desktop-v$v" ]] || return 0
+  if gh release edit "desktop-v$v" --repo "$OV_GH_REPO" --latest >/dev/null; then
+    echo "desktop-v$v is now GitHub's latest release (was ${latest:-unknown}): the updater's fallback endpoint"
+  else
+    echo "WARNING: GitHub's latest release is ${latest:-unknown}, not desktop-v$v, and making it latest failed: the updater's fallback endpoint serves the wrong release (gh release edit desktop-v$v --latest)" >&2
+  fi
+}
+
+# --- APT hold-back -------------------------------------------------------------
+# The in-app .deb updater runs `apt-get install --only-upgrade`, which installs
+# whatever the APT index lists as newest, not the version latest.json
+# announces. So the index must never list a desktop version that
+# desktop/latest.json does not announce yet: a --staging .deb goes into the
+# pool (its URL in staging.json works) but stays out of Packages, and the kill
+# switch (latest.json back to the previous version) takes the bad version out
+# of the index on the next run. The rule, in dpkg version order:
+#   desktop/latest.json exists      hold back every version newer than it
+#   only desktop/staging.json       hold back that version and newer (the
+#                                   first --staging, before any latest.json)
+#   neither                         hold back nothing (releases before 2.2.0)
+# A --desktop V run counts as having already written its manifests.
+APT_HOLD_OP='' APT_HOLD_V=''
+
+# manifest_version FILE: the "version" of a desktop manifest.
+manifest_version() {
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$1" 2>/dev/null ||
+    die "cannot read the version in $1"
+}
+
+# apt_hold_init PUBDIR [V STAGING]: sets APT_HOLD_OP (gt, ge or empty) and APT_HOLD_V.
+apt_hold_init() {
+  local d="$1/desktop" v=${2:-} staging=${3:-0} latest='' stg=''
+  if [[ -f "$d/latest.json" ]]; then latest=$(manifest_version "$d/latest.json"); fi
+  if [[ -f "$d/staging.json" ]]; then stg=$(manifest_version "$d/staging.json"); fi
+  if [[ -n "$v" ]]; then
+    stg=$v
+    [[ "$staging" == 1 ]] || latest=$v
+  fi
+  APT_HOLD_OP='' APT_HOLD_V=''
+  if [[ -n "$latest" ]]; then
+    APT_HOLD_OP=gt APT_HOLD_V=$latest
+  elif [[ -n "$stg" ]]; then
+    APT_HOLD_OP=ge APT_HOLD_V=$stg
+  fi
+}
+
+apt_held() {
+  [[ -n "$APT_HOLD_OP" ]] && dpkg --compare-versions "$1" "$APT_HOLD_OP" "$APT_HOLD_V"
+}
+
+# apt_hold_packages PACKAGES: rewrite the Packages file without the held-back
+# $DESKTOP_DEB_NAME stanzas; prints each version it leaves out.
+apt_hold_packages() {
+  local file=$1 tmp keep=() pkg ver held=0 why
+  [[ -n "$APT_HOLD_OP" ]] || return 0
+  if [[ "$APT_HOLD_OP" == gt ]]; then
+    why="desktop/latest.json announces $APT_HOLD_V"
+  else
+    why="$APT_HOLD_V is only on staging, no desktop/latest.json yet"
+  fi
+  # One line per stanza: "<package> <version>", in file order.
+  while read -r pkg ver; do
+    if [[ "$pkg" == "$DESKTOP_DEB_NAME" ]] && apt_held "$ver"; then
+      keep+=(0)
+      echo "held back from APT: $pkg $ver ($why)"
+      held=$((held + 1))
+    else
+      keep+=(1)
+    fi
+  done < <(awk 'BEGIN { RS = ""; FS = "\n" } {
+      p = ""; v = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^Package: /) p = substr($i, 10)
+        if ($i ~ /^Version: /) v = substr($i, 10)
+      }
+      print p, v
+    }' "$file")
+  (( held )) || return 0
+  tmp=$(mktemp)
+  awk -v keep="${keep[*]}" 'BEGIN { RS = ""; ORS = "\n\n"; n = split(keep, k, " ") }
+    { if (k[NR] == 1) print }' "$file" > "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
 }
 
 # refuse_key_material PUBDIR: die if anything key-like is in the public tree:

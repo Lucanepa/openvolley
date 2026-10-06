@@ -14,12 +14,14 @@
 #      (plugins.updater.pubkey in tauri.conf.json, also with minisign when it is
 #      installed); writes latest.json (tauri-plugin-updater format; notes from
 #      the fastlane changelog of that version). The .deb then goes through 1.
-#      like any other. After step 4 the manifest goes to public/desktop/:
+#      like any other (with --staging it enters the pool but not the index,
+#      see 2.). After step 4 the manifest goes to public/desktop/:
 #      latest-VERSION.json and staging.json always, latest.json unless
 #      --staging (then only clients started with
 #      OPENVOLLEY_UPDATE_CHANNEL=staging see it). After the sync the .sig files,
 #      and latest.json unless --staging, go to the GitHub release (the
-#      updater's fallback endpoint). Needs gh, node and tauri-cli >= 2.12
+#      updater's fallback endpoint), which is then made GitHub's "Latest"
+#      unless --staging. Needs gh, node and tauri-cli >= 2.12
 #      (escoresheet/frontend: npm ci). OV_DESKTOP_RELEASE_DIR=DIR takes the
 #      installers from DIR instead of GitHub (tests; only with --no-sync).
 #   1. Adds the given packages: a .deb goes to the APT pool, a signed .apk to
@@ -32,9 +34,15 @@
 #      openvolley-e-scoresheet, openvolley (and its own old name), so
 #      `apt install openvolley-escoresheet` takes over an old install. Old-name
 #      files already in the pool are migrated the same way. Repacking is
-#      deterministic: the same input always gives the same bytes.
+#      deterministic: the same input always gives the same bytes. A .deb given
+#      by hand that is newer than desktop/latest.json is refused (use
+#      --desktop VERSION).
 #   2. Rebuilds the APT index (Packages, Release, InRelease, Release.gpg) and
 #      exports the public key as apt/openvolley.gpg and apt/openvolley.asc.
+#      The index never lists a desktop version newer than desktop/latest.json
+#      (lib/publish-lib.sh, APT hold-back): the in-app .deb updater installs
+#      APT's newest, so a staging .deb, or one the kill switch withdrew from
+#      latest.json, stays in the pool but out of the index.
 #   3. Rebuilds the F-Droid index (fdroid update) and copies repo/ over.
 #   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
 #   5. Refuses if anything key-like ended up in the public tree, then rsyncs
@@ -127,6 +135,7 @@ if [[ -n "$DESKTOP_V" ]]; then
   desktop_manifest "$DESKTOP_V" "$WORK/desktop" "$WORK/desktop/latest.json"
   FILES+=("$DESKTOP_DEB")
 fi
+apt_hold_init "$PUB" "$DESKTOP_V" "$STAGING"
 
 # add_rel CONTROL FIELD NAME: append NAME to FIELD (creating it) unless listed.
 add_rel() {
@@ -197,6 +206,10 @@ for f in "${FILES[@]}"; do
   [[ -f "$f" ]] || die "$f: no such file"
   case "$f" in
     *.deb)
+      ver=$(dpkg-deb -f "$f" Version) || die "$f: not a .deb"
+      if [[ "$f" != "$DESKTOP_DEB" ]] && apt_held "$ver"; then
+        die "$f: version $ver is not announced by desktop/latest.json, so APT would not list it; publish desktop releases with --desktop $ver [--staging]"
+      fi
       add_deb "$f"
       ;;
     *.apk)
@@ -243,6 +256,7 @@ gpg_sign() {
   # every version installable (rollback: apt install <pkg>=<old version>).
   dpkg-scanpackages --multiversion --arch amd64 pool/main > "$DIST/main/binary-amd64/Packages"
 )
+apt_hold_packages "$DIST/main/binary-amd64/Packages"
 gzip -9nkf "$DIST/main/binary-amd64/Packages"
 
 conf="$WORK/apt-ftparchive.conf"

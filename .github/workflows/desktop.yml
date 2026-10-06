@@ -123,8 +123,10 @@ jobs:
           prerelease: false
           # The desktop updater's fallback endpoint is
           # releases/latest/download/latest.json, so the newest desktop-v*
-          # release must stay "Latest" (Android releases are created with
-          # --latest=false for the same reason).
+          # release must stay "Latest" (server v* releases set make_latest
+          # "false" in release.yml and Android releases are created with
+          # --latest=false for the same reason; publish-pkgs.sh --desktop takes
+          # "Latest" back for the version latest.json announces).
           make_latest: "true"
           body: |
             ## Offline desktop scoretable + LAN tablet server

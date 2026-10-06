@@ -226,6 +226,95 @@ expect_fail "a private key is in the public tree" leak_test embedded; cleanup_le
 grep -rqF "$PASSWORD" "$P" "$T/work" && bad "the password is in a published or work file"
 ok "the password appears in no output file"
 
+# --- APT hold-back: the index never runs ahead of desktop/latest.json ----------
+# The in-app .deb updater installs APT's newest version, so a staging .deb or a
+# version the kill switch took out of latest.json must not be in Packages.
+POOL="$T/apt/pool/main"
+mkdir -p "$POOL"
+for v in 2.1.1 2.2.0 2.2.1 2.2.2; do make_deb "$POOL/openvolley-escoresheet_${v}_amd64.deb" "$v"; done
+make_deb "$POOL/other-tool_9.0.0_amd64.deb" 9.0.0 other-tool
+scan() { (cd "$T/apt" && dpkg-scanpackages --multiversion --arch amd64 "$1" 2>/dev/null); }
+scan pool/main > "$T/Packages.all"
+# held_case NAME EXPECTED-VERSIONS PUBDIR [V STAGING]: Packages after the hold
+# lists exactly EXPECTED-VERSIONS of the app (and other-tool, never held back),
+# byte for byte what dpkg-scanpackages gives for a pool without the held files.
+held_case() {
+  local name=$1 want=$2 pub=$3 v got
+  shift 3
+  apt_hold_init "$pub" "$@"
+  cp "$T/Packages.all" "$T/Packages.$name"
+  apt_hold_packages "$T/Packages.$name" > "$T/held.$name"
+  got=$(awk '/^Package: openvolley-escoresheet$/ { p = 1 } /^Version:/ && p { print $2; p = 0 }' "$T/Packages.$name" | sort -V | xargs)
+  [[ "$got" == "$want" ]] || bad "hold $name: APT lists '$got', expected '$want'"
+  grep -q '^Package: other-tool$' "$T/Packages.$name" || bad "hold $name: other-tool dropped"
+  rm -rf "$T/apt/ref"; mkdir -p "$T/apt/ref"
+  cp "$POOL/other-tool_9.0.0_amd64.deb" "$T/apt/ref/"
+  for v in $want; do cp "$POOL/openvolley-escoresheet_${v}_amd64.deb" "$T/apt/ref/"; done
+  scan ref | sed 's|^Filename: ref/|Filename: pool/main/|' | cmp -s - "$T/Packages.$name" ||
+    bad "hold $name: filtered Packages differs from a scan of the kept files"
+  ok "hold $name: APT lists $want"
+}
+HP="$T/hold-pub"
+mkdir -p "$HP"
+# manifest_at VERSION FILE: a desktop manifest announcing VERSION.
+manifest_at() { node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('$L','utf8')); m.version='$1'; fs.writeFileSync('$2', JSON.stringify(m))"; }
+held_case none "2.1.1 2.2.0 2.2.1 2.2.2" "$HP"
+held_case first-staging "2.1.1" "$HP" 2.2.0 1
+mkdir -p "$HP/desktop"; manifest_at 2.2.0 "$HP/desktop/staging.json"
+held_case after-first-staging "2.1.1" "$HP"
+held_case first-release "2.1.1 2.2.0" "$HP" 2.2.0 0
+manifest_at 2.2.0 "$HP/desktop/latest.json"
+held_case staging-2.2.1 "2.1.1 2.2.0" "$HP" 2.2.1 1
+manifest_at 2.2.1 "$HP/desktop/staging.json"
+held_case plain-run-while-staging "2.1.1 2.2.0" "$HP"
+held_case release-2.2.1 "2.1.1 2.2.0 2.2.1" "$HP" 2.2.1 0
+# Bad 2.2.2 went out; the kill switch puts latest-2.2.1.json back over
+# latest.json and staging.json and runs publish-pkgs.sh: 2.2.2 leaves the index,
+# so a 2.2.0 laptop's apt-get --only-upgrade gets 2.2.1, not 2.2.2.
+manifest_at 2.2.1 "$HP/desktop/latest.json"; manifest_at 2.2.1 "$HP/desktop/staging.json"
+held_case kill-switch "2.1.1 2.2.0 2.2.1" "$HP"
+grep -q 'held back from APT: openvolley-escoresheet 2.2.2 (desktop/latest.json announces 2.2.1)' "$T/held.kill-switch" ||
+  bad "hold: no held-back report"
+ok "hold: reports what it leaves out"
+apt_hold_init "$HP"
+apt_held 2.2.1-1 && apt_held 2.2.2~rc1 && ! apt_held 2.2.1 && ! apt_held 2.2.1~rc1 ||
+  bad "hold: dpkg version order (2.2.1-1, 2.2.2~rc1 held; 2.2.1, 2.2.1~rc1 not)"
+ok "hold: compares in dpkg version order"
+
+# publish-pkgs.sh refuses a hand-given .deb that the index would hold back.
+# Fake key dirs get it past the setup checks; it dies before any key use.
+mkdir -p "$OV_PKGS_HOME/gnupg" "$OV_PKGS_HOME/fdroid" "$OV_PKGS_HOME/public/desktop"
+touch "$OV_PKGS_HOME/gpg-passphrase" "$OV_PKGS_HOME/fdroid/config.yml" "$OV_PKGS_HOME/fdroid/keystore.p12"
+manifest_at 2.2.1 "$OV_PKGS_HOME/public/desktop/latest.json"
+if command -v fdroid >/dev/null && command -v apt-ftparchive >/dev/null && command -v rsync >/dev/null; then
+  expect_fail "version 2.2.2 is not announced by desktop/latest.json" \
+    "$KIT_DIR/publish-pkgs.sh" --no-sync "$POOL/openvolley-escoresheet_2.2.2_amd64.deb"
+  [[ ! -e "$OV_PKGS_HOME/public/apt/pool/main/openvolley-escoresheet_2.2.2_amd64.deb" ]] || bad "the refused .deb reached the pool"
+else
+  echo "skip publish-pkgs.sh hand-given .deb refusal (fdroid, apt-ftparchive or rsync not installed)"
+fi
+rm -rf "$OV_PKGS_HOME"
+
+# --- desktop_upload: GitHub's "Latest" follows desktop/latest.json --------------
+# gh stub: logs each call; `gh api .../releases/latest` answers $GH_LATEST.
+GH_LOG="$T/gh.log"
+gh() {
+  echo "gh $*" >> "$GH_LOG"
+  if [[ "$1" == api ]]; then echo "$GH_LATEST"; fi
+}
+upload_case() { : > "$GH_LOG"; GH_LATEST=$1; desktop_upload "$V" "$2" "$T/work" > "$T/upload.out" 2>&1; }
+upload_case v1.3.0 0
+grep -q "^gh release upload desktop-v$V .*latest.json" "$GH_LOG" || bad "upload: latest.json not uploaded"
+grep -q "^gh release edit desktop-v$V --repo Lucanepa/openvolley --latest$" "$GH_LOG" || bad "upload: did not make desktop-v$V latest"
+ok "upload: a server release that took \"Latest\" gives it back to desktop-v$V"
+upload_case "desktop-v$V" 0
+! grep -q '^gh release edit' "$GH_LOG" || bad "upload: edited a release that already was latest"
+ok "upload: no edit when desktop-v$V already is latest"
+upload_case v1.3.0 1
+! grep -q 'latest' "$GH_LOG" || bad "upload: a staging run touched latest.json or GitHub's latest"
+ok "upload: --staging neither uploads latest.json nor moves \"Latest\""
+unset -f gh
+
 # --- publish-pkgs.sh argument handling (dies before any key or network use) --
 pp() { "$KIT_DIR/publish-pkgs.sh" "$@"; }
 expect_fail "--staging needs --desktop VERSION" pp --staging --no-sync

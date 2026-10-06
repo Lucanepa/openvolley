@@ -51,7 +51,7 @@ network, and carries `traefik.enable=false`.
 | `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` |
 | `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
-| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards |
+| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the APT hold-back, GitHub's "Latest" (stubbed `gh`) |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
@@ -151,9 +151,20 @@ The Windows installer and an APK copy (`OpenVolley-<version>.apk`) are assets of
 release `desktop-v<version>`; the page links there. From 2.2.0 the release also carries a `.sig`
 per installer and `latest.json`: the app asks `https://get.openvolley.app/desktop/latest.json`
 first and `https://github.com/Lucanepa/openvolley/releases/latest/download/latest.json` if that
-fails, so the newest `desktop-v*` release must stay GitHub's "Latest" (`desktop.yml` sets
-`make_latest`; Android releases are created with `--latest=false`). The Windows and AppImage
-entries point at the GitHub assets, the `.deb` entry at the APT pool.
+fails, so the release `desktop/latest.json` announces must be GitHub's "Latest". `desktop.yml`
+sets `make_latest`, server `v*` releases (`release.yml`) set `make_latest: "false"`, Android
+releases are created with `--latest=false`, and `publish-pkgs.sh --desktop <version>` (not
+`--staging`) makes `desktop-v<version>` "Latest" again after uploading its `latest.json`, so a
+release that took it in between gives it back. The Windows and AppImage entries point at the
+GitHub assets, the `.deb` entry at the APT pool.
+
+The in-app `.deb` updater does not download that `.deb`: it runs
+`apt-get install --only-upgrade openvolley-escoresheet`, which installs the newest version the
+APT index lists. So the index never lists a desktop version newer than `desktop/latest.json`
+(the APT hold-back in `lib/publish-lib.sh`): a newer `.deb` stays in the pool, reachable by its
+URL, but out of `Packages` until `latest.json` announces it. Before the first `latest.json`,
+the version on `staging.json` and newer are held back. A `.deb` given by hand that would be held
+back is refused (use `--desktop`).
 
 User commands (also on the page). Linux, one line:
 
@@ -246,17 +257,21 @@ when the scorer quits the app, and it should not be the first thing a venue sees
    `minisign` when it is installed), writes `latest.json` (notes: the fastlane changelog of the
    same version) and adds the `.deb` to the APT pool. With `--staging` it updates
    `desktop/staging.json` and `desktop/latest-<version>.json` and uploads only the `.sig` files to
-   the GitHub release. The `.deb` enters the APT repo already in this run (APT has no staging
-   channel), so `sudo apt upgrade` and unattended-upgrades see it at once; only the in-app
-   updater waits for `latest.json`. Start your own laptops with `OPENVOLLEY_UPDATE_CHANNEL=staging`
-   and check that they update (quit, or "Restart and update"). Then everyone:
+   the GitHub release. The `.deb` goes into the APT pool but not into the index (APT hold-back,
+   above), so neither `sudo apt upgrade` nor the in-app updater of an APT install gets it before
+   `latest.json` announces it. Start your own laptops with `OPENVOLLEY_UPDATE_CHANNEL=staging`
+   and check that they update (quit, or "Restart and update"): Windows and AppImage. An APT
+   laptop cannot take a staging version through the updater; install it by hand to try it
+   (`curl -fsSLO https://get.openvolley.app/apt/pool/main/openvolley-escoresheet_<version>_amd64.deb && sudo apt install ./openvolley-escoresheet_<version>_amd64.deb`).
+   Then everyone:
    ```bash
    escoresheet/deploy/publish-pkgs.sh --desktop <version>
    ```
-   That re-signs, writes `desktop/latest.json` too and uploads `latest.json` with the `.sig`
-   files to the release (after the rsync, so it never points at a `.deb` not yet served). It
-   warns if that release is not GitHub's "Latest" (`gh release edit desktop-v<version> --latest`).
-   A channel never moves back to an older version this way; see the kill switch below.
+   That re-signs, writes `desktop/latest.json` too, lists the `.deb` in the APT index and
+   uploads `latest.json` with the `.sig` files to the release (after the rsync, so it never
+   points at a `.deb` not yet served), then makes that release GitHub's "Latest" if another one
+   took it (it warns if that fails). A channel never moves back to an older version this way;
+   see the kill switch below.
 
    `publish-pkgs.sh` refuses an APK not signed by the OpenVolley app key, a `.deb` that is not the desktop app,
    and a package that would overwrite a different file under the same version. It also copies
@@ -271,14 +286,25 @@ when the scorer quits the app, and it should not be the first thing a venue sees
 To withdraw a version: delete it from `~/.config/openvolley-pkgs/public/apt/pool/main/` or
 `~/.config/openvolley-pkgs/fdroid/repo/` and run `publish-pkgs.sh` again.
 
-**Desktop kill switch** (a bad desktop release is rolling out): point the manifest back at the
-previous release and sync. Clients that have not updated yet stop; clients never downgrade, so
-ship a fixed patch next.
+**Desktop kill switch** (a bad desktop release is rolling out, on `latest.json` or only on
+staging): point both manifests back at the previous release, take the bad `.deb` out of the
+pool and sync. Clients that have not updated yet stop; clients never downgrade, so ship a fixed
+patch next.
 ```bash
-cp ~/.config/openvolley-pkgs/public/desktop/latest-<previous>.json ~/.config/openvolley-pkgs/public/desktop/latest.json
-escoresheet/deploy/publish-pkgs.sh                      # syncs the tree
+D=~/.config/openvolley-pkgs/public/desktop
+cp $D/latest-<previous>.json $D/latest.json             # everyone
+cp $D/latest-<previous>.json $D/staging.json            # staging laptops too
+rm ~/.config/openvolley-pkgs/public/apt/pool/main/openvolley-escoresheet_<bad>_amd64.deb
+escoresheet/deploy/publish-pkgs.sh                      # rebuilds the APT index, syncs the tree
 gh release delete-asset desktop-v<bad> latest.json --repo Lucanepa/openvolley --yes   # the fallback endpoint too
+gh release edit desktop-v<previous> --repo Lucanepa/openvolley --latest              # and it serves <previous> again
 ```
+The APT index follows `latest.json` (hold-back), so the run above drops `<bad>` from it even if
+the `rm` is forgotten, and an APT laptop's in-app updater (`apt-get --only-upgrade`) gets
+`<previous>`, not `<bad>`. The `rm` keeps `<bad>` out of the index for good: the fixed patch's
+release would otherwise list it again as an older version (`apt install
+openvolley-escoresheet=<bad>` could still pick it). Without the last two lines the fallback
+endpoint fails closed (no `latest.json` on the "Latest" release) until the next release.
 
 Tests (offline, throwaway key, no GitHub, no sync):
 `TMPDIR=<scratch dir> OV_TAURI_CLI=<tauri-cli >= 2.12> escoresheet/deploy/tests/publish-desktop.test.sh`.
