@@ -107,3 +107,26 @@ describe('useDesktopUpdate', () => {
     expect(invoke.mock.calls.filter(([cmd]) => cmd === 'update_check_now')).toHaveLength(2)
   })
 })
+
+describe('an older answer never replaces a newer status', () => {
+  it('the page asks on load while it reports the end of the match: the event wins', async () => {
+    let answer
+    const { win } = appWindow({ update_status: () => new Promise((r) => { answer = r }) })
+    const { result } = renderHook(() => useDesktopUpdate({ win }))
+    // the app pushes the newer status (the match is over) before it answers
+    act(() => { win.dispatchEvent(updateEvent({ ...READY, seq: 8, canRestart: true, blockers: [] })) })
+    await act(async () => { answer({ ...READY, seq: 7, canRestart: false, blockers: [{ kind: 'matchLive' }] }) })
+    expect(result.current.status).toMatchObject({ seq: 8, canRestart: true })
+    act(() => { win.dispatchEvent(updateEvent({ ...READY, seq: 9, phase: 'installing' })) })
+    expect(result.current.status.phase).toBe('installing')
+  })
+
+  it('newerStatus', async () => {
+    const { newerStatus } = await import('../useDesktopUpdate')
+    expect(newerStatus(null, { seq: 1 })).toEqual({ seq: 1 })
+    expect(newerStatus({ seq: 2 }, { seq: 1 })).toEqual({ seq: 2 })
+    expect(newerStatus({ seq: 2 }, { seq: 3 })).toEqual({ seq: 3 })
+    expect(newerStatus({ seq: 2 }, null)).toEqual({ seq: 2 })
+    expect(newerStatus({ phase: 'a' }, { phase: 'b' })).toEqual({ phase: 'b' }, 'without numbers: the latest')
+  })
+})

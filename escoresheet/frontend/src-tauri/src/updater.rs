@@ -34,7 +34,7 @@
 //! are not granted to any window (capabilities/update.json).
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -357,6 +357,11 @@ pub struct Status {
     pub can_restart: bool,
     /// The last check was asked for (its failure is shown).
     pub manual: bool,
+    /// Increases with every status the page gets (command answers and
+    /// `ov-update` events): an answer computed before a newer event (a page
+    /// that just loaded asks while it reports the end of a match) is older
+    /// and the page keeps the newer one.
+    pub seq: u64,
 }
 
 /// Something to restart into: downloaded (Windows, AppImage), or the deb
@@ -505,9 +510,20 @@ pub fn gate_input<R: Runtime>(app: &AppHandle<R>) -> GateInput {
     }
 }
 
-/// The status the page sees. Linux deb: also notices a binary replaced by
-/// APT (the helper, `apt upgrade`, unattended-upgrades).
+static SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn next_seq() -> u64 {
+    SEQ.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+/// The status the page sees, numbered (see `Status::seq`).
 pub fn status<R: Runtime>(app: &AppHandle<R>) -> Status {
+    Status { seq: next_seq(), ..current(app) }
+}
+
+/// The status without its number. Linux deb: also notices a binary replaced
+/// by APT (the helper, `apt upgrade`, unattended-upgrades).
+fn current<R: Runtime>(app: &AppHandle<R>) -> Status {
     let gate = gate_input(app);
     let updates = app.state::<Updates>();
     notice_replaced_binary(&updates);
@@ -524,6 +540,7 @@ pub fn status<R: Runtime>(app: &AppHandle<R>) -> Status {
         can_restart: ready && blockers.is_empty(),
         blockers,
         manual: i.manual,
+        seq: 0,
     }
 }
 
@@ -564,17 +581,18 @@ fn event_script(status_json: &str) -> String {
 /// Tell the page (when something changed) and the tray.
 pub fn push<R: Runtime>(app: &AppHandle<R>) {
     let Some(updates) = app.try_state::<Updates>() else { return };
-    let st = status(app);
+    let st = current(app);
     let offer = if st.can_restart { st.available.as_ref().map(|a| a.version.clone()) } else { None };
     lifecycle::set_update_offer(app, offer);
-    let Ok(json) = serde_json::to_string(&st) else { return };
+    let Ok(unnumbered) = serde_json::to_string(&st) else { return };
     {
         let mut i = updates.lock();
-        if i.last_pushed == json {
+        if i.last_pushed == unnumbered {
             return;
         }
-        i.last_pushed = json.clone();
+        i.last_pushed = unnumbered;
     }
+    let Ok(json) = serde_json::to_string(&Status { seq: next_seq(), ..st }) else { return };
     if let Some(main) = app.get_webview_window(lifecycle::MAIN) {
         let _ = main.eval(event_script(&json));
     }
@@ -631,7 +649,7 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
         eprintln!("[update] not an installed copy (no bundle type): no automatic updates");
         return;
     }
-    eprintln!("[update] {kind:?}: checking after the page loaded, then every 6 h");
+    eprintln!("[update] {} {kind:?}: checking after the page loaded, then every 6 h", app.package_info().version);
     tauri::async_runtime::spawn(async move {
         // never at startup: once the scoretable page is there, and a minute later
         while !app.state::<Lifecycle>().page_ready() {
@@ -687,8 +705,12 @@ async fn run_tick<R: Runtime>(app: &AppHandle<R>, first: bool) {
 fn updater<R: Runtime>(app: &AppHandle<R>) -> Result<tauri_plugin_updater::Updater, String> {
     let h = app.clone();
     // Windows: install() ends the process itself (no RunEvent::Exit), so the
-    // tablets' network is stopped here
-    let mut b = app.updater_builder().on_before_exit(move || crate::netshare::shutdown(&h));
+    // tablets' network is stopped here. This replaces the plugin's own hook,
+    // so its cleanup (the tray icon) runs here too.
+    let mut b = app.updater_builder().on_before_exit(move || {
+        crate::netshare::shutdown(&h);
+        h.cleanup_before_exit();
+    });
     if std::env::var("OPENVOLLEY_UPDATE_CHANNEL").as_deref() == Ok("staging") {
         b = b.endpoints(vec![STAGING_ENDPOINT.parse().map_err(|e| format!("{e}"))?]).map_err(|e| e.to_string())?;
     }
@@ -1277,6 +1299,7 @@ mod tests {
             blockers: vec![Blocker::MatchLive, Blocker::Tablets { count: 2 }],
             can_restart: false,
             manual: false,
+            seq: 7,
         };
         let v = serde_json::to_value(&st).unwrap();
         assert_eq!(v["kind"], "appImage");
@@ -1288,6 +1311,8 @@ mod tests {
         assert_eq!(v["blockers"][0]["kind"], "matchLive");
         assert_eq!(v["blockers"][1], serde_json::json!({ "kind": "tablets", "count": 2 }));
         assert_eq!(v["canRestart"], false);
+        assert_eq!(v["seq"], 7);
+        assert!(next_seq() < next_seq(), "numbered in order");
         let failed = serde_json::to_value(Phase::Failed { msg: "needsAdmin".into() }).unwrap();
         assert_eq!(failed, serde_json::json!({ "phase": "failed", "msg": "needsAdmin" }));
         assert_eq!(serde_json::to_value(Phase::RestartPending).unwrap()["phase"], "restartPending");
