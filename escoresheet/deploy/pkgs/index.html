@@ -8,7 +8,7 @@
 <title>Get OpenVolley</title>
 <meta name="description" content="Install the OpenVolley eScoresheet: Android via F-Droid or APK, Linux via APT, Windows installer.">
 <link rel="icon" href="/fdroid/repo/icons/icon.png">
-<!-- Template: publish-pkgs.sh fills in @DESKTOP_VERSION@, @APK_VERSION@, @APK_FILE@ and @DEB_PACKAGE@
+<!-- Template: publish-pkgs.sh fills in @DESKTOP_VERSION@, @DEB_PACKAGE@, @WINDOWS_URL@, @APK_VERSION@ and @APK_FILE@
      from the packages it publishes. Plain HTML, no external requests. -->
 <style>
   :root {
@@ -130,11 +130,19 @@
 
   <section class="card" id="linux">
     <h2>Linux (Debian, Ubuntu, Mint) <span>@DESKTOP_VERSION@ · amd64</span></h2>
-    <p>Add the signed APT repository once; <code>apt upgrade</code> then keeps the app current.</p>
+    <h3>Install with one command</h3>
+    <p>Adds the signed APT repository (it checks the key fingerprint below first) and installs the app. Running it again is harmless.</p>
+    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Read it first if you like: <a href="/install.sh">install.sh</a></p>
+    <h3>From then on</h3>
+    <div class="cmd"><pre><code>sudo apt install @DEB_PACKAGE@</code></pre><button class="copy" type="button">Copy</button></div>
+    <div class="cmd"><pre><code>sudo apt update &amp;&amp; sudo apt upgrade</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Start it from the app menu (<b>OpenVolley eScoresheet</b>) or with <code>@DEB_PACKAGE@</code>. Headless relay for the tablets only: <code>@DEB_PACKAGE@ --server-only</code>.</p>
+    <h3>Or by hand (same result)</h3>
     <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg &gt;/dev/null
-echo 'deb [signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
 sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Start it from the app menu (<b>Openvolley eScoresheet</b>) or with <code>openvolley-escoresheet</code>. Headless relay for the tablets only: <code>openvolley-escoresheet --server-only</code>.</p>
+    <p class="meta">Check the key before trusting it: <code>gpg --show-keys /usr/share/keyrings/openvolley.gpg</code> must show the fingerprint below. Installed the <code>.deb</code> from GitHub before (package <code>openvolley-e-scoresheet</code>)? <code>sudo apt install @DEB_PACKAGE@</code> replaces it.</p>
     <p class="meta">Signing key: OpenVolley packages &lt;packages@openvolley.app&gt;, ed25519 (<a href="/apt/openvolley.asc">openvolley.asc</a>)</p>
     <p class="fp">AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C</p>
   </section>
@@ -143,7 +151,7 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
     <h2>Windows <span>@DESKTOP_VERSION@ · 64-bit</span></h2>
     <p>Download and run the installer from the GitHub release. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
     <div class="actions">
-      <a class="btn btn-primary" href="https://github.com/Lucanepa/openvolley/releases/download/desktop-v@DESKTOP_VERSION@/Openvolley.eScoresheet_@DESKTOP_VERSION@_x64-setup.exe">Download for Windows</a>
+      <a class="btn btn-primary" href="@WINDOWS_URL@">Download for Windows</a>
       <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
     </div>
   </section>

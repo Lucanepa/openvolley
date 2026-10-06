@@ -3,6 +3,7 @@
 # Serves /srv/pkgs (read-only bind of /data/openvolley/pkgs, filled by
 # publish-pkgs.sh from lenovoserver):
 #   /               index.html (install instructions)
+#   /install.sh     one-line installer (curl -fsSL https://get.openvolley.app/install.sh | sudo sh)
 #   /apt/           signed APT repository (dists/stable, pool/main, openvolley.gpg/.asc)
 #   /fdroid/repo/   signed F-Droid repository
 #
@@ -30,6 +31,7 @@
 	@armored path *.asc
 	@release path */InRelease */Release
 	@detached path */Release.gpg
+	@script path /install.sh
 	header @deb Content-Type application/vnd.debian.binary-package
 	header @apk Content-Type application/vnd.android.package-archive
 	header @jar Content-Type application/java-archive
@@ -38,6 +40,8 @@
 	header @armored Content-Type "text/plain; charset=utf-8"
 	header @release Content-Type "text/plain; charset=utf-8"
 	header @detached Content-Type application/pgp-signature
+	# Shown as text in a browser (read it before piping it to sh).
+	header @script Content-Type "text/plain; charset=utf-8"
 
 	# Caching: packages are named by version and never rewritten, so they are
 	# immutable. Everything else (APT dists/, F-Droid index and entry files,
