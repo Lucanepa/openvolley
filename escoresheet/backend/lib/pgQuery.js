@@ -74,14 +74,6 @@ export const DEFAULT_CONFIG = Object.freeze({
       localColumn: 'match_id',
       foreignColumn: 'id',
       columns: ['set_results']
-    }, {
-      // openbeach's livescore / display lists (the match's sport_type too)
-      select: '*, matches!match_live_state_match_id_fkey_cascade(set_results, sport_type)',
-      as: 'matches',
-      table: 'matches',
-      localColumn: 'match_id',
-      foreignColumn: 'id',
-      columns: ['set_results', 'sport_type']
     }]
   },
   // Match ownership (opts.matchOwner): who may write a match and its children.
