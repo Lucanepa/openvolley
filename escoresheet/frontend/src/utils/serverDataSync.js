@@ -1456,7 +1456,8 @@ export async function listAvailableMatchesForBenchSupabase() {
       .order('scheduled_at', { ascending: true })
 
     if (error) {
-      console.error('[listAvailableMatchesForBenchSupabase] Error:', error)
+      // No answer (venue offline, LAN tablet origin): the relay list stands in
+      if (error.status !== 404 && !error.network) console.error('[listAvailableMatchesForBenchSupabase] Error:', error)
       return { success: false, matches: [], error: error.message }
     }
 
