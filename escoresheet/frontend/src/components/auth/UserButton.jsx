@@ -75,7 +75,13 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
           )}
           style={style}
         >
-          {t('auth.login', 'Login')}
+          {inline ? (
+            // Same icon column as the other header menu rows
+            <span className="flex flex-1 items-center gap-3">
+              <span className="flex w-5 shrink-0 items-center justify-center text-stone-400"><User size={15} aria-hidden="true" /></span>
+              {t('auth.login', 'Login')}
+            </span>
+          ) : t('auth.login', 'Login')}
           <ChevronRight size={fullWidth ? 16 : 13} aria-hidden="true" className="text-stone-400" />
         </button>
 

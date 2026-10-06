@@ -829,6 +829,7 @@
     "de-CH": "Schwiizerdütsch"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "Online",
     "notSynced": "Not synced",
     "supportAndFeedback": "Support & Feedback",
@@ -852,9 +853,9 @@
     "moreOptions": "Wiiteri Optione...",
     "match": "Spiil",
     "notSet": "Nöd feschtgleit",
-    "testMatch": "TESTSPIIL",
-    "matchNumber": "SPIIL #{{number}}",
-    "test": "TEST",
+    "testMatch": "Testspiil",
+    "matchNumber": "Spiil #{{number}}",
+    "test": "Test",
     "versionHistory": "Versionsverlauf",
     "current": "Aktuell",
     "exitFullscreen": "Vollbild verlah",

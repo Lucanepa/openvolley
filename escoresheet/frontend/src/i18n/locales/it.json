@@ -829,6 +829,7 @@
     "de-CH": "Svizzero tedesco"
   },
   "header": {
+    "versionLabel": "Versione {{version}}",
     "online": "Online",
     "notSynced": "Non sincronizzato",
     "supportAndFeedback": "Supporto e feedback",
@@ -852,9 +853,9 @@
     "moreOptions": "Altre opzioni...",
     "match": "Partita",
     "notSet": "Non impostato",
-    "testMatch": "PARTITA TEST",
-    "matchNumber": "PARTITA #{{number}}",
-    "test": "TEST",
+    "testMatch": "Partita test",
+    "matchNumber": "Partita #{{number}}",
+    "test": "Test",
     "versionHistory": "Cronologia versioni",
     "current": "Attuale",
     "exitFullscreen": "Esci da schermo intero",

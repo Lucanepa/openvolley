@@ -828,6 +828,7 @@
     "de-CH": "Suisse allemand"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "En ligne",
     "notSynced": "Not synced",
     "supportAndFeedback": "Support & feedback",
@@ -851,9 +852,9 @@
     "moreOptions": "Plus d'options...",
     "match": "Match",
     "notSet": "Non défini",
-    "testMatch": "MATCH AMICAL",
-    "matchNumber": "MATCH N°{{number}}",
-    "test": "TEST",
+    "testMatch": "Match amical",
+    "matchNumber": "Match n°{{number}}",
+    "test": "Test",
     "versionHistory": "Historique des versions",
     "current": "Actuelle",
     "exitFullscreen": "Quitter le plein écran",
