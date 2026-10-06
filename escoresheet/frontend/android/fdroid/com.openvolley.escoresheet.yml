@@ -4,7 +4,7 @@ AntiFeatures:
       federation that is not under a free licence.
 Categories:
   - Sports & Health
-License: GPL-3.0-only
+License: GPL-3.0-or-later
 AuthorName: Luca Canepa
 WebSite: https://openvolley.app
 SourceCode: https://github.com/Lucanepa/openvolley
