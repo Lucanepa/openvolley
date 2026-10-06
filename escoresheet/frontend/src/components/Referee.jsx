@@ -5,9 +5,9 @@ import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScaledLayout } from '../hooks/useScaledLayout'
-import mikasaVolleyball from '../mikasa_v200w.png'
+import ballFallback from '../ball_fallback.png'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } from '../utils/matchFormat'
 import ConnectionStatus from './ConnectionStatus'
@@ -2465,7 +2465,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* Serve ball indicator */}
         {shouldShowBall && (
           <img
-            src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+            src={ballImage} onError={(e) => e.target.src = ballFallback}
             alt="Ball"
             style={{
               position: 'absolute',

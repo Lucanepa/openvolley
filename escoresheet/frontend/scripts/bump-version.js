@@ -82,5 +82,23 @@ writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
 const versionJsonPath = resolve(frontendDir, 'public', 'version.json')
 writeFileSync(versionJsonPath, JSON.stringify({ version: newVersion }) + '\n')
 
+// Update the Android app's literal versionName/versionCode (F-Droid's update
+// checker reads them from build.gradle with a regex). A new web version resets
+// androidBuild to 0; android/app/build.gradle fails the build if they drift.
+const gradlePath = resolve(frontendDir, 'android', 'app', 'build.gradle')
+const staged = [pkgPath, versionJsonPath]
+try {
+  const [nMajor, nMinor, nPatch] = newVersion.split('.').map(Number)
+  const versionCode = (nMajor * 1000000 + nMinor * 1000 + nPatch) * 10
+  const gradle = readFileSync(gradlePath, 'utf-8')
+    .replace(/^def androidBuild = \d+$/m, 'def androidBuild = 0')
+    .replace(/^(\s+)versionCode \d+$/m, `$1versionCode ${versionCode}`)
+    .replace(/^(\s+)versionName "[^"]*"$/m, `$1versionName "${newVersion}"`)
+  writeFileSync(gradlePath, gradle)
+  staged.push(gradlePath)
+} catch (err) {
+  if (err.code !== 'ENOENT') throw err
+}
+
 // Stage the updated files
-execSync(`git add "${pkgPath}" "${versionJsonPath}"`)
+execSync(`git add ${staged.map((p) => `"${p}"`).join(' ')}`)

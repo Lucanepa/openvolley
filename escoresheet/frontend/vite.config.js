@@ -63,14 +63,28 @@ export default defineConfig({
   // If deploying to a custom domain (CNAME), use '/'. Otherwise set to '/<repo-name>/'
   // For Electron, use './' for relative paths
   base: isElectron ? './' : (process.env.VITE_BASE_PATH || '/'),
+  // Android app: no .env files, only the variables given on the command line
+  // (scripts/release-android.sh, the F-Droid recipe). F-Droid builds the APK
+  // from source and checks it against the owner-signed one byte for byte, so
+  // a value from someone's local .env (e.g. VITE_REOPEN_PASSWORD_HASH) must
+  // not end up in the bundle.
+  envDir: isCapacitor ? false : undefined,
   optimizeDeps: {
     include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks']
   },
   resolve: {
     dedupe: ['react', 'react-dom', 'dexie'],
-    alias: {
-      '@': resolve(__dirname, 'src')
-    }
+    alias: [
+      { find: '@', replacement: resolve(__dirname, 'src') },
+      // Android app (F-Droid): the Swiss Volley logo in the scoresheet PDF
+      // header is a federation trademark with no licence to redistribute it,
+      // so it must not ship inside the APK. The import resolves to a module
+      // that exports null and the header leaves the slot empty. Web and
+      // desktop builds keep the logo.
+      ...(isCapacitor
+        ? [{ find: /^\.\/swissvolleylogo\.jpg$/, replacement: resolve(__dirname, 'scoresheet_pdf/components/noFederationLogo.js') }]
+        : [])
+    ]
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion)

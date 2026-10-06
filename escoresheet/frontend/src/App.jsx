@@ -22,9 +22,9 @@ import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { pickNativeBackupFile } from './utils/nativeBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
-import mikasaVolleyball from './mikasa_v200w.png'
+import ballFallback from './ball_fallback.png'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 
 // Logo for dark background (HomePage)
@@ -302,7 +302,7 @@ export default function App() {
   useEffect(() => {
     const assetsToPreload = [
       ballImage,
-      mikasaVolleyball,
+      ballFallback,
       openvolleyLogo
     ]
 
@@ -828,7 +828,7 @@ export default function App() {
 
   // Preload ball and logo images when app loads
   useEffect(() => {
-    const imagesToPreload = [ballImage, mikasaVolleyball, openvolleyLogo]
+    const imagesToPreload = [ballImage, ballFallback, openvolleyLogo]
 
     imagesToPreload.forEach(src => {
       // Preload the image

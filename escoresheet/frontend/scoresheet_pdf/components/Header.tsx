@@ -45,8 +45,9 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
     <header className="border border-black bg-white">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-0.5">
         <div className="flex items-center justify-center min-w-[120px]">
-            {/* Swiss Volley logo (left slot), matching the official Matchblatt */}
-            {!imageError ? (
+            {/* Swiss Volley logo (left slot), matching the official Matchblatt.
+                Null in the Android build (vite.config.js alias): the slot stays empty. */}
+            {swissvolleyLogo && !imageError ? (
                 <img
                     src={swissvolleyLogo}
                     alt="Swiss Volley"

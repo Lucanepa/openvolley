@@ -18,9 +18,9 @@ import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
-import mikasaVolleyball from '../mikasa_v200w.png'
+import ballFallback from '../ball_fallback.png'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
@@ -15880,7 +15880,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     if (!servingPlayer || !servingPlayer.number) {
                       return (
                         <img
-                          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                          src={ballImage} onError={(e) => e.target.src = ballFallback}
                           alt={t('common.servingTeam')}
                           style={{
                             ...serveBallBaseStyle,
@@ -15942,7 +15942,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     if (!servingPlayer || !servingPlayer.number) {
                       return (
                         <img
-                          src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                          src={ballImage} onError={(e) => e.target.src = ballFallback}
                           alt={t('common.servingTeam')}
                           style={{
                             ...serveBallBaseStyle,
@@ -16529,7 +16529,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             >
                               {shouldShowBall && (
                                 <img
-                                  src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                                  src={ballImage} onError={(e) => e.target.src = ballFallback}
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
@@ -17108,7 +17108,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             >
                               {shouldShowBall && (
                                 <img
-                                  src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                                  src={ballImage} onError={(e) => e.target.src = ballFallback}
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
@@ -17666,7 +17666,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           minHeight: 'calc(40px * var(--scale-factor))'
                         }}
                       >
-                        <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="" style={{ width: '2.5em', height: '2.5em', objectFit: 'contain' }} />
+                        <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="" style={{ width: '2.5em', height: '2.5em', objectFit: 'contain' }} />
                         {t('scoreboard.buttons.switchServe')}
                       </button>
                       <button
@@ -27650,7 +27650,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {/* Serve ball underneath if serving */}
                     {leftIsServing && (
                       <img
-                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                        src={ballImage} onError={(e) => e.target.src = ballFallback}
                         alt={t('common.servingTeam')}
                         style={{
                           width: vmin(5),
@@ -27682,7 +27682,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {/* Serve ball underneath if serving */}
                     {rightIsServing && (
                       <img
-                        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+                        src={ballImage} onError={(e) => e.target.src = ballFallback}
                         alt={t('common.servingTeam')}
                         style={{
                           width: vmin(5),

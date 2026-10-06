@@ -8,9 +8,9 @@ import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import MenuList from './MenuList'
-import mikasaVolleyball from '../mikasa_v200w.png'
+import ballFallback from '../ball_fallback.png'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
@@ -1465,7 +1465,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       alignItems: 'center', justifyContent: 'center', flexShrink: 0
     }}>
       <img
-        src={ballImage} onError={(e) => e.target.src = mikasaVolleyball}
+        src={ballImage} onError={(e) => e.target.src = ballFallback}
         alt="Volleyball"
         style={{ maxWidth: '100%', maxHeight: '100%' }}
       />
@@ -1521,7 +1521,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           onClick={switchServe}
           style={{ minHeight: sizes.actionButtonMinHeight, padding: '0 20px 0 12px', fontSize: sizes.actionButtonFont }}
         >
-          <img src={ballImage} onError={(e) => { e.target.src = mikasaVolleyball }} alt="" style={{ width: '1.75em', height: '1.75em' }} /> {t('coinToss.switchServe')}
+          <img src={ballImage} onError={(e) => { e.target.src = ballFallback }} alt="" style={{ width: '1.75em', height: '1.75em' }} /> {t('coinToss.switchServe')}
         </Button>
       </div>
 

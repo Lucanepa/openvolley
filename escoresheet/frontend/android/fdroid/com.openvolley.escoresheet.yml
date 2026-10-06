@@ -1,0 +1,46 @@
+Categories:
+  - Sports & Health
+License: GPL-3.0-or-later
+AuthorName: Luca Canepa
+WebSite: https://openvolley.app
+SourceCode: https://github.com/Lucanepa/openvolley
+IssueTracker: https://github.com/Lucanepa/openvolley/issues
+
+AutoName: OpenVolley
+
+RepoType: git
+Repo: https://github.com/Lucanepa/openvolley.git
+Binaries: 
+  https://github.com/Lucanepa/openvolley/releases/download/android-v%v/com.openvolley.escoresheet_%c.apk
+
+Builds:
+  - versionName: 1.48.20
+    versionCode: 10480200
+    commit: 7c9cb0ad6e98ee8e6e466642a99a517ba2d68877
+    subdir: escoresheet/frontend/android/app
+    sudo:
+      - curl -Lo node.tar.xz https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz
+      - echo "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de node.tar.xz"
+        | sha256sum -c -
+      - tar xJf node.tar.xz --strip-components=1 -C /usr/local/
+    init:
+      - cd ../..
+      - npm ci --ignore-scripts
+    gradle:
+      - yes
+    prebuild:
+      - cd ../..
+      - CAPACITOR=true VITE_BACKEND_URL=https://backend.openvolley.app npx vite build
+        --outDir dist-capacitor --emptyOutDir
+      - npx cap sync android
+    scanignore:
+      - escoresheet/frontend/node_modules/pdfjs-dist/iccs
+    scandelete:
+      - escoresheet/frontend/node_modules
+
+AllowedAPKSigningKeys: 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^android-v[\d.]+$
+CurrentVersion: 1.48.20
+CurrentVersionCode: 10480200
