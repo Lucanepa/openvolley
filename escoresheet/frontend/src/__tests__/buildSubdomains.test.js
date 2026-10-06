@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { existsSync } from 'fs'
+import { spawnSync } from 'child_process'
 import { resolve } from 'path'
 import { subdomains, htmlFor, usesPwa, extraFilesFor } from '../../scripts/build-subdomains.js'
 
@@ -46,5 +47,15 @@ describe('build-subdomains: manager.openvolley.app', () => {
   it('the other subdomains still get a generated page', () => {
     expect(htmlFor(subdomains.referee)).toContain('src="/src/referee-main.jsx"')
     expect(htmlFor(subdomains.scoresheet)).toContain('src="/src/scoresheet-main.jsx"')
+  })
+})
+
+describe('build-subdomains: outputs', () => {
+  // Every dist-<name> must be gitignored, or a local build of a new subdomain
+  // (dist-manager was missed once) lands in `git add -A`
+  it.each(Object.keys(subdomains))('dist-%s is gitignored', (name) => {
+    const r = spawnSync('git', ['check-ignore', '-q', `dist-${name}/index.html`], { cwd: frontendDir })
+    if (r.error) return // no git here: nothing to check against
+    expect(r.status).toBe(0)
   })
 })

@@ -8,8 +8,9 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 
-// manager.openvolley.app ships no service worker (scripts/subdomains.config.js:
-// pwa false): an admin console must never run a stale build from a cache.
+// manager.openvolley.app ships no service worker (scripts/build-subdomains.js,
+// subdomains.manager.pwa: false): an admin console must never run a stale
+// build from a cache.
 stripCacheBustParam()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
