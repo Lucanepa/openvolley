@@ -249,11 +249,22 @@ function getDataLayer() {
       console.warn('⚠️  [Config] OV_PIN_SECRET is not set: game and connection PINs are stored in plaintext in the database (README "PINs at rest").')
     }
     const restore = mr.createMatchRestore(db, { pinHasher: pins })
-    // One pg Pool for everything (auth shares pgQuery's pool).
-    const auth = au.createAuth({ pool: db.pool, contactEmail: CONTACT_EMAIL })
     const storage = st.createStorage({
       ...st.storageOptionsFromEnv({ ...process.env, STORAGE_DIR: STORAGE_ROOT }),
       checkQuota: st.createWriteQuota()
+    })
+    // One pg Pool for everything (auth shares pgQuery's pool). delete-account
+    // removes the account's files too (README "Deleting an account").
+    const auth = au.createAuth({
+      pool: db.pool,
+      contactEmail: CONTACT_EMAIL,
+      onAccountDeleted: async (userId) => {
+        const r = await storage.deleteUserData(userId)
+        if (r.objectsRemoved || r.ownerRecordsUpdated || r.ownerRecordsRemoved) {
+          console.log('[Auth] delete-account files', JSON.stringify(r))
+        }
+        return r
+      }
     })
     dataLayer = { db, restore, auth, storage, pins, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
@@ -1868,57 +1879,89 @@ const server = createServer((req, res) => {
     return
   }
 
-  // Get detailed connection info for dashboard server UI
+  // Who watches a match (tablet status on the scorer, LAN server dashboard).
+  // LAN: the full list (ids, IPs, rooms), as before. Cloud: an anonymous
+  // caller gets counts only: without matchId the totals, with matchId one
+  // entry per watching tablet of THAT match carrying just its role and team
+  // (no id, no IP, no connect time, no list of rooms). The detail (ids,
+  // connect times) of one match needs that match's PIN or match token
+  // (X-OV-Match-Pin / X-OV-Match-Token, as GET /api/match/:id).
   if (url.pathname === '/api/server/connections') {
     if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
       res.end(JSON.stringify({ error: 'Rate limited' }))
       return
     }
-    const matchId = url.searchParams.get('matchId')
+    const matchIdParam = url.searchParams.get('matchId')
+    const matchId = matchIdParam ? normalizeMatchId(matchIdParam) : null
 
-    // Build client list (exclude WebSocket object and filter by matchId if provided)
-    const clients = []
+    // Cloud: the detail of one match only with its PIN or match token
+    let detail = !IS_CLOUD
+    if (IS_CLOUD && matchId) {
+      const entry = activeMatches.get(matchId)
+      detail = tokenGrantsRelay(req.headers['x-ov-match-token'], matchId, entry?.match)
+      const offeredPin = req.headers['x-ov-match-pin']
+      if (!detail && entry && typeof offeredPin === 'string' && offeredPin.trim()) {
+        const ipKey = ipBucketKey(getClientIp(req))
+        if (pinFailureLimiter.isLimited(ipKey)) {
+          sendJson(res, 429, { error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, { 'Retry-After': '600' })
+          return
+        }
+        detail = pinGrantsAccess(entry.match, offeredPin)
+        if (detail) pinFailureLimiter.refund(ipKey)
+      }
+    }
+
+    // Dashboard clients (referee, bench, livescore...) - not the scoreboard
+    const watchers = []
     connections.forEach((client) => {
-      // Skip if matchId filter is set and client is not in that match
-      if (matchId && String(client.matchId) !== String(matchId)) {
-        return
-      }
-      // Only include dashboard clients (referee, bench) - not scoreboard
-      if (client.role && client.role !== 'scoreboard') {
-        clients.push({
-          id: client.id,
-          // LAN scorers see which tablet is which; a public cloud relay must
-          // not hand every client's IP to anonymous callers.
-          ip: IS_CLOUD ? null : client.ip,
-          // A PIN-verified role wins over the subscribe-match label
-          role: client.role === 'subscriber' && client.device ? client.device : client.role,
-          team: client.team || client.deviceTeam,
-          matchId: client.matchId,
-          connectedAt: client.connectedAt
-        })
-      }
+      if (!client.role || client.role === 'scoreboard') return
+      if (matchId && String(client.matchId) !== String(matchId)) return
+      watchers.push(client)
     })
+    // A PIN-verified role wins over the subscribe-match label
+    const roleOf = (client) => client.role === 'subscriber' && client.device ? client.device : client.role
+    const refereesCount = watchers.filter(c => roleOf(c) === 'referee').length
+    const benchCount = watchers.filter(c => roleOf(c) === 'bench').length
 
-    // Count by role
-    const refereesCount = clients.filter(c => c.role === 'referee').length
-    const benchCount = clients.filter(c => c.role === 'bench').length
+    let clients
+    if (detail) {
+      clients = watchers.map((client) => ({
+        id: client.id,
+        // LAN scorers see which tablet is which; a public cloud relay must
+        // not hand every client's IP to anonymous callers.
+        ip: IS_CLOUD ? null : client.ip,
+        role: roleOf(client),
+        team: client.team || client.deviceTeam,
+        matchId: client.matchId,
+        connectedAt: client.connectedAt
+      }))
+    } else if (matchId) {
+      // Counts, in the shape the scorer's tablet status reads (role, team)
+      clients = watchers.map((client) => ({ role: roleOf(client), team: client.team || client.deviceTeam || null, matchId: client.matchId }))
+    } else {
+      clients = []
+    }
 
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({
+    const body = {
+      access: detail ? 'detail' : 'counts',
       totalClients: connections.size,
-      dashboardClients: clients.length,
+      dashboardClients: watchers.length,
       referees: refereesCount,
       benches: benchCount,
-      clients,
+      clients
+    }
+    if (!IS_CLOUD) {
       // Watchers only, like the LAN relays (the scoreboard's sockets are room members too)
-      matchSubscriptions: Object.fromEntries(
-        Array.from(rooms.entries()).map(([matchId, room]) => [
-          matchId,
+      body.matchSubscriptions = Object.fromEntries(
+        Array.from(rooms.entries()).map(([roomId, room]) => [
+          roomId,
           [...room.clients].filter((id) => connections.get(id)?.role !== 'scoreboard').length
         ])
       )
-    }))
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(body))
     return
   }
 

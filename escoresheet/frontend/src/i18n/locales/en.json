@@ -184,6 +184,8 @@
     "noRefereeHistory": "No referee history yet. Enter referees manually and they will be saved for future matches."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Scorer date of birth: needed for the coin toss",
+    "dobRequiredForCoinToss": "Required for the coin toss",
     "title": "Match setup",
     "scoresheet": "Scoresheet",
     "options": "Options",
@@ -1543,6 +1545,10 @@
     "serving": "Serving"
   },
   "auth": {
+    "deleteAccountWhatStays": "The matches you scored and their scoresheets: they are the clubs' official match records, and your name stays on them as the scorer. Matches saved on this device stay on it.",
+    "deleteAccountWhatStaysTitle": "Kept, without your account",
+    "deleteAccountWhatGoes": "Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 7 months at most.",
+    "deleteAccountWhatGoesTitle": "Deleted from the server",
     "signIn": "Sign in",
     "signUp": "Sign up",
     "signOut": "Sign out",
@@ -1592,7 +1598,7 @@
     "deleteAccountWarning": "Deleting your account is permanent and cannot be undone.",
     "deleteAccount": "Delete account",
     "confirmDeleteAccount": "Confirm account deletion",
-    "deleteAccountConfirmMessage": "This action is permanent. All your data will be deleted.",
+    "deleteAccountConfirmMessage": "This action is permanent and cannot be undone.",
     "typeEmailToConfirm": "Type your email to confirm:",
     "emailDoesNotMatch": "Email does not match",
     "deleting": "Deleting...",

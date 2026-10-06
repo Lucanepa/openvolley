@@ -183,6 +183,8 @@
     "noRefereeHistory": "No kei Schiri-Historie. Gebed Sie Schiri manuell ii und sie werdet für zukünftigi Spiil gspeicheret."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Geburtsdatum vom Schriber: für d Usloosig nötig",
+    "dobRequiredForCoinToss": "Für d Usloosig nötig",
     "title": "Spiiliihrichtig",
     "scoresheet": "eMatchblatt",
     "options": "Optione",
@@ -1511,6 +1513,10 @@
     "serving": "Ufschlag"
   },
   "auth": {
+    "deleteAccountWhatStays": "D Spiil, wo Sie gschribe händ, und ihri Matchblätter: Das sind di offizielle Spielbricht vo de Verein, und Ihre Name blibt druff als Schriber. Spiil, wo uf däm Grät gspeicheret sind, bliibed druff.",
+    "deleteAccountWhatStaysTitle": "Blibt erhalte, ohni Ihres Konto",
+    "deleteAccountWhatGoes": "Ihres Konto und Profil, Ihri Aamäldige, Ihri Liste «Mini Spiil», Ihri Bearbeitigsrächt a Spiil, Ihri Cloud-Backups und Protokoll und Ihre Zuegriff uf d Matchblätter, wo Sie uueglade händ. Verschlüsseleti Server-Backups bhaltet e Kopie, bis sie ablaufed, spöötischtens nach öppe 7 Mönet.",
+    "deleteAccountWhatGoesTitle": "Vom Server glöscht",
     "signIn": "Aamälde",
     "signUp": "Registriere",
     "signOut": "Abmälde",
@@ -1560,7 +1566,7 @@
     "deleteAccountWarning": "S Lösche vo Ihrem Konto isch duurhaft und chan nöd rückgängig gmacht werde.",
     "deleteAccount": "Konto lösche",
     "confirmDeleteAccount": "Kontolöschig bestätige",
-    "deleteAccountConfirmMessage": "Die Aktion isch duurhaft. Alli Ihri Date werdet glöscht.",
+    "deleteAccountConfirmMessage": "Die Aktion isch duurhaft und chan nöd rückgängig gmacht werde.",
     "typeEmailToConfirm": "Gänd Sie Ihri E-Mail zur Bestätigung ii:",
     "emailDoesNotMatch": "E-Mail stimmt nöd überii",
     "deleting": "Wird glöscht...",
