@@ -240,15 +240,19 @@ const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle, label }) {
 // strip rounds its own top corners to sit inside the box instead.
 const ROSTER_TABLE = 'rounded-lg border border-stone-200 bg-white gap-y-0 divide-y divide-stone-100'
 const ROSTER_TABLE_HEAD = 'rounded-t-[7px] rounded-b-none bg-stone-50 text-[11px] font-bold uppercase tracking-wide text-stone-500'
-// One official (1st/2nd referee, scorer, assistant scorer): a bordered box with
-// a heading strip, the kit inner box of the setup page card (never a card in a card).
-const OFFICIAL_BOX = 'rounded-xl border border-stone-200 bg-white overflow-hidden transition-colors'
+// One official (1st/2nd referee, scorer, assistant scorer): the kit Block
+// (stone-50/60, hairline, no shadow) with a heading strip, inside the setup
+// page card (volleyui: never a card in a card).
+const OFFICIAL_BOX = 'rounded-xl border border-stone-200/70 bg-stone-50/60 overflow-hidden transition-colors'
 const OFFICIAL_BOX_COLLAPSED = 'rounded-xl border border-dashed border-stone-200 overflow-hidden transition-colors'
 // One head height for every box (h-8 Database button + py-2 + hairline), and a
 // tighter inline gap so title + Database + switch stay on one line at 1280.
-const OFFICIAL_HEAD = 'flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 min-h-12.25 px-4 py-2 border-b border-stone-100 bg-stone-50/60'
+const OFFICIAL_HEAD = 'flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 min-h-12.25 px-4 py-2 border-b border-stone-200/70'
 const OFFICIAL_HEAD_COLLAPSED = 'flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 min-h-12 px-4 py-2'
 const OFFICIAL_TITLE = 'whitespace-nowrap text-sm font-semibold text-stone-700'
+// A section inside the setup page card (match info, team, live server, roster
+// panels): the kit Block, sunken stone-50/60 with a hairline and no shadow.
+const SETUP_BLOCK = 'rounded-xl border border-stone-200/70 bg-stone-50/60'
 
 const OfficialCard = memo(function OfficialCard({
   title,
@@ -3480,12 +3484,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             />
           </div>
 
-          {/* Teams Card - Full width row at bottom */}
-          <div className="col-span-5 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          {/* Teams - full width row at bottom: a section on its head rule, no box */}
+          <div className="col-span-5 pt-2">
             <SectionHeader title={t('matchSetup.teams')} as="h2" className="mb-4" />
             <div className="flex items-center gap-6">
               {/* Home Team */}
-              <div data-help-id="setup-home-team-card" className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+              <div data-help-id="setup-home-team-card" className="flex-1 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
                 {/* Header row: Trikot container + Title */}
                 <div className="mb-4 flex items-center gap-3">
                   {/* Trikot container */}
@@ -3557,7 +3561,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
 
               {/* Away Team */}
-              <div data-help-id="setup-away-team-card" className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+              <div data-help-id="setup-away-team-card" className="flex-1 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
                 {/* Header row: Trikot container + Title */}
                 <div className="mb-4 flex items-center gap-3">
 
@@ -6153,7 +6157,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     <span
       className={cn(
         'mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold leading-none',
-        ready ? 'bg-emerald-600 text-white' : pending ? 'bg-sky-600 text-white' : 'border border-amber-300 bg-amber-100 text-amber-800'
+        ready ? 'bg-emerald-700 text-white' : pending ? 'bg-sky-600 text-white' : 'border border-amber-300 bg-amber-100 text-amber-800'
       )}
       aria-label={ready ? t('scoreboard.complete') : pending ? t('scoreboard.readyToConfirm') : t('scoreboard.incomplete')}
       title={ready ? t('scoreboard.complete') : pending ? t('scoreboard.readyToConfirm') : t('scoreboard.incomplete')}
@@ -6567,8 +6571,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         <div
           data-help-id="setup-match-info-card"
           className={cn(
-            'rounded-xl border bg-white p-4 sm:p-5',
-            matchInfoConfirmed ? 'border-stone-200' : canConfirmMatchInfo ? 'border-2 border-sky-300' : 'border-2 border-amber-300'
+            'rounded-xl border bg-stone-50/60 p-4 sm:p-5',
+            matchInfoConfirmed ? 'border-stone-200/70' : canConfirmMatchInfo ? 'border-2 border-sky-300' : 'border-2 border-amber-300'
           )}
         >
           <div className="mb-4 flex items-center justify-between gap-2">
@@ -6630,7 +6634,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       {/* Connection toggles moved to Scoreboard Options menu (ConnectionSetupModal) */}
 
       <div className={cn('grid-4 setup-section', !matchInfoConfirmed && 'pointer-events-none opacity-50')}>
-        <div className="flex flex-col gap-5 rounded-xl border border-stone-200 bg-white p-4 sm:p-5" style={{ order: 1 }}>
+        <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 1 }}>
           {/* Row 1: Status + Team Name + Sync Indicator */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -6686,7 +6690,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
 
-        <div className="flex flex-col gap-5 rounded-xl border border-stone-200 bg-white p-4 sm:p-5" style={{ order: 2 }}>
+        <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }}>
           {/* Row 1: Status + Team Name + Sync Indicator */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -6742,7 +6746,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
-          <div className="flex flex-col gap-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5" style={{ order: 3 }}>
+          <div className={cn('flex flex-col gap-4 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 3 }}>
             <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1">
@@ -7104,7 +7108,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         )
 
         const teamPanel = (teamName, players, liberos, liberosCount, bench) => (
-          <div className="flex flex-col gap-4 rounded-xl border border-stone-200 bg-white p-4 sm:p-5">
+          <div className={cn('flex flex-col gap-4 p-4 sm:p-5', SETUP_BLOCK)}>
             <h3 className="m-0 text-base font-semibold text-stone-900">{t('roster.titleWithTeam', { team: teamName })}</h3>
             {/* Players Section */}
             <div>

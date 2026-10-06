@@ -2487,7 +2487,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                       {check.status === 'pass' && <span className="text-emerald-600">✓</span>}
                       {check.status === 'warn' && <span className="text-amber-600">!</span>}
                       {check.status === 'fail' && <span className="text-red-600">✕</span>}
-                      {check.status === 'skip' && <span className="text-stone-400">—</span>}
+                      {check.status === 'skip' && <span className="text-stone-500">—</span>}
                     </span>
                     <span className={check.status === 'skip' ? 'text-stone-500' : 'text-stone-800'} style={{
                       fontSize: 13,

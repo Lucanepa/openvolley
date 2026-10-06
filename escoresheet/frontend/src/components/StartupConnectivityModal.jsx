@@ -29,14 +29,16 @@ export default function StartupConnectivityModal({
 }) {
   const { t } = useTranslation()
   const hasAutoDismissed = useRef(false)
+  // True only while a countdown interval runs, so a stale 0 left from an
+  // earlier opening can never dismiss a reopened modal at once.
+  const counting = useRef(false)
   const [countdown, setCountdown] = useState(AUTO_DISMISS_SECONDS)
 
-  // Reset when modal opens fresh
+  // Reset on every open/close: the component stays mounted while closed, so
+  // the countdown must not keep its 0 into the next opening.
   useEffect(() => {
-    if (open) {
-      hasAutoDismissed.current = false
-      setCountdown(AUTO_DISMISS_SECONDS)
-    }
+    if (open) hasAutoDismissed.current = false
+    setCountdown(AUTO_DISMISS_SECONDS)
   }, [open])
 
   // App is ready when DB works AND at least one sync path works (cloud backend OR WebSocket).
@@ -77,28 +79,32 @@ export default function StartupConnectivityModal({
     }
   }, [open, browserOffline, onDismiss])
 
-  // Countdown + auto-dismiss once the sync works
+  // Countdown once the sync works. The updater only counts down: calling
+  // onDismiss (a parent setState) from inside it would update App while this
+  // component renders. The effect below dismisses when it reaches 0.
   useEffect(() => {
     if (!open || !primaryOk || hasAutoDismissed.current) return
 
     setCountdown(AUTO_DISMISS_SECONDS)
 
     const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval)
-          if (!hasAutoDismissed.current) {
-            hasAutoDismissed.current = true
-            onDismiss?.()
-          }
-          return 0
-        }
-        return prev - 1
-      })
+      counting.current = true
+      setCountdown(prev => (prev <= 1 ? 0 : prev - 1))
     }, 1000)
 
-    return () => clearInterval(interval)
-  }, [open, primaryOk, onDismiss])
+    return () => {
+      counting.current = false
+      clearInterval(interval)
+    }
+  }, [open, primaryOk])
+
+  // Auto-dismiss when the countdown reaches 0 (once per opening)
+  useEffect(() => {
+    if (open && primaryOk && counting.current && countdown === 0 && !hasAutoDismissed.current) {
+      hasAutoDismissed.current = true
+      onDismiss?.()
+    }
+  }, [open, primaryOk, countdown, onDismiss])
 
   if (!open || browserOffline) return null
 
@@ -123,7 +129,7 @@ export default function StartupConnectivityModal({
       return <Loader2 size={18} className="animate-spin text-stone-400" aria-hidden="true" />
     }
     if (status === 'not_available' || status === 'not_configured') {
-      return <span className="text-base leading-none text-stone-400" aria-hidden="true">–</span>
+      return <span className="text-base leading-none text-stone-500" aria-hidden="true">–</span>
     }
     if (isStatusOk(status)) {
       return <Check size={18} strokeWidth={2.5} className="text-green-600" aria-hidden="true" />

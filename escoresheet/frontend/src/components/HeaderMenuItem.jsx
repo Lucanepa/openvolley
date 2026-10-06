@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { SwitchTrack } from '../ui/Switch.jsx'
+import { StatusPill } from '../ui/StatusPill.jsx'
 import {
   MENU_ROW, MENU_ROW_ON, MENU_ROW_DANGER, MENU_INFO_ROW, MENU_ICON, MENU_COUNT, STATUS_TONES,
   itemTone, itemStatusTone
@@ -14,8 +15,8 @@ import {
  *
  * A row with nothing to do (`info`, or `disabled` without an onClick: the TEST
  * MODE flag, the Server / WebSocket / Database status) is drawn as a static
- * info row at full opacity in its 700/800 tone, with a dot and a word for a
- * status. The chosen row of a choice list (`active`) is inverted slate-900,
+ * info row at full opacity in its 700/800 tone; a status is a kit StatusPill
+ * (tinted word, no border). The chosen row of a choice list (`active`) is inverted slate-900,
  * the same as the chosen language.
  */
 export default function HeaderMenuItem({ item, onClose }) {
@@ -26,10 +27,7 @@ export default function HeaderMenuItem({ item, onClose }) {
         {item.icon && <span className={cn(MENU_ICON, tone.text)}>{item.icon}</span>}
         <span className={cn('flex-1', item.status ? 'text-stone-700' : tone.text)}>{item.label}</span>
         {item.status && (
-          <span className={cn('inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold', tone.text)}>
-            <span aria-hidden="true" className={cn('h-2 w-2 rounded-full', tone.dot)} />
-            {item.status.word}
-          </span>
+          <StatusPill className={cn('shrink-0', tone.tint)}>{item.status.word}</StatusPill>
         )}
       </div>
     )

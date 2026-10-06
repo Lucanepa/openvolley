@@ -11,7 +11,7 @@ import { cn } from '../ui/cn.js'
 import { SwitchTrack } from '../ui/Switch.jsx'
 import {
   FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
-  MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, STATUS_PILL, STATUS_TONES
+  MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, STATUS_PILL, STATUS_TONES, HEADER_SWITCH
 } from './chromeClasses'
 
 
@@ -323,14 +323,14 @@ export default function MainHeader({
         style={{ zIndex: 1000 }}
       >
         {/* Match Number */}
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t('header.notSynced')}</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('header.notSynced')}</div>
         <div className="text-sm font-bold text-stone-900 tabular-nums">
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
 
         {/* Match ID - for debugging/support */}
         {matchId && (
-          <div className="font-mono text-[10px] text-stone-400">
+          <div className="font-mono text-[10px] text-stone-500">
             ID: {matchId}
           </div>
         )}
@@ -524,7 +524,7 @@ export default function MainHeader({
               aria-checked={!offlineMode}
               onClick={() => setOfflineMode(!offlineMode)}
               title={offlineMode ? t('header.switchToOnline') : t('header.switchToOffline')}
-              className={cn('inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-lg border-0 bg-transparent px-2 text-xs font-medium tracking-normal text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer', FOCUS_RING)}
+              className={HEADER_SWITCH}
             >
               <span>{offlineMode ? t('header.offline') : t('header.online')}</span>
               {/* Toggle Switch: emerald when online (no brand red on the scoreboard, R4) */}
@@ -580,7 +580,7 @@ export default function MainHeader({
                     <span>{t('header.connectDevices')}</span>
                   )}
                   {dashboardServer.refereePin && dashboardServer.dashboardCount > 0 && (
-                    <span className="rounded bg-white/70 px-1.5 py-px font-mono text-[10px] tracking-[0.15em] text-stone-700">
+                    <span className="rounded bg-stone-100 px-1.5 py-px font-mono text-[10px] tracking-[0.15em] text-stone-700">
                       {dashboardServer.refereePin}
                     </span>
                   )}
@@ -599,7 +599,7 @@ export default function MainHeader({
                     zIndex: 1000
                   }}
                 >
-                  <div className="border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+                  <div className="border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
                     {t('header.dashboardConnectionInfo')}
                   </div>
 

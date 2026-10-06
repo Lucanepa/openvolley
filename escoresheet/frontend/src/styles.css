@@ -33,11 +33,16 @@
    The side columns' own buttons (Improper Request / Delay Warning / Delay
    Penalty chips, IR & Delays, TO/SUB, bench and libero buttons) are pinned
    too; the side-column surfaces around them take the stone hairlines.
+   The referee dashboard's scoring view (.referee-court in Referee.jsx: team
+   chips, set counters, serve box, score digits, the court floor and lines,
+   TO/SUB counters, sanctions and the last-action line) is pinned whole, as
+   its floor is a translucent tint over these surfaces.
    This only sets custom properties (and re-resolves the inherited text
    colour, which the `button` rule overrides as before); the frozen rules
    themselves are not edited. */
 :where(.court-wrapper, .court, .set-score-display, [data-help-id="scoreboard-set-display"],
-       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button) {
+       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button,
+       .referee-court) {
   --bg: #f1f5f9;
   --panel: #ffffff;
   --panel-2: #f8fafc;
@@ -273,14 +278,22 @@ p {
   }
 }
 
-/* Never a card in a card: inside the .setup page card (match setup, match end)
-   a .card is the kit inner bordered box: white, stone-200 hairline, one radius
-   step down, no shadow. White (not the tinted Block) because MatchEnd's frozen
-   readouts (3:0, the paper-sheet Results) sit on these and keep their ground. */
+/* Never a card in a card: inside the .setup page card (match end) a .card is
+   the kit Block: sunken stone-50/60, stone-200/70 hairline, one radius step
+   down, no shadow. Its padding and layout are unchanged. The frozen readouts
+   keep their own colours: the paper-sheet Results and Sanctions boxes paint
+   their own white. The Winner card stays white (the inner-box finish without
+   the tint): its 3:0 digits and winner bar have no ground of their own, so the
+   tint would shift those frozen pixels. */
 .setup .card {
-  border-color: var(--ov-hairline);
+  background: rgb(250 250 249 / 0.6); /* stone-50/60 */
+  border-color: var(--ov-hairline-soft);
   border-radius: var(--ov-radius-lg);
   box-shadow: none;
+}
+
+.setup .card.match-end-winner {
+  background: var(--ov-card);
 }
 
 .card h3 {

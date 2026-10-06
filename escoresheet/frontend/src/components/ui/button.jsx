@@ -18,7 +18,7 @@ export const buttonVariants = cva(
       variant: {
         default: 'rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 disabled:bg-stone-300',
         destructive: 'rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:bg-stone-300',
-        success: 'rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50',
+        success: 'rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50',
         dark: 'rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:bg-stone-200 disabled:text-stone-400',
         outline: 'rounded-lg border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-50',
         secondary: 'rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-100 disabled:opacity-50',
