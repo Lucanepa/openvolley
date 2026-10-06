@@ -77,28 +77,28 @@ export default function StartupConnectivityModal({
     }
   }, [open, browserOffline, onDismiss])
 
-  // Countdown + auto-dismiss once the sync works
+  // Countdown once the sync works. The updater only counts down: calling
+  // onDismiss (a parent setState) from inside it would update App while this
+  // component renders. The effect below dismisses when it reaches 0.
   useEffect(() => {
     if (!open || !primaryOk || hasAutoDismissed.current) return
 
     setCountdown(AUTO_DISMISS_SECONDS)
 
     const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval)
-          if (!hasAutoDismissed.current) {
-            hasAutoDismissed.current = true
-            onDismiss?.()
-          }
-          return 0
-        }
-        return prev - 1
-      })
+      setCountdown(prev => (prev <= 1 ? 0 : prev - 1))
     }, 1000)
 
     return () => clearInterval(interval)
   }, [open, primaryOk, onDismiss])
+
+  // Auto-dismiss when the countdown reaches 0 (once per opening)
+  useEffect(() => {
+    if (open && primaryOk && countdown === 0 && !hasAutoDismissed.current) {
+      hasAutoDismissed.current = true
+      onDismiss?.()
+    }
+  }, [open, primaryOk, countdown, onDismiss])
 
   if (!open || browserOffline) return null
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { useState } from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
@@ -63,6 +64,26 @@ describe('StartupConnectivityModal while offline', () => {
     expect(screen.getByText('(5s)')).toBeInTheDocument()
     act(() => { vi.advanceTimersByTime(6000) })
     expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('synced: the auto-dismiss does not update the parent while the modal renders', () => {
+    vi.useFakeTimers()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    function Parent() {
+      const [open, setOpen] = useState(true)
+      return (
+        <>
+          <span>{open ? 'modal open' : 'modal closed'}</span>
+          <StartupConnectivityModal open={open} connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'disconnected' }} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
+        </>
+      )
+    }
+    render(<Parent />)
+    act(() => { vi.advanceTimersByTime(6000) })
+    expect(screen.getByText('modal closed')).toBeInTheDocument()
+    const renderPhaseUpdates = consoleError.mock.calls.filter(args => String(args[0]).includes('Cannot update a component'))
+    expect(renderPhaseUpdates).toHaveLength(0)
   })
 })
 
