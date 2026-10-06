@@ -236,7 +236,8 @@ Writes that carry no game PIN (sets, events, live state, plain updates) wait
 until that first match upsert, or until the app's own `claim` (the sync queue,
 and since this release the direct set-end / match-end syncs too, try it once a
 minute per match and requeue the match's parked jobs). A deleted account leaves
-its matches ownerless the same way (`ON DELETE SET NULL`).
+its matches ownerless the same way (`ON DELETE SET NULL`; see "Deleting an
+account").
 
 **Reference tables:** `svrz_games` (the official schedule, written by the
 server's vm-sync job) is read-only for every account but admins (403
@@ -351,6 +352,59 @@ stored before this change (`backup/backups/…`, no user folder) are no longer
 reachable through the API; the 30-day sweep still removes them (and sweeps
 every account's `{user id}/backups`).
 
+### Deleting an account
+
+`POST /api/auth/delete-account` (Profile > Delete account) removes the
+account's personal data on the server and keeps the match records, which
+belong to the clubs and the federation, not to the scorer's account.
+
+| Deleted | Where |
+|---|---|
+| the account (email, password hash) | `auth.users` |
+| every session (all devices signed out) | `auth.app_sessions` |
+| the profile (name, date of birth, licence, roles) | `public.profiles` |
+| My Matches links | `public.user_matches` |
+| editor rights on other accounts' matches | `public.match_editors` |
+| match backups and interaction logs | storage `backup/{user id}/` (whole folder; the same for any other owner-scoped bucket, except the uploader-only `scoresheets`, whose files stay even with `STORAGE_OWNER_SCOPE_BUCKETS=all`) |
+| the right to read the scoresheets it uploaded | the account's entry in every `.owners/scoresheets/*.json` record (a record left without owners is deleted) |
+
+| Kept | Why |
+|---|---|
+| the matches it created (`matches`, `sets`, `events`, `match_live_state`), with `created_by` set NULL | official match records (results, rosters, officials, signatures) that the clubs and the league rely on; a match is not the scorer's personal data. Without an owner they are read-only except for admins and editors, like the rows that predate `005` (see "Who may write a match"). |
+| the officials list of those matches, including the scorer's own name and date of birth | it is part of the match record, exactly as on the paper scoresheet |
+| the scoresheet files it uploaded (`scoresheets/…`) | the approved scoresheet is the match's official record. With no owner left nobody can read it through the API; an operator can grant it to the club or federation account (`scripts/storage-owner.mjs grant`). |
+| beach competition matches it created or claimed, with `created_by`/`claimed_by` NULL | competition records, same reasoning |
+| anything on the user's devices (IndexedDB matches, cached profile) | not the server's to delete; the app clears the stored session and cached profile |
+| copies in the host backups, until they expire (see below) | they exist to restore the service after a loss; they are GPG-encrypted to a key that is not on the server and cannot be edited row by row |
+
+**Host backups still hold a deleted account until they rotate out.** The
+account's rows (email, password hash, profile with date of birth, licence,
+sessions, user_matches, match_editors) are in every database dump taken before
+the deletion, and its `backup/{user id}/` files are in the nightly storage
+snapshots (`deploy/backup-openvolley.sh`). Retention:
+
+| Copy | Kept |
+|---|---|
+| hourly database dumps on the server (`db-*.dump.gpg`) | 48 h (`OV_DB_KEEP_MIN`) |
+| nightly `scoresheets-*`/`snapshots-*.tar.gpg` on the server | 7 days (`OV_FILES_KEEP_DAYS`) |
+| NAS pull (`deploy/nas-pull.sh`): dumps / file archives | 30 days (`NP_KEEP_DB_DAYS`) / 90 days (`NP_KEEP_FILES_DAYS`) |
+| NAS btrfs snapshots of that folder (Synology Snapshot Replication) | 7 daily, 4 weekly, 6 monthly |
+
+So the last copy is gone about 7 months after the deletion (a monthly NAS
+snapshot taken up to a month later, still holding a dump from before it, is
+kept 6 months). A restore from one of these backups brings the account back:
+after restoring, delete it again (or re-run the deletion for every account
+deleted since the dump was taken). The delete dialog says this in one line
+(`auth.deleteAccountWhatGoes`).
+
+Order (`lib/auth.js` `deleteAccount`): the files go first
+(`storage.deleteUserData`); when that fails the answer is 503 and **no row is
+deleted**, so the user can retry with the same session. Then one transaction
+revokes the sessions, deletes the rows above, detaches the matches and deletes
+`auth.users`. The file clean-up runs once more after the commit (an upload that
+was in flight). Tests: `tests/accountData.e2e.test.js`, `tests/auth.test.js`,
+`tests/storage.test.js`.
+
 ### Sign-up
 
 Auto-confirmed (no email flow yet). Limits: 5 per hour per IP (/64), 3 per
@@ -397,7 +451,7 @@ Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works
 
 ## Self-hosted storage (`lib/storage.js`)
 
-Replaces Supabase Storage behind `POST /api/storage/upload`, `/download` and `/list` (buckets `scoresheets` and `backup`). Objects live at `{STORAGE_DIR}/{bucket}/{path}`. The request and response shapes are the ones `apiStorage` in `frontend/src/lib/apiClient.js` already uses; `signed-url` is gone (404, it had no caller).
+Replaces Supabase Storage behind `POST /api/storage/upload`, `/download`, `/list` and `/remove` (buckets `scoresheets` and `backup`). Objects live at `{STORAGE_DIR}/{bucket}/{path}`. The request and response shapes are the ones `apiStorage` in `frontend/src/lib/apiClient.js` already uses; `signed-url` is gone (404, it had no caller).
 
 | Variable | Description | Default |
 | --- | --- | --- |
@@ -419,8 +473,9 @@ Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry 
 
 - **Ownership comes from creating the file, not from uploading to its path.** The first upload of a path records its account as the owner in `{STORAGE_DIR}/.owners/{bucket}/{sha256(path)}.json` (`{"key":"<path>","owners":["<user uuid>"]}`, written atomically). An upload to an existing file by anyone else is refused with 403 and changes nothing: there is no way to add yourself to someone else's file. Owner check, record and commit of one path run under one lock in the server process, so a download never sees a file under an older record. (One server process per `STORAGE_DIR`.)
 - **The path cannot be claimed in advance.** Game numbers and dates are public (`/api/db` reads), so a key-less name could be squatted by anyone who uploads first. The scorer app therefore names the files with `{key}` = `k` + 128 random bits that it keeps on the scoring device (localStorage, never on the match record, which is synced and backed up). `n` is the game number, or the external id of a match without one (no shared `unknown` name).
-- **Finding your own file.** `list` in an uploader-only bucket shows the caller only its own files (folders are always shown), so the random part never leaks. The viewer (`/scoresheet/?date=…&game=…`, opened from **My Matches**) lists the date folder and opens the caller's newest approved file of that game.
-- **Clean-up.** `sweep()` (daily) removes owner records whose file is gone (after a few minutes' grace, under the same lock), so a stale record can never hand rights to a file written later at the same path. Uploads only ever record one owner; the list is capped at 16 for operator grants.
+- **Finding your own file.** `list` in an uploader-only bucket shows the caller only its own files (folders are always shown), so the random part never leaks. The viewer (`/scoresheet/?date=…&game=…`, opened from **My Matches**) lists the date folder and opens the caller's newest approved file of that game. The session lives in the browser per origin, so the standalone archive site (scoresheet subdomain, `frontend/src/ScoresheetApp.jsx`) has its own email/password sign-in: its View links ask for it and then open the scoresheet for its uploader; nobody else can open it there either.
+- **Deleting.** `POST /api/storage/remove {bucket, paths:[…]}` (1-100 paths) deletes the caller's own objects only: in `scoresheets/` an owner of the object, in `backup/` the caller's own folder; any other bucket is 403. The object's owner record (`.owners/{bucket}/{sha256}.json`) is deleted with it, under the same lock. Answer `{data:[{name}]}` with the paths removed (missing ones are skipped). So the uploader of a scoresheet may withdraw it, just as it may already replace it with a new upload: "kept as the official record" (see "Deleting an account") means the server never deletes it on the uploader's behalf, not that the uploader cannot. No app screen calls `remove` today.
+- **Clean-up.** `sweep()` (5 min after start, then daily, with the backup sweep) removes owner records whose file is gone (after a few minutes' grace, under the same lock), in every bucket's `.owners` folder, so a stale record can never hand rights to a file written later at the same path. That is also what clears records left by objects deleted outside the API (a test clean-up with `rm`): the server log line `[Storage] sweep {…"ownerRecordsRemoved":N}` counts them. Uploads only ever record one owner; the list is capped at 16 for operator grants.
 
 Why not a share link: a link is a bearer secret that keeps working for whoever it is forwarded to and ends up in browser history, chat logs and referrers. Why not "the match's owner": rows written before `db/005_match_ownership.sql` have no server-verified owner, and any account can write a `user_matches` row for any match, so they cannot prove who scored a match.
 
@@ -490,7 +545,22 @@ Detailed server status.
 
 ### `GET /api/server/connections?matchId=abc`
 
-Connected dashboard clients (referee, bench). Optional `matchId` filter.
+Connected dashboard clients (referee, bench, livescore), for the scorer's
+tablet status and the LAN server dashboard.
+
+- **LAN relay:** the full list as before: `clients[]` with `id`, `ip`, `role`,
+  `team`, `matchId`, `connectedAt`, and `matchSubscriptions` (watchers per
+  room). Optional `matchId` filter.
+- **Cloud** (`DATABASE_URL` or `IS_CLOUD`), anonymous: counts only.
+  Without `matchId`: `{access:"counts", totalClients, dashboardClients,
+  referees, benches, clients: []}`, no list of rooms. With `matchId`: the same
+  counts for that match and one entry per watching tablet carrying only
+  `{role, team, matchId}` (what the scorer's tablet status reads; no id, IP or
+  connect time).
+- **Cloud with proof:** `X-OV-Match-Pin` (a PIN of that match, as for
+  `GET /api/match/:id`; a wrong one counts as a failed guess) or
+  `X-OV-Match-Token` with `matchId`: `access:"detail"`, the entries of that
+  match with `id` and `connectedAt` (`ip` stays null).
 
 ### `GET /api/match/list`
 
@@ -523,6 +593,15 @@ answer carries the match (no PINs) and `token`, the match access token.
 `{ matchExternalId, team: "home"|"away", pin, roster, coachSignature?, captainSignature? }` ->
 200 `{ success: true }`; 403 wrong PIN or match; 409 match no longer in setup.
 
+The upload PINs reach the server with the match: Match Setup's Create match
+sends the full `connection_pins` (referee, benches, both upload PINs) with the
+match insert, and a regenerated upload PIN through the sync queue, stored as
+HMACs ("PINs at rest"). The roster lands in `connections.pending_{team}_roster`
+of the match row; the scorer reads it with "Search for roster" (its own match
+row, by `external_id`), and Accept / Reject clears it on the server. The
+Upload Roster app calls the relay's `PATCH /api/match/:id` only on a LAN
+relay: this backend has no PATCH route.
+
 ### `POST /api/match/send-info`
 
 Send match info email to a specified address. Requires email configuration.
@@ -553,7 +632,7 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `sign-up` `{email, password, metadata}` | Creates `auth.users` + `profiles` in one transaction (the `handle_new_user` mapping; client `roles` are dropped). 200 `{user}`, no session; 422 on duplicates or bad input |
 | `get-user` `{access_token}` | 200 `{user, session:{expires_at, expires_in}}`; **401 `invalid_token`** when unknown, expired or revoked |
 | `sign-out` `{access_token}` | Deletes the session; always 200 |
-| `delete-account` `{access_token}` | Deletes the user, profile, user_matches and sessions |
+| `delete-account` `{access_token}` | Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". 503 and nothing deleted when the files cannot be removed |
 | `profile` `{access_token}` | Read-only; `updates` is ignored |
 | `update-user` | 501 (email change returns in Phase 7) |
 | `reset-password` | 503 "temporarily unavailable", until Phase 7 |

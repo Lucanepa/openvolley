@@ -567,6 +567,40 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       }
       assert.equal((await auth.handleAuthRequest('get-user', { access_token: t1 }, { ip })).status, 401)
     })
+
+    it('delete-account also drops match_editors and the account\'s files; its matches stay with created_by NULL', async () => {
+      const calls = []
+      const auth = makeAuth({ onAccountDeleted: async (uid) => { calls.push(uid); return { objectsRemoved: 0 } } })
+      const ip = nextIp()
+      const su = await auth.handleAuthRequest('sign-up', { email: 'scorer-del@example.ch', password: 'pw123456' }, { ip })
+      const id = su.body.data.user.id
+      const other = await insertUser('other-del@example.ch', 'pw123456')
+      const { rows: [m1] } = await pool.query(`INSERT INTO public.matches (external_id, status, created_by) VALUES ('del-m1', 'final', $1) RETURNING id`, [id])
+      const { rows: [m2] } = await pool.query(`INSERT INTO public.matches (external_id, status, created_by) VALUES ('del-m2', 'final', $1) RETURNING id`, [other.id])
+      await pool.query(`INSERT INTO public.match_editors (match_id, user_id) VALUES ($1, $2), ($3, $2), ($3, $4)`, [m1.id, id, m2.id, other.id])
+      const token = (await signIn(auth, 'scorer-del@example.ch', 'pw123456')).body.data.session.access_token
+      const r = await auth.handleAuthRequest('delete-account', { access_token: token }, { ip })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual(calls, [id, id], 'files removed before the rows and once more after the commit')
+      const { rows: matches } = await pool.query(`SELECT external_id, created_by FROM public.matches WHERE external_id IN ('del-m1', 'del-m2') ORDER BY external_id`)
+      assert.deepEqual(matches.map((m) => [m.external_id, m.created_by]), [['del-m1', null], ['del-m2', other.id]], 'matches are kept; only the deleted account is forgotten')
+      const { rows: editors } = await pool.query('SELECT user_id FROM public.match_editors WHERE match_id = ANY($1)', [[m1.id, m2.id]])
+      assert.deepEqual(editors.map((e) => e.user_id), [other.id])
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM auth.users WHERE id = $1', [id])).rows[0].n, 0)
+    })
+
+    it('delete-account deletes nothing when the account\'s files cannot be removed (503, retry)', async () => {
+      const auth = makeAuth({ onAccountDeleted: async () => { throw new Error('storage down') } })
+      const ip = nextIp()
+      const su = await auth.handleAuthRequest('sign-up', { email: 'keepme-del@example.ch', password: 'pw123456' }, { ip })
+      const id = su.body.data.user.id
+      const token = (await signIn(auth, 'keepme-del@example.ch', 'pw123456')).body.data.session.access_token
+      const r = await auth.handleAuthRequest('delete-account', { access_token: token }, { ip })
+      assert.equal(r.status, 503)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM auth.users WHERE id = $1', [id])).rows[0].n, 1)
+      assert.equal((await auth.handleAuthRequest('get-user', { access_token: token }, { ip })).status, 200, 'the session still works, so the user can retry')
+      assert.equal(auth.config.onAccountDeleted, undefined, 'the hook is not exposed in config')
+    })
   })
 
   describe('lockout and rate-limit buckets', () => {

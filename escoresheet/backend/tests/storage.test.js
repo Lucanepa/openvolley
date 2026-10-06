@@ -1030,7 +1030,8 @@ describe('handle (HTTP adapter)', () => {
     assert.equal(r2.body.error.code, 'OV_STORAGE_INVALID_PATH')
     assert.equal((await s.handle('upload', null)).status, 400)
     assert.equal((await s.handle('upload', [])).status, 400)
-    assert.equal((await s.handle('remove', {})).status, 404)
+    assert.equal((await s.handle('move', {})).status, 404)
+    assert.equal((await s.handle('remove', {})).status, 400)
   })
 
   it('signed-url is removed (404)', async () => {
@@ -1052,5 +1053,121 @@ describe('handle (HTTP adapter)', () => {
     const r = await make().handle('upload', { bucket: 'backup', path: 'x.json', fileBase64: b64('{}') })
     assert.equal(r.status, 503)
     assert.ok(!JSON.stringify(r.body).includes(base))
+  })
+})
+
+describe('remove and delete-account clean-up', () => {
+  beforeEach(async () => makeRoot())
+  afterEach(async () => fs.rm(base, { recursive: true, force: true }))
+  const U1 = '11111111-1111-4111-8111-111111111111'
+  const U2 = '22222222-2222-4222-8222-222222222222'
+  const sheet = '2026-10-05/game991404_k0123456789abcdef0123456789abcdef_final.json'
+  const pdf = '2026-10-05/game991404_k0123456789abcdef0123456789abcdef.pdf'
+  const opts = { ownerScope: 'prefix', ownerScopeBuckets: ['backup'], uploaderReadBuckets: ['scoresheets'] }
+  const upSheet = (s, userId, p = sheet) =>
+    s.upload({ bucket: 'scoresheets', path: p, fileBase64: b64('{"sheet":1}'), contentType: p.endsWith('.pdf') ? 'application/pdf' : 'application/json', userId })
+  const upBackup = (s, userId, p) =>
+    s.upload({ bucket: 'backup', path: p, fileBase64: b64('{"backup":1}'), contentType: 'application/json', userId })
+  const ownerRecords = async (bucket = 'scoresheets') => {
+    try { return await fs.readdir(path.join(root, '.owners', bucket)) } catch { return [] }
+  }
+
+  it('remove: an owner deletes its scoresheet and the .owners sidecar goes with it', async () => {
+    const s = make(opts)
+    await upSheet(s, U1)
+    await upSheet(s, U1, pdf)
+    assert.equal((await ownerRecords()).length, 2)
+    // not the owner: 403, nothing removed
+    await rejectsWith(s.remove({ bucket: 'scoresheets', paths: [sheet], userId: U2 }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.equal(await exists(path.join(root, 'scoresheets', sheet)), true)
+    const r = await s.handle('remove', { bucket: 'scoresheets', paths: [sheet, '2026-10-05/missing.json'] }, { userId: U1 })
+    assert.deepEqual(r, { status: 200, body: { data: [{ name: sheet }], error: null } })
+    assert.equal(await exists(path.join(root, 'scoresheets', sheet)), false)
+    assert.equal((await ownerRecords()).length, 1, 'the sidecar of the removed object is gone, the other stays')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: pdf }), [U1])
+  })
+
+  it('remove: backup objects only inside the caller\'s own folder; no deletes in an unscoped bucket', async () => {
+    const s = make(opts)
+    await upBackup(s, U1, 'backups/backup_g1/a.json')
+    await upBackup(s, U2, 'backups/backup_g1/a.json')
+    assert.deepEqual(await s.remove({ bucket: 'backup', paths: ['backups/backup_g1/a.json'], userId: U1 }), [{ name: 'backups/backup_g1/a.json' }])
+    assert.equal(await exists(path.join(root, 'backup', U1, 'backups/backup_g1/a.json')), false)
+    assert.equal(await exists(path.join(root, 'backup', U2, 'backups/backup_g1/a.json')), true, 'another account\'s object is untouched')
+    await rejectsWith(s.remove({ bucket: 'backup', paths: ['../x.json'], userId: U1 }), 400)
+    await rejectsWith(s.remove({ bucket: 'backup', paths: [], userId: U1 }), 400)
+    await rejectsWith(s.remove({ bucket: 'backup', paths: ['a.json'] }), 403)
+    const open = make({ uploaderReadBuckets: [] })
+    await rejectsWith(open.remove({ bucket: 'scoresheets', paths: [sheet], userId: U1 }), 403, 'OV_STORAGE_FORBIDDEN')
+  })
+
+  it('remove never follows or deletes a symlink', async () => {
+    const s = make(opts)
+    await fs.mkdir(path.join(root, 'backup', U1), { recursive: true })
+    await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'backup', U1, 'link.json'))
+    await rejectsWith(s.remove({ bucket: 'backup', paths: ['link.json'], userId: U1 }), 403)
+    assert.equal(await exists(path.join(outside, 'secret.json')), true)
+  })
+
+  it('deleteUserData: the account\'s backups and owner entries go; scoresheets stay as unowned records', async () => {
+    const s = make(opts)
+    await upBackup(s, U1, 'backups/backup_g1/a.json')
+    await upBackup(s, U1, 'logs/log_g1.json')
+    await upBackup(s, U2, 'backups/backup_g1/a.json')
+    await upSheet(s, U1)
+    const shared = '2026-10-06/game7_k11111111111111111111111111111111_final.json'
+    await upSheet(s, U2, shared)
+    await s.setOwners({ bucket: 'scoresheets', path: shared, userIds: [U1] }) // operator grant: two owners
+    const other = '2026-10-06/game8_k22222222222222222222222222222222_final.json'
+    await upSheet(s, U2, other)
+
+    const r = await s.deleteUserData(U1)
+    assert.deepEqual(r, { objectsRemoved: 2, bytesRemoved: 24, foldersRemoved: 4, ownerRecordsUpdated: 1, ownerRecordsRemoved: 1 })
+    assert.equal(await exists(path.join(root, 'backup', U1)), false, 'the account\'s backup folder is gone')
+    assert.equal(await exists(path.join(root, 'backup', U2, 'backups/backup_g1/a.json')), true)
+    // the scoresheet file stays (match record), readable by nobody until an operator grants it
+    assert.equal(await exists(path.join(root, 'scoresheets', sheet)), true)
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), [])
+    await rejectsWith(s.download({ bucket: 'scoresheets', path: sheet, userId: U1 }), 403, 'OV_STORAGE_FORBIDDEN')
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: shared }), [U2])
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: other }), [U2])
+    assert.equal((await ownerRecords()).length, 2)
+    // idempotent
+    assert.deepEqual(await s.deleteUserData(U1), { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0, ownerRecordsUpdated: 0, ownerRecordsRemoved: 0 })
+    await rejectsWith(s.deleteUserData('../x'), 400)
+  })
+
+  it('deleteUserData keeps scoresheets when every bucket is owner-scoped (STORAGE_OWNER_SCOPE_BUCKETS=all)', async () => {
+    const s = make({ ...opts, ownerScopeBuckets: ['backup', 'scoresheets'] })
+    await upBackup(s, U1, 'backups/backup_g1/a.json')
+    await upSheet(s, U1)
+    const onDisk = path.join(root, 'scoresheets', U1, sheet)
+    assert.equal(await exists(onDisk), true, 'owner-scoped: the scoresheet sits under the uploader\'s folder')
+    const r = await s.deleteUserData(U1)
+    assert.equal(r.objectsRemoved, 1, 'only the backup object')
+    assert.equal(r.ownerRecordsRemoved, 1)
+    assert.equal(await exists(path.join(root, 'backup', U1)), false)
+    assert.equal(await exists(onDisk), true, 'the scoresheet (official record) stays')
+  })
+
+  it('sweep removes orphaned sidecars (object deleted outside the API), in every bucket', async () => {
+    let t = Date.now()
+    const s = make({ ...opts, now: () => t, sweepDirGraceMs: 1000 })
+    const paths = Array.from({ length: 8 }, (_, i) => `2026-10-0${i + 1}/game${i}_k${String(i).repeat(32)}_final.json`)
+    for (const p of paths) await upSheet(s, U1, p)
+    await upSheet(s, U1) // keeps its object
+    for (const p of paths) await fs.unlink(path.join(root, 'scoresheets', p)) // test clean-up with rm
+    // a record left under a bucket that is no longer uploader-only
+    await fs.mkdir(path.join(root, '.owners', 'backup'), { recursive: true })
+    const crypto = await import('node:crypto')
+    const key = `${U1}/gone.json`
+    await fs.writeFile(path.join(root, '.owners', 'backup', crypto.createHash('sha256').update(key).digest('hex') + '.json'), JSON.stringify({ key, owners: [U1] }))
+    assert.equal((await ownerRecords()).length, 9)
+    t += 60_000
+    const r = await s.sweep()
+    assert.equal(r.ownerRecordsRemoved, 9)
+    assert.equal((await ownerRecords()).length, 1)
+    assert.deepEqual(await ownerRecords('backup'), [])
+    assert.deepEqual(await s.getOwners({ bucket: 'scoresheets', path: sheet }), [U1])
   })
 })

@@ -194,6 +194,8 @@
     "noRefereeHistory": "Noch keine Schiedsrichter-Historie. Geben Sie Schiedsrichter manuell ein und sie werden für zukünftige Spiele gespeichert."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Geburtsdatum des Schreibers: für die Auslosung nötig",
+    "dobRequiredForCoinToss": "Für die Auslosung erforderlich",
     "title": "Spieleinrichtung",
     "scoresheet": "eMatchblatt",
     "options": "Optionen",
@@ -1383,6 +1385,10 @@
     "serving": "Aufschlag"
   },
   "auth": {
+    "deleteAccountWhatStays": "Die Spiele, die Sie geschrieben haben, und ihre Matchblätter: Sie sind die offiziellen Spielberichte der Vereine, und Ihr Name bleibt darauf als Schreiber. Auf diesem Gerät gespeicherte Spiele bleiben darauf.",
+    "deleteAccountWhatStaysTitle": "Bleibt erhalten, ohne Ihr Konto",
+    "deleteAccountWhatGoes": "Ihr Konto und Profil, Ihre Anmeldungen, Ihre Liste «Meine Spiele», Ihre Bearbeitungsrechte an Spielen, Ihre Cloud-Backups und Protokolle sowie Ihr Zugriff auf die Matchblätter, die Sie hochgeladen haben. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 7 Monaten.",
+    "deleteAccountWhatGoesTitle": "Vom Server gelöscht",
     "signIn": "Anmelden",
     "signUp": "Registrieren",
     "signOut": "Abmelden",
@@ -1432,7 +1438,7 @@
     "deleteAccountWarning": "Das Löschen Ihres Kontos ist dauerhaft und kann nicht rückgängig gemacht werden.",
     "deleteAccount": "Konto löschen",
     "confirmDeleteAccount": "Kontolöschung bestätigen",
-    "deleteAccountConfirmMessage": "Diese Aktion ist dauerhaft. Alle Ihre Daten werden gelöscht.",
+    "deleteAccountConfirmMessage": "Diese Aktion ist dauerhaft und kann nicht rückgängig gemacht werden.",
     "typeEmailToConfirm": "Geben Sie Ihre E-Mail zur Bestätigung ein:",
     "emailDoesNotMatch": "E-Mail stimmt nicht überein",
     "deleting": "Wird gelöscht...",

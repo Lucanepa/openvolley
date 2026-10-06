@@ -358,16 +358,32 @@ export default function ProfileModal({ open, onClose }) {
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="profile-delete-title"
-            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             <h3 id="profile-delete-title" className="text-lg font-bold text-stone-900">
               {t('auth.confirmDeleteAccount', 'Confirm account deletion')}
             </h3>
 
-            <p className="mt-2 mb-4 text-sm text-stone-600">
-              {t('auth.deleteAccountConfirmMessage', 'This action is permanent. All your data will be deleted.')}
+            <p className="mt-2 text-sm text-stone-600">
+              {t('auth.deleteAccountConfirmMessage', 'This action is permanent and cannot be undone.')}
             </p>
+
+            {/* What the server deletes and what it keeps (backend README "Deleting an account") */}
+            <dl className="mt-3 mb-4 space-y-2 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-sm">
+              <div>
+                <dt className="font-semibold text-stone-800">{t('auth.deleteAccountWhatGoesTitle', 'Deleted from the server')}</dt>
+                <dd className="mt-0.5 text-stone-600">
+                  {t('auth.deleteAccountWhatGoes', 'Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 7 months at most.')}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-stone-800">{t('auth.deleteAccountWhatStaysTitle', 'Kept, without your account')}</dt>
+                <dd className="mt-0.5 text-stone-600">
+                  {t('auth.deleteAccountWhatStays', "The matches you scored and their scoresheets: they are the clubs' official match records, and your name stays on them as the scorer. Matches saved on this device stay on it.")}
+                </dd>
+              </div>
+            </dl>
 
             <label htmlFor="profile-delete-email" className="mb-1 block text-sm font-medium text-stone-700">
               {t('auth.typeEmailToConfirm', 'Type your email to confirm:')}
@@ -393,12 +409,13 @@ export default function ProfileModal({ open, onClose }) {
               className="text-sm"
             />
 
-            <div className="mt-6 flex gap-2">
+            {/* Side by side when both labels fit, else stacked (never a two-line label) */}
+            <div className="mt-6 flex flex-wrap gap-2">
               <Button
                 variant="secondary"
                 size="xl"
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 rounded-lg font-medium"
+                className="min-w-fit flex-1 whitespace-nowrap rounded-lg font-medium"
               >
                 {t('common.cancel', 'Cancel')}
               </Button>
@@ -407,7 +424,7 @@ export default function ProfileModal({ open, onClose }) {
                 size="xl"
                 onClick={handleDeleteAccount}
                 disabled={deleteLoading || deleteEmailInput !== user?.email}
-                className={cn('flex-1 rounded-lg', deleteLoading && 'opacity-70')}
+                className={cn('min-w-fit flex-1 whitespace-nowrap rounded-lg', deleteLoading && 'opacity-70')}
               >
                 {deleteLoading
                   ? t('auth.deleting', 'Deleting...')
