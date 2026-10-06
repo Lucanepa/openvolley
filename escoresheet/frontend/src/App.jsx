@@ -20,6 +20,7 @@ import ConnectionSetupModal from './components/options/ConnectionSetupModal'
 import { useSyncQueue, useUserMatchLink } from './hooks/useSyncQueue'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
+import { pickNativeBackupFile } from './utils/nativeBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import mikasaVolleyball from './mikasa_v200w.png'
 
@@ -110,6 +111,24 @@ export default function App() {
   // whether the cloud is waiting for a sign-in.
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
+  // Backup file for a restore: the desktop app opens its own dialog in the
+  // backup folder; elsewhere the browser file picker.
+  const pickBackupFile = useCallback(async () => {
+    const native = await pickNativeBackupFile()
+    return native === undefined ? selectBackupFile() : native
+  }, [])
+  // Options > Backup > Restore from a backup file: same preview + restore path
+  // as the Restore match dialog.
+  const restoreFromBackupFile = useCallback(async () => {
+    try {
+      const jsonData = await pickBackupFile()
+      if (!jsonData) return // cancelled
+      setHomeOptionsModal(false)
+      setRestorePreviewData({ data: jsonData, source: 'local' })
+    } catch (err) {
+      setAlertModal(err?.message || t('home.modals.failedToRestoreFromFile'))
+    }
+  }, [pickBackupFile, t])
   // My Matches: link the signed-in account to the match open here (sync queue)
   useUserMatchLink(matchId)
 
@@ -3153,7 +3172,7 @@ export default function App() {
                         setRestoreLoading(true)
                         setRestoreError('')
                         try {
-                          const jsonData = await selectBackupFile()
+                          const jsonData = await pickBackupFile()
                           if (!jsonData) {
                             setRestoreLoading(false)
                             return // User cancelled
@@ -3615,6 +3634,7 @@ export default function App() {
                 toggleWakeLock
               }}
               backup={backup}
+              onRestoreFromFile={restoreFromBackupFile}
               dashboardServer={isElectron ? {
                 enabled: dashboardServerEnabled,
                 onToggle: () => {

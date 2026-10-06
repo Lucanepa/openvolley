@@ -66,6 +66,83 @@ function Row({ children, style }) {
   )
 }
 
+// Apps (desktop / Android): a backup file at every scoring event, no browser API.
+function NativeBackupRow({ backup, onRestoreFromFile, t }) {
+  const [saving, setSaving] = useState(false)
+  const enabled = backup.autoBackupEnabled
+  return (
+    <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm font-semibold text-stone-900">{t('options.autoBackup')}</div>
+          <InfoDot title={t('options.nativeBackupInfo')} />
+        </div>
+        <ToggleSwitch value={enabled} onToggle={() => backup.toggleAutoBackup(!enabled)} />
+      </div>
+
+      {enabled ? (
+        <div>
+          <div className="text-xs text-stone-600">{t('options.nativeBackupOn')}</div>
+          <div
+            className="mt-1.5 break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[11px] leading-snug text-stone-700"
+            data-testid="native-backup-folder"
+          >
+            {backup.backupFolder || t('options.nativeBackupPreparing')}
+          </div>
+          {backup.platform === 'capacitor' && (
+            <div className="mt-1.5 text-[11px] leading-snug text-stone-500">{t('options.nativeBackupCopyHint')}</div>
+          )}
+        </div>
+      ) : (
+        <div className="text-xs text-stone-500">{t('options.nativeBackupOff')}</div>
+      )}
+
+      {backup.lastBackup && (
+        <div className="text-[11px] tabular-nums text-stone-500">
+          {t('options.lastBackup')}: {backup.lastBackup.toLocaleTimeString()}
+        </div>
+      )}
+
+      {backup.backupError && (
+        <div role="status" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {t('options.nativeBackupFailed')} {backup.backupError}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {backup.canOpenBackupFolder && (
+          <button
+            type="button"
+            onClick={() => backup.openBackupFolder()}
+            className={BTN_OUTLINE}
+          >
+            {t('options.openBackupFolder')}
+          </button>
+        )}
+        {onRestoreFromFile && (
+          <button type="button" onClick={onRestoreFromFile} className={BTN_OUTLINE}>
+            {t('options.restoreFromBackupFile')}
+          </button>
+        )}
+        {backup.activeMatchId != null && (
+          <button
+            type="button"
+            disabled={saving}
+            aria-busy={saving || undefined}
+            onClick={async () => {
+              setSaving(true)
+              try { await backup.manualBackup() } finally { setSaving(false) }
+            }}
+            className={BTN_OUTLINE}
+          >
+            {saving ? t('options.backingUp') : t('options.saveBackupNow')}
+          </button>
+        )}
+      </div>
+    </Row>
+  )
+}
+
 function Section({ title, children }) {
   // svrz section head (name on a dark 1.5px rule) over a flat divided list.
   return (
@@ -142,6 +219,7 @@ export default function HomeOptionsModal({
   displayOptions,
   wakeLock,
   backup = null, // Optional backup props from useAutoBackup
+  onRestoreFromFile = null, // Options > Backup > Restore from a backup file
   dashboardServer = null // Optional dashboard server props from useDashboardServer
 }) {
   const { t } = useTranslation()
@@ -697,7 +775,13 @@ export default function HomeOptionsModal({
 
       
 
-        {backup && (
+        {backup?.nativeMode && (
+          <Section title={t('options.backup')}>
+            <NativeBackupRow backup={backup} onRestoreFromFile={onRestoreFromFile} t={t} />
+          </Section>
+        )}
+
+        {backup && !backup.nativeMode && (
           <Section title={t('options.backup')}>
             <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
               <div className="flex items-center justify-between">
