@@ -115,8 +115,8 @@ The app is prepared for f-droid.org, which builds it from source itself:
   Swiss Volley logo in the scoresheet PDF header (`scoresheet_pdf/components/swissvolleylogo.jpg`)
   is left out of this build: with `CAPACITOR=true`, `vite.config.js` aliases
   it to `noFederationLogo.js` (null), and the header slot stays empty. Web and
-  desktop keep it. Icons come from Lucide (ISC) or Game Icons (CC BY 3.0,
-  credited under Options → App version).
+  desktop keep it. Icons come from Lucide (ISC) and Phosphor (MIT), both
+  credited under Options → App version.
 
 ## Signing key
 
