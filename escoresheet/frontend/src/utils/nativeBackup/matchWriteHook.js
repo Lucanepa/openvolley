@@ -1,9 +1,11 @@
 /**
  * Calls onWrite after every committed Dexie write of one match: its events
  * (points, timeouts, substitutions, sanctions, libero changes, set start/end,
- * undo deletes), its sets (scores, set end) and its match row (status, match
- * end, signatures, sanctions, remarks...). This is the place every scorer
- * action lands, whichever screen wrote it.
+ * undo deletes), its sets (scores, set end), its match row (status, match
+ * end, signatures, sanctions, remarks...) and the players of its two teams
+ * (roster, captain and libero changes). This is the place every scorer action
+ * lands, whichever screen wrote it. (Team rows themselves - names, colours -
+ * are backed up with the next of those writes.)
  *
  * Uses Dexie table hooks; the callback runs after the transaction commits
  * (never inside it) and its errors are swallowed, so a backup problem can never
@@ -12,7 +14,7 @@
 
 // Match-row writes that are bookkeeping, not scoring (connection heartbeats,
 // session ownership, sync stamps): they do not start a backup by themselves.
-const VOLATILE_MATCH_KEY = /heartbeat|lastseen|sessionid|synced|_sync|lastupdated|updatedat/i
+export const VOLATILE_MATCH_KEY = /heartbeat|lastseen|sessionid|synced|_sync|lastupdated|updatedat/i
 
 const NO_BACKUP_EVENT_TYPES = new Set(['rally_start'])
 
@@ -98,12 +100,39 @@ export function subscribeMatchWrites(db, matchId, onWrite) {
     })
   }
 
+  // the players of the match's teams (team ids read from the match row)
+  const teamIds = new Set()
+  const learnTeams = (m) => {
+    teamIds.clear()
+    for (const id of [m?.homeTeamId, m?.awayTeamId]) if (id != null) teamIds.add(id)
+  }
+  try {
+    const read = db.matches?.get?.(matchId)
+    if (read && typeof read.then === 'function') read.then(learnTeams, () => {})
+  } catch {
+    // no team ids: player writes wait for the next event
+  }
+  const ofMatchTeam = (...rows) => rows.some(r => r?.teamId != null && teamIds.has(r.teamId))
+  add(db.players, 'creating', function (_key, obj, transaction) {
+    if (ofMatchTeam(obj)) fire(transaction)
+  })
+  add(db.players, 'updating', function (mods, _key, obj, transaction) {
+    if (ofMatchTeam(obj, mods)) fire(transaction)
+  })
+  add(db.players, 'deleting', function (_key, obj, transaction) {
+    if (ofMatchTeam(obj)) fire(transaction)
+  })
+
   // the match row itself
   add(db.matches, 'updating', function (mods, key, obj, transaction) {
-    if (key === matchId && !isVolatileMatchUpdate(mods, obj)) fire(transaction)
+    if (key !== matchId) return
+    if ('homeTeamId' in (mods || {}) || 'awayTeamId' in (mods || {})) learnTeams({ ...obj, ...mods })
+    if (!isVolatileMatchUpdate(mods, obj)) fire(transaction)
   })
-  add(db.matches, 'creating', function (key, _obj, transaction) {
-    if (key === matchId) fire(transaction)
+  add(db.matches, 'creating', function (key, obj, transaction) {
+    if (key !== matchId) return
+    learnTeams(obj)
+    fire(transaction)
   })
 
   return () => {

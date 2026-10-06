@@ -115,6 +115,41 @@ describe('restoreMatchFromJson', () => {
     expect(restore.payload.sets.map(s => s.external_id)).toEqual(restoredSets.map(s => `${SEED}:s:${s.id}`))
   })
 
+  it('an app backup file (no PINs) keeps the PINs of the local copy it replaces', async () => {
+    fakeDb.matches.map.set(2, {
+      id: 2, seed_key: SEED, status: 'live', gamePin: '900001', refereePin: '900002', homeTeamPin: '900003',
+      awayTeamPin: '900004', homeTeamUploadPin: '900005', awayTeamUploadPin: '900006'
+    })
+    const app = backup()
+    delete app.match.refereePin
+    delete app.match.homeTeamPin
+    const newId = await restoreMatchFromJson({ ...app, secretsRemoved: true })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({
+      gamePin: '900001', refereePin: '900002', homeTeamPin: '900003', awayTeamPin: '900004',
+      homeTeamUploadPin: '900005', awayTeamUploadPin: '900006'
+    })
+    const restore = [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
+    expect(restore.payload.match.game_pin).toBe('900001')
+    expect(restore.payload.match.connection_pins).toMatchObject({ referee: '900002', bench_home: '900003' })
+  })
+
+  it('an app backup file of a match not on this device gets new PINs', async () => {
+    const app = backup({ seed_key: 'match_300_ccc' })
+    delete app.match.refereePin
+    delete app.match.homeTeamPin
+    const newId = await restoreMatchFromJson({ ...app, secretsRemoved: true })
+    const restored = fakeDb.matches.map.get(newId)
+    const pins = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin'].map(f => restored[f])
+    for (const pin of pins) expect(pin).toMatch(/^\d{6}$/)
+    expect(new Set(pins).size).toBe(pins.length)
+  })
+
+  it('other backups are restored with exactly their own PINs', async () => {
+    const newId = await restoreMatchFromJson(backup())
+    expect(fakeDb.matches.map.get(newId).gamePin).toBeUndefined()
+    expect(fakeDb.matches.map.get(newId).awayTeamPin).toBeUndefined()
+  })
+
   it('never queues a restore for a test match', async () => {
     await restoreMatchFromJson(backup({ test: true }))
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'restore')).toBe(false)
