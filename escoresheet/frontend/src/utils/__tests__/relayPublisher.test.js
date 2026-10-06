@@ -4,6 +4,8 @@ import {
   createScorerRelay,
   createLiveStateOrder,
   isRelayErrorFor,
+  isLocalRelayUrl,
+  liveStateTargets,
   relayReconnectDelay,
   relayConnectionStatus,
   scorerRelayUrl,
@@ -269,6 +271,30 @@ describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
     expect(sockets[1].url).toBe('ws://host:8181')
     sockets[1].open()
     expect(hasPins(relay.pins.payloadFor(sockets[1], match(), 'match_1_a').match)).toBe(true)
+    expect(relay.url).toBe('ws://host:8181')
+  })
+})
+
+describe('test (rehearsal) matches: live state to a local relay only', () => {
+  it('tells a venue / local relay from a cloud one', () => {
+    for (const url of [
+      'ws://127.0.0.1:8080', 'ws://localhost:8080', 'wss://192.168.1.20:8080', 'ws://10.0.0.5', 'ws://172.16.4.1:8080',
+      'ws://172.31.255.1', 'ws://169.254.10.2', 'ws://100.114.142.10:8080', 'ws://[::1]:8080', 'ws://[fd12:3456::1]:8080',
+      'ws://[fe80::1]:8080', 'ws://openvolley.local:8080', 'ws://pi.lan', 'ws://openvolley-pi:8080', 'ws://box.home.arpa'
+    ]) expect(isLocalRelayUrl(url), url).toBe(true)
+    for (const url of [
+      'wss://backend.openvolley.app', 'wss://openvolley.app', 'ws://203.0.113.9:8080', 'ws://8.8.8.8', 'ws://172.32.0.1',
+      'ws://100.128.0.1', 'wss://relay.example.com', 'ws://[2001:db8::1]:8080', 'ws://192.168.1.20.nip.io',
+      null, undefined, '', 'not a url'
+    ]) expect(isLocalRelayUrl(url), String(url)).toBe(false)
+  })
+
+  it('an official match goes to the relay and the cloud; a test match to a local relay only, never the cloud', () => {
+    expect(liveStateTargets({ isTest: false, relayKey: 'match_1', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: true, cloud: true })
+    expect(liveStateTargets({ isTest: false, relayKey: null, relayUrl: 'ws://127.0.0.1:8080' })).toEqual({ relay: false, cloud: true })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'ws://192.168.1.20:8080' })).toEqual({ relay: true, cloud: false })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: false, cloud: false })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: null })).toEqual({ relay: false, cloud: false })
   })
 })
 
