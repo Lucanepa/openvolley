@@ -7,10 +7,14 @@
  * planReopen decides; MatchEnd carries the decision out:
  * - 'local'          test match or never-synced match (no seed_key): reopen
  *                    locally as before.
- * - 'localUnsynced'  no closing update ever reached the server: its queued /
- *                    errored / refused closing jobs are superseded and the
- *                    match reopens locally without queuing 'ended'. The only
- *                    offline path; the server never saw the match closed.
+ * - 'localUnsynced'  the local queue PROVES no closing update reached the
+ *                    server: it holds an unsent (queued / errored / refused)
+ *                    closing job of this match and no sent one. Those jobs are
+ *                    superseded and the match reopens locally without queuing
+ *                    'ended'. The only offline path. No closing job at all is
+ *                    no proof (sent jobs are pruned after 7 days, the match
+ *                    may have been closed on another device or restored from
+ *                    the cloud): then the server is asked.
  * - 'needsConnection' the server may have it closed and there is no connection.
  * - 'serverOpen'     the server has it open (an admin reopened it): reopen
  *                    locally without queuing.
@@ -44,11 +48,9 @@ export async function planReopen({ match, queue, online, access, readServerMatch
 
   const closingJobs = (queue || []).filter(j => isClosingSyncJob(j) && jobMatchKey(j) === match.seed_key)
   const reached = closingJobs.some(j => j.status === 'sent' || j.status === 'sending')
-  if (!reached) {
-    const supersedeIds = closingJobs
-      .filter(j => j.status === 'queued' || j.status === 'error' || j.status === 'failed')
-      .map(j => j.id)
-    return { kind: 'localUnsynced', supersedeIds }
+  const unsent = closingJobs.filter(j => j.status === 'queued' || j.status === 'error' || j.status === 'failed')
+  if (!reached && unsent.length > 0) {
+    return { kind: 'localUnsynced', supersedeIds: unsent.map(j => j.id) }
   }
 
   if (!online) return { kind: 'needsConnection' }
