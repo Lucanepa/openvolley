@@ -121,7 +121,7 @@ OpenVolley eScoresheet $version is installed.
   Updates:           sudo apt update && sudo apt upgrade
   Remove:            sudo apt remove $PKG
 
-In the app, Help > Connect a Tablet... shows the addresses the tablets use.
+In the app, the header menu > Connect tablets shows the addresses the tablets use.
 EOF
 }
 
