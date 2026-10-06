@@ -317,7 +317,7 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     const preflight = (origin) => fetch(`${srv.base}/api/db`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Headers': 'content-type,x-ov-proto,authorization' } })
     // The desktop app's window loads from its own relay (http://localhost:5173)
     // and sends cloud sync here; Android's WebView is https://localhost.
-    for (const origin of ['http://localhost:5173', 'https://localhost', 'tauri://localhost', 'http://tauri.localhost', 'https://app.openvolley.app']) {
+    for (const origin of ['http://localhost:5173', 'https://localhost', 'tauri://localhost', 'http://tauri.localhost', 'https://app.openvolley.app', 'https://manager.openvolley.app']) {
       const r = await preflight(origin)
       assert.equal(r.headers.get('access-control-allow-origin'), origin, origin)
       assert.equal(r.headers.get('access-control-allow-credentials'), 'true', origin)
