@@ -7,7 +7,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
-import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, isEndedStatus, shouldAutoConnect, liveSetsWon, liveSetResults, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS } from './utils/livescoreModel'
+import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange } from './utils/livescoreModel'
 import mikasaVolleyball from './mikasa_v200w.png'
 import { AlertTriangle, Radio, RefreshCw, Server } from 'lucide-react'
 import { cn } from './ui/cn.js'
@@ -145,8 +145,13 @@ export default function LivescoreApp() {
         (payload) => {
           // INSERT/UPDATE upsert by match_id and merge into the loaded row (keeps
           // the joined set_results); an UPDATE for an unknown game is an insert;
-          // probe rows are ignored. See utils/livescoreChanges.js.
-          setLiveGames(prev => applyLiveChange(prev, payload))
+          // probe rows are ignored. See utils/livescoreChanges.js. Frames older
+          // than the shown row are dropped, and the match-end set_end frame
+          // keeps the last set's sides (utils/livescoreModel settleLiveChange).
+          setLiveGames(prev => {
+            const settled = settleLiveChange(prev, payload)
+            return settled ? applyLiveChange(prev, settled) : prev
+          })
           if (payload.eventType === 'DELETE') {
             // If the deleted game was selected, clear selection to go back to list
             setSelectedGame(prev => prev === payload.old?.match_id ? null : prev)
@@ -216,46 +221,13 @@ export default function LivescoreApp() {
     ? liveGames.find(g => g.match_id === selectedGame)
     : null
 
-  // Helper to compute left/right from A/B based on side_a
-  const getLeftRight = (game) => {
-    const sideA = game.side_a || 'left' // default Team A on left
-    const isALeft = sideA === 'left'
-    const isMatchEnded = isEndedStatus(game.match_status)
-    const isInSetInterval = !isMatchEnded && game.set_interval_active
-
-    // When match is ended, show set score as main score (a finished match
-    // counts its set results, see liveSetsWon)
-    const setsWon = liveSetsWon(game)
-    const leftSets = isALeft ? setsWon.a : setsWon.b
-    const rightSets = isALeft ? setsWon.b : setsWon.a
-    const leftPoints = isALeft ? (game.points_a || 0) : (game.points_b || 0)
-    const rightPoints = isALeft ? (game.points_b || 0) : (game.points_a || 0)
-
-    // Set results (live-state row, else the joined matches row), stored as
-    // {set, home, away}: as Team A / Team B (Team A is home or away), to left/right
-    const setResults = liveSetResults(game).map(s => ({
-      set: s.set,
-      left: isALeft ? s.a : s.b,
-      right: isALeft ? s.b : s.a
-    }))
-
-    return {
-      leftName: isALeft ? (game.team_a_name || 'Team A') : (game.team_b_name || 'Team B'),
-      rightName: isALeft ? (game.team_b_name || 'Team B') : (game.team_a_name || 'Team A'),
-      // Main score: show sets if match ended or in set interval, otherwise points
-      leftScore: (isMatchEnded || isInSetInterval) ? leftSets : leftPoints,
-      rightScore: (isMatchEnded || isInSetInterval) ? rightSets : rightPoints,
-      leftSets,
-      rightSets,
-      leftPoints,
-      rightPoints,
-      isMatchEnded,
-      isInSetInterval,
-      // Serving: convert team key to side
-      servingTeam: game.serving_team, // already 'left' or 'right'
-      setResults
-    }
-  }
+  // Left/right view of a game (sides from side_a, main digits, phase, finished
+  // sets): utils/livescoreModel liveScoreboard
+  const getLeftRight = liveScoreboard
+  // Label for a set break / running timeout (null while the ball is in play)
+  const phaseLabel = (phase) => (phase === 'set_break'
+    ? t('livescore.setBreak', 'Set break')
+    : phase === 'timeout' ? t('scoreboard.timeout', 'Timeout') : null)
 
   // Last refetch failed after an earlier success: the scores shown may be old.
   const staleNotice = stale ? (
@@ -273,8 +245,33 @@ export default function LivescoreApp() {
 
   // Fullscreen view for selected game
   if (selectedGameData) {
-    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(selectedGameData)
+    const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults, phase } = getLeftRight(selectedGameData)
     const currentSet = liveSetNumber(selectedGameData)
+    const breakLabel = phaseLabel(phase)
+    // Finished sets as chips: at FINAL and during the match
+    const setChips = setResults.length > 0 ? (
+      <div style={{
+        display: 'flex',
+        gap: 'clamp(8px, 2vmin, 24px)',
+        flexWrap: 'wrap',
+        justifyContent: 'center'
+      }}>
+        {setResults.map((s) => (
+          <div key={s.set} style={{
+            fontSize: 'clamp(16px, 4vmin, 64px)',
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums',
+            color: '#44403c', // stone-700
+            padding: '0.6vmin 1.8vmin',
+            background: '#ffffff',
+            border: '1px solid #e7e5e4', // stone-200
+            borderRadius: '8px'
+          }}>
+            {s.left}–{s.right}
+          </div>
+        ))}
+      </div>
+    ) : null
     const gameN = selectedGameData.game_n || ''
     const league = selectedGameData.league || ''
     const gender = selectedGameData.gender || ''
@@ -368,32 +365,21 @@ export default function LivescoreApp() {
                 }}>
                   {t('livescore.final', 'Final')}
                 </div>
-                {setResults.length > 0 && (
-                  <div style={{
-                    display: 'flex',
-                    gap: 'clamp(8px, 2vmin, 24px)',
-                    flexWrap: 'wrap',
-                    justifyContent: 'center'
-                  }}>
-                    {setResults.map((s) => (
-                      <div key={s.set} style={{
-                        fontSize: 'clamp(16px, 4vmin, 64px)',
-                        fontWeight: 600,
-                        fontVariantNumeric: 'tabular-nums',
-                        color: '#44403c', // stone-700
-                        padding: '0.6vmin 1.8vmin',
-                        background: '#ffffff',
-                        border: '1px solid #e7e5e4', // stone-200
-                        borderRadius: '8px'
-                      }}>
-                        {s.left}–{s.right}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {setChips}
               </>
             ) : (
               /* Sets won and the current set during the match */
+              <>
+              {breakLabel && (
+                <div role="status" style={{
+                  fontSize: 'clamp(16px, 5vmin, 96px)',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em'
+                }}>
+                  {breakLabel}
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(12px, 3vmin, 40px)' }}>
                 <div style={{
                   fontSize: 'clamp(32px, 14vmin, 300px)',
@@ -424,6 +410,8 @@ export default function LivescoreApp() {
                   {rightSets}
                 </div>
               </div>
+              {setChips}
+              </>
             )}
           </div>
         </div>
@@ -485,7 +473,8 @@ export default function LivescoreApp() {
           <Card pad="list" className="mx-auto max-w-3xl">
             <RowList soft>
             {shownGames.map((game) => {
-              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults } = getLeftRight(game)
+              const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults, phase } = getLeftRight(game)
+              const breakLabel = phaseLabel(phase)
               const gameN = game.game_n || ''
               const league = game.league || ''
               const rawGender = game.gender || ''
@@ -506,6 +495,8 @@ export default function LivescoreApp() {
                   label={[
                     `${leftName} ${leftScore} – ${rightScore} ${rightName}`,
                     isMatchEnded ? t('livescore.final', 'Final') : `Set ${liveSetNumber(game)}`,
+                    breakLabel || '',
+                    setResults.length > 0 ? setResults.map((r) => `${r.left}-${r.right}`).join(' ') : '',
                     gameN ? t('livescore.game', { number: gameN }) : '',
                   ].filter(Boolean).join(', ')}
                   className="min-h-11"
@@ -533,12 +524,14 @@ export default function LivescoreApp() {
                     </div>
                   }
                   meta={!isMatchEnded ? <span className="tabular-nums">{`Sets: ${leftSets} – ${rightSets}`}</span> : undefined}
-                  chips={isMatchEnded && setResults.length > 0
+                  chips={setResults.length > 0
                     ? setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}–{r.right}</span></Chip>)
                     : undefined}
                   status={isMatchEnded
                     ? <StatusPill tone="done">{t('livescore.final', 'Final')}</StatusPill>
-                    : <StatusPill tone="brand"><span className="tabular-nums">{`Set ${liveSetNumber(game)}`}</span></StatusPill>}
+                    : breakLabel
+                      ? <StatusPill tone="todo">{breakLabel}</StatusPill>
+                      : <StatusPill tone="brand"><span className="tabular-nums">{`Set ${liveSetNumber(game)}`}</span></StatusPill>}
                 />
               )
             })}

@@ -404,6 +404,7 @@
       "pinCode": "000000"
     },
     "syncStatus": {
+      "savedOnDevice": "Uf em Grät gspeicheret",
       "notSynced": "Nöd synchronisiert",
       "offline": "Offline",
       "synced": "Synchronisiert",
@@ -1486,6 +1487,7 @@
     "failedToLoadLeagues": "Lige händ nöd chönne glade werde"
   },
   "livescore": {
+    "setBreak": "Satzpause",
     "staleData": "Verbindigsproblem: di zletscht bekannte Ergebnis werdet aazeigt",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfüegbari Spiil werdet glade...",

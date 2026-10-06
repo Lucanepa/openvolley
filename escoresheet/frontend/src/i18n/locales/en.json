@@ -405,6 +405,7 @@
       "pinCode": "000000"
     },
     "syncStatus": {
+      "savedOnDevice": "Saved on device",
       "notSynced": "Not synced",
       "offline": "Offline",
       "synced": "Synced",
@@ -1518,6 +1519,7 @@
     "failedToLoadLeagues": "Failed to load leagues"
   },
   "livescore": {
+    "setBreak": "Set break",
     "staleData": "Connection problem: showing the last known scores",
     "title": "Live scoring",
     "loadingGames": "Loading available games...",

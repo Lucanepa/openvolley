@@ -403,6 +403,7 @@
       "pinCode": "000000"
     },
     "syncStatus": {
+      "savedOnDevice": "Enregistré sur l'appareil",
       "notSynced": "Non synchronisé",
       "offline": "Hors ligne",
       "synced": "Synchronisé",
@@ -1485,6 +1486,7 @@
     "failedToLoadLeagues": "Échec du chargement des ligues"
   },
   "livescore": {
+    "setBreak": "Pause entre les sets",
     "staleData": "Problème de connexion : derniers scores connus affichés",
     "title": "Score en direct",
     "loadingGames": "Chargement des matchs disponibles...",

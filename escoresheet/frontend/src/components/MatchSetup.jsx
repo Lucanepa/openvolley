@@ -17,6 +17,8 @@ import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getBackendUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { toastQueuedSync } from '../utils/syncToast'
+import { hasStoredSessionToken } from '../hooks/useSyncQueue'
 import { apiFrom } from '../lib/apiClient'
 import { generateMatchSeedKey, relayMatchKey } from '../utils/serverDataSync'
 import { scorerLiveOrder, scorerRelay } from '../utils/relayPublisher'
@@ -406,7 +408,7 @@ function formatDobForSync(dob) {
 }
 
 export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
@@ -931,75 +933,75 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     cleanupLegacyErrorJobs()
   }, [])
 
+  // Statuses of this match's match jobs not sent yet ('error,queued', ...): a
+  // live query, so the card pills follow the queue at once (the save toast
+  // watches the same jobs) instead of up to 5 s later.
+  const unsentMatchJobStatuses = useLiveQuery(async () => {
+    if (!match?.seed_key) return ''
+    const jobs = await db.sync_queue.where('resource').equals('match').toArray()
+    const statuses = new Set(jobs
+      .filter(j => (j.status === 'queued' || j.status === 'error' || j.status === 'failed') &&
+        (j.payload?.id === match.seed_key || j.payload?.external_id === match.seed_key))
+      .map(j => j.status))
+    return [...statuses].sort().join(',')
+  }, [match?.seed_key], '')
+
   // Check Supabase availability and sync status periodically
   useEffect(() => {
+    let cancelled = false // a slower check of an older queue state must not win
+    const setAllCardStatuses = (status) => {
+      if (cancelled) return
+      setMatchInfoSyncStatus(status)
+      setOfficialsSyncStatus(status)
+      setHomeTeamSyncStatus(status)
+      setAwayTeamSyncStatus(status)
+    }
+    const unsent = (unsentMatchJobStatuses || '').split(',').filter(Boolean)
+    const hasQueued = unsent.includes('queued')
+    const hasError = unsent.includes('error') || unsent.includes('failed')
+
     const checkSupabaseAndSyncStatus = async () => {
       try {
+        // Signed out: nothing is sent (the sync queue waits for a session),
+        // so the cards say the match is kept on this device, not "Syncing..."
+        if (match?.seed_key && unsent.length > 0 && !hasStoredSessionToken()) {
+          setAllCardStatuses('savedOnDevice')
+          return
+        }
+
         const { error } = await apiFrom('matches').select('id').limit(1)
+        if (cancelled) return
         const available = !error
         setIsSupabaseAvailable(available)
 
         if (!available || !match?.seed_key) return
 
-        // Check sync queue for pending items related to this match
-        const queuedJobs = await db.sync_queue
-          .where('status')
-          .equals('queued')
-          .toArray()
-
-        const errorJobs = await db.sync_queue
-          .where('status')
-          .equals('error')
-          .toArray()
-
-        // Check for match-related sync jobs
-        const matchJobs = [...queuedJobs, ...errorJobs].filter(
-          j => j.resource === 'match' && (j.payload?.id === match.seed_key || j.payload?.external_id === match.seed_key)
-        )
-
-        const hasQueued = matchJobs.some(j => j.status === 'queued')
-        const hasError = matchJobs.some(j => j.status === 'error')
-
         // Update sync statuses based on queue
         if (hasError) {
-          setMatchInfoSyncStatus('error')
-          setOfficialsSyncStatus('error')
-          setHomeTeamSyncStatus('error')
-          setAwayTeamSyncStatus('error')
+          setAllCardStatuses('error')
         } else if (hasQueued) {
-          setMatchInfoSyncStatus('syncing')
-          setOfficialsSyncStatus('syncing')
-          setHomeTeamSyncStatus('syncing')
-          setAwayTeamSyncStatus('syncing')
+          setAllCardStatuses('syncing')
         } else {
           // Check if match exists in Supabase
           const { data: supabaseMatch } = await apiFrom('matches')
             .select('id, status')
             .eq('external_id', match.seed_key)
             .maybeSingle()
-
-          if (supabaseMatch) {
-            setMatchInfoSyncStatus('synced')
-            setOfficialsSyncStatus('synced')
-            setHomeTeamSyncStatus('synced')
-            setAwayTeamSyncStatus('synced')
-          } else {
-            setMatchInfoSyncStatus('idle')
-            setOfficialsSyncStatus('idle')
-            setHomeTeamSyncStatus('idle')
-            setAwayTeamSyncStatus('idle')
-          }
+          setAllCardStatuses(supabaseMatch ? 'synced' : 'idle')
         }
       } catch (err) {
         console.debug('[MatchSetup] Error checking sync status:', err.message)
-        setIsSupabaseAvailable(false)
+        if (!cancelled) setIsSupabaseAvailable(false)
       }
     }
 
     checkSupabaseAndSyncStatus()
     const interval = setInterval(checkSupabaseAndSyncStatus, 5000)
-    return () => clearInterval(interval)
-  }, [match?.seed_key])
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [match?.seed_key, unsentMatchJobStatuses])
 
   // Retry sync for a specific card type
   const retrySyncForCard = async (cardType) => {
@@ -2141,11 +2143,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
-      setNoticeModal({
-        message: isCreating ? t('matchSetup.modals.matchCreatedSyncing') : t('matchSetup.modals.matchUpdatedSyncing'),
-        type: 'success',
-        syncing: true
-      })
 
       // Send match info email if provided (non-blocking)
       if (notificationEmail && notificationEmail.trim() && match?.gamePin) {
@@ -2189,30 +2186,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         uploadLogsToCloud(matchId, gameN || null)
       }).catch(err => console.warn('[MatchSetup] Cloud backup failed:', err))
 
-      // Poll to check when sync completes
-      const checkSyncStatus = async () => {
-        let attempts = 0
-        const maxAttempts = 20 // 10 seconds max
-        const interval = setInterval(async () => {
-          attempts++
-          try {
-            const job = await db.sync_queue.get(syncJobId)
-            if (!job || job.status === 'sent') {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
-            } else if (job.status === 'error') {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
-            } else if (attempts >= maxAttempts) {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-            }
-          } catch (err) {
-            clearInterval(interval)
-          }
-        }, 500)
-      }
-      checkSyncStatus()
+      // One non-blocking toast with the outcome of this save (utils/syncToast)
+      toastQueuedSync([syncJobId], {
+        synced: t('matchSetup.modals.matchSynced'),
+        failed: t('matchSetup.modals.matchSavedLocalSyncFailed'),
+        pending: t('matchSetup.modals.matchSavedLocalSyncPending')
+      }, i18n?.language)
     } catch (error) {
       console.error('Error confirming match info:', error)
       setNoticeModal({ message: t('matchSetup.errorGeneric', { error: error.message }), type: 'error' })
@@ -4669,10 +4648,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               await db.matches.update(matchId, updateData)
 
               // Sync home team data to Supabase as JSONB
+              let homeSyncJobId = null
               if (match?.seed_key) {
                 const homeCoachSig = homeCoachSignature || savedSignatures.homeCoach || null
                 const homeCaptainSig = homeCaptainSignature || savedSignatures.homeCaptain || null
-                await db.sync_queue.add({
+                homeSyncJobId = await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
@@ -4727,28 +4707,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Poll to check when sync completes
-              setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
-                    }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
-              }
-              checkSyncStatus()
+              // One non-blocking toast for this roster's own sync job
+              toastQueuedSync([homeSyncJobId], {
+                synced: t('matchSetup.homeSynced'),
+                failed: t('matchSetup.modals.matchSavedLocalSyncFailed'),
+                pending: t('matchSetup.homeSavedLocal')
+              }, i18n?.language)
             }
             setCurrentView('main')
             }}>{t('common.confirm')}</Button>
@@ -5778,10 +5742,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               await db.matches.update(matchId, updateData)
 
               // Sync away team data to Supabase as JSONB
+              let awaySyncJobId = null
               if (match?.seed_key) {
                 const awayCoachSig = awayCoachSignature || savedSignatures.awayCoach || null
                 const awayCaptainSig = awayCaptainSignature || savedSignatures.awayCaptain || null
-                await db.sync_queue.add({
+                awaySyncJobId = await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
@@ -5837,28 +5802,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Poll to check when sync completes
-              setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
-                    }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
-              }
-              checkSyncStatus()
+              // One non-blocking toast for this roster's own sync job
+              toastQueuedSync([awaySyncJobId], {
+                synced: t('matchSetup.awaySynced'),
+                failed: t('matchSetup.modals.matchSavedLocalSyncFailed'),
+                pending: t('matchSetup.awaySavedLocal')
+              }, i18n?.language)
             }
             setCurrentView('main')
             }}>{t('common.confirm')}</Button>
@@ -6087,16 +6036,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       synced: { pill: 'border-emerald-200 bg-emerald-50 text-emerald-800', dot: 'bg-emerald-500' },
       syncing: { pill: 'border-amber-200 bg-amber-50 text-amber-800', dot: 'bg-amber-500 animate-pulse' },
       error: { pill: 'border-red-200 bg-red-50 text-red-700', dot: 'bg-red-500' },
-      idle: { pill: 'border-stone-200 bg-stone-100 text-stone-600', dot: 'bg-stone-400' }
+      idle: { pill: 'border-stone-200 bg-stone-100 text-stone-600', dot: 'bg-stone-400' },
+      savedOnDevice: { pill: 'border-stone-200 bg-stone-100 text-stone-600', dot: 'bg-stone-400' }
     }
     const labels = {
       synced: t('matchSetup.syncStatus.synced', 'Synced'),
       syncing: t('matchSetup.syncStatus.syncing', 'Syncing...'),
       error: t('matchSetup.syncStatus.error', 'Sync error'),
-      idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced') : t('matchSetup.syncStatus.offline', 'Offline')
+      idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced') : t('matchSetup.syncStatus.offline', 'Offline'),
+      // Signed out: sent after sign-in (the Not signed in banner says so)
+      savedOnDevice: t('matchSetup.syncStatus.savedOnDevice', 'Saved on device')
     }
     const c = tones[status] || tones.synced
-    const retry = status !== 'synced' && onRetry
+    const retry = status !== 'synced' && status !== 'savedOnDevice' && onRetry
 
     return (
       <div
@@ -6107,7 +6059,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           c.pill,
           retry ? 'cursor-pointer hover:brightness-95' : 'cursor-default'
         )}
-        title={status !== 'synced' ? t('matchSetup.syncStatus.clickToRetry', 'Click to retry sync') : ''}
+        title={retry ? t('matchSetup.syncStatus.clickToRetry', 'Click to retry sync') : ''}
       >
         <span className={cn('inline-block h-1.5 w-1.5 rounded-full', c.dot)} />
         <span>{labels[status]}</span>
