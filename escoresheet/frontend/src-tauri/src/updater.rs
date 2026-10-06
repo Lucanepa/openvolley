@@ -364,11 +364,14 @@ pub struct Status {
     pub seq: u64,
 }
 
-/// Something to restart into: downloaded (Windows, AppImage), or the deb
-/// installed / installable by the helper.
+/// Something to restart into: downloaded (Windows, AppImage), installed and
+/// waiting for the restart (a deb, or an AppImage whose restart the gate
+/// held back), or the deb installable by the helper.
 pub fn restart_ready(kind: Kind, phase: &Phase, downloaded: bool, available: bool) -> bool {
     match kind {
-        Kind::Nsis | Kind::AppImage => downloaded && !matches!(phase, Phase::Installing),
+        Kind::Nsis | Kind::AppImage => {
+            matches!(phase, Phase::RestartPending) || (downloaded && !matches!(phase, Phase::Installing))
+        }
         Kind::DebApt => matches!(phase, Phase::RestartPending) || (available && matches!(phase, Phase::Ready | Phase::Available)),
         Kind::DebNoRepo | Kind::Unsupported => false,
     }
@@ -702,15 +705,32 @@ async fn run_tick<R: Runtime>(app: &AppHandle<R>, first: bool) {
     push(app);
 }
 
+/// Windows: the plugin runs this right before it starts the installer
+/// (ShellExecute, which shows the administrator prompt) and, once the
+/// installer runs, ends the process itself (no RunEvent::Exit). Only what
+/// must happen before that exit, and nothing that cannot be undone: the
+/// prompt can be cancelled, and the app then runs on
+/// ([`after_failed_install`]). So the tablets' network stops and the tray
+/// icon leaves the notification area (an icon a process leaves behind stays
+/// there, dead, until the mouse passes over it). Not the plugin's own hook,
+/// `AppHandle::cleanup_before_exit`: it drops the tray icon for good and
+/// hides every window, which left a running app with no window and no tray
+/// after a cancelled prompt.
+fn before_installer<R: Runtime>(app: &AppHandle<R>) {
+    crate::netshare::shutdown(app);
+    lifecycle::set_tray_visible(app, false);
+}
+
+/// The installer did not start (Windows: the administrator prompt was
+/// cancelled or refused): the app runs on, its tray icon comes back.
+fn after_failed_install<R: Runtime>(app: &AppHandle<R>) {
+    lifecycle::set_tray_visible(app, true);
+}
+
 fn updater<R: Runtime>(app: &AppHandle<R>) -> Result<tauri_plugin_updater::Updater, String> {
     let h = app.clone();
-    // Windows: install() ends the process itself (no RunEvent::Exit), so the
-    // tablets' network is stopped here. This replaces the plugin's own hook,
-    // so its cleanup (the tray icon) runs here too.
-    let mut b = app.updater_builder().on_before_exit(move || {
-        crate::netshare::shutdown(&h);
-        h.cleanup_before_exit();
-    });
+    // replaces the plugin's own hook (cleanup_before_exit), see before_installer
+    let mut b = app.updater_builder().on_before_exit(move || before_installer(&h));
     if std::env::var("OPENVOLLEY_UPDATE_CHANNEL").as_deref() == Ok("staging") {
         b = b.endpoints(vec![STAGING_ENDPOINT.parse().map_err(|e| format!("{e}"))?]).map_err(|e| e.to_string())?;
     }
@@ -803,7 +823,8 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>, reason: Reason) {
         let i = updates.lock();
         (i.pending.is_some(), i.prefs.auto_install, i.phase.clone())
     };
-    if kind.downloads() && download_allowed(&gate) && !has_file {
+    // RestartPending: installed already (an AppImage whose restart the gate held back)
+    if kind.downloads() && download_allowed(&gate) && !has_file && phase != Phase::RestartPending {
         download_update(app, update).await;
     } else if kind == Kind::DebApt && download_allowed(&gate) && auto_install && phase == Phase::Ready {
         deb_upgrade(app).await;
@@ -949,27 +970,53 @@ async fn on_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) ->
     rx.await.ok()
 }
 
-/// "Restart and update" (the page's button, the tray item). Refused with the
-/// reasons while the gate is closed; never installs anyway.
-pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
+/// The gate, refused with its reasons.
+fn gate_clear<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
     let blockers = restart_blockers(&gate_input(app));
-    if !blockers.is_empty() {
-        push(app);
-        return Err(InstallError { code: "blocked".into(), blockers });
+    if blockers.is_empty() {
+        return Ok(());
     }
+    push(app);
+    Err(InstallError { code: "blocked".into(), blockers })
+}
+
+/// The update is installed (the deb by the helper, the AppImage file
+/// replaced): restart, if the gate is still open. The install step can take
+/// minutes (the APT helper waits for the dpkg lock and downloads), and a
+/// match may have started or a tablet connected in the meantime: then the
+/// app stays as it is, "Restart to finish" (RestartPending), and the page
+/// and the tray offer the restart again once the gate opens.
+fn restart_when_clear<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
+    app.state::<Updates>().set_phase(Phase::RestartPending);
+    if let Err(e) = gate_clear(app) {
+        eprintln!("[update] installed; the restart waits (the gate closed meanwhile)");
+        return Err(e);
+    }
+    restart_app(app);
+    Ok(())
+}
+
+/// "Restart and update" (the page's button, the tray item). Refused with the
+/// reasons while the gate is closed, before the install and again before the
+/// restart; never restarts anyway.
+pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
+    gate_clear(app)?;
     let updates = app.state::<Updates>();
     let Some(_busy) = updates.try_begin() else { return Err(InstallError::code("busy")) };
     let (kind, phase) = {
         let i = updates.lock();
         (i.kind, i.phase.clone())
     };
+    if phase == Phase::RestartPending && restart_ready(kind, &phase, false, false) {
+        // installed already, only the restart is missing
+        return restart_when_clear(app);
+    }
     match kind {
         Kind::Nsis | Kind::AppImage => {
             let Some(pending) = updates.lock().pending.take() else { return Err(InstallError::code("nothing")) };
             updates.set_phase(Phase::Installing);
             push(app);
             let version = pending.update.version.clone();
-            let h = app.clone();
             // Windows: the installer (one administrator prompt) replaces the
             // app and starts it again (/R); install() ends this process.
             let result = on_thread(move || {
@@ -977,15 +1024,18 @@ pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallEr
                 (r, pending)
             })
             .await;
-            let Some((result, pending)) = result else { return Err(InstallError::code("installFailed")) };
+            let Some((result, pending)) = result else {
+                after_failed_install(app);
+                updates.set_phase(Phase::Failed { msg: "installFailed".into() });
+                push(app);
+                return Err(InstallError::code("installFailed"));
+            };
             match result {
-                Ok(()) => {
-                    // AppImage: the file is replaced; Windows does not get here
-                    restart_app(&h);
-                    Ok(())
-                }
+                // AppImage: the file is replaced; Windows does not get here
+                Ok(()) => restart_when_clear(app),
                 Err(e) => {
                     eprintln!("[update] install of {version} failed: {e}");
+                    after_failed_install(app);
                     let code = if needs_admin(&e) { "needsAdmin" } else { "installFailed" };
                     let mut i = updates.lock();
                     if code == "needsAdmin" {
@@ -1001,23 +1051,24 @@ pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallEr
             }
         }
         Kind::DebApt => {
-            if phase != Phase::RestartPending {
-                if updates.lock().available.is_none() {
-                    return Err(InstallError::code("nothing"));
-                }
-                deb_upgrade(app).await;
+            if updates.lock().available.is_none() {
+                return Err(InstallError::code("nothing"));
             }
-            let phase = updates.lock().phase.clone();
-            match phase {
-                Phase::RestartPending => {
-                    restart_app(app);
-                    Ok(())
-                }
-                Phase::Failed { msg } => Err(InstallError::code(&msg)),
-                _ => Err(InstallError::code("installFailed")),
-            }
+            deb_upgrade(app).await;
+            after_deb_upgrade(app)
         }
         Kind::DebNoRepo | Kind::Unsupported => Err(InstallError::code("nothing")),
+    }
+}
+
+/// After the APT helper ran for "Restart and update": restart (when the gate
+/// is still open) or say why not.
+fn after_deb_upgrade<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
+    let phase = app.state::<Updates>().lock().phase.clone();
+    match phase {
+        Phase::RestartPending => restart_when_clear(app),
+        Phase::Failed { msg } => Err(InstallError::code(&msg)),
+        _ => Err(InstallError::code("installFailed")),
     }
 }
 
@@ -1281,6 +1332,8 @@ mod tests {
         assert!(restart_ready(Kind::Nsis, &Phase::Ready, true, true));
         assert!(!restart_ready(Kind::Nsis, &Phase::Available, false, true));
         assert!(!restart_ready(Kind::AppImage, &Phase::Installing, true, true));
+        // the file replaced, the restart held back by the gate
+        assert!(restart_ready(Kind::AppImage, &Phase::RestartPending, false, false));
         assert!(restart_ready(Kind::DebApt, &Phase::RestartPending, false, false));
         assert!(restart_ready(Kind::DebApt, &Phase::Ready, false, true));
         assert!(!restart_ready(Kind::DebNoRepo, &Phase::Ready, false, true));
@@ -1347,5 +1400,83 @@ mod tests {
         assert!(release.download_url("windows-x86_64-nsis").unwrap().as_str().ends_with("_x64-setup.exe"));
         assert!(release.download_url("linux-x86_64-deb").unwrap().as_str().ends_with("_amd64.deb"));
         assert!(release.download_url("linux-x86_64-appimage").unwrap().as_str().ends_with(".AppImage"));
+    }
+
+    // -- on Tauri's mock runtime, with the app's real managed state ----------
+
+    fn mock_app() -> tauri::App<tauri::test::MockRuntime> {
+        crate::with_app_commands(tauri::test::mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app")
+    }
+
+    fn set_installed(h: &AppHandle<tauri::test::MockRuntime>, kind: Kind, phase: Phase) {
+        let updates = h.state::<Updates>();
+        let mut i = updates.lock();
+        i.kind = kind;
+        i.available = Some(Available { version: "2.2.0".into(), notes: None, date: None });
+        i.pending = None;
+        i.phase = phase;
+    }
+
+    /// "Restart and update": the gate was open when the scorer clicked, the
+    /// install step ran (the APT helper can take minutes), and meanwhile a
+    /// tablet connected. No restart: it waits, "Restart to finish", and is
+    /// offered again once the gate opens.
+    #[test]
+    fn a_restart_waits_when_the_gate_closed_during_the_install() {
+        let app = mock_app();
+        let h = app.handle();
+        h.state::<Lifecycle>().gate().page_attached("h1");
+        set_installed(h, Kind::DebApt, Phase::Ready);
+        assert!(gate_clear(h).is_ok(), "the gate is open when the scorer clicks");
+        assert!(status(h).can_restart);
+
+        // the helper upgraded the package; a tablet connected meanwhile
+        h.state::<Updates>().set_phase(Phase::RestartPending);
+        lifecycle::set_tablet_count(h, 2);
+        let err = after_deb_upgrade(h).expect_err("no restart with a tablet connected");
+        assert_eq!(err.code, "blocked");
+        assert_eq!(err.blockers, vec![Blocker::Tablets { count: 2 }]);
+        assert_eq!(h.state::<Updates>().lock().phase, Phase::RestartPending);
+        // the restart was not let through: an exit is still asked for
+        assert_eq!(h.state::<Lifecycle>().gate().exit_requested(true), lifecycle::ExitDecision::Prevent);
+        let st = status(h);
+        assert!(!st.can_restart);
+        assert_eq!(st.phase, Phase::RestartPending);
+
+        // AppImage: the file is replaced, the restart waits the same way
+        set_installed(h, Kind::AppImage, Phase::Installing);
+        let err = restart_when_clear(h).expect_err("no restart with a tablet connected");
+        assert_eq!(err.code, "blocked");
+        assert_eq!(h.state::<Updates>().lock().phase, Phase::RestartPending);
+        assert_eq!(h.state::<Lifecycle>().gate().exit_requested(true), lifecycle::ExitDecision::Prevent);
+
+        // the tablet left: the page and the tray offer the restart again
+        lifecycle::set_tablet_count(h, 0);
+        let st = status(h);
+        assert!(st.can_restart, "offered again: {st:?}");
+        assert!(st.blockers.is_empty());
+    }
+
+    /// Windows: the plugin runs the before-exit hook before the
+    /// administrator prompt, which the scorer can cancel. The hook must not
+    /// be Tauri's exit cleanup (cleanup_before_exit drops the tray icon for
+    /// good, hides every window and clears the app's resources): after a
+    /// cancelled prompt the app runs on with its window and its tray.
+    #[test]
+    fn the_installer_hook_leaves_a_running_app() {
+        struct Marker;
+        impl tauri::Resource for Marker {}
+        let app = mock_app();
+        let h = app.handle();
+        let _main = tauri::WebviewWindowBuilder::new(h, lifecycle::MAIN, tauri::WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let rid = h.resources_table().add(Marker);
+        before_installer(h);
+        after_failed_install(h);
+        assert!(h.resources_table().get::<Marker>(rid).is_ok(), "the hook ran the app's exit cleanup");
+        assert!(h.get_webview_window(lifecycle::MAIN).is_some());
     }
 }
