@@ -105,9 +105,10 @@ describe('status interfaces', () => {
 })
 
 describe('LAN_UNAVAILABLE_ROLES', () => {
-  it('keeps livescore off the local network until the relay has a live feed', () => {
-    expect(LAN_UNAVAILABLE_ROLES).toEqual({ livescore: 'needs-internet' })
-    for (const role of ['main', 'referee', 'bench_home', 'bench_away']) expect(LAN_UNAVAILABLE_ROLES[role]).toBeUndefined()
+  it('lets every role on the local network: the livescore follows the relay', () => {
+    expect(LAN_UNAVAILABLE_ROLES).toEqual({})
+    for (const role of TABLET_ROLES) expect(LAN_UNAVAILABLE_ROLES[role]).toBeUndefined()
+    expect(lanRoleUrl('10.42.0.1', 5173, 'livescore', 'match_1')).toBe('http://10.42.0.1:5173/livescore')
   })
 })
 

@@ -1381,6 +1381,7 @@
   "livescore": {
     "setBreak": "Satzpause",
     "staleData": "Verbindungsproblem: die zuletzt bekannten Ergebnisse werden angezeigt",
+    "testMatch": "Testspiel",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfügbare Spiele werden geladen...",
     "selectGame": "Wählen Sie ein Spiel aus, um das Live-Ergebnis anzuzeigen",
@@ -1671,7 +1672,6 @@
     "hotspotExternal": "Der Hotspot dieses Computers wurde in den Systemeinstellungen eingeschaltet. Tablets darin können die Links unten nutzen; ausschalten dort.",
     "windowsFirewall": "Tablets sind im WLAN, aber die Seite lädt nicht? Windows-Sicherheit › Firewall- & Netzwerkschutz › App durch Firewall zulassen › OpenVolley › «Öffentlich» ankreuzen.",
     "btExternal": "Dieses Bluetooth-Netz wurde nicht von dieser App-Sitzung gestartet. Stoppe es in den Netzwerkeinstellungen des Systems.",
-    "livescoreNeedsInternet": "Braucht Internet: Tab «Server» nehmen",
     "confirm": {
       "tabletsOn": "Jetzt verbundene Tablets: {{count}}.",
       "itsWifi": "sein WLAN",

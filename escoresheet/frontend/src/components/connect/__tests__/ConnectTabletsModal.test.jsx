@@ -111,9 +111,9 @@ describe('ConnectTabletsModal', () => {
     expect(screen.getByText('http://192.168.1.42:5173/')).toBeInTheDocument()
     expect(screen.getByText('http://192.168.1.42:5173/bench?match=match_1759740000000_ab12cd&team=home')).toBeInTheDocument()
     expect(screen.getByText('http://192.168.1.42:5173/bench?match=match_1759740000000_ab12cd&team=away')).toBeInTheDocument()
-    // livescore reads the cloud's live table: no LAN link, the Server tab instead
-    expect(screen.queryByText('http://192.168.1.42:5173/livescore')).toBeNull()
-    expect(screen.getByTestId('role-note-livescore')).toHaveTextContent('Needs internet: use the “Server” tab')
+    // livescore follows the relay on the hall Wi-Fi: a link, no match, no PIN
+    expect(screen.getByText('http://192.168.1.42:5173/livescore')).toBeInTheDocument()
+    expect(screen.queryByTestId('role-note-livescore')).toBeNull()
 
     // PINs: referee and home bench (let in); away bench is off, so no PIN; never the game PIN
     expect(screen.getByTestId('pin-referee')).toHaveTextContent('123456')
@@ -253,7 +253,7 @@ describe('ConnectTabletsModal', () => {
     expect(screen.getByText(/pair with “framework”/)).toBeInTheDocument()
   })
 
-  it('livescore: no LAN or Bluetooth link (the relay has no live table), the cloud link on Server', async () => {
+  it('livescore: a link and QR code on the laptop\'s Wi-Fi and Bluetooth (the relay feed), the cloud link on Server', async () => {
     let active = true
     const win = tauri({
       hotspot_status: () => ({ supported: true, active, platform: 'linux', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', gatewayIp: '10.42.0.1' }),
@@ -263,14 +263,15 @@ describe('ConnectTabletsModal', () => {
     // the open Wi-Fi brings the dialog to "Create Wi-Fi"
     await waitFor(() => expect(screen.getByText('http://10.42.0.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
     const row = () => screen.getByTestId('role-row-livescore')
-    expect(within(row()).getByText('Needs internet: use the “Server” tab')).toBeInTheDocument()
-    expect(within(row()).getByRole('button', { name: /QR/ })).toBeDisabled()
-    expect(within(row()).getByRole('button', { name: /Copy/ })).toBeDisabled()
+    expect(within(row()).getByText('http://10.42.0.1:5173/livescore')).toBeInTheDocument()
+    expect(within(row()).queryByText(/Needs internet/)).toBeNull()
+    expect(within(row()).getByRole('button', { name: /QR/ })).toBeEnabled()
+    expect(within(row()).getByRole('button', { name: /Copy/ })).toBeEnabled()
 
     tab(/Bluetooth/)
     await waitFor(() => expect(screen.getByText('http://10.42.1.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
-    expect(within(row()).getByText('Needs internet: use the “Server” tab')).toBeInTheDocument()
-    expect(within(row()).getByRole('button', { name: /QR/ })).toBeDisabled()
+    expect(within(row()).getByText('http://10.42.1.1:5173/livescore')).toBeInTheDocument()
+    expect(within(row()).getByRole('button', { name: /QR/ })).toBeEnabled()
 
     tab(/Server/)
     expect(within(row()).getByText(/^https:\/\/livescore\.openvolley\.app\//)).toBeInTheDocument()

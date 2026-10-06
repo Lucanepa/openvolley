@@ -1508,6 +1508,7 @@
   "livescore": {
     "setBreak": "Pause entre les sets",
     "staleData": "Problème de connexion : derniers scores connus affichés",
+    "testMatch": "Match amical",
     "title": "Score en direct",
     "loadingGames": "Chargement des matchs disponibles...",
     "selectGame": "Sélectionnez un match pour voir le score en direct",
@@ -1798,7 +1799,6 @@
     "hotspotExternal": "Le point d’accès de cet ordinateur a été activé dans les réglages du système. Les tablettes connectées peuvent utiliser les liens ci-dessous ; désactivez-le là-bas.",
     "windowsFirewall": "Les tablettes rejoignent le Wi-Fi mais la page ne se charge pas ? Sécurité Windows › Pare-feu et protection du réseau › Autoriser une application via le pare-feu › OpenVolley › cochez « Public ».",
     "btExternal": "Ce réseau Bluetooth n’a pas été lancé par cette session de l’app. Arrêtez-le dans les réglages réseau du système.",
-    "livescoreNeedsInternet": "Internet requis : utilisez l’onglet « Serveur »",
     "confirm": {
       "tabletsOn": "Tablettes connectées en ce moment : {{count}}.",
       "itsWifi": "son Wi-Fi",

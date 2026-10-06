@@ -126,12 +126,12 @@ export function hallInterfaces(status) {
 export const firstOfKind = (status, kind) => statusInterfaces(status).find(i => i.kind === kind) || null
 
 /**
- * Roles a LAN or Bluetooth link cannot serve yet, with why. Livescore reads
- * the cloud's live table (/api/db match_live_state), which the desktop
- * relay does not have: on the laptop's own network the page would list no
- * match. It works on the Server tab (tablets with internet).
+ * Roles a LAN or Bluetooth link cannot serve, with why (a key of the
+ * dialog's notes). None today: the livescore served by the relay reads the
+ * relay's public match summaries (utils/relayLivescore), so it works on the
+ * hall Wi-Fi, the laptop's own Wi-Fi and Bluetooth without internet.
  */
-export const LAN_UNAVAILABLE_ROLES = { livescore: 'needs-internet' }
+export const LAN_UNAVAILABLE_ROLES = Object.freeze({})
 
 /**
  * Escape a value for the Wi-Fi QR format (ZXing / Wi-Fi Alliance `WIFI:`

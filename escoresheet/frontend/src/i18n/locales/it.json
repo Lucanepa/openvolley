@@ -1536,6 +1536,7 @@
   "livescore": {
     "setBreak": "Pausa tra i set",
     "staleData": "Problema di connessione: vengono mostrati gli ultimi punteggi noti",
+    "testMatch": "Partita test",
     "title": "Punteggio live",
     "loadingGames": "Caricamento partite disponibili...",
     "selectGame": "Seleziona una partita per vedere il punteggio live",
@@ -1826,7 +1827,6 @@
     "hotspotExternal": "L’hotspot di questo computer è stato attivato nelle impostazioni di sistema. I tablet collegati possono usare i link qui sotto; disattivalo da lì.",
     "windowsFirewall": "I tablet entrano nel Wi-Fi ma la pagina non si carica? Sicurezza di Windows › Firewall e protezione della rete › Consenti app attraverso il firewall › OpenVolley › spunta «Pubblica».",
     "btExternal": "Questa rete Bluetooth non è stata avviata da questa sessione dell’app. Fermala nelle impostazioni di rete del sistema.",
-    "livescoreNeedsInternet": "Serve internet: usa la scheda «Server»",
     "confirm": {
       "tabletsOn": "Tablet collegati ora: {{count}}.",
       "itsWifi": "il suo Wi-Fi",

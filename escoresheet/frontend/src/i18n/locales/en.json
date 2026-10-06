@@ -1537,6 +1537,7 @@
   "livescore": {
     "setBreak": "Set break",
     "staleData": "Connection problem: showing the last known scores",
+    "testMatch": "Test match",
     "title": "Live scoring",
     "loadingGames": "Loading available games...",
     "selectGame": "Select a game to view live scores",
@@ -1827,7 +1828,6 @@
     "hotspotExternal": "This computer’s hotspot was switched on in the system settings. The tablets on it can use the links below; switch it off there.",
     "windowsFirewall": "Tablets join but the page does not load? Windows Security › Firewall & network protection › Allow an app through firewall › OpenVolley › tick “Public”.",
     "btExternal": "This Bluetooth network was not started by this app run. Stop it in the system’s network settings.",
-    "livescoreNeedsInternet": "Needs internet: use the “Server” tab",
     "confirm": {
       "tabletsOn": "Tablets connected right now: {{count}}.",
       "itsWifi": "its Wi-Fi",

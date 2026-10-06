@@ -132,12 +132,21 @@ a link or QR code; the game PIN is never shown) and the switch that lets the
 role in. A link only preselects the match (`?match=<seed key>`, benches
 `&team=home|away`); the tablet still asks for the PIN.
 
-**Livescore needs internet.** The livescore page reads the cloud's live table
-(`/api/db` → `match_live_state`); the desktop relay has no such table, so on
-the hall Wi-Fi, the laptop's own Wi-Fi and Bluetooth its row says "Needs
-internet: use the Server tab" (no link, no QR). Follow-up: a relay-backed
-livescore feed (`/api/match/list` + the relay's WebSocket when the page is
-served from a LAN address).
+**Livescore works without internet.** On the hall Wi-Fi, the laptop's own
+Wi-Fi and Bluetooth the livescore row has its link and QR code
+(`http://<laptop address>:5173/livescore`, no match, no PIN). A livescore
+page served by a relay on this machine or the local network (or the Android
+app pointed at one) reads that relay instead of the cloud's live table
+(`src/utils/relayLivescore.js`): the match list from
+`/api/match/list?finished=1` every 10 s, then one WebSocket with
+`subscribe-match { device: 'livescore' }` per match and never a PIN. The
+relay answers such a socket with the public summary only (team names and
+colours, status, set scores, the scorer's live state: score, serve, sides,
+timeouts) and every `live-state-update`; PINs, rosters, officials, dates of
+birth, events and match actions go only to a socket that proved a PIN. The
+page keeps only the fields it shows. A rehearsal (test) match is shown with
+a "Test match" chip; the cloud livescore never lists one. Online (the Server
+tab, `livescore.openvolley.app`) it reads the cloud as before.
 
 Asked first: **Create Wi-Fi** when it takes the laptop off its Wi-Fi (one
 card: "This computer leaves <hall Wi-Fi>: tablets on it disconnect and cloud
