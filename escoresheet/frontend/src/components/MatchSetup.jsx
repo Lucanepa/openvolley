@@ -14,7 +14,7 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 // Primary ball image (with mikasa as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { parseRosterPdf } from '../utils/parseRosterPdf'
-import { getBackendUrl } from '../utils/backendConfig'
+import { getCloudApiUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { toastQueuedSync } from '../utils/syncToast'
@@ -2161,10 +2161,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           league: league || ''
         }
 
-        // Get backend URL from environment or use default
-        const backendUrl = getBackendUrl()
+        // The cloud backend sends the email (a LAN relay has no mailer)
+        const sendInfoUrl = getCloudApiUrl('/api/match/send-info')
 
-        fetch(`${backendUrl}/api/match/send-info`, {
+        if (sendInfoUrl) fetch(sendInfoUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(emailData)
@@ -3651,10 +3651,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
                             return
                           }
+                          // The cloud backend sends the email (a LAN relay has no mailer)
+                          const sendInfoUrl = getCloudApiUrl('/api/match/send-info')
+                          if (!sendInfoUrl) {
+                            showAlert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.', 'error')
+                            return
+                          }
                           setSendingEmail(true)
                           try {
-                            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-                            const res = await fetch(`${backendUrl}/api/match/send-info`, {
+                            const res = await fetch(sendInfoUrl, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({

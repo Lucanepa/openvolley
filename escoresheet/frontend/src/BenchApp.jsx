@@ -6,6 +6,7 @@ import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
+import { loadMatchList } from './utils/matchListSource'
 import mikasaVolleyball from './mikasa_v200w.png'
 
 // Primary ball image (with mikasa as fallback)
@@ -366,28 +367,22 @@ export default function BenchApp() {
       const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
         connectionMode === CONNECTION_MODES.AUTO
 
-      if (useSupabase) {
-        const result = await listAvailableMatchesForBenchSupabase()
-        if (result.success) {
-          // Supabase is connected even if there are no matches
-          setConnectionStatuses(prev => ({ ...prev, supabase: 'connected' }))
-          if (result.matches && result.matches.length > 0) {
-            setAvailableMatches(result.matches)
-            setActiveConnection('supabase')
-            setLoadingMatches(false)
-            return
-          }
-        } else {
-          // Supabase call failed
-          setConnectionStatuses(prev => ({ ...prev, supabase: 'disconnected' }))
-        }
+      // Cloud first, relay as fallback; on a page served by a local relay
+      // (venue tablet, desktop app) the relay first, so a cloud that hangs
+      // without an internet uplink never holds up the list.
+      const { result, source, cloud } = await loadMatchList({
+        listCloud: listAvailableMatchesForBenchSupabase,
+        listRelay: listAvailableMatches,
+        relayFirst: isServedFromLocalServer(),
+        useCloud: useSupabase
+      })
+      if (cloud) {
+        // the cloud is connected even if it has no matches
+        setConnectionStatuses(prev => ({ ...prev, supabase: cloud.success ? 'connected' : 'disconnected' }))
       }
-
-      // Fall back to WebSocket/server
-      const result = await listAvailableMatches()
       if (result.success && result.matches) {
         setAvailableMatches(result.matches)
-        setActiveConnection('websocket')
+        setActiveConnection(source)
       }
     } catch (err) {
       console.error('[Bench] Error loading matches:', err)

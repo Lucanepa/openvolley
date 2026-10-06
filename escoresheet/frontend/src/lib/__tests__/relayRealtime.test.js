@@ -124,6 +124,26 @@ describe('backend URL resolution', () => {
     clearBackendOverride()
   })
 
+  it('in the desktop app (page on the local relay) opens the cloud socket, not the relay', () => {
+    const realLocation = window.location
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    Object.defineProperty(window, 'location', {
+      value: { hostname: 'localhost', protocol: 'http:', port: '5173', origin: 'http://localhost:5173', host: 'localhost:5173' },
+      writable: true,
+      configurable: true
+    })
+    try {
+      const client = createRelayRealtime({ WebSocketImpl: FakeWebSocket, logger: { warn() {}, error() {} } })
+      client.channel('x').on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `match_id=eq.${UUID}` }, () => {}).subscribe()
+      expect(last().url).toBe('wss://backend.openvolley.app/?purpose=live')
+      client.disconnect()
+    } finally {
+      Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('reports CHANNEL_ERROR and keeps retrying when no backend is available', () => {
     let url = null
     const client = makeClient({ getUrl: () => url })

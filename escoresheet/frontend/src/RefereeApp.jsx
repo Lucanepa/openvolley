@@ -7,6 +7,7 @@ import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { isServedFromLocalServer } from './utils/backendConfig'
+import { loadMatchList } from './utils/matchListSource'
 import { setBackendOverride } from './utils/backendConfig'
 import refereeIcon from './ref.png'
 import { db } from './db/db'
@@ -229,23 +230,18 @@ export default function RefereeApp() {
     setConnectionStatuses(statuses)
   }
 
-  // Load available matches function - called on mount and manually via button
-  // Try Supabase first (cloud-persistent), fall back to WebSocket (local/Render)
+  // Load available matches function - called on mount and manually via button.
+  // Cloud first, relay as fallback; on a page served by a local relay (venue
+  // tablet, desktop app) the relay first, so a cloud that hangs without an
+  // internet uplink never holds up the list (see loadMatchList).
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true)
     try {
-      // Try Supabase first (cloud database)
-      let result = await listAvailableMatchesSupabase()
-      let source = 'supabase'
-
-      // If Supabase fails or returns no matches, try WebSocket server
-      if (!result.success || (result.matches && result.matches.length === 0)) {
-        const wsResult = await listAvailableMatches()
-        if (wsResult.success && wsResult.matches && wsResult.matches.length > 0) {
-          result = wsResult
-          source = 'websocket'
-        }
-      }
+      const { result, source } = await loadMatchList({
+        listCloud: listAvailableMatchesSupabase,
+        listRelay: listAvailableMatches,
+        relayFirst: isServedFromLocalServer()
+      })
 
       if (result.success && result.matches) {
         console.log(`[RefereeApp] Available games (${source}):`, result.matches.length, '| Games:', result.matches.map(m => ({

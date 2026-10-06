@@ -5,7 +5,7 @@
  * and filesystem. No database credentials or keys exist in the frontend.
  */
 
-import { getApiUrl } from '../utils/backendConfig'
+import { getCloudApiUrl } from '../utils/backendConfig'
 
 // Client protocol version, sent as X-OV-Proto on every data request. The
 // backend refuses writes below 2 (426 OV_CLIENT_TOO_OLD), so queued jobs from
@@ -180,7 +180,7 @@ class QueryBuilder {
   }
 
   async _execute() {
-    const apiUrl = getApiUrl('/api/db')
+    const apiUrl = getCloudApiUrl('/api/db')
     if (!apiUrl) {
       return { data: null, error: { message: 'Backend not available' } }
     }
@@ -234,7 +234,7 @@ function getAuthHeaders() {
 export const RESTORE_REQUEST_TIMEOUT_MS = 90000
 
 async function postJson(path, body, { auth = true, timeoutMs = DB_REQUEST_TIMEOUT_MS, fallbackError = 'Request failed' } = {}) {
-  const apiUrl = getApiUrl(path)
+  const apiUrl = getCloudApiUrl(path)
   if (!apiUrl) return { data: null, error: { message: 'Backend not available' }, status: 0 }
   let response
   try {
@@ -321,7 +321,7 @@ export const apiStorage = {
   from(bucket) {
     return {
       async upload(path, fileData, options = {}) {
-        const apiUrl = getApiUrl('/api/storage/upload')
+        const apiUrl = getCloudApiUrl('/api/storage/upload')
         if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
         // Convert file data to base64 (inside the try: an encoding failure must
@@ -352,7 +352,7 @@ export const apiStorage = {
       },
 
       async download(path) {
-        const apiUrl = getApiUrl('/api/storage/download')
+        const apiUrl = getCloudApiUrl('/api/storage/download')
         if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
         let response
@@ -387,7 +387,7 @@ export const apiStorage = {
       },
 
       async list(dirPath, options = {}) {
-        const apiUrl = getApiUrl('/api/storage/list')
+        const apiUrl = getCloudApiUrl('/api/storage/list')
         if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
         try {
@@ -408,7 +408,7 @@ export const apiStorage = {
 // ==================== Auth ====================
 
 async function authRequest(action, body = {}) {
-  const apiUrl = getApiUrl(`/api/auth/${action}`)
+  const apiUrl = getCloudApiUrl(`/api/auth/${action}`)
   if (!apiUrl) return { data: null, error: { message: 'Backend not available' } }
 
   try {

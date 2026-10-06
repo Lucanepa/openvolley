@@ -830,6 +830,7 @@
     "de-CH": "Swiss German"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "Online",
     "notSynced": "Not synced",
     "supportAndFeedback": "Support & feedback",
@@ -853,9 +854,9 @@
     "moreOptions": "More options...",
     "match": "Match",
     "notSet": "Not set",
-    "testMatch": "TEST MATCH",
-    "matchNumber": "MATCH #{{number}}",
-    "test": "TEST",
+    "testMatch": "Test match",
+    "matchNumber": "Match #{{number}}",
+    "test": "Test",
     "versionHistory": "Version history",
     "current": "Current",
     "exitFullscreen": "Exit fullscreen",
@@ -1655,6 +1656,8 @@
     "signInAgain": "Sign in again"
   },
   "connectionStatus": {
+    "localOnly": "Local only",
+    "localOnlyPending": "Local only ({{count}} waiting)",
     "syncing": "Syncing",
     "connected": "Connected",
     "error": "Error",
@@ -1688,7 +1691,22 @@
     "messageLabel": "Message:",
     "connectionIssueDetected": "Connection issue detected"
   },
+  "lanTablets": {
+    "title": "Connect tablets",
+    "description": "Tablets on the same Wi-Fi open these addresses in their browser. No internet needed.",
+    "scoretable": "Scoretable",
+    "referee": "Referee",
+    "bench": "Bench",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Copy",
+    "copied": "Copied",
+    "loading": "Reading the local server…",
+    "unavailable": "The local server does not answer. Restart the app, then try again.",
+    "hint": "The tablet must be on the same Wi-Fi as this computer. The camera (QR roster upload) works on this computer only, not on tablets over plain http."
+  },
   "startupConnectivity": {
+    "cloudWaits": "No internet: cloud sync starts as soon as this device is online. Matches are kept here and on the local server.",
     "connecting": "Connecting...",
     "goOffline": "Go offline",
     "continueAnyway": "Continue anyway",
