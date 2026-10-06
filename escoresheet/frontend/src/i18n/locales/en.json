@@ -1539,9 +1539,9 @@
     }
   },
   "auth": {
-    "deleteAccountWhatStays": "The matches you scored and their scoresheets: they are the clubs' official match records, and your name stays on them as the scorer. Nothing stored on this device is deleted.",
+    "deleteAccountWhatStays": "The matches you scored and their scoresheets: they are the clubs' official match records, and your name stays on them as the scorer. Matches saved on this device stay on it.",
     "deleteAccountWhatStaysTitle": "Kept, without your account",
-    "deleteAccountWhatGoes": "Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded.",
+    "deleteAccountWhatGoes": "Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 7 months at most.",
     "deleteAccountWhatGoesTitle": "Deleted from the server",
     "signIn": "Sign in",
     "signUp": "Sign up",

@@ -1538,9 +1538,9 @@
     }
   },
   "auth": {
-    "deleteAccountWhatStays": "Le partite che hai segnato e i loro referti: sono i verbali ufficiali delle società e il tuo nome vi resta come segnapunti. Su questo dispositivo non viene eliminato nulla.",
+    "deleteAccountWhatStays": "Le partite che hai segnato e i loro referti: sono i verbali ufficiali delle società e il tuo nome vi resta come segnapunti. Le partite salvate su questo dispositivo vi restano.",
     "deleteAccountWhatStaysTitle": "Conservato, senza il tuo account",
-    "deleteAccountWhatGoes": "Il tuo account e il profilo, i tuoi accessi, l’elenco «Le mie partite», i tuoi diritti di modifica sulle partite, i tuoi backup e log nel cloud e il tuo accesso ai referti che hai caricato.",
+    "deleteAccountWhatGoes": "Il tuo account e il profilo, i tuoi accessi, l’elenco «Le mie partite», i tuoi diritti di modifica sulle partite, i tuoi backup e log nel cloud e il tuo accesso ai referti che hai caricato. I backup cifrati del server ne conservano una copia finché scadono, al massimo dopo circa 7 mesi.",
     "deleteAccountWhatGoesTitle": "Eliminato dal server",
     "signIn": "Accedi",
     "signUp": "Registrati",
