@@ -57,6 +57,7 @@
     "@fontsource/orbitron": "^5.3.0",
     "@fontsource/roboto-mono": "^5.3.0",
     "@fontsource/space-mono": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dexie": "^4.3.0",
