@@ -259,7 +259,7 @@ export default function ProfileModal({ open, onClose }) {
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name fields */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
               <Field label={t('auth.firstName', 'First name')}>
                 <Input
                   size="lg"
@@ -283,7 +283,7 @@ export default function ProfileModal({ open, onClose }) {
             </div>
 
             {/* Country and DOB */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
               <Field label={t('auth.country', 'Country')}>
                 <Input
                   size="lg"

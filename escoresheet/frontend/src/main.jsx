@@ -11,6 +11,7 @@ import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
+import { watchFormStack } from './utils/formLayout'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
@@ -18,6 +19,11 @@ stripCacheBustParam()
 
 // Initialize logger to capture console output
 initLogger()
+
+// Portrait data entry: <body> carries ov-form-stack while a tablet is held
+// upright, which switches on the one-field-per-row rules in tailwind.css for
+// this app and its dialogs portalled to <body> (not for the other apps).
+watchFormStack(document.body)
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
