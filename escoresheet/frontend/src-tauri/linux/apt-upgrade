@@ -1,0 +1,36 @@
+#!/bin/sh
+# OpenVolley eScoresheet: upgrade this one package from its own APT repo.
+#
+# Run as root by the app through pkexec (polkit action
+# com.openvolley.escoresheet.update, which allows the local active session
+# without a password), in the background and only while no match is live
+# (src-tauri/src/updater.rs). It takes no input at all: no arguments, no
+# environment it trusts (pkexec gives it a clean one), so all it can ever do
+# is upgrade openvolley-escoresheet from the repo install.sh added, whose
+# packages are signed with the key pinned in that repo's list file.
+#
+# Exit codes (updater.rs, deb_outcome):
+#   0  done (upgraded, or nothing newer in the repo yet)
+#   3  not installed from the repo (no openvolley.list): the app shows how to add it
+#   4  apt-get install failed
+#   5  apt-get update failed (offline, repo unreachable)
+#   64 called with arguments
+set -eu
+
+[ $# -eq 0 ] || exit 64
+
+LIST=/etc/apt/sources.list.d/openvolley.list
+[ -f "$LIST" ] || exit 3
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+export DEBIAN_FRONTEND=noninteractive
+
+# Refresh only this repo's index, not every source on the machine.
+apt-get -q -o Dir::Etc::sourcelist=sources.list.d/openvolley.list \
+  -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update </dev/null || exit 5
+
+# Only this package, only if it is installed, keeping changed config files;
+# waits up to 2 minutes for another package manager to finish.
+apt-get -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confold \
+  install --only-upgrade -y openvolley-escoresheet </dev/null || exit 4

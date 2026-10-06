@@ -72,6 +72,23 @@ jobs:
         with:
           projectPath: escoresheet/frontend
 
+      # The .deb updates itself through a root helper and a polkit policy
+      # (src-tauri/linux, updater.rs): lint both, and check that the helper is
+      # packaged as an executable owned by root (the bundler's tar writes the
+      # numeric owner, 0/0).
+      - name: Check the deb's update helper
+        if: matrix.os == 'ubuntu-22.04'
+        working-directory: escoresheet/frontend/src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y shellcheck libxml2-utils
+          shellcheck linux/apt-upgrade
+          xmllint --noout linux/*.policy
+          deb=$(ls target/release/bundle/deb/*.deb | head -n1)
+          dpkg-deb -c "$deb" | grep -E '^-rwxr-xr-x (root/root|0/0) .*usr/libexec/openvolley-escoresheet/apt-upgrade$'
+          dpkg-deb -c "$deb" | grep -E '^-rw-r--r-- (root/root|0/0) .*usr/share/polkit-1/actions/com\.openvolley\.escoresheet\.update\.policy$'
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
