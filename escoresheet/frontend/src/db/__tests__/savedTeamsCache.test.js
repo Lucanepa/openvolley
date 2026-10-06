@@ -7,7 +7,8 @@ vi.mock('../../lib/accountApi', () => ({
 
 import { db } from '../db'
 import { savedTeamsApi } from '../../lib/accountApi'
-import { refreshSavedTeams, getSavedTeams, clearSavedTeams, bundleToRows, getSavedTeamsMeta, competitionsOf } from '../savedTeams'
+import { refreshSavedTeams, getSavedTeams, clearSavedTeams, bundleToRows, getSavedTeamsMeta, competitionsOf, storeSavedTeamsBundle } from '../savedTeams'
+import { mixedSavedTeamsBundle } from '../../domain/__tests__/fixtures/beachSavedTeamsBundle'
 import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
@@ -122,5 +123,28 @@ describe('saved teams cache', () => {
     await clearSavedTeams()
     expect(await db.saved_teams.count()).toBe(0)
     expect(await db.saved_teams_meta.count()).toBe(0)
+  })
+
+  describe('indoor only (beach teams are OpenBeach\'s)', () => {
+    it('refresh asks for the indoor bundle', async () => {
+      savedTeamsApi.fetchBundle.mockResolvedValue({ data: bundle('1'), error: null, status: 200 })
+      expect((await refreshSavedTeams({ access: scorer, userId: 'u1', online: true })).status).toBe('refreshed')
+      expect(savedTeamsApi.fetchBundle).toHaveBeenCalledWith({ sport: 'indoor' })
+    })
+
+    it('storing a mixed bundle keeps no beach team and no beach competition', async () => {
+      const rows = await storeSavedTeamsBundle(mixedSavedTeamsBundle(), 'u1')
+      expect(rows.map(r => r.name)).toEqual(['VBC Test'])
+      expect((await db.saved_teams.toArray()).map(r => r.name)).toEqual(['VBC Test'])
+      const meta = await getSavedTeamsMeta()
+      expect(meta.competitions.map(c => [c.name, c.sport])).toEqual([['2. Liga Damen', 'indoor']])
+      expect((await getSavedTeams({ userId: 'u1' })).map(r => r.competition.sport)).toEqual(['indoor'])
+    })
+
+    it('getSavedTeams drops a beach row put directly', async () => {
+      await storeSavedTeamsBundle(bundle('1'), 'u1')
+      await db.saved_teams.put({ id: 'beach-row', competitionId: 'cb', competition: { id: 'cb', name: 'Tour', sport: 'beach' }, name: 'A / B', players: [], staff: [] })
+      expect((await getSavedTeams({ userId: 'u1' })).map(r => r.id)).toEqual(['t1'])
+    })
   })
 })

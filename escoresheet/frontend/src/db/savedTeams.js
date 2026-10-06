@@ -6,12 +6,16 @@
  * The rows hold personal data (DOB, licence number): they are only for the
  * account that loaded them (meta.userId) and are cleared on sign-out and
  * account switch (AuthContext).
+ *
+ * Indoor only (docs/beach-saved-teams-spec.md 3.3): beach teams are
+ * OpenBeach's. storeSavedTeamsBundle drops every beach competition and team,
+ * whatever the caller fetched, so MatchSetup and its modals never see one.
  */
 
 import { db } from './db'
 import { savedTeamsApi } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
-import { normalizeName } from '../domain/savedTeams'
+import { bundleForSport, normalizeName, sportOf } from '../domain/savedTeams'
 
 export const SAVED_TEAMS_MAX_AGE_MS = 10 * 60 * 1000
 export const SAVED_TEAMS_CHANGED_EVENT = 'ov-saved-teams-changed'
@@ -53,7 +57,8 @@ export function bundleCompetitions(bundle) {
     gender: c.gender ?? null,
     category: c.category ?? null,
     vmLeagues: Array.isArray(c.vm_leagues) ? c.vm_leagues : [],
-    archived: !!c.archived
+    archived: !!c.archived,
+    sport: sportOf(c)
   }))
 }
 
@@ -106,7 +111,7 @@ export async function getSavedTeams({ userId = currentUserId() } = {}) {
   try {
     const meta = await db.saved_teams_meta.get(META_KEY)
     if (!meta || !userId || meta.userId !== userId) return []
-    return await db.saved_teams.toArray()
+    return (await db.saved_teams.toArray()).filter(row => sportOf(row.competition) !== 'beach')
   } catch {
     return []
   }
@@ -126,6 +131,7 @@ export async function clearSavedTeams() {
 
 /** Replace the cache with a bundle (also used after a write that returned data). */
 export async function storeSavedTeamsBundle(bundle, userId) {
+  bundle = bundleForSport(bundle, 'indoor') // the single guarantee: no beach team in this cache
   const rows = bundleToRows(bundle)
   await db.transaction('rw', db.saved_teams, db.saved_teams_meta, async () => {
     await db.saved_teams.clear()
@@ -161,7 +167,7 @@ export async function refreshSavedTeams({ force = false, access, userId, online 
     }
   }
 
-  const { data, error, status } = await savedTeamsApi.fetchBundle()
+  const { data, error, status } = await savedTeamsApi.fetchBundle({ sport: 'indoor' })
   if (error) {
     if (status === 403 || status === 401) {
       await clearSavedTeams()
