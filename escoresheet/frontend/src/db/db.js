@@ -339,6 +339,15 @@ db.version(18).stores({}).upgrade(async tx => {
   }
 })
 
+// Version 19: offline cache of the saved teams (competition manager, read by
+// scorers in MatchSetup). Two new tables, no upgrade function: nothing to
+// migrate, so the upgrade cannot reject. The rows hold DOBs and licence
+// numbers; db/savedTeams.js clears them on sign-out and account switch.
+db.version(19).stores({
+  saved_teams: 'id, competitionId, nameKey, svrzKey',
+  saved_teams_meta: 'key'
+})
+
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;
 // without this the browser treats it as "best-effort" and may evict it under
 // storage pressure or inactivity (e.g. iOS/Safari ~7-day eviction), which could
