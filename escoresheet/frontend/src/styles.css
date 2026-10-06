@@ -33,11 +33,16 @@
    The side columns' own buttons (Improper Request / Delay Warning / Delay
    Penalty chips, IR & Delays, TO/SUB, bench and libero buttons) are pinned
    too; the side-column surfaces around them take the stone hairlines.
+   The referee dashboard's scoring view (.referee-court in Referee.jsx: team
+   chips, set counters, serve box, score digits, the court floor and lines,
+   TO/SUB counters, sanctions and the last-action line) is pinned whole, as
+   its floor is a translucent tint over these surfaces.
    This only sets custom properties (and re-resolves the inherited text
    colour, which the `button` rule overrides as before); the frozen rules
    themselves are not edited. */
 :where(.court-wrapper, .court, .set-score-display, [data-help-id="scoreboard-set-display"],
-       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button) {
+       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button,
+       .referee-court) {
   --bg: #f1f5f9;
   --panel: #ffffff;
   --panel-2: #f8fafc;
