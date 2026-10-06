@@ -65,11 +65,18 @@ The app is prepared for f-droid.org, which builds it from source itself:
   commit whose `build.gradle` carries that version. F-Droid's checkupdates
   finds the tag, reads versionName/versionCode from `build.gradle` and builds
   it (no further action needed once the app is in the catalogue).
-- F-Droid signs with its own key, so its APK cannot update one from the
-  private repo (and vice versa) unless reproducible builds are set up
-  (`Binaries` + `AllowedAPKSigningKeys`; see the yml). For that the private
-  build must come from a clean checkout of the tag with no local `.env`
-  (vite would read `VITE_REOPEN_PASSWORD_HASH` from it; F-Droid does not have it).
+- Reproducible builds (`Binaries` + `AllowedAPKSigningKeys` in the recipe):
+  F-Droid builds the tag, copies the signature of the owner-signed APK
+  (GitHub release asset `com.openvolley.escoresheet_<versionCode>.apk` on the
+  `android-v<versionName>` release) onto its build and ships the owner-signed
+  APK if it verifies. Users can then move between the private repo and
+  F-Droid. Requirements: build from a clean checkout of the tag
+  (`release-android.sh` refuses a dirty tree); the Android bundle ignores
+  `.env` files (`envDir: false` for `CAPACITOR=true` in `vite.config.js`); and
+  the signing step must keep AGP's ZIP alignment: `apksigner sign
+  --alignment-preserved true` (plain `apksigner sign` re-aligns stored
+  entries and the copied signature no longer verifies).
+  `release-android.sh` checks this after signing, like F-Droid does.
 - No Google services plugin, no proprietary libraries: keep it that way
   (Capacitor plugins that pull Firebase/Play Services would block inclusion).
 
