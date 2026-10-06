@@ -8,8 +8,8 @@
 #   docker run --rm -v "$PWD/cloudflared:/etc/cloudflared:ro" \
 #     cloudflare/cloudflared:2026.5.2 tunnel --config /etc/cloudflared/config.yml ingress validate
 #
-# Every hostname reaches the same origin: ov-backend on the compose network
-# "ov-edge". No host port is involved.
+# The backend hostnames reach ov-backend and get.openvolley.app reaches ov-pkgs,
+# both on the compose network "ov-edge". No host port is involved.
 no-autoupdate: true
 originRequest:
   connectTimeout: 10s
@@ -24,4 +24,7 @@ ingress:
   # DNS record points at it; delete its CNAME after go-live.
   - hostname: ov-preflight.openvolley.app
     service: http://ov-backend:8080
+  # Public download host (APT + F-Droid repos, install page): ov-pkgs, static.
+  - hostname: get.openvolley.app
+    service: http://ov-pkgs:80
   - service: http_status:404

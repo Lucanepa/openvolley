@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#e2001a">
+<meta name="color-scheme" content="light">
+<title>Get OpenVolley</title>
+<meta name="description" content="Install the OpenVolley eScoresheet: Android via F-Droid or APK, Linux via APT, Windows installer.">
+<link rel="icon" href="/fdroid/repo/icons/icon.png">
+<!-- Template: publish-pkgs.sh fills in @DESKTOP_VERSION@, @APK_VERSION@, @APK_FILE@ and @DEB_PACKAGE@
+     from the packages it publishes. Plain HTML, no external requests. -->
+<style>
+  :root {
+    --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
+    --stone-400: #a8a29e; --stone-500: #78716c; --stone-600: #57534e; --stone-700: #44403c;
+    --stone-800: #292524; --stone-900: #1c1917; --slate-900: #0f172a;
+    --red: #e2001a; --red-dark: #be0014;
+    --shadow-card: 0 1px 2px rgb(28 25 23 / .04), 0 1px 3px rgb(28 25 23 / .06);
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--stone-800);
+    background: linear-gradient(to bottom, var(--stone-50), var(--stone-100));
+    font: 14px/1.5 Inter, "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  main { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
+  header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+  header img { width: 56px; height: 56px; border-radius: 14px; flex: none; }
+  .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--stone-400); margin: 0 0 .15rem; }
+  h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; color: var(--stone-900); margin: 0; }
+  .lead { color: var(--stone-600); margin: 0 0 1.5rem; max-width: 40rem; }
+  .card {
+    background: #fff; border: 1px solid rgb(231 229 228 / .7); border-radius: 1rem;
+    box-shadow: var(--shadow-card); padding: 1.25rem; margin-bottom: 1rem; position: relative;
+  }
+  .card > h2 {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--stone-800);
+    margin: 0 0 1rem; padding-bottom: .4rem; border-bottom: 1.5px solid var(--stone-800);
+    display: flex; justify-content: space-between; gap: .5rem;
+  }
+  .card > h2 span { color: var(--stone-500); font-weight: 600; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 14px; font-weight: 600; color: var(--stone-700); margin: 1.25rem 0 .35rem; }
+  h3:first-of-type { margin-top: 0; }
+  p { margin: .35rem 0; }
+  .meta { font-size: 12px; color: var(--stone-500); }
+  ol { margin: .35rem 0; padding-left: 1.25rem; }
+  li { margin: .2rem 0; }
+  code { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cmd {
+    display: flex; align-items: stretch; margin: .5rem 0; border: 1px solid var(--stone-200); border-radius: .75rem;
+    background: var(--stone-50); overflow: hidden;
+  }
+  .cmd pre { margin: 0; padding: .65rem .75rem; overflow-x: auto; flex: 1; min-width: 0; }
+  .cmd pre code { white-space: pre; color: var(--stone-800); }
+  .copy {
+    flex: none; border: 0; border-left: 1px solid var(--stone-200); background: #fff; color: var(--stone-600);
+    font: 500 12px/1 inherit; font-family: inherit; padding: 0 .75rem; cursor: pointer; min-width: 4.25rem;
+  }
+  .copy:hover { background: var(--stone-100); }
+  .copy:focus-visible, .btn:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgb(248 113 113 / .6); }
+  .fp { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; color: var(--stone-700); }
+  .row { display: flex; gap: 1.25rem; align-items: flex-start; }
+  .row > div { flex: 1; min-width: 0; }
+  .qr { flex: none; width: 132px; text-align: center; }
+  .qr img { width: 132px; height: 132px; image-rendering: pixelated; border: 1px solid var(--stone-200); border-radius: .5rem; display: block; }
+  .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  .actions + h3, .row + h3 { margin-top: 1.5rem; }
+  .btn {
+    display: inline-flex; align-items: center; height: 2.25rem; padding: 0 .85rem; border-radius: .5rem;
+    font-size: 14px; font-weight: 500; text-decoration: none; transition: background-color .15s;
+  }
+  .btn-primary { background: var(--red); color: #fff; }
+  .btn-primary:hover { background: var(--red-dark); }
+  .btn-ghost { border: 1px solid var(--stone-200); color: var(--stone-600); background: #fff; font-size: 13px; }
+  .btn-ghost:hover { background: var(--stone-100); }
+  a { color: var(--red-dark); }
+  kbd { font: 600 12px/1 inherit; font-family: inherit; border: 1px solid var(--stone-300); border-bottom-width: 2px; border-radius: .3rem; padding: .1rem .3rem; background: #fff; color: var(--stone-700); }
+  footer { color: var(--stone-500); font-size: 12px; margin-top: 2rem; }
+  footer a { color: var(--stone-600); }
+  @media (max-width: 560px) {
+    h1 { font-size: 1.5rem; }
+    .row { flex-direction: column; align-items: stretch; }
+    .qr { width: auto; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="/fdroid/repo/icons/icon.png" alt="">
+    <div>
+      <p class="eyebrow">get.openvolley.app</p>
+      <h1>Install OpenVolley eScoresheet</h1>
+    </div>
+  </header>
+  <p class="lead">The electronic volleyball scoresheet (FIVB and Swiss Volley rules). Pick your device below. Every package here is signed: the apps by the OpenVolley app key, the repositories by the keys whose fingerprints are shown on this page.</p>
+
+  <section class="card" id="android">
+    <h2>Android tablets <span>@APK_VERSION@</span></h2>
+    <div class="row">
+      <div>
+        <h3>With F-Droid (gets updates automatically)</h3>
+        <ol>
+          <li>Install <a href="https://f-droid.org/">F-Droid</a>.</li>
+          <li>On the tablet, open the link below, or scan the code with F-Droid. Or in F-Droid: <kbd>Settings</kbd> → <kbd>Repositories</kbd> → <kbd>+</kbd> and paste the address.</li>
+          <li>Search for <b>OpenVolley</b> and install.</li>
+        </ol>
+        <div class="cmd"><pre><code>https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Repository fingerprint (SHA-256):</p>
+        <p class="fp">61C7 0F89 4944 1E04 E2E2 1ACC 8E6E 5C6C C502 ADD5 2A15 7FB9 A8DD 8588 DACE 0720</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://fdroid.link/#https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720">Add to F-Droid</a>
+        </div>
+      </div>
+      <div class="qr">
+        <img src="/fdroid/repo/index.png" alt="QR code of the F-Droid repository address with its fingerprint">
+        <p class="meta">Scan with F-Droid</p>
+      </div>
+    </div>
+    <h3>Or the APK directly (no automatic updates)</h3>
+    <p>Allow installs from your browser when Android asks. Updates install over it as long as they come from here or the F-Droid repository above.</p>
+    <div class="actions">
+      <a class="btn btn-ghost" href="/fdroid/repo/@APK_FILE@">Download APK @APK_VERSION@</a>
+      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">GitHub release</a>
+    </div>
+  </section>
+
+  <section class="card" id="linux">
+    <h2>Linux (Debian, Ubuntu, Mint) <span>@DESKTOP_VERSION@ · amd64</span></h2>
+    <p>Add the signed APT repository once; <code>apt upgrade</code> then keeps the app current.</p>
+    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg &gt;/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
+sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Start it from the app menu (<b>Openvolley eScoresheet</b>) or with <code>openvolley-escoresheet</code>. Headless relay for the tablets only: <code>openvolley-escoresheet --server-only</code>.</p>
+    <p class="meta">Signing key: OpenVolley packages &lt;packages@openvolley.app&gt;, ed25519 (<a href="/apt/openvolley.asc">openvolley.asc</a>)</p>
+    <p class="fp">AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C</p>
+  </section>
+
+  <section class="card" id="windows">
+    <h2>Windows <span>@DESKTOP_VERSION@ · 64-bit</span></h2>
+    <p>Download and run the installer from the GitHub release. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://github.com/Lucanepa/openvolley/releases/download/desktop-v@DESKTOP_VERSION@/Openvolley.eScoresheet_@DESKTOP_VERSION@_x64-setup.exe">Download for Windows</a>
+      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
+    </div>
+  </section>
+
+  <footer>
+    Browse the repositories: <a href="/apt/">/apt/</a> · <a href="/fdroid/repo/">/fdroid/repo/</a> ·
+    Source: <a href="https://github.com/Lucanepa/openvolley">github.com/Lucanepa/openvolley</a> · Web app: <a href="https://openvolley.app">openvolley.app</a>
+  </footer>
+</main>
+<script>
+  for (const b of document.querySelectorAll('.copy')) {
+    b.addEventListener('click', async () => {
+      const text = b.previousElementSibling.textContent;
+      try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+      catch { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Select'; }
+      setTimeout(() => { b.textContent = 'Copy'; }, 2000);
+    });
+  }
+</script>
+</body>
+</html>

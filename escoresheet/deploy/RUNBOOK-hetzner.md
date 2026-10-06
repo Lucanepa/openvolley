@@ -95,7 +95,7 @@ lenovo$ escoresheet/deploy/build-image.sh --ship hetzner                 # print
 
 ```bash
 lenovo$ rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ hetzner:/opt/openvolley/
-lenovo$ ssh hetzner 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml'
+lenovo$ ssh hetzner 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
 lenovo$ scp ~/ov-backup-public.asc hetzner:/root/ov-backup-public.asc
 ```
 
@@ -310,7 +310,7 @@ hetzner# docker compose exec ov-backend node -e 'fetch("http://127.0.0.1:8080/he
 hetzner# echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" >> DEPLOYED.log
 ```
 
-Kit changes (`compose.yaml`, `cloudflared/config.yml`, scripts): rsync as in step 4 (never `.env`),
+Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts): rsync and chmod as in step 4 (never `.env`),
 then `docker compose config -q && docker compose up -d` (recreates only what changed). Script
 changes also need `./host-prep.sh` (reinstalls `backup-openvolley.sh` and the units).
 

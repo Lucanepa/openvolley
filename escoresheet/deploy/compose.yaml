@@ -2,10 +2,11 @@
 #
 #   cd /opt/openvolley && docker compose up -d          # project name is fixed below
 #
-# Three services, two private networks, zero published ports:
+# Four services, two private networks, zero published ports:
 #
 #   Cloudflare edge ──(outbound QUIC/HTTP2 from ov-tunnel)──> ov-tunnel
 #        ov-tunnel ──ov-edge──> ov-backend:8080 (HTTP + WS upgrade)
+#        ov-tunnel ──ov-edge──> ov-pkgs:80 (get.openvolley.app, static, read-only)
 #       ov-backend ──ov-internal (internal: true, no egress)──> ov-postgres:5432
 #
 # Nothing here is a Coolify resource and nothing joins Coolify's networks or
@@ -213,6 +214,56 @@ services:
     depends_on:
       ov-backend:
         condition: service_healthy
+    networks: [ov-edge]
+    logging: *logging
+    labels:
+      traefik.enable: "false"
+      diun.enable: "true"
+
+  # Static download host https://get.openvolley.app: the public APT and F-Droid
+  # repositories plus an install page. Serves a read-only copy of
+  # ${OV_PKGS_HOST_DIR} that publish-pkgs.sh (lenovoserver) rsyncs in; no
+  # signing key ever reaches this VM. Caddy runs with no admin API, no ACME
+  # and nothing writable but small tmpfs dirs.
+  ov-pkgs:
+    image: ${OV_PKGS_IMAGE:-caddy:2.11.7-alpine}
+    restart: unless-stopped
+    user: "65534:65534"
+    volumes:
+      - type: bind
+        source: ./pkgs/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OV_PKGS_HOST_DIR:-/data/openvolley/pkgs}
+        target: /srv/pkgs
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /config:size=1m,uid=65534,gid=65534,mode=0700
+      - /data:size=1m,uid=65534,gid=65534,mode=0700
+      - /tmp:size=16m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    # /usr/bin/caddy in the image carries the file capability
+    # cap_net_bind_service; with it missing from the bounding set the kernel
+    # refuses the exec ("operation not permitted"). This is the only one kept.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    oom_score_adj: 500
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     networks: [ov-edge]
     logging: *logging
     labels:
