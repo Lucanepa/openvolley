@@ -21,6 +21,11 @@ mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"
 
+# GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
+# in the tree through tauri (wry/tao), so this adds no new crate.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 # Release profile tuned for a small, fast single binary.
 [profile.release]
 opt-level = "s"
