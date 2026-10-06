@@ -59,6 +59,7 @@ import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import ManageConsole from './components/manage/ManageConsole'
+import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
@@ -3739,7 +3740,7 @@ export default function App() {
 
       {/* Manage console (admins and competition managers), full screen */}
       {manageTab && !matchId && (
-        <ManageConsole tab={manageTab} onTab={setManageTab} onClose={() => setManageTab(null)} />
+        <ManageConsole tab={manageTab} onTab={setManageTab} onClose={() => setManageTab(null)} headerActions={<ManagerSiteLink />} />
       )}
     </div>
   )
