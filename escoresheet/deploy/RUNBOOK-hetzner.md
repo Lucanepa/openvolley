@@ -291,7 +291,8 @@ Check that the key really is read-only: from the NAS,
 ## Match-day rules (deploy freeze)
 
 From **Friday 17:00 to Sunday 23:59**: no `build-image.sh --ship`, no `docker compose up`, no edits
-in `/opt/openvolley`, no `host-prep.sh`, no Postgres image bump. Relay rooms live in memory, so any
+in `/opt/openvolley`, no `host-prep.sh`, no Postgres image bump, no `publish-pkgs.sh --desktop`
+(desktop apps download an update within 6 hours and install it when the scorer quits). Relay rooms live in memory, so any
 backend restart during a match drops every live room. On Friday: check `/health`, the probe
 history, `systemctl list-timers 'openvolley-*'` and the newest NAS file.
 
@@ -313,7 +314,27 @@ hetzner# echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" >> DEPLOYED
 
 Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts): rsync and chmod as in step 4 (never `.env`),
 then `docker compose config -q && docker compose up -d` (recreates only what changed). Script
-changes also need `./host-prep.sh` (reinstalls `backup-openvolley.sh` and the units).
+changes also need `./host-prep.sh` (reinstalls `backup-openvolley.sh` and the units). A changed
+bind-mounted file alone (`pkgs/Caddyfile`, `cloudflared/config.yml`) is not a compose change:
+also `docker compose up -d --force-recreate ov-pkgs` (or `ov-tunnel`). For the F-Droid index
+CORS header (Android update check), check afterwards from lenovoserver:
+
+```bash
+lenovo$ curl -fsSI https://get.openvolley.app/fdroid/repo/index-v2.json | grep -i '^access-control-allow-origin: \*'
+lenovo$ curl -fsSI https://get.openvolley.app/apt/dists/stable/InRelease | grep -ci access-control   # 0: only the index
+```
+
+Desktop app release (Monday to Thursday, or Friday before 17:00; lenovoserver only, nothing on
+the VM): after CI has built `desktop-v<version>`,
+
+```bash
+lenovo$ cd ~/repos/openvolley && git pull && (cd escoresheet/frontend && npm ci)
+lenovo$ escoresheet/deploy/publish-pkgs.sh --desktop <version> --staging   # own laptops: OPENVOLLEY_UPDATE_CHANNEL=staging
+lenovo$ escoresheet/deploy/publish-pkgs.sh --desktop <version>             # everyone
+lenovo$ curl -fsS https://get.openvolley.app/desktop/latest.json | head -3
+```
+
+Details, the updater key and the kill switch: README.md, "Release procedure".
 
 Postgres minor bump (monthly, weekday): set `OV_POSTGRES_IMAGE=postgres:17.<n>-alpine`,
 `docker compose pull ov-postgres && docker compose up -d ov-postgres`, check `/health`, then run the

@@ -46,10 +46,12 @@ network, and carries `traefik.enable=false`.
 | `compose.yaml` | VM, `/opt/openvolley` | The three services, two networks, limits, bind mounts with `create_host_path: false` |
 | `env.example` | VM | Template for `/opt/openvolley/.env` (mode 600). Lists every variable; no real values |
 | `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
-| `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else |
+| `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else (the desktop updater manifests too); `Access-Control-Allow-Origin: *` on `/fdroid/repo/index-v2.json` only (the Android app's update check) |
 | `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`). Its `<!--per-machine-->` block (administrator prompt, firewall rule) is published only for a desktop version newer than 2.1.0, the last per-user Windows installer |
 | `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` |
-| `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. See [Public downloads](#public-downloads-getopenvolleyapp) |
+| `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
+| `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
+| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
@@ -143,9 +145,15 @@ tunnel as the backend:
 | `/install.sh` | One-line Linux installer (`pkgs/install.sh`), served as `text/plain` | pins the APT key fingerprint below |
 | `/apt/` | APT repo: `dists/stable` (component `main`, arch `amd64`), `pool/main/*.deb`, `openvolley.gpg` (binary keyring), `openvolley.asc` | GPG key **OpenVolley packages <packages@openvolley.app>**, ed25519, no expiry, fingerprint `AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C` |
 | `/fdroid/repo/` | F-Droid repo **OpenVolley** with `com.openvolley.escoresheet` | Index: repo key `CN=openvolley, OU=F-Droid`, RSA 4096, to 2054, fingerprint `61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`. APKs: the OpenVolley app key (`frontend/ANDROID.md`), never re-signed |
+| `/desktop/` | Desktop updater manifests: `latest.json` (everyone), `staging.json` (apps started with `OPENVOLLEY_UPDATE_CHANNEL=staging`), `latest-<version>.json` (archive, for the kill switch) | Each installer's signature inside: the desktop updater key (minisign Ed25519, made with `tauri signer`), public half in `frontend/src-tauri/tauri.conf.json` `plugins.updater.pubkey`; the signature also binds the version (`requireSignedVersion`) |
 
 The Windows installer and an APK copy (`OpenVolley-<version>.apk`) are assets of the GitHub
-release `desktop-v<version>`; the page links there.
+release `desktop-v<version>`; the page links there. From 2.2.0 the release also carries a `.sig`
+per installer and `latest.json`: the app asks `https://get.openvolley.app/desktop/latest.json`
+first and `https://github.com/Lucanepa/openvolley/releases/latest/download/latest.json` if that
+fails, so the newest `desktop-v*` release must stay GitHub's "Latest" (`desktop.yml` sets
+`make_latest`; Android releases are created with `--latest=false`). The Windows and AppImage
+entries point at the GitHub assets, the `.deb` entry at the APT pool.
 
 User commands (also on the page). Linux, one line:
 
@@ -195,17 +203,29 @@ repo only ever lists `openvolley-escoresheet`. Someone who installed `openvolley
   new fingerprint; losing the APT key means everyone re-downloads `openvolley.gpg`.
 - `public/`: the served tree, rebuilt by `publish-pkgs.sh`. Only this directory is rsynced.
 
+The desktop updater key lives apart, in `~/.config/openvolley-desktop/` (mode 700):
+`updater.key` (the `tauri signer` private key, password protected) and `key-password` (its
+password), both mode 600, plus `updater.key.pub`, whose content is the `pubkey` committed in
+`tauri.conf.json`. Vaultwarden: **"OpenVolley desktop updater key"** (notes: the key file and
+the password). Losing it means installed apps never update themselves again (a new key needs a
+manual reinstall everywhere). CI never signs and holds no updater secret, so a GitHub compromise
+cannot push code to venue laptops. `publish-pkgs.sh` checks every signature against the key in
+`tauri.conf.json`, never against the `.pub` file next to the private key.
+
 This is separate from the owner's private F-Droid repo (`/srv/fdroid/desktop-calendar`), which
 stays private and is not touched by any of this.
 
 ### Release procedure
 
-1. Desktop: tag `desktop-v<version>` (CI builds and creates the GitHub release), then
-   ```bash
-   gh release download desktop-v<version> --repo Lucanepa/openvolley --pattern '*.deb' -D /tmp/ovrel
-   ```
-   (Releases built before the Linux rename ship `Openvolley.eScoresheet_<version>_amd64.deb`,
-   package `openvolley-e-scoresheet`; `publish-pkgs.sh` repacks it, see Package name.)
+Not on match days (Friday 17:00 to Sunday): an update downloads in the background and installs
+when the scorer quits the app, and it should not be the first thing a venue sees on a Saturday.
+
+1. Desktop: bump the version (`escoresheet/frontend/package.json`) and tag `desktop-v<version>`.
+   CI builds and creates the GitHub release; the release job fails if the tag and
+   `package.json` disagree. Releases before 2.2.0 (no updater) were published by downloading
+   the `.deb` by hand
+   (`gh release download desktop-v<version> --repo Lucanepa/openvolley --pattern '*.deb' -D /tmp/ovrel`)
+   and passing it to step 3; from 2.2.0 use `--desktop` (step 3) instead.
 2. Android: `escoresheet/frontend/scripts/release-android.sh` builds and signs the APK and puts
    it in the private repo as `/srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk`
    (`frontend/ANDROID.md`). Attach it to the release for direct download:
@@ -213,20 +233,55 @@ stays private and is not touched by any of this.
    cp /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk /tmp/ovrel/OpenVolley-<version>.apk
    gh release upload desktop-v<version> --repo Lucanepa/openvolley /tmp/ovrel/OpenVolley-<version>.apk
    ```
-3. Publish both (either may be left out):
+3. Publish (the desktop part, the APK, or both). A desktop release goes to staging first:
    ```bash
-   escoresheet/deploy/publish-pkgs.sh /tmp/ovrel/*.deb \
+   cd escoresheet/frontend && npm ci && cd -     # tauri-cli >= 2.12 (signer --app-version)
+   escoresheet/deploy/publish-pkgs.sh --desktop <version> --staging \
      /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk
    ```
-   It refuses an APK not signed by the OpenVolley app key, a `.deb` that is not the desktop app,
+   `--desktop` downloads the release's `-setup.exe`, AppImage and `.deb` with `gh`, checks each
+   is that version (and the `.deb` is `openvolley-escoresheet`), signs each with the updater key
+   (`tauri signer sign --app-version`, the password goes through the environment only), verifies
+   each signature against `tauri.conf.json` (with `lib/desktop-updater.mjs`, and also with
+   `minisign` when it is installed), writes `latest.json` (notes: the fastlane changelog of the
+   same version) and adds the `.deb` to the APT pool. With `--staging` it updates
+   `desktop/staging.json` and `desktop/latest-<version>.json` and uploads only the `.sig` files to
+   the GitHub release. The `.deb` enters the APT repo already in this run (APT has no staging
+   channel), so `sudo apt upgrade` and unattended-upgrades see it at once; only the in-app
+   updater waits for `latest.json`. Start your own laptops with `OPENVOLLEY_UPDATE_CHANNEL=staging`
+   and check that they update (quit, or "Restart and update"). Then everyone:
+   ```bash
+   escoresheet/deploy/publish-pkgs.sh --desktop <version>
+   ```
+   That re-signs, writes `desktop/latest.json` too and uploads `latest.json` with the `.sig`
+   files to the release (after the rsync, so it never points at a `.deb` not yet served). It
+   warns if that release is not GitHub's "Latest" (`gh release edit desktop-v<version> --latest`).
+   A channel never moves back to an older version this way; see the kill switch below.
+
+   `publish-pkgs.sh` refuses an APK not signed by the OpenVolley app key, a `.deb` that is not the desktop app,
    and a package that would overwrite a different file under the same version. It also copies
    `pkgs/install.sh` (after checking it pins the APT key and the package name). `--no-sync` builds `~/.config/openvolley-pkgs/public`
-   without uploading. Clients see the new indexes within 60 s (cache), packages are immutable.
+   without uploading anything (rsync or GitHub). Clients see the new indexes and manifests within 60 s (cache), packages are immutable.
+   Before publishing, refuses anything key-like in the public tree: key stores, password files,
+   `*.key`, PGP private key blocks and minisign / tauri secret keys (as text or base64).
 4. Check: `curl -fsS https://get.openvolley.app/apt/dists/stable/InRelease | head`, the
-   version on the page, and `curl -fsSI https://get.openvolley.app/install.sh` (200, text/plain).
+   version on the page, `curl -fsSI https://get.openvolley.app/install.sh` (200, text/plain),
+   and for a desktop release `curl -fsS https://get.openvolley.app/desktop/latest.json | head -3`.
 
 To withdraw a version: delete it from `~/.config/openvolley-pkgs/public/apt/pool/main/` or
 `~/.config/openvolley-pkgs/fdroid/repo/` and run `publish-pkgs.sh` again.
+
+**Desktop kill switch** (a bad desktop release is rolling out): point the manifest back at the
+previous release and sync. Clients that have not updated yet stop; clients never downgrade, so
+ship a fixed patch next.
+```bash
+cp ~/.config/openvolley-pkgs/public/desktop/latest-<previous>.json ~/.config/openvolley-pkgs/public/desktop/latest.json
+escoresheet/deploy/publish-pkgs.sh                      # syncs the tree
+gh release delete-asset desktop-v<bad> latest.json --repo Lucanepa/openvolley --yes   # the fallback endpoint too
+```
+
+Tests (offline, throwaway key, no GitHub, no sync):
+`TMPDIR=<scratch dir> OV_TAURI_CLI=<tauri-cli >= 2.12> escoresheet/deploy/tests/publish-desktop.test.sh`.
 
 ### Deploy (owner, once)
 
@@ -239,6 +294,11 @@ lenovo$ ssh hetzner 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley
 hetzner# cd /opt/openvolley && docker compose config -q && docker compose up -d ov-pkgs && docker compose restart ov-tunnel
 hetzner# docker compose ps ov-pkgs                                               # healthy
 ```
+
+A later `pkgs/Caddyfile` change (such as the F-Droid index CORS header) does not change the
+compose config, so `up -d` alone keeps the old one: copy the kit as above, then
+`docker compose up -d --force-recreate ov-pkgs` and check
+`curl -fsSI https://get.openvolley.app/fdroid/repo/index-v2.json | grep -i access-control`.
 
 The `chmod 644` matters: the kit lands root-owned `640`, and `ov-pkgs` runs as `nobody` (as
 `ov-tunnel` runs as a non-root user), so without it Caddy cannot read its config. `publish-pkgs.sh`
