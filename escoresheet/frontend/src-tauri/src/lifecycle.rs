@@ -351,7 +351,12 @@ pub fn on_close_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     match action {
         CloseAction::Close => false,
         CloseAction::AskPage => {
-            match main_window(app).map(|w| w.eval(page_event_script("close-requested"))) {
+            // in front of its scoresheet windows: the notice is in this one
+            let main = main_window(app);
+            if let Some(w) = &main {
+                let _ = w.set_focus();
+            }
+            match main.map(|w| w.eval(page_event_script("close-requested"))) {
                 Some(Ok(())) => {}
                 _ => hide_windows(app),
             }

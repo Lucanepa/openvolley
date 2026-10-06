@@ -234,12 +234,16 @@ function installDesktop(win, ask) {
   }
   win.addEventListener(LIFECYCLE_EVENT, onEvent)
   liveListeners.add(report)
+  // A language's texts load after the switch (i18n/index.js): report again
+  // once they are there, or the tray keeps the fallback (English) ones.
   i18n.on?.('languageChanged', report)
+  i18n.store?.on?.('added', report)
   report()
   return () => {
     win.removeEventListener(LIFECYCLE_EVENT, onEvent)
     liveListeners.delete(report)
     i18n.off?.('languageChanged', report)
+    i18n.store?.off?.('added', report)
     if (desktopWin === win) desktopWin = null
   }
 }
