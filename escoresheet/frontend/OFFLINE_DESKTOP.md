@@ -39,6 +39,15 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
   (`ws://localhost:8080`, `http://<LAN-IP>:5173`). Online, the startup check
   shows Cloud sync: Connected; without internet it shows Cloud sync: Offline
   and the header pill reads **Local only** while the venue keeps running.
+  Nothing is uploaded without an account: with no sign-in the queue waits
+  ("Sign in to sync") and matches stay on this laptop.
+- Only the desktop window (loopback origin) talks to the cloud. Pages the
+  relay serves to the venue tablets from the LAN address
+  (`http://<LAN-IP>:5173/referee`, `/bench`, `/livescore`) keep cloud calls on
+  the relay itself: the cloud rejects LAN origins (CORS), and the relay
+  answers `/api/db` with an instant 404, so the tablets never wait on a hall
+  Wi-Fi without uplink. The referee and bench match lists ask the relay first
+  on a relay-served page (`src/utils/matchListSource.js`).
 - The desktop connects from loopback, so it bypasses the single-scoretable gate
   and can reload freely; a second device hitting the root over the LAN still
   gets the "one scoretable" protection.
