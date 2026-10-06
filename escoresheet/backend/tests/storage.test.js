@@ -1137,6 +1137,19 @@ describe('remove and delete-account clean-up', () => {
     await rejectsWith(s.deleteUserData('../x'), 400)
   })
 
+  it('deleteUserData keeps scoresheets when every bucket is owner-scoped (STORAGE_OWNER_SCOPE_BUCKETS=all)', async () => {
+    const s = make({ ...opts, ownerScopeBuckets: ['backup', 'scoresheets'] })
+    await upBackup(s, U1, 'backups/backup_g1/a.json')
+    await upSheet(s, U1)
+    const onDisk = path.join(root, 'scoresheets', U1, sheet)
+    assert.equal(await exists(onDisk), true, 'owner-scoped: the scoresheet sits under the uploader\'s folder')
+    const r = await s.deleteUserData(U1)
+    assert.equal(r.objectsRemoved, 1, 'only the backup object')
+    assert.equal(r.ownerRecordsRemoved, 1)
+    assert.equal(await exists(path.join(root, 'backup', U1)), false)
+    assert.equal(await exists(onDisk), true, 'the scoresheet (official record) stays')
+  })
+
   it('sweep removes orphaned sidecars (object deleted outside the API), in every bucket', async () => {
     let t = Date.now()
     const s = make({ ...opts, now: () => t, sweepDirGraceMs: 1000 })
