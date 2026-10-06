@@ -192,8 +192,41 @@ describe('db/007_scorer_accounts.sql', { skip: SKIP_PG }, () => {
       const after = (await raw.query('SELECT closed_at, closed_by, status FROM public.matches WHERE id = $1', [id])).rows[0]
       assert.deepEqual({ closed_at: after.closed_at, closed_by: after.closed_by }, before, 'the stamp stays')
       assert.equal(after.status, 'final')
-      // match_live_state is not locked
-      await q('INSERT INTO public.match_live_state (match_id, points_a) VALUES ($1, 1)', [id])
+      // the stored live score is frozen too (review: livescore showed a closed match as live)
+      await expectState('INSERT INTO public.match_live_state (match_id, points_a) VALUES ($1, 1)', [id], 'OVC01')
+      await raw.query("SELECT set_config('ov.allow_closed', 'on', false)")
+      await raw.query('INSERT INTO public.match_live_state (match_id, points_a) VALUES ($1, 1)', [id])
+      await raw.query("SELECT set_config('ov.allow_closed', '', false)")
+      await expectState('UPDATE public.match_live_state SET points_a = 99 WHERE match_id = $1', [id], 'OVC01')
+      await expectState('DELETE FROM public.match_live_state WHERE match_id = $1', [id], 'OVC01')
+      // moving an open match's live state onto the closed match
+      await q('INSERT INTO public.match_live_state (match_id, points_a) VALUES ($1, 1)', [open.id])
+      await expectState('UPDATE public.match_live_state SET match_id = $1 WHERE match_id = $2', [id, open.id], 'OVC01')
+    })
+
+    it('an exemption holds for its key only: moving an exempt match onto a claimed game hits the index', async () => {
+      const { rows: [a] } = await q("INSERT INTO public.matches (external_id, game_n, scheduled_at) VALUES ('ex_a', 74004, '2026-10-10T16:00:00Z') RETURNING id")
+      const { rows: [b] } = await q("INSERT INTO public.matches (external_id, game_n, scheduled_at) VALUES ('ex_b', 74005, '2026-10-11T16:00:00Z') RETURNING id")
+      assert.ok(a.id)
+      await raw.query('UPDATE public.matches SET official_game_exempt = true WHERE id = $1', [b.id])
+      // same key: the exemption stays (a time correction, a status change)
+      await q("UPDATE public.matches SET scheduled_at = '2026-10-11T18:00:00Z', status = 'live' WHERE id = $1", [b.id])
+      assert.equal((await raw.query('SELECT official_game_exempt FROM public.matches WHERE id = $1', [b.id])).rows[0].official_game_exempt, true)
+      // onto game 74004 of the same season: the exemption ends, the index refuses
+      await expectState('UPDATE public.matches SET game_n = 74004 WHERE id = $1', [b.id], '23505')
+      // onto a free game: allowed, and no longer exempt
+      await q('UPDATE public.matches SET game_n = 74006 WHERE id = $1', [b.id])
+      assert.equal((await raw.query('SELECT official_game_exempt FROM public.matches WHERE id = $1', [b.id])).rows[0].official_game_exempt, false)
+      // another season by date: the key changes too
+      await raw.query('UPDATE public.matches SET official_game_exempt = true WHERE id = $1', [b.id])
+      await q("UPDATE public.matches SET scheduled_at = '2027-10-11T16:00:00Z' WHERE id = $1", [b.id])
+      assert.equal((await raw.query('SELECT official_game_exempt FROM public.matches WHERE id = $1', [b.id])).rows[0].official_game_exempt, false)
+      // ov.allow_closed (the admin endpoints) keeps what they set
+      await q('BEGIN')
+      await q("SELECT set_config('ov.allow_closed', 'on', true)")
+      await q('UPDATE public.matches SET official_game_exempt = true, game_n = 74004, scheduled_at = $2 WHERE id = $1', [b.id, '2026-10-10T16:00:00Z'])
+      await q('COMMIT')
+      assert.equal((await raw.query('SELECT official_game_exempt FROM public.matches WHERE id = $1', [b.id])).rows[0].official_game_exempt, true)
     })
 
     it('ov.allow_closed lifts the lock (admin reopen), and closing again stamps again', async () => {

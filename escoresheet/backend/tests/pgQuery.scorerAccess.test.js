@@ -119,6 +119,26 @@ describe('pgQuery and matchRestore: scorer access, closing, official games', { s
       assert.equal((await raw.query('SELECT count(*)::int n FROM sets WHERE match_id = $1', [m.id])).rows[0].n, 1)
     })
 
+    it('a live-state upsert on its id cannot move another match\'s row into a test match', async () => {
+      // review: a pending PIN holder (editor of N) upserted {id: L.id, match_id: T}
+      const n = await matchOf(asScorer(scorer))
+      const r0 = await q('match_live_state', 'upsert', { data: { match_id: n.id, points_a: 7 }, onConflict: 'match_id', returning: 'id', single: true }, asScorer(scorer))
+      assert.equal(r0.status, 200, JSON.stringify(r0.body))
+      const liveId = r0.body.data.id
+      await raw.query("INSERT INTO match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [n.id, pending])
+      const t = await matchOf(asPending(pending), { test: true })
+      const r = await q('match_live_state', 'upsert', { data: { id: liveId, match_id: t.id, points_a: 0, points_b: 25 } }, asPending(pending))
+      assert.equal(r.status, 403, JSON.stringify(r.body))
+      // an approved scorer owning both matches cannot move it either
+      const s2 = await matchOf(asScorer(scorer))
+      const r2 = await q('match_live_state', 'upsert', { data: { id: liveId, match_id: s2.id, points_a: 1 } }, asScorer(scorer))
+      assert.equal(r2.status, 403, JSON.stringify(r2.body))
+      const { rows: [row] } = await raw.query('SELECT match_id, points_a, points_b FROM match_live_state WHERE id = $1', [liveId])
+      assert.deepEqual({ match_id: row.match_id, points_a: row.points_a }, { match_id: n.id, points_a: 7 })
+      // the normal per-match upsert (on match_id) of a scorer still works
+      assert.equal((await q('match_live_state', 'upsert', { data: { match_id: n.id, points_a: 8 }, onConflict: 'match_id' }, asScorer(scorer))).status, 200)
+    })
+
     it('an approved scorer and an admin are not limited to test matches', async () => {
       await matchOf(asScorer(scorer))
       const a = await matchOf(asAdmin(admin))
@@ -141,6 +161,7 @@ describe('pgQuery and matchRestore: scorer access, closing, official games', { s
     it('a closed match, its sets and events refuse writes with 409 OV_MATCH_CLOSED; approved -> final passes', async () => {
       const m = await matchOf(asScorer(scorer))
       assert.equal((await q('sets', 'insert', { data: setOf(m, 1) }, asScorer(scorer))).status, 200)
+      assert.equal((await q('match_live_state', 'upsert', { data: { match_id: m.id, points_a: 1 }, onConflict: 'match_id' }, asScorer(scorer))).status, 200)
       assert.equal((await q('matches', 'update', { data: { status: 'approved' }, filters: [eq('id', m.id)] }, asScorer(scorer))).status, 200)
       const closed = (r) => {
         expectCode(r, 409, 'OV_MATCH_CLOSED')
@@ -156,8 +177,10 @@ describe('pgQuery and matchRestore: scorer access, closing, official games', { s
       assert.equal((await q('matches', 'update', { data: { status: 'final' }, filters: [eq('id', m.id)] }, asScorer(scorer))).status, 200)
       // the resent closing job is a no-op rewrite
       assert.equal((await q('matches', 'update', { data: { status: 'final' }, filters: [eq('id', m.id)] }, asScorer(scorer))).status, 200)
-      // match_live_state is not locked (ephemeral display data)
-      assert.equal((await q('match_live_state', 'upsert', { data: { match_id: m.id, points_a: 2 }, onConflict: 'match_id' }, asScorer(scorer))).status, 200)
+      // the stored live score is locked as well
+      closed(await q('match_live_state', 'upsert', { data: { match_id: m.id, points_a: 2 }, onConflict: 'match_id' }, asScorer(scorer)))
+      closed(await q('match_live_state', 'delete', { filters: [eq('match_id', m.id)] }, asScorer(scorer)))
+      assert.equal((await raw.query('SELECT points_a FROM match_live_state WHERE match_id = $1', [m.id])).rows[0].points_a, 1)
     })
 
     it('a test match never closes', async () => {

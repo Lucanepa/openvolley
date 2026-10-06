@@ -150,6 +150,21 @@ BEGIN
       -- closed_at / closed_by are the server's (a client value is ignored)
       NEW.closed_at := OLD.closed_at;
       IF NEW.closed_by IS NOT NULL THEN NEW.closed_by := OLD.closed_by; END IF;
+      -- An exemption (admin release-game, or a duplicate exempted above) holds
+      -- for the official-game key it was given for: moving the match to
+      -- another key puts it back under the unique index.
+      -- (Key = the index's: beach or not, game_n, season; and test.)
+      IF OLD.official_game_exempt AND NEW.official_game_exempt AND (
+           NEW.game_n IS DISTINCT FROM OLD.game_n
+           OR (NEW.test IS TRUE) IS DISTINCT FROM (OLD.test IS TRUE)
+           OR (NEW.sport_type IS NOT DISTINCT FROM 'beach') IS DISTINCT FROM (OLD.sport_type IS NOT DISTINCT FROM 'beach')
+           OR (date_part('year', (coalesce(NEW.scheduled_at, NEW.created_at) AT TIME ZONE 'Europe/Zurich'))::int
+                 - CASE WHEN date_part('month', (coalesce(NEW.scheduled_at, NEW.created_at) AT TIME ZONE 'Europe/Zurich')) < 7 THEN 1 ELSE 0 END)
+              IS DISTINCT FROM
+              (date_part('year', (coalesce(OLD.scheduled_at, OLD.created_at) AT TIME ZONE 'Europe/Zurich'))::int
+                 - CASE WHEN date_part('month', (coalesce(OLD.scheduled_at, OLD.created_at) AT TIME ZONE 'Europe/Zurich')) < 7 THEN 1 ELSE 0 END)) THEN
+        NEW.official_game_exempt := false;
+      END IF;
     END IF;
   ELSE -- INSERT
     IF NOT allow THEN
@@ -218,6 +233,12 @@ CREATE TRIGGER sets_closed_guard
 DROP TRIGGER IF EXISTS events_closed_guard ON public.events;
 CREATE TRIGGER events_closed_guard
   BEFORE INSERT OR UPDATE OR DELETE ON public.events
+  FOR EACH ROW EXECUTE FUNCTION public.ov_match_children_guard();
+-- The stored live score of a closed match is frozen too (livescore reads it);
+-- the admin reopen and restore run with ov.allow_closed or before the close.
+DROP TRIGGER IF EXISTS match_live_state_closed_guard ON public.match_live_state;
+CREATE TRIGGER match_live_state_closed_guard
+  BEFORE INSERT OR UPDATE OR DELETE ON public.match_live_state
   FOR EACH ROW EXECUTE FUNCTION public.ov_match_children_guard();
 
 -- 6. Invite codes -------------------------------------------------------------------
