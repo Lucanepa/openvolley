@@ -6,6 +6,7 @@ import {
   isRelayErrorFor,
   isLocalRelayUrl,
   liveStateTargets,
+  publishLiveState,
   relayReconnectDelay,
   relayConnectionStatus,
   scorerRelayUrl,
@@ -295,6 +296,28 @@ describe('test (rehearsal) matches: live state to a local relay only', () => {
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'ws://192.168.1.20:8080' })).toEqual({ relay: true, cloud: false })
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: false, cloud: false })
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: null })).toEqual({ relay: false, cloud: false })
+  })
+
+  it('publishLiveState: the relay first, the cloud work only for an official match', async () => {
+    const run = async (targets) => {
+      const calls = []
+      const out = await publishLiveState({
+        targets,
+        toRelay: () => calls.push('relay'),
+        toCloud: async () => { calls.push('cloud'); return 'written' }
+      })
+      return { calls, out }
+    }
+    const official = liveStateTargets({ isTest: false, relayKey: 'match_1', relayUrl: 'wss://backend.openvolley.app' })
+    expect(await run(official)).toEqual({ calls: ['relay', 'cloud'], out: 'written' })
+    // A rehearsal on the venue relay: the LedBox gets it, the cloud never
+    const rehearsal = liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'ws://192.168.1.20:8080' })
+    expect(await run(rehearsal)).toEqual({ calls: ['relay'], out: undefined })
+    // A rehearsal with only the cloud relay: nothing at all
+    expect(await run(liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'wss://backend.openvolley.app' }))).toEqual({ calls: [], out: undefined })
+    // No room key yet: the cloud still gets an official match
+    expect(await run(liveStateTargets({ isTest: false, relayKey: null }))).toEqual({ calls: ['cloud'], out: 'written' })
+    expect(await run(undefined)).toEqual({ calls: [], out: undefined })
   })
 })
 

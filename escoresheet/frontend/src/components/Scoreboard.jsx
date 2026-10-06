@@ -25,7 +25,7 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
-import { isRelayErrorFor, liveStateTargets, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
+import { isRelayErrorFor, liveStateTargets, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -1833,7 +1833,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const match = await db.matches.get(matchId)
       if (!match) return
       const isTest = match.test === true
-      if (isTest && !liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url }).relay) return
+      const routeOf = () => liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url })
+      if (isTest && !routeOf().relay) return
       console.log(`[PERF:liveState] After match.get: +${(performance.now() - _tl).toFixed(0)}ms`)
 
       // The Supabase match UUID when the match record already has it. A lookup
@@ -2064,80 +2065,84 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Only under the seed key (a Dexie id is no relay room). The push
       // carries the order (_seq, _session): the tablets compare it with the
       // bundle's _syncedSeq instead of the wall clock. Not in the database row.
-      const targets = liveStateTargets({ isTest, relayKey: relayKeyRef.current, relayUrl: scorerRelay.url })
-      if (targets.relay && liveOrder.shouldPush(liveSeq)) {
-        sendRelayMessage({
-          type: 'live-state-update',
-          matchId: relayKeyRef.current,
-          liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session }
-        })
-      }
-      // Test match: the local relay was all (no lookup, no upsert, no retry)
-      if (!targets.cloud) return
-
-      // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
-      // upsert per rally that would only get the same 401. Pushed again once
-      // the queue drains after the sign-in.
-      if (isAuthBlocked()) {
-        setLiveStateDirty(matchId, true)
-        return
-      }
-
-      if (!supabaseMatchId) {
-        const seedKey = match.seed_key || String(matchId)
-        const { data: matchData, error } = await apiFrom('matches')
-          .select('id')
-          .eq('external_id', seedKey)
-          .maybeSingle()
-        if (error || !matchData) {
-          // Offline, or the match is not in the cloud yet: push again later
-          setLiveStateDirty(matchId, true)
-          return
-        }
-        supabaseMatchId = matchData.id
-        liveStateData.match_id = supabaseMatchId
-        console.log(`[PERF:liveState] After Supabase match lookup: +${(performance.now() - _tl).toFixed(0)}ms`)
-      }
-
-      console.log('[LiveState] Syncing to Supabase:', {
-        eventType,
-        teamAKey: snapshot.teamAKey,
-        teamAName: snapshot.teamAName,
-        teamBName: snapshot.teamBName,
-        sideA: snapshot.sideA,
-        servingTeam: snapshot.servingTeam,
-        pointsA: snapshot.pointsA,
-        pointsB: snapshot.pointsB,
-        setScoreA: snapshot.setScoreA,
-        setScoreB: snapshot.setScoreB
-      })
-
-      // DIRECT SUPABASE WRITE (bypasses sync_queue) - see architecture note at top of file
-      // Reason: match_live_state needs sub-second latency for real-time spectator display.
-      // Queuing would add 1s+ delay from the polling interval in useSyncQueue.
-      // Note: current_set is already in liveStateData, so we don't need a separate matches.update().
-      // The sync queue will update matches.current_set for persistence.
-      // One upsert at a time, and one older than the last written is dropped:
-      // concurrent upserts are last-write-wins on match_id, so the stale
-      // 'point' row of a side-out could overwrite the 'rotation' row.
-      const liveStateResult = await liveOrder.write(liveSeq,
-        () => apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }))
-      if (liveStateResult?.skipped) return
-
-      if (liveStateResult.error) {
-        console.error('[LiveState] Sync error:', liveStateResult.error)
-        setLiveStateDirty(matchId, true)
-        // Offline, signed out or a backend hiccup is caught up later, not a dialog
-        if (isLiveStateErrorWorthAlert(liveStateResult.error)) {
-          setScoresheetErrorModal({
-            error: t('errors.syncFailed'),
-            details: liveStateResult.error.message || t('errors.databaseWriteError')
+      // A test match: the local relay is all (no lookup, no upsert, no retry):
+      // every cloud step stays inside toCloud (publishLiveState)
+      await publishLiveState({
+        targets: routeOf(),
+        toRelay: () => {
+          if (!liveOrder.shouldPush(liveSeq)) return
+          sendRelayMessage({
+            type: 'live-state-update',
+            matchId: relayKeyRef.current,
+            liveState: { ...liveStateData, _seq: liveSeq, _session: liveOrder.session }
           })
+        },
+        toCloud: async () => {
+          // The cloud wants a sign-in (the sync queue got a 401): no lookup and no
+          // upsert per rally that would only get the same 401. Pushed again once
+          // the queue drains after the sign-in.
+          if (isAuthBlocked()) {
+            setLiveStateDirty(matchId, true)
+            return
+          }
+
+          if (!supabaseMatchId) {
+            const seedKey = match.seed_key || String(matchId)
+            const { data: matchData, error } = await apiFrom('matches')
+              .select('id')
+              .eq('external_id', seedKey)
+              .maybeSingle()
+            if (error || !matchData) {
+              // Offline, or the match is not in the cloud yet: push again later
+              setLiveStateDirty(matchId, true)
+              return
+            }
+            supabaseMatchId = matchData.id
+            liveStateData.match_id = supabaseMatchId
+            console.log(`[PERF:liveState] After Supabase match lookup: +${(performance.now() - _tl).toFixed(0)}ms`)
+          }
+
+          console.log('[LiveState] Syncing to Supabase:', {
+            eventType,
+            teamAKey: snapshot.teamAKey,
+            teamAName: snapshot.teamAName,
+            teamBName: snapshot.teamBName,
+            sideA: snapshot.sideA,
+            servingTeam: snapshot.servingTeam,
+            pointsA: snapshot.pointsA,
+            pointsB: snapshot.pointsB,
+            setScoreA: snapshot.setScoreA,
+            setScoreB: snapshot.setScoreB
+          })
+
+          // DIRECT SUPABASE WRITE (bypasses sync_queue) - see architecture note at top of file
+          // Reason: match_live_state needs sub-second latency for real-time spectator display.
+          // Queuing would add 1s+ delay from the polling interval in useSyncQueue.
+          // Note: current_set is already in liveStateData, so we don't need a separate matches.update().
+          // The sync queue will update matches.current_set for persistence.
+          // One upsert at a time, and one older than the last written is dropped:
+          // concurrent upserts are last-write-wins on match_id, so the stale
+          // 'point' row of a side-out could overwrite the 'rotation' row.
+          const liveStateResult = await liveOrder.write(liveSeq,
+            () => apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }))
+          if (liveStateResult?.skipped) return
+
+          if (liveStateResult.error) {
+            console.error('[LiveState] Sync error:', liveStateResult.error)
+            setLiveStateDirty(matchId, true)
+            // Offline, signed out or a backend hiccup is caught up later, not a dialog
+            if (isLiveStateErrorWorthAlert(liveStateResult.error)) {
+              setScoresheetErrorModal({
+                error: t('errors.syncFailed'),
+                details: liveStateResult.error.message || t('errors.databaseWriteError')
+              })
+            }
+          } else {
+            setLiveStateDirty(matchId, false)
+            console.log('[LiveState] Synced successfully - side_a:', snapshot.sideA, 'serving:', snapshot.servingTeam)
+          }
         }
-      } else {
-        setLiveStateDirty(matchId, false)
-        console.log('[LiveState] Synced successfully - side_a:', snapshot.sideA, 'serving:', snapshot.servingTeam)
-      }
+      })
       console.log(`[PERF:liveState] TOTAL: ${(performance.now() - _tl).toFixed(0)}ms`)
     } catch (err) {
       console.error('[LiveState] Exception:', err)
