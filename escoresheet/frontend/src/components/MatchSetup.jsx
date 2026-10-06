@@ -3651,10 +3651,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             showAlert(t('matchSetup.invalidEmail') || 'Please enter a valid email address', 'warning')
                             return
                           }
+                          // The cloud backend sends the email (a LAN relay has no mailer)
+                          const sendInfoUrl = getCloudApiUrl('/api/match/send-info')
+                          if (!sendInfoUrl) {
+                            showAlert(t('matchSetup.emailFailed') || 'Failed to send email. Check server connection.', 'error')
+                            return
+                          }
                           setSendingEmail(true)
                           try {
-                            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-                            const res = await fetch(`${backendUrl}/api/match/send-info`, {
+                            const res = await fetch(sendInfoUrl, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
