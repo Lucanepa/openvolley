@@ -243,7 +243,7 @@ export const modalPrimaryClass =
   `h-10 px-5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors ${FOCUS_RING}`;
 /** Positive commit ("Save"). App.tsx:10214-10221, ConfirmDialog.tsx:139-140 */
 export const modalSaveClass =
-  `h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors ${FOCUS_RING}`;
+  `h-10 px-4 rounded-lg bg-emerald-700 text-white text-sm font-medium hover:bg-emerald-800 transition-colors ${FOCUS_RING}`;
 /** Destructive commit ("Delete", "Reset"). App.tsx:10220, ConfirmDialog.tsx:139 */
 export const modalDangerClass =
   `h-10 px-4 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors ${FOCUS_RING}`;
