@@ -45,7 +45,8 @@
     "postinstall": "node scripts/install-hooks.js",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "check:i18n": "node scripts/check-i18n-keys.js"
   },
   "dependencies": {
     "@capacitor/filesystem": "^8.1.4",
