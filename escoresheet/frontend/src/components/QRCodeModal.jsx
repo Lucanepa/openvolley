@@ -31,8 +31,11 @@ const ROLE_SUBDOMAINS = {
  * Where the tablet app for a role lives when the tablets use the cloud backend:
  * next to the scorer's own deployment. The scorer on dev-app.openvolley.app
  * links dev-referee / dev-bench / dev-livescore, app.openvolley.app links the
- * production sites; a scorer page that is not on openvolley.app (local dev,
- * desktop app) links production.
+ * production sites; a Cloudflare Pages build of the scorer
+ * (<branch>.openvolley-app.pages.dev, or openvolley-app.pages.dev) links the
+ * same build of the tablet projects (<branch>.openvolley-referee.pages.dev
+ * ...); a per-deployment hash URL (<8 hex>.openvolley-app.pages.dev) links
+ * the tablet projects' production build. A scorer page anywhere else (local dev, desktop app) links production.
  * @param {string} role - 'referee' | 'bench_home' | 'bench_away' | 'livescore'
  * @param {string} [hostname] - the scorer page's hostname
  */
@@ -41,6 +44,13 @@ export function cloudTabletBase(role, hostname = typeof window !== 'undefined' ?
   if (!sub) return null
   let prefix = ''
   const host = String(hostname || '').toLowerCase()
+  const pages = host.match(/^(?:([a-z0-9-]+)\.)?openvolley-app\.pages\.dev$/)
+  if (pages) {
+    // A per-deployment URL (<8 hex>.openvolley-app.pages.dev): that hash
+    // exists only in the scorer's project, so link the tablets' production build
+    const label = pages[1] && !/^[0-9a-f]{8}$/.test(pages[1]) ? `${pages[1]}.` : ''
+    return `https://${label}openvolley-${sub}.pages.dev`
+  }
   if (host.endsWith('.openvolley.app')) {
     const label = host.slice(0, -'.openvolley.app'.length)
     // <prefix>app.openvolley.app -> <prefix><sub>.openvolley.app ('dev-app' -> 'dev-')

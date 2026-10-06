@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   setBackendOverride,
   getBackendOverride,
   clearBackendOverride,
   isDesktopPlatform,
   isStaticDeployment,
+  isStaticHost,
+  getLocalServerStatusUrl,
   getApiUrl
 } from '../backendConfig'
 
@@ -98,6 +100,44 @@ describe('isStaticDeployment', () => {
       configurable: true
     })
     expect(isStaticDeployment()).toBe(false)
+  })
+})
+
+describe('static hosts and the local server status', () => {
+  const setLocation = (url) => {
+    const u = new URL(url)
+    Object.defineProperty(window, 'location', {
+      value: { hostname: u.hostname, protocol: u.protocol, port: u.port, origin: u.origin, host: u.host },
+      writable: true,
+      configurable: true
+    })
+  }
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('treats Cloudflare Pages builds and GitHub Pages like *.openvolley.app (no backend behind them)', () => {
+    for (const host of ['app.openvolley.app', 'openvolley.app', 'dev.openvolley-app.pages.dev', 'openvolley-referee.pages.dev', 'x.github.io']) {
+      expect(isStaticHost(host), host).toBe(true)
+    }
+    for (const host of ['localhost', '192.168.1.20', 'openvolley.local', 'example.com']) {
+      expect(isStaticHost(host), host).toBe(false)
+    }
+    setLocation('https://dev.openvolley-app.pages.dev/')
+    expect(isStaticDeployment()).toBe(true)
+  })
+
+  it('polls /api/server/status only where a local server serves the page', () => {
+    vi.stubEnv('DEV', false)
+    setLocation('https://dev.openvolley-app.pages.dev/')
+    expect(getLocalServerStatusUrl()).toBeNull()
+    setLocation('https://app.openvolley.app/')
+    expect(getLocalServerStatusUrl()).toBeNull()
+    setLocation('http://192.168.1.20:3000/')
+    expect(getLocalServerStatusUrl()).toBe('http://192.168.1.20:3000/api/server/status')
+    setLocation('file:///opt/app/index.html')
+    expect(getLocalServerStatusUrl()).toBeNull()
+    vi.stubEnv('DEV', true)
+    setLocation('http://localhost:5173/')
+    expect(getLocalServerStatusUrl()).toBe('http://localhost:5173/api/server/status')
   })
 })
 

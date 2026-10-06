@@ -24,7 +24,7 @@ export default function TabletStatusIndicator({ match }) {
   // Heartbeats alone never reached the scorer device: the relay's subscriber
   // list for this match (by seed key) says which tablets are actually there.
   const anyEnabled = !!(match?.refereeConnectionEnabled || match?.homeTeamConnectionEnabled || match?.awayTeamConnectionEnabled)
-  const relayTablets = useRelayTablets(match ? relayMatchKey(match, match.id) : null, match, { enabled: anyEnabled })
+  const relayTablets = useRelayTablets(relayMatchKey(match), match, { enabled: anyEnabled })
   const summary = applyRelayTablets(getTabletStatusSummary(match), relayTablets)
 
   // Kit status tones: emerald all connected, amber some missing, stone none.

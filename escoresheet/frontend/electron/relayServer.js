@@ -107,7 +107,7 @@ function start(opts = {}) {
       }
       res.setHeader('Vary', 'Origin')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token')
       res.setHeader('X-Content-Type-Options', 'nosniff')
       res.setHeader('X-Frame-Options', 'SAMEORIGIN')
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')

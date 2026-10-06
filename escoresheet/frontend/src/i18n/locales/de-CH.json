@@ -1342,6 +1342,7 @@
     "awaitingCoinTossDesc": "S Spiil fangt aa sobald d Siitewahl bestätigt worde isch."
   },
   "refereeDashboard": {
+    "linkDown": "Offline: keine Verbindung zum Matchblatt. Spielstand und Aufschlag sind evtl. nicht aktuell.",
     "title": "Schiri",
     "dashboardTitle": "Schiri-Dashboard",
     "status": "Status",

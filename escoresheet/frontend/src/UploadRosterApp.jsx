@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, listAvailableMatchesSupabase, validateUploadPinSupabase } from './utils/serverDataSync'
+import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, validateUploadPinSupabase, uploadRosterToCloud } from './utils/serverDataSync'
+import { listRosterUploadMatches } from './utils/rosterUploadMatches'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
@@ -9,7 +10,6 @@ import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
 import SignaturePad from './components/SignaturePad'
 import { supabase } from './lib/supabaseClient'
-import { apiFrom } from './lib/apiClient'
 import { CalendarX2, Check, ChevronRight, FileUp, Loader2, Plus } from 'lucide-react'
 import { cn } from './ui/cn.js'
 import { Button } from './ui/Button.jsx'
@@ -227,7 +227,9 @@ export default function UploadRosterApp() {
         if (useSupabase) {
           console.log('[Roster DEBUG] Attempting Supabase connection...')
           try {
-            const result = await listAvailableMatchesSupabase()
+            // Matches still in setup (rosters open), not only those with the
+            // referee connection on (that comes after the coin toss)
+            const result = await listRosterUploadMatches()
             console.log('[Roster DEBUG] Supabase result:', JSON.stringify(result, null, 2))
 
             if (result.success && result.matches && result.matches.length > 0) {
@@ -567,7 +569,13 @@ export default function UploadRosterApp() {
       setServerPinValidated(false)
       if (uploadPin && uploadPin.length === 6) {
         let cancelled = false
-        validateUploadPinSupabase(team, uploadPin).then(res => {
+        // Bound to the match the roster will be written to
+        const matchKey = selectedMatch?.external_id || match?.external_id || null
+        if (!matchKey) {
+          setValidationError('Select the match first')
+          return
+        }
+        validateUploadPinSupabase(team, uploadPin, matchKey).then(res => {
           if (cancelled) return
           if (res.success) {
             setServerPinValidated(true)
@@ -605,7 +613,7 @@ export default function UploadRosterApp() {
     } else {
       setValidationError('')
     }
-  }, [uploadPin, match, team, activeConnection])
+  }, [uploadPin, match, selectedMatch, team, activeConnection])
 
   // Load teams when match is found (already loaded in checkMatchStatus)
 
@@ -634,7 +642,13 @@ export default function UploadRosterApp() {
           setValidationError('Please enter an upload PIN')
           return false
         }
-        const res = await validateUploadPinSupabase(team, uploadPin.trim())
+        const matchKey = selectedMatch?.external_id || foundMatch?.external_id || null
+        if (!matchKey) {
+          setServerPinValidated(false)
+          setValidationError('Select the match first')
+          return false
+        }
+        const res = await validateUploadPinSupabase(team, uploadPin.trim(), matchKey)
         if (!res.success) {
           setServerPinValidated(false)
           setValidationError(res.error || 'Invalid upload PIN')
@@ -823,63 +837,19 @@ export default function UploadRosterApp() {
         timestamp: new Date().toISOString()
       }
 
-      // Try Supabase first if connected
+      // Cloud first if connected: the backend checks the team's upload PIN of
+      // this match and stores the pending roster + signatures (no account
+      // needed; only the match's scorer may write the match itself).
       if (activeConnection === 'supabase' && selectedMatch?.external_id) {
-        console.log('[Roster] Writing roster to Supabase for match:', selectedMatch.external_id)
-
-        // JSONB signature keys
-        const coachSigJsonKey = team === 'home' ? 'home_coach' : 'away_coach'
-        const captainSigJsonKey = team === 'home' ? 'home_captain' : 'away_captain'
-
-        // The pending roster lives in the connections JSON column (matches has no
-        // pending_*_roster column; sending one made the whole update fail)
-        const supabaseUpdate = {}
-
-        // Build signatures JSONB partial update
-        const signaturesUpdate = {}
-        // Build connections JSONB partial update for pending roster
-        const pendingRosterJsonKey = team === 'home' ? 'pending_home_roster' : 'pending_away_roster'
-
-        // Save signatures to JSONB
-        if (coachSignature) {
-          signaturesUpdate[coachSigJsonKey] = coachSignature
-        }
-        if (captainSignature) {
-          signaturesUpdate[captainSigJsonKey] = captainSignature
-        }
-
-        // Merge with existing signatures and connections JSONB
-        const { data: existingMatch } = await apiFrom('matches')
-          .select('signatures, connections')
-          .eq('external_id', selectedMatch.external_id)
-          .maybeSingle()
-
-        // Update signatures JSONB if we have signature updates
-        if (Object.keys(signaturesUpdate).length > 0) {
-          supabaseUpdate.signatures = {
-            ...(existingMatch?.signatures || {}),
-            ...signaturesUpdate
-          }
-        }
-
-        // Always update connections JSONB with pending roster
-        supabaseUpdate.connections = {
-          ...(existingMatch?.connections || {}),
-          [pendingRosterJsonKey]: rosterData
-        }
-
-        const { error } = await apiFrom('matches')
-          .update(supabaseUpdate)
-          .eq('external_id', selectedMatch.external_id)
-
-        if (error) {
-          // Typically 401: cloud writes need a signed-in scorer on this device
-          console.error('[Roster] Supabase write error:', error)
-          cloudError = error
+        console.log('[Roster] Writing roster to the cloud for match:', selectedMatch.external_id)
+        const result = await uploadRosterToCloud(selectedMatch.external_id, team, uploadPin, rosterData)
+        if (!result.success) {
+          console.error('[Roster] Cloud write error:', result.status, result.error)
+          cloudError = result
           // Fall back to server
         } else {
           saved = true
-          console.log('[Roster] Successfully wrote roster to Supabase with signatures:', signaturesUpdate)
+          console.log('[Roster] Successfully wrote roster to the cloud')
         }
       }
 
@@ -899,8 +869,8 @@ export default function UploadRosterApp() {
       setShowConfirmModal(false)
       if (!saved) {
         // Nothing stored the roster: say so instead of showing success
-        setSaveError(cloudError?.status === 401
-          ? 'Roster was NOT saved: the cloud rejected the upload (not signed in). Please give the roster to the scorer.'
+        setSaveError(cloudError?.status === 403 || cloudError?.status === 409
+          ? `Roster was NOT saved: the cloud rejected the upload (${cloudError.error}). Please give the roster to the scorer.`
           : 'Roster was NOT saved: the scoresheet could not be reached. Please try again or give the roster to the scorer.')
         return
       }

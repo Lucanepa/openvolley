@@ -25,7 +25,13 @@
 //!     claims are limited per IP / connection and a LAN IP may own few ids;
 //!   - the liveState is kept across syncs only for the same owner / game PIN and
 //!     is mirrored as `data: { liveState }` for the LedBox bridge;
-//!   - only the relay host itself may take / release the main-instance lock.
+//!   - only the relay host itself may take / release the main-instance lock;
+//!   - subscribers get the bundle (rosters, events) and match-actions only after
+//!     proving a PIN of the match (subscribe-match `pin`, or the X-OV-Match-Pin
+//!     header on GET /api/match/:id): the referee PIN, an enabled bench PIN or
+//!     the game PIN. Everyone else gets the public summary (`access: "summary"`:
+//!     teams, status, set scores, live state). Wrong PINs are limited per
+//!     connection / IP.
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
@@ -68,6 +74,66 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
     "gamePin",
 ];
 
+/// Personal data the relay never hands out. Subscribing needs no PIN and the
+/// room key is the match's public external_id, so every match object and
+/// bundle that leaves the relay is public (only the scorer, who sent it, has
+/// the full bundle). Same lists as lanRelayCore.cjs / backend publicColumns.js.
+const PERSON_PRIVATE_FIELDS: &[&str] = &[
+    "dob",
+    "dateOfBirth",
+    "date_of_birth",
+    "birthDate",
+    "birthdate",
+    "birth_date",
+    "country",
+    "nationality",
+    "email",
+    "phone",
+    "address",
+];
+/// Match keys never relayed, besides every key containing "signature".
+const MATCH_PRIVATE_FIELDS: &[&str] = &[
+    "officials",
+    "signatures",
+    "approval",
+    "manualChanges",
+    "manual_changes",
+    "pendingHomeRoster",
+    "pendingAwayRoster",
+    "pending_home_roster",
+    "pending_away_roster",
+];
+/// Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
+const MATCH_ROSTER_FIELDS: &[&str] = &[
+    "players_home",
+    "players_away",
+    "bench_home",
+    "bench_away",
+    "players_team1",
+    "players_team2",
+    "benchHome",
+    "benchAway",
+    "homePlayers",
+    "awayPlayers",
+];
+
+/// What a subscriber without a PIN gets of a match (lanRelayCore
+/// `relaySummaryBundle`, backend publicColumns.js): allowlists.
+const SUMMARY_MATCH_FIELDS: &[&str] = &[
+    "id", "status", "gameNumber", "gameN", "game_n", "seed_key", "seedKey", "external_id", "externalId",
+    "scheduledAt", "scheduled_at", "sport_type", "sportType", "test", "league", "best_of", "bestOf",
+    "coinTossTeamA", "coinTossTeamB", "homeShortName", "awayShortName", "homeTeamName", "awayTeamName",
+    "refereeConnectionEnabled", "homeTeamConnectionEnabled", "awayTeamConnectionEnabled",
+    "_syncedAt", "_syncedSeq", "_syncSession",
+];
+const SUMMARY_TEAM_FIELDS: &[&str] = &["name", "shortName", "short_name", "color"];
+const SUMMARY_SET_FIELDS: &[&str] = &[
+    "id", "index", "homePoints", "awayPoints", "home_points", "away_points", "finished", "startTime", "endTime",
+];
+/// Wrong PINs offered for a match's bundle per connection / IP per window.
+const PIN_FAILURE_LIMIT: u32 = 5;
+const MAX_ACCESS_KEYS: usize = 16;
+
 /// Same cap as the Node relays / cloud relay.
 const WS_MAX_MESSAGE: usize = 10 * 1024 * 1024;
 const MAX_MATCH_ID_LEN: usize = 128;
@@ -80,7 +146,9 @@ const STALE_TAKEOVER: Duration = Duration::from_secs(10 * 60);
 /// Rate-limit window shared by every per-IP / per-connection counter.
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 /// Wrong game-PIN claims per IP / connection per window before claims needing
-/// proof are refused without comparing the PIN (no guessing oracle).
+/// proof are refused without comparing the PIN (no guessing oracle). One limit
+/// for both on purpose: on the venue LAN every scorer device has its own
+/// address, unlike the cloud relay behind venue NATs (per-IP limit 20 there).
 const CLAIM_FAILURE_LIMIT: u32 = 5;
 /// Distinct match ids one (non-loopback) IP may own, and new ids per window.
 const MAX_OWNED_PER_IP: usize = 4;
@@ -114,6 +182,8 @@ struct ConnMeta {
     aliases: HashMap<String, String>,
     /// room keys this connection sent PINs for, oldest first (see 'pins-required')
     pin_keys: Vec<String>,
+    /// room key -> (PIN offered in subscribe-match, verified against the match yet)
+    access: HashMap<String, (String, bool)>,
     connected_at: String,
 }
 
@@ -266,18 +336,48 @@ fn iso_now() -> String {
     )
 }
 
+/// Remove the personal keys of every person in a roster array.
+fn strip_people(list: &mut Value) {
+    if let Some(arr) = list.as_array_mut() {
+        for p in arr.iter_mut() {
+            if let Some(o) = p.as_object_mut() {
+                for k in PERSON_PRIVATE_FIELDS {
+                    o.remove(*k);
+                }
+            }
+        }
+    }
+}
+
+/// Make a match object public: no PINs, no officials / signatures / pending
+/// rosters / manual changes, rosters without personal keys.
 fn strip_secrets(m: &mut Value) {
     if let Some(obj) = m.as_object_mut() {
         for k in MATCH_SECRET_FIELDS {
             obj.remove(*k);
         }
+        for k in MATCH_PRIVATE_FIELDS {
+            obj.remove(*k);
+        }
+        obj.retain(|k, _| !k.to_ascii_lowercase().contains("signature"));
+        for k in MATCH_ROSTER_FIELDS {
+            if let Some(v) = obj.get_mut(*k) {
+                strip_people(v);
+            }
+        }
     }
 }
 
+/// A bundle as the relay hands it out: public match, players without personal keys.
 fn strip_bundle_secrets(bundle: &Value) -> Value {
     let mut b = bundle.clone();
     if let Some(m) = b.get_mut("match") {
         strip_secrets(m);
+    }
+    for k in ["homePlayers", "awayPlayers"] {
+        if let Some(v) = b.get_mut(k) {
+            strip_people(v);
+        }
     }
     b
 }
@@ -385,8 +485,106 @@ fn bundle_from(src: &Value) -> Option<Value> {
 /// A flat, PIN-free match message: `{ type, matchId, match, homeTeam, ..., liveState? }`.
 /// A stored liveState is mirrored as `data: { liveState }` (nothing else under
 /// `data`) for the LedBox bridge, which reads `msg.data.liveState`.
+#[cfg(test)]
 fn bundle_message(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<Value>) -> Value {
-    let mut out = strip_bundle_secrets(bundle);
+    bundle_message_access(msg_type, match_id, bundle, sb_ts, true)
+}
+
+/// Only `keys` of an object; anything else as it is (null when missing).
+fn pick_fields(v: Option<&Value>, keys: &[&str]) -> Value {
+    match v {
+        Some(Value::Object(o)) => {
+            let mut out = serde_json::Map::new();
+            for k in keys {
+                if let Some(x) = o.get(*k) {
+                    out.insert((*k).to_string(), x.clone());
+                }
+            }
+            Value::Object(out)
+        }
+        Some(other) => other.clone(),
+        None => Value::Null,
+    }
+}
+
+/// The public summary of a bundle (no PIN proved): same shape, rosters and
+/// events empty, `access: "summary"` (lanRelayCore `relaySummaryBundle`).
+fn summary_bundle(bundle: &Value) -> Value {
+    let sets: Vec<Value> = bundle
+        .get("sets")
+        .and_then(|s| s.as_array())
+        .map(|a| a.iter().map(|s| pick_fields(Some(s), SUMMARY_SET_FIELDS)).collect())
+        .unwrap_or_default();
+    let mut out = json!({
+        "access": "summary",
+        "match": pick_fields(bundle.get("match"), SUMMARY_MATCH_FIELDS),
+        "homeTeam": pick_fields(bundle.get("homeTeam"), SUMMARY_TEAM_FIELDS),
+        "awayTeam": pick_fields(bundle.get("awayTeam"), SUMMARY_TEAM_FIELDS),
+        "homePlayers": [],
+        "awayPlayers": [],
+        "sets": sets,
+        "events": [],
+    });
+    if let Some(live) = bundle.get("liveState") {
+        out["liveState"] = live.clone();
+    }
+    out
+}
+
+fn pin_text(v: Option<&Value>) -> Option<String> {
+    match v {
+        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Constant time for equal lengths.
+fn ct_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Does `pin` prove access to the match: the referee PIN (referee connection
+/// on), a bench PIN (that bench connection on) or the game PIN? A match
+/// without any of them grants nothing (lanRelayCore `pinGrantsAccess`).
+fn pin_grants_access(m: Option<&Value>, pin: &str) -> bool {
+    let p = pin.trim();
+    let Some(m) = m.filter(|m| m.is_object()) else { return false };
+    if p.is_empty() {
+        return false;
+    }
+    let on = |k: &str| m.get(k).and_then(|v| v.as_bool()) == Some(true);
+    let mut candidates = Vec::new();
+    if on("refereeConnectionEnabled") {
+        candidates.push(pin_text(m.get("refereePin")));
+    }
+    if on("homeTeamConnectionEnabled") {
+        candidates.push(pin_text(m.get("homeTeamPin")));
+    }
+    if on("awayTeamConnectionEnabled") {
+        candidates.push(pin_text(m.get("awayTeamPin")));
+    }
+    candidates.push(game_pin_of(Some(m)));
+    let mut ok = false;
+    for c in candidates.into_iter().flatten() {
+        if ct_eq(&c, p) {
+            ok = true;
+        }
+    }
+    ok
+}
+
+/// A match message with the full (PIN-free) bundle, or the summary.
+fn bundle_message_access(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<Value>, full: bool) -> Value {
+    let mut out = if full {
+        let mut b = strip_bundle_secrets(bundle);
+        if let Some(obj) = b.as_object_mut() {
+            obj.insert("access".into(), json!("full"));
+        }
+        b
+    } else {
+        summary_bundle(bundle)
+    };
     if let Some(obj) = out.as_object_mut() {
         let now = now_ms();
         obj.insert("type".into(), json!(msg_type));
@@ -532,7 +730,7 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
     );
     h.insert(
         "Access-Control-Allow-Headers",
-        HeaderValue::from_static("Content-Type, X-Instance-ID"),
+        HeaderValue::from_static("Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token"),
     );
     res
 }
@@ -678,35 +876,63 @@ fn bad_match_id() -> Response {
     json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Match ID required" }))
 }
 
-async fn match_get(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+/// GET /api/match/:id: the bundle when the X-OV-Match-Pin header carries a PIN
+/// that grants the match, the public summary otherwise.
+async fn match_get(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
     let Some(id) = path_match_id(id) else { return bad_match_id() };
-    {
-        let matches = state.matches.lock().await;
-        if let Some(bundle) = matches.get(&id) {
-            let clean = strip_bundle_secrets(bundle);
-            let mut out = clean;
-            if let Some(obj) = out.as_object_mut() {
-                obj.insert("success".to_string(), json!(true));
-            }
-            return json_response(StatusCode::OK, out);
-        }
+    let offered = headers
+        .get("x-ov-match-pin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if offered.is_some() && window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT {
+        return json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({ "success": false, "error": "Too many wrong PINs. Wait a minute." }),
+        );
     }
-    let rid = format!("match-data-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
-    let req_msg = json!({ "type": "match-data-request", "requestId": rid, "matchId": id });
-    // The WS side validates the answer (proven scoreboard, game PIN) and stores it.
-    match ws_roundtrip(&state, req_msg, &rid, "match-data-response", Some(id.clone())).await {
-        Some(data) => {
-            let mut out = strip_bundle_secrets(&data);
-            if let Some(obj) = out.as_object_mut() {
-                obj.insert("success".to_string(), json!(true));
+    let answer = |bundle: &Value, full: bool| {
+        let mut out = if full {
+            let mut b = strip_bundle_secrets(bundle);
+            if let Some(obj) = b.as_object_mut() {
+                obj.insert("access".into(), json!("full"));
             }
-            json_response(StatusCode::OK, out)
+            b
+        } else {
+            summary_bundle(bundle)
+        };
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("success".to_string(), json!(true));
         }
-        _ => json_response(
+        json_response(StatusCode::OK, out)
+    };
+    let stored = state.matches.lock().await.get(&id).cloned();
+    let found = match stored {
+        Some(b) => Some(b),
+        None => {
+            let rid = format!("match-data-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
+            let req_msg = json!({ "type": "match-data-request", "requestId": rid, "matchId": id });
+            // The WS side validates the answer (proven scoreboard, game PIN) and stores it.
+            ws_roundtrip(&state, req_msg, &rid, "match-data-response", Some(id.clone())).await
+        }
+    };
+    let Some(bundle) = found else {
+        return json_response(
             StatusCode::NOT_FOUND,
             json!({ "success": false, "error": "Match data not found. Make sure the main scoresheet is running and connected." }),
-        ),
+        );
+    };
+    let full = offered.as_deref().map_or(false, |p| pin_grants_access(bundle.get("match"), p));
+    if offered.is_some() && !full {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
     }
+    answer(&bundle, full)
 }
 
 async fn match_list(State(state): State<Arc<AppState>>) -> Response {
@@ -1033,7 +1259,15 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
     state.clients.lock().await.insert(conn_id, tx.clone());
     state.conn_meta.lock().await.insert(
         conn_id,
-        ConnMeta { ip, role: "subscriber".to_string(), team: None, aliases: HashMap::new(), pin_keys: Vec::new(), connected_at: iso_now() },
+        ConnMeta {
+            ip,
+            role: "subscriber".to_string(),
+            team: None,
+            aliases: HashMap::new(),
+            pin_keys: Vec::new(),
+            access: HashMap::new(),
+            connected_at: iso_now(),
+        },
     );
 
     let send_task = tokio::spawn(async move {
@@ -1130,7 +1364,7 @@ fn claim_error_message(code: &str) -> &'static str {
         "not-match-owner" => "Match is owned by another scoreboard (game PIN mismatch)",
         "rate-limited" => "Too many failed scoreboard claims. Wait a minute.",
         "too-many-matches" => "This device already drives the maximum number of matches",
-        "pins-required" => "The relay no longer holds this match: send it again with its PINs",
+        "pins-required" => "Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)",
         _ => "Refused",
     }
 }
@@ -1144,7 +1378,9 @@ fn claim_error_message(code: &str) -> &'static str {
 /// - a match nobody has owned for ORPHAN_TAKEOVER (finished) / STALE_TAKEOVER
 ///   (in play) may be taken over; an unfinished one taken over with another
 ///   PIN may be reclaimed once by its own PIN.
-/// Wrong-PIN claims are limited per IP and per connection: over the limit a
+/// A connection that never proved the match and leaves the game PIN out is
+/// asked for it ('pins-required'), not counted. Wrong-PIN claims (only claims
+/// carrying a PIN) are limited per IP and per connection: over the limit a
 /// claim needing proof is refused BEFORE the PIN is compared (no oracle).
 async fn claim(
     state: &Arc<AppState>,
@@ -1195,6 +1431,11 @@ async fn claim(
     if was_owner && stored_pin.is_some() && (incoming_pin == stored_pin || !has_game_pin_field(incoming)) {
         return grant(&mut owners, &mut orphaned, ClaimKind::Owner);
     }
+    // Proof takes the game PIN. A connection that leaves it out (the scorer
+    // after a reconnect) is asked for it: nothing compared, nothing counted.
+    if stored_pin.is_some() && !has_game_pin_field(incoming) {
+        return Err("pins-required");
+    }
     let mut keys = vec![format!("fail:ws:{conn_id}")];
     if let Some(ip) = ip {
         keys.push(format!("fail:ip:{ip}"));
@@ -1231,8 +1472,11 @@ async fn claim(
         }
         return grant(&mut owners, &mut orphaned, ClaimKind::Takeover);
     }
-    for k in &keys {
-        window_bump(&mut limits, k);
+    // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
+    if incoming_pin.is_some() {
+        for k in &keys {
+            window_bump(&mut limits, k);
+        }
     }
     Err("not-match-owner")
 }
@@ -1335,8 +1579,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 }
             }
             let stored = store_bundle(state, &match_id, bundle, kind).await;
-            let update = bundle_message("match-data-update", &match_id, &stored, data.get("_timestamp").cloned());
-            notify_subscribers(state, &match_id, &update, Some(conn_id)).await;
+            notify_match_data(state, &match_id, "match-data-update", &stored, data.get("_timestamp").cloned(), Some(conn_id)).await;
         }
         "subscribe-match" => {
             let Some(match_id) = match_id else {
@@ -1355,9 +1598,11 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 }
             }
             let stored = state.matches.lock().await.get(&match_id).cloned();
+            offer_pin(state, conn_id, tx, &match_id, data.get("pin"), stored.as_ref()).await;
             if let Some(bundle) = stored {
-                let full = bundle_message("match-full-data", &match_id, &bundle, None);
-                let _ = tx.send(Message::Text(full.to_string()));
+                let full = has_access(state, conn_id, &match_id, Some(&bundle)).await;
+                let msg = bundle_message_access("match-full-data", &match_id, &bundle, None, full);
+                let _ = tx.send(Message::Text(msg.to_string()));
             }
         }
         "unsubscribe-match" => {
@@ -1403,7 +1648,8 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                         "_timestamp": now,
                         "_scoreboardTimestamp": sb_ts,
                     });
-                    notify_subscribers(state, &match_id, &msg, Some(conn_id)).await;
+                    // Only to connections with access: actions carry players and sanctions
+                    notify_access_only(state, &match_id, &msg, Some(conn_id)).await;
                 }
                 "live-state-update" => {
                     let Some(live) = data.get("liveState").filter(|v| v.is_object()).cloned() else { return };
@@ -1490,8 +1736,7 @@ async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: 
                     if let Ok(kind) = claim(state, conn_id, id, bundle.get("match")).await {
                         let stored = store_bundle(state, id, bundle, kind).await;
                         if msg_type == "match-update-response" {
-                            let update = bundle_message("match-data-update", id, &stored, None);
-                            notify_subscribers(state, id, &update, Some(conn_id)).await;
+                            notify_match_data(state, id, "match-data-update", &stored, None, Some(conn_id)).await;
                             result = Some(json!({ "data": stored }));
                         } else {
                             result = Some(stored);
@@ -1525,6 +1770,148 @@ async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: 
             if exhausted {
                 pending.remove(rid);
             }
+        }
+    }
+}
+
+// --- PIN-proved access -------------------------------------------------------
+
+async fn pin_blocked(state: &Arc<AppState>, conn_id: u64, ip: IpAddr) -> bool {
+    let limits = state.limits.lock().await;
+    window_count(&limits, &format!("pinfail:ip:{}", canonical_ip(ip))) >= PIN_FAILURE_LIMIT
+        || window_count(&limits, &format!("pinfail:ws:{conn_id}")) >= PIN_FAILURE_LIMIT
+}
+
+async fn count_pin_failure(state: &Arc<AppState>, conn_id: u64, ip: IpAddr) {
+    let mut limits = state.limits.lock().await;
+    window_bump(&mut limits, &format!("pinfail:ip:{}", canonical_ip(ip)));
+    window_bump(&mut limits, &format!("pinfail:ws:{conn_id}"));
+}
+
+/// subscribe-match `pin`: checked now when the relay holds the match (wrong:
+/// 'pin-invalid', counted), else once the match arrives.
+async fn offer_pin(state: &Arc<AppState>, conn_id: u64, tx: &Tx, match_id: &str, raw: Option<&Value>, stored: Option<&Value>) {
+    let offered: String = match raw {
+        Some(Value::String(s)) => s.trim().chars().take(32).collect(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    };
+    if offered.is_empty() {
+        return;
+    }
+    let Some(ip) = state.conn_meta.lock().await.get(&conn_id).map(|m| m.ip) else { return };
+    if pin_blocked(state, conn_id, ip).await {
+        send_error(tx, "rate-limited", "Too many wrong PINs. Wait a minute.", Some(match_id));
+        return;
+    }
+    let m = stored.and_then(|b| b.get("match"));
+    if m.is_some() && !pin_grants_access(m, &offered) {
+        count_pin_failure(state, conn_id, ip).await;
+        send_error(tx, "pin-invalid", "Wrong PIN for this match", Some(match_id));
+        return;
+    }
+    if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+        meta.access.remove(match_id);
+        if meta.access.len() >= MAX_ACCESS_KEYS {
+            if let Some(k) = meta.access.keys().next().cloned() {
+                meta.access.remove(&k);
+            }
+        }
+        meta.access.insert(match_id.to_string(), (offered, m.is_some()));
+    }
+}
+
+/// May this connection get the bundle and match actions (not just the summary)?
+async fn has_access(state: &Arc<AppState>, conn_id: u64, match_id: &str, bundle: Option<&Value>) -> bool {
+    if is_owner(state, conn_id, match_id).await {
+        return true;
+    }
+    let (offered, verified, ip) = {
+        let meta = state.conn_meta.lock().await;
+        match meta.get(&conn_id).and_then(|m| m.access.get(match_id).map(|(p, v)| (p.clone(), *v, m.ip))) {
+            Some(x) => x,
+            None => return false,
+        }
+    };
+    let Some(m) = bundle.and_then(|b| b.get("match")) else { return false };
+    if pin_grants_access(Some(m), &offered) {
+        if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            if let Some(a) = meta.access.get_mut(match_id) {
+                a.1 = true;
+            }
+        }
+        return true;
+    }
+    // Offered before the match reached the relay: checked once
+    if !verified {
+        if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            meta.access.remove(match_id);
+        }
+        count_pin_failure(state, conn_id, ip).await;
+    }
+    false
+}
+
+async fn subscriber_ids(state: &Arc<AppState>, match_id: &str, exclude: Option<u64>) -> Vec<u64> {
+    state
+        .subs
+        .lock()
+        .await
+        .get(match_id)
+        .map(|s| s.iter().copied().filter(|id| Some(*id) != exclude).collect())
+        .unwrap_or_default()
+}
+
+/// match-full-data / match-data-update to a match's subscribers: full or summary each.
+async fn notify_match_data(
+    state: &Arc<AppState>,
+    match_id: &str,
+    msg_type: &str,
+    bundle: &Value,
+    sb_ts: Option<Value>,
+    exclude: Option<u64>,
+) {
+    let mut full_ids = Vec::new();
+    let mut summary_ids = Vec::new();
+    for id in subscriber_ids(state, match_id, exclude).await {
+        if has_access(state, id, match_id, Some(bundle)).await {
+            full_ids.push(id);
+        } else {
+            summary_ids.push(id);
+        }
+    }
+    let full = (!full_ids.is_empty())
+        .then(|| bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), true).to_string());
+    let summary = (!summary_ids.is_empty())
+        .then(|| bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), false).to_string());
+    let clients = state.clients.lock().await;
+    for (ids, text) in [(full_ids, full), (summary_ids, summary)] {
+        let Some(text) = text else { continue };
+        for id in ids {
+            if let Some(tx) = clients.get(&id) {
+                let _ = tx.send(Message::Text(text.clone()));
+            }
+        }
+    }
+}
+
+/// A message only for the subscribers with access to the match.
+async fn notify_access_only(state: &Arc<AppState>, match_id: &str, msg: &Value, exclude: Option<u64>) {
+    let bundle = state.matches.lock().await.get(match_id).cloned();
+    let mut ids = Vec::new();
+    for id in subscriber_ids(state, match_id, exclude).await {
+        if has_access(state, id, match_id, bundle.as_ref()).await {
+            ids.push(id);
+        }
+    }
+    if ids.is_empty() {
+        return;
+    }
+    let text = msg.to_string();
+    let clients = state.clients.lock().await;
+    for id in ids {
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone()));
         }
     }
 }
@@ -1571,7 +1958,15 @@ mod tests {
     async fn connect(state: &Arc<AppState>, id: u64, ip: &str) {
         state.conn_meta.lock().await.insert(
             id,
-            ConnMeta { ip: ip.parse().unwrap(), role: "subscriber".into(), team: None, aliases: HashMap::new(), pin_keys: Vec::new(), connected_at: iso_now() },
+            ConnMeta {
+                ip: ip.parse().unwrap(),
+                role: "subscriber".into(),
+                team: None,
+                aliases: HashMap::new(),
+                pin_keys: Vec::new(),
+                access: HashMap::new(),
+                connected_at: iso_now(),
+            },
         );
     }
 
@@ -1661,6 +2056,25 @@ mod tests {
         assert!(!text.contains("987654") && !text.contains("314159"));
     }
 
+    #[test]
+    fn match_messages_carry_no_personal_data() {
+        let mut b = bundle(7, "987654", "live");
+        b["match"]["officials"] = json!([{ "role": "1st referee", "lastName": "Ref", "dob": "1980-01-01" }]);
+        b["match"]["homeCoachSignature"] = json!("data:image/png;base64,SIG");
+        b["match"]["signatures"] = json!({ "home_coach": "data:image/png;base64,SIG" });
+        b["match"]["pendingHomeRoster"] = json!({ "players": [] });
+        b["match"]["bench_home"] = json!([{ "role": "Coach", "lastName": "Coach", "dob": "1970-02-02" }]);
+        b["homePlayers"] = json!([{ "number": 7, "lastName": "Player", "dob": "2000-03-03", "country": "SUI" }]);
+        let msg = bundle_message("match-data-update", "7", &b, None);
+        let text = msg.to_string();
+        for secret in ["1980-01-01", "1970-02-02", "2000-03-03", "SUI", "base64,SIG", "pendingHomeRoster", "officials"] {
+            assert!(!text.contains(secret), "{secret} leaked: {text}");
+        }
+        assert_eq!(msg["homePlayers"][0]["number"], json!(7));
+        assert_eq!(msg["match"]["bench_home"][0]["role"], json!("Coach"));
+        assert_eq!(msg["match"]["status"], json!("live"));
+    }
+
     #[tokio::test]
     async fn a_lan_device_cannot_squat_on_many_ids() {
         let state = new_state(0, 0);
@@ -1704,8 +2118,29 @@ mod tests {
         let stored = state.matches.lock().await.get(seed).cloned().unwrap();
         assert_eq!(stored["match"]["refereePin"], json!("314159"));
         assert_eq!(game_pin_of(stored.get("match")).as_deref(), Some("111111"));
-        // ...but a connection that never proved the match must bring the game PIN
-        assert_eq!(claim(&state, 2, seed, Some(&no_pins)).await.err(), Some("not-match-owner"));
+        // ...but a connection that never proved the match must bring the game
+        // PIN: it is asked for it, never counted as a failed claim
+        for _ in 0..(CLAIM_FAILURE_LIMIT + 2) {
+            assert_eq!(claim(&state, 2, seed, Some(&no_pins)).await.err(), Some("pins-required"));
+        }
+        assert!(matches!(claim(&state, 2, seed, m.get("match")).await, Ok(ClaimKind::Proved)));
+    }
+
+    #[tokio::test]
+    async fn a_claim_without_a_pin_is_no_guess() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.50").await;
+        let full = bundle(1, "111111", "live")["match"].clone();
+        assert!(claim(&state, 1, "1", Some(&full)).await.is_ok());
+        store_bundle(&state, "1", bundle(1, "111111", "live"), ClaimKind::New).await;
+        let mut null_pin = full.clone();
+        null_pin["gamePin"] = Value::Null;
+        for _ in 0..(CLAIM_FAILURE_LIMIT + 1) {
+            assert_eq!(claim(&state, 2, "1", Some(&null_pin)).await.err(), Some("not-match-owner"));
+        }
+        // Not rate limited: the right PIN still proves the match
+        assert!(matches!(claim(&state, 2, "1", Some(&full)).await, Ok(ClaimKind::Proved)));
     }
 
     #[tokio::test]
@@ -1769,6 +2204,61 @@ mod tests {
             &json!({ "requestId": "r2", "matchId": seed, "success": true, "data": b })).await;
         assert!(state.matches.lock().await.contains_key(seed));
         assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn the_bundle_only_after_a_pin_of_the_match() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.60").await;
+        connect(&state, 3, "192.168.1.61").await;
+        let (tx1, _rx1) = mpsc::unbounded_channel::<Message>();
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        let (tx3, mut rx3) = mpsc::unbounded_channel::<Message>();
+        state.clients.lock().await.insert(2, tx2.clone());
+        state.clients.lock().await.insert(3, tx3.clone());
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["refereeConnectionEnabled"] = json!(true);
+        let players = json!([{ "number": 7, "lastName": "Player" }]);
+        handle_ws_message(&state, 1, &tx1, &json!({ "type": "sync-match-data", "matchId": "7", "match": m, "homePlayers": players }).to_string()).await;
+        let next = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Value {
+            let Ok(Message::Text(t)) = rx.try_recv() else { panic!("expected a message") };
+            serde_json::from_str(&t).unwrap()
+        };
+        // No PIN: the summary, no roster
+        handle_ws_message(&state, 2, &tx2, &json!({ "type": "subscribe-match", "matchId": "7" }).to_string()).await;
+        let s = next(&mut rx2);
+        assert_eq!(s["type"], json!("match-full-data"));
+        assert_eq!(s["access"], json!("summary"));
+        assert_eq!(s["homePlayers"], json!([]));
+        assert_eq!(s["match"]["status"], json!("live"));
+        // The referee PIN: the bundle
+        handle_ws_message(&state, 3, &tx3, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" }).to_string()).await;
+        let f = next(&mut rx3);
+        assert_eq!(f["access"], json!("full"));
+        assert_eq!(f["homePlayers"][0]["number"], json!(7));
+        assert!(!f.to_string().contains("314159"));
+        // Actions reach only the referee
+        handle_ws_message(&state, 1, &tx1, &json!({ "type": "match-action", "matchId": "7", "action": "timeout", "data": { "team": "home" } }).to_string()).await;
+        assert_eq!(next(&mut rx3)["type"], json!("match-action"));
+        assert!(rx2.try_recv().is_err());
+        // A wrong PIN is refused and counted; past the limit nothing is compared
+        let (tx4, mut rx4) = mpsc::unbounded_channel::<Message>();
+        connect(&state, 4, "192.168.1.62").await;
+        for _ in 0..PIN_FAILURE_LIMIT {
+            handle_ws_message(&state, 4, &tx4, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "000000" }).to_string()).await;
+            assert_eq!(next(&mut rx4)["code"], json!("pin-invalid"));
+            assert_eq!(next(&mut rx4)["access"], json!("summary"));
+        }
+        handle_ws_message(&state, 4, &tx4, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" }).to_string()).await;
+        assert_eq!(next(&mut rx4)["code"], json!("rate-limited"));
+        assert_eq!(next(&mut rx4)["access"], json!("summary"));
+        // With the referee connection off the referee PIN grants nothing; the game PIN still does
+        let mut off = m.clone();
+        off["refereeConnectionEnabled"] = json!(false);
+        assert!(!pin_grants_access(Some(&off), "314159"));
+        assert!(pin_grants_access(Some(&off), "111111"));
+        assert!(!pin_grants_access(Some(&json!({ "status": "live" })), ""));
     }
 
     #[test]

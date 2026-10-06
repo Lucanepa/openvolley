@@ -9,14 +9,22 @@
  *     backups and bundles send extra keys (backupManager's live state `status`
  *     is renamed to `match_status`). Sets/events without sport_type get the
  *     match's, else 'indoor'. Null/empty game_pin or connection_pins keep the
- *     stored value; connection_pins is merged into the stored object. A
- *     non-empty game_pin replaces the stored PIN (accepted until ownership
- *     checks exist, see README).
+ *     stored value; connection_pins is merged into the stored object. PINs are
+ *     stored in hashed form when a PIN secret is configured (lib/pinHash.js).
+ *     With `matchOwner` (every non-admin session) the match must be new or
+ *     owned by the caller (creator or editor), else 403 OV_NOT_MATCH_OWNER and
+ *     nothing is written.
  *     -> 200 { data: { id, counts: { sets, events, liveState }, dropped: { match?, sets?, events?, liveState? } }, error: null }
  *
  *   POST /api/match/restore-by-pin { gameN, pin }                        (anonymous, attempt-limited)
  *     Exact match on game number AND game PIN. Returns the match with its
- *     secret columns stripped, plus its sets, events and live state.
+ *     secret columns stripped, plus its sets, events and live state. With
+ *     `editorUserId` (the caller is signed in) that account becomes an editor
+ *     of the match (match_editors): proving the game PIN is the take-over.
+ *
+ *   POST /api/match/claim { externalId, pin }                           (session, attempt-limited)
+ *     The take-over alone: game PIN of that match -> the caller becomes an
+ *     editor. Same attempt limits as restore-by-pin.
  *     Limits: 20 attempts per caller in 10 min across all game numbers and 5
  *     per caller and game number; a successful lookup does not count.
  *     The server MUST pass the client IP as `limitKey` (default: one shared bucket).
@@ -61,6 +69,7 @@ export const RESTORE_DEFAULTS = Object.freeze({
 })
 
 const PIN_RE = /^[A-Za-z0-9]{1,32}$/
+const quote = (name) => '"' + String(name).replace(/"/g, '""') + '"'
 
 /**
  * Fixed-window attempt limiter with a bounded key map.
@@ -127,6 +136,12 @@ function errorBody (status, code, message, details) {
 export function createMatchRestore (db, options = {}) {
   const cfg = { ...RESTORE_DEFAULTS, ...options }
   const log = options.logger || console
+  // lib/pinHash.js hasher; without one PINs are stored and compared as they are.
+  const pins = options.pinHasher || {
+    enabled: false,
+    candidates: (kind, pin) => [String(pin)],
+    hashMatchRow: (row) => row
+  }
   const pinLimiter = createAttemptLimiter(cfg.pinAttempts)
   const callerLimiter = createAttemptLimiter(cfg.callerAttempts)
 
@@ -159,7 +174,7 @@ export function createMatchRestore (db, options = {}) {
     return null
   }
 
-  async function restoreMatch (payload, { proto } = {}) {
+  async function restoreMatch (payload, { proto, matchOwner } = {}) {
     if (!isPlainObject(payload)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const { match, sets = [], events = [], liveState = null } = payload
     const minProto = db.config.minWriteProto
@@ -196,6 +211,9 @@ export function createMatchRestore (db, options = {}) {
       for (const k of matchSecrets) {
         if (k in matchRow && (matchRow[k] == null || matchRow[k] === '')) delete matchRow[k]
       }
+      // The creator is the server's to set (pgQuery's ownership guard), never a backup's.
+      if (db.config.ownership?.ownerColumn) delete matchRow[db.config.ownership.ownerColumn]
+      const storedMatchRow = pins.hashMatchRow(matchRow)
       const sportType = typeof matchRow.sport_type === 'string' && matchRow.sport_type ? matchRow.sport_type : cfg.defaultSportType
       const childRows = (table, rows, label) => {
         const hasSport = cat.tables.get(table).columns.has('sport_type')
@@ -221,7 +239,7 @@ export function createMatchRestore (db, options = {}) {
       const changes = []
       const out = await db.withTransaction(async (client) => {
         const run = async (step, request, extra = {}) => {
-          const r = await db.runQuery(request, { client, proto, collectChanges: true, ...extra })
+          const r = await db.runQuery(request, { client, proto, collectChanges: true, ...(matchOwner ? { matchOwner } : {}), ...extra })
           if (r.body.error) throw new RestoreAbort(step, r)
           if (r.changes) changes.push(...r.changes)
           return r
@@ -229,7 +247,7 @@ export function createMatchRestore (db, options = {}) {
         const up = await run('match', {
           table: cfg.matchTable,
           action: 'upsert',
-          params: { data: matchRow, onConflict: cfg.matchKey, returning: cfg.matchId, single: true }
+          params: { data: storedMatchRow, onConflict: cfg.matchKey, returning: cfg.matchId, single: true }
         }, { mergeOnUpsert: matchSecrets })
         const matchUuid = up.body.data[cfg.matchId]
         const withFk = (row) => ({ ...row, [cfg.childFk]: matchUuid })
@@ -270,7 +288,80 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
-  async function restoreByPin (input, { limitKey = 'anon' } = {}) {
+  /**
+   * Make `userId` an editor of the match (unless it created it). Never throws;
+   * returns 'creator' | 'editor' | null (failed, logged).
+   */
+  async function addEditor (matchUuid, userId, via) {
+    const own = db.config.ownership
+    if (!own || typeof userId !== 'string' || !userId) return null
+    const table = (name) => `${quote(db.config.schema || 'public')}.${quote(name)}`
+    try {
+      const r = await db.pool.query(
+        `WITH m AS (SELECT ${quote(own.ownerColumn)} AS owner FROM ${table(own.parent)} WHERE ${quote(own.key)} = $1),
+              ins AS (INSERT INTO ${table(own.editors.table)} (${quote(own.editors.matchColumn)}, ${quote(own.editors.userColumn)}, granted_via)
+                      SELECT $1, $2::uuid, $3 WHERE NOT EXISTS (SELECT 1 FROM m WHERE owner = $2::uuid)
+                      ON CONFLICT DO NOTHING RETURNING 1)
+         SELECT EXISTS (SELECT 1 FROM m WHERE owner = $2::uuid) AS creator`,
+        [matchUuid, userId, via])
+      return r.rows[0]?.creator ? 'creator' : 'editor'
+    } catch (err) {
+      log.warn?.(`[matchRestore] could not add an editor: ${err.code || err.message}`)
+      return null
+    }
+  }
+
+  /** Attempt limits shared by restore-by-pin and claim. Returns a 429 result or null. */
+  function overLimit (callerKey, gameKey) {
+    if (callerLimiter.isLimited(callerKey) || pinLimiter.isLimited(gameKey)) {
+      return errorBody(429, 'OV_TOO_MANY_ATTEMPTS', 'Too many attempts. Please wait a few minutes before trying again.')
+    }
+    return null
+  }
+
+  /**
+   * POST /api/match/claim { externalId, pin }: the caller (signed in) proves
+   * the match's game PIN and becomes an editor of it.
+   */
+  async function claimMatch (input, { userId, limitKey = 'anon' } = {}) {
+    if (!isPlainObject(input)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
+    const ext = typeof input.externalId === 'string' ? input.externalId.trim() : ''
+    const pin = typeof input.pin === 'number' ? String(input.pin) : (typeof input.pin === 'string' ? input.pin.trim() : '')
+    if (!ext || ext.length > 200 || !PIN_RE.test(pin)) {
+      return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request', 'externalId and pin are required')
+    }
+    const callerKey = String(limitKey)
+    const gameKey = `${callerKey}|ext:${ext}`
+    const limited = overLimit(callerKey, gameKey)
+    if (limited) return limited
+    try {
+      const found = await db.runQuery({
+        table: cfg.matchTable,
+        action: 'select',
+        params: {
+          columns: cfg.matchId,
+          filters: [
+            { type: 'eq', column: cfg.matchKey, value: ext },
+            { type: 'in', column: cfg.pinColumn, value: pins.candidates('game', pin) }
+          ],
+          limit: 1
+        }
+      }, { internal: true })
+      if (found.body.error) return { status: found.status, body: found.body }
+      const row = found.body.data[0]
+      if (!row) return errorBody(404, 'OV_NOT_FOUND', 'No match with this id and game PIN')
+      pinLimiter.reset(gameKey)
+      callerLimiter.refund(callerKey)
+      const role = await addEditor(row[cfg.matchId], userId, 'claim')
+      if (!role) return errorBody(503, 'OV_DB_UNAVAILABLE', 'Service unavailable')
+      return { status: 200, body: { data: { id: row[cfg.matchId], external_id: ext, role }, error: null } }
+    } catch (err) {
+      const r = db.toErrorResult(err, { action: 'claim', table: cfg.matchTable })
+      return { status: r.status, body: r.body }
+    }
+  }
+
+  async function restoreByPin (input, { limitKey = 'anon', editorUserId = null } = {}) {
     if (!isPlainObject(input)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const gameN = typeof input.gameN === 'string' && /^\d+$/.test(input.gameN.trim()) ? Number(input.gameN.trim()) : input.gameN
     const pin = typeof input.pin === 'number' ? String(input.pin) : (typeof input.pin === 'string' ? input.pin.trim() : '')
@@ -281,9 +372,8 @@ export function createMatchRestore (db, options = {}) {
     // against every match), then per caller and game number.
     const callerKey = String(limitKey)
     const gameKey = `${callerKey}|${gameN}`
-    if (callerLimiter.isLimited(callerKey) || pinLimiter.isLimited(gameKey)) {
-      return errorBody(429, 'OV_TOO_MANY_ATTEMPTS', 'Too many attempts. Please wait a few minutes before trying again.')
-    }
+    const limited = overLimit(callerKey, gameKey)
+    if (limited) return limited
     try {
       const cat = await db.ensureCatalog()
       const mt = cat.tables.get(cfg.matchTable)
@@ -298,7 +388,7 @@ export function createMatchRestore (db, options = {}) {
           columns: '*',
           filters: [
             { type: 'eq', column: cfg.gameNColumn, value: gameN },
-            { type: 'eq', column: cfg.pinColumn, value: pin }
+            { type: 'in', column: cfg.pinColumn, value: pins.candidates('game', pin) }
           ],
           order,
           limit: 1
@@ -315,6 +405,9 @@ export function createMatchRestore (db, options = {}) {
         for (const key of Object.keys(match)) if (key.toLowerCase() === k) delete match[key]
       }
       const matchUuid = row[cfg.matchId]
+      // A signed-in caller who proved the game PIN may now write the match.
+      const editor = editorUserId ? await addEditor(matchUuid, editorUserId, 'restore-by-pin') : null
+      for (const k of ['created_by']) delete match[k]
       const byMatch = [{ type: 'eq', column: cfg.childFk, value: matchUuid }]
       const childOrder = (table, cols) => {
         const t = cat.tables.get(table)
@@ -332,7 +425,7 @@ export function createMatchRestore (db, options = {}) {
         read(cfg.eventsTable, { order: childOrder(cfg.eventsTable, ['seq', 'ts', 'id']) }),
         read(cfg.liveStateTable, { maybeSingle: true })
       ])
-      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data }, error: null } }
+      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(editor ? { access: editor } : {}) }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }
       const r = db.toErrorResult(err, { action: 'restore-by-pin', table: cfg.matchTable })
@@ -340,5 +433,5 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
-  return { restoreMatch, restoreByPin, pinLimiter, callerLimiter }
+  return { restoreMatch, restoreByPin, claimMatch, addEditor, pinLimiter, callerLimiter }
 }

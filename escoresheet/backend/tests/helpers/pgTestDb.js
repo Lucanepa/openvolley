@@ -36,14 +36,21 @@ export const PG_TEST_TEMPLATE = process.env.PG_TEST_TEMPLATE || ''
 if (PG_TEST_TEMPLATE && !/^[a-z_][a-z0-9_]{0,62}$/.test(PG_TEST_TEMPLATE)) throw new Error('PG_TEST_TEMPLATE: not a plain database name')
 
 const here = dirname(fileURLToPath(import.meta.url))
-export const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
+// The backend's own migrations that the synthetic schema does not carry
+// (they run on the production database through restore.sh): applied after it,
+// and after a template copy (all of them are idempotent).
+export const MIGRATIONS_SQL = ['005_match_ownership.sql']
+  .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
+  .join('\n')
+export const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8') + '\n' + MIGRATIONS_SQL
 
 // Test-only objects the synthetic schema has and a production copy does not:
 // pgcrypto (crypt() in the auth tests) and a table that is NOT on the allowlist.
 export const TEMPLATE_EXTRAS_SQL = `
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   CREATE TABLE IF NOT EXISTS public.internal_notes (id serial PRIMARY KEY, note text);
-  INSERT INTO public.internal_notes (note) VALUES ('do not leak');`
+  INSERT INTO public.internal_notes (note) VALUES ('do not leak');
+` + MIGRATIONS_SQL
 
 export const REHEARSAL_MARK = '(rehearsal, scrubbed)'
 

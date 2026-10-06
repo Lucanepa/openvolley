@@ -168,7 +168,8 @@ export default function BackupTable({
           : (backup.created_at || backup.updated_at ? new Date(backup.created_at || backup.updated_at).toLocaleString() : 'Unknown')
 
         const isPb = backup.source === 'pocketbase'
-        const lastAction = isPb
+        // PocketBase snapshots and the cloud match itself show their status
+        const lastAction = isPb || backup.source === 'database'
           ? (backup.status || '—')
           : (loadingActions[backup.path]
             ? t('common.loading', 'Loading...')

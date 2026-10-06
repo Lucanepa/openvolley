@@ -4,7 +4,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
+import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -293,14 +293,34 @@ describe('self-hosted backend contract', () => {
     expect(offline.error.network).toBe(true)
   })
 
-  it('apiMatchRestoreByPin is anonymous and maps 404 to an error object', async () => {
+  it('apiMatchRestoreByPin carries the session when there is one (take-over) and maps 404 to an error object', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Match not found with this ID and PIN', code: 'OV_NOT_FOUND' } }, 404))
     const r = await apiMatchRestoreByPin(12, '123456')
     expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/restore-by-pin')
-    expect(sentHeaders().Authorization).toBeUndefined()
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
     expect(sentBody()).toEqual({ gameN: 12, pin: '123456' })
     expect(r.error.code).toBe('OV_NOT_FOUND')
     expect(r.status).toBe(404)
+    // Signed out: anonymous lookup
+    localStorage.removeItem('api_auth_token')
+    await apiMatchRestoreByPin(12, '123456')
+    expect(globalThis.fetch.mock.calls[1][1].headers.Authorization).toBeUndefined()
+  })
+
+  it('apiMatchClaim proves the game PIN with the session', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', external_id: 'match_1', role: 'editor' }, error: null }))
+    const r = await apiMatchClaim('match_1', '864201')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/claim')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
+    expect(sentBody()).toEqual({ externalId: 'match_1', pin: '864201' })
+    expect(r.data.role).toBe('editor')
+  })
+
+  it('a query can carry extra headers (match token) without replacing the session', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: [], error: null }))
+    await apiFrom('matches').headers({ 'X-OV-Match-Token': 'v1.a.b', Authorization: 'Bearer forged' }).select('*').eq('external_id', 'm')
+    expect(sentHeaders()['X-OV-Match-Token']).toBe('v1.a.b')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
   })
 
   it('signOut revokes the session on the server, then clears it locally (even offline)', async () => {

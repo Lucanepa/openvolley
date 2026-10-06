@@ -1214,6 +1214,7 @@
     "awaitingCoinTossDesc": "Das Spiel beginnt sobald die Auslosung bestätigt wurde."
   },
   "refereeDashboard": {
+    "linkDown": "Offline: keine Verbindung zum Matchblatt. Spielstand und Aufschlag sind evtl. nicht aktuell.",
     "title": "Schiedsrichter",
     "dashboardTitle": "Schiedsrichter-Dashboard",
     "status": "Status",

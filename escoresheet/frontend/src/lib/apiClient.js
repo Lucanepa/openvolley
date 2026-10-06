@@ -73,6 +73,17 @@ class QueryBuilder {
     this._table = table
     this._action = null
     this._params = {}
+    this._headers = null
+  }
+
+  /**
+   * Extra request headers for this request only, e.g. the match token of a
+   * PIN check (serverDataSync matchAccessHeaders). Content-Type, X-OV-Proto
+   * and Authorization cannot be replaced.
+   */
+  headers(extra) {
+    if (extra && typeof extra === 'object') this._headers = { ...(this._headers || {}), ...extra }
+    return this
   }
 
   // --- Actions ---
@@ -178,7 +189,7 @@ class QueryBuilder {
     try {
       response = await fetch(apiUrl, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: this._headers ? { ...this._headers, ...getAuthHeaders() } : getAuthHeaders(),
         body: JSON.stringify({
           table: this._table,
           action: this._action,
@@ -261,7 +272,19 @@ export function apiMatchRestore({ match, sets = [], events = [], liveState = nul
  * @returns {Promise<{data: {match: object, sets: object[], events: object[], liveState: object|null}|null, error: object|null, status: number}>}
  */
 export function apiMatchRestoreByPin(gameN, pin) {
-  return postJson('/api/match/restore-by-pin', { gameN, pin }, { auth: false, fallbackError: 'Match lookup failed' })
+  // With a session the backend also makes this account an editor of the match
+  // (proving the game PIN is the take-over); without one it is a plain lookup.
+  return postJson('/api/match/restore-by-pin', { gameN, pin }, { fallbackError: 'Match lookup failed' })
+}
+
+/**
+ * Take-over: prove the game PIN of a cloud match so the signed-in account may
+ * write it (the backend adds it as an editor). Needs a session.
+ * 404 OV_NOT_FOUND = wrong PIN / unknown match; 429 OV_TOO_MANY_ATTEMPTS.
+ * @returns {Promise<{data: {id: string, external_id: string, role: 'creator'|'editor'}|null, error: object|null, status: number}>}
+ */
+export function apiMatchClaim(externalId, pin) {
+  return postJson('/api/match/claim', { externalId, pin }, { fallbackError: 'Match take-over failed' })
 }
 
 // ==================== Base64 (storage uploads) ====================

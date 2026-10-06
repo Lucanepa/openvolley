@@ -5,6 +5,7 @@ import { apiFrom } from '../../lib/apiClient'
 import { ClipboardIcon } from '../icons'
 import { Loader2, X } from 'lucide-react'
 import { Button, cn, IconButton } from '../../ui'
+import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
@@ -52,7 +53,9 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
       // Get match details for each match_external_id (which references matches.external_id)
       const matchIds = userMatches.map(m => m.match_external_id)
       const { data: matchDetails, error: matchError } = await apiFrom('matches')
-        .select('external_id, team_a, team_b, final_score, winner, status, start_time, created_at')
+        // matches has no team_a/team_b/start_time columns (the backend refuses
+        // unknown ones): the teams are home_team/away_team, the date scheduled_at
+        .select('external_id, game_n, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
         .in('external_id', matchIds)
         .eq('sport_type', 'indoor')
 
@@ -80,6 +83,15 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   }
 
   if (!open) return null
+
+  // A finalized match opens its approved scoresheet, readable only by the
+  // account that uploaded it: opened on this origin, where the session is.
+  const openMatch = (match) => {
+    if (onSelectMatch) return onSelectMatch(match)
+    const url = finalScoresheetUrl(match)
+    if (url) window.open(url, '_blank', 'noopener')
+  }
+  const canOpen = (match) => !!onSelectMatch || !!finalScoresheetUrl(match)
 
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
@@ -148,21 +160,21 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
             <div className="divide-y divide-stone-100">
               {matches.map((match, index) => (
                 <div
-                  key={match.match_external_id || index}
-                  onClick={() => onSelectMatch?.(match)}
-                  className={cn('rounded-md px-2 py-3 transition-colors', onSelectMatch && 'cursor-pointer hover:bg-stone-50')}
+                  key={`${match.match_external_id || index}:${match.userRole || ''}`}
+                  onClick={() => openMatch(match)}
+                  className={cn('rounded-md px-2 py-3 transition-colors', canOpen(match) && 'cursor-pointer hover:bg-stone-50')}
                 >
                   {/* Top row: Teams and score */}
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold text-stone-900">
-                        {getTeamName(match.team_a)}
+                        {getTeamName(match.home_team)}
                       </div>
                       <div className="text-xs text-stone-500">
                         {t('matchHistory.vs', 'vs')}
                       </div>
                       <div className="text-sm font-semibold text-stone-900">
-                        {getTeamName(match.team_b)}
+                        {getTeamName(match.away_team)}
                       </div>
                     </div>
                     {match.final_score && (
@@ -175,7 +187,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                   {/* Bottom row: Date, role, status */}
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <div className="tabular-nums text-stone-500">
-                      {formatDate(match.start_time || match.created_at)}
+                      {formatDate(match.scheduled_at || match.created_at)}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-[3px] text-[11px] font-semibold capitalize leading-none text-stone-600">

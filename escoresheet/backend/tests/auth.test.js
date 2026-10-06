@@ -641,6 +641,46 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       assert.equal(other.status, 200)
     })
 
+    it('limits sign-up per email address across IPs, and all sign-ups together', async () => {
+      const auth = makeAuth({ limits: { signUpIp: false } })
+      for (let i = 0; i < 3; i++) {
+        const r = await auth.handleAuthRequest('sign-up', { email: 'Same.Address@example.ch', password: 'pw123456' }, { ip: nextIp() })
+        assert.equal(r.status, i === 0 ? 200 : 422, JSON.stringify(r.body)) // then: already registered
+      }
+      const r = await auth.handleAuthRequest('sign-up', { email: 'same.address@EXAMPLE.ch', password: 'pw123456' }, { ip: nextIp() })
+      assert.equal(r.status, 429)
+      assert.equal(r.body.error.code, 'rate_limited')
+
+      const capped = makeAuth({ limits: { signUpIp: false, signUpGlobal: { max: 2, windowMs: 60_000 } } })
+      for (let i = 0; i < 2; i++) {
+        assert.equal((await capped.handleAuthRequest('sign-up', { email: `global${i}@example.ch`, password: 'pw123456' }, { ip: nextIp() })).status, 200)
+      }
+      assert.equal((await capped.handleAuthRequest('sign-up', { email: 'global2@example.ch', password: 'pw123456' }, { ip: nextIp() })).status, 429)
+      // An invalid request does not use up the global budget
+      const fresh = makeAuth({ limits: { signUpIp: false, signUpGlobal: { max: 1, windowMs: 60_000 } } })
+      assert.equal((await fresh.handleAuthRequest('sign-up', { email: 'not-an-email', password: 'pw123456' }, { ip: nextIp() })).status, 422)
+      assert.equal((await fresh.handleAuthRequest('sign-up', { email: 'global3@example.ch', password: 'pw123456' }, { ip: nextIp() })).status, 200)
+    })
+
+    it('the global sign-up budget counts created accounts only; plus-tags share the per-address bucket', async () => {
+      // Requests for existing addresses cannot use up everyone's budget
+      const capped = makeAuth({ limits: { signUpIp: false, signUpEmail: false, signUpGlobal: { max: 1, windowMs: 60_000 } } })
+      assert.equal((await capped.handleAuthRequest('sign-up', { email: 'budget0@example.ch', password: 'pw123456' }, { ip: nextIp() })).status, 200)
+      const capped2 = makeAuth({ limits: { signUpIp: false, signUpEmail: false, signUpGlobal: { max: 1, windowMs: 60_000 } } })
+      for (let i = 0; i < 5; i++) {
+        assert.equal((await capped2.handleAuthRequest('sign-up', { email: 'budget0@example.ch', password: 'pw123456' }, { ip: nextIp() })).status, 422)
+      }
+      assert.equal((await capped2.handleAuthRequest('sign-up', { email: 'budget1@example.ch', password: 'pw123456' }, { ip: nextIp() })).status, 200)
+      assert.equal((await capped2.handleAuthRequest('sign-up', { email: 'budget2@example.ch', password: 'pw123456' }, { ip: nextIp() })).status, 429)
+
+      const auth = makeAuth({ limits: { signUpIp: false } })
+      const statuses = []
+      for (const email of ['tagged@example.ch', 'tagged+a@example.ch', 'tagged+b@example.ch', 'tagged+c@example.ch']) {
+        statuses.push((await auth.handleAuthRequest('sign-up', { email, password: 'pw123456' }, { ip: nextIp() })).status)
+      }
+      assert.deepEqual(statuses, [200, 200, 200, 429])
+    })
+
     it('the per-email bucket caps attempts on one address across IPs', async () => {
       await insertUser('emailbucket@example.ch', 'pw123456')
       const auth = makeAuth({ limits: { signInEmail: { max: 3, windowMs: 60_000 } } })

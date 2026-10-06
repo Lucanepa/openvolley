@@ -151,6 +151,9 @@ services:
       VM_SYNC: ${VM_SYNC:-on}
       VM_SYNC_DAYS_BACK: ${VM_SYNC_DAYS_BACK:-1}
       VM_SYNC_DAYS_AHEAD: ${VM_SYNC_DAYS_AHEAD:-14}
+      # Phase 7 (backend README "Security model"): PINs at rest and match tokens
+      OV_PIN_SECRET: ${OV_PIN_SECRET:-}
+      OV_MATCH_TOKEN_SECRET: ${OV_MATCH_TOKEN_SECRET:-}
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}
