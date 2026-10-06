@@ -101,7 +101,7 @@ export default function SimpleHeader({
     }
   }
 
-  // Close menu on outside click
+  // Close menu on outside click and on Escape
   useEffect(() => {
     if (!menuOpen) return
     const handleClick = (e) => {
@@ -109,8 +109,15 @@ export default function SimpleHeader({
         setMenuOpen(false)
       }
     }
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
     document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [menuOpen])
 
   const currentLanguage = languages.find(l => l.code === i18n.language)

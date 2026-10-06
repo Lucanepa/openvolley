@@ -38,6 +38,30 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
   return same(result) ? result.match : null
 }
 
+// A failed check that never reached a server (offline, timeout, no backend),
+// as opposed to a server answering that the PIN is wrong.
+const UNREACHABLE_RE = /failed to fetch|networkerror|load failed|timed out|not available|network request failed/i
+const isUnreachable = (r) => !!r && (r.unreachable === true || UNREACHABLE_RE.test(String(r.error || '')))
+
+/**
+ * Check a typed referee PIN: the backend's database check, then the LAN relay
+ * (relay-only matches are known there only). A thrown relay error is a failed
+ * check, not the message to show: the relay's "No match found ... make sure
+ * the main scoresheet is running" sent referees to check the scoresheet when
+ * they had only mistyped the PIN.
+ * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable' }>}
+ */
+export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin } = {}) {
+  const ok = (r) => r?.success && r.match
+  let cloud
+  try { cloud = await checkCloud(pin, 'referee') } catch (err) { cloud = { success: false, error: err?.message, unreachable: err?.name === 'TypeError' } }
+  if (ok(cloud)) return { match: cloud.match, source: 'supabase' }
+  let lan
+  try { lan = await checkLan(pin, 'referee') } catch (err) { lan = { success: false, error: err?.message, unreachable: err?.name === 'TypeError' } }
+  if (ok(lan)) return { match: lan.match, source: 'websocket' }
+  return { match: null, reason: isUnreachable(cloud) && isUnreachable(lan) ? 'unreachable' : 'invalid' }
+}
+
 export default function RefereeApp() {
   const { t, i18n } = useTranslation()
   // Label this tablet on the relay (scorer's tablet status) before the
@@ -405,21 +429,11 @@ export default function RefereeApp() {
     }
 
     try {
-      // Try Supabase first (cloud database)
-      let result = await validatePinSupabase(pinInput.trim(), 'referee')
-      let source = 'supabase'
+      // Backend database check first, then the LAN relay
+      const result = await validateRefereePin(pinInput.trim())
 
-      // If Supabase fails, try WebSocket server
-      if (!result.success) {
-        const wsResult = await validatePin(pinInput.trim(), 'referee')
-        if (wsResult.success) {
-          result = wsResult
-          source = 'websocket'
-        }
-      }
-
-      if (result.success && result.match) {
-        console.log(`[RefereeApp] PIN validated via ${source}`)
+      if (result.match) {
+        console.log(`[RefereeApp] PIN validated via ${result.source}`)
         setLinkedMatch(null)
         setMatchId(result.match.id)
         setMatch(result.match)
@@ -428,7 +442,9 @@ export default function RefereeApp() {
       } else if (pinInput === MASTER_PIN) {
         enterMasterMode()
       } else {
-        setError(t('refereeDashboard.errors.invalidPin'))
+        setError(result.reason === 'unreachable'
+          ? t('refereeDashboard.errors.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.')
+          : t('refereeDashboard.errors.invalidPin'))
         setPinInput('')
         localStorage.removeItem('refereeMatchId')
         localStorage.removeItem('refereePin')
@@ -439,7 +455,7 @@ export default function RefereeApp() {
         return
       }
       console.error('Error validating PIN:', err)
-      setError(err.message || t('refereeDashboard.errors.invalidPin'))
+      setError(t('refereeDashboard.errors.invalidPin'))
       setPinInput('')
     } finally {
       setIsLoading(false)

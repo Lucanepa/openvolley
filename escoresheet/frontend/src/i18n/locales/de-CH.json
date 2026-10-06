@@ -449,7 +449,8 @@
       "validationError": "Bitte überprüefe: Alli Nummere müend im Kader sii, kei Liberos sii und nöd dopplet.",
       "confirm": "Bestätige",
       "close": "Schliesse",
-      "modify": "Bearbeite"
+      "modify": "Bearbeite",
+      "positionInput": "Spieler auf Position {{pos}}"
     },
     "lastAction": "Letschti Aktion:",
     "keybindings": {
@@ -1375,7 +1376,8 @@
       "invalidPin": "Ungültige PIN-Code. Bitte überprüefe und nomal probiere.",
       "connectionLost": "Verbindig verlore. Bitte neu verbinde.",
       "matchEnded": "S Spiil isch beendet.",
-      "connectionDisabled": "D Verbindig isch deaktiviert worde."
+      "connectionDisabled": "D Verbindig isch deaktiviert worde.",
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
     },
     "connection": {
       "title": "Verbindig",
