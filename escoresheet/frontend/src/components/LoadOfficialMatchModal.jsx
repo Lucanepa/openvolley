@@ -395,7 +395,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
     // Show reminder alert after modal closes
     setTimeout(() => {
-      showAlert(t('loadOfficialMatch.reminderAlert', 'Set Teams colours and Team Short names'), 'info')
+      showAlert(t('loadOfficialMatch.reminderAlert', 'Set teams colours and team short names'), 'info')
     }, 100)
   }
 
@@ -426,7 +426,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       {/* Sticky Header */}
       <div className="sticky -top-4 z-10 mb-4 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white py-2">
         <h2 className="text-lg font-bold text-stone-900">
-          {t('loadOfficialMatch.title', 'Load Match from Schedule')}
+          {t('loadOfficialMatch.title', 'Load match from schedule')}
         </h2>
         <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} />
       </div>
@@ -605,7 +605,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               <span className="text-center">{t('loadOfficialMatch.gameN', 'Game #')}</span>
               <span className="text-center">{t('loadOfficialMatch.date', 'Date')}</span>
               <span className="text-center">{t('loadOfficialMatch.time', 'Time')}</span>
-              <span>{t('loadOfficialMatch.homeVsAway', 'Home vs Away')}</span>
+              <span>{t('loadOfficialMatch.homeVsAway', 'Home vs away')}</span>
             </div>
 
             {/* Table Rows */}

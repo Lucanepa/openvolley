@@ -133,7 +133,7 @@ export default function DashboardHeader({
   if (onLoadGames) {
     menuItems.push({
       icon: <RefreshIcon size={13} />,
-      label: loadingMatches ? t('common.loading', 'Loading...') : t('refereeDashboard.loadGames', 'Load Games'),
+      label: loadingMatches ? t('common.loading', 'Loading...') : t('refereeDashboard.loadGames', 'Load games'),
       onClick: onLoadGames,
       disabled: loadingMatches,
       badge: matchCount > 0 ? `${matchCount}` : null
@@ -144,7 +144,7 @@ export default function DashboardHeader({
   if (showWakeLock && onToggleWakeLock) {
     menuItems.push({
       icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
-      label: t('refereeDashboard.keepScreenOn', 'Keep Screen On'),
+      label: t('refereeDashboard.keepScreenOn', 'Keep screen on'),
       onClick: onToggleWakeLock,
       toggle: wakeLockActive,
       keepOpen: true
@@ -163,13 +163,13 @@ export default function DashboardHeader({
     })
     menuItems.push({
       icon: <DatabaseIcon size={13} />,
-      label: t('refereeDashboard.connection.dbOnly', 'Database Only'),
+      label: t('refereeDashboard.connection.dbOnly', 'Database only'),
       onClick: () => onConnectionModeChange('supabase'),
       active: connectionMode === 'supabase'
     })
     menuItems.push({
       icon: <SatelliteDishIcon size={13} />,
-      label: t('refereeDashboard.connection.directOnly', 'Direct Only'),
+      label: t('refereeDashboard.connection.directOnly', 'Direct only'),
       onClick: () => onConnectionModeChange('websocket'),
       active: connectionMode === 'websocket'
     })
@@ -189,8 +189,8 @@ export default function DashboardHeader({
     const statusInfo = (status) => {
       if (status === 'connected') return { tone: 'ok', word: t('connectionStatus.connected', 'Connected') }
       if (status === 'connecting') return { tone: 'warn', word: t('connectionStatus.connecting', 'Connecting') }
-      if (status === 'not_available') return { tone: 'neutral', word: t('connectionStatus.naStatic', 'N/A (Static)') }
-      if (status === 'no_match') return { tone: 'neutral', word: t('connectionStatus.noMatch', 'No Match') }
+      if (status === 'not_available') return { tone: 'neutral', word: t('connectionStatus.naStatic', 'N/A (static)') }
+      if (status === 'no_match') return { tone: 'neutral', word: t('connectionStatus.noMatch', 'No match') }
       if (status === 'unknown') return { tone: 'neutral', word: t('connectionStatus.unknown', 'Unknown') }
       if (status === 'error') return { tone: 'error', word: t('connectionStatus.error', 'Error') }
       return { tone: 'error', word: t('connectionStatus.disconnected', 'Disconnected') }
@@ -357,7 +357,7 @@ export default function DashboardHeader({
                   className={cn(MENU_ROW, MENU_ROW_DANGER)}
                 >
                   <span className={cn(MENU_ICON, 'text-red-500')}><TrashIcon size={13} /></span>
-                  <span className="flex-1">{t('options.clearCache', 'Clear Cache')}</span>
+                  <span className="flex-1">{t('options.clearCache', 'Clear cache')}</span>
                 </button>
               ) : (
                 <div className="px-3 py-2">

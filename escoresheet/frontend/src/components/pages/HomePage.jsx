@@ -218,7 +218,7 @@ export default function HomePage({
                 </a>
               )}
               <a href={RELEASES_PAGE} target="_blank" rel="noopener noreferrer" className={quietLink}>
-                {t('home.downloadServer', 'Download Server — Referee without internet')}
+                {t('home.downloadServer', 'Download server — referee without internet')}
               </a>
             </div>
           )

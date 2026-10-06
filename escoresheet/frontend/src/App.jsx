@@ -3267,7 +3267,7 @@ export default function App() {
                               restorePreviewData.source === 'pocketbase' ? 'bg-emerald-100 text-emerald-800' :
                               restorePreviewData.source === 'cloud' ? 'bg-violet-100 text-violet-800' : 'bg-amber-100 text-amber-800'
                           )}>
-                            {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From Database') :
+                            {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From database') :
                               restorePreviewData.source === 'pocketbase' ? 'PocketBase Backup' :
                               restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
                           </span>
