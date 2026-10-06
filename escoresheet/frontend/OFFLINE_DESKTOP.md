@@ -123,14 +123,20 @@ The installer hooks (`src-tauri/windows/installer-hooks.nsh`, `installerHooks`):
   only, never the internet), no port filter (the app listens on 5173 / 8080, or
   the `OPENVOLLEY_*_PORT` ones). `netsh advfirewall` (64-bit, via `Sysnative`),
   delete-then-add, so a reinstall never makes a second one. Domain networks are
-  not covered (Defender asks there). If netsh fails the install goes on and
+  not covered (Defender asks there; Cancel at that prompt, or a standard user
+  who cannot elevate, makes inbound **Block** rules for the Program Files exe,
+  and Block beats Allow on every network: the app's check below catches
+  that). If netsh fails the install goes on and
   Defender asks at the first start, as before. Removed after an uninstall.
 - **Upgrade from a per-user install** (2.0.x / 2.1.0 installed into
   `%LOCALAPPDATA%\Openvolley eScoresheet`, HKCU): Tauri's own "already
   installed" page only reads HKLM in per-machine mode, so on its own the
   installer would leave two installs and two Start menu entries. Before copying,
-  the hook finds the installing user's old uninstaller (HKCU uninstall entry),
-  asks to close the app if it runs, and runs it silently in place
+  the hook finds the installing user's old uninstaller (HKCU uninstall entry);
+  if the app runs (for any Windows user) it asks once, closes it for **all**
+  users (as Tauri's own per-machine check right after the hook would; Cancel or
+  a failure to close stops the install before anything is removed), and runs
+  the old uninstaller silently in place
   (`uninstall.exe /S _?=<dir>`). Silent never ticks **Delete the application
   data**, so matches and settings stay; no uninstaller ever touches the backups
   folder. Then it deletes the leftover `uninstall.exe` and folder and the
@@ -144,7 +150,13 @@ The installer hooks (`src-tauri/windows/installer-hooks.nsh`, `installerHooks`):
 - The app checks the rule itself (`firewall_status`, `src-tauri/src/firewall.rs`,
   read through the firewall's COM API, main window only): Connect tablets shows
   the manual "tick Public" step only while the rule is missing (a dev build, a
-  copy run from elsewhere, a rule removed by IT or group policy).
+  copy run from elsewhere, a rule removed by IT or group policy) or an enabled
+  inbound Block rule for this exe (TCP or any protocol, private or public)
+  overrides it (`blocked-by-rule`; ticking Public in "Allow an app through
+  firewall" turns Defender's Block rule into an Allow one). Not while the check
+  is still running, so the step never flashes up. Not covered: "Block all
+  incoming connections" in a profile's settings, and Block rules for all
+  programs or for ports only.
 
 Checked on Linux only: the config against the Tauri schema, and the real Tauri
 NSIS template with these hooks compiled by `makensis` 3.11 (`npx tauri bundle
@@ -342,12 +354,19 @@ The network code is unit-tested and type-checked (Linux build; Windows
   the rule is gone; cancel the "app is running" question during uninstall:
   the rule stays. Upgrade **from 2.1.0 per-user** (with matches, a backup and
   a ticked-Public Defender rule): the old app running → the close question
-  appears first; afterwards one entry in Settings › Apps, one Start menu
+  appears once (Cancel: the old app still installed and working, nothing
+  changed); afterwards one entry in Settings › Apps, one Start menu
   entry, no `%LOCALAPPDATA%\Openvolley eScoresheet` folder, the old Defender
   rules for that path gone, and the matches, settings, remembered tablet Wi-Fi
   and `%APPDATA%\OpenVolley\backups` all still there in the new app. The
   same upgrade by a standard user with an administrator's password (expected:
-  the old copy stays, data intact). Silent install `/S` from an elevated
+  the old copy stays, data intact). The app open in a **second user session**
+  (fast user switching) during that upgrade: one question, OK closes both
+  users' copies and the upgrade completes; Cancel leaves the old install in
+  place. Defender Block rule: on a domain network (or with the rule deleted)
+  cancel Defender's first-start prompt, then on the hotspot the dialog shows
+  the step (`firewall_status` reason `blocked-by-rule`); tick Public: it goes.
+  Silent install `/S` from an elevated
   prompt over 2.1.0. Delete the rule by hand, start the app: the dialog shows
   the step again. Group policy that ignores local rules (domain laptop): note
   what happens.

@@ -82,16 +82,31 @@
       DetailPrint "Earlier per-user install in $R7: replaced in place"
       DeleteRegKey HKCU "${UNINSTKEY}"
     ${ElseIf} ${FileExists} "$R6"
-      ; The old uninstaller closes a running app without asking when silent:
-      ; ask first, as the install itself would.
+      ; The app must be closed before anything is removed, and for every
+      ; Windows user. The template's own check right after this hook
+      ; (CheckIfAppIsRunning; perMachine: FindProcess / KillProcess, all
+      ; users) would otherwise still find another user's copy (fast user
+      ; switching) and, on Cancel, stop the install with the old copy already
+      ; gone: the old uninstaller closes only this user's copy. So ask once
+      ; (the only question): Cancel stops with nothing changed; OK closes it
+      ; for all users here, and the template's check finds nothing left.
       nsis_tauri_utils::FindProcess "${MAINBINARYNAME}.exe"
       Pop $0
       ${If} $0 = 0
-      ${AndIfNot} ${Silent}
-      ${AndIf} $PassiveMode <> 1
-        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "${PRODUCTNAME} is running. Click OK to close it and continue (matches are saved), or Cancel to stop the installation." IDOK ov_close_ok
-        Abort "${PRODUCTNAME} is running. Close it and run the installer again."
-        ov_close_ok:
+        ${IfNot} ${Silent}
+        ${AndIf} $PassiveMode <> 1
+          MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "${PRODUCTNAME} is running (maybe for another Windows user too). Click OK to close it and continue (matches are saved), or Cancel to stop the installation: nothing is changed then." IDOK ov_close_ok
+          Abort "${PRODUCTNAME} is running. Close it and run the installer again."
+          ov_close_ok:
+        ${EndIf}
+        ; all users, as the template's perMachine check (0 closed, 2 none left)
+        nsis_tauri_utils::KillProcess "${MAINBINARYNAME}.exe"
+        Pop $0
+        Sleep 500
+        ${If} $0 <> 0
+        ${AndIf} $0 <> 2
+          Abort "${PRODUCTNAME} could not be closed. Close it for every Windows user and run the installer again: nothing was changed."
+        ${EndIf}
       ${EndIf}
 
       DetailPrint "Removing the earlier per-user install in $R7 (match data and backups stay)"
