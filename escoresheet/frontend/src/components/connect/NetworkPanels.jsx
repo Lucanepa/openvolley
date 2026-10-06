@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Bluetooth, KeyRound, Loader2, LogIn, Power, Router, Wifi } from 'lucide-react'
+import { Bluetooth, KeyRound, Loader2, LogIn, Power, Router, Shield, Wifi } from 'lucide-react'
 import { Button, Notice, Select, StatusPill } from '../../ui'
 
 // Inner block (kit Block recipe): no shadow, one radius down from the dialog.
@@ -76,8 +76,22 @@ function TravelRouterTip() {
   )
 }
 
+// The manual step while the installer's firewall rule is missing (Windows)
+const firewallText = (t) => t('connectTablets.windowsFirewall', 'Tablets join but the page does not load? Windows Security › Firewall & network protection › Allow an app through firewall › OpenVolley › tick “Public”.')
+
+/** Windows without the installer's firewall rule: the manual step. */
+function FirewallTip() {
+  const { t } = useTranslation()
+  return (
+    <p className="mt-2 flex items-start gap-1.5 text-xs leading-snug text-stone-600" data-testid="firewall-step">
+      <Shield size={14} className="mt-0.5 shrink-0 text-stone-400" aria-hidden="true" />
+      <span>{firewallText(t)}</span>
+    </p>
+  )
+}
+
 /** Hall Wi-Fi: the addresses this computer has on the hall network. */
-export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp }) {
+export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp, firewallStep = false }) {
   const { t } = useTranslation()
   const kindLabel = (k) => ({
     wifi: t('connectTablets.kind.wifi', 'Wi-Fi'),
@@ -120,12 +134,13 @@ export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp 
           <span className="font-mono text-xs text-stone-600">{`${interfaces[0].ip} · ${kindLabel(interfaces[0].kind)}`}</span>
         )}
       </div>
+      {firewallStep && <FirewallTip />}
     </div>
   )
 }
 
 /** Wi-Fi from this laptop (desktop app): start / stop, name, password. */
-export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onStart, onStop, onNewPassword }) {
+export function HotspotPanel({ desktop, status, loading, busy, error, wifi, firewallStep = false, onStart, onStop, onNewPassword }) {
   const { t } = useTranslation()
   const errorText = useNetErrorText()
 
@@ -153,7 +168,6 @@ export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onSt
   // On, but switched on outside the app (system settings): the app did not
   // start it and cannot stop it.
   const external = active && !!status?.external
-  const windows = status?.platform === 'windows'
   return (
     <div className={BLOCK} data-testid="hotspot-panel">
       <div className="flex flex-wrap items-start gap-3">
@@ -212,7 +226,7 @@ export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onSt
           t('connectTablets.joinIpad', 'iPad: open the Camera, point it at the Wi-Fi code, tap “Join”.'),
           t('connectTablets.joinAndroid', 'Android: Settings › Wi-Fi › QR icon (or the camera), scan the Wi-Fi code.'),
           t('connectTablets.joinNoInternet', '“No internet”? Choose “Stay connected”, then scan the role’s code.'),
-          ...(windows ? [t('connectTablets.windowsFirewall', 'Tablets join but the page does not load? Windows Security › Firewall & network protection › Allow an app through firewall › OpenVolley › tick “Public”.')] : [])
+          ...(firewallStep ? [firewallText(t)] : [])
         ]} />
       )}
     </div>

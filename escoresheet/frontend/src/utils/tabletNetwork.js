@@ -104,6 +104,26 @@ export const hotspot = {
   stop: (win) => call('hotspot_stop', {}, win)
 }
 
+/**
+ * Windows: the firewall rule the installer adds for the tablets
+ * (src-tauri/src/firewall.rs). `{ platform, supported, ready, reason }`.
+ */
+export const firewall = {
+  status: (win) => call('firewall_status', {}, win)
+}
+
+/**
+ * Show the manual "tick Public" firewall step? Only in the Windows desktop
+ * app, and only while the installer's rule is not known to be there (a dev
+ * build, a copy run from elsewhere, a rule removed by IT, or no answer).
+ * @param {{ platform?: string, ready?: boolean }|null} fw firewall_status
+ * @param {{ platform?: string }|null} hotspotStatus hotspot_status (its platform, when fw is missing)
+ */
+export function needsFirewallStep(fw, hotspotStatus) {
+  const platform = fw?.platform || hotspotStatus?.platform
+  return platform === 'windows' && fw?.ready !== true
+}
+
 export const bluetoothNetwork = {
   status: (win) => call('bluetooth_status', {}, win),
   start: (win) => call('bluetooth_start', {}, win),
