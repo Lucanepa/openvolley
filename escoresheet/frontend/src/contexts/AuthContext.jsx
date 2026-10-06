@@ -116,12 +116,6 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] onAuthStateChange:', event, session?.user?.id)
         clearTimeout(loadingTimeout)
         setUser(session?.user ?? null)
-        // A sign-in is a moment the app is in use and online: the update
-        // checks listen for it (Android: utils/androidUpdate.js, the desktop
-        // app: hooks/useDesktopUpdate.js). Dispatched here only, once.
-        if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
-          try { window.dispatchEvent(new CustomEvent('ov-signed-in')) } catch { /* no window events */ }
-        }
 
         if (session?.user && (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
           await fetchProfile(session.user.id)
@@ -129,6 +123,13 @@ export function AuthProvider({ children }) {
           setProfile(null)
         }
         setLoading(false)
+        // A sign-in is a moment the app is in use and online: the update
+        // checks listen for it (utils/androidUpdate.js in the Android app,
+        // hooks/useDesktopUpdate.js in the desktop app) and throttle
+        // themselves. Fired once per sign-in, here only.
+        if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
+          try { window.dispatchEvent(new CustomEvent('ov-signed-in')) } catch { /* no window events */ }
+        }
       }
     )
 
