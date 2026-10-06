@@ -1369,7 +1369,9 @@ export async function listAvailableMatchesSupabase() {
       .order('scheduled_at', { ascending: true })
 
     if (error) {
-      console.error('[listAvailableMatchesSupabase] Error:', error)
+      // 404: a LAN relay without /api/db (desktop app) — the caller falls back
+      // to the relay's own match list, nothing is wrong
+      if (error.status !== 404) console.error('[listAvailableMatchesSupabase] Error:', error)
       return { success: false, matches: [], error: error.message }
     }
 

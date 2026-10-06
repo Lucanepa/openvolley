@@ -268,6 +268,24 @@ function isNetworkException(err) {
   return NETWORK_ERROR_MESSAGE.test(err?.message || '')
 }
 
+/**
+ * Sync status after a failed connection probe (SELECT on matches).
+ * A 404 means this server has no /api/db at all: the page is served by a LAN
+ * relay (desktop app, Rust relay) that only relays matches. That is the
+ * offline setup working as designed, not a backend error.
+ * @param {{network?: boolean, status?: number, code?: string, message?: string}} error
+ * @returns {'offline'|'online_no_supabase'|'error'}
+ */
+export function probeErrorStatus(error) {
+  if (error?.network) return 'offline'
+  if (error?.status === 404) return 'online_no_supabase'
+  // A missing table (42P01) is a setup issue, not a connection error
+  if (error?.code === '42P01' || error?.message?.includes('relation') || error?.message?.includes('does not exist')) {
+    return 'online_no_supabase'
+  }
+  return 'error'
+}
+
 // Map an apiFrom error to a processJob result; the reason goes on `ctx`
 function failureResult(error, ctx) {
   if (ctx) ctx.error = summarizeError(error)
@@ -1247,15 +1265,10 @@ export function useSyncQueue() {
       // Try a simple query to check connection - use matches table
       const { error } = await apiFrom('matches').select('id').limit(1)
       if (error) {
-        // Request never reached the backend (offline, timeout)
-        if (error.network) return probeFailed('offline')
-        // If table doesn't exist (code 42P01), it's a setup issue, not a connection error
-        if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
-          // Table doesn't exist - this is expected if tables aren't set up yet
-          return probeFailed('online_no_supabase')
-        }
-        safeLog.error('[SyncQueue] Connection check error:', error)
-        return probeFailed('error')
+        // offline (no answer), no database on this server (LAN relay), or an error
+        const status = probeErrorStatus(error)
+        if (status === 'error') safeLog.error('[SyncQueue] Connection check error:', error)
+        return probeFailed(status)
       }
       // Cache successful connection
       connectionVerified.current = true

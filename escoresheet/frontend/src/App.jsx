@@ -513,8 +513,8 @@ export default function App() {
     } else if (syncStatus === 'online_no_supabase') {
       updateStatus('supabase', 'not_configured', {
         status: 'not_configured',
-        message: 'No cloud backend configured',
-        details: 'This build has no backend URL; matches are kept on this device (and the local server, if any).'
+        message: 'Offline: no cloud backend here',
+        details: 'This server is an offline LAN relay (desktop app or venue server) or the build has no backend URL. Matches are kept on this device and on the local server; tablets connect through the relay.'
       })
     } else if (syncStatus === 'connecting') {
       updateStatus('supabase', 'connecting', { status: 'connecting', message: 'Connecting to the cloud backend...' })

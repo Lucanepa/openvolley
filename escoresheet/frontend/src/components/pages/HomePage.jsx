@@ -4,6 +4,7 @@ import SupportFeedbackModal from '../SupportFeedbackModal'
 import UserButton from '../auth/UserButton'
 import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
 import { Button, Card, cn, FOCUS_RING, FOCUS_RING_INSET } from '../../ui'
+import { isServedFromLocalServer } from '../../utils/backendConfig'
 
 const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
 const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
@@ -17,10 +18,13 @@ function detectDesktopOS() {
   return null
 }
 
-// Already running inside the Electron/Tauri desktop app — no point offering the download.
+// Already running inside the Electron/Tauri desktop app, or served by a local
+// relay (the desktop app's own window loads http://localhost:5173 from it, and
+// venue tablets/laptops have no internet) — no point offering the download.
 function isInsideDesktopApp() {
   return typeof window !== 'undefined' &&
-    (!!window.electronAPI || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__)
+    (!!window.electronAPI || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__ ||
+      isServedFromLocalServer())
 }
 
 export default function HomePage({
