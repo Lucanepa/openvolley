@@ -102,10 +102,22 @@ build stays valid.
 
 - The check is a plain GET of the public index
   `https://get.openvolley.app/fdroid/repo/index-v2.json` (about 4 kB): at
-  start, back in the foreground and at sign-in, **at most once per 24 h**,
-  never during a live match. Nothing else is sent. A manual "Check for
-  updates" is the user's own request and works for every install. So there is
-  no Tracking anti-feature and the F-Droid recipe needs no change.
+  start, back in the foreground, at sign-in and when the device comes back
+  online, **at most once per 24 h** after a check that worked and an hour
+  after one that failed (a tablet started offline in a gym checks again soon
+  after it is back on Wi-Fi). Never offline, never during a live match, and not
+  at start before the app has read whether a match is live. Nothing else is
+  sent. A manual "Check for updates" is the user's own request and works for
+  every install. So there is no Tracking anti-feature and the F-Droid recipe
+  needs no change.
+- "Newer" compares the whole `versionCode` with the installed one (the plugin
+  reads it), so an Android-only rebuild with the build digit raised
+  (`androidBuild` in `build.gradle`) is announced too. Without the plugin's
+  answer only MAJOR.MINOR.PATCH of the version name counts.
+- An F-Droid install reads the same index, the OpenVolley repo. f-droid.org
+  builds a release some days later, so a user who installed from f-droid.org
+  only sees "available" before F-Droid offers it: the card and the options say
+  so and offer "Add the OpenVolley repo" next to "Open in F-Droid".
 - The WebView (origin `https://localhost`) needs CORS on that file:
   `escoresheet/deploy/pkgs/Caddyfile` must send
   `Access-Control-Allow-Origin *` for `/fdroid/repo/index-v2.json`. Without it
@@ -116,7 +128,8 @@ build stays valid.
   `fdroidrepos://…`, or fdroid.link in the browser without a client),
   "Download APK", Later (hidden for that version until the next start).
 - Prefs: `localStorage` `ov.update.notify` (`yes` / `no`) and
-  `ov.update.lastCheck`.
+  `ov.update.lastCheck` (the time of the last check that worked; after a
+  failure set so that the next one is due in an hour).
 - Why no self-installer: `REQUEST_INSTALL_PACKAGES` needs an explicit opt-in
   under the F-Droid Inclusion Policy, and under Android 14+ update ownership a
   second installer clashes with F-Droid. A browser-installed APK is bound to

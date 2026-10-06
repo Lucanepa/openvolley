@@ -50,7 +50,6 @@ import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
-import AndroidUpdateNotice from './components/AndroidUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
@@ -60,7 +59,8 @@ import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
-import { installAndroidUpdates } from './utils/androidUpdate'
+import { installAndroidUpdates, liveMatchKnown } from './utils/androidUpdate'
+import AndroidUpdateNotice from './components/AndroidUpdateNotice'
 import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
@@ -463,9 +463,13 @@ export default function App() {
   useEffect(() => installAndroidUpdates(), [])
   const activeMatchStatus = activeMatch?.status
   const activeMatchIsTest = !!activeMatch?.test
+  // undefined until the live query has answered: before that "no live match"
+  // is only a guess, and the Android update check must not run on a guess
+  const activeMatchLoaded = activeMatch !== undefined
   useEffect(() => {
     setLiveMatch(liveOf(activeMatchStatus ? { status: activeMatchStatus, test: activeMatchIsTest } : null))
-  }, [activeMatchStatus, activeMatchIsTest])
+    if (activeMatchLoaded) liveMatchKnown()
+  }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
 
   // Get current match (most recent match that's not final)
   const currentMatch = useLiveQuery(async () => {
@@ -2976,8 +2980,9 @@ export default function App() {
                 />
               ) : !matchId ? (
                 <>
-                  <UpdateBanner showClearDataOption={true} />
+                  {/* the Android app's update notice (utils/androidUpdate.js): home screen only */}
                   <AndroidUpdateNotice />
+                  <UpdateBanner showClearDataOption={true} />
                   <HomePage
                     favicon={openvolleyLogo}
                     newMatchMenuOpen={newMatchMenuOpen}

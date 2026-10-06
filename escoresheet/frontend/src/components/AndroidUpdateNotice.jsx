@@ -47,18 +47,18 @@ export default function AndroidUpdateNotice() {
         <Modal
           open={askReady}
           onClose={() => update.setNotify(false)}
-          title={t('update.askTitle')}
+          title={t('androidUpdate.askTitle')}
           size="sm"
           decision
           closeLabel={t('common.close')}
         >
-          <p className="text-sm leading-relaxed text-stone-600">{t('update.askBody')}</p>
+          <p className="text-sm leading-relaxed text-stone-600">{t('androidUpdate.askBody')}</p>
           <div className="mt-5 grid grid-cols-2 gap-2">
             <Button variant="secondary" size="xl" onClick={() => update.setNotify(false)} data-testid="update-ask-no">
-              {t('update.askNo')}
+              {t('androidUpdate.askNo')}
             </Button>
             <Button variant="secondary" size="xl" onClick={() => update.setNotify(true)} data-testid="update-ask-yes">
-              {t('update.askYes')}
+              {t('androidUpdate.askYes')}
             </Button>
           </div>
         </Modal>
@@ -82,31 +82,48 @@ export default function AndroidUpdateNotice() {
         </div>
         <div className="min-w-0 flex-1">
           <h3 id="ov-android-update-title" className="text-sm font-semibold text-stone-900">
-            {t('update.available', { version: update.latest.versionName })}
+            {t('androidUpdate.available', { version: update.latest.versionName })}
           </h3>
           <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-2 py-0.5 font-mono text-xs tabular-nums text-stone-600">
             <span>{currentVersion}</span>
             <span className="text-stone-400" aria-hidden="true">→</span>
             <span className="font-semibold text-emerald-700">{update.latest.versionName}</span>
           </div>
+          {/* the check reads the OpenVolley repo; an f-droid.org install
+              gets the version only once f-droid.org has built it */}
+          {fromFdroid && (
+            <p className="mt-2 text-xs leading-relaxed text-stone-500">{t('androidUpdate.fdroidRepoHint')}</p>
+          )}
         </div>
       </div>
       <div className="mt-4 flex flex-col gap-2">
         {fromFdroid ? (
-          <Button variant="dark" size="xl" onClick={() => update.openInFdroid()} className="w-full">
-            {t('update.openFdroid')}
-          </Button>
+          <>
+            <Button variant="dark" size="xl" onClick={() => update.openInFdroid()} className="w-full">
+              {t('androidUpdate.openFdroid')}
+            </Button>
+            <Button variant="secondary" size="xl" onClick={() => update.getFromFdroid()} className="w-full">
+              {t('androidUpdate.addRepo')}
+            </Button>
+          </>
         ) : (
           <>
             <Button variant="dark" size="xl" onClick={() => update.getFromFdroid()} className="h-auto min-h-11 w-full py-2 text-center leading-snug">
-              {t('update.getFdroid')}
+              {t('androidUpdate.getFdroid')}
             </Button>
             <Button variant="secondary" size="xl" onClick={() => update.downloadApk()} className="w-full">
-              {t('update.downloadApk')}
+              {t('androidUpdate.downloadApk')}
             </Button>
           </>
         )}
-        <Button variant="text" onClick={() => update.dismiss()} className="mx-auto h-9 text-sm">
+        {/* quiet like a text link, but a full 44px courtside touch target */}
+        <Button
+          variant="text"
+          size="xl"
+          onClick={() => update.dismiss()}
+          className="w-full px-4 text-sm font-medium"
+          data-testid="android-update-later"
+        >
           {t('common.later')}
         </Button>
       </div>

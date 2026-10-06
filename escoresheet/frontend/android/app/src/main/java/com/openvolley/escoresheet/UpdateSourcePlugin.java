@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.InstallSourceInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -56,7 +57,12 @@ public class UpdateSourcePlugin extends Plugin {
         return "other";
     }
 
-    /** {installer, updateOwner, family: 'fdroid' | 'sideload' | 'other'} */
+    /**
+     * {installer, updateOwner, family: 'fdroid' | 'sideload' | 'other',
+     * versionCode}. versionCode is the installed one, build digit included, so
+     * the page also sees an Android-only rebuild of the same versionName
+     * (absent when it cannot be read).
+     */
     @PluginMethod
     @SuppressWarnings("deprecation") // getInstallerPackageName: Android 10 and older only
     public void getInstallSource(PluginCall call) {
@@ -82,6 +88,8 @@ public class UpdateSourcePlugin extends Plugin {
         ret.put("installer", installer);
         ret.put("updateOwner", updateOwner);
         ret.put("family", familyOf(installer, updateOwner));
+        long code = installedVersionCode(pm, pkg);
+        if (code > 0) ret.put("versionCode", code);
         call.resolve(ret);
     }
 
@@ -128,6 +136,16 @@ public class UpdateSourcePlugin extends Plugin {
             ret.put("fallback", opened);
         }
         call.resolve(ret);
+    }
+
+    @SuppressWarnings("deprecation") // PackageInfo.versionCode: Android 8.1 and older only
+    private static long installedVersionCode(PackageManager pm, String pkg) {
+        try {
+            PackageInfo info = pm.getPackageInfo(pkg, 0);
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? info.getLongVersionCode() : info.versionCode;
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+            return 0;
+        }
     }
 
     private static boolean allowed(String url, boolean storeSchemes) {

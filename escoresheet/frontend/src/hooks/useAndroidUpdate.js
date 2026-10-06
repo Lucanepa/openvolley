@@ -31,7 +31,7 @@ const actions = {
 export default function useAndroidUpdate() {
   const state = useSyncExternalStore(subscribeAndroidUpdate, getAndroidUpdateSnapshot, getAndroidUpdateSnapshot)
   const live = useSyncExternalStore(onLiveMatchChange, getLiveMatch, getLiveMatch)
-  const newer = state.active && isNewer(state.latest)
+  const newer = state.active && isNewer(state.latest, undefined, state.installedCode)
   const quiet = live !== 'none'
   return {
     ...state,

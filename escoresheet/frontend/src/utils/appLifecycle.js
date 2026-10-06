@@ -69,14 +69,12 @@ export function setLiveMatch(next) {
 
 export const getLiveMatch = () => live
 
-/**
- * Follow the live match (e.g. the Android update notice waits for its end).
- * @param {(live: 'none'|'official'|'test') => void} listener
- * @returns {() => void} unsubscribe
- */
+/** Follow the live match (e.g. the update notice hides during a match).
+ *  @returns {() => void} unsubscribe */
 export function onLiveMatchChange(listener) {
-  liveListeners.add(listener)
-  return () => { liveListeners.delete(listener) }
+  const l = (value) => listener(value)
+  liveListeners.add(l)
+  return () => liveListeners.delete(l)
 }
 
 // ---------------------------------------------------------------------------

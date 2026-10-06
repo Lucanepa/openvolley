@@ -17,6 +17,7 @@ import {
   FDROID_REPO_WEB,
   LAST_CHECK_KEY,
   NOTIFY_KEY,
+  RETRY_AFTER_FAILURE_MS,
   checkAndroidUpdate,
   checkDue,
   dismissAndroidUpdate,
@@ -27,7 +28,9 @@ import {
   installAndroidUpdates,
   isAndroidApp,
   isNewer,
+  lastCheckAfterFailure,
   latestFromIndex,
+  liveMatchKnown,
   openInFdroid,
   readNotify,
   repoBaseOf,
@@ -35,7 +38,12 @@ import {
   setUpdateNotify,
   versionCode,
 } from '../androidUpdate'
-import { resetAppLifecycleForTests, setLiveMatch } from '../appLifecycle'
+import { onLiveMatchChange, resetAppLifecycleForTests, setLiveMatch } from '../appLifecycle'
+import en from '../../i18n/locales/en.json'
+import de from '../../i18n/locales/de.json'
+import deCH from '../../i18n/locales/de-CH.json'
+import fr from '../../i18n/locales/fr.json'
+import it_ from '../../i18n/locales/it.json'
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0))
@@ -59,11 +67,19 @@ describe('versionCode / isNewer', () => {
     expect(versionCode('dev')).toBe(0)
   })
 
-  it('ignores the build digit and compares MAJOR.MINOR.PATCH', () => {
+  it('without the installed code: ignores the build digit and compares MAJOR.MINOR.PATCH', () => {
     expect(isNewer({ versionCode: 20020000 }, '2.1.1')).toBe(true)
     expect(isNewer({ versionCode: 20010019 }, '2.1.1')).toBe(false) // 2.1.1 build 9
     expect(isNewer({ versionCode: 20010000 }, '2.1.1')).toBe(false)
     expect(isNewer(null, '2.1.1')).toBe(false)
+    expect(isNewer({ versionCode: 20020001 }, '2.2.0', null)).toBe(false)
+  })
+
+  it('with the installed code: an Android-only rebuild (build digit +1) is newer', () => {
+    expect(isNewer({ versionCode: 20020001 }, '2.2.0', 20020000)).toBe(true)
+    expect(isNewer({ versionCode: 20020000 }, '2.2.0', 20020000)).toBe(false)
+    expect(isNewer({ versionCode: 20020000 }, '2.2.0', 20020001)).toBe(false)
+    expect(isNewer({ versionCode: 20030000 }, '2.2.0', 20020001)).toBe(true)
   })
 })
 
@@ -117,6 +133,18 @@ describe('checkDue', () => {
     expect(checkDue(now, now - CHECK_INTERVAL_MS)).toBe(true)
     expect(checkDue(now, now + 60_000)).toBe(true) // the clock went back
   })
+
+  it('after a failure: due again in an hour, not a day', () => {
+    const last = lastCheckAfterFailure(now, 0)
+    expect(checkDue(now + RETRY_AFTER_FAILURE_MS - 1, last)).toBe(false)
+    expect(checkDue(now + RETRY_AFTER_FAILURE_MS, last)).toBe(true)
+    // a success 10 min ago already scheduled the next check later: kept
+    const ok = now - 10 * 60_000
+    expect(lastCheckAfterFailure(now, ok)).toBe(ok)
+    // a success 23.5 h ago: the retry comes later than its 24 h mark
+    const old = now - CHECK_INTERVAL_MS + 30 * 60_000
+    expect(lastCheckAfterFailure(now, old)).toBe(now - CHECK_INTERVAL_MS + RETRY_AFTER_FAILURE_MS)
+  })
 })
 
 describe('the controller in the Android app', () => {
@@ -133,13 +161,17 @@ describe('the controller in the Android app', () => {
     return w
   }
 
-  function start(family, body = indexWith('2.2.0', 20020000)) {
+  // App.jsx: installAndroidUpdates, then liveMatchKnown once its live-match
+  // query has answered
+  function start(family, body = indexWith('2.2.0', 20020000), { known = true, source = {} } = {}) {
     plugin = {
-      getInstallSource: vi.fn(async () => ({ installer: null, updateOwner: null, family })),
+      getInstallSource: vi.fn(async () => ({ installer: null, updateOwner: null, family, ...source })),
       openStore: vi.fn(async () => ({ opened: true })),
     }
     fetchImpl = vi.fn(async () => ({ ok: true, json: async () => body }))
-    return installAndroidUpdates({ win, plugin, fetchImpl, now: () => clock })
+    const stop = installAndroidUpdates({ win, plugin, fetchImpl, now: () => clock })
+    if (known) liveMatchKnown()
+    return stop
   }
 
   beforeEach(() => {
@@ -236,6 +268,97 @@ describe('the controller in the Android app', () => {
     stop()
   })
 
+  it('waits for the live match to be known at start (restart mid-match)', async () => {
+    localStorage.setItem(NOTIFY_KEY, 'yes')
+    // the install source answers before App.jsx's live query
+    const stop = start('sideload', undefined, { known: false })
+    await flush()
+    expect(getAndroidUpdateSnapshot().family).toBe('sideload')
+    win.dispatchEvent(new Event('ov-signed-in'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(fetchImpl).not.toHaveBeenCalled()
+    // the query finds the live match: still nothing
+    setLiveMatch('official')
+    liveMatchKnown()
+    await flush()
+    expect(fetchImpl).not.toHaveBeenCalled()
+    setLiveMatch('none')
+    await flush()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('checks as soon as the live match is known to be none', async () => {
+    localStorage.setItem(NOTIFY_KEY, 'yes')
+    const stop = start('sideload', undefined, { known: false })
+    await flush()
+    expect(fetchImpl).not.toHaveBeenCalled()
+    liveMatchKnown()
+    await flush()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('a failed check is retried an hour later, not a day later', async () => {
+    localStorage.setItem(NOTIFY_KEY, 'yes')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const stop = start('sideload')
+    fetchImpl.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await flush()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(getAndroidUpdateSnapshot().status).toBe('failed')
+    // a failure does not count as a check for the 24 h throttle
+    expect(Number(localStorage.getItem(LAST_CHECK_KEY))).toBeLessThan(clock - CHECK_INTERVAL_MS + 2 * RETRY_AFTER_FAILURE_MS)
+
+    clock += 10 * 60 * 1000
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+
+    clock += 50 * 60 * 1000 // an hour after the failure
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(getAndroidUpdateSnapshot().status).toBe('available')
+    expect(Number(localStorage.getItem(LAST_CHECK_KEY))).toBe(clock)
+    warn.mockRestore()
+    stop()
+  })
+
+  it('never checks offline; checks when the device is back online', async () => {
+    localStorage.setItem(NOTIFY_KEY, 'yes')
+    win.navigator = { onLine: false }
+    const stop = start('sideload')
+    await flush()
+    win.dispatchEvent(new Event('ov-signed-in'))
+    await flush()
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(localStorage.getItem(LAST_CHECK_KEY)).toBeNull()
+    win.navigator.onLine = true
+    win.dispatchEvent(new Event('online'))
+    await flush()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('announces an Android-only rebuild by the installed versionCode', async () => {
+    localStorage.setItem(NOTIFY_KEY, 'yes')
+    // installed 2.2.0 build 0, the repo has 2.2.0 build 1
+    let stop = start('sideload', indexWith('2.2.0', 20020001), { source: { versionCode: 20020000 } })
+    await flush()
+    expect(getAndroidUpdateSnapshot()).toMatchObject({ installedCode: 20020000, status: 'available' })
+    stop()
+    // the same build installed: up to date
+    resetAndroidUpdateForTests()
+    stop = start('sideload', indexWith('2.2.0', 20020001), { source: { versionCode: 20020001 } })
+    await flush()
+    expect(getAndroidUpdateSnapshot().installedCode).toBe(20020001)
+    await checkAndroidUpdate()
+    expect(getAndroidUpdateSnapshot().status).toBe('upToDate')
+    stop()
+  })
+
   it('a failed check keeps the app running and is reported', async () => {
     localStorage.setItem(NOTIFY_KEY, 'yes')
     start('sideload')
@@ -298,5 +421,31 @@ describe('the controller in the Android app', () => {
   it('reads a blocked storage as never asked', () => {
     expect(readNotify({ getItem: () => { throw new Error('blocked') } })).toBe('unset')
     expect(readNotify(null)).toBe('unset')
+  })
+})
+
+describe('texts', () => {
+  const locales = { en, de, 'de-CH': deCH, fr, it: it_ }
+  const keys = Object.keys(en.androidUpdate).sort()
+
+  it.each(Object.keys(locales))('%s has every androidUpdate text', (lng) => {
+    expect(Object.keys(locales[lng].androidUpdate).sort()).toEqual(keys)
+    for (const key of keys) expect(locales[lng].androidUpdate[key]).toMatch(/\S/)
+  })
+})
+
+describe('onLiveMatchChange', () => {
+  it('one listener subscribed twice keeps the second subscription', () => {
+    resetAppLifecycleForTests()
+    const seen = []
+    const listener = (v) => seen.push(v)
+    const off1 = onLiveMatchChange(listener)
+    const off2 = onLiveMatchChange(listener)
+    off1()
+    setLiveMatch('test')
+    expect(seen).toEqual(['test'])
+    off2()
+    setLiveMatch('none')
+    expect(seen).toEqual(['test'])
   })
 })
