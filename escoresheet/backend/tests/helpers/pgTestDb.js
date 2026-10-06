@@ -151,3 +151,18 @@ export function quietLogger () {
   const push = (lvl) => (...a) => lines.push(`${lvl} ${a.join(' ')}`)
   return { lines, log: push('log'), warn: push('warn'), error: push('error') }
 }
+
+/**
+ * Give an account roles directly in SQL (new accounts have none since db/007:
+ * they are pending and may only write test matches). Tests only.
+ * @param {{query: Function}} db  pg Client/Pool or a connection string
+ */
+export async function grantRoles (db, userId, roles = ['scorer']) {
+  if (typeof db === 'string') {
+    const c = new pg.Client({ connectionString: db })
+    await c.connect()
+    try { return await grantRoles(c, userId, roles) } finally { await c.end() }
+  }
+  const r = await db.query('UPDATE public.profiles SET roles = $2::text[] WHERE user_id = $1', [userId, roles])
+  if (r.rowCount === 0) await db.query('INSERT INTO public.profiles (user_id, roles) VALUES ($1, $2::text[])', [userId, roles])
+}
