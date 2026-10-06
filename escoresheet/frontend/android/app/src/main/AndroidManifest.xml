@@ -12,6 +12,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme">
 
         <!-- Android 16 (targetSdk 36) ignores screenOrientation on large screens
@@ -51,4 +52,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Automatic match backups go to the public Documents/OpenVolley/backups
+         folder (copyable off the tablet). Android 11+ needs no permission for
+         files the app creates there; Android 10 and older need storage access
+         (plus requestLegacyExternalStorage above on Android 10). If refused,
+         the app falls back to its own external files folder. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 </manifest>
