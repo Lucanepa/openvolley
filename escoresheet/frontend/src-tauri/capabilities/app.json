@@ -1,14 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app",
-  "description": "Close to tray and quit: the scoretable window (loaded from the built-in server on http://localhost) tells the app its tray texts and whether a match is in progress, hides itself after the first-close notice, and quits after the scorer confirmed. LAN tablets and the scoresheet windows never get these commands.",
+  "description": "Close to tray and quit: the scoretable window (loaded from the built-in server on http://localhost) tells the app its tray texts and whether a match is in progress, says when its handler is gone (error screen), hides itself after the first-close notice, acknowledges a quit request and quits after the scorer confirmed. LAN tablets and the scoresheet windows never get these commands.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://localhost:*"]
   },
   "permissions": [
     "allow-app-page-state",
+    "allow-app-page-gone",
     "allow-app-hide",
-    "allow-app-quit"
+    "allow-app-quit",
+    "allow-app-quit-ack"
   ]
 }

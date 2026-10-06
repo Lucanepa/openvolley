@@ -19,17 +19,23 @@
 //! - **Quit** (tray menu, the page's header menu): the window comes back and
 //!   the page asks (askConfirm, danger). Only its `app_quit` exits; the exit
 //!   then stops the tablets' network (RunEvent::Exit in main.rs) as before.
+//!   The page must take the request (`app_quit_ack`) within [`ACK_TIMEOUT`];
+//!   a page that cannot (crashed into its error screen, a hung web process,
+//!   still loading) gets a native "Quit OpenVolley?" from the app instead,
+//!   so the app can always be quit, and never without a confirmation.
 //! - **The OS ends the session**: never blocked. Windows ends the event loop
 //!   on WM_ENDSESSION (tao), which is RunEvent::Exit, not ExitRequested.
 //!   Linux: SIGTERM / SIGINT / SIGHUP quit at once (`os_exit`), with a
 //!   watchdog in case the event loop no longer answers.
 //! - **Second launch**: tauri-plugin-single-instance hands it to this one,
-//!   which shows its window (main.rs).
+//!   which shows its window (main.rs). `--quit` (the Windows installer and
+//!   uninstaller, windows/hooks.nsh, after they asked) quits it cleanly.
 //!
 //! The decisions are in [`ExitGate`] (plain data, unit-tested); the rest
 //! applies them to the windows.
 
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -41,6 +47,17 @@ pub const TRAY_ID: &str = "openvolley";
 const MENU_SHOW: &str = "ov-show";
 const MENU_STATUS: &str = "ov-status";
 const MENU_QUIT: &str = "ov-quit";
+
+/// The command-line argument that quits the running app (main.rs).
+pub const QUIT_ARG: &str = "--quit";
+
+/// How long the page has to take "quit-requested" before the app asks itself.
+pub const ACK_TIMEOUT: Duration = Duration::from_millis(2500);
+
+/// Page handler tokens are short (appLifecycle.js); anything else is cut.
+const MAX_TOKEN: usize = 64;
+/// Detached handlers remembered, so a late report of one cannot re-attach it.
+const MAX_DETACHED: usize = 8;
 
 /// What closing the scoretable window does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,9 +75,14 @@ pub enum CloseAction {
 /// What "Quit OpenVolley…" does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuitAction {
-    /// Show the window and let the page ask.
-    AskPage,
-    /// Exit now (confirmed, the OS asked, or no page that could ask).
+    /// Show the window and let the page ask; request number `n` must be
+    /// acknowledged (`app_quit_ack`) within ACK_TIMEOUT.
+    AskPage(u64),
+    /// No page that could ask: the app asks with a native dialog.
+    AskNative,
+    /// The native question is already on screen: only show it again.
+    Showing,
+    /// Exit now (already confirmed, or the OS is ending the app).
     Exit,
 }
 
@@ -80,10 +102,20 @@ pub struct ExitGate {
     os_exit: bool,
     /// The tray icon exists.
     tray: bool,
-    /// The scoretable page has loaded and handles the lifecycle events.
-    page_ready: bool,
+    /// The scoretable page's lifecycle handler (a token per install), while
+    /// it can answer the lifecycle events: set by `app_page_state`, cleared by
+    /// a page (re)load and by `app_page_gone` (the handler was uninstalled,
+    /// e.g. the page crashed into its error screen).
+    page: Option<String>,
+    /// Handlers that said they are gone (a late report must not revive one).
+    detached: Vec<String>,
     /// The first-close notice was asked for this run.
     notice_asked: bool,
+    /// A "quit-requested" the page has not acknowledged yet (its number).
+    quit_unacked: Option<u64>,
+    quit_seq: u64,
+    /// The native "Quit OpenVolley?" is on screen.
+    native_open: bool,
 }
 
 impl ExitGate {
@@ -103,8 +135,37 @@ impl ExitGate {
         self.tray = tray;
     }
 
-    pub fn set_page_ready(&mut self, ready: bool) {
-        self.page_ready = ready;
+    fn page_ready(&self) -> bool {
+        self.page.is_some()
+    }
+
+    /// `app_page_state`: the page's handler `token` answers from now on
+    /// (unless it already said it is gone).
+    pub fn page_attached(&mut self, token: &str) {
+        let token: String = token.chars().take(MAX_TOKEN).collect();
+        if !self.detached.contains(&token) {
+            self.page = Some(token);
+        }
+    }
+
+    /// `app_page_gone`: the handler was uninstalled, nothing answers now.
+    pub fn page_detached(&mut self, token: &str) {
+        let token: String = token.chars().take(MAX_TOKEN).collect();
+        if self.page.as_deref() == Some(token.as_str()) {
+            self.page = None;
+        }
+        if !self.detached.contains(&token) {
+            if self.detached.len() >= MAX_DETACHED {
+                self.detached.remove(0);
+            }
+            self.detached.push(token);
+        }
+    }
+
+    /// The main window started loading a page: it answers again only after
+    /// it called app_page_state.
+    pub fn page_unloaded(&mut self) {
+        self.page = None;
     }
 
     /// Hide or minimise: what "out of the way, still running" is here.
@@ -123,7 +184,7 @@ impl ExitGate {
         }
         // The page shows the notice once per run. A page that does not answer
         // (still loading, stuck) only delays the hide to the next close.
-        if self.page_ready && !self.notice_asked {
+        if self.page_ready() && !self.notice_asked {
             self.notice_asked = true;
             return CloseAction::AskPage;
         }
@@ -131,13 +192,51 @@ impl ExitGate {
     }
 
     /// "Quit OpenVolley…" in the tray menu, or an exit nobody confirmed.
-    pub fn quit_requested(&self) -> QuitAction {
-        // Without a loaded page nobody could answer: a blank or broken window
-        // must not make the app impossible to quit (the match is in IndexedDB).
-        if self.exiting() || !self.page_ready {
-            QuitAction::Exit
-        } else {
-            QuitAction::AskPage
+    pub fn quit_requested(&mut self) -> QuitAction {
+        if self.exiting() {
+            return QuitAction::Exit;
+        }
+        if self.native_open {
+            return QuitAction::Showing;
+        }
+        // Without a page that answers (still loading, crashed, uninstalled
+        // its handler), or when it did not take the last request: the app
+        // asks itself. A broken window must neither make the app impossible
+        // to quit nor quit it without a confirmation.
+        if !self.page_ready() || self.quit_unacked.is_some() {
+            return self.ask_native();
+        }
+        self.quit_seq += 1;
+        self.quit_unacked = Some(self.quit_seq);
+        QuitAction::AskPage(self.quit_seq)
+    }
+
+    fn ask_native(&mut self) -> QuitAction {
+        self.quit_unacked = None;
+        self.native_open = true;
+        QuitAction::AskNative
+    }
+
+    /// `app_quit_ack`: the page took the request and its question is on screen.
+    pub fn quit_acked(&mut self) {
+        self.quit_unacked = None;
+    }
+
+    /// Request `n` was not taken in time (or could not be sent): true when
+    /// the app must ask natively now.
+    pub fn quit_not_taken(&mut self, n: u64) -> bool {
+        if self.exiting() || self.native_open || self.quit_unacked != Some(n) {
+            return false;
+        }
+        self.ask_native();
+        true
+    }
+
+    /// The native question was answered.
+    pub fn native_answered(&mut self, quit: bool) {
+        self.native_open = false;
+        if quit {
+            self.quit_confirmed = true;
         }
     }
 
@@ -146,8 +245,8 @@ impl ExitGate {
         self.quit_confirmed = true;
     }
 
-    /// The OS ends the app (logout / shutdown / SIGTERM).
-    #[cfg_attr(not(unix), allow(dead_code))] // Windows: WM_ENDSESSION is RunEvent::Exit
+    /// The OS ends the app (logout / shutdown / SIGTERM), or the installer
+    /// asked (`--quit`, after its own question).
     pub fn os_exit(&mut self) {
         self.os_exit = true;
     }
@@ -165,7 +264,8 @@ impl ExitGate {
     }
 }
 
-/// The tray texts, in the page's language (`app_page_state`).
+/// The tray texts and the native "Quit OpenVolley?", in the page's language
+/// (`app_page_state`). The last ones a page sent stay after it crashed.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TrayLabels {
@@ -178,6 +278,16 @@ pub struct TrayLabels {
     pub tablets: String,
     pub match_live: String,
     pub test_match_live: String,
+    pub quit_title: String,
+    pub quit_title_match: String,
+    pub quit_title_test_match: String,
+    /// "Tablets on this computer's network will disconnect."
+    pub quit_body: String,
+    /// The match is saved and can be continued.
+    pub quit_match_body: String,
+    pub quit_test_match_body: String,
+    pub quit_confirm: String,
+    pub keep_running: String,
 }
 
 impl Default for TrayLabels {
@@ -191,15 +301,29 @@ impl Default for TrayLabels {
             tablets: "{{count}} tablets connected".into(),
             match_live: "Match in progress".into(),
             test_match_live: "Test match in progress".into(),
+            quit_title: "Quit OpenVolley?".into(),
+            quit_title_match: "Quit OpenVolley during the match?".into(),
+            quit_title_test_match: "Quit OpenVolley during the test match?".into(),
+            quit_body: "Tablets on this computer's network will disconnect.".into(),
+            quit_match_body: "A match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
+            quit_test_match_body: "A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
+            quit_confirm: "Quit OpenVolley".into(),
+            keep_running: "Keep running".into(),
         }
     }
 }
 
-/// At most this many characters per label; no control characters.
+/// At most this many characters per label (a sentence of the native
+/// question: MAX_TEXT); no control characters.
 const MAX_LABEL: usize = 80;
+const MAX_TEXT: usize = 300;
 
 fn clean_label(s: &str, fallback: &str) -> String {
-    let s: String = s.chars().filter(|c| !c.is_control()).take(MAX_LABEL).collect();
+    clean_text(s, fallback, MAX_LABEL)
+}
+
+fn clean_text(s: &str, fallback: &str, max: usize) -> String {
+    let s: String = s.chars().filter(|c| !c.is_control()).take(max).collect();
     let s = s.trim();
     if s.is_empty() {
         fallback.to_string()
@@ -222,7 +346,25 @@ impl TrayLabels {
             tablets: clean_label(&self.tablets, &d.tablets),
             match_live: clean_label(&self.match_live, &d.match_live),
             test_match_live: clean_label(&self.test_match_live, &d.test_match_live),
+            quit_title: clean_label(&self.quit_title, &d.quit_title),
+            quit_title_match: clean_label(&self.quit_title_match, &d.quit_title_match),
+            quit_title_test_match: clean_label(&self.quit_title_test_match, &d.quit_title_test_match),
+            quit_body: clean_text(&self.quit_body, &d.quit_body, MAX_TEXT),
+            quit_match_body: clean_text(&self.quit_match_body, &d.quit_match_body, MAX_TEXT),
+            quit_test_match_body: clean_text(&self.quit_test_match_body, &d.quit_test_match_body, MAX_TEXT),
+            quit_confirm: clean_label(&self.quit_confirm, &d.quit_confirm),
+            keep_running: clean_label(&self.keep_running, &d.keep_running),
         }
+    }
+
+    /// The native "Quit OpenVolley?": title, message, confirm and cancel.
+    pub fn native_question(&self, live: MatchLive) -> (String, String, String, String) {
+        let (title, message) = match live {
+            MatchLive::None => (self.quit_title.clone(), self.quit_body.clone()),
+            MatchLive::Official => (self.quit_title_match.clone(), format!("{}\n\n{}", self.quit_match_body, self.quit_body)),
+            MatchLive::Test => (self.quit_title_test_match.clone(), format!("{}\n\n{}", self.quit_test_match_body, self.quit_body)),
+        };
+        (title, message, self.quit_confirm.clone(), self.keep_running.clone())
     }
 
     /// The tray's status line: "2 tablets connected · Match in progress".
@@ -369,20 +511,64 @@ pub fn on_close_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     }
 }
 
-/// "Quit OpenVolley…": the window comes back and the page asks; without a
-/// page that could ask, the app exits.
+/// "Quit OpenVolley…": the window comes back and the page asks. A page that
+/// does not take the request within ACK_TIMEOUT (crashed, hung, loading), or
+/// none at all, gets the app's own native question instead.
 pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
     let action = app.state::<Lifecycle>().gate().quit_requested();
-    if action == QuitAction::AskPage {
-        show_windows(app);
-        if let Some(main) = main_window(app) {
-            if main.eval(page_event_script("quit-requested")).is_ok() {
+    match action {
+        QuitAction::Exit => app.exit(0),
+        QuitAction::Showing => show_windows(app),
+        QuitAction::AskNative => {
+            show_windows(app);
+            ask_native(app);
+        }
+        QuitAction::AskPage(n) => {
+            show_windows(app);
+            let sent = main_window(app).map(|w| w.eval(page_event_script("quit-requested")).is_ok()).unwrap_or(false);
+            if !sent {
+                if app.state::<Lifecycle>().gate().quit_not_taken(n) {
+                    ask_native(app);
+                }
                 return;
             }
+            // eval is fire-and-forget: Ok says nothing about a page that
+            // still listens (an error screen, a hung web process)
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(ACK_TIMEOUT);
+                if app.state::<Lifecycle>().gate().quit_not_taken(n) {
+                    eprintln!("[app] the page did not take the quit request: asking natively");
+                    ask_native(&app);
+                }
+            });
         }
     }
-    app.state::<Lifecycle>().gate().confirm_quit();
-    app.exit(0);
+}
+
+/// The app's own "Quit OpenVolley?" (tauri-plugin-dialog, no page needed),
+/// in the last language the page reported.
+fn ask_native<R: Runtime>(app: &AppHandle<R>) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let lifecycle = app.state::<Lifecycle>();
+    let live = *lifecycle.live.lock().unwrap_or_else(|e| e.into_inner());
+    let (title, message, ok, cancel) = lifecycle.labels().native_question(live);
+    let mut dialog = app
+        .dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(ok, cancel));
+    if let Some(main) = main_window(app) {
+        dialog = dialog.parent(&main);
+    }
+    let handle = app.clone();
+    dialog.show(move |quit| {
+        handle.state::<Lifecycle>().gate().native_answered(quit);
+        if quit {
+            handle.exit(0);
+        }
+    });
 }
 
 /// RunEvent::ExitRequested: true when the exit must be prevented (the
@@ -400,8 +586,7 @@ pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     false
 }
 
-/// The OS ends the app: never blocked.
-#[cfg_attr(not(unix), allow(dead_code))]
+/// The OS ends the app (or the installer, after it asked): never blocked.
 pub fn os_exit<R: Runtime>(app: &AppHandle<R>, why: &str) {
     eprintln!("[app] {why}: quitting");
     app.state::<Lifecycle>().gate().os_exit();
@@ -564,7 +749,7 @@ pub fn set_tablet_count<R: Runtime>(app: &AppHandle<R>, count: usize) {
 /// The main window started loading a page: until it calls app_page_state, it
 /// cannot answer the lifecycle events.
 pub fn page_load_started<R: Runtime>(app: &AppHandle<R>) {
-    app.state::<Lifecycle>().gate().set_page_ready(false);
+    app.state::<Lifecycle>().gate().page_unloaded();
 }
 
 #[derive(Debug, Serialize)]
@@ -574,12 +759,14 @@ pub struct PageInfo {
     pub tray: bool,
 }
 
-/// The scoretable page: it is loaded and listens for `ov-app-lifecycle`; its
-/// tray texts (its language) and whether a match is in progress.
+/// The scoretable page: its handler `handler` is installed and listens for
+/// `ov-app-lifecycle`; its tray texts (its language) and whether a match is
+/// in progress.
 #[tauri::command]
 pub fn app_page_state<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, Lifecycle>,
+    handler: Option<String>,
     labels: Option<TrayLabels>,
     live: Option<MatchLive>,
 ) -> PageInfo {
@@ -591,11 +778,25 @@ pub fn app_page_state<R: Runtime>(
     }
     let tray = {
         let mut gate = state.gate();
-        gate.set_page_ready(true);
+        gate.page_attached(handler.as_deref().unwrap_or_default());
         gate.has_tray()
     };
     refresh_tray(&app);
     PageInfo { tray }
+}
+
+/// The page's lifecycle handler was uninstalled (the page crashed into its
+/// error screen, or unmounts): it cannot answer any more, so a quit is asked
+/// natively.
+#[tauri::command]
+pub fn app_page_gone(state: State<'_, Lifecycle>, handler: String) {
+    state.gate().page_detached(&handler);
+}
+
+/// The page took a "quit-requested": its question is on screen.
+#[tauri::command]
+pub fn app_quit_ack(state: State<'_, Lifecycle>) {
+    state.gate().quit_acked();
 }
 
 /// The page showed its first-close notice: hide (or minimise) now.
@@ -618,7 +819,7 @@ mod tests {
 
     fn ready(tray: bool) -> ExitGate {
         let mut g = ExitGate::new(tray);
-        g.set_page_ready(true);
+        g.page_attached("h1");
         g
     }
 
@@ -645,19 +846,98 @@ mod tests {
         let mut g = ExitGate::new(true);
         assert_eq!(g.close_requested(), CloseAction::Hide);
         // the notice is still shown once the page is there
-        g.set_page_ready(true);
+        g.page_attached("h1");
         assert_eq!(g.close_requested(), CloseAction::AskPage);
         // a reload does not show it again in the same run
-        g.set_page_ready(false);
-        g.set_page_ready(true);
+        g.page_unloaded();
+        g.page_attached("h2");
         assert_eq!(g.close_requested(), CloseAction::Hide);
     }
 
     #[test]
     fn quitting_without_confirmation_is_prevented() {
-        let g = ready(true);
-        assert_eq!(g.quit_requested(), QuitAction::AskPage);
+        let mut g = ready(true);
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(1));
         assert_eq!(g.exit_requested(true), ExitDecision::Prevent);
+    }
+
+    #[test]
+    fn a_page_that_takes_the_quit_request_asks_it() {
+        let mut g = ready(true);
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(1));
+        g.quit_acked();
+        assert!(!g.quit_not_taken(1), "taken in time: no native question");
+        // Keep running, then Quit again: the page asks again
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(2));
+        g.quit_acked();
+        assert_eq!(g.exit_requested(true), ExitDecision::Prevent);
+    }
+
+    #[test]
+    fn a_page_that_does_not_take_the_quit_request_gets_the_native_question() {
+        // e.g. a hung web process: eval returned Ok, nothing listens
+        let mut g = ready(true);
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(1));
+        assert!(g.quit_not_taken(1), "no ack within ACK_TIMEOUT: ask natively");
+        assert!(!g.quit_not_taken(1), "only once");
+        // Quit again while the native question is open: it is only shown again
+        assert_eq!(g.quit_requested(), QuitAction::Showing);
+        assert_eq!(g.exit_requested(true), ExitDecision::Prevent, "not without an answer");
+        g.native_answered(false);
+        assert_eq!(g.exit_requested(true), ExitDecision::Prevent, "Keep running");
+        // the page still did not answer: the next Quit asks natively at once
+        // (the page is trusted again only by acknowledging)
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(2));
+        assert_eq!(g.quit_requested(), QuitAction::AskNative, "a second Quit while one is unanswered");
+        g.native_answered(true);
+        assert_eq!(g.exit_requested(true), ExitDecision::Proceed);
+        assert_eq!(g.close_requested(), CloseAction::Close);
+    }
+
+    #[test]
+    fn a_late_timer_of_an_answered_request_does_nothing() {
+        let mut g = ready(true);
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(1));
+        g.quit_acked();
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(2));
+        assert!(!g.quit_not_taken(1), "request 1's timer: not the pending one");
+        assert!(g.quit_not_taken(2));
+    }
+
+    #[test]
+    fn a_crashed_page_quits_through_the_native_question() {
+        // The page crashed into its error screen: its handler said it is gone.
+        // The page itself is still loaded (no new page load), so only
+        // app_page_gone tells the app that nothing answers.
+        let mut g = ready(true);
+        g.page_detached("h1");
+        assert_eq!(g.quit_requested(), QuitAction::AskNative);
+        assert_eq!(g.exit_requested(true), ExitDecision::Prevent);
+        g.native_answered(true);
+        assert_eq!(g.exit_requested(true), ExitDecision::Proceed);
+    }
+
+    #[test]
+    fn a_reinstalled_handler_is_not_cleared_by_the_old_one() {
+        // React StrictMode (and a remount) uninstall then install again; the
+        // two calls may arrive in any order
+        let mut g = ready(true);
+        g.page_attached("h2");
+        g.page_detached("h1");
+        assert!(matches!(g.quit_requested(), QuitAction::AskPage(_)), "h2 still answers");
+        // a late report of a gone handler does not bring it back
+        let mut g = ready(true);
+        g.page_detached("h1");
+        g.page_attached("h1");
+        assert_eq!(g.quit_requested(), QuitAction::AskNative);
+        // only a few gone handlers are remembered
+        let mut g = ExitGate::new(true);
+        for i in 0..(MAX_DETACHED + 5) {
+            g.page_detached(&format!("x{i}"));
+        }
+        assert!(g.detached.len() <= MAX_DETACHED);
+        g.page_attached(&"y".repeat(500));
+        assert_eq!(g.page.as_ref().map(|t| t.chars().count()), Some(MAX_TOKEN));
     }
 
     #[test]
@@ -673,10 +953,13 @@ mod tests {
     #[test]
     fn the_os_ending_the_session_exits() {
         let mut g = ready(true);
+        // even with a quit question open
+        assert_eq!(g.quit_requested(), QuitAction::AskPage(1));
         g.os_exit();
         assert_eq!(g.exit_requested(true), ExitDecision::Proceed);
         assert_eq!(g.close_requested(), CloseAction::Close);
         assert_eq!(g.quit_requested(), QuitAction::Exit);
+        assert!(!g.quit_not_taken(1), "no native question while exiting");
     }
 
     #[test]
@@ -687,10 +970,37 @@ mod tests {
     }
 
     #[test]
-    fn without_a_page_quit_exits() {
-        // a blank / broken window must not make the app impossible to quit
-        let g = ExitGate::new(true);
+    fn without_a_page_quit_asks_natively() {
+        // a blank / broken window must not make the app impossible to quit,
+        // nor quit it without a confirmation
+        let mut g = ExitGate::new(true);
+        assert_eq!(g.quit_requested(), QuitAction::AskNative);
+        g.native_answered(true);
         assert_eq!(g.quit_requested(), QuitAction::Exit);
+    }
+
+    #[test]
+    fn native_question_texts() {
+        let l = TrayLabels::default();
+        let (title, message, ok, cancel) = l.native_question(MatchLive::None);
+        assert_eq!((title.as_str(), ok.as_str(), cancel.as_str()), ("Quit OpenVolley?", "Quit OpenVolley", "Keep running"));
+        assert_eq!(message, "Tablets on this computer's network will disconnect.");
+        let (title, message, _, _) = l.native_question(MatchLive::Official);
+        assert_eq!(title, "Quit OpenVolley during the match?");
+        assert!(message.starts_with("A match is in progress.") && message.ends_with("will disconnect."));
+        let (title, message, _, _) = l.native_question(MatchLive::Test);
+        assert_eq!(title, "Quit OpenVolley during the test match?");
+        assert!(message.starts_with("A test match is in progress."));
+        // the page's language, sentences kept longer than a tray label
+        let page: TrayLabels = serde_json::from_str(&format!(
+            r#"{{"quitTitle":"OpenVolley beenden?","quitBody":"{}"}}"#,
+            "b".repeat(200)
+        ))
+        .unwrap();
+        let (title, message, ok, _) = page.cleaned().native_question(MatchLive::None);
+        assert_eq!(title, "OpenVolley beenden?");
+        assert_eq!(message.chars().count(), 200);
+        assert_eq!(ok, "Quit OpenVolley", "missing: English");
     }
 
     #[test]

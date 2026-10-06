@@ -15,8 +15,10 @@ const APP_COMMANDS: &[&str] = &[
     "bluetooth_stop",
     // close to tray / confirmed quit (lifecycle.rs)
     "app_page_state",
+    "app_page_gone",
     "app_hide",
     "app_quit",
+    "app_quit_ack",
 ];
 
 fn main() {

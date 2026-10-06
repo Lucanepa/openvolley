@@ -36,7 +36,8 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
       <h3 className="m-0 min-w-0 pt-1.5 text-lg font-bold leading-snug text-stone-900">{title}</h3>
       {!hideCloseButton && (
         <span className="ov-kit -mr-2 -mt-1 shrink-0">
-          <IconButton variant="close" label={closeLabel} icon={X} onClick={onClose} />
+          {/* data-modal-close: Android's Back closes the modal with it (appLifecycle.js) */}
+          <IconButton variant="close" label={closeLabel} icon={X} onClick={onClose} data-modal-close="" />
         </span>
       )}
     </div>

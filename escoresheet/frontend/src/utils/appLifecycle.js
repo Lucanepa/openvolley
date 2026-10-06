@@ -6,14 +6,21 @@
  *   (src-tauri/src/lifecycle.rs). The app sends `ov-app-lifecycle` events:
  *   `close-requested` (the first close of a run: say "OpenVolley keeps
  *   running in the tray", then hide) and `quit-requested` (the tray's
- *   "Quit OpenVolley…": ask, then quit). The page reports its tray texts and
- *   whether a match is live (`app_page_state`). The header menu's "Quit
- *   OpenVolley…" asks the same question (requestDesktopQuit).
+ *   "Quit OpenVolley…": take it (`app_quit_ack`), ask, then quit). The page
+ *   reports its handler, tray texts, the texts of the app's own native quit
+ *   question and whether a match is live (`app_page_state`), and says when
+ *   its handler is gone (`app_page_gone`: e.g. it crashed into its error
+ *   screen), so the app then asks natively instead of waiting for a page
+ *   that no longer answers. The header menu's "Quit OpenVolley…" asks the
+ *   same question (requestDesktopQuit). A quit request closes the first-close
+ *   notice if it is open.
  * - capacitor (the Android app): the Back button on the app's first page
- *   asks "Exit OpenVolley?" (MainActivity calls window.__ovAndroidBack; on
- *   Exit the app's own plugin "OpenVolleyApp" finishes the activity). The
- *   in-app view of the scoresheet keeps its own Back (a history entry,
- *   openAppWindow.js), so Back closes it first.
+ *   closes an open dialog first (a confirm is cancelled, a modal gets
+ *   Escape / its close button); with none open it asks "Exit OpenVolley?"
+ *   (MainActivity calls window.__ovAndroidBack; on Exit the app's own plugin
+ *   "OpenVolleyApp" finishes the activity). The in-app view of the
+ *   scoresheet keeps its own Back (a history entry, openAppWindow.js), so
+ *   Back closes it first.
  * - web (a browser): leaving or reloading the page while a match is live
  *   asks first (beforeunload; the browser shows its own generic text).
  *
@@ -23,6 +30,7 @@
 
 import i18n from 'i18next'
 import { askConfirm } from './askConfirm.js'
+import { getConfirmSnapshot, hasConfirmHost, settleConfirm } from '../ui/uiStore.js'
 import { detectAppPlatform, isInAppView } from './openAppWindow.js'
 import { isLeavingAllowed, resetLeaveGuardForTests } from './leaveGuard.js'
 
@@ -127,7 +135,9 @@ export function exitQuestion({ live: liveNow = 'none' } = {}) {
   }
 }
 
-/** The tray's texts in the page's language (Rust falls back to English). */
+/** The tray's texts and the app's native quit question, in the page's
+ *  language (Rust falls back to English). The native question is the app's
+ *  own fallback when the page cannot ask (lifecycle.rs). */
 export function trayLabels() {
   // {{count}} stays in the text: the app fills it in (lifecycle.rs)
   const tablets = t('appLifecycle.trayTablets', '{{count}} tablets connected', { count: '{{count}}' })
@@ -140,6 +150,14 @@ export function trayLabels() {
     tablets: tablets.includes('{{count}}') ? tablets : '{{count}} tablets connected',
     matchLive: t('appLifecycle.trayMatchLive', 'Match in progress'),
     testMatchLive: t('appLifecycle.trayTestMatchLive', 'Test match in progress'),
+    quitTitle: t('appLifecycle.quitTitle', 'Quit OpenVolley?'),
+    quitTitleMatch: t('appLifecycle.quitTitleMatch', 'Quit OpenVolley during the match?'),
+    quitTitleTestMatch: t('appLifecycle.quitTitleTestMatch', 'Quit OpenVolley during the test match?'),
+    quitBody: t('appLifecycle.quitTablets', "Tablets on this computer's network will disconnect."),
+    quitMatchBody: t('appLifecycle.quitMatchLive', 'A match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.'),
+    quitTestMatchBody: t('appLifecycle.quitTestMatchLive', 'A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.'),
+    quitConfirm: t('appLifecycle.quitConfirm', 'Quit OpenVolley'),
+    keepRunning: t('appLifecycle.keepRunning', 'Keep running'),
   }
 }
 
@@ -164,7 +182,11 @@ export function isDesktopScoretable(win = typeof window !== 'undefined' ? window
 
 let desktopWin = null
 let tray = true
-let asking = false
+// The quit question and the first-close notice are separate: a quit request
+// while the notice is open replaces the notice (noticeAbort).
+let quitAsking = false
+let noticeAbort = null
+let handlerSeq = 0
 
 /** A promise that settles within `ms` (a stuck command must not hold the dialog). */
 function within(promise, ms, fallback) {
@@ -184,15 +206,33 @@ async function laptopNetworks(invoke) {
   return { wifi: !!(wifi?.active && !wifi?.external), bluetooth: !!(bt?.active && !bt?.external) }
 }
 
+/** Tell the app this page took its quit request (its question is on screen);
+ *  without it the app asks natively after a few seconds (lifecycle.rs). */
+function ackQuit(invoke) {
+  Promise.resolve(invoke('app_quit_ack')).catch((e) => console.warn('[app] app_quit_ack failed', e))
+}
+
+/** The in-app dialog can show: a <UiHost /> is mounted. An injected `ask`
+ *  (tests) is taken as able to. */
+const defaultCanAsk = (ask) => (ask === askConfirm ? hasConfirmHost() : true)
+
 /**
  * Ask "Quit OpenVolley?" and quit on confirm. The header menu's "Quit
  * OpenVolley…" and the tray's (through `quit-requested`) both end here.
  * @returns {Promise<boolean>} true when the app is quitting
  */
-export async function requestDesktopQuit(win = desktopWin || window, ask = askConfirm) {
+export async function requestDesktopQuit(win = desktopWin || window, ask = askConfirm, { canAsk = defaultCanAsk } = {}) {
   const invoke = tauriInvoke(win)
-  if (!invoke || asking) return false
-  asking = true
+  if (!invoke) return false
+  // No dialog host (the page crashed into its error screen): do not take the
+  // request; the app asks natively.
+  if (!canAsk(ask)) return false
+  // Taken: the question is (or already was) on screen.
+  ackQuit(invoke)
+  if (quitAsking) return false
+  quitAsking = true
+  // The first-close notice gives way to the quit question.
+  noticeAbort?.abort()
   try {
     const nets = await laptopNetworks(invoke)
     if (!(await ask(quitQuestion({ live, ...nets })))) return false
@@ -202,28 +242,33 @@ export async function requestDesktopQuit(win = desktopWin || window, ask = askCo
     console.error('[app] quit failed', e)
     return false
   } finally {
-    asking = false
+    quitAsking = false
   }
 }
 
 async function showCloseNotice(win, ask) {
   const invoke = tauriInvoke(win)
-  if (!invoke || asking) return
-  asking = true
+  if (!invoke || quitAsking || noticeAbort) return
+  const controller = new AbortController()
+  noticeAbort = controller
   try {
-    if (await ask(closeNotice({ tray }))) await invoke('app_hide')
+    const hide = await ask({ ...closeNotice({ tray }), signal: controller.signal })
+    if (hide && !controller.signal.aborted) await invoke('app_hide')
   } catch (e) {
     console.error('[app] hide failed', e)
   } finally {
-    asking = false
+    if (noticeAbort === controller) noticeAbort = null
   }
 }
 
 function installDesktop(win, ask) {
   const invoke = tauriInvoke(win)
   desktopWin = win
+  // This install's handler: the app forgets it on app_page_gone, and a late
+  // report of an uninstalled one (StrictMode, remounts) cannot revive it.
+  const handler = `${Date.now().toString(36)}-${++handlerSeq}`
   const report = () => {
-    Promise.resolve(invoke('app_page_state', { labels: trayLabels(), live }))
+    Promise.resolve(invoke('app_page_state', { handler, labels: trayLabels(), live }))
       .then((info) => { if (info && typeof info.tray === 'boolean') tray = info.tray })
       .catch((e) => console.warn('[app] app_page_state failed', e))
   }
@@ -245,6 +290,9 @@ function installDesktop(win, ask) {
     i18n.off?.('languageChanged', report)
     i18n.store?.off?.('added', report)
     if (desktopWin === win) desktopWin = null
+    // e.g. the page crashed into its error screen: nothing here answers
+    // "close" / "quit" any more, so the app must not wait for it
+    Promise.resolve(invoke('app_page_gone', { handler })).catch((e) => console.warn('[app] app_page_gone failed', e))
   }
 }
 
@@ -259,11 +307,42 @@ function androidExit(win) {
   return exitPlugin?.exitApp?.()
 }
 
+/**
+ * Back while a dialog is open closes that dialog, like Back does anywhere on
+ * Android. Returns true when there was one (Back then never asks to exit):
+ * - an in-app confirm (askConfirm; also "Exit OpenVolley?" itself): cancelled;
+ * - a modal: Escape (kit modals close on it), or its close button for the
+ *   legacy modals that have one (data-modal-close). A decision modal without
+ *   one stays: it needs an answer.
+ */
+function closeOpenDialog(win) {
+  const confirm = getConfirmSnapshot()
+  if (confirm) {
+    settleConfirm(confirm.id, false)
+    return true
+  }
+  const doc = win.document
+  const modals = doc?.querySelectorAll?.('[aria-modal="true"]')
+  if (!modals || modals.length === 0) return false
+  const modal = modals[modals.length - 1]
+  const close = modal.querySelector?.('[data-modal-close]')
+  if (close) {
+    close.click()
+    return true
+  }
+  const active = doc.activeElement
+  const target = active && modal.contains?.(active) ? active : modal
+  const KeyboardEventCtor = win.KeyboardEvent || globalThis.KeyboardEvent
+  target.dispatchEvent(new KeyboardEventCtor('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }))
+  return true
+}
+
 function installAndroid(win, ask) {
   let open = false
   // MainActivity: Back with no page to go back to. Returns true when handled
   // (the app then neither exits nor goes to the background by itself).
   win.__ovAndroidBack = () => {
+    if (closeOpenDialog(win)) return true
     if (open) return true // a second Back while it asks: keep asking
     open = true
     Promise.resolve(ask(exitQuestion({ live })))
@@ -313,7 +392,8 @@ export function resetAppLifecycleForTests() {
   liveListeners.clear()
   desktopWin = null
   tray = true
-  asking = false
+  quitAsking = false
+  noticeAbort = null
   exitPlugin = null
   resetLeaveGuardForTests()
 }
