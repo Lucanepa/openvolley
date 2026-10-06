@@ -2,9 +2,26 @@
 # Rebuild and publish the public package repos behind https://get.openvolley.app
 #
 #   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--staging] [--no-sync] [FILE.apk ...]
 #
 # Runs on lenovoserver (never on the VM: the signing keys live only here).
 #
+#   0. --desktop VERSION (a desktop app release; replaces downloading the .deb
+#      by hand): downloads the Windows installer, the AppImage and the .deb of
+#      the GitHub release desktop-vVERSION and checks each is that version;
+#      signs each with the updater key (tauri signer, signature bound to
+#      VERSION); verifies each signature against the key the app trusts
+#      (plugins.updater.pubkey in tauri.conf.json, also with minisign when it is
+#      installed); writes latest.json (tauri-plugin-updater format; notes from
+#      the fastlane changelog of that version). The .deb then goes through 1.
+#      like any other. After step 4 the manifest goes to public/desktop/:
+#      latest-VERSION.json and staging.json always, latest.json unless
+#      --staging (then only clients started with
+#      OPENVOLLEY_UPDATE_CHANNEL=staging see it). After the sync the .sig files,
+#      and latest.json unless --staging, go to the GitHub release (the
+#      updater's fallback endpoint). Needs gh, node and tauri-cli >= 2.12
+#      (escoresheet/frontend: npm ci). OV_DESKTOP_RELEASE_DIR=DIR takes the
+#      installers from DIR instead of GitHub (tests; only with --no-sync).
 #   1. Adds the given packages: a .deb goes to the APT pool, a signed .apk to
 #      the F-Droid repo. An APK must already be signed with the OpenVolley app
 #      key (ANDROID.md); anything else is refused. Nothing is ever re-signed.
@@ -31,6 +48,10 @@
 #                     key, Vaultwarden: "OpenVolley F-Droid repo key"), metadata/, repo/
 #   public/           the served tree, rebuilt here and mirrored to the server:
 #                       index.html  install.sh  apt/{dists,pool,openvolley.gpg,openvolley.asc}  fdroid/repo/
+#                       desktop/{latest,staging,latest-<version>}.json
+# Desktop updater key under ${OV_DESKTOP_KEYS} (default ~/.config/openvolley-desktop):
+#   updater.key       tauri signer private key, key-password its password (both
+#                     mode 600). Vaultwarden: "OpenVolley desktop updater key"
 #
 # Only public/ ever leaves this machine. Removing a .deb from public/apt/pool/main
 # or an .apk from fdroid/repo and re-running un-publishes it.
@@ -51,23 +72,38 @@ FD="$PKGS/fdroid"
 export GNUPGHOME="$PKGS/gnupg"
 
 die() { echo "publish-pkgs: $*" >&2; exit 1; }
+# shellcheck source=SCRIPTDIR/lib/publish-lib.sh
+. "$KIT_DIR/lib/publish-lib.sh"
 
 SYNC=1
 FILES=()
-for a in "$@"; do
-  case "$a" in
+DESKTOP_V=
+STAGING=0
+while (( $# )); do
+  case "$1" in
     --no-sync) SYNC=0 ;;
-    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
-    -*) die "unknown option $a" ;;
-    *) FILES+=("$a") ;;
+    --desktop)
+      [[ -z "$DESKTOP_V" ]] || die "--desktop given twice"
+      (( $# > 1 )) || die "--desktop needs a version"
+      DESKTOP_V=${2#v}; shift
+      desktop_version_ok "$DESKTOP_V" || die "--desktop $DESKTOP_V: not a version like 2.2.0"
+      ;;
+    --staging) STAGING=1 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
+    -*) die "unknown option $1" ;;
+    *) FILES+=("$1") ;;
   esac
+  shift
 done
+(( ! STAGING )) || [[ -n "$DESKTOP_V" ]] || die "--staging needs --desktop VERSION"
+[[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
 
 for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3; do
   command -v "$t" >/dev/null || die "$t not found"
 done
 [[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
 [[ -f "$FD/config.yml" && -f "$FD/keystore.p12" ]] || die "no F-Droid repo in $FD (restore it from Vaultwarden)"
+[[ -z "$DESKTOP_V" ]] || desktop_check_setup
 
 build_tool() {
   local bt
@@ -82,6 +118,15 @@ APT_NAME=openvolley-escoresheet
 LEGACY_NAMES=(openvolley-e-scoresheet openvolley)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+
+# --- 0. desktop release: fetch, sign, verify, latest.json -------------------
+if [[ -n "$DESKTOP_V" ]]; then
+  desktop_fetch "$DESKTOP_V" "$WORK/desktop"
+  desktop_sign "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB"
+  desktop_verify "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB"
+  desktop_manifest "$DESKTOP_V" "$WORK/desktop" "$WORK/desktop/latest.json"
+  FILES+=("$DESKTOP_DEB")
+fi
 
 # add_rel CONTROL FIELD NAME: append NAME to FIELD (creating it) unless listed.
 add_rel() {
@@ -264,13 +309,15 @@ grep -q "^FPR=$APT_SIGNER_FPR\$" "$KIT_DIR/pkgs/install.sh" || die "pkgs/install
 grep -q "^PKG=$APT_NAME\$" "$KIT_DIR/pkgs/install.sh" || die "pkgs/install.sh does not install $APT_NAME"
 install -m 644 "$KIT_DIR/pkgs/install.sh" "$PUB/install.sh"
 
-# --- 5. check and sync ------------------------------------------------------
-leak=$(find "$PUB" \( -iname '*.p12' -o -iname '*.jks' -o -iname '*.keystore' -o -iname 'config.yml' \
-  -o -iname '*passphrase*' -o -iname 'private-keys-v1.d' -o -iname '*.kbx' -o -iname 'secring*' \) -print)
-[[ -z "$leak" ]] || die "refusing to publish, key material in the public tree: $leak"
-if grep -rlqs -- '-----BEGIN PGP PRIVATE KEY BLOCK-----' "$PUB"; then
-  die "refusing to publish, a private key block is in the public tree"
+# The deb the updater announces is the pool file: same bytes as the signed one.
+if [[ -n "$DESKTOP_V" ]]; then
+  cmp -s "$DESKTOP_DEB" "$APT/pool/main/${APT_NAME}_${DESKTOP_V}_amd64.deb" ||
+    die "pool .deb for $DESKTOP_V differs from the signed one"
+  desktop_publish_tree "$DESKTOP_V" "$STAGING" "$WORK/desktop/latest.json" "$PUB"
 fi
+
+# --- 5. check and sync ------------------------------------------------------
+refuse_key_material "$PUB"
 chmod -R u=rwX,go=rX "$PUB"
 
 echo "published:"
@@ -283,12 +330,23 @@ for app, p in d["packages"].items():
         m = v["manifest"]
         print(f"  fdroid  {app} {m['versionName']} ({m['versionCode']})")
 EOF
+for f in "$PUB"/desktop/latest.json "$PUB"/desktop/staging.json; do
+  if [[ -f "$f" ]]; then
+    echo "  desktop $(basename "$f" .json) $(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$f")"
+  fi
+done
 
 if (( SYNC )); then
   # --delay-updates puts every changed file in place at the end, so a client
   # never sees a new index that points at a package not uploaded yet.
   rsync -rlt --delete-after --delay-updates --chmod=D755,F644 "$PUB/" "$DEST"
   echo "synced to $DEST"
+  # Only now: latest.json on GitHub must not point at a .deb not yet in the pool.
+  [[ -z "$DESKTOP_V" ]] || desktop_upload "$DESKTOP_V" "$STAGING" "$WORK/desktop"
 else
   echo "not synced (--no-sync); tree: $PUB"
+  if [[ -n "$DESKTOP_V" ]]; then
+    if (( STAGING )); then up="the .sig files"; else up="the .sig files and latest.json"; fi
+    echo "not uploaded to desktop-v$DESKTOP_V (--no-sync): $up"
+  fi
 fi
