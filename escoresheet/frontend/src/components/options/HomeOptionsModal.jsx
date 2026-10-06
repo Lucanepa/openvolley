@@ -899,8 +899,8 @@ export default function HomeOptionsModal({
         <Section title={t('options.appVersion')}>
           {/* Android: the APK bundles version.json (always "latest"); it asks
               the F-Droid index instead (AndroidVersionRows). */}
-          {androidApp && <AndroidVersionRows />}
-          {!androidApp && <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+          {androidApp ? <AndroidVersionRows /> : (
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-stone-900">{t('options.currentVersion')}</div>
@@ -952,7 +952,8 @@ export default function HomeOptionsModal({
                 {t('options.couldNotCheckUpdates')}
               </div>
             )}
-          </Row>}
+          </Row>
+          )}
           {/* Licence + credits. The icons are the same packs as wiedisync:
               Lucide (ISC) for the UI glyphs and the whistle, Phosphor (MIT) for
               the volleyball (see components/icons and ui/AppSpinner.jsx). Both
