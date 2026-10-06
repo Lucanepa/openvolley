@@ -609,6 +609,74 @@ describe('lanRelayCore protocol', () => {
     expect(relay.hasMatch(3)).toBe(true)
   })
 
+  it('lists every scheduled/live match a scorer publishes, with or without the referee connection, public fields only', () => {
+    const relay = createLanRelay()
+    const scorerA = connect(relay, '192.168.1.10')
+    const scorerB = connect(relay, '192.168.1.11')
+    const scorerC = connect(relay, '192.168.1.12')
+    const scorerD = connect(relay, '192.168.1.13')
+    // Referee connection off (the default for a new match)
+    msg(relay, scorerA, syncMessage(makeMatch({ id: 1, seed_key: 'seed-a', gamePin: '111111', status: 'scheduled', refereeConnectionEnabled: false, scheduledAt: '2026-10-05T17:00:00.000Z' })))
+    msg(relay, scorerB, syncMessage(makeMatch({ id: 1, seed_key: 'seed-b', gamePin: '222222', status: 'live', scheduledAt: '2026-10-05T19:00:00.000Z' })))
+    // A rehearsal match (no game PIN) and a finished one
+    msg(relay, scorerC, syncMessage({ id: 1, seedKey: 'test-seed', test: true, status: 'live', refereePin: PINS.refereePin }))
+    msg(relay, scorerD, syncMessage(makeMatch({ id: 1, seed_key: 'seed-d', gamePin: '444444', status: 'final' })))
+
+    const res = relay.listMatches()
+    expect(res.status).toBe(200)
+    const { matches } = res.body
+    // All published, open matches; newest first, one without a date last
+    expect(matches.map((m) => m.id)).toEqual(['seed-b', 'seed-a', 'test-seed'])
+    expect(matches[1]).toEqual({
+      id: 'seed-a',
+      gameNumber: 4242,
+      homeTeam: 'Home VC',
+      awayTeam: 'Away VC',
+      scheduledAt: '2026-10-05T17:00:00.000Z',
+      dateTime: expect.any(String),
+      status: 'scheduled',
+      test: false,
+      refereeConnectionEnabled: false
+    })
+    expect(matches[2]).toMatchObject({ test: true, status: 'live' })
+    const text = JSON.stringify(res.body)
+    expect(containsPin(text)).toBe(false)
+    expect(containsPersonal(text)).toBe(false)
+    expect(text).not.toMatch(/Player|Coach|"lastName"/)
+  })
+
+  it('lists a match whose scorer left only while it would still hold it (10 min)', () => {
+    for (const { opts, listed } of [{ opts: {}, listed: true }, { opts: { staleTakeoverMs: 0 }, listed: false }]) {
+      const relay = createLanRelay(opts)
+      const scorer = connect(relay, '192.168.1.10')
+      msg(relay, scorer, syncMessage(makeMatch({ seed_key: 'seed-x' })))
+      expect(relay.listMatches().body.matches).toHaveLength(1)
+      relay.removeClient(scorer)
+      expect(relay.listMatches().body.matches.length, JSON.stringify(opts)).toBe(listed ? 1 : 0)
+      // Back again: listed again
+      const again = connect(relay, '192.168.1.10')
+      msg(relay, again, syncMessage(makeMatch({ seed_key: 'seed-x' })))
+      expect(relay.listMatches().body.matches).toHaveLength(1)
+    }
+  })
+
+  it('takes openbeach\'s team1Team / team2Team as the home / away team', () => {
+    const relay = createLanRelay()
+    const scorer = connect(relay, '192.168.1.10')
+    const viewer = connect(relay, '192.168.1.20')
+    const beach = { ...syncMessage(makeMatch({ seed_key: 'beach-1' })), homeTeam: undefined, awayTeam: undefined }
+    msg(relay, scorer, { ...beach, team1Team: { id: 1, name: 'Muster / Meier', color: '#e2001a' }, team2Team: { id: 2, name: 'Rossi / Bianchi' } })
+    expect(relay.listMatches().body.matches[0]).toMatchObject({ homeTeam: 'Muster / Meier', awayTeam: 'Rossi / Bianchi' })
+    msg(relay, viewer, { type: 'subscribe-match', matchId: 'beach-1' })
+    const summary = viewer.last('match-full-data')
+    expect(summary.access).toBe('summary')
+    expect(summary.homeTeam).toEqual({ name: 'Muster / Meier', color: '#e2001a' })
+    expect(summary.awayTeam).toEqual({ name: 'Rossi / Bianchi' })
+    // Its periodic sync names them team1 / team2
+    msg(relay, scorer, { ...beach, team1: { name: 'Muster / Meier' }, team2: { name: 'Keller / Huber' } })
+    expect(relay.listMatches().body.matches[0].awayTeam).toBe('Keller / Huber')
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
@@ -775,11 +843,22 @@ async function relayScenario({ httpBase, wsUrl }) {
   expect(containsPersonal(okText)).toBe(false)
   expect((await validate('000001', 'referee')).status).toBe(404)
 
+  // The match list (display devices, e.g. the LedBox bridge) shows every
+  // published match, also one with the referee connection off, newest first
+  const second = await openClient(wsUrl)
+  second.send(syncMessage(makeMatch({ id: 1, seed_key: 'seed-off', gamePin: '555555', status: 'scheduled', refereeConnectionEnabled: false, scheduledAt: '2026-10-04T18:00:00.000Z' })))
+  second.send({ type: 'ping' })
+  await second.waitFor((m) => m.type === 'pong')
   const list = await fetch(`${httpBase}/api/match/list`)
   const listText = await list.text()
   expect(list.status).toBe(200)
-  expect(JSON.parse(listText).matches.map((m) => m.id)).toEqual([7])
+  const listed = JSON.parse(listText).matches
+  expect(listed.map((m) => m.id)).toEqual([7, 'seed-off'])
+  expect(listed[1]).toMatchObject({ homeTeam: 'Home VC', awayTeam: 'Away VC', status: 'scheduled', refereeConnectionEnabled: false })
   expect(containsPin(listText)).toBe(false)
+  expect(containsPersonal(listText)).toBe(false)
+  second.send({ type: 'delete-match', matchId: 'seed-off' })
+  second.ws.close()
 
   for (const path of ['/api/match/7', '/api/match/by-game-number?gameNumber=4242', '/api/match/by-game-number?gameNumber=7']) {
     const r = await fetch(httpBase + path)
