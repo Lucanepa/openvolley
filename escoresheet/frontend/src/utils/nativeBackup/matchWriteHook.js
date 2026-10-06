@@ -14,9 +14,35 @@
 // session ownership, sync stamps): they do not start a backup by themselves.
 const VOLATILE_MATCH_KEY = /heartbeat|lastseen|sessionid|synced|_sync|lastupdated|updatedat/i
 
-export function isVolatileMatchUpdate(modifications) {
+const NO_BACKUP_EVENT_TYPES = new Set(['rally_start'])
+
+const valueAt = (obj, keyPath) => keyPath.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj)
+
+function sameValue(a, b) {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false
+  try {
+    return JSON.stringify(a) === JSON.stringify(b)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when an update of the match row changes nothing but bookkeeping.
+ * Dexie's `updating` hook gets an object diff that compares arrays and other
+ * non-plain values by reference, so an unchanged officials/bench array shows
+ * up as "modified": keys whose value equals the stored one are ignored.
+ * @param {object} modifications key paths -> new values
+ * @param {object} [current] the stored row before the update
+ */
+export function isVolatileMatchUpdate(modifications, current) {
   const keys = Object.keys(modifications || {})
-  return keys.length > 0 && keys.every(k => VOLATILE_MATCH_KEY.test(k))
+  if (!keys.length) return false
+  const changed = current
+    ? keys.filter(k => !sameValue(modifications[k], valueAt(current, k)))
+    : keys
+  return changed.every(k => VOLATILE_MATCH_KEY.test(k))
 }
 
 function afterCommit(transaction, fn) {
@@ -58,7 +84,11 @@ export function subscribeMatchWrites(db, matchId, onWrite) {
   // events + sets: rows carry matchId
   for (const table of [db.events, db.sets]) {
     add(table, 'creating', function (_key, obj, transaction) {
-      if (obj?.matchId === matchId) fire(transaction)
+      if (obj?.matchId !== matchId) return
+      // "rally started" is not a scoring event and comes before every point:
+      // it would double the files; the point backup right after includes it.
+      if (table === db.events && NO_BACKUP_EVENT_TYPES.has(obj.type)) return
+      fire(transaction)
     })
     add(table, 'updating', function (mods, _key, obj, transaction) {
       if (obj?.matchId === matchId || mods?.matchId === matchId) fire(transaction)
@@ -69,8 +99,8 @@ export function subscribeMatchWrites(db, matchId, onWrite) {
   }
 
   // the match row itself
-  add(db.matches, 'updating', function (mods, key, _obj, transaction) {
-    if (key === matchId && !isVolatileMatchUpdate(mods)) fire(transaction)
+  add(db.matches, 'updating', function (mods, key, obj, transaction) {
+    if (key === matchId && !isVolatileMatchUpdate(mods, obj)) fire(transaction)
   })
   add(db.matches, 'creating', function (key, _obj, transaction) {
     if (key === matchId) fire(transaction)
