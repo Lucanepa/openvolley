@@ -49,6 +49,8 @@ windows = { version = "0.61", features = [
   "Devices_WiFiDirect",
   "Security_Credentials",
   "Win32_System_Com",
+  # the installer's firewall rule for the tablets (firewall.rs, read only)
+  "Win32_NetworkManagement_WindowsFirewall",
 ] }
 
 [dev-dependencies]
