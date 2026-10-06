@@ -114,12 +114,29 @@ export function isStaticHost(hostname) {
 }
 
 /**
- * Detect if running on a static deployment (see isStaticHost)
- * Static deployments have no backend server, so they need to use cloud relay
+ * Running inside the native Android/iOS app (Capacitor). Its WebView serves the
+ * bundled web app from https://localhost (androidScheme https) — a host that
+ * has no backend behind it, exactly like a static deployment: the cloud
+ * backend (VITE_BACKEND_URL / backend.openvolley.app) unless the user points
+ * the app at a venue LAN relay (the override).
+ */
+export function isNativeApp() {
+  if (typeof window === 'undefined') return false
+  try {
+    return !!window.Capacitor?.isNativePlatform?.()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Detect if running on a static deployment (see isStaticHost) or in the
+ * native app. Neither has a backend server of its own, so they use the cloud
+ * relay.
  */
 export function isStaticDeployment() {
   if (typeof window === 'undefined') return false
-  return isStaticHost(window.location.hostname)
+  return isNativeApp() || isStaticHost(window.location.hostname)
 }
 
 /**
@@ -129,6 +146,7 @@ export function isStaticDeployment() {
 export function isServedFromLocalServer() {
   if (typeof window === 'undefined') return false
   if (import.meta.env.DEV) return false
+  if (isNativeApp()) return false
   if (isStaticHost(window.location.hostname)) return false
   return true
 }
@@ -144,6 +162,7 @@ export function getLocalServerStatusUrl() {
   if (typeof window === 'undefined' || !window.location) return null
   const { protocol, hostname, origin } = window.location
   if (protocol !== 'http:' && protocol !== 'https:') return null
+  if (isNativeApp()) return null
   if (!import.meta.env.DEV && isStaticHost(hostname)) return null
   return `${origin}/api/server/status`
 }

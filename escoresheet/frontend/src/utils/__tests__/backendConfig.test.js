@@ -6,7 +6,11 @@ import {
   isDesktopPlatform,
   isStaticDeployment,
   isStaticHost,
+  isNativeApp,
+  isServedFromLocalServer,
   getLocalServerStatusUrl,
+  getBackendUrl,
+  getRelayWebSocketUrl,
   getApiUrl
 } from '../backendConfig'
 
@@ -138,6 +142,50 @@ describe('static hosts and the local server status', () => {
     vi.stubEnv('DEV', true)
     setLocation('http://localhost:5173/')
     expect(getLocalServerStatusUrl()).toBe('http://localhost:5173/api/server/status')
+  })
+})
+
+describe('native app (Capacitor WebView on https://localhost)', () => {
+  const setLocation = (url) => {
+    const u = new URL(url)
+    Object.defineProperty(window, 'location', {
+      value: { hostname: u.hostname, protocol: u.protocol, port: u.port, origin: u.origin, host: u.host },
+      writable: true,
+      configurable: true
+    })
+  }
+  beforeEach(() => {
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    setLocation('https://localhost/')
+    window.Capacitor = { isNativePlatform: () => true }
+  })
+  afterEach(() => {
+    delete window.Capacitor
+    vi.unstubAllEnvs()
+  })
+
+  it('is not mistaken for a standalone local server', () => {
+    expect(isNativeApp()).toBe(true)
+    expect(isServedFromLocalServer()).toBe(false)
+    expect(getLocalServerStatusUrl()).toBeNull()
+    expect(isStaticDeployment()).toBe(true)
+    delete window.Capacitor
+    expect(isNativeApp()).toBe(false)
+    expect(isServedFromLocalServer()).toBe(true)
+  })
+
+  it('talks to the cloud backend, not to its own https://localhost', () => {
+    expect(getBackendUrl()).toBe('https://backend.openvolley.app')
+    expect(getRelayWebSocketUrl()).toBe('wss://backend.openvolley.app')
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
+    expect(getApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+  })
+
+  it('switches to a plain-http venue LAN relay entered by the user', () => {
+    setBackendOverride('http://192.168.1.20:8080')
+    expect(getBackendUrl()).toBe('http://192.168.1.20:8080')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
   })
 })
 
