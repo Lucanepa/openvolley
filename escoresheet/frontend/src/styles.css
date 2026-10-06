@@ -1435,7 +1435,11 @@ button:disabled {
 .match-content {
   display: grid;
   gap: 6px;
-  grid-template-columns: minmax(10px, 1fr) minmax(0, 4fr) minmax(10px, 1fr);
+  /* Side columns never below 190 px: their chips, bench numbers and official
+     names are sized from the column width (cqw), and at 1024 px a plain 1fr
+     (~168 px) shrank them under 12 px. The court is limited by height there
+     anyway, so the centre column can give up the width. */
+  grid-template-columns: minmax(190px, 1fr) minmax(0, 4fr) minmax(190px, 1fr);
   /* One row exactly as tall as the space under the toolbar: the centre column
      then knows its height and the court (.court-slot) shrinks to fit, instead
      of the rally controls overflowing into a hidden inner scroll at 16:10. */
@@ -1467,6 +1471,12 @@ button:disabled {
   height: auto;
   container-type: inline-size;
   container-name: team-toolbar;
+}
+
+/* When the side column is taller than the window it scrolls; its blocks never
+   shrink (the team header has overflow:hidden and used to collapse to 0). */
+.team-controls > * {
+  flex-shrink: 0;
 }
 
 /* Custom scrollbar for team controls */
