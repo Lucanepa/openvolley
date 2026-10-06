@@ -602,7 +602,16 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `003_svrz_games_local_time.sql` | after 002 | one-off: `svrz_games.date/time` in Zurich time, closes stuck `svrz_sync_log` rows (vm-sync port) |
 | `004_live_state_best_of.sql` | after 003 | `match_live_state.best_of` (written by the scoreboard, missing on Supabase) |
 | `005_match_ownership.sql` | after 004 | `matches.created_by` (FK `auth.users`, `ON DELETE SET NULL`) and `match_editors` (see "Security model"). Existing rows stay without an owner. Without it every guarded write answers 503 `OV_OWNERSHIP_UNAVAILABLE` (retryable), never an unguarded write. |
+| `006_matches_updated_at.sql` | after 005 | `BEFORE UPDATE` trigger: `matches.updated_at` (and `sets.updated_at` when the column exists) = `now()` on every update. Idempotent; the trigger function is `SECURITY INVOKER`, so `ov_app` needs no EXECUTE grant. Not on `match_live_state` (the realtime hub orders it by the scorer's `updated_at`). Without it, updates through `/api/db` still get a fresh `updated_at` (`lib/pgQuery.js` drops the client's value; the column keeps its old value only for writes that bypass the API). |
 | `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
+
+**A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:
+
+```bash
+lenovo$ ssh hetzner 'cd /opt/openvolley && docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1' \
+          < escoresheet/backend/db/006_matches_updated_at.sql
+lenovo$ ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
+```
 
 `scripts/migrate/restore.sh [--force] [--expect-counts FILE] [--env-file FILE] [--db-user U] [--scrub-except EMAIL] <container> <export-dir>` loads the Phase-0 export (`public.dump`, `auth_users.csv`) through all of the above (every `db/NNN_*.sql` from 003 on, in order; two files with the same number stop it) with a filtered `pg_restore` list, then verifies (row counts, per table against `--expect-counts` when given, users vs CSV, FKs incl. `match_live_state_match_id_fkey_cascade`, no RLS, sequences, ownership, `ov_app` grants and TCP login). A restore list that leaves out a table's data is refused (`--allow-missing-data` overrides). It replaces the target database only when that is empty or left over from an unfinished run the app never used; otherwise it refuses unless `--force`, which renames the old database to `<db>_pre_restore_<UTC>` instead of dropping it. `--print-toc` shows the restore list. `--help` has the details.
 
