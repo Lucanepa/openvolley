@@ -654,6 +654,42 @@ describe('lanRelayCore protocol', () => {
     expect(text).not.toMatch(/Player|Coach|"lastName"/)
   })
 
+  // The livescore on the hall Wi-Fi / Bluetooth (utils/relayLivescore): the
+  // list with ?finished=1, then subscribe-match without a PIN per match.
+  it('gives a livescore viewer (no PIN) finished matches on request and only the public summary', () => {
+    const relay = createLanRelay()
+    const scorerA = connect(relay, '192.168.1.10')
+    const scorerB = connect(relay, '192.168.1.11')
+    msg(relay, scorerA, syncMessage(makeMatch({ id: 1, seed_key: 'seed-live', gamePin: '111111', status: 'live' })))
+    msg(relay, scorerB, syncMessage(makeMatch({ id: 1, seed_key: 'seed-ended', gamePin: '222222', status: 'ended' })))
+    expect(relay.listMatches().body.matches.map((m) => m.id)).toEqual(['seed-live'])
+    const all = relay.listMatches({ includeFinished: true }).body.matches
+    expect(all.map((m) => m.id).sort()).toEqual(['seed-ended', 'seed-live'])
+    expect(all.find((m) => m.id === 'seed-ended').status).toBe('ended')
+    for (const row of all) expect(Object.keys(row).sort()).toEqual(LIST_ROW_KEYS)
+
+    const viewer = connect(relay, '192.168.1.60')
+    msg(relay, viewer, { type: 'subscribe-match', matchId: 'seed-live', device: 'livescore' })
+    msg(relay, scorerA, { type: 'live-state-update', matchId: 1, liveState: { points_a: 5, points_b: 3, serving_team: 'left', timeouts_a: 1 } })
+    msg(relay, scorerA, { type: 'match-action', matchId: 1, action: 'timeout', data: { team: 'home' } })
+    msg(relay, scorerA, syncMessage(makeMatch({ id: 1, seed_key: 'seed-live', gamePin: '111111', status: 'live' })))
+
+    const summary = viewer.last('match-full-data')
+    expect(summary.access).toBe('summary')
+    expect(summary.homePlayers).toEqual([])
+    expect(summary.events).toEqual([])
+    expect(summary.sets).toEqual([{ id: 1, index: 1, homePoints: 3, awayPoints: 1 }])
+    expect(viewer.last('live-state-update').liveState).toEqual({ points_a: 5, points_b: 3, serving_team: 'left', timeouts_a: 1 })
+    const update = viewer.last('match-data-update')
+    expect(update.access).toBe('summary')
+    expect(update.liveState).toEqual({ points_a: 5, points_b: 3, serving_team: 'left', timeouts_a: 1 })
+    expect(viewer.last('match-action')).toBeUndefined()
+    const text = viewer.raw.join('\n')
+    expect(containsPin(text)).toBe(false)
+    expect(containsPersonal(text)).toBe(false)
+    expect(text).not.toMatch(/"lastName"|"dob"|"bench_home"|"officials"/)
+  })
+
   it('lists a match whose scorer left only while it would still hold it (10 min)', () => {
     for (const { opts, listed } of [{ opts: {}, listed: true }, { opts: { staleTakeoverMs: 0 }, listed: false }]) {
       const relay = createLanRelay(opts)
@@ -875,6 +911,20 @@ async function relayScenario({ httpBase, wsUrl }) {
   }
   expect(containsPin(listText)).toBe(false)
   expect(containsPersonal(listText)).toBe(false)
+  // A finished match: only with ?finished=1 (the livescore), same row shape
+  second.send(syncMessage(makeMatch({ id: 2, seed_key: 'seed-done', gamePin: '666666', status: 'ended', scheduledAt: '2026-10-03T18:00:00.000Z' })))
+  second.send({ type: 'ping' })
+  await second.waitFor((m) => m.type === 'pong')
+  expect((await (await fetch(`${httpBase}/api/match/list`)).json()).matches.map((m) => m.id)).toEqual([7, 'seed-off'])
+  const withFinished = await fetch(`${httpBase}/api/match/list?finished=1`)
+  const withFinishedText = await withFinished.text()
+  const finishedRows = JSON.parse(withFinishedText).matches
+  expect(finishedRows.map((m) => m.id)).toEqual([7, 'seed-off', 'seed-done'])
+  expect(finishedRows[2].status).toBe('ended')
+  for (const row of finishedRows) expect(Object.keys(row).sort()).toEqual(LIST_ROW_KEYS)
+  expect(containsPin(withFinishedText)).toBe(false)
+  expect(containsPersonal(withFinishedText)).toBe(false)
+  second.send({ type: 'delete-match', matchId: 'seed-done' })
   second.send({ type: 'delete-match', matchId: 'seed-off' })
   second.ws.close()
 
