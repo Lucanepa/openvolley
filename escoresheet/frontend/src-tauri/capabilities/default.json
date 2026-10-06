@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Core permissions for the desktop scoretable window.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default"]
+  "permissions": ["core:default"]
 }

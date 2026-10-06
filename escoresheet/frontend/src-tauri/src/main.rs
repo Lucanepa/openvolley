@@ -40,7 +40,6 @@ fn main() {
     let state = relay::new_state(http, ws);
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         // No native menu bar on Linux / Windows: it held only Help > Connect a
         // Tablet and rendered in the GTK system theme (dark on a dark desktop).
         // The app's own header menu has Connect tablets (LAN addresses + QR),
@@ -96,11 +95,26 @@ pub fn light_gtk_theme_name(name: &str) -> Option<String> {
 /// Light only (volleyui): no dark variant and no dark GTK theme for the
 /// window's title bar, pickers and scrollbars. GTK_THEME set by the user
 /// still wins (GTK reads it before these settings).
+///
+/// Applied at startup and again whenever the desktop pushes a new style while
+/// the app runs (XSETTINGS / the settings portal reset gtk-theme-name to
+/// "Yaru-dark" when the user flips Ubuntu's style). Each handler only writes
+/// when the value is dark, so its own write (now light) ends the loop.
 #[cfg(target_os = "linux")]
 fn force_light_gtk_theme() {
     use gtk::prelude::GtkSettingsExt;
     let Some(settings) = gtk::Settings::default() else { return };
-    settings.set_gtk_application_prefer_dark_theme(false);
+    apply_light_gtk_settings(&settings);
+    settings.connect_gtk_theme_name_notify(apply_light_gtk_settings);
+    settings.connect_gtk_application_prefer_dark_theme_notify(apply_light_gtk_settings);
+}
+
+#[cfg(target_os = "linux")]
+fn apply_light_gtk_settings(settings: &gtk::Settings) {
+    use gtk::prelude::GtkSettingsExt;
+    if settings.is_gtk_application_prefer_dark_theme() {
+        settings.set_gtk_application_prefer_dark_theme(false);
+    }
     if let Some(dark) = settings.gtk_theme_name() {
         if let Some(light) = light_gtk_theme_name(dark.as_str()) {
             eprintln!("[theme] GTK theme {dark} -> {light} (the scoretable is light only)");
