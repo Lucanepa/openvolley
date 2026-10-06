@@ -28,6 +28,7 @@ import { buildConnectionPins } from '../utils/connectionPins'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { Loader2 } from 'lucide-react'
 import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn } from '../ui'
+import CaptainToggle from './CaptainToggle'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -4155,24 +4156,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   )}
                 </select>
                 <div data-help-id="setup-captain-toggle" className="cell-captain">
-                  <div
-                    onClick={() => setHomeCaptain(!homeCaptain)}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      border: homeCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
-                      background: homeCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: homeCaptain ? '#22c55e' : 'var(--muted)',
-                      userSelect: 'none'
-                    }}
-                  >C</div>
+                  <CaptainToggle pressed={homeCaptain} number={homeNum} onToggle={() => setHomeCaptain(!homeCaptain)} />
                 </div>
                 {lfpTrackingEnabled && (
                   <div className="cell-captain">
@@ -4374,30 +4358,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   )}
                 </select>
                 <div className="cell-captain">
-                  <div
-                    onClick={() => {
+                  <CaptainToggle
+                    pressed={!!p.isCaptain}
+                    number={p.number}
+                    onToggle={() => {
                       const updated = homeRoster.map((player, idx) => ({
                         ...player,
                         isCaptain: idx === i ? !player.isCaptain : false
                       }))
                       setHomeRoster(updated)
                     }}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid var(--border)',
-                      background: (p.isCaptain || false) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: (p.isCaptain || false) ? '#22c55e' : 'var(--muted)',
-                      userSelect: 'none'
-                    }}
-                  >C</div>
+                  />
                 </div>
                 {lfpTrackingEnabled && (
                   <div className="cell-captain">
@@ -5321,24 +5292,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   )}
                 </select>
                 <div className="cell-captain">
-                  <div
-                    onClick={() => setAwayCaptain(!awayCaptain)}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      border: awayCaptain ? '2px solid #22c55e' : '2px solid var(--border)',
-                      background: awayCaptain ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: awayCaptain ? '#22c55e' : 'var(--muted)',
-                      userSelect: 'none'
-                    }}
-                  >C</div>
+                  <CaptainToggle pressed={awayCaptain} number={awayNum} onToggle={() => setAwayCaptain(!awayCaptain)} />
                 </div>
                 {lfpTrackingEnabled && (
                   <div className="cell-captain">
@@ -5533,30 +5487,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   )}
                 </select>
                 <div className="cell-captain">
-                  <div
-                    onClick={() => {
+                  <CaptainToggle
+                    pressed={!!p.isCaptain}
+                    number={p.number}
+                    onToggle={() => {
                       const updated = awayRoster.map((player, idx) => ({
                         ...player,
                         isCaptain: idx === i ? !player.isCaptain : false
                       }))
                       setAwayRoster(updated)
                     }}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      border: (p.isCaptain || false) ? '2px solid #22c55e' : '2px solid var(--border)',
-                      background: (p.isCaptain || false) ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: (p.isCaptain || false) ? '#22c55e' : 'var(--muted)',
-                      userSelect: 'none'
-                    }}
-                  >C</div>
+                  />
                 </div>
                 {lfpTrackingEnabled && (
                   <div className="cell-captain">

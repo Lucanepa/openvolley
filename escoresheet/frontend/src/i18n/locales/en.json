@@ -409,7 +409,9 @@
       "syncing": "Syncing...",
       "error": "Sync error",
       "clickToRetry": "Click to retry sync"
-    }
+    },
+    "captainToggle": "Team captain #{{number}}",
+    "captainToggleNew": "Team captain (new player)"
   },
   "scoreboard": {
     "set": "Set",

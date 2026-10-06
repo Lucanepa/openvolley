@@ -407,7 +407,9 @@
       "syncing": "Synchronisation...",
       "error": "Erreur de synchronisation",
       "clickToRetry": "Cliquez sur pour réessayer la synchronisation"
-    }
+    },
+    "captainToggle": "Capitaine d'équipe #{{number}}",
+    "captainToggleNew": "Capitaine d'équipe (nouveau joueur)"
   },
   "scoreboard": {
     "set": "Set",
