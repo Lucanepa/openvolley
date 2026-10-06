@@ -21,6 +21,10 @@ mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"
 
+[dev-dependencies]
+# mock runtime for the IPC/ACL test of the backup commands (main.rs)
+tauri = { version = "2", features = ["test"] }
+
 # Release profile tuned for a small, fast single binary.
 [profile.release]
 opt-level = "s"
