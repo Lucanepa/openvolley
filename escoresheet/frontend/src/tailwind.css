@@ -402,3 +402,132 @@
     --ring: var(--ov-selected);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Portrait data entry (scorer app). A tablet held upright gets one field per
+   row: label above, full-width control, 44 px tall. Landscape is untouched:
+   every rule below sits inside the portrait media query, except .pf-label's
+   display: none (a portrait-only label, so it takes no grid cell in landscape).
+   The query is FORM_STACK_QUERY in src/utils/formLayout.js; the `stack:`
+   variant is the same query for Tailwind classes (stack:grid-cols-1 ...).
+   Scope: .ov-scorer is the scorer app's <body> (main.jsx), so the referee,
+   bench and livescore apps are not touched, and .match-record (the scoreboard,
+   which shows its rotate-your-device overlay in portrait) is left out.
+   --------------------------------------------------------------------------- */
+@custom-variant stack {
+  @media (orientation: portrait), (max-width: 799.98px) {
+    @slot;
+  }
+}
+
+.pf-label {
+  display: none;
+}
+
+@media (orientation: portrait), (max-width: 799.98px) {
+  /* 44 px controls, 16 px text (no zoom-on-focus on tablets). Not the coin
+     toss roster review (.roster-table): its cells are text-styled inline
+     edits that fit 800 px as a table; its rows get the 44 px height instead. */
+  .ov-scorer :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]), select):not(:is(.match-record, .roster-table) *) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .ov-scorer textarea:not(.match-record *) {
+    font-size: 16px;
+  }
+  .ov-scorer .roster-table:not(.match-record *) td {
+    height: 44px;
+  }
+
+  /* Roster and bench editors (MatchSetup): each table row becomes a card,
+     one field per row. The head strip is hidden; every field carries its own
+     .pf-label instead. Card: [# label] / badge + number + Delete (bench:
+     role + Delete) / one row per field / libero select + captain toggle. */
+  .roster-grid,
+  .bench-grid {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 0;
+  }
+  .roster-grid-row.grid-header,
+  .bench-grid-row.grid-header {
+    display: none;
+  }
+  .roster-grid-row,
+  .bench-grid-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 12px 14px 14px;
+  }
+  .roster-grid-row > *,
+  .bench-grid-row > * {
+    order: 3;
+  }
+  .roster-grid-row > div:empty {
+    display: none;
+  }
+  .roster-grid-row :is(input, select),
+  .bench-grid-row :is(input, select) {
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  .pf-label {
+    display: block;
+    flex: 0 0 100%;
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.3;
+    font-weight: 500;
+    color: var(--color-stone-600);
+  }
+  .pf-label.pf-head {
+    order: 1;
+    margin-top: 0;
+  }
+  .roster-grid-row > .roster-badge,
+  .roster-grid-row > .cell-head,
+  .bench-grid-row > .cell-head,
+  .roster-grid-row > .cell-action,
+  .bench-grid-row > .cell-action {
+    order: 2;
+  }
+  .roster-grid-row > .roster-badge {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+  .roster-grid-row > input.cell-head {
+    flex: 0 0 96px;
+    width: 96px;
+    font-size: 18px;
+  }
+  .bench-grid-row > select.cell-head {
+    flex: 1 1 0;
+  }
+  .roster-grid-row > select.cell-libero {
+    flex: 1 1 0;
+  }
+  .roster-grid-row > .cell-action,
+  .bench-grid-row > .cell-action {
+    margin-left: auto;
+  }
+  .roster-grid-row > .cell-action button,
+  .bench-grid-row > .cell-action button,
+  .bench-grid-row > button {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+  /* captain and LFP toggles: 44 px tap targets (their size is inline) */
+  .roster-grid-row > .cell-captain > * {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+  }
+}

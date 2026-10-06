@@ -19,6 +19,10 @@ stripCacheBustParam()
 // Initialize logger to capture console output
 initLogger()
 
+// Scope for the scorer app's portrait form rules (tailwind.css), which must
+// also reach its dialogs portalled to <body>, and no other app.
+document.body.classList.add('ov-scorer')
+
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="scorer">
