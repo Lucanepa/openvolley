@@ -581,6 +581,11 @@ so the room keys of official matches are not handed out worldwide. The
 referee and bench apps offer only the matches they can join
 (`refereeConnectionEnabled`, `home`/`awayTeamConnectionEnabled`).
 openbeach's `team1Team` / `team2Team` are taken as the home / away team.
+`?finished=1` lists finished matches too (status `ended`, `final`,
+`completed`, `finished`; same row): the livescore served by a venue relay
+(frontend `src/utils/relayLivescore.js`) keeps a match that just ended. It
+then subscribes to each match without a PIN and gets the public summary and
+every `live-state-update`.
 
 ### `GET /api/match/:matchId`
 

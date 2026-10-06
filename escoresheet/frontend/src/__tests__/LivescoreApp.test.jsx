@@ -10,6 +10,10 @@ vi.mock('../utils/backendConfig', () => ({
   isStaticDeployment: () => env.staticDeployment,
   isServedFromLocalServer: () => env.localServer,
   getBackendOverride: () => env.override,
+  isLanBackendUrl: (url) => /^http:\/\/(localhost|192\.168\.|10\.)/.test(String(url || '')),
+  getApiUrl: (path) => `http://192.168.1.20:5173${path}`,
+  getLocalServerStatusUrl: () => 'http://192.168.1.20:5173/api/server/status',
+  getRelayWebSocketUrl: ({ wsPort } = {}) => `ws://192.168.1.20:${wsPort || 8080}`,
   setBackendOverride: vi.fn(),
   applyServerParam: vi.fn(),
   getBackendUrl: () => 'https://backend.openvolley.app',
@@ -315,5 +319,84 @@ describe('LivescoreApp', () => {
 
     act(() => rt.handler({ eventType: 'UPDATE', old: {}, new: { match_id: 'a', match_status: 'ended', last_event_type: 'match_end', points_a: 25, points_b: 20, sets_won_a: 3, side_a: 'right', serving_team: 'right', set_interval_active: false, updated_at: at(18) } }))
     expect(sides()).toEqual(['Away a', 'Home a'])
+  })
+
+  // Served by the desktop relay on the hall Wi-Fi / its hotspot / Bluetooth,
+  // no internet: the relay's list and summaries, never /api/db, never a PIN.
+  describe('on a venue relay (no internet)', () => {
+    const relay = vi.hoisted(() => ({ sockets: [] }))
+    let savedFetch
+    let savedWebSocket
+    let savedLocation
+    beforeEach(() => {
+      env.staticDeployment = false
+      env.localServer = true
+      relay.sockets = []
+      savedFetch = globalThis.fetch
+      savedWebSocket = globalThis.WebSocket
+      savedLocation = window.location
+      Object.defineProperty(window, 'location', { value: { ...savedLocation, origin: 'http://192.168.1.20:5173', search: '' }, writable: true, configurable: true })
+      globalThis.fetch = vi.fn(async (url) => ({
+        ok: true,
+        json: async () => (String(url).endsWith('/api/server/status')
+          ? { wsPort: 8080 }
+          : { success: true, matches: [{ id: 'seed-1', homeTeam: 'Home VC', awayTeam: 'Away VC', status: 'live', test: false }] })
+      }))
+      globalThis.WebSocket = class {
+        constructor(url) {
+          this.url = url
+          this.readyState = 0
+          this.sent = []
+          relay.sockets.push(this)
+        }
+        send(text) { this.sent.push(JSON.parse(text)) }
+        close() { this.readyState = 3 }
+      }
+    })
+    afterEach(() => {
+      globalThis.fetch = savedFetch
+      globalThis.WebSocket = savedWebSocket
+      Object.defineProperty(window, 'location', { value: savedLocation, writable: true, configurable: true })
+    })
+
+    const live = (extra = {}) => ({
+      team_a_name: 'Home VC', team_b_name: 'Away VC', side_a: 'left', current_set: 1, sets_won_a: 0, sets_won_b: 0,
+      points_a: 3, points_b: 1, serving_team: 'left', match_status: 'in_progress', last_event_type: 'point',
+      updated_at: new Date().toISOString(), sport_type: 'indoor', _seq: 1, _session: 's', ...extra
+    })
+
+    it('lists the relay\'s matches and updates the score from its WebSocket', async () => {
+      render(<LivescoreApp />)
+      await flush()
+      await flush()
+      expect(api.calls).toBe(0) // no /api/db on a relay
+      expect(globalThis.fetch).toHaveBeenCalledWith('http://192.168.1.20:5173/api/match/list?finished=1', expect.anything())
+      const ws = relay.sockets[0]
+      expect(ws.url).toBe('ws://192.168.1.20:8080')
+      await act(async () => { ws.readyState = 1; ws.onopen() })
+      expect(ws.sent.find((m) => m.type === 'subscribe-match')).toEqual({ type: 'subscribe-match', matchId: 'seed-1', device: 'livescore' })
+
+      const receive = (msg) => act(() => { ws.onmessage({ data: JSON.stringify(msg) }) })
+      receive({ type: 'match-full-data', matchId: 'seed-1', access: 'summary', match: { status: 'live', coinTossTeamA: 'home' }, homeTeam: { name: 'Home VC' }, sets: [], liveState: live() })
+      expect(screen.getByText('Home VC')).toBeInTheDocument()
+      expect(screen.getByText('3')).toBeInTheDocument()
+      receive({ type: 'live-state-update', matchId: 'seed-1', liveState: live({ points_a: 4, _seq: 2 }) })
+      expect(screen.getByText('4')).toBeInTheDocument()
+      expect(screen.getByTestId('header').textContent).toContain('1 game live')
+      for (const m of ws.sent) expect(m).not.toHaveProperty('pin')
+    })
+
+    it('says when the relay socket is down', async () => {
+      render(<LivescoreApp />)
+      await flush()
+      await flush()
+      const ws = relay.sockets[0]
+      await act(async () => { ws.readyState = 1; ws.onopen() })
+      act(() => { ws.onmessage({ data: JSON.stringify({ type: 'match-full-data', matchId: 'seed-1', access: 'summary', match: {}, sets: [], liveState: live() }) }) })
+      expect(screen.queryByText('Connection problem: showing the last known scores')).toBeNull()
+      act(() => { ws.readyState = 3; ws.onclose({ code: 1006 }) })
+      expect(screen.getByText('Connection problem: showing the last known scores')).toBeInTheDocument()
+      expect(screen.getByText('Home VC')).toBeInTheDocument()
+    })
   })
 })

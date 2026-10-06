@@ -1509,6 +1509,7 @@
   "livescore": {
     "setBreak": "Satzpause",
     "staleData": "Verbindigsproblem: di zletscht bekannte Ergebnis werdet aazeigt",
+    "testMatch": "Testspiil",
     "title": "Live-Ergebnis",
     "loadingGames": "Verfüegbari Spiil werdet glade...",
     "selectGame": "Wähled Sie es Spiil us, um s Live-Ergebnis aazeige",
@@ -1799,7 +1800,6 @@
     "hotspotExternal": "De Hotspot vo dem Computer isch i de Systemiistellige iigschaltet worde. Tablets drin chönd d Links une bruuche; usschalte det.",
     "windowsFirewall": "Tablets sind im WLAN, aber d Siite ladet nöd? Windows-Sicherheit › Firewall- & Netzwerkschutz › App durch Firewall zulassen › OpenVolley › «Öffentlich» aachrüüzle.",
     "btExternal": "Das Bluetooth-Netz isch nöd vo dere App-Sitzig gstartet worde. Stopp es i de Netzwerkiistellige vom System.",
-    "livescoreNeedsInternet": "Bruucht Internet: Tab «Server» neh",
     "confirm": {
       "tabletsOn": "Jetzt verbundeni Tablets: {{count}}.",
       "itsWifi": "sis WLAN",

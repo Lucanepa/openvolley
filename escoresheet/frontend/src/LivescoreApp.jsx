@@ -5,7 +5,8 @@ import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { applyServerParam, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
+import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
+import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange } from './utils/livescoreModel'
 import ballFallback from './ball_fallback.png'
@@ -31,12 +32,25 @@ function shouldAutoConnectNow() {
   })
 }
 
+// A venue relay (desktop app, venue server) on this machine or the local
+// network: the livescore reads it instead of the cloud (utils/relayLivescore).
+function relayLivescoreNow() {
+  if (typeof window === 'undefined') return false
+  return relayLivescoreMode({
+    servedFromLocalServer: isServedFromLocalServer(),
+    origin: window.location?.origin || null,
+    override: getBackendOverride()
+  })
+}
+
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 
 /**
  * Simplified Livescore App
- * - Subscribes to match_live_state table
+ * - Subscribes to match_live_state table (cloud), or to a venue relay's
+ *   public match summaries on the hall Wi-Fi / Bluetooth without internet
+ *   (utils/relayLivescore: no PIN, never anything but the public summary)
  * - Shows all live games with scores
  * - Select a game to view fullscreen
  */
@@ -55,6 +69,9 @@ export default function LivescoreApp() {
   const [stale, setStale] = useState(false)
   const hasLoadedRef = useRef(false)
   const channelRef = useRef(null)
+  // The venue relay feed (relay mode), and why its data may be old
+  const relayFeedRef = useRef(null)
+  const relayDownRef = useRef({ list: false, socket: false })
 
   // Matches shown as started in this session (stay listed after an undo to
   // 0:0) and matches watched while they could still change their set results.
@@ -94,8 +111,12 @@ export default function LivescoreApp() {
     setServerReady(false)
   }, [])
 
-  // Fetch all live games from match_live_state
+  // Fetch all live games from match_live_state (relay mode: the relay's list)
   const fetchLiveGames = useCallback(async () => {
+    if (relayFeedRef.current) {
+      await relayFeedRef.current.refresh()
+      return
+    }
     try {
       const { data, error: fetchError } = await apiFrom('match_live_state')
         .select('*, matches!match_live_state_match_id_fkey_cascade(set_results)')
@@ -127,6 +148,42 @@ export default function LivescoreApp() {
   // (a server chosen on the connection screen is used by both).
   useEffect(() => {
     if (!serverReady) return undefined
+
+    if (relayLivescoreNow()) {
+      // The relay's list (every 10 s) and one socket for every match's summary
+      // The socket counts as down until it opened: no scores come without it
+      const down = relayDownRef.current
+      down.list = false
+      down.socket = true
+      const showStale = () => setStale(hasLoadedRef.current && (down.list || down.socket))
+      const feed = createRelayLivescoreFeed({
+        listMatches: () => fetchRelayLivescoreList(getApiUrl('/api/match/list?finished=1')),
+        getWsUrl: () => relayLivescoreWsUrl(),
+        onChange: (rows) => setLiveGames(rows),
+        onList: ({ ok, error: listError }) => {
+          down.list = !ok
+          if (ok) {
+            hasLoadedRef.current = true
+            setError(null)
+          } else if (!hasLoadedRef.current) {
+            setError(listError || 'The relay did not answer')
+          }
+          showStale()
+          setLoading(false)
+        },
+        onLive: (on) => {
+          down.socket = !on
+          showStale()
+        }
+      })
+      relayFeedRef.current = feed
+      feed.start()
+      return () => {
+        feed.stop()
+        if (relayFeedRef.current === feed) relayFeedRef.current = null
+      }
+    }
+
     fetchLiveGames()
 
     if (!supabase) return undefined
@@ -524,8 +581,12 @@ export default function LivescoreApp() {
                     </div>
                   }
                   meta={!isMatchEnded ? <span className="tabular-nums">{`Sets: ${leftSets} – ${rightSets}`}</span> : undefined}
-                  chips={setResults.length > 0
-                    ? setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}–{r.right}</span></Chip>)
+                  chips={setResults.length > 0 || game.test
+                    ? [
+                        // A rehearsal match on the venue relay (the cloud never lists one)
+                        ...(game.test ? [<Chip key="test">{t('livescore.testMatch', 'Test match')}</Chip>] : []),
+                        ...setResults.map((r) => <Chip key={r.set}><span className="tabular-nums">{r.left}–{r.right}</span></Chip>)
+                      ]
                     : undefined}
                   status={isMatchEnded
                     ? <StatusPill tone="done">{t('livescore.final', 'Final')}</StatusPill>

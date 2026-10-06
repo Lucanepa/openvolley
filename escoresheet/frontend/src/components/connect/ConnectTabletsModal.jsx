@@ -70,8 +70,9 @@ function usePoll(active, load) {
  *   - Bluetooth: a Bluetooth network this laptop serves (desktop app on
  *     Linux; Windows cannot serve one).
  *
- * Livescore has no LAN / Bluetooth link: it reads the cloud's live table,
- * which the relay does not have (tabletLinks LAN_UNAVAILABLE_ROLES).
+ * Every role has a LAN / Bluetooth link: the livescore served by the relay
+ * follows the relay's public match summaries, no internet needed
+ * (utils/relayLivescore; tabletLinks LAN_UNAVAILABLE_ROLES is empty).
  *
  * Links only preselect the match; each tablet asks for its role's PIN, which
  * is shown here and never put in a link or a QR code. The game PIN is never
@@ -263,9 +264,8 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   }
   const cloudBlocked = isCloudBlockedOnThisPort()
   const cloudApiBase = cloudBlocked ? null : getCloudApiBaseUrl()
-  const lanNotes = {
-    'needs-internet': t('connectTablets.livescoreNeedsInternet', 'Needs internet: use the “Server” tab')
-  }
+  // Why a role has no link on this network (tabletLinks LAN_UNAVAILABLE_ROLES; none today)
+  const lanNotes = {}
   const rows = TABLET_ROLES.map(role => {
     if (view.tab === 'server') return { role, url: cloudBlocked ? null : cloudRoleUrl(role, seedKey, { cloudApiBase }) }
     const unavailable = LAN_UNAVAILABLE_ROLES[role]
