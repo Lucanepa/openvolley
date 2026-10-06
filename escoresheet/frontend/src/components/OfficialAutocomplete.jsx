@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { FOCUS_RING_INSET } from '../ui/Button.jsx'
 
@@ -114,9 +115,7 @@ export default function OfficialAutocomplete({
             style={{ border: 'none' }}
             tabIndex={-1}
           >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
-              <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <ChevronDown size={12} strokeWidth={2.5} aria-hidden="true" />
           </button>
         )}
       </div>

@@ -193,9 +193,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
             A
             {improperRequests.teamA && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" style={{ display: 'block' }}>
-                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
+                <X size={20} strokeWidth={3} aria-hidden="true" style={{ display: 'block' }} />
               </div>
             )}
           </div>
@@ -203,9 +201,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
             B
             {improperRequests.teamB && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" style={{ display: 'block' }}>
-                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
+                <X size={20} strokeWidth={3} aria-hidden="true" style={{ display: 'block' }} />
               </div>
             )}
           </div>
