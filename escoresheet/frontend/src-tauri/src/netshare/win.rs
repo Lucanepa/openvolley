@@ -14,7 +14,16 @@
 //! - "Turn off when no devices are connected" (5 minutes) is switched off
 //!   while the tablets' Wi-Fi runs and restored on stop.
 //! - No automatic teardown like NetworkManager's: stopped on exit, and at
-//!   the next start-up after a crash (a marker file says it was on).
+//!   the next start-up after a crash (a marker file says it was on, and
+//!   holds the user's own hotspot settings and the timeout flag of older
+//!   builds, so a crash cannot leave them replaced).
+//! - The connection profile the hotspot was started from is kept: status
+//!   and stop use that one, so an uplink change (Ethernet plugged in later)
+//!   cannot make the app read another profile's manager and think the
+//!   hotspot went off.
+//! - A Mobile Hotspot switched on in Windows' own settings is reported as
+//!   on and `external` (with its name and password): the tablets on it can
+//!   use it; the app does not stop it.
 //! - The laptop stays on its own Wi-Fi: the hotspot runs on the Wi-Fi Direct
 //!   virtual adapter (192.168.137.1).
 //! - Fallback (no usable profile, or tethering refused for a reason other
@@ -58,6 +67,8 @@ struct SavedAp {
 pub struct Inner {
     method: Option<&'static str>,
     publisher: Option<WiFiDirectAdvertisementPublisher>,
+    /// The profile the Mobile Hotspot was started from: probe and stop it.
+    profile: Option<ConnectionProfile>,
     saved: Option<SavedAp>,
     /// "Turn off when no devices are connected" was on before we started.
     restore_timeout: bool,
@@ -76,12 +87,37 @@ fn marker() -> Option<PathBuf> {
     Some(PathBuf::from(base).join("OpenVolley").join("tablet-wifi-on"))
 }
 
-fn write_marker() {
+/// The marker's contents: what a crashed run must put back. The user's own
+/// hotspot name and password (older Windows only) sit in the user's own
+/// LOCALAPPDATA, which other users cannot read, and only while the tablets'
+/// Wi-Fi runs.
+fn marker_json(saved: Option<&SavedAp>, restore_timeout: bool) -> String {
+    let saved = saved.map(|s| {
+        serde_json::json!({ "ssid": s.ssid, "passphrase": s.passphrase, "band": s.band.map(|b| b.0) })
+    });
+    serde_json::json!({ "saved": saved, "restoreTimeout": restore_timeout }).to_string()
+}
+
+/// A marker's contents back (an old "1" marker: nothing to put back).
+fn parse_marker(text: &str) -> (Option<SavedAp>, bool) {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else { return (None, false) };
+    let restore_timeout = v.get("restoreTimeout").and_then(|b| b.as_bool()).unwrap_or(false);
+    let saved = v.get("saved").filter(|s| s.is_object()).and_then(|s| {
+        Some(SavedAp {
+            ssid: s.get("ssid")?.as_str()?.to_string(),
+            passphrase: s.get("passphrase")?.as_str()?.to_string(),
+            band: s.get("band").and_then(|b| b.as_i64()).map(|b| TetheringWiFiBand(b as i32)),
+        })
+    });
+    (saved, restore_timeout)
+}
+
+fn write_marker(saved: Option<&SavedAp>, restore_timeout: bool) {
     if let Some(m) = marker() {
         if let Some(dir) = m.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let _ = std::fs::write(m, b"1");
+        let _ = std::fs::write(m, marker_json(saved, restore_timeout));
     }
 }
 
@@ -120,9 +156,18 @@ fn pick_profile() -> (Option<ConnectionProfile>, Option<TetheringCapability>) {
     (None, refused)
 }
 
-fn manager() -> Option<NetworkOperatorTetheringManager> {
-    let (profile, _) = pick_profile();
-    NetworkOperatorTetheringManager::CreateFromConnectionProfile(&profile?).ok()
+/// The manager of `profile` (the one the hotspot was started from), else of
+/// whichever profile would be picked now.
+fn manager(profile: Option<&ConnectionProfile>) -> Option<NetworkOperatorTetheringManager> {
+    let picked;
+    let p = match profile {
+        Some(p) => p,
+        None => {
+            picked = pick_profile().0?;
+            &picked
+        }
+    };
+    NetworkOperatorTetheringManager::CreateFromConnectionProfile(p).ok()
 }
 
 fn capability_error(c: Option<TetheringCapability>) -> NetError {
@@ -150,15 +195,28 @@ struct Probe {
     on: bool,
     clients: Option<u32>,
     max: Option<u32>,
+    /// The name / password of the hotspot that is on (for one started in
+    /// Windows' settings).
+    ssid: Option<String>,
+    passphrase: Option<String>,
 }
 
-fn probe() -> Probe {
-    let (profile, refused) = pick_profile();
-    let mut r = Probe { tether_ok: profile.is_some(), refused, on: false, clients: None, max: None };
+/// The tethering state, read from `started_from` (the profile this run
+/// started the hotspot from) when there is one.
+fn probe(started_from: Option<ConnectionProfile>) -> Probe {
+    let (picked, refused) = pick_profile();
+    let mut r = Probe { tether_ok: picked.is_some(), refused, on: false, clients: None, max: None, ssid: None, passphrase: None };
+    let profile = started_from.or(picked);
     if let Some(m) = profile.and_then(|p| NetworkOperatorTetheringManager::CreateFromConnectionProfile(&p).ok()) {
         r.on = m.TetheringOperationalState().map(|s| s == TetheringOperationalState::On).unwrap_or(false);
         r.clients = m.ClientCount().ok();
         r.max = m.MaxClientCount().ok();
+        if r.on {
+            if let Ok(cfg) = m.GetCurrentAccessPointConfiguration() {
+                r.ssid = cfg.Ssid().ok().map(|h| h.to_string());
+                r.passphrase = cfg.Passphrase().ok().map(|h| h.to_string());
+            }
+        }
     }
     r
 }
@@ -173,9 +231,17 @@ fn restore(m: &NetworkOperatorTetheringManager, saved: &SavedAp) {
     let _ = m.ConfigureAccessPointAsync(&cfg).and_then(|a| a.get());
 }
 
-/// Start the Mobile Hotspot; returns the user's settings to put back (older
-/// Windows) and whether the no-connections timeout was on.
-fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Result<(Option<SavedAp>, bool), NetError> {
+/// What a started Mobile Hotspot needs at stop: its profile, the user's
+/// settings to put back (older Windows) and whether the no-connections
+/// timeout was on.
+struct Started {
+    profile: ConnectionProfile,
+    saved: Option<SavedAp>,
+    restore_timeout: bool,
+}
+
+/// Start the Mobile Hotspot.
+fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Result<Started, NetError> {
     let (profile, refused) = pick_profile();
     let Some(profile) = profile else { return Err(capability_error(refused)) };
     let mgr = NetworkOperatorTetheringManager::CreateFromConnectionProfile(&profile).map_err(we("hotspot-failed"))?;
@@ -227,11 +293,11 @@ fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Resul
         }
         return Err(status_error(status, message));
     }
-    Ok((saved, timeout_was_on))
+    Ok(Started { profile, saved, restore_timeout: timeout_was_on })
 }
 
-fn stop_tethering(saved: Option<SavedAp>, restore_timeout: bool) {
-    if let Some(m) = manager() {
+fn stop_tethering(profile: Option<ConnectionProfile>, saved: Option<SavedAp>, restore_timeout: bool) {
+    if let Some(m) = manager(profile.as_ref()) {
         let _ = m.StopTetheringAsync().and_then(|op| op.get());
         if let Some(s) = &saved {
             restore(&m, s);
@@ -287,7 +353,8 @@ pub async fn hotspot_status(inner: &mut Inner) -> HotspotStatus {
         inner.publisher = None;
         inner.method = None;
     }
-    let p = match blocking(probe).await {
+    let started_from = if inner.method == Some("mobile-hotspot") { inner.profile.clone() } else { None };
+    let p = match blocking(move || probe(started_from)).await {
         Ok(p) => p,
         Err(e) => {
             st.reason = Some("hotspot-failed");
@@ -307,6 +374,16 @@ pub async fn hotspot_status(inner: &mut Inner) -> HotspotStatus {
         }
         // switched off elsewhere (Settings, the quick settings toggle)
         let _ = hotspot_stop(inner).await;
+    } else if p.on {
+        // switched on in Windows' own settings, not by this app
+        st.supported = true;
+        st.active = true;
+        st.external = true;
+        st.method = Some("mobile-hotspot");
+        st.ssid = p.ssid.unwrap_or_default();
+        st.password = p.passphrase.unwrap_or_default();
+        st.gateway_ip = Some(hotspot_ip().unwrap_or_else(|| DEFAULT_GATEWAY.into()));
+        return st;
     }
     if p.tether_ok {
         st.supported = true;
@@ -332,11 +409,12 @@ pub async fn hotspot_start(inner: &mut Inner, c: &Credentials) -> Result<(), Net
     let (ssid, pass) = (c.ssid.clone(), c.password.clone());
     let tether = blocking(move || start_tethering(&ssid, &pass, None)).await?;
     match tether {
-        Ok((saved, restore_timeout)) => {
+        Ok(started) => {
+            write_marker(started.saved.as_ref(), started.restore_timeout);
             inner.method = Some("mobile-hotspot");
-            inner.saved = saved;
-            inner.restore_timeout = restore_timeout;
-            write_marker();
+            inner.profile = Some(started.profile);
+            inner.saved = started.saved;
+            inner.restore_timeout = started.restore_timeout;
         }
         Err(e) if e.code == "disabled-by-policy" => return Err(e),
         Err(e) => {
@@ -364,9 +442,10 @@ pub async fn hotspot_stop(inner: &mut Inner) -> Result<(), NetError> {
         let _ = p.Stop();
     }
     if inner.method == Some("mobile-hotspot") {
+        let profile = inner.profile.take();
         let saved = inner.saved.take();
         let restore_timeout = std::mem::take(&mut inner.restore_timeout);
-        blocking(move || stop_tethering(saved, restore_timeout)).await?;
+        blocking(move || stop_tethering(profile, saved, restore_timeout)).await?;
         remove_marker();
     }
     inner.method = None;
@@ -385,12 +464,32 @@ pub async fn bluetooth_stop(_inner: &mut Inner) -> Result<(), NetError> {
     Ok(())
 }
 
-/// A previous run crashed with the tablets' Wi-Fi on: switch it off.
+/// A previous run crashed with the tablets' Wi-Fi on: switch it off, and
+/// put back the user's own hotspot settings and the no-connections timeout
+/// the marker kept.
 pub fn recover<R: Runtime>(_app: &AppHandle<R>) {
-    if marker().map(|m| m.exists()).unwrap_or(false) {
-        tauri::async_runtime::spawn_blocking(|| {
-            stop_tethering(None, false);
-            remove_marker();
-        });
+    let Some(text) = marker().and_then(|m| std::fs::read_to_string(m).ok()) else { return };
+    let (saved, restore_timeout) = parse_marker(&text);
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_tethering(None, saved, restore_timeout);
+        remove_marker();
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marker_keeps_what_a_crash_must_put_back() {
+        let saved = SavedAp { ssid: "Luca-PC".into(), passphrase: "home \"secret\"".into(), band: Some(TetheringWiFiBand::FiveGigahertz) };
+        let (back, timeout) = parse_marker(&marker_json(Some(&saved), true));
+        let back = back.expect("saved");
+        assert_eq!((back.ssid.as_str(), back.passphrase.as_str(), back.band, timeout), ("Luca-PC", "home \"secret\"", Some(TetheringWiFiBand::FiveGigahertz), true));
+        let (none, timeout) = parse_marker(&marker_json(None, false));
+        assert!(none.is_none() && !timeout);
+        // a marker of an older version
+        let (none, timeout) = parse_marker("1");
+        assert!(none.is_none() && !timeout);
     }
 }

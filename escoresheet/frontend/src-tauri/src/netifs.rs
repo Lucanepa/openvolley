@@ -20,8 +20,9 @@ pub enum IfKind {
     Hotspot,
     Wifi,
     Ethernet,
-    /// A Bluetooth network the laptop serves (BlueZ / NetworkManager NAP
-    /// bridge) or joined.
+    /// The Bluetooth network the laptop serves (the app's NetworkManager NAP
+    /// bridge). A Bluetooth network it only joined (tethered to a phone) is
+    /// not listed: the tablets cannot reach it.
     Bluetooth,
     Other,
 }
@@ -35,7 +36,6 @@ pub struct NetIf {
 
 /// The bridge NetworkManager creates for the Bluetooth network
 /// (netshare/linux.rs), at most 15 characters.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const BT_BRIDGE_NAME: &str = "pan-openvolley";
 
 /// Interface names (Linux) and adapter names (Windows) of virtual networks a
@@ -60,8 +60,13 @@ pub fn classify(name: &str, ip: Ipv4Addr) -> Option<IfKind> {
         return None;
     }
     let o = ip.octets();
-    if lower.starts_with("pan") || lower.starts_with("bnep") || lower.starts_with("bt-") || lower.contains("bluetooth") {
+    if name == BT_BRIDGE_NAME {
         return Some(IfKind::Bluetooth);
+    }
+    // Any other Bluetooth network: the laptop joined it (Windows "Bluetooth
+    // Network Connection", Linux bnep0 tethered to a phone), it serves none.
+    if lower.starts_with("pan") || lower.starts_with("bnep") || lower.starts_with("bt-") || lower.contains("bluetooth") {
+        return None;
     }
     // Windows Mobile Hotspot and Wi-Fi Direct groups (ICS): 192.168.137.0/24
     if o[0] == 192 && o[1] == 168 && o[2] == 137 {
@@ -157,7 +162,9 @@ mod tests {
         assert_eq!(classify("enp0s31f6", ip("10.0.0.5")), Some(IfKind::Ethernet));
         assert_eq!(classify("eth0", ip("172.16.3.4")), Some(IfKind::Ethernet));
         assert_eq!(classify(BT_BRIDGE_NAME, ip("10.42.1.1")), Some(IfKind::Bluetooth));
-        assert_eq!(classify("bnep0", ip("192.168.44.2")), Some(IfKind::Bluetooth));
+        // tethered to a phone over Bluetooth: joined, not served
+        assert_eq!(classify("bnep0", ip("192.168.44.2")), None);
+        assert_eq!(classify("pan0", ip("10.42.1.1")), None);
         assert_eq!(classify("lo", ip("127.0.0.1")), None);
         assert_eq!(classify("docker0", ip("172.17.0.1")), None);
         assert_eq!(classify("tailscale0", ip("100.114.142.10")), None);
@@ -172,8 +179,10 @@ mod tests {
         assert_eq!(classify("Ethernet 2", ip("10.1.1.4")), Some(IfKind::Ethernet));
         assert_eq!(classify("Local Area Connection* 10", ip("192.168.137.1")), Some(IfKind::Hotspot));
         assert_eq!(classify("LAN-Verbindung* 3", ip("192.168.137.1")), Some(IfKind::Hotspot));
-        assert_eq!(classify("Bluetooth Network Connection", ip("192.168.44.3")), Some(IfKind::Bluetooth));
-        assert_eq!(classify("Bluetooth-Netzwerkverbindung", ip("192.168.44.3")), Some(IfKind::Bluetooth));
+        // Windows only ever joins a Bluetooth network
+        assert_eq!(classify("Bluetooth Network Connection", ip("192.168.44.3")), None);
+        assert_eq!(classify("Bluetooth-Netzwerkverbindung", ip("192.168.44.3")), None);
+        assert_eq!(classify("Bluetooth Network Connection", ip("192.168.137.4")), None);
         assert_eq!(classify("vEthernet (WSL)", ip("172.20.0.1")), None);
         assert_eq!(classify("VirtualBox Host-Only Network", ip("192.168.56.1")), None);
         assert_eq!(classify("Some adapter", ip("192.168.5.5")), Some(IfKind::Other));
