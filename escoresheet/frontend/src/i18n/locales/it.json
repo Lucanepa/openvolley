@@ -494,7 +494,7 @@
       "switchSides": "Inverti lati",
       "switchCourts": "Inverti campo",
       "switchServe": "Inverti servizio",
-      "confirmSet5Setup": "Conferma set 5"
+      "confirmSet5Setup": "Conferma set {{number}}"
     },
     "sync": {
       "syncing": "Sincronizzazione...",
@@ -519,7 +519,7 @@
       "liberoRedesignation": "Nuova designazione libero",
       "courtSwitchRequired": "Cambio campo richiesto",
       "teamsMustSwitchCourts": "Le squadre devono cambiare campo",
-      "set5ChooseSideService": "Set 5 - scegli campo e servizio",
+      "set5ChooseSideService": "Set {{number}} - scegli campo e servizio",
       "noLegalSubstitution": "Nessuna sostituzione legale disponibile",
       "liberoReminder": "Promemoria libero",
       "reopenSet": "Riapri set",

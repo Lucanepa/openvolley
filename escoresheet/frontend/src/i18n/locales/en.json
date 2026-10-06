@@ -495,7 +495,7 @@
       "switchSides": "Switch sides",
       "switchCourts": "Switch courts",
       "switchServe": "Switch serve",
-      "confirmSet5Setup": "Confirm set 5 setup"
+      "confirmSet5Setup": "Confirm set {{number}} setup"
     },
     "sync": {
       "syncing": "Syncing...",
@@ -520,7 +520,7 @@
       "liberoRedesignation": "Libero re-designation",
       "courtSwitchRequired": "Court switch required",
       "teamsMustSwitchCourts": "Teams must switch courts",
-      "set5ChooseSideService": "Set 5 - choose side and service",
+      "set5ChooseSideService": "Set {{number}} - choose side and service",
       "noLegalSubstitution": "No legal substitution available",
       "liberoReminder": "Libero reminder",
       "reopenSet": "Reopen set",

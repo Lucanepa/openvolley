@@ -505,7 +505,7 @@
       "switchSides": "Seiten wechseln",
       "switchCourts": "Feld wechseln",
       "switchServe": "Aufschlag wechseln",
-      "confirmSet5Setup": "Satz 5 Einrichtung bestätigen"
+      "confirmSet5Setup": "Satz {{number}} Einrichtung bestätigen"
     },
     "sync": {
       "syncing": "Synchronisiere...",
@@ -530,7 +530,7 @@
       "liberoRedesignation": "Libero-Neubezeichnung",
       "courtSwitchRequired": "Seitenwechsel erforderlich",
       "teamsMustSwitchCourts": "Teams müssen die Seiten wechseln",
-      "set5ChooseSideService": "Satz 5 - Seite und Aufschlag wählen",
+      "set5ChooseSideService": "Satz {{number}} - Seite und Aufschlag wählen",
       "noLegalSubstitution": "Keine regelkonforme Auswechslung verfügbar",
       "liberoReminder": "Libero-Erinnerung",
       "reopenSet": "Satz wieder öffnen",

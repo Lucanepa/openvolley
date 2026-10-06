@@ -493,7 +493,7 @@
       "switchSides": "Changer de côté",
       "switchCourts": "Tribunaux de première instance",
       "switchServe": "Changer de service",
-      "confirmSet5Setup": "Confirmer set 5 setup"
+      "confirmSet5Setup": "Confirmer set {{number}} setup"
     },
     "sync": {
       "syncing": "Synchronisation...",
@@ -518,7 +518,7 @@
       "liberoRedesignation": "Nouvelle désignation libéro",
       "courtSwitchRequired": "Changement de côté requis",
       "teamsMustSwitchCourts": "Les équipes doivent changer de terrain",
-      "set5ChooseSideService": "Set 5 - choisir le côté et le service",
+      "set5ChooseSideService": "Set {{number}} - choisir le côté et le service",
       "noLegalSubstitution": "Aucun remplacement légal disponible",
       "liberoReminder": "Rappel libéro",
       "reopenSet": "Rouvrir le set",

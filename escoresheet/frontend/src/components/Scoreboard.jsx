@@ -14314,7 +14314,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             return (
                               <>
                                 <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--muted)', marginBottom: '4px' }}>
-                                  Set 5 Coin Toss Pending
+                                  Set {displaySetNumber(5, data?.match?.bestOf)} coin toss pending
                                 </div>
 
                                 {/* Switch Sides */}
@@ -17671,7 +17671,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           minHeight: 'calc(40px * var(--scale-factor))'
                         }}
                       >
-                        {t('scoreboard.buttons.confirmSet5Setup')}
+                        {t('scoreboard.buttons.confirmSet5Setup', { number: displaySetNumber(5, data?.match?.bestOf) })}
                       </button>
                     </div>
 
@@ -27581,7 +27581,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         return (
           <Modal
-            title={t('scoreboard.modals.set5ChooseSideService')}
+            title={t('scoreboard.modals.set5ChooseSideService', { number: displaySetNumber(5, data?.match?.bestOf) })}
             open={true}
             onClose={() => { }}
             width={500}
@@ -27589,7 +27589,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           >
             <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '24px', fontSize: '16px', textAlign: 'center' }}>
-                Configure teams and service for Set 5.
+                Configure teams and service for set {displaySetNumber(5, data?.match?.bestOf)}.
               </p>
 
               {/* Teams on Sides */}
