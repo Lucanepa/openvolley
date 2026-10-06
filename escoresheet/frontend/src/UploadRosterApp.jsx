@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { findMatchByGameNumber, getMatchData, updateMatchData, listAvailableMatches, getWebSocketStatus, validateUploadPinSupabase, uploadRosterToCloud } from './utils/serverDataSync'
+import { rosterGoesToRelay } from './utils/remoteRoster'
 import { listRosterUploadMatches } from './utils/rosterUploadMatches'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
@@ -846,24 +847,28 @@ export default function UploadRosterApp() {
         if (!result.success) {
           console.error('[Roster] Cloud write error:', result.status, result.error)
           cloudError = result
-          // Fall back to server
+          // Reported below (nothing else stores a cloud roster)
         } else {
           saved = true
           console.log('[Roster] Successfully wrote roster to the cloud')
         }
       }
 
-      // Also try to update via server (for local sync and WebSocket updates)
-      // Optional when the cloud write worked; otherwise it is the only copy
-      try {
-        const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
-        await updateMatchData(matchId, {
-          [serverPendingField]: rosterData
-        })
-        saved = true
-        console.log('[Roster] Server update also succeeded')
-      } catch (serverError) {
-        console.warn(`[Roster] Server update failed${saved ? ' (non-blocking, cloud has the roster)' : ''}:`, serverError)
+      // LAN / desktop relay: its PATCH /api/match/:id hands the roster to the
+      // scoresheet. Never in cloud mode: the cloud backend has no PATCH route
+      // (CORS refuses the method) and the upload above already reached the
+      // scorer's match row, where Match Setup's "Search for roster" reads it.
+      if (rosterGoesToRelay(activeConnection)) {
+        try {
+          const serverPendingField = team === 'home' ? 'pendingHomeRoster' : 'pendingAwayRoster'
+          await updateMatchData(matchId, {
+            [serverPendingField]: rosterData
+          })
+          saved = true
+          console.log('[Roster] Relay update succeeded')
+        } catch (serverError) {
+          console.warn('[Roster] Relay update failed:', serverError?.message || serverError)
+        }
       }
 
       setShowConfirmModal(false)

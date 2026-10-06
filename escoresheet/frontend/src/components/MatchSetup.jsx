@@ -25,8 +25,9 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { generateSecurePin } from '../utils/stringUtils'
 import { setExtId } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
+import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
-import { Loader2 } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn } from '../ui'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
@@ -1224,64 +1225,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         else if (match.gameNumber) setGameN(String(match.gameNumber))
 
         // Generate PINs if they don't exist (for matches created before PIN feature)
-        const updates = {}
-        const existingPins = []
-        if (!match.refereePin) {
-          const refPin = generateSecurePin(existingPins)
-          updates.refereePin = String(refPin).trim() // Ensure string
-          existingPins.push(String(refPin).trim())
-        } else {
-          existingPins.push(String(match.refereePin).trim())
-        }
-        if (!match.homeTeamPin) {
-          const homePin = generateSecurePin(existingPins)
-          updates.homeTeamPin = String(homePin).trim() // Ensure string
-          existingPins.push(String(homePin).trim())
-        } else {
-          existingPins.push(String(match.homeTeamPin).trim())
-        }
-        if (!match.awayTeamPin) {
-          const awayPin = generateSecurePin(existingPins)
-          updates.awayTeamPin = String(awayPin).trim() // Ensure string
-          existingPins.push(String(awayPin).trim())
-        } else {
-          existingPins.push(String(match.awayTeamPin).trim())
-        }
-        if (!match.homeTeamUploadPin) {
-          const homeUploadPin = generateSecurePin(existingPins)
-          updates.homeTeamUploadPin = homeUploadPin
-          existingPins.push(homeUploadPin)
-        } else {
-          existingPins.push(match.homeTeamUploadPin)
-        }
-        if (!match.awayTeamUploadPin) {
-          const awayUploadPin = generateSecurePin(existingPins)
-          updates.awayTeamUploadPin = awayUploadPin
-        }
+        const updates = missingConnectionPins(match)
         if (Object.keys(updates).length > 0) {
           await db.matches.update(matchId, updates)
         }
 
-        // Always sync upload PINs to Supabase if connected (whether newly generated or existing)
-        // This ensures existing local PINs get pushed to Supabase
-        if (match.seed_key) {
-          const homeUploadPin = updates.homeTeamUploadPin || match.homeTeamUploadPin
-          const awayUploadPin = updates.awayTeamUploadPin || match.awayTeamUploadPin
-          if (homeUploadPin || awayUploadPin) {
-            try {
-              // Send the FULL connection_pins built from the local match: the proxy
-              // never returns connection_pins, so a read-merge-write started from {}
-              // and erased the referee/bench PINs. (No-op if the match is not in
-              // the cloud yet: the update matches no row.)
-              const connectionPinsUpdate = buildConnectionPins({ ...match, ...updates })
-              const { error: pinsError } = await apiFrom('matches')
-                .update({ connection_pins: connectionPinsUpdate })
-                .eq('external_id', match.seed_key)
-              if (pinsError) throw pinsError
-              console.log('[MatchSetup] Synced connection PINs to Supabase:', Object.keys(connectionPinsUpdate))
-            } catch (err) {
-              console.warn('[MatchSetup] Failed to sync upload PINs to Supabase:', err)
-            }
+        // A created match: make sure the server has every connection PIN
+        // (roster upload validates the upload PIN there). Through the sync
+        // queue, so it also works offline and after the match insert; it
+        // heals matches created before Create match carried the PINs.
+        if (match.seed_key && match.matchInfoConfirmedAt) {
+          try {
+            await db.sync_queue.add(connectionPinsSyncJob(match.seed_key, { ...match, ...updates }))
+          } catch (err) {
+            console.warn('[MatchSetup] Failed to queue the connection PINs:', err)
           }
         }
 
@@ -1350,7 +1307,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             setScorerFirst(scorer.firstName || '')
             setScorerLast(scorer.lastName || '')
             setScorerCountry(scorer.country || 'CHE')
-            setScorerDob(scorer.dob || '01.01.1900')
+            setScorerDob(scorer.dob || '')
           }
           const asst = match.officials.find(o => o.role === 'assistant scorer')
           if (asst) {
@@ -2051,6 +2008,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         matchSeedKey = generateMatchSeedKey()
       }
 
+      // Every connection PIN the scorer will show (referee, benches, upload)
+      // exists locally and goes to the server with the match, so the roster
+      // upload's PIN check works from Create match on (stored hashed there).
+      const localMatch = await db.matches.get(matchId)
+      const pinUpdates = missingConnectionPins(localMatch)
+
       // Update match with team IDs and match info
       // matchInfoConfirmedAt flag indicates user explicitly clicked "Create Match"
       await db.matches.update(matchId, {
@@ -2077,6 +2040,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         sport_type: 'indoor',
         game_n: gameN ? parseInt(gameN, 10) : null,
         seed_key: matchSeedKey, // Ensure seed_key is set
+        ...pinUpdates,
         bench_home: benchHome,
         bench_away: benchAway,
         officials: buildOfficialsArray(
@@ -2098,6 +2062,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         scheduled_at: scheduledAt || null,
         game_n: gameN ? parseInt(gameN, 10) : null,
         game_pin: match?.gamePin || null,
+        connection_pins: buildConnectionPins({ ...localMatch, ...pinUpdates }),
         sport_type: 'indoor',
         test: false,
         // JSONB columns
@@ -2959,7 +2924,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
-  // Search for pending roster in Supabase
+  // New upload PIN for a team; a created match sends it to the server at once
+  // (the roster upload checks it there), through the sync queue.
+  const regenerateUploadPin = async (team) => {
+    if (!matchId) return
+    const local = await db.matches.get(matchId)
+    if (!local) return
+    const field = team === 'home' ? 'homeTeamUploadPin' : 'awayTeamUploadPin'
+    const existingPins = [local.refereePin, local.homeTeamPin, local.awayTeamPin, local.homeTeamUploadPin, local.awayTeamUploadPin].filter(Boolean)
+    const newPin = generateSecurePin(existingPins)
+    await db.matches.update(matchId, { [field]: newPin })
+    if (local.seed_key && local.matchInfoConfirmedAt) {
+      try {
+        await db.sync_queue.add(connectionPinsSyncJob(local.seed_key, { ...local, [field]: newPin }))
+      } catch (err) {
+        console.warn('[MatchSetup] Failed to queue the new upload PIN:', err)
+      }
+    }
+  }
+
+  // Accepted or rejected: clear the coach's upload on the server too, so the
+  // next search does not bring it back (a new upload replaces it anyway).
+  const clearServerPendingRoster = async (team) => {
+    if (!match?.seed_key || !match?.matchInfoConfirmedAt) return
+    try {
+      await db.sync_queue.add(clearPendingRosterJob(match.seed_key, team))
+    } catch (err) {
+      console.warn('[MatchSetup] Failed to queue the pending roster clean-up:', err)
+    }
+  }
+
+  // Search for the roster a coach uploaded (remote roster upload)
   const handleSearchHomeRoster = async () => {
     if (!match) {
       setNoticeModal({ message: t('matchSetup.noSupabaseConnection') })
@@ -2968,29 +2963,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     setHomeRosterSearching(true)
     try {
-      const gameNumber = match.game_n || match.gameNumber || gameN
-      console.log('[MatchSetup] Searching for home roster, game number:', gameNumber)
-
-      // Search for pending roster in Supabase
-      const { data, error } = await apiFrom('matches')
-        .select('pending_home_roster, external_id')
-        .eq('game_n', gameNumber)
-        .not('pending_home_roster', 'is', null)
-        .limit(1)
-        .single()
-
-      if (error || !data?.pending_home_roster) {
-        console.log('[MatchSetup] No pending home roster found')
+      // The coach's upload lands in this match's row (connections.pending_home_roster)
+      const { roster, error } = await fetchPendingRoster(apiFrom, match.seed_key, 'home')
+      if (error) throw error
+      if (!roster) {
         setNoticeModal({ message: t('matchSetup.noRosterFound') })
         return
       }
 
-      console.log('[MatchSetup] Found pending home roster:', data.pending_home_roster)
-
       // Store in local match data to trigger the pending roster UI
-      await db.matches.update(matchId, { pendingHomeRoster: data.pending_home_roster })
+      await db.matches.update(matchId, { pendingHomeRoster: roster })
     } catch (err) {
-      console.error('[MatchSetup] Error searching for home roster:', err)
+      console.error('[MatchSetup] Error searching for home roster:', err?.message || err)
       setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
     } finally {
       setHomeRosterSearching(false)
@@ -3005,29 +2989,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     setAwayRosterSearching(true)
     try {
-      const gameNumber = match.game_n || match.gameNumber || gameN
-      console.log('[MatchSetup] Searching for away roster, game number:', gameNumber)
-
-      // Search for pending roster in Supabase
-      const { data, error } = await apiFrom('matches')
-        .select('pending_away_roster, external_id')
-        .eq('game_n', gameNumber)
-        .not('pending_away_roster', 'is', null)
-        .limit(1)
-        .single()
-
-      if (error || !data?.pending_away_roster) {
-        console.log('[MatchSetup] No pending away roster found')
+      // The coach's upload lands in this match's row (connections.pending_away_roster)
+      const { roster, error } = await fetchPendingRoster(apiFrom, match.seed_key, 'away')
+      if (error) throw error
+      if (!roster) {
         setNoticeModal({ message: t('matchSetup.noRosterFound') })
         return
       }
 
-      console.log('[MatchSetup] Found pending away roster:', data.pending_away_roster)
-
       // Store in local match data to trigger the pending roster UI
-      await db.matches.update(matchId, { pendingAwayRoster: data.pending_away_roster })
+      await db.matches.update(matchId, { pendingAwayRoster: roster })
     } catch (err) {
-      console.error('[MatchSetup] Error searching for away roster:', err)
+      console.error('[MatchSetup] Error searching for away roster:', err?.message || err)
       setNoticeModal({ message: t('matchSetup.errorSearchingRoster') })
     } finally {
       setAwayRosterSearching(false)
@@ -3948,18 +3921,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           variant="ghost"
                           size="sm"
                           className="bg-white"
-                          onClick={async () => {
-                            if (!matchId) return
-                            const match = await db.matches.get(matchId)
-                            const existingPins = [
-                              match?.refereePin,
-                              match?.homeTeamPin,
-                              match?.awayTeamPin,
-                              match?.awayTeamUploadPin
-                            ].filter(Boolean)
-                            const newPin = generateSecurePin(existingPins)
-                            await db.matches.update(matchId, { homeTeamUploadPin: newPin })
-                          }}
+                          onClick={() => regenerateUploadPin('home')}
                           >
                             {t('matchSetup.regenerate')}
                           </Button>
@@ -3969,18 +3931,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         variant="ghost"
                         size="sm"
                         className="bg-white"
-                        onClick={async () => {
-                          if (!matchId) return
-                          const match = await db.matches.get(matchId)
-                          const existingPins = [
-                            match?.refereePin,
-                            match?.homeTeamPin,
-                            match?.awayTeamPin,
-                            match?.awayTeamUploadPin
-                          ].filter(Boolean)
-                          const newPin = generateSecurePin(existingPins)
-                          await db.matches.update(matchId, { homeTeamUploadPin: newPin })
-                        }}
+                        onClick={() => regenerateUploadPin('home')}
                         >
                           {t('matchSetup.generatePin')}
                         </Button>
@@ -4066,6 +4017,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               // If no teamId yet, just clear pending
                               await db.matches.update(matchId, { pendingHomeRoster: null })
                             }
+                            await clearServerPendingRoster('home')
                           }}
                           >
                             {t('matchSetup.acceptRoster')}
@@ -4077,6 +4029,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             onClick={async () => {
                               if (!matchId) return
                               await db.matches.update(matchId, { pendingHomeRoster: null })
+                              await clearServerPendingRoster('home')
                             }}
                           >
                             {t('matchSetup.rejectRoster')}
@@ -5104,18 +5057,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                           variant="ghost"
                           size="sm"
                           className="bg-white"
-                          onClick={async () => {
-                            if (!matchId) return
-                            const match = await db.matches.get(matchId)
-                            const existingPins = [
-                              match?.refereePin,
-                              match?.homeTeamPin,
-                              match?.awayTeamPin,
-                              match?.homeTeamUploadPin
-                            ].filter(Boolean)
-                            const newPin = generateSecurePin(existingPins)
-                            await db.matches.update(matchId, { awayTeamUploadPin: newPin })
-                          }}
+                          onClick={() => regenerateUploadPin('away')}
                           >
                             {t('matchSetup.regenerate')}
                           </Button>
@@ -5125,18 +5067,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         variant="ghost"
                         size="sm"
                         className="bg-white"
-                        onClick={async () => {
-                          if (!matchId) return
-                          const match = await db.matches.get(matchId)
-                          const existingPins = [
-                            match?.refereePin,
-                            match?.homeTeamPin,
-                            match?.awayTeamPin,
-                            match?.homeTeamUploadPin
-                          ].filter(Boolean)
-                          const newPin = generateSecurePin(existingPins)
-                          await db.matches.update(matchId, { awayTeamUploadPin: newPin })
-                        }}
+                        onClick={() => regenerateUploadPin('away')}
                         >
                           {t('matchSetup.generatePin')}
                         </Button>
@@ -5222,6 +5153,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                               // If no teamId yet, just clear pending
                               await db.matches.update(matchId, { pendingAwayRoster: null })
                             }
+                            await clearServerPendingRoster('away')
                           }}
                           >
                             {t('matchSetup.acceptRoster')}
@@ -5233,6 +5165,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                             onClick={async () => {
                               if (!matchId) return
                               await db.matches.update(matchId, { pendingAwayRoster: null })
+                              await clearServerPendingRoster('away')
                             }}
                           >
                             {t('matchSetup.rejectRoster')}
