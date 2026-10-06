@@ -31,7 +31,7 @@ vi.mock('../../lib/apiClient', () => ({
   }
 }))
 
-import MatchHistory from '../auth/MatchHistory'
+import MatchHistory, { matchStatusPill } from '../auth/MatchHistory'
 
 afterEach(() => {
   api.calls = []
@@ -51,5 +51,28 @@ describe('MatchHistory (My Matches)', () => {
 
     fireEvent.click(screen.getByText('Home V'))
     expect(open).toHaveBeenCalledWith('/scoresheet/?date=2026-10-05&game=991404', '_blank', 'noopener')
+  })
+
+  it('a final match is a keyboard-reachable row with a done (not amber) Final pill', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    render(<MatchHistory open onClose={() => {}} />)
+    const row = await screen.findByRole('button', { name: /Home V – Away V 2:0: Open scoresheet/ })
+    expect(row).toHaveAttribute('tabindex', '0')
+    const pill = screen.getByText('Final')
+    expect(pill.className).toContain('emerald')
+    expect(pill.className).not.toContain('amber')
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(open).toHaveBeenCalledWith('/scoresheet/?date=2026-10-05&game=991404', '_blank', 'noopener')
+  })
+})
+
+describe('matchStatusPill', () => {
+  it('maps every database status to a word and never to amber', () => {
+    for (const s of ['live', 'final', 'ended', 'approved', 'setup', 'finished', 'something']) {
+      expect(matchStatusPill(s).className).not.toContain('amber')
+    }
+    expect(matchStatusPill('final').fallback).toBe('Final')
+    expect(matchStatusPill('ended').fallback).toBe('Final')
+    expect(matchStatusPill('live').fallback).toBe('Live')
   })
 })

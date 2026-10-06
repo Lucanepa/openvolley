@@ -1570,7 +1570,14 @@
     "noMatches": "Aucun match pour l'instant",
     "noMatchesHint": "Les matchs que vous marquez apparaîtront ici",
     "unknown": "Inconnu",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Ouvrir la feuille de match",
+    "status": {
+      "live": "En direct",
+      "final": "Terminé",
+      "approved": "Approuvé",
+      "setup": "Préparation"
+    }
   },
   "backupTable": {
     "noActions": "Aucune action",

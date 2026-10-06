@@ -1603,7 +1603,14 @@
     "noMatches": "No matches yet",
     "noMatchesHint": "Matches you score will appear here",
     "unknown": "Unknown",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Open scoresheet",
+    "status": {
+      "live": "Live",
+      "final": "Final",
+      "approved": "Approved",
+      "setup": "Setup"
+    }
   },
   "backupTable": {
     "noActions": "No actions",
