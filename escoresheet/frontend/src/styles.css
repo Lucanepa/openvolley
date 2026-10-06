@@ -278,12 +278,14 @@ p {
   }
 }
 
-/* Never a card in a card: inside the .setup page card (match setup, match end)
-   a .card is the kit inner bordered box: white, stone-200 hairline, one radius
-   step down, no shadow. White (not the tinted Block) because MatchEnd's frozen
-   readouts (3:0, the paper-sheet Results) sit on these and keep their ground. */
+/* Never a card in a card: inside the .setup page card (match end) a .card is
+   the kit Block: sunken stone-50/60, stone-200/70 hairline, one radius step
+   down, no shadow. Its padding and layout are unchanged. The frozen readouts
+   keep their own colours: the paper-sheet Results and Sanctions boxes paint
+   their own white, and the 3:0 digits and winner bar are unchanged. */
 .setup .card {
-  border-color: var(--ov-hairline);
+  background: rgb(250 250 249 / 0.6); /* stone-50/60 */
+  border-color: var(--ov-hairline-soft);
   border-radius: var(--ov-radius-lg);
   box-shadow: none;
 }
