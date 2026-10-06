@@ -100,8 +100,13 @@ describe('tabletNetwork', () => {
 
     expect(needsFirewallStep({ platform: 'windows', ready: true }, null)).toBe(false)
     expect(needsFirewallStep({ platform: 'windows', ready: false, reason: 'rule-missing' }, null)).toBe(true)
-    // no answer from the check: the hotspot's platform decides, and the step shows
+    // the check failed: the hotspot's platform decides, and the step shows
     expect(needsFirewallStep(null, { platform: 'windows' })).toBe(true)
+    // the check has not answered yet: no step (it would flash on every opening)
+    expect(needsFirewallStep(undefined, { platform: 'windows' })).toBe(false)
+    expect(needsFirewallStep(undefined, null)).toBe(false)
+    // a Block rule for the app: the step
+    expect(needsFirewallStep({ platform: 'windows', ready: false, reason: 'blocked-by-rule' }, null)).toBe(true)
     expect(needsFirewallStep({ platform: 'linux', ready: false }, { platform: 'linux' })).toBe(false)
     expect(needsFirewallStep(null, { platform: 'linux' })).toBe(false)
     expect(needsFirewallStep(null, null)).toBe(false)
