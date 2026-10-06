@@ -29,6 +29,7 @@ import { isRelayErrorFor, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '.
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
+import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
@@ -5409,6 +5410,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Update set with start time (absolute timestamp)
     await db.sets.update(data.set.id, { startTime: roundToMinute(time) })
+    // ...and the cloud sets row (it holds the row's creation time until now)
+    await queueSetStartTimeSync(db, { matchId, setId: data.set.id, startTime: roundToMinute(time) })
 
     // Get the highest sequence number for this match
     const nextSeq1 = await getNextSeq()
