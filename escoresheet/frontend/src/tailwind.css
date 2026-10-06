@@ -410,13 +410,14 @@
    display: none (a portrait-only label, so it takes no grid cell in landscape).
    The query is FORM_STACK_QUERY in src/utils/formLayout.js; the `stack:`
    variant is the same query for Tailwind classes (stack:grid-cols-1 ...).
+   Screen only, so printing on portrait paper changes nothing.
    Scope: .ov-form-stack sits on the scorer app's <body> only while the query
    matches (watchFormStack in main.jsx; never set in landscape), so the referee,
    bench and livescore apps are not touched, and .match-record (the scoreboard,
    which shows its rotate-your-device overlay in portrait) is left out.
    --------------------------------------------------------------------------- */
 @custom-variant stack {
-  @media (orientation: portrait), (max-width: 799.98px) {
+  @media screen and (orientation: portrait), screen and (max-width: 799.98px) {
     @slot;
   }
 }
@@ -425,60 +426,18 @@
   display: none;
 }
 
-@media (orientation: portrait), (max-width: 799.98px) {
-  /* 44 px controls, 16 px text (no zoom-on-focus on tablets). Not the coin
-     toss roster review (.roster-table): its cells are text-styled inline
-     edits that fit 800 px as a table; its rows get the 44 px height instead. */
-  .ov-form-stack :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]), select):not(:is(.match-record, .roster-table) *) {
+@media screen and (orientation: portrait), screen and (max-width: 799.98px) {
+  /* 44 px controls, 16 px text (no zoom-on-focus on tablets). */
+  .ov-form-stack :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]), select):not(.match-record *) {
     min-height: 44px;
     font-size: 16px;
   }
   .ov-form-stack textarea:not(.match-record *) {
     font-size: 16px;
   }
-  .ov-form-stack .roster-table:not(.match-record *) td {
-    height: 44px;
-  }
 
-  /* Roster and bench editors (MatchSetup): each table row becomes a card,
-     one field per row. The head strip is hidden; every field carries its own
-     .pf-label instead. Card: [# label] / badge + number + Delete (bench:
-     role + Delete) / one row per field / libero select + captain toggle. */
-  .roster-grid,
-  .bench-grid {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    margin: 0;
-  }
-  .roster-grid-row.grid-header,
-  .bench-grid-row.grid-header {
-    display: none;
-  }
-  .roster-grid-row,
-  .bench-grid-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: 12px;
-    row-gap: 6px;
-    padding: 12px 14px 14px;
-  }
-  .roster-grid-row > *,
-  .bench-grid-row > * {
-    order: 3;
-  }
-  .roster-grid-row > div:empty {
-    display: none;
-  }
-  .roster-grid-row :is(input, select),
-  .bench-grid-row :is(input, select) {
-    flex: 0 0 100%;
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
-  .pf-label {
+  /* Field label above a control in a stacked card. */
+  .ov-form-stack .pf-label {
     display: block;
     flex: 0 0 100%;
     margin: 6px 0 0;
@@ -487,48 +446,207 @@
     font-weight: 500;
     color: var(--color-stone-600);
   }
-  .pf-label.pf-head {
+  .ov-form-stack .pf-label.pf-head {
     order: 1;
     margin-top: 0;
   }
-  .roster-grid-row > .roster-badge,
-  .roster-grid-row > .cell-head,
-  .bench-grid-row > .cell-head,
-  .roster-grid-row > .cell-action,
-  .bench-grid-row > .cell-action {
+
+  /* Roster and bench editors (MatchSetup): each table row becomes a card of
+     its own (border, radius, white, 10 px apart), one field per row. The head
+     strip is hidden; every field carries its own .pf-label instead. Card:
+     [# label] / badge + number + Delete (bench: role + Delete) / one row per
+     field / libero select + captain toggle. Captain and libero rows keep their
+     inline green / grey border and tint. */
+  .ov-form-stack :is(.roster-grid, .bench-grid) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
+    display: none;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 12px 14px 14px;
+    border: 1px solid var(--ov-hairline);
+    border-radius: 10px;
+    background: var(--ov-card);
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > * {
+    order: 3;
+  }
+  .ov-form-stack .roster-grid-row > div:empty {
+    display: none;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) :is(input, select) {
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  .ov-form-stack .roster-grid-row > :is(.roster-badge, .cell-head, .cell-action),
+  .ov-form-stack .bench-grid-row > :is(.cell-head, .cell-action) {
     order: 2;
   }
-  .roster-grid-row > .roster-badge {
+  .ov-form-stack .roster-grid-row > .roster-badge {
     min-width: 32px;
     height: 32px;
     padding: 0 6px;
     font-size: 13px;
   }
-  .roster-grid-row > input.cell-head {
+  .ov-form-stack .roster-grid-row > input.cell-head {
     flex: 0 0 96px;
     width: 96px;
     font-size: 18px;
   }
-  .bench-grid-row > select.cell-head {
+  .ov-form-stack .bench-grid-row > select.cell-head,
+  .ov-form-stack .roster-grid-row > select.cell-libero {
     flex: 1 1 0;
   }
-  .roster-grid-row > select.cell-libero {
-    flex: 1 1 0;
+  /* "No libero" in sentence case (the legacy select rule capitalizes) */
+  .ov-form-stack :is(select.cell-libero, table.ct-cards select) {
+    text-transform: none;
   }
-  .roster-grid-row > .cell-action,
-  .bench-grid-row > .cell-action {
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action {
     margin-left: auto;
   }
-  .roster-grid-row > .cell-action button,
-  .bench-grid-row > .cell-action button,
-  .bench-grid-row > button {
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action button,
+  .ov-form-stack .bench-grid-row > button {
     min-height: 44px;
     padding-inline: 16px;
   }
   /* captain and LFP toggles: 44 px tap targets (their size is inline) */
-  .roster-grid-row > .cell-captain > * {
+  .ov-form-stack .roster-grid-row > .cell-captain > * {
     width: 44px !important;
     min-width: 44px !important;
     height: 44px !important;
+  }
+  /* Add-player card: it sits in its own stone box, so no second frame; Add
+     goes last, full width, under the fields it submits. */
+  .ov-form-stack .roster-add > .roster-grid-row {
+    padding: 4px 2px 2px;
+    border: 0;
+    background: transparent;
+  }
+  .ov-form-stack .roster-add > .roster-grid-row > .cell-action {
+    order: 4;
+    flex: 0 0 100%;
+    margin: 10px 0 0;
+  }
+  .ov-form-stack .roster-add > .roster-grid-row > .cell-action button {
+    width: 100%;
+  }
+
+  /* Coin toss roster review (CoinToss, table.ct-cards): the same cards. Each
+     <tr> is a card, each <td> one line with its .pf-label; number + delete on
+     top. Its controls are text-styled inline edits, so the field look and the
+     44 px / 16 px sizes need !important here. */
+  .ov-form-stack table.ct-cards {
+    display: block;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
+  }
+  .ov-form-stack table.ct-cards thead {
+    display: none;
+  }
+  .ov-form-stack table.ct-cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ov-form-stack table.ct-cards tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 12px 14px 14px;
+    border: 1px solid var(--ov-hairline);
+    border-radius: 10px;
+    background: var(--ov-card);
+  }
+  .ov-form-stack table.ct-cards td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    flex: 0 0 100%;
+    order: 3;
+    width: auto !important;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0;
+  }
+  .ov-form-stack table.ct-cards td.ct-head {
+    order: 1;
+    flex: 1 1 0;
+  }
+  .ov-form-stack table.ct-cards td.ct-action {
+    order: 2;
+    flex: 0 0 auto;
+  }
+  .ov-form-stack table.ct-cards .pf-label {
+    order: 0;
+  }
+  .ov-form-stack table.ct-cards td.ct-head > div {
+    flex: 1 1 0;
+    gap: 12px !important;
+  }
+  .ov-form-stack table.ct-cards :is(input, select) {
+    flex: 1 1 0;
+    width: 100% !important;
+    min-width: 0;
+    height: 44px !important;
+    min-height: 44px;
+    margin: 0 !important;
+    padding: 0 12px !important;
+    font-size: 16px !important;
+    text-align: left !important;
+    color: var(--ov-text-body) !important;
+    background: var(--ov-card) !important;
+    border: 1px solid var(--ov-hairline-strong) !important;
+    border-radius: var(--ov-radius) !important;
+  }
+  .ov-form-stack table.ct-cards select {
+    appearance: auto !important;
+  }
+  .ov-form-stack table.ct-cards input[type="number"] {
+    flex: 0 0 96px;
+    width: 96px !important;
+    text-align: center !important;
+    font-size: 18px !important;
+    font-weight: 600;
+  }
+  .ov-form-stack table.ct-cards input[data-captain] {
+    border: 2px solid #059669 !important; /* emerald-600, as CaptainToggle */
+  }
+  .ov-form-stack table.ct-cards input[aria-invalid="true"] {
+    color: #b91c1c !important; /* red-700 */
+    background: #fef2f2 !important; /* red-50 */
+    border: 2px solid #f87171 !important; /* red-400 */
+  }
+  .ov-form-stack table.ct-cards .ct-libero {
+    font-size: 13px !important;
+  }
+  .ov-form-stack .ct-add-player :is(input, select) {
+    font-size: 16px !important;
+  }
+  .ov-form-stack :is(table.ct-cards, .ct-add-player) :is(.ct-toggle, td.ct-action button) {
+    flex: 0 0 44px;
+    width: 44px !important;
+    min-width: 44px;
+    height: 44px !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
   }
 }

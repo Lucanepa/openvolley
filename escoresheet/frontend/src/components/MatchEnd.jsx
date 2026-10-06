@@ -1383,7 +1383,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <Button
               variant="secondary"
               size="md"
-              className="relative font-medium after:absolute after:-inset-1 after:content-['']"
+              className="relative font-medium after:absolute after:-inset-1 after:content-[''] stack:h-11 stack:px-4"
               onClick={() => {
                 setRemarksText(match?.remarks || '')
                 setShowRemarksModal(true)

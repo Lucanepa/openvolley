@@ -210,7 +210,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                 <button
                   type="button"
                   onClick={onSwitchToLogin}
-                  className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
+                  className={cn('min-h-11 rounded stack:px-1 font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
                 >
                   {t('auth.signIn', 'Sign in')}
                 </button>

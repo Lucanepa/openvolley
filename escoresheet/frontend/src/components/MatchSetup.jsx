@@ -32,6 +32,8 @@ import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn } from '../ui'
 import CaptainToggle from './CaptainToggle'
+import StackLabel from './StackLabel'
+import { useFormStack } from '../hooks/useFormStack'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -223,20 +225,13 @@ function hasRosterChanged(originalRoster, currentRoster, originalBench, currentB
 const TEST_HOME_TEAM = TEST_TEAM_SEED_DATA.find(t => t.seedKey === 'test-team-home')
 const TEST_AWAY_TEAM = TEST_TEAM_SEED_DATA.find(t => t.seedKey === 'test-team-away')
 
-// Field label for a roster / bench card in portrait (tailwind.css, "Portrait
-// data entry"). Hidden in landscape, where the table head names the columns,
-// so it takes no grid cell there. The control keeps its own aria-label.
-function StackLabel({ head = false, children }) {
-  return <span aria-hidden="true" className={head ? 'pf-label pf-head' : 'pf-label'}>{children}</span>
-}
-
 // OfficialCard component - defined outside to prevent focus loss on re-render
 const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle, label }) {
   return (
     <Switch
       checked={on}
       onCheckedChange={() => onToggle()}
-      className="p-0"
+      className="p-0 stack:after:absolute stack:after:-inset-x-1 stack:after:-inset-y-3 stack:after:content-['']"
       aria-label={label}
       title={label}
     />
@@ -419,6 +414,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
+  // Portrait: the libero select's empty option reads "No libero" (its column
+  // head is hidden there); landscape keeps the blank option. The option is
+  // keyed on the orientation, so turning back replaces the node: a select
+  // keeps the width of a longer text when only its option's text changes.
+  const formStack = useFormStack()
   // MatchSetup uses 25% larger scale by default
   const scaleFactor = baseScaleFactor * 1.25
   // Helper for scaled pixel values
@@ -3251,7 +3251,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           <div className="flex flex-col items-center gap-2">
             <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
-            <Button variant="toolbar" size="md" onClick={() => setLoadOfficialMatchModal(true)}>
+            <Button variant="toolbar" size="md" className="stack:h-11 stack:px-4" onClick={() => setLoadOfficialMatchModal(true)}>
               {t('loadOfficialMatch.button')}
             </Button>
           </div>
@@ -3895,7 +3895,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {/* Local/Remote Toggle */}
                 <SegmentedControl
                   ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 shrink-0 [&_button]:p-0"
+                  className="w-44 shrink-0 [&_button]:p-0 stack:[&_button]:h-11"
                   value={homeUploadMode}
                   onChange={setHomeUploadMode}
                   options={[
@@ -4110,7 +4110,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {homeRoster.length < 14 && (
           <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3 stack:w-full">
             <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-stone-500">{t('matchSetup.addNewPlayer')}</div>
-            <div data-help-id="setup-add-player" className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
+            <div data-help-id="setup-add-player" className={`roster-grid roster-add${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
                 <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
@@ -4129,7 +4129,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }
                   setHomeLibero(newValue)
                 }}>
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!homeRoster.some(p => p.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -4337,7 +4337,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                 >
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -5001,7 +5001,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {/* Local/Remote Toggle */}
                 <SegmentedControl
                   ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 shrink-0 [&_button]:p-0"
+                  className="w-44 shrink-0 [&_button]:p-0 stack:[&_button]:h-11"
                   value={awayUploadMode}
                   onChange={setAwayUploadMode}
                   options={[
@@ -5216,7 +5216,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         {awayRoster.length < 14 && (
           <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3 stack:w-full">
             <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-stone-500">{t('matchSetup.addNewPlayer')}</div>
-            <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
+            <div className={`roster-grid roster-add${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
                 <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
@@ -5246,7 +5246,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }
                   setAwayLibero(newValue)
                 }}>
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!awayRoster.some(p => p.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -5447,7 +5447,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                 >
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
