@@ -257,7 +257,9 @@ export function redactForLog(value, depth = 0) {
 const safeLog = {
   log: (...args) => console.log(...args.map((a) => redactForLog(a))),
   warn: (...args) => console.warn(...args.map((a) => redactForLog(a))),
-  error: (...args) => console.error(...args.map((a) => redactForLog(a)))
+  // A 401 (signed out, session expired) is an expected state the queue waits
+  // out ('auth_required'), not an error worth a red console line
+  error: (...args) => (args.some((a) => a && typeof a === 'object' && isAuthError(a)) ? console.warn : console.error)(...args.map((a) => redactForLog(a)))
 }
 
 // apiFrom rejects (throws) when fetch itself fails. Matched on the message only:
@@ -1292,6 +1294,14 @@ export function useSyncQueue() {
         return
       }
 
+      // No session on this device: every write would come back 401, so none
+      // is sent. The queue resumes on sign-in (installAuthListener).
+      if (!hasStoredSessionToken()) {
+        const waiting = await db.sync_queue.where('status').equals('queued').count()
+        setSyncStatus(waiting > 0 ? 'auth_required' : 'synced')
+        return
+      }
+
       // Errored jobs whose backoff has passed go back into this pass. Done here,
       // inside the flush claim: a separate timer always found a flush running
       // (its 30 s period was a multiple of the 5 s poll) and never retried.
@@ -1498,6 +1508,16 @@ export function storedSessionUserId() {
   if (!session?.access_token) return null
   if (session.expires_at && Date.now() / 1000 > session.expires_at) return null
   return session.user?.id || null
+}
+
+/**
+ * Is a session token stored on this device (unexpired)? Without one the
+ * queue sends nothing: the backend answers every write with 401.
+ */
+export function hasStoredSessionToken() {
+  const session = readStoredJson(AUTH_TOKEN_STORAGE_KEY)
+  if (!session?.access_token) return false
+  return !(session.expires_at && Date.now() / 1000 > session.expires_at)
 }
 
 /**
