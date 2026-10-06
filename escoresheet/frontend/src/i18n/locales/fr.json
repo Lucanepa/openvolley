@@ -2501,6 +2501,22 @@
     "matchClosed": "Non synchronisé : ce match est clôturé sur le serveur. Seul un admin peut le rouvrir.",
     "joinWithPin": "Rejoindre avec le PIN du match"
   },
+  "androidUpdate": {
+    "available": "OpenVolley {{version}} est disponible",
+    "fromFdroid": "Les mises à jour viennent de F-Droid.",
+    "openFdroid": "Ouvrir dans F-Droid",
+    "notFromFdroid": "Installée sans F-Droid : l'application ne se met pas à jour seule.",
+    "notifyOption": "M'avertir des nouvelles versions",
+    "notifyHint": "Interroge get.openvolley.app environ une fois par jour, jamais pendant un match. Rien d'autre n'est envoyé.",
+    "askTitle": "Être averti des nouvelles versions ?",
+    "askBody": "OpenVolley demanderait environ une fois par jour à get.openvolley.app si une nouvelle version existe. Rien d'autre n'est envoyé. Modifiable dans les options.",
+    "askYes": "M'avertir",
+    "askNo": "Non, merci",
+    "getFdroid": "L'obtenir via F-Droid (mise à jour automatique ensuite)",
+    "downloadApk": "Télécharger l'APK",
+    "fdroidRepoHint": "Publiée dans le dépôt OpenVolley. Si F-Droid ne propose pas encore de mise à jour, ajoutez ce dépôt : f-droid.org la compile quelques jours plus tard.",
+    "addRepo": "Ajouter le dépôt OpenVolley"
+  },
   "appLifecycle": {
     "trayTooltip": "OpenVolley eScoresheet",
     "trayShow": "Afficher OpenVolley",

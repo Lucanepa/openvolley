@@ -60,6 +60,8 @@ import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
+import { installAndroidUpdates, liveMatchKnown } from './utils/androidUpdate'
+import AndroidUpdateNotice from './components/AndroidUpdateNotice'
 import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
@@ -458,11 +460,17 @@ export default function App() {
   // before it quits, Android's Back asks before it exits, a browser asks
   // before it leaves a live match (utils/appLifecycle.js)
   useEffect(() => installAppLifecycle(), [])
+  // Android app: who installed it, the opt-in update check (utils/androidUpdate.js)
+  useEffect(() => installAndroidUpdates(), [])
   const activeMatchStatus = activeMatch?.status
   const activeMatchIsTest = !!activeMatch?.test
+  // undefined until the live query has answered: before that "no live match"
+  // is only a guess, and the Android update check must not run on a guess
+  const activeMatchLoaded = activeMatch !== undefined
   useEffect(() => {
     setLiveMatch(liveOf(activeMatchStatus ? { status: activeMatchStatus, test: activeMatchIsTest } : null))
-  }, [activeMatchStatus, activeMatchIsTest])
+    if (activeMatchLoaded) liveMatchKnown()
+  }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
 
   // Get current match (most recent match that's not final)
   const currentMatch = useLiveQuery(async () => {
@@ -2973,6 +2981,8 @@ export default function App() {
                 />
               ) : !matchId ? (
                 <>
+                  {/* the Android app's update notice (utils/androidUpdate.js): home screen only */}
+                  <AndroidUpdateNotice />
                   <UpdateBanner showClearDataOption={true} />
                   {/* the desktop app's own update (updater.rs): home screen only */}
                   <DesktopUpdateNotice />
