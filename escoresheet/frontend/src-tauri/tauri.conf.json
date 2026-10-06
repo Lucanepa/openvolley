@@ -20,7 +20,7 @@
     "active": true,
     "targets": ["nsis", "appimage", "deb"],
     "category": "Sports",
-    "shortDescription": "Offline volleyball scoretable + LAN tablet server",
+    "shortDescription": "Open Source Volleyball eScoresheet",
     "longDescription": "Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in LAN server so referee, bench and livescore tablets connect over the same Wi-Fi — no internet, no accounts.",
     "icon": [
       "icons/32x32.png",
