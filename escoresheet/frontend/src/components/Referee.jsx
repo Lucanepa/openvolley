@@ -27,6 +27,7 @@ import { Button, FOCUS_RING } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
+import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -363,6 +364,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   if (liveTrackerRef.current === null) liveTrackerRef.current = createLiveStateTracker()
   useEffect(() => {
     liveTrackerRef.current.reset()
+    setLastEvent(null)
   }, [matchId])
 
   // Helper function to update match data state (with debounce to reduce flickering)
@@ -392,6 +394,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         events: result.events || [],
         liveState: result.liveState || null
       }
+
+      // Last action from what was just loaded (reload, reconnect refetch,
+      // relay bundle), not only from realtime pushes: keep the newest.
+      const loadedLastEvent = lastEventFromMatchData(newData)
+      if (loadedLastEvent) setLastEvent(prev => pickNewerLastEvent(prev, loadedLastEvent))
 
       const now = Date.now()
       const timeSinceLastUpdate = now - lastDataUpdateRef.current
@@ -984,16 +991,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             }
           }
 
-          // Store last event for footer display (only specific event types)
-          const displayableEvents = ['point', 'timeout', 'substitution', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_redesignation', 'set_end', 'sanction', 'court_captain_designation']
-          if (state.last_event_type && displayableEvents.includes(state.last_event_type)) {
-            setLastEvent({
-              type: state.last_event_type,
-              team: state.last_event_team,
-              data: state.last_event_data,
-              timestamp: Date.now()
-            })
-          }
+          // Store last event for footer display (only specific event types),
+          // stamped with the scorer's time of the action
+          const pushedLastEvent = lastEventFromLiveState(state, { fallbackTs: Date.now() })
+          if (pushedLastEvent) setLastEvent(prev => pickNewerLastEvent(prev, pushedLastEvent))
 
           // Shown data was built from match_live_state (no relay bundle): apply
           // the pushed row itself. Re-reading the database here raced the
@@ -2438,7 +2439,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       <div style={{
         position: 'relative',
         aspectRatio: '1/1',
-        height: 'auto',
+        // Sized from the court box (container query on the court grid), not
+        // from the viewport alone: on a landscape tablet the court is ~270 px
+        // tall and three 93 px discs overflowed it (bottom row cut off, rows
+        // touching). 26cqh leaves room for three rows plus gaps; 17cqw keeps a
+        // disc inside its column in portrait. Same disc, colours and numbers.
+        height: `min(26cqh, 17cqw, ${Math.round(vmin(8) * 1.45)}px)`,
+        width: 'auto',
+        boxSizing: 'border-box',
         padding: '4px',
         border: isRecentlySub ? '3px solid #f97316' : '1px solid var(--border)',
         borderRadius: '50%',
@@ -2447,7 +2455,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: vmin(8),
+        fontSize: `min(${vmin(8)}px, 14cqh, 9cqw)`,
+        lineHeight: 1,
         fontWeight: isRecentlySub ? 900 : 700,
         boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
         flexShrink: 0,
@@ -2704,9 +2713,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       overflow: 'hidden'
     }}>
       {linkDown && (
+        // Below the 40 px header (it covered the centred menu button) and
+        // click-through, like the kit's ConnectionBanner.
         <div role="alert" className="rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
-          top: 8,
+          top: 48,
+          pointerEvents: 'none',
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 9999,
@@ -3198,6 +3210,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               width: '98%',
               height: '98%',
               position: 'relative',
+              // The player discs size themselves from this box (cqh / cqw).
+              containerType: 'size',
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
               background: 'linear-gradient(90deg, rgba(234, 179, 8, 0.12), rgba(234, 179, 8, 0.08))',

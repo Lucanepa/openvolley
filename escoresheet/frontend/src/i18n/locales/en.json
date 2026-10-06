@@ -450,7 +450,8 @@
       "validationError": "Please check: All numbers must exist in roster, not be liberos, and not be duplicated.",
       "confirm": "Confirm",
       "close": "Close",
-      "modify": "Modify"
+      "modify": "Modify",
+      "positionInput": "Player at position {{pos}}"
     },
     "lastAction": "Last action:",
     "keybindings": {
@@ -1377,7 +1378,8 @@
       "invalidPin": "Invalid PIN code. Please check and try again.",
       "connectionLost": "Connection lost. Please reconnect.",
       "matchEnded": "Match has ended.",
-      "connectionDisabled": "Connection has been disabled."
+      "connectionDisabled": "Connection has been disabled.",
+      "serverUnreachable": "No connection to the server – check the Wi-Fi and try again."
     },
     "connection": {
       "title": "Connection",

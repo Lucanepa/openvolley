@@ -448,7 +448,8 @@
       "validationError": "Veuillez vérifier : Tous les numéros doivent exister dans la liste, ne pas être des libéros et ne pas être dupliqués.",
       "confirm": "Confirmer",
       "close": "Fermer",
-      "modify": "Modifier"
+      "modify": "Modifier",
+      "positionInput": "Joueur en position {{pos}}"
     },
     "lastAction": "Dernière action :",
     "keybindings": {
@@ -1374,7 +1375,8 @@
       "invalidPin": "Code PIN incorrect.",
       "connectionLost": "Connexion perdue. Reconnexion requise.",
       "matchEnded": "Le match est fini.",
-      "connectionDisabled": "Connexion désactivée."
+      "connectionDisabled": "Connexion désactivée.",
+      "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez."
     },
     "connection": {
       "title": "Connexion",

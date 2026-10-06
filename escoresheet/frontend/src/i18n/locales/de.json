@@ -460,7 +460,8 @@
       "validationError": "Bitte prüfen: Alle Nummern müssen im Kader sein, keine Liberos, keine Duplikate.",
       "confirm": "Bestätigen",
       "close": "Schliessen",
-      "modify": "Ändern"
+      "modify": "Ändern",
+      "positionInput": "Spieler auf Position {{pos}}"
     },
     "lastAction": "Letzte Aktion:",
     "keybindings": {
@@ -1247,7 +1248,8 @@
       "invalidPin": "Ungültiger PIN-Code. Bitte überprüfen und erneut versuchen.",
       "connectionLost": "Verbindung verloren. Bitte erneut verbinden.",
       "matchEnded": "Das Spiel ist beendet.",
-      "connectionDisabled": "Die Verbindung wurde deaktiviert."
+      "connectionDisabled": "Die Verbindung wurde deaktiviert.",
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
     },
     "connection": {
       "title": "Verbindung",
