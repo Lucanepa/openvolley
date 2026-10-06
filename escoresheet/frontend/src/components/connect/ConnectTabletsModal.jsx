@@ -15,7 +15,7 @@ import {
   LAN_UNAVAILABLE_ROLES, TABLET_ROLES, cloudRoleUrl, firstOfKind, hallInterfaces, lanRoleUrl, roleAccess, wifiQrString
 } from '../../utils/tabletLinks'
 import {
-  bluetoothNetwork, displayedWifi, hotspot, isTabletNetworkAvailable, netError, renewWifiPassword
+  bluetoothNetwork, displayedWifi, firewall, hotspot, isTabletNetworkAvailable, needsFirewallStep, netError, renewWifiPassword
 } from '../../utils/tabletNetwork'
 import { QrPanel, RoleRows } from './RoleLinks'
 import { BluetoothPanel, HallPanel, HotspotPanel, ServerPanel } from './NetworkPanels'
@@ -99,6 +99,9 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const [hallIp, setHallIp] = useState(null)
   const [hs, setHs] = useState({ loading: desktop, status: null, busy: false, error: null })
   const [bt, setBt] = useState({ loading: desktop, status: null, busy: false, error: null })
+  // Windows: is the installer's firewall rule for the tablets there?
+  // undefined = not answered yet (no step meanwhile), null = the check failed
+  const [fw, setFw] = useState(undefined)
   const [qrRole, setQrRole] = useState('referee')
   const [showLogin, setShowLogin] = useState(false)
   const [roleOverride, setRoleOverride] = useState({})
@@ -134,6 +137,17 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
     }).catch(() => { if (!cancelled) setHs(s => ({ ...s, loading: false })) })
     return () => { cancelled = true }
   }, [open, desktop, win])
+
+  // -- the firewall (Windows desktop app): read once per opening --
+  useEffect(() => {
+    if (!open || !desktop) return undefined
+    let cancelled = false
+    firewall.status(win)
+      .then(status => { if (!cancelled) setFw(status || null) })
+      .catch(() => { if (!cancelled) setFw(null) })
+    return () => { cancelled = true }
+  }, [open, desktop, win])
+  const firewallStep = desktop && needsFirewallStep(fw, hs.status)
 
   // -- the laptop's Bluetooth network (desktop app) --
   const loadBluetooth = useCallback((cancelled) => {
@@ -327,7 +341,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
                   ariaLabel={t('connectTablets.lanWhich', 'Which Wi-Fi')}
                 />
                 {view.lanMode === 'hall' ? (
-                  <HallPanel served={served} loading={relay.loading} interfaces={halls} selectedIp={hallAddress} onSelectIp={setHallIp} />
+                  <HallPanel served={served} loading={relay.loading} interfaces={halls} selectedIp={hallAddress} onSelectIp={setHallIp} firewallStep={firewallStep} />
                 ) : (
                   <HotspotPanel
                     desktop={desktop}
@@ -336,6 +350,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
                     busy={hs.busy}
                     error={hs.error}
                     wifi={wifi}
+                    firewallStep={firewallStep}
                     onStart={startHotspot}
                     onStop={stopHotspot}
                     onNewPassword={newPassword}

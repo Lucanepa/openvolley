@@ -247,8 +247,15 @@ rel="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v$deb_ver"
 win_url=$(curl -fsS --max-time 20 "https://api.github.com/repos/Lucanepa/openvolley/releases/tags/desktop-v$deb_ver" 2>/dev/null |
   python3 -c 'import json, sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].lower().endswith("-setup.exe")))' 2>/dev/null) || win_url=$rel
 [[ "$win_url" =~ ^https://github\.com/Lucanepa/openvolley/releases/[A-Za-z0-9._/%+-]+$ ]] || win_url=$rel
+# The per-machine Windows installer (administrator prompt, firewall rule for
+# the tablets) comes after 2.1.0: up to 2.1.0 the linked setup.exe installs
+# per user, so the <!--per-machine--> block of the page is left out.
+PER_USER_UNTIL=2.1.0
+per_machine=() # sed args that drop the block
+[[ "$deb_ver" != "$PER_USER_UNTIL" && "$(printf '%s\n' "$PER_USER_UNTIL" "$deb_ver" | sort -V | tail -1)" == "$deb_ver" ]] ||
+  per_machine=(-e '/<!--per-machine/,/<!--\/per-machine-->/d')
 sed -e "s|@DESKTOP_VERSION@|$deb_ver|g" -e "s|@DEB_PACKAGE@|$deb_pkg|g" -e "s|@WINDOWS_URL@|$win_url|g" \
-    -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \
+    -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" "${per_machine[@]}" \
     "$KIT_DIR/pkgs/index.html" > "$PUB/index.html"
 ! grep -q '@[A-Z_]*@' "$PUB/index.html" || die "index.html has unfilled placeholders"
 # curl -fsSL https://get.openvolley.app/install.sh | sudo sh
