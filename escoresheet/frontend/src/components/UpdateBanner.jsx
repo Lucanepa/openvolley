@@ -55,7 +55,7 @@ export default function UpdateBanner() {
 
         {/* Title */}
         <h3 id="ov-update-title" className="mb-2 text-lg font-bold text-stone-900">
-          {t('options.updateAvailable', 'Update Available!')}
+          {t('options.updateAvailable', 'Update available!')}
         </h3>
 
         {/* Version info */}
@@ -79,7 +79,7 @@ export default function UpdateBanner() {
             {t('common.later', 'Later')}
           </Button>
           <Button variant="dark" size="xl" icon={RefreshCw} onClick={() => updateServiceWorker()} className="w-full sm:w-auto">
-            {t('options.refreshToUpdate', 'Refresh to Update')}
+            {t('options.refreshToUpdate', 'Refresh to update')}
           </Button>
         </div>
       </div>

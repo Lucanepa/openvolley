@@ -64,7 +64,7 @@ describe('ConnectionStatus sync indicator', () => {
     fireEvent.click(screen.getByText('Error'))
     expect(screen.getByText('Cloud sync:')).toBeInTheDocument()
     expect(screen.getByText('Refused by the server:')).toBeInTheDocument()
-    expect(screen.getByText('Retry All')).toBeInTheDocument()
+    expect(screen.getByText('Retry all')).toBeInTheDocument()
     expect(screen.queryByText(/Supabase/)).toBeNull()
   })
 
@@ -119,7 +119,7 @@ describe('SyncSignInBanner', () => {
     const { rerender } = render(<SyncSignInBanner syncStatus="auth_required" />)
     expect(screen.getByRole('status')).toHaveTextContent('saved on this device only')
 
-    fireEvent.click(screen.getByText('Sign In'))
+    fireEvent.click(screen.getByText('Sign in'))
     expect(screen.getByText('login-modal')).toBeInTheDocument()
 
     rerender(<SyncSignInBanner syncStatus="synced" />)

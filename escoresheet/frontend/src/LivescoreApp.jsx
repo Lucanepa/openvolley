@@ -307,7 +307,7 @@ export default function LivescoreApp() {
 
         {/* Header */}
         <DashboardHeader
-          title={gameN ? `Game ${gameN}` : t('livescore.title', 'Live Score')}
+          title={gameN ? `Game ${gameN}` : t('livescore.title', 'Live score')}
           subtitle={[league, gender].filter(Boolean).join(' • ') || null}
           onBack={() => setSelectedGame(null)}
           backLabel={t('common.back', 'Back')}
@@ -473,7 +473,7 @@ export default function LivescoreApp() {
 
       {/* Header */}
       <DashboardHeader
-        title={t('livescore.title', 'Live Scores')}
+        title={t('livescore.title', 'Live scores')}
         subtitle={`${countLiveGames(shownGames)} ${countLiveGames(shownGames) === 1 ? 'game' : 'games'} live`}
         onLoadGames={fetchLiveGames}
         loadingMatches={loading}

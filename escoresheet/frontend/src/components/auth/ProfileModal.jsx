@@ -322,7 +322,7 @@ export default function ProfileModal({ open, onClose }) {
                 ? t('auth.saving', 'Saving...')
                 : success
                   ? t('auth.infoSaved', 'Info saved')
-                  : t('auth.saveProfile', 'Save Profile')}
+                  : t('auth.saveProfile', 'Save profile')}
             </button>
           </form>
 
@@ -330,7 +330,7 @@ export default function ProfileModal({ open, onClose }) {
           {/* Danger Zone - Delete Account */}
           <div className="mt-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
             <div className="text-[11px] font-bold uppercase tracking-wider text-red-700">
-              {t('auth.dangerZone', 'Danger Zone')}
+              {t('auth.dangerZone', 'Danger zone')}
             </div>
             <p className="mt-1 mb-3 text-sm text-stone-600">
               {t('auth.deleteAccountWarning', 'Deleting your account is permanent and cannot be undone.')}
@@ -341,7 +341,7 @@ export default function ProfileModal({ open, onClose }) {
               onClick={() => setShowDeleteConfirm(true)}
               className="rounded-lg bg-white font-medium"
             >
-              {t('auth.deleteAccount', 'Delete Account')}
+              {t('auth.deleteAccount', 'Delete account')}
             </Button>
           </div>
         </div>
@@ -362,7 +362,7 @@ export default function ProfileModal({ open, onClose }) {
             onClick={e => e.stopPropagation()}
           >
             <h3 id="profile-delete-title" className="text-lg font-bold text-stone-900">
-              {t('auth.confirmDeleteAccount', 'Confirm Account Deletion')}
+              {t('auth.confirmDeleteAccount', 'Confirm account deletion')}
             </h3>
 
             <p className="mt-2 mb-4 text-sm text-stone-600">
@@ -411,7 +411,7 @@ export default function ProfileModal({ open, onClose }) {
               >
                 {deleteLoading
                   ? t('auth.deleting', 'Deleting...')
-                  : t('auth.deleteAccountConfirm', 'Delete My Account')}
+                  : t('auth.deleteAccountConfirm', 'Delete my account')}
               </Button>
             </div>
           </div>

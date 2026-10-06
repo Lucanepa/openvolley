@@ -12,18 +12,18 @@ function formatEventType(type, t) {
     'point': t('backupTable.eventTypes.point', 'Point'),
     'timeout': t('backupTable.eventTypes.timeout', 'Timeout'),
     'substitution': t('backupTable.eventTypes.substitution', 'Substitution'),
-    'libero_entry': t('backupTable.eventTypes.liberoEntry', 'Libero Entry'),
-    'libero_exit': t('backupTable.eventTypes.liberoExit', 'Libero Exit'),
-    'libero_exchange': t('backupTable.eventTypes.liberoExchange', 'Libero Exchange'),
-    'libero_unable': t('backupTable.eventTypes.liberoUnable', 'Libero Unable'),
-    'libero_redesignation': t('backupTable.eventTypes.liberoRedesignation', 'Libero Redesignation'),
-    'set_start': t('backupTable.eventTypes.setStart', 'Set Start'),
-    'set_end': t('backupTable.eventTypes.setEnd', 'Set End'),
-    'coin_toss': t('backupTable.eventTypes.coinToss', 'Coin Toss'),
+    'libero_entry': t('backupTable.eventTypes.liberoEntry', 'Libero entry'),
+    'libero_exit': t('backupTable.eventTypes.liberoExit', 'Libero exit'),
+    'libero_exchange': t('backupTable.eventTypes.liberoExchange', 'Libero exchange'),
+    'libero_unable': t('backupTable.eventTypes.liberoUnable', 'Libero unable'),
+    'libero_redesignation': t('backupTable.eventTypes.liberoRedesignation', 'Libero redesignation'),
+    'set_start': t('backupTable.eventTypes.setStart', 'Set start'),
+    'set_end': t('backupTable.eventTypes.setEnd', 'Set end'),
+    'coin_toss': t('backupTable.eventTypes.coinToss', 'Coin toss'),
     'rotation': t('backupTable.eventTypes.rotation', 'Rotation'),
     'sanction': t('backupTable.eventTypes.sanction', 'Sanction'),
     'challenge': t('backupTable.eventTypes.challenge', 'Challenge'),
-    'decision_change': t('backupTable.eventTypes.decisionChange', 'Decision Change')
+    'decision_change': t('backupTable.eventTypes.decisionChange', 'Decision change')
   }
   return typeMap[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')
 }
@@ -131,8 +131,8 @@ export default function BackupTable({
         <span className="text-center">{t('backupTable.gameN', 'Game N')}</span>
         <span className="text-center">{t('backupTable.set', 'Set')}</span>
         <span className="text-center">{t('backupTable.score', 'Score')}</span>
-        <span >{t('backupTable.lastAction', 'Last Action')}</span>
-        <span className="text-right">{t('backupTable.createdAt', 'Created At')}</span>
+        <span >{t('backupTable.lastAction', 'Last action')}</span>
+        <span className="text-right">{t('backupTable.createdAt', 'Created at')}</span>
         {showRestoreButton && <span></span>}
       </div>
 

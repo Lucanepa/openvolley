@@ -69,8 +69,8 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
         <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-2">
           <h2 id="login-modal-title" className="text-xl font-bold tracking-tight text-stone-900">
             {showForgotPassword
-              ? t('auth.resetPassword', 'Reset Password')
-              : t('auth.signIn', 'Sign In')}
+              ? t('auth.resetPassword', 'Reset password')
+              : t('auth.signIn', 'Sign in')}
           </h2>
           <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
         </div>
@@ -98,7 +98,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                 }}
                 className="mt-5"
               >
-                {t('auth.backToSignIn', 'Back to Sign In')}
+                {t('auth.backToSignIn', 'Back to sign in')}
               </Button>
             </div>
           ) : showForgotPassword ? (
@@ -117,14 +117,14 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                 />
               </Field>
               <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
-                {loading ? t('auth.sending', 'Sending...') : t('auth.sendResetLink', 'Send Reset Link')}
+                {loading ? t('auth.sending', 'Sending...') : t('auth.sendResetLink', 'Send reset link')}
               </Button>
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(false)}
                 className={quietLink}
               >
-                {t('auth.backToSignIn', 'Back to Sign In')}
+                {t('auth.backToSignIn', 'Back to sign in')}
               </button>
             </form>
           ) : (
@@ -151,7 +151,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                   />
                 </Field>
                 <Button variant="hero" block type="submit" disabled={loading} loading={loading}>
-                  {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign In')}
+                  {loading ? t('common.signingIn', 'Signing in...') : t('auth.signIn', 'Sign in')}
                 </Button>
               </form>
 
@@ -170,7 +170,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
                   onClick={onSwitchToSignUp}
                   className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
                 >
-                  {t('auth.signUp', 'Sign Up')}
+                  {t('auth.signUp', 'Sign up')}
                 </button>
               </div>
             </>

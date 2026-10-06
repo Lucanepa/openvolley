@@ -172,7 +172,7 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
         <div className="relative overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-6 shadow-card-lg sm:p-8">
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
           <h2 className="text-center text-xl font-bold tracking-tight text-stone-900">
-            {t('connection.connectToServer', 'Connect to Server')}
+            {t('connection.connectToServer', 'Connect to server')}
           </h2>
           <p className="mt-1 mb-6 text-center text-sm text-stone-500">
             {t('connection.selectServerMode', 'Choose how to connect')}

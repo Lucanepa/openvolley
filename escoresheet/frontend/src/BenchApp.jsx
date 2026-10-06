@@ -657,8 +657,8 @@ export default function BenchApp() {
   // Get team names from selected match (list entries, PIN check and relay
   // bundles name them differently)
   const selectedNames = matchTeamNames(selectedMatch)
-  const homeTeamName = selectedNames.home || 'Home Team'
-  const awayTeamName = selectedNames.away || 'Away Team'
+  const homeTeamName = selectedNames.home || 'Home team'
+  const awayTeamName = selectedNames.away || 'Away team'
 
   // Label this tablet on the relay (scorer's tablet status). Set before the
   // match view mounts (PIN submit / restore): MatchEntry subscribes in its own
@@ -886,7 +886,7 @@ export default function BenchApp() {
               className="py-6"
               action={
                 <Button variant="secondary" size="xl" icon={RefreshCw} onClick={loadMatches} disabled={loadingMatches}>
-                  {loadingMatches ? t('common.loading', 'Loading...') : t('benchDashboard.loadGames', 'Load Games')}
+                  {loadingMatches ? t('common.loading', 'Loading...') : t('benchDashboard.loadGames', 'Load games')}
                 </Button>
               }
             >
@@ -901,7 +901,7 @@ export default function BenchApp() {
                   variant="outline"
                   className="h-11 w-11"
                   icon={loadingMatches ? <Loader2 size={16} className="animate-spin" aria-hidden /> : RefreshCw}
-                  label={t('benchDashboard.loadGames', 'Load Games')}
+                  label={t('benchDashboard.loadGames', 'Load games')}
                   onClick={loadMatches}
                   disabled={loadingMatches}
                 />

@@ -81,7 +81,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
         {/* Header */}
         <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-2">
           <h2 id="signup-modal-title" className="text-xl font-bold tracking-tight text-stone-900">
-            {t('auth.createAccount', 'Create Account')}
+            {t('auth.createAccount', 'Create account')}
           </h2>
           <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
         </div>
@@ -106,7 +106,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                   : t('auth.accountReady', 'Your account is ready. You can sign in now.')}
               </p>
               <Button variant="hero" block onClick={onSwitchToLogin} className="mt-5">
-                {t('auth.signIn', 'Sign In')}
+                {t('auth.signIn', 'Sign in')}
               </Button>
             </div>
           ) : (
@@ -201,7 +201,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                 </Field>
 
                 <Button variant="hero" block type="submit" disabled={loading} loading={loading} className="!mt-5">
-                  {loading ? t('auth.creatingAccount', 'Creating account...') : t('auth.createAccount', 'Create Account')}
+                  {loading ? t('auth.creatingAccount', 'Creating account...') : t('auth.createAccount', 'Create account')}
                 </Button>
               </form>
 
@@ -212,7 +212,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                   onClick={onSwitchToLogin}
                   className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
                 >
-                  {t('auth.signIn', 'Sign In')}
+                  {t('auth.signIn', 'Sign in')}
                 </button>
               </div>
             </>

@@ -4515,7 +4515,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Coach Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.coachSignature', 'Coach Signature')}
+                {t('rosterSetup.coachSignature', 'Coach signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('home-coach')}
@@ -4547,7 +4547,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Captain Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.captainSignature', 'Captain Signature')}
+                {t('rosterSetup.captainSignature', 'Captain signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('home-captain')}
@@ -4978,10 +4978,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           open={openSignature !== null}
           onClose={() => setOpenSignature(null)}
           onSave={handleSignatureSave}
-          title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-            openSignature === 'home-captain' ? 'Home Captain Signature' :
-              openSignature === 'away-coach' ? 'Away Coach Signature' :
-                openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+          title={openSignature === 'home-coach' ? 'Home coach signature' :
+            openSignature === 'home-captain' ? 'Home captain signature' :
+              openSignature === 'away-coach' ? 'Away coach signature' :
+                openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
         />
       </MatchSetupHomeTeamView>
     )
@@ -5674,7 +5674,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Coach Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.coachSignature', 'Coach Signature')}
+                {t('rosterSetup.coachSignature', 'Coach signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('away-coach')}
@@ -5706,7 +5706,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {/* Captain Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
-                {t('rosterSetup.captainSignature', 'Captain Signature')}
+                {t('rosterSetup.captainSignature', 'Captain signature')}
               </div>
               <div
                 onClick={() => setOpenSignature('away-captain')}
@@ -6138,10 +6138,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           open={openSignature !== null}
           onClose={() => setOpenSignature(null)}
           onSave={handleSignatureSave}
-          title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-            openSignature === 'home-captain' ? 'Home Captain Signature' :
-              openSignature === 'away-coach' ? 'Away Coach Signature' :
-                openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+          title={openSignature === 'home-coach' ? 'Home coach signature' :
+            openSignature === 'home-captain' ? 'Home captain signature' :
+              openSignature === 'away-coach' ? 'Away coach signature' :
+                openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
         />
       </MatchSetupAwayTeamView>
     )
@@ -6176,7 +6176,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const labels = {
       synced: t('matchSetup.syncStatus.synced', 'Synced'),
       syncing: t('matchSetup.syncStatus.syncing', 'Syncing...'),
-      error: t('matchSetup.syncStatus.error', 'Sync Error'),
+      error: t('matchSetup.syncStatus.error', 'Sync error'),
       idle: isSupabaseAvailable ? t('matchSetup.syncStatus.notSynced') : t('matchSetup.syncStatus.offline', 'Offline')
     }
     const c = tones[status] || tones.synced
@@ -6809,7 +6809,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     onClick={handleStopServer}
                     disabled={serverLoading}
                   >
-                    {serverLoading ? 'Stopping...' : 'Stop Server'}
+                    {serverLoading ? 'Stopping...' : 'Stop server'}
                   </Button>
                 ) : null
               ) : (
@@ -6820,7 +6820,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   disabled={serverLoading}
                 >
                   {typeof window !== 'undefined' && window.electronAPI?.server
-                    ? (serverLoading ? 'Starting...' : 'Start Server')
+                    ? (serverLoading ? 'Starting...' : 'Start server')
                     : <span className="inline-flex items-center gap-1.5"><ClipboardIcon size={14} />Copy Start Command</span>
                   }
                 </Button>
@@ -6965,52 +6965,52 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
                   // Check Match Info
                   if (!(date || time || hall || city || league)) {
-                    setupIssues.push('Match Info (date, time, venue, etc.)')
+                    setupIssues.push('Match info (date, time, venue, etc.)')
                   }
 
                   // Check Officials - at least 1R should be set
                   if (!ref1First && !ref1Last) {
-                    setupIssues.push('Match Officials (1st Referee)')
+                    setupIssues.push('Match officials (1st referee)')
                   }
 
                   // Check Home Team
                   if (!home || home.trim() === '' || home === 'Home') {
-                    setupIssues.push('Home Team name')
+                    setupIssues.push('Home team name')
                   } else if (homeRoster.length < 6) {
-                    setupIssues.push('Home Team roster (minimum 6 players)')
+                    setupIssues.push('Home team roster (minimum 6 players)')
                   } else {
                     // Additional roster validations for proceeding to coin toss
                     // Note: all players having numbers is only validated when CONFIRMING coin toss
                     if (!homeCounts.hasCaptain) {
-                      setupIssues.push('Home Team: must have a captain assigned')
+                      setupIssues.push('Home team: must have a captain assigned')
                     }
                     if (!homeCounts.hasCoach) {
-                      setupIssues.push('Home Team: must have a coach')
+                      setupIssues.push('Home team: must have a coach')
                     }
                   }
 
                   // Check Away Team
                   if (!away || away.trim() === '' || away === 'Away') {
-                    setupIssues.push('Away Team name')
+                    setupIssues.push('Away team name')
                   } else if (awayRoster.length < 6) {
-                    setupIssues.push('Away Team roster (minimum 6 players)')
+                    setupIssues.push('Away team roster (minimum 6 players)')
                   } else {
                     // Additional roster validations for proceeding to coin toss
                     // Note: all players having numbers is only validated when CONFIRMING coin toss
                     if (!awayCounts.hasCaptain) {
-                      setupIssues.push('Away Team: must have a captain assigned')
+                      setupIssues.push('Away team: must have a captain assigned')
                     }
                     if (!awayCounts.hasCoach) {
-                      setupIssues.push('Away Team: must have a coach')
+                      setupIssues.push('Away team: must have a coach')
                     }
                   }
 
                   // Check short names
                   if (!homeShortName || homeShortName.trim() === '') {
-                    setupIssues.push('Home Team short name')
+                    setupIssues.push('Home team short name')
                   }
                   if (!awayShortName || awayShortName.trim() === '') {
-                    setupIssues.push('Away Team short name')
+                    setupIssues.push('Away team short name')
                   }
 
                   if (setupIssues.length > 0) {
@@ -7601,10 +7601,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         open={openSignature !== null}
         onClose={() => setOpenSignature(null)}
         onSave={handleSignatureSave}
-        title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-          openSignature === 'home-captain' ? 'Home Captain Signature' :
-            openSignature === 'away-coach' ? 'Away Coach Signature' :
-              openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+        title={openSignature === 'home-coach' ? 'Home coach signature' :
+          openSignature === 'home-captain' ? 'Home captain signature' :
+            openSignature === 'away-coach' ? 'Away coach signature' :
+              openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
       />
     </MatchSetupMainView>
   )

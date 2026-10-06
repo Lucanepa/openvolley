@@ -1007,7 +1007,7 @@ export default function UploadRosterApp() {
         onConnectionModeChange={handleConnectionModeChange}
         showConnectionOptions={true}
         onBack={selectedMatch ? handleBackToGames : null}
-        backLabel={t('uploadRoster.changeGame', 'Change Game')}
+        backLabel={t('uploadRoster.changeGame', 'Change game')}
       />
 
       <div className="ov-kit flex-1 bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6 sm:py-8">
@@ -1199,8 +1199,8 @@ export default function UploadRosterApp() {
                   {/* Column headers for players */}
                   <div className={cn(ROSTER_HEAD, 'grid-cols-[60px_1fr_1fr_140px_100px_100px_70px]')}>
                     <span>{t('rosterSetup.number', '#')}</span>
-                    <span>{t('rosterSetup.lastName', 'Last Name')}</span>
-                    <span>{t('rosterSetup.firstName', 'First Name')}</span>
+                    <span>{t('rosterSetup.lastName', 'Last name')}</span>
+                    <span>{t('rosterSetup.firstName', 'First name')}</span>
                     <span>{t('rosterSetup.dob', 'DOB')}</span>
                     <span>{t('rosterSetup.libero', 'Libero')}</span>
                     <span className="text-center">C</span>
@@ -1222,16 +1222,16 @@ export default function UploadRosterApp() {
                           type="text"
                           value={player.lastName}
                           onChange={(e) => handlePlayerChange(index, 'lastName', e.target.value)}
-                          placeholder={t('rosterSetup.lastName', 'Last Name')}
-                          aria-label={t('rosterSetup.lastName', 'Last Name')}
+                          placeholder={t('rosterSetup.lastName', 'Last name')}
+                          aria-label={t('rosterSetup.lastName', 'Last name')}
                           className={FIELD}
                         />
                         <input
                           type="text"
                           value={player.firstName}
                           onChange={(e) => handlePlayerChange(index, 'firstName', e.target.value)}
-                          placeholder={t('rosterSetup.firstName', 'First Name')}
-                          aria-label={t('rosterSetup.firstName', 'First Name')}
+                          placeholder={t('rosterSetup.firstName', 'First name')}
+                          aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
                         <input
@@ -1290,8 +1290,8 @@ export default function UploadRosterApp() {
                   {/* Column headers for bench officials */}
                   <div className={cn(ROSTER_HEAD, 'grid-cols-[180px_1fr_1fr_140px_70px]')}>
                     <span>{t('rosterSetup.role', 'Role')}</span>
-                    <span>{t('rosterSetup.lastName', 'Last Name')}</span>
-                    <span>{t('rosterSetup.firstName', 'First Name')}</span>
+                    <span>{t('rosterSetup.lastName', 'Last name')}</span>
+                    <span>{t('rosterSetup.firstName', 'First name')}</span>
                     <span>{t('rosterSetup.dob', 'DOB')}</span>
                     <span></span>
                   </div>
@@ -1306,8 +1306,8 @@ export default function UploadRosterApp() {
                           className={FIELD}
                         >
                           <option value="Coach">{t('benchRoles.coach', 'Coach')}</option>
-                          <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1', 'Assistant Coach 1')}</option>
-                          <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2', 'Assistant Coach 2')}</option>
+                          <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1', 'Assistant coach 1')}</option>
+                          <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2', 'Assistant coach 2')}</option>
                           <option value="Physiotherapist">{t('benchRoles.physiotherapist', 'Physiotherapist')}</option>
                           <option value="Medic">{t('benchRoles.medic', 'Medic')}</option>
                         </select>
@@ -1315,16 +1315,16 @@ export default function UploadRosterApp() {
                           type="text"
                           value={official.lastName}
                           onChange={(e) => handleBenchChange(index, 'lastName', e.target.value)}
-                          placeholder={t('rosterSetup.lastName', 'Last Name')}
-                          aria-label={t('rosterSetup.lastName', 'Last Name')}
+                          placeholder={t('rosterSetup.lastName', 'Last name')}
+                          aria-label={t('rosterSetup.lastName', 'Last name')}
                           className={FIELD}
                         />
                         <input
                           type="text"
                           value={official.firstName}
                           onChange={(e) => handleBenchChange(index, 'firstName', e.target.value)}
-                          placeholder={t('rosterSetup.firstName', 'First Name')}
-                          aria-label={t('rosterSetup.firstName', 'First Name')}
+                          placeholder={t('rosterSetup.firstName', 'First name')}
+                          aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
                         <input
@@ -1355,8 +1355,8 @@ export default function UploadRosterApp() {
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {[
-                  { key: 'coach', label: t('rosterSetup.coachSignature', 'Coach Signature'), value: coachSignature, clear: () => setCoachSignature(null), alt: 'Coach signature' },
-                  { key: 'captain', label: t('rosterSetup.captainSignature', 'Captain Signature'), value: captainSignature, clear: () => setCaptainSignature(null), alt: 'Captain signature' }
+                  { key: 'coach', label: t('rosterSetup.coachSignature', 'Coach signature'), value: coachSignature, clear: () => setCoachSignature(null), alt: 'Coach signature' },
+                  { key: 'captain', label: t('rosterSetup.captainSignature', 'Captain signature'), value: captainSignature, clear: () => setCaptainSignature(null), alt: 'Captain signature' }
                 ].map((sig) => (
                   <div key={sig.key} className="min-w-0">
                     <p className="mb-1.5 text-sm font-medium text-stone-700">{sig.label}</p>
@@ -1471,8 +1471,8 @@ export default function UploadRosterApp() {
             setOpenSignature(null)
           }}
           title={openSignature === 'coach'
-            ? t('rosterSetup.coachSignature', 'Coach Signature')
-            : t('rosterSetup.captainSignature', 'Captain Signature')}
+            ? t('rosterSetup.coachSignature', 'Coach signature')
+            : t('rosterSetup.captainSignature', 'Captain signature')}
         />
       </div>
     </div>

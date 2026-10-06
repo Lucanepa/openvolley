@@ -167,7 +167,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
                   className={cn(MENU_ROW, fullWidth ? 'text-base' : 'text-sm', 'text-stone-700 hover:bg-stone-100', FOCUS_RING)}
                 >
                   <CalendarDays size={iconPx} aria-hidden="true" className="text-stone-400" />
-                  {t('home.myMatches', 'My Matches')}
+                  {t('home.myMatches', 'My matches')}
                 </button>
 
                 <button
@@ -176,7 +176,7 @@ export default function UserButton({ style = {}, fullWidth = false }) {
                   className={cn(MENU_ROW, fullWidth ? 'text-base' : 'text-sm', 'mt-1 text-red-600 hover:bg-red-50', FOCUS_RING)}
                 >
                   <LogOut size={iconPx} aria-hidden="true" />
-                  {t('auth.signOut', 'Sign Out')}
+                  {t('auth.signOut', 'Sign out')}
                 </button>
               </div>
             </div>
