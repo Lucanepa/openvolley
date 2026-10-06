@@ -1,7 +1,7 @@
 [package]
 name = "openvolley-escoresheet"
 version = "2.0.0"
-description = "Openvolley eScoresheet — offline scoretable + LAN tablet server"
+description = "OpenVolley eScoresheet — offline scoretable + LAN tablet server"
 authors = ["Luca Canepa"]
 edition = "2021"
 rust-version = "1.77"

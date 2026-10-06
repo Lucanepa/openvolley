@@ -38,6 +38,13 @@ fn main() {
         std::process::exit(1);
     });
 
+    // The cloud backend's CORS trusts the desktop window on port 5173 only:
+    // on another port the app runs the venue as usual and says "Cloud sync
+    // unavailable on port N" (isCloudBlockedOnThisPort in backendConfig.js).
+    if http != DEFAULT_HTTP_PORT {
+        eprintln!("OPENVOLLEY_HTTP_PORT={http}: cloud sync needs port {DEFAULT_HTTP_PORT}; the tablets keep working");
+    }
+
     let state = relay::new_state(http, ws);
 
     with_backup_commands(tauri::Builder::default().plugin(tauri_plugin_dialog::init()))
@@ -64,7 +71,7 @@ fn main() {
                 "main",
                 WebviewUrl::External(format!("http://localhost:{http}/").parse().unwrap()),
             )
-            .title("Openvolley eScoresheet")
+            .title("OpenVolley eScoresheet")
             .inner_size(1400.0, 900.0)
             .min_inner_size(1200.0, 700.0)
             // Light only (volleyui): a dark OS theme must not darken the
