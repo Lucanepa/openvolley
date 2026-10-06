@@ -364,12 +364,15 @@ export const PERSON_PRIVATE_FIELDS = Object.freeze([
 /** Match keys never relayed (besides any key containing "signature"). */
 export const MATCH_PRIVATE_FIELDS = Object.freeze([
   'officials', 'signatures', 'approval', 'manualChanges', 'manual_changes',
-  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster'
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  // openbeach's uploaded rosters waiting for the scorer (with dob)
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
 ])
 /** Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS. */
 export const MATCH_ROSTER_FIELDS = Object.freeze([
   'players_home', 'players_away', 'bench_home', 'bench_away',
-  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers'
+  'players_team1', 'players_team2', 'benchHome', 'benchAway', 'homePlayers', 'awayPlayers',
+  'team1Players', 'team2Players'
 ])
 
 const isSignatureKey = (k) => /signature/i.test(k)
