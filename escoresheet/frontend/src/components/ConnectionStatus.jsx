@@ -173,6 +173,8 @@ export default function ConnectionStatus({
       return { tone: 'ok', text: status === 'syncing' ? t('connectionStatus.syncing', 'Syncing') : t('connectionStatus.connected', 'Connected') }
     } else if (status === 'awaiting_match') {
       return { tone: 'ok', text: t('connectionStatus.connected', 'Connected') }
+    } else if (status === 'local_only') {
+      return { tone: 'ok', text: t('connectionStatus.localOnly', 'Local only') }
     } else if (status === 'attention') {
       return { tone: 'error', text: t('connectionStatus.error', 'Error') }
     } else if (status === 'no_match') {
@@ -259,14 +261,21 @@ export default function ConnectionStatus({
 
   // No network as far as the browser knows, but a local server (offline
   // desktop / LAN scoretable serving tablets) can still be connected: then the
-  // match runs normally and only the cloud copy waits ('Syncing...' + count).
-  const overallStatus = browserOffline && !localPathViable
+  // match runs normally and only the cloud copy waits ('Local only' + count).
+  const baseStatus = browserOffline && !localPathViable
     ? 'offline'
     : errorCount > 0
       ? 'attention'
       : authRequired
         ? 'auth_required'
         : getOverallStatus()
+  // The venue runs on the local relay while the cloud is out of reach
+  // (desktop app or LAN scoretable without internet): say so instead of
+  // 'Connected' / 'Syncing...', which would claim the cloud copy is moving.
+  const cloudOut = browserOffline || connectionStatuses.supabase === 'offline'
+  const overallStatus = localPathViable && cloudOut && (baseStatus === 'connected' || baseStatus === 'awaiting_match')
+    ? 'local_only'
+    : baseStatus
   const statusInfo = getStatusColor(overallStatus)
 
   const sizeClasses = {
@@ -298,6 +307,11 @@ export default function ConnectionStatus({
           <span className="inline-flex items-center">
             {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
               overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
+              overallStatus === 'local_only'
+                ? (pendingCount > 0
+                  ? t('connectionStatus.localOnlyPending', 'Local only ({{count}} waiting)', { count: pendingCount })
+                  : t('connectionStatus.localOnly', 'Local only'))
+                :
                 overallStatus === 'offline'
                   ? (pendingCount > 0
                     ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })

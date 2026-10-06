@@ -1654,6 +1654,8 @@
     "signInAgain": "Accedi di nuovo"
   },
   "connectionStatus": {
+    "localOnly": "Solo locale",
+    "localOnlyPending": "Solo locale ({{count}} in attesa)",
     "syncing": "Sincronizzazione",
     "connected": "Connesso",
     "error": "Errore",
@@ -1688,6 +1690,7 @@
     "connectionIssueDetected": "Problema di connessione rilevato"
   },
   "startupConnectivity": {
+    "cloudWaits": "Nessuna connessione internet: la sincronizzazione cloud parte appena questo dispositivo è online. Le partite restano qui e sul server locale.",
     "connecting": "Connessione in corso...",
     "goOffline": "Vai offline",
     "continueAnyway": "Continua comunque",
