@@ -12,7 +12,7 @@ vi.mock('../utils/serverDataSync', async (importOriginal) => {
   return { ...actual, validatePin: sync.validatePin, validatePinSupabase: sync.validatePinSupabase }
 })
 
-import { readBenchSession, validateBenchPin } from '../BenchApp'
+import { readBenchSession, validateBenchPin, benchGameLabel } from '../BenchApp'
 import { revalidateRefereeSession } from '../RefereeApp'
 
 beforeEach(() => {
@@ -68,5 +68,17 @@ describe('referee session restore', () => {
     const lan = vi.fn().mockResolvedValue({ success: true, match: { id: 7 } })
     expect(await revalidateRefereeSession('7', '314159', { checkCloud: cloud, checkLan: lan })).toEqual({ id: 7 })
     expect(await revalidateRefereeSession(SEED, '314159', { checkCloud: cloud, checkLan: lan })).toBeNull()
+  })
+})
+
+describe('bench game label', () => {
+  const t = (key) => (key === 'benchDashboard.game' ? 'Game' : key)
+  it('shows the game number only when it is known', () => {
+    expect(benchGameLabel(t, 12)).toBe('Game 12')
+    expect(benchGameLabel(t, '999')).toBe('Game 999')
+    expect(benchGameLabel(t, 0)).toBe('Game 0')
+    expect(benchGameLabel(t, null)).toBeUndefined()
+    expect(benchGameLabel(t, undefined)).toBeUndefined()
+    expect(benchGameLabel(t, '')).toBeUndefined()
   })
 })

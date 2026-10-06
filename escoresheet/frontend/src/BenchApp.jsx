@@ -82,6 +82,12 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
   return result
 }
 
+/** "Game 12", or undefined while the game number is unknown (never "Game null"). */
+export function benchGameLabel(t, gameNumber) {
+  if (gameNumber == null || gameNumber === '') return undefined
+  return `${t('benchDashboard.game')} ${gameNumber}`
+}
+
 export default function BenchApp() {
   const { t, i18n } = useTranslation()
   const [serverReady, setServerReady] = useState(isServedFromLocalServer())
@@ -789,7 +795,7 @@ export default function BenchApp() {
       }}>
         <DashboardHeader
           title={t('benchDashboard.title')}
-          subtitle={`${t('benchDashboard.game')} ${selectedMatch.gameNumber}`}
+          subtitle={benchGameLabel(t, selectedMatch.gameNumber)}
           connectionStatuses={connectionStatuses}
           connectionDebugInfo={connectionDebugInfo}
           showWakeLock={true}
@@ -804,7 +810,7 @@ export default function BenchApp() {
           <EntryCard
             art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
             title={t('benchDashboard.selectTeam')}
-            subtitle={`${t('benchDashboard.game')} ${selectedMatch.gameNumber ?? ''}`.trim()}
+            subtitle={benchGameLabel(t, selectedMatch.gameNumber)}
           >
             <div className="flex flex-col gap-3">
               <Button
@@ -917,7 +923,7 @@ export default function BenchApp() {
                   lang={i18n.language}
                   home={m.homeTeamName || t('common.home')}
                   away={m.awayTeamName || t('common.away')}
-                  gameLabel={`${t('benchDashboard.game')} ${m.gameNumber}`}
+                  gameLabel={benchGameLabel(t, m.gameNumber)}
                   onOpen={() => handleMatchSelect(m)}
                   status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
                 />
