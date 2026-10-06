@@ -15,7 +15,7 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
-import { randomBytes, createHash, timingSafeEqual } from 'crypto'
+import { randomBytes, timingSafeEqual } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { isIP, BlockList } from 'net'
@@ -193,7 +193,7 @@ const READ_ONLY_TABLES = new Set(['svrz_games'])
 const REFEREE_DIRECTORY = 'referee_database'
 const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
 const DB_RATE_LIMIT_MAX = 200 // relay reads (/api/match/list, /api/match/:id, ...)
-const AUTH_RATE_LIMIT_MAX = 10 // verify-reopen-password, PocketBase PIN proof
+const AUTH_RATE_LIMIT_MAX = 10 // PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
 // Venue-NAT sized buckets (plan §4 Phase 2/3, §9): one address may carry a whole hall.
@@ -212,6 +212,19 @@ const DB_IP_RATE_LIMIT_MAX = 1200    // /api/db per IP (/64), any action, checke
 const restoreGate = createConcurrencyGate({ maxConcurrent: 2, maxQueue: 4 })
 const RESTORE_RATE_LIMIT_MAX = 30    // /api/match/restore per user
 const RESTORE_PIN_IP_RATE_LIMIT_MAX = 60 // /api/match/restore-by-pin per IP (the attempt limiter is inside)
+// docs/scorer-accounts-spec.md section 5
+const MANAGE_RATE_LIMIT_MAX = 300        // /api/admin/* and /api/saved-teams* per user and minute
+const OFFICIAL_CHECK_RATE_LIMIT_MAX = 120 // /api/match/official-check per user and minute
+// Invite redemption: FAILED attempts per account and per IP (/64); a success is refunded
+const redeemLimiter = createAttemptLimiter({ max: 10, windowMs: 10 * 60 * 1000 })
+// The paths of lib/manageApi.js (same as its manageFamilyOf, which loads with the data layer)
+function manageFamilyOf(pathname) {
+  if (pathname === '/api/account/redeem-invite') return 'account'
+  if (pathname === '/api/match/official-check') return 'officialCheck'
+  if (pathname.startsWith('/api/admin/')) return 'admin'
+  if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
+  return null
+}
 // Internal scan of setup/live matches for validate-connection-pin
 const PIN_SCAN_MAX_ROWS = 20000
 
@@ -233,8 +246,13 @@ function getDataLayer() {
     import('./lib/matchRestore.js'),
     import('./lib/auth.js'),
     import('./lib/storage.js'),
-    import('./lib/pinHash.js')
-  ]).then(([pgq, mr, au, st, ph]) => {
+    import('./lib/pinHash.js'),
+    import('./lib/access.js'),
+    import('./lib/accounts.js'),
+    import('./lib/savedTeams.js'),
+    import('./lib/manageApi.js'),
+    import('./lib/officialGame.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -266,7 +284,12 @@ function getDataLayer() {
         return r
       }
     })
-    dataLayer = { db, restore, auth, storage, pins, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    // Roles from public.profiles (never the request), 30 s per process (lib/access.js)
+    const access = ac.createAccessResolver({ pool: db.pool })
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access })
+    const savedTeams = svt.createSavedTeams({ pool: db.pool })
+    const manage = mg.createManageApi({ accounts, savedTeams })
+    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, manage, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -301,7 +324,8 @@ function publishChanges(changes) {
         rows.push(changes[i].row)
         i++
       }
-      if (table === 'matches' && eventType === 'DELETE' && liveStateRelay) {
+      // UPDATE too: the relay caches closed_at (a closed match publishes nothing)
+      if (table === 'matches' && (eventType === 'DELETE' || eventType === 'UPDATE') && liveStateRelay) {
         for (const r of rows) liveStateRelay.invalidate(r?.id, r?.external_id)
       }
       realtimeHub.broadcastDbChange(table, eventType, rows)
@@ -316,41 +340,31 @@ function publishChanges(changes) {
 const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
 
 // Columns a client may never write (privilege / identity fields).
-// matches.created_by is set by pgQuery's ownership guard (the session's user).
+// matches.created_by is set by pgQuery's ownership guard (the session's user);
+// closed_at / closed_by by db/007's trigger; official_game_exempt by an admin;
+// created_at by the database default (it is part of the official-game key when
+// scheduled_at is empty, so a client must not pick the season through it).
 const WRITE_DENYLIST = {
   profiles: ['roles', 'user_id', 'id'],
   user_matches: ['user_id', 'id'],
-  matches: ['created_by']
+  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at']
 }
 
 // Match ownership (db/005_match_ownership.sql, lib/pgQuery.js opts.matchOwner):
 // writes to these tables need the match's creator or an editor; an admin
-// (profiles.roles contains one of ADMIN_ROLES, read from the database, never
-// from the request) writes unguarded.
+// (profiles.roles contains admin or super_admin, read from the database, never
+// from the request) writes unguarded. An account that is not an approved
+// scorer writes test matches only (db/007, docs/scorer-accounts-spec.md).
 const MATCH_OWNED_TABLES = new Set(['matches', 'sets', 'events', 'match_live_state'])
-const ADMIN_ROLES = ['admin', 'super_admin']
-const ADMIN_CACHE_MS = 30 * 1000
-const adminCache = new Map() // userId -> { at, admin }
 
-/** Is this account an admin? Cached briefly; a database error counts as "no". */
+/** Is this account an admin? (lib/access.js, cached 30 s); a database error counts as "no". */
 async function isAdminUser(layer, userId) {
-  const hit = adminCache.get(userId)
-  if (hit && Date.now() - hit.at < ADMIN_CACHE_MS) return hit.admin
-  let admin = false
   try {
-    const { rows } = await layer.db.pool.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1', [userId])
-    let roles = rows[0]?.roles
-    if (typeof roles === 'string') {
-      try { roles = JSON.parse(roles) } catch { roles = roles.replace(/^\{|\}$/g, '').split(',') }
-    }
-    admin = Array.isArray(roles) && roles.some((r) => ADMIN_ROLES.includes(String(r).trim().toLowerCase()))
+    return (await layer.access.get(userId)).isAdmin
   } catch (err) {
     console.warn('[auth] admin check failed:', err?.message)
     return false
   }
-  if (adminCache.size > 5000) adminCache.clear()
-  adminCache.set(userId, { at: Date.now(), admin })
-  return admin
 }
 
 /**
@@ -414,6 +428,7 @@ async function claimByUpsertPin(layer, userId, data, clientIp) {
       if (!(await layer.restore.addEditor(id, userId, 'game_pin'))) return false
     }
     console.log(`[match/claim] inline take-over of ${proved.length} match(es) by game PIN`)
+    for (const id of new Set(proved)) await layer.accounts.auditClaimPin({ actorId: userId, matchId: id, via: 'upsert-pin' })
     return true
   } catch (err) {
     console.warn('[match/claim] inline take-over failed:', err?.message)
@@ -423,9 +438,36 @@ async function claimByUpsertPin(layer, userId, data, clientIp) {
   }
 }
 
-/** pgQuery opts.matchOwner for this user (an admin's records the creator, checks nothing). */
+/**
+ * pgQuery opts.matchOwner for this user: an admin's records the creator and
+ * checks nothing; an account that cannot score is limited to test matches.
+ * THROWS when the roles cannot be read (callers answer 503, never "not a scorer").
+ */
 async function matchOwnerFor(layer, user) {
-  return (await isAdminUser(layer, user.id)) ? { userId: user.id, admin: true } : { userId: user.id }
+  const a = await layer.access.get(user.id)
+  return a.isAdmin ? { userId: user.id, admin: true } : { userId: user.id, testOnly: !a.canScore }
+}
+
+const DB_UNAVAILABLE_BODY = { data: null, error: { message: 'Service unavailable', code: 'OV_DB_UNAVAILABLE', retryable: true } }
+const GAME_TAKEN_MESSAGE = 'This official game is already scored by another account.'
+
+/** The 409 body of a game another match already holds (lib/officialGame.js publicClaim). */
+function gameTakenBody(layer, claim) {
+  return { data: null, error: { message: GAME_TAKEN_MESSAGE, code: 'OV_GAME_TAKEN', claim: claim ? layer.publicClaim(claim) : null } }
+}
+
+/**
+ * A 409 OV_GAME_TAKEN from the database (a race, or an update onto a taken
+ * game): add the claim when the payload names a game. Never throws.
+ */
+async function enrichGameTaken(layer, userId, result, rows) {
+  if (result?.status !== 409 || result.body?.error?.code !== 'OV_GAME_TAKEN') return result
+  let claim = null
+  try {
+    claim = await layer.accounts.findTakenGame({ userId, rows })
+  } catch { claim = null }
+  if (claim) await layer.accounts.auditGameTaken({ actorId: userId, claim })
+  return { ...result, body: gameTakenBody(layer, claim) }
 }
 
 // Secret fields on an in-memory match object that must never reach a client.
@@ -691,7 +733,7 @@ if (realtimeHub) {
       const r = await layer.db.runQuery({
         table: 'matches',
         action: 'select',
-        params: { columns: 'id, sport_type, game_pin', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
+        params: { columns: 'id, sport_type, game_pin, closed_at', filters: [{ type: 'eq', column: key.column, value: key.value }], limit: 1 }
       }, { internal: true })
       if (r.body.error) throw new Error(r.body.error.code || 'lookup failed')
       return r.body.data?.[0] || null
@@ -701,7 +743,12 @@ if (realtimeHub) {
     // synced game PIN must be the row's, else nothing is published. A row
     // without a game PIN cannot be bound and gets nothing either (the
     // scorer's HTTP sync still updates it).
+    // A closed match (db/007) is frozen for livescore too: nothing is published.
+    // This relay is gated by the game PIN, not by an account: a socket carries
+    // no session, so the approved-scorer rule (docs/scorer-accounts-spec.md
+    // decision 1) does not apply to it. Nothing it relays is stored.
     verifyMatch: (row, synced) => {
+      if (row?.closed_at != null) return false
       const pin = gamePinOf(synced?.match)
       return !!(pin && dataLayer?.pins && dataLayer.pins.matches('game', pin, row?.game_pin))
     }
@@ -952,7 +999,7 @@ const rateLimitMaps = {
   relay: new Map(),     // relay reads: /api/match/list|:id, /api/server/connections, /api/pocketbase/*
   contact: new Map(),   // /api/contact
   email: new Map(),     // /api/match/send-info
-  auth: new Map(),      // /api/verify-reopen-password, PocketBase PIN proof (lib/auth.js has its own buckets)
+  auth: new Map(),      // PocketBase PIN proof (lib/auth.js has its own buckets)
   ical: new Map(),      // /api/official-matches
   db: new Map(),        // /api/db reads, per IP
   dbWrite: new Map(),   // /api/db writes, per user id
@@ -962,7 +1009,9 @@ const rateLimitMaps = {
   pin: new Map(),       // validate-connection-pin, per IP (/64) + type
   pinIp: new Map(),     // validate-connection-pin, per IP (/64)
   restore: new Map(),   // /api/match/restore, per user id
-  restorePin: new Map() // /api/match/restore-by-pin, per IP
+  restorePin: new Map(), // /api/match/restore-by-pin, per IP
+  manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
+  officialCheck: new Map() // /api/match/official-check, per user id
 }
 
 function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
@@ -1433,7 +1482,7 @@ const server = createServer((req, res) => {
   const cors = getCorsOrigin(req)
   res.setHeader('Access-Control-Allow-Origin', cors.origin)
   res.setHeader('Vary', 'Origin')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
   // X-OV-Proto: the client protocol version; /api/db writes and
   // /api/match/restore need >= 2. Without it here every browser write would
   // fail the CORS preflight.
@@ -1829,6 +1878,7 @@ const server = createServer((req, res) => {
       url.pathname !== '/api/match/list' &&
       url.pathname !== '/api/match/validate-pin' &&
       url.pathname !== '/api/match/by-game-number' &&
+      url.pathname !== '/api/match/official-check' &&
       req.method === 'GET') {
     if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
@@ -2256,55 +2306,8 @@ Generated by eScoresheet
     return
   }
 
-  // Verify reopen password (server-side hash comparison)
-  if (url.pathname === '/api/verify-reopen-password' && req.method === 'POST') {
-    const clientIp = getClientIp(req)
-    if (isRateLimited(clientIp, AUTH_RATE_LIMIT_MAX, 'auth')) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
-      res.end(JSON.stringify({ error: 'Too many requests' }))
-      return
-    }
-    const reopenHash = process.env.REOPEN_PASSWORD_HASH
-    if (!reopenHash) {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ success: true })) // No password configured = always allowed
-      return
-    }
-
-    let body = ''
-    req.on('data', chunk => {
-      body += chunk
-      if (body.length > MAX_BODY_SIZE) { req.destroy(); return }
-    })
-    req.on('end', async () => {
-      try {
-        const { password } = JSON.parse(body)
-        if (!password || typeof password !== 'string') {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Password required' }))
-          return
-        }
-
-        // Hash the input with SHA-256 and compare (timing-safe)
-        const inputHash = createHash('sha256').update(password).digest('hex')
-        const inputBuf = Buffer.from(inputHash, 'utf8')
-        const expectedBuf = Buffer.from(reopenHash, 'utf8')
-
-        if (inputBuf.length === expectedBuf.length && timingSafeEqual(inputBuf, expectedBuf)) {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: true }))
-        } else {
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Incorrect password' }))
-        }
-      } catch (err) {
-        console.error('[API] Error verifying reopen password:', err)
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
-      }
-    })
-    return
-  }
+  // POST /api/verify-reopen-password was removed (db/007): reopening a closed
+  // match is an admin action (POST /api/admin/matches/:id/reopen, audit-logged).
 
   // Get official matches from iCal feeds
   if (url.pathname === '/api/official-matches' && req.method === 'GET') {
@@ -2558,6 +2561,76 @@ Generated by eScoresheet
     return
   }
 
+  // Approved scorers, admin console and saved teams (lib/manageApi.js,
+  // docs/scorer-accounts-spec.md section 5): /api/account/redeem-invite,
+  // /api/match/official-check, /api/admin/*, /api/saved-teams*. Every call
+  // needs a session; the roles come from the database (lib/access.js). The
+  // UI hides what an account may not do, but the check is here.
+  const manageFamily = manageFamilyOf(url.pathname)
+  if (manageFamily) {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    const clientIp = getClientIp(req)
+    ;(async () => {
+      const noStore = { 'Cache-Control': 'no-store' }
+      try {
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        const limited = manageFamily === 'officialCheck'
+          ? isRateLimited(user.id, OFFICIAL_CHECK_RATE_LIMIT_MAX, 'officialCheck')
+          : (manageFamily === 'admin' || manageFamily === 'savedTeams') && isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
+        if (limited) {
+          req.resume()
+          sendJson(res, 429, TOO_MANY, { 'Retry-After': '60', ...noStore })
+          return
+        }
+        let access
+        try {
+          access = await layer.access.get(user.id)
+        } catch (err) {
+          req.resume()
+          console.warn('[manage] access check failed:', err?.message)
+          sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5', ...noStore })
+          return
+        }
+        // Invite codes: failed attempts per account AND per IP (/64), refunded on success
+        const redeemKeys = manageFamily === 'account' ? [`u:${user.id}`, `ip:${ipBucketKey(clientIp)}`] : []
+        if (redeemKeys.length) {
+          const overUser = redeemLimiter.isLimited(redeemKeys[0])
+          const overIp = redeemLimiter.isLimited(redeemKeys[1])
+          if (overUser || overIp) {
+            req.resume()
+            sendJson(res, 429, { data: null, error: { message: 'Too many attempts. Please wait a few minutes.', code: 'OV_TOO_MANY_ATTEMPTS' } }, { 'Retry-After': '600', ...noStore })
+            return
+          }
+        }
+        let body = {}
+        if (req.method !== 'GET' && req.method !== 'DELETE' && req.method !== 'HEAD') {
+          try {
+            body = await readJsonBody(req)
+          } catch (err) {
+            sendBodyError(res, err)
+            return
+          }
+        } else {
+          req.resume()
+        }
+        const r = await layer.manage.route({ method: req.method, pathname: url.pathname, query: url.searchParams, body, user, access })
+        if (redeemKeys.length && r.status === 200) for (const k of redeemKeys) redeemLimiter.refund(k)
+        if (r.status === 200 && r.changes?.length) publishChanges(r.changes)
+        const headers = { ...noStore, ...(r.status >= 500 ? { 'Retry-After': '5' } : {}) }
+        sendJson(res, r.status, r.body, headers)
+      } catch (err) {
+        console.error('[manage] error:', err?.message || err)
+        sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5', ...noStore })
+      }
+    })()
+    return
+  }
+
   // POST /api/db — the PostgREST-shaped contract of apiClient.js, served by
   // lib/pgQuery.js. Reads are anonymous (secret columns redacted and never
   // filterable; matches without a session: public columns only, see
@@ -2709,7 +2782,19 @@ Generated by eScoresheet
         if (p.data !== undefined && layer.pins.enabled) {
           p.data = Array.isArray(p.data) ? p.data.map((r) => layer.pins.hashMatchRow(r)) : layer.pins.hashMatchRow(p.data)
         }
-        const matchOwner = isWrite && MATCH_OWNED_TABLES.has(table) ? await matchOwnerFor(layer, authUser) : undefined
+        // The roles decide the guard: a database error is 503 (retryable),
+        // never a silent "not a scorer".
+        let matchOwner
+        if (isWrite && MATCH_OWNED_TABLES.has(table)) {
+          try {
+            matchOwner = await matchOwnerFor(layer, authUser)
+          } catch (err) {
+            console.warn('[DB] access check failed:', err?.message)
+            logRejected(503, 'OV_DB_UNAVAILABLE')
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+        }
 
         // Never an unfiltered update/delete (pgQuery refuses it too). On
         // owner-scoped tables the forced user_id filter is the filter.
@@ -2719,10 +2804,39 @@ Generated by eScoresheet
           return
         }
 
+        // One cloud match per official game (db/007): the friendly answer
+        // before the write, with who holds the game. Approved scorers only:
+        // a pending account gets pgQuery's 403 OV_SCORER_REQUIRED first, so
+        // it never sees a scorer's name.
+        // An update that moves a match onto another game or season gets the
+        // same check (the stored rows with the update over them).
+        const officialWrite = (action === 'insert' || action === 'upsert') ? p.data !== undefined : action === 'update'
+        if (table === 'matches' && officialWrite && matchOwner && !matchOwner.testOnly) {
+          let claim
+          try {
+            claim = action === 'update'
+              ? await layer.accounts.findTakenGameForUpdate({ userId: authUser.id, filters: p.filters, data: p.data })
+              : await layer.accounts.findTakenGame({ userId: authUser.id, rows: p.data })
+          } catch (err) {
+            console.warn('[DB] official-game check failed:', err?.message)
+            logRejected(503, 'OV_DB_UNAVAILABLE')
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+          if (claim) {
+            await layer.accounts.auditGameTaken({ actorId: authUser.id, claim })
+            logRejected(409, 'OV_GAME_TAKEN')
+            sendJson(res, 409, gameTakenBody(layer, claim))
+            return
+          }
+        }
+
         const runOpts = {
           proto: req.headers['x-ov-proto'],
           scope: ownerScoped ? { column: 'user_id', value: authUser.id } : undefined,
           matchOwner,
+          // the acting account for db/007's triggers (closed_by)
+          ...(isWrite ? { actorId: authUser.id } : {}),
           ...(readOwner ? { readOwner } : {})
         }
         let r = await layer.db.runQuery({ table, action, params: p }, runOpts)
@@ -2738,7 +2852,11 @@ Generated by eScoresheet
             r = await layer.db.runQuery({ table, action, params: p }, runOpts)
           }
         }
-        if (r.status === 200 && r.changes?.length) publishChanges(r.changes)
+        if (table === 'matches' && isWrite) r = await enrichGameTaken(layer, authUser.id, r, p.data)
+        if (r.status === 200 && r.changes?.length) {
+          publishChanges(r.changes)
+          if (table === 'matches') await layer.accounts.auditClaimedGames({ actorId: authUser.id, changes: r.changes })
+        }
         // 4xx/5xx from pgQuery (OV_UNSCOPED_EXTERNAL_ID, OV_CLIENT_TOO_OLD,
         // OV_UNSCOPED_WRITE, constraint errors, ...): code only, no details
         // (they can quote row values).
@@ -2794,8 +2912,36 @@ Generated by eScoresheet
             sendBodyError(res, err)
             return
           }
-          const r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner: await matchOwnerFor(layer, user) })
-          if (r.status === 200) publishChanges(r.changes)
+          let matchOwner
+          try {
+            matchOwner = await matchOwnerFor(layer, user)
+          } catch (err) {
+            console.warn('[match/restore] access check failed:', err?.message)
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+          // One cloud match per official game: the same friendly pre-check as /api/db
+          if (!matchOwner.testOnly && body && typeof body === 'object' && body.match && typeof body.match === 'object') {
+            let claim
+            try {
+              claim = await layer.accounts.findTakenGame({ userId: user.id, rows: [body.match] })
+            } catch (err) {
+              console.warn('[match/restore] official-game check failed:', err?.message)
+              sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+              return
+            }
+            if (claim) {
+              await layer.accounts.auditGameTaken({ actorId: user.id, claim })
+              sendJson(res, 409, gameTakenBody(layer, claim))
+              return
+            }
+          }
+          let r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner, actorId: user.id })
+          r = await enrichGameTaken(layer, user.id, r, body?.match ? [body.match] : [])
+          if (r.status === 200) {
+            publishChanges(r.changes)
+            await layer.accounts.auditClaimedGames({ actorId: user.id, changes: r.changes })
+          }
           sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
         })
       } catch (err) {
@@ -2837,6 +2983,9 @@ Generated by eScoresheet
           return
         }
         const r = await layer.restore.claimMatch(body, { userId: user.id, limitKey: layer.ipKey(clientIp) })
+        if (r.status === 200 && r.body.data?.role === 'editor') {
+          await layer.accounts.auditClaimPin({ actorId: user.id, matchId: r.body.data.id, via: 'claim', role: r.body.data.role })
+        }
         sendJson(res, r.status, r.body, r.status === 429 ? { 'Retry-After': '600' } : {})
       } catch (err) {
         sendLayerError('match/claim', err)
@@ -2967,6 +3116,9 @@ Generated by eScoresheet
           try { editorUserId = (await layer.auth.verifyToken(req))?.id || null } catch { editorUserId = null }
         }
         const r = await layer.restore.restoreByPin(body, { limitKey: layer.ipKey(clientIp), editorUserId })
+        if (r.status === 200 && editorUserId && r.body.data?.access === 'editor') {
+          await layer.accounts.auditClaimPin({ actorId: editorUserId, matchId: r.body.data.match?.id, via: 'restore-by-pin' })
+        }
         sendJson(res, r.status, r.body, r.status === 429 ? { 'Retry-After': '600' } : {})
       } catch (err) {
         sendLayerError('match/restore-by-pin', err)
@@ -3004,6 +3156,21 @@ Generated by eScoresheet
         } catch (err) {
           sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
           return
+        }
+        // Scoresheets of official matches: approved scorers only (backups stay open)
+        if (action === 'upload' && body && body.bucket === 'scoresheets') {
+          let canScore
+          try {
+            canScore = (await layer.access.get(user.id)).canScore
+          } catch (err) {
+            console.warn('[Storage] access check failed:', err?.message)
+            sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+            return
+          }
+          if (!canScore) {
+            sendJson(res, 403, { data: null, error: { message: 'Your account is not approved for official matches yet', code: 'OV_SCORER_REQUIRED' } })
+            return
+          }
         }
         const { status, body: out } = await layer.storage.handle(action, body, { userId: user.id })
         sendJson(res, status, out)

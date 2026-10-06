@@ -84,7 +84,10 @@ const DEFAULTS = Object.freeze({
   onAccountDeleted: null,
   // Mirrors handle_new_user() from frontend/src/db/migrations/001_auth_profiles.sql.
   // `roles` is never taken from the client: it always gets defaultRoles.
-  defaultRoles: ['scorer'],
+  // New accounts get no role: they are pending until an admin approves them
+  // or they redeem an invite code (db/007, lib/accounts.js). Until then they
+  // score test matches only.
+  defaultRoles: [],
   defaultCountry: 'CHE',
   // Extra metadata keys copied verbatim into same-named profile columns when
   // that column exists (the live profiles table has sport_type, 001 did not).

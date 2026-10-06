@@ -3,6 +3,9 @@ import { apiFrom, apiAuth } from '../lib/apiClient'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { profileUpdateColumns, confirmedProfileRow, PROFILE_NOT_SAVED } from '../components/auth/profileWrite'
 import { discardUnsentLogs } from '../utils/logger'
+import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from '../lib/access'
+import { redeemInvite as apiRedeemInvite } from '../lib/accountApi'
+import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 
 const AuthContext = createContext(null)
 
@@ -17,6 +20,19 @@ function cacheProfile(profile) {
     window.dispatchEvent(new Event(PROFILE_CACHED_EVENT))
   } catch { /* storage full or blocked: offline auto-fill just has no profile */ }
 }
+
+function readCachedProfile() {
+  try {
+    const cached = localStorage.getItem('cachedProfile')
+    return cached ? JSON.parse(cached) : null
+  } catch {
+    return null
+  }
+}
+
+// A pending account re-reads its profile this often, so an admin's approval
+// (or an invite redeemed on another device) shows without a reload.
+export const PENDING_PROFILE_POLL_MS = 60000
 
 // Check if backend proxy is available (for auth operations)
 const hasBackend = () => !!getCloudApiUrl('/api/auth/sign-in')
@@ -167,7 +183,9 @@ export function AuthProvider({ children }) {
           last_name: profileData.lastName || null,
           country: profileData.country || 'CHE',
           dob: profileData.dob || null,
-          roles: profileData.roles || ['scorer'],
+          // No roles: the server never takes them from the client. New
+          // accounts are pending until an admin approves them or they
+          // redeem an invite code.
           sport_type: 'indoor'
         }
       }
@@ -190,6 +208,9 @@ export function AuthProvider({ children }) {
       // Console lines not uploaded yet belong to this account: never upload
       // them under the next one signing in on this device
       discardUnsentLogs()
+      // The saved-team cache holds DOBs and licence numbers of this account's
+      // teams: never leave it for the next one on a shared tablet
+      clearSavedTeams()
     }
 
     return { error }
@@ -277,6 +298,7 @@ export function AuthProvider({ children }) {
       setProfile(null)
       localStorage.removeItem('cachedProfile')
       discardUnsentLogs()
+      clearSavedTeams()
 
       return { error: null }
     } catch (err) {
@@ -285,9 +307,90 @@ export function AuthProvider({ children }) {
     }
   }, [user])
 
+  // What this account may do (spec section 1). From the loaded profile, or
+  // the cached one of the same account when offline. The server enforces
+  // every rule; the UI only hides what the account cannot do.
+  // `known` is false while neither a profile nor a cached one is at hand
+  // (first load on a new device): the UI then shows no "pending" state yet.
+  const userId = user?.id ?? null
+  const accessSource = useMemo(() => {
+    if (!userId) return null
+    if (profile) return profile
+    const cached = readCachedProfile()
+    return cached && (!cached.user_id || cached.user_id === userId) ? cached : null
+  }, [userId, profile])
+  const rolesKey = JSON.stringify(accessSource?.roles ?? [])
+  const known = !!accessSource
+  const access = useMemo(() => {
+    if (!userId) return NO_ACCESS
+    return { ...accessFromRoles(JSON.parse(rolesKey)), known }
+  }, [userId, rolesKey, known])
+
+  // Tell the rest of the app (sync queue, saved-team cache) when the access
+  // changed, e.g. a pending account was approved.
+  const previousAccess = useRef(null)
+  useEffect(() => {
+    const prev = previousAccess.current
+    previousAccess.current = access
+    if (prev && accessChanged(prev, access)) {
+      try { window.dispatchEvent(new CustomEvent(ACCESS_CHANGED_EVENT, { detail: access })) } catch { /* no window */ }
+    }
+  }, [access])
+
+  // Another account (or none) on this device: drop the saved-team cache.
+  const previousUserId = useRef(undefined)
+  useEffect(() => {
+    const id = user?.id ?? null
+    const prev = previousUserId.current
+    previousUserId.current = id
+    if (prev !== undefined && prev !== null && prev !== id) clearSavedTeams()
+  }, [user])
+
+  // Load the saved teams once the profile says this account may read them.
+  useEffect(() => {
+    if (!user || !profile || !access.canReadTeams) return
+    refreshSavedTeams({ access, userId: user.id }).catch(() => { /* offline-first: keep the cache */ })
+  }, [user, profile, access])
+
+  // A pending account re-reads its profile: every minute, on focus and when
+  // the connection comes back.
+  useEffect(() => {
+    if (!user || !access.isPending || !hasBackend()) return
+    const refresh = () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+      fetchProfile(user.id)
+    }
+    const timer = setInterval(refresh, PENDING_PROFILE_POLL_MS)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+    }
+  }, [user, access.isPending, fetchProfile])
+
+  // Redeem a club invite code. On success the new roles apply at once (the
+  // profile is then re-read from the server).
+  const redeemInvite = useCallback(async (code) => {
+    if (!hasBackend() || !user) return { data: null, error: { message: 'Not authenticated', status: 401 }, status: 401 }
+    const result = await apiRedeemInvite(code)
+    if (!result.error && Array.isArray(result.data?.roles)) {
+      setProfile(prev => {
+        const next = { ...(prev || readCachedProfile() || { user_id: user.id }), roles: result.data.roles }
+        cacheProfile(next)
+        return next
+      })
+      fetchProfile(user.id)
+    }
+    return result
+  }, [user, fetchProfile])
+
   const value = useMemo(() => ({
     user,
     profile,
+    access,
+    redeemInvite,
     loading,
     isAuthenticated: !!user,
     signIn,
@@ -299,7 +402,7 @@ export function AuthProvider({ children }) {
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

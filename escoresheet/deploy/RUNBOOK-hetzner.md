@@ -15,7 +15,7 @@ or a raised `OV_MIN_MATCHES`, would be ignored. The one place that needs a value
 any `docker compose up`, this must print nothing:
 
 ```bash
-hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN|PUBLIC_ORIGINS|RESEND_|SMTP_|CONTACT_EMAIL|REOPEN_PASSWORD_HASH)='
+hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN|PUBLIC_ORIGINS|RESEND_|SMTP_|CONTACT_EMAIL)='
 ```
 
 **Preconditions**
@@ -133,7 +133,8 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
 - `OV_BACKEND_IMAGE` = the tag from step 3.
 - `OV_OWNER_PW`, `OV_APP_PW` = `openssl rand -hex 32` each (into Vaultwarden).
 - `TUNNEL_TOKEN` from step 2.
-- `RESEND_*`, `SMTP_*`, `CONTACT_EMAIL`, `REOPEN_PASSWORD_HASH` from the old backend's settings.
+- `RESEND_*`, `SMTP_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
+  it was replaced by the admin reopen of db/007.)
 - `OV_MIN_MATCHES=0` until the data load (step 8).
 
 ```bash

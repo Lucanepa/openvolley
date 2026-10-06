@@ -6,6 +6,7 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
+import { ACCESS_CHANGED_EVENT } from '../lib/access'
 
 /**
  * ============================================================================
@@ -209,13 +210,25 @@ export function takeJobError(jobId) {
   return error
 }
 
+// The OV_GAME_TAKEN claim (spec 5.2), whitelisted: who scores the official
+// game and in which state. Never PINs, emails or ids (the server sends none).
+const CLAIM_FIELDS = ['game_n', 'season', 'sport', 'status', 'scorer_name', 'mine', 'scheduled_at']
+export function summarizeClaim(claim) {
+  if (!claim || typeof claim !== 'object') return null
+  const out = {}
+  for (const k of CLAIM_FIELDS) if (claim[k] !== undefined) out[k] = claim[k]
+  return out
+}
+
 function summarizeError(error) {
   if (!error) return null
-  return {
+  const out = {
     status: error.status ?? null,
     code: typeof error.code === 'string' ? error.code : null,
     message: String(error.message || '').slice(0, 200)
   }
+  if (error.code === 'OV_GAME_TAKEN') out.claim = summarizeClaim(error.claim)
+  return out
 }
 
 // A PIN field: 'pin' as a word of the key (game_pin, gamePin, connection_pins,
@@ -518,6 +531,82 @@ export function clearAuthBlock() {
  * again. Everything parked because of the missing session, and the jobs the
  * backend refused (a 403 may have been the wrong account), is requeued now.
  */
+// ---------------------------------------------------------------------------
+// Cloud blocks (spec 6.7): the server refused a match for good because the
+// account is not an approved scorer, the official game is already scored by
+// another cloud match, or the match is closed. The local match carries
+// cloudBlock { code, claim, at } so the UI can say why it does not sync.
+// ---------------------------------------------------------------------------
+export const CLOUD_BLOCK_CODES = ['OV_SCORER_REQUIRED', 'OV_GAME_TAKEN', 'OV_MATCH_CLOSED']
+export const CLOUD_BLOCK_EVENT = 'ov-cloud-block'
+const CLOUD_BLOCK_RESOURCES = ['match', 'set', 'event']
+
+// seed_keys of local matches with a cloudBlock, loaded once, so a sent job
+// does not scan the matches table to find out there is nothing to clear
+let blockedSeeds = null
+async function getBlockedSeeds() {
+  if (blockedSeeds) return blockedSeeds
+  const seeds = new Set()
+  try {
+    for (const m of await db.matches.filter(m => !!m.cloudBlock).toArray()) if (m.seed_key) seeds.add(m.seed_key)
+  } catch { /* no table yet: nothing blocked */ }
+  blockedSeeds = seeds
+  return seeds
+}
+export function resetCloudBlockCache() {
+  blockedSeeds = null
+}
+
+async function recordCloudBlock(job, error) {
+  const seedKey = jobMatchKey(job)
+  if (!seedKey || !error?.code) return
+  try {
+    const local = await findLocalMatchBySeed(seedKey)
+    if (!local) return
+    await db.matches.update(local.id, { cloudBlock: { code: error.code, claim: error.claim ?? null, at: Date.now() } })
+    ;(await getBlockedSeeds()).add(seedKey)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(CLOUD_BLOCK_EVENT, { detail: { seedKey, code: error.code } }))
+    }
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not record the cloud block of a match:', err?.message)
+  }
+}
+
+async function clearCloudBlock(job) {
+  const seedKey = jobMatchKey(job)
+  if (!seedKey) return
+  try {
+    const seeds = await getBlockedSeeds()
+    if (!seeds.has(seedKey)) return
+    seeds.delete(seedKey)
+    const local = await findLocalMatchBySeed(seedKey)
+    if (local?.cloudBlock) await db.matches.update(local.id, { cloudBlock: null })
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not clear the cloud block of a match:', err?.message)
+  }
+}
+
+// A closing update (approved / final) closes the match on the server, and from
+// then on the server refuses its sets and events (409 OV_MATCH_CLOSED). It
+// must not overtake an older set or event job of the same match that is still
+// on its way (queued, in flight or waiting out a backoff). Old 'failed' jobs do
+// not hold it: they were refused and wait for a hand retry.
+const CLOSING_STATUSES = ['approved', 'final']
+export function isClosingJob(job) {
+  return job?.resource === 'match' && job.action === 'update' && CLOSING_STATUSES.includes(job.payload?.status)
+}
+export async function closingMustWait(job) {
+  const matchKey = jobMatchKey(job)
+  if (!matchKey || job?.id == null) return false
+  try {
+    const pending = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error').toArray()
+    return pending.some(j => j.id < job.id && (j.resource === 'set' || j.resource === 'event') && jobMatchKey(j) === matchKey)
+  } catch {
+    return false
+  }
+}
+
 export async function resumeAfterSignIn() {
   clearAuthBlock()
   const requeued = await retryErrorsInternal({ force: true, includeFailed: true })
@@ -531,6 +620,9 @@ function installAuthListener() {
   _authListenerInstalled = true
   const onSession = (session) => { if (session) resumeAfterSignIn() }
   window.addEventListener(AUTH_TOKEN_CHANGE_EVENT, (e) => onSession(e.detail))
+  // A pending account was approved (admin or invite code): the jobs the
+  // server refused with OV_SCORER_REQUIRED can go now.
+  window.addEventListener(ACCESS_CHANGED_EVENT, (e) => { if (e?.detail?.canScore) resumeAfterSignIn() })
   // Another tab signed in. Only a new session (no old value): another tab
   // refreshing the stored session's expiry is not a sign-in.
   window.addEventListener('storage', (e) => {
@@ -558,6 +650,14 @@ export async function processJob(job) {
     if (matchKey && claimDue(matchKey) && await claimMatchWithLocalPin(matchKey)) {
       result = await processJobOnce(job)
       if (result === true) await requeueParkedJobsOf(matchKey, job.id)
+    }
+  }
+  if (CLOUD_BLOCK_RESOURCES.includes(job?.resource)) {
+    if (result === PERMANENT_FAILURE) {
+      const error = jobErrors.get(job?.id)
+      if (CLOUD_BLOCK_CODES.includes(error?.code)) await recordCloudBlock(job, error)
+    } else if (result === true) {
+      await clearCloudBlock(job)
     }
   }
   return result
@@ -612,6 +712,12 @@ async function processJobInner(job, ctx) {
         job = { ...job, payload: { ...job.payload, external_id: resolved.external_id } }
         await db.sync_queue.update(job.id, { payload: job.payload })
       }
+    }
+
+    // Closing order: the approval waits for the match's older sets and events
+    if (isClosingJob(job) && await closingMustWait(job)) {
+      safeLog.log('[SyncQueue] Closing update waits for older set/event jobs of its match')
+      return null
     }
 
     // ==================== MATCH ====================

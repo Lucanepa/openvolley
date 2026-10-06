@@ -6,7 +6,10 @@ import LoginModal from './LoginModal'
 import SignUpModal from './SignUpModal'
 import ProfileModal from './ProfileModal'
 import MatchHistory from './MatchHistory'
-import { CalendarDays, ChevronDown, ChevronRight, LogOut, User } from 'lucide-react'
+import RedeemInviteModal from './RedeemInviteModal'
+import RoleChips from './RoleChips'
+import { openManage } from '../../utils/manageNav'
+import { CalendarDays, ChevronDown, ChevronRight, KeyRound, LogOut, ShieldCheck, User, Users } from 'lucide-react'
 import { cn, FOCUS_RING } from '../../ui'
 
 // Kit recipes. Header-small button (svrz AdminConsole header) and the
@@ -25,15 +28,18 @@ const toBody = (node) => (typeof document !== 'undefined' ? createPortal(node, d
  *   clipped ('Sign out' cut off)
  * @param {() => void} [props.onAction] called when a row opens a dialog or
  *   signs out, so the surrounding menu can close
+ * @param {boolean} [props.inMatch] a match is open: the console rows (Admin,
+ *   Saved teams) are hidden, since the console never opens over a match
  */
-export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction }) {
+export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction, inMatch = false }) {
   const { t } = useTranslation()
-  const { user, profile, loading, signOut } = useAuth()
+  const { user, profile, access, loading, signOut } = useAuth()
 
   const [showLogin, setShowLogin] = useState(false)
   const [showSignUp, setShowSignUp] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showMatchHistory, setShowMatchHistory] = useState(false)
+  const [showRedeem, setShowRedeem] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
 
   if (loading) {
@@ -125,6 +131,37 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
       open={showMatchHistory}
       onClose={() => setShowMatchHistory(false)}
     />
+
+    <RedeemInviteModal
+      open={showRedeem}
+      onClose={() => setShowRedeem(false)}
+    />
+  </>)
+
+  // Access rows: admin console, saved teams (competition managers) and the
+  // invite code for any account that cannot score yet (pending, or a referee
+  // or competition manager without the scorer role). Hiding them is cosmetic:
+  // the server refuses every action without the role. The console rows are
+  // left out while a match is open (App never opens the console over one).
+  const accessRows = (rowClass, close) => (<>
+    {access?.isAdmin && !inMatch && (
+      <button type="button" onClick={() => { close(); openManage('accounts') }} className={rowClass}>
+        <ShieldCheck size={iconPx} aria-hidden="true" className="text-stone-400" />
+        {t('manage.menuAdmin')}
+      </button>
+    )}
+    {access?.canManageTeams && !inMatch && (
+      <button type="button" onClick={() => { close(); openManage('teams') }} className={rowClass}>
+        <Users size={iconPx} aria-hidden="true" className="text-stone-400" />
+        {t('manage.menuSavedTeams')}
+      </button>
+    )}
+    {access?.known && !access?.canScore && (
+      <button type="button" onClick={() => { close(); setShowRedeem(true) }} className={rowClass}>
+        <KeyRound size={iconPx} aria-hidden="true" className="text-amber-600" />
+        {t('manage.menuInviteCode')}
+      </button>
+    )}
   </>)
 
   if (inline) {
@@ -138,6 +175,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-stone-900">{userName}</div>
             <div className="truncate text-xs text-stone-500" title={user.email}>{user.email}</div>
+            {access?.known && <RoleChips roles={access.roles} pending={access.isPending} className="mt-1" />}
           </div>
         </div>
         <button
@@ -162,6 +200,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
           <CalendarDays size={iconPx} aria-hidden="true" className="text-stone-400" />
           {t('home.myMatches', 'My matches')}
         </button>
+        {accessRows(cn(MENU_ROW, 'border-0 bg-transparent text-sm text-stone-700 hover:bg-stone-100', FOCUS_RING), () => onAction?.())}
         <button
           type="button"
           onClick={handleSignOut}
@@ -226,11 +265,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
                 <div className={cn('mt-0.5 truncate text-stone-500', fullWidth ? 'text-sm' : 'text-xs')}>
                   {user.email}
                 </div>
-                <div className="mt-1.5 flex gap-1">
-                  <span className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-emerald-200 bg-emerald-50 px-1.5 py-[3px] text-[11px] font-semibold leading-none text-emerald-700">
-                    {t('auth.roleScorer', 'Scorer')}
-                  </span>
-                </div>
+                {access?.known && <RoleChips roles={access.roles} pending={access.isPending} className="mt-1.5" />}
               </div>
 
               {/* Menu items */}
@@ -258,6 +293,8 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
                   <CalendarDays size={iconPx} aria-hidden="true" className="text-stone-400" />
                   {t('home.myMatches', 'My matches')}
                 </button>
+
+                {accessRows(cn(MENU_ROW, fullWidth ? 'text-base' : 'text-sm', 'text-stone-700 hover:bg-stone-100', FOCUS_RING), () => setShowDropdown(false))}
 
                 <button
                   type="button"

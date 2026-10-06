@@ -66,7 +66,7 @@ export default defineConfig({
   // Android app: no .env files, only the variables given on the command line
   // (scripts/release-android.sh, the F-Droid recipe). F-Droid builds the APK
   // from source and checks it against the owner-signed one byte for byte, so
-  // a value from someone's local .env (e.g. VITE_REOPEN_PASSWORD_HASH) must
+  // a value from someone's local .env (e.g. a VITE_* backend URL) must
   // not end up in the bundle.
   envDir: isCapacitor ? false : undefined,
   optimizeDeps: {

@@ -132,7 +132,10 @@ import {
   processJob,
   takeJobError,
   probeErrorStatus,
-  STOP_PASS
+  STOP_PASS,
+  resetCloudBlockCache,
+  isClosingJob,
+  CLOUD_BLOCK_EVENT
 } from '../useSyncQueue'
 
 const MATCH_UUID = '11111111-2222-4333-8444-555555555555'
@@ -987,5 +990,125 @@ describe('useSyncQueue flush loop', () => {
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
     expect(result.current.syncStatus).toBe('synced')
     unmount()
+  })
+})
+
+describe('closing order (approval waits for the match\'s older sets and events)', () => {
+  const close = (id, status = 'approved') => ({ id, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa', status } })
+  const setJob = (id, status = 'queued') => ({ id, resource: 'set', action: 'update', status, retry_count: 0, payload: { external_id: 'match_100_aaa:s:5', match_id: 'match_100_aaa', home_points: 25 } })
+
+  it('recognises closing updates only', () => {
+    expect(isClosingJob(close(1))).toBe(true)
+    expect(isClosingJob(close(1, 'final'))).toBe(true)
+    expect(isClosingJob(close(1, 'ended'))).toBe(false)
+    expect(isClosingJob({ resource: 'match', action: 'insert', payload: { status: 'approved' } })).toBe(false)
+  })
+
+  it('holds the approval while an older set job is queued, and sends it after', async () => {
+    fakeDb.sync_queue.reset([setJob(1), close(2)])
+    // The set job errors in the first pass (5xx), so it is still pending
+    let setCalls = 0
+    api.respond = (call) => {
+      if (call.table === 'sets' && call.action !== 'select') {
+        setCalls++
+        if (setCalls === 1) return { data: null, error: { message: 'Service unavailable', status: 503 } }
+      }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    const matchUpdates = () => api.calls.filter(c => c.table === 'matches' && c.action === 'update')
+    expect(matchUpdates()).toHaveLength(0)
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+
+    // The set goes through: the approval follows in the next pass
+    fakeDb.sync_queue.update(1, { status: 'queued', next_attempt_at: 0 })
+    await runQueuePass()
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(matchUpdates()).toHaveLength(1)
+  })
+
+  it('an old failed set job does not hold the approval', async () => {
+    fakeDb.sync_queue.reset([setJob(1, 'failed'), close(2)])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  it('a newer set job does not hold it either', async () => {
+    fakeDb.sync_queue.reset([close(1), setJob(2)])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+})
+
+describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', () => {
+  beforeEach(() => {
+    resetCloudBlockCache()
+  })
+
+  const insertJob = (id) => ({ id, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } })
+  const eventJob = (id) => ({ id, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `match_100_aaa:e:${id}`, match_id: 'match_100_aaa' } })
+
+  it('OV_GAME_TAKEN parks the job and records who scores the game, without anything but the claim fields', async () => {
+    const seen = []
+    const onBlock = (e) => seen.push(e.detail)
+    window.addEventListener(CLOUD_BLOCK_EVENT, onBlock)
+    fakeDb.sync_queue.reset([insertJob(1)])
+    const claim = { game_n: 4711, season: 2026, sport: 'indoor', status: 'live', scorer_name: 'Anna Muster', mine: false, scheduled_at: '2026-10-10T16:00:00Z', game_pin: '123456' }
+    api.respond = (call) => {
+      if (call.table === 'matches' && call.action !== 'select') return { data: null, error: { message: 'taken', code: 'OV_GAME_TAKEN', status: 409, claim } }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    window.removeEventListener(CLOUD_BLOCK_EVENT, onBlock)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    const block = fakeDb.matches.map.get(1).cloudBlock
+    expect(block.code).toBe('OV_GAME_TAKEN')
+    expect(block.claim).toEqual({ game_n: 4711, season: 2026, sport: 'indoor', status: 'live', scorer_name: 'Anna Muster', mine: false, scheduled_at: '2026-10-10T16:00:00Z' })
+    expect(fakeDb.sync_queue.map.get(1).last_error.claim.scorer_name).toBe('Anna Muster')
+    expect(seen).toEqual([{ seedKey: 'match_100_aaa', code: 'OV_GAME_TAKEN' }])
+  })
+
+  it.each(['OV_SCORER_REQUIRED', 'OV_MATCH_CLOSED'])('%s sets the block with no claim', async (code) => {
+    fakeDb.sync_queue.reset([eventJob(1)])
+    api.respond = (call) => {
+      if (call.table === 'events') return { data: null, error: { message: 'no', code, status: code === 'OV_SCORER_REQUIRED' ? 403 : 409 } }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code, claim: null })
+  })
+
+  it('a later successful job of the match clears the block', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', cloudBlock: { code: 'OV_SCORER_REQUIRED', claim: null, at: 1 } }])
+    fakeDb.sync_queue.reset([eventJob(1)])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
+  })
+
+  it('other refusals set no block', async () => {
+    fakeDb.sync_queue.reset([eventJob(1)])
+    api.respond = (call) => {
+      if (call.table === 'events') return { data: null, error: { message: 'bad', code: 'OV_INVALID_REQUEST', status: 400 } }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeUndefined()
+  })
+})
+
+describe('access changes', () => {
+  it('ov-access-changed with canScore requeues the refused jobs', async () => {
+    fakeDb.sync_queue.reset([{ id: 1, resource: 'match', action: 'insert', status: 'failed', failed_at: Date.now(), payload: { external_id: 'match_100_aaa' } }])
+    window.dispatchEvent(new CustomEvent('ov-access-changed', { detail: { canScore: false } }))
+    await new Promise(r => setTimeout(r, 10))
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    window.dispatchEvent(new CustomEvent('ov-access-changed', { detail: { canScore: true } }))
+    await new Promise(r => setTimeout(r, 10))
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
   })
 })

@@ -132,7 +132,7 @@ CREATE TABLE public.match_live_state (
   challenges_used_a smallint DEFAULT 0 NOT NULL,
   challenges_used_b smallint DEFAULT 0 NOT NULL,
   server_number smallint DEFAULT 0 NOT NULL,
-  tto_active boolean DEFAULT false,      -- db/007_live_state_tto.sql
+  tto_active boolean DEFAULT false,      -- db/008_live_state_tto.sql
   tto_started_at timestamptz,
   updated_at timestamptz DEFAULT now()
 );

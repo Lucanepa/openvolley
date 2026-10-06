@@ -25,7 +25,7 @@ import { dirname, join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import WebSocket from 'ws'
-import { createDatabase, testSchemaSql } from './helpers/pgTestDb.js'
+import { createDatabase, testSchemaSql, grantRoles } from './helpers/pgTestDb.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BACKEND_DIR = resolve(HERE, '..')
@@ -346,7 +346,9 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(me.json.data.user.id, userId)
     const profile = await api(srv.base, '/api/auth/profile', { body: { access_token: token } })
     assert.equal(profile.status, 200)
-    assert.deepEqual(profile.json.data.roles, ['scorer'], 'sign-up cannot self-assign roles')
+    assert.deepEqual(profile.json.data.roles, [], 'sign-up cannot self-assign roles (and new accounts are pending)')
+    // this suite scores official matches: approve the account (db/007)
+    await grantRoles(db.url, userId, ['scorer'])
   })
 
   it('a purpose=live socket gets the live hello', async () => {
@@ -739,6 +741,7 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal((await api(srv.base, '/api/auth/sign-up', { body: { email: otherEmail, password } })).status, 200)
     const other = await api(srv.base, '/api/auth/sign-in', { body: { email: otherEmail, password } })
     assert.equal(other.status, 200, other.text)
+    await grantRoles(db.url, other.json.data.user.id, ['scorer']) // a scorer, so the ownership rule is what refuses
     const otherDown = await api(srv.base, '/api/storage/download', { token: other.json.data.session.access_token, body: { bucket: 'scoresheets', path: '2026-10-05/game4711_final.json' } })
     assert.equal(otherDown.status, 403)
     assert.equal(otherDown.json.error.code, 'OV_STORAGE_FORBIDDEN')

@@ -252,6 +252,37 @@ async function postJson(path, body, { auth = true, timeoutMs = DB_REQUEST_TIMEOU
 }
 
 /**
+ * One JSON request to a cloud endpoint with the session's token (the account,
+ * admin and saved-team endpoints). GET and DELETE send no body.
+ * A network failure is { error: { network: true }, status: 0 }.
+ * @param {'GET'|'POST'|'PATCH'|'PUT'|'DELETE'} method
+ * @param {string} path e.g. '/api/admin/accounts?filter=pending'
+ * @param {object} [body]
+ * @param {{timeoutMs?: number, fallbackError?: string}} [opts]
+ * @returns {Promise<{data: any, error: object|null, status: number}>}
+ */
+export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TIMEOUT_MS, fallbackError = 'Request failed' } = {}) {
+  const apiUrl = getCloudApiUrl(path)
+  if (!apiUrl) return { data: null, error: { message: 'Backend not available', status: 0, network: true }, status: 0 }
+  const verb = String(method || 'GET').toUpperCase()
+  const init = { method: verb, headers: getAuthHeaders(), signal: requestTimeoutSignal(timeoutMs) }
+  if (verb !== 'GET' && verb !== 'DELETE' && body !== undefined) init.body = JSON.stringify(body ?? {})
+  let response
+  try {
+    response = await fetch(apiUrl, init)
+  } catch (err) {
+    return { data: null, error: networkError(err), status: 0 }
+  }
+  let result
+  try {
+    result = await safeJsonResponse(response, fallbackError)
+  } catch {
+    return { data: null, error: normalizeError(null, response.status, fallbackError), status: response.status }
+  }
+  return { data: result?.data ?? null, error: result?.error ?? null, status: result?.status ?? response.status }
+}
+
+/**
  * Restore one match in the cloud in a single server-side transaction:
  * upsert the match by external_id, replace its sets, events and live state.
  * Needs a session. 426 / 429 / 5xx / network errors are worth retrying later.

@@ -9,7 +9,12 @@ import {
   queueSetReopenSync,
   setLiveStateDirty,
   isLiveStateDirty,
-  isLiveStateErrorWorthAlert
+  isLiveStateErrorWorthAlert,
+  isLiveStateRefusal,
+  isLiveStateRefused,
+  markLiveStateRefused,
+  clearLiveStateRefused,
+  LIVE_REFUSAL_PAUSE_MS
 } from '../eventSync'
 
 // In-memory stand-in for the Dexie tables used here
@@ -210,5 +215,29 @@ describe('live state catch-up flag', () => {
     expect(isLiveStateErrorWorthAlert({ status: 429 })).toBe(false)
     expect(isLiveStateErrorWorthAlert({ status: 503 })).toBe(false)
     expect(isLiveStateErrorWorthAlert({ status: 400, code: 'OV_INVALID_DATA' })).toBe(true)
+  })
+
+  it('a server refusal (pending account, closed match, taken game, not an owner) never opens a dialog', () => {
+    for (const [status, code] of [[403, 'OV_SCORER_REQUIRED'], [409, 'OV_MATCH_CLOSED'], [409, 'OV_GAME_TAKEN'], [403, 'OV_NOT_MATCH_OWNER'], [409, 'OV_UNSCOPED_WRITE']]) {
+      expect(isLiveStateRefusal({ status, code, message: 'x' })).toBe(true)
+      expect(isLiveStateErrorWorthAlert({ status, code, message: 'x' })).toBe(false)
+    }
+    expect(isLiveStateRefusal({ status: 403, code: 'OV_SOMETHING_ELSE' })).toBe(false)
+    expect(isLiveStateRefusal({ network: true, status: 0, code: 'OV_SCORER_REQUIRED' })).toBe(false)
+  })
+
+  it('a refused match pauses its cloud pushes, until the pause ends or access changes', () => {
+    const t0 = 1_000_000
+    markLiveStateRefused(11, 'OV_SCORER_REQUIRED', t0)
+    expect(isLiveStateRefused(11, t0 + 1000)).toBe(true)
+    expect(isLiveStateRefused('11', t0 + 1000)).toBe(true)
+    expect(isLiveStateRefused(12, t0 + 1000)).toBe(false)
+    expect(isLiveStateRefused(11, t0 + LIVE_REFUSAL_PAUSE_MS)).toBe(false)
+    markLiveStateRefused(11, 'OV_MATCH_CLOSED', t0)
+    clearLiveStateRefused(11)
+    expect(isLiveStateRefused(11, t0 + 1)).toBe(false)
+    markLiveStateRefused(13, 'OV_MATCH_CLOSED', t0)
+    clearLiveStateRefused()
+    expect(isLiveStateRefused(13, t0 + 1)).toBe(false)
   })
 })
