@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { settleLiveChange, liveScoreboard, livePhase, applyMatchRowChange } from '../livescoreModel'
+import { settleLiveChange, liveScoreboard, livePhase, applyMatchRowChange, isLateFrame, FRAME_REORDER_WINDOW_MS } from '../livescoreModel'
 import { applyLiveChange } from '../livescoreChanges'
 
 // Frames recorded on the dev relay at the end of game 992303 (3:1, set 4 won
@@ -17,8 +17,10 @@ const setEndFrame = { match_id: 'm1', points_a: 0, points_b: 0, sets_won_a: 3, s
 const matchEndFrame = { match_id: 'm1', points_a: 26, points_b: 24, sets_won_a: 3, sets_won_b: 1, side_a: 'right', serving_team: 'right', match_status: 'ended', last_event_type: 'match_end', current_set: 4, set_interval_active: false, updated_at: '2026-10-06T08:31:18.511Z' }
 
 const update = (row) => ({ eventType: 'UPDATE', new: row })
+// This page's clock, a little after the recorded frames
+const NOW = Date.parse('2026-10-06T08:31:20Z')
 const apply = (games, row) => {
-  const settled = settleLiveChange(games, update(row))
+  const settled = settleLiveChange(games, update(row), NOW)
   return settled ? applyLiveChange(games, settled) : games
 }
 const view = (game) => {
@@ -46,30 +48,72 @@ describe('match end on the livescore: no transient flip', () => {
 
   it('a frame older than the shown row is dropped (out-of-order delivery)', () => {
     const games = [{ ...base, ...matchEndFrame }]
-    expect(settleLiveChange(games, update(setEndFrame))).toBeNull()
-    expect(settleLiveChange(games, update({ ...lastPoint }))).toBeNull()
+    expect(settleLiveChange(games, update(setEndFrame), NOW)).toBeNull()
+    expect(settleLiveChange(games, update({ ...lastPoint }), NOW)).toBeNull()
   })
 
   it('the match_end frame itself is authoritative', () => {
     const games = [{ ...base, ...lastPoint, side_a: 'left' }]
-    const settled = settleLiveChange(games, update(matchEndFrame))
+    const settled = settleLiveChange(games, update(matchEndFrame), NOW)
     expect(settled.new.side_a).toBe('right')
   })
 
   it('an in-play frame and an unknown match pass unchanged; DELETE passes', () => {
     const games = [{ ...base, ...lastPoint }]
     const next = { ...lastPoint, points_a: 25, updated_at: '2026-10-06T08:31:08Z', side_a: 'left' }
-    expect(settleLiveChange(games, update(next)).new).toEqual(next)
+    expect(settleLiveChange(games, update(next), NOW).new).toEqual(next)
     const other = { ...setEndFrame, match_id: 'm2' }
-    expect(settleLiveChange(games, update(other)).new).toEqual(other)
+    expect(settleLiveChange(games, update(other), NOW).new).toEqual(other)
     const del = { eventType: 'DELETE', old: { match_id: 'm1' } }
-    expect(settleLiveChange(games, del)).toBe(del)
+    expect(settleLiveChange(games, del, NOW)).toBe(del)
   })
 
   it('rows without updated_at are never dropped', () => {
     const games = [{ ...base, ...lastPoint }]
     const { updated_at: _u, ...noStamp } = lastPoint
-    expect(settleLiveChange(games, update(noStamp))).not.toBeNull()
+    expect(settleLiveChange(games, update(noStamp), NOW)).not.toBeNull()
+  })
+})
+
+describe('frame ordering against device clocks', () => {
+  const at = (ms) => new Date(ms).toISOString()
+  const frame = (points, ms) => ({ ...lastPoint, points_a: points, updated_at: at(ms) })
+
+  it('a shown row stamped 10 min in the future does not block later honest frames', () => {
+    // A scorer device whose clock ran 10 min fast, then an honest device
+    let games = [{ ...base, ...frame(10, NOW + 10 * 60 * 1000) }]
+    for (let i = 1; i <= 3; i++) {
+      const settled = settleLiveChange(games, update(frame(10 + i, NOW + i * 1000)), NOW + i * 1000)
+      expect(settled).not.toBeNull()
+      games = applyLiveChange(games, settled)
+    }
+    expect(games[0].points_a).toBe(13)
+  })
+
+  it('a scorer device whose clock is behind keeps the game moving', () => {
+    let games = [{ ...base, ...frame(10, NOW) }]
+    // The scorer moved to a tablet 10 min behind
+    for (let i = 1; i <= 3; i++) {
+      const settled = settleLiveChange(games, update(frame(10 + i, NOW - 10 * 60 * 1000 + i * 1000)), NOW + i * 1000)
+      expect(settled).not.toBeNull()
+      games = applyLiveChange(games, settled)
+    }
+    expect(games[0].points_a).toBe(13)
+  })
+
+  it('a frame with a future stamp is clamped: it blocks honest frames for seconds at most', () => {
+    let games = [{ ...base, ...frame(10, NOW) }]
+    games = applyLiveChange(games, settleLiveChange(games, update(frame(11, NOW + 60 * 60 * 1000)), NOW))
+    // The shown row is now far ahead: the next honest frame is applied
+    expect(settleLiveChange(games, update(frame(12, NOW + 1000)), NOW + 1000)).not.toBeNull()
+  })
+
+  it('isLateFrame: only a slightly older frame is late', () => {
+    expect(isLateFrame(at(NOW), at(NOW - 1500), NOW)).toBe(true)
+    expect(isLateFrame(at(NOW), at(NOW - FRAME_REORDER_WINDOW_MS - 1), NOW)).toBe(false)
+    expect(isLateFrame(at(NOW), at(NOW), NOW)).toBe(false)
+    expect(isLateFrame(at(NOW + 60_000), at(NOW), NOW)).toBe(false)
+    expect(isLateFrame(undefined, at(NOW), NOW)).toBe(false)
   })
 })
 
