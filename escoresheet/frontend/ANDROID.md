@@ -153,6 +153,13 @@ The app is prepared for f-droid.org, which builds it from source itself:
   orientation requests on tablets unless the app opts out
   (`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`, set). In a browser both
   calls are no-ops.
+  Known limits: the lock is a fixed side (`SCREEN_ORIENTATION_LANDSCAPE` or
+  `REVERSE_LANDSCAPE`, the plugin has no sensor-landscape), so a tablet turned
+  round by 180° while the scoreboard is open shows it upside down until the
+  scoreboard is left and opened again. On displays that ignore orientation
+  requests (`ignoreOrientationRequest`, Pixel Tablet style and the emulator
+  default) an upright tablet shows the scoreboard as a letterboxed landscape
+  view; it never becomes a portrait scoreboard.
 - **Screen stays on**: the scoreboard's Screen Wake Lock request works in the
   WebView (no extra native code).
 - **Venue mode (no internet)**: plain-http LAN relays are allowed:
