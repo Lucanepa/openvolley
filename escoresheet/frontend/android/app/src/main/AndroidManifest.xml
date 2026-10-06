@@ -57,7 +57,9 @@
          folder (copyable off the tablet). Android 11+ needs no permission for
          files the app creates there; Android 10 and older need storage access
          (plus requestLegacyExternalStorage above on Android 10). If refused,
-         the app falls back to its own external files folder. -->
+         the app falls back to its own external files folder. The app only
+         reads files it wrote itself, so READ is needed only where the
+         Filesystem plugin asks for it with WRITE (Android 10 and older). -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 </manifest>
