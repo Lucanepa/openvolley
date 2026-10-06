@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
 mod relay;
 
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -43,6 +44,15 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Automatic match backups (see backup.rs; ACL in capabilities/backup.json)
+        .invoke_handler(tauri::generate_handler![
+            backup::backup_info,
+            backup::backup_write,
+            backup::backup_list,
+            backup::backup_remove,
+            backup::backup_open_dir,
+            backup::backup_pick_file
+        ])
         .menu(|handle| {
             let tablet = MenuItem::with_id(handle, "connect_tablet", "Connect a Tablet…", true, None::<&str>)?;
             let help = Submenu::with_items(handle, "Help", true, &[&tablet])?;
