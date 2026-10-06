@@ -1098,6 +1098,27 @@ async fn match_patch(
     }
 }
 
+/// Devices connected over the network (the tray's "2 tablets connected"):
+/// WebSocket connections from another machine. The scoretable on this
+/// computer (loopback or one of its own addresses) does not count.
+pub async fn tablet_count(state: &Arc<AppState>) -> usize {
+    let ips: Vec<IpAddr> = state.conn_meta.lock().await.values().map(|m| m.ip).collect();
+    if ips.is_empty() {
+        return 0;
+    }
+    let own: Vec<IpAddr> = local_ip_address::list_afinet_netifas()
+        .map(|list| list.into_iter().map(|(_, a)| canonical_ip(a)).collect())
+        .unwrap_or_default();
+    count_remote(&ips, &own)
+}
+
+fn count_remote(ips: &[IpAddr], own: &[IpAddr]) -> usize {
+    ips.iter()
+        .map(|ip| canonical_ip(*ip))
+        .filter(|ip| !ip.is_loopback() && !own.contains(ip))
+        .count()
+}
+
 async fn server_connections(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
@@ -2004,6 +2025,22 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tablets_are_the_other_machines() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let own = [ip("192.168.1.10"), ip("10.42.0.1")];
+        let conns = [
+            ip("127.0.0.1"),          // the scoretable window
+            ip("::1"),
+            ip("192.168.1.10"),       // the scoretable on its LAN address
+            ip("::ffff:10.42.0.1"),   // same, IPv4-mapped
+            ip("192.168.1.20"),       // a tablet
+            ip("::ffff:10.42.0.57"),  // a tablet on the laptop's Wi-Fi
+        ];
+        assert_eq!(count_remote(&conns, &own), 2);
+        assert_eq!(count_remote(&[], &own), 0);
+    }
 
     fn bundle(id: u64, pin: &str, status: &str) -> Value {
         json!({

@@ -32,14 +32,27 @@ export function getConfirmSnapshot() {
   return confirmQueue.length > 0 ? confirmQueue[0] : null;
 }
 
+/** Whether a <UiHost /> (its ConfirmDialog) is mounted to show a confirm.
+ *  None after an error boundary replaced the tree with its error screen. */
+export function hasConfirmHost() {
+  return confirmListeners.size > 0;
+}
+
 /**
  * Ask the user to confirm something. Resolves true on confirm, false on cancel,
  * Escape or a backdrop click. Never rejects. (store.ts:48-57)
+ *
+ * `opts.signal` (an AbortSignal): aborting it takes the dialog away as if
+ * cancelled (resolves false), e.g. a more important question replaces it.
  */
 export function confirmDialog(opts) {
+  const { signal, ...rest } = opts ?? {};
   return new Promise((resolve) => {
-    confirmQueue = [...confirmQueue, { ...opts, id: ++seq, resolve }];
+    if (signal?.aborted) { resolve(false); return; }
+    const id = ++seq;
+    confirmQueue = [...confirmQueue, { ...rest, id, resolve }];
     emitConfirm();
+    signal?.addEventListener?.('abort', () => settleConfirm(id, false), { once: true });
   });
 }
 

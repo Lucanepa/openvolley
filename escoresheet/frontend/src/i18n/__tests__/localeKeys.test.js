@@ -21,7 +21,7 @@ function flatten(obj, prefix = '', out = []) {
 }
 
 // Every key of these namespaces in English must exist everywhere
-const NAMESPACES = ['access', 'manage', 'savedTeams', 'cloudBlock']
+const NAMESPACES = ['access', 'manage', 'savedTeams', 'cloudBlock', 'appLifecycle']
 const EXTRA_KEYS = [
   'matchSetup.gameTakenTitle',
   'matchSetup.gameTakenBody',

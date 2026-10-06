@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-page-gone"
+description = "Enables the app_page_gone command without any pre-configured scope."
+commands.allow = ["app_page_gone"]
+
+[[permission]]
+identifier = "deny-app-page-gone"
+description = "Denies the app_page_gone command without any pre-configured scope."
+commands.deny = ["app_page_gone"]

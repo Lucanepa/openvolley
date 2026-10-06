@@ -58,6 +58,8 @@ import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
+import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
+import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
@@ -450,6 +452,16 @@ export default function App() {
       return null
     }
   }, [])
+
+  // Closing / quitting the app: the desktop app hides to the tray and asks
+  // before it quits, Android's Back asks before it exits, a browser asks
+  // before it leaves a live match (utils/appLifecycle.js)
+  useEffect(() => installAppLifecycle(), [])
+  const activeMatchStatus = activeMatch?.status
+  const activeMatchIsTest = !!activeMatch?.test
+  useEffect(() => {
+    setLiveMatch(liveOf(activeMatchStatus ? { status: activeMatchStatus, test: activeMatchIsTest } : null))
+  }, [activeMatchStatus, activeMatchIsTest])
 
   // Get current match (most recent match that's not final)
   const currentMatch = useLiveQuery(async () => {
@@ -927,15 +939,24 @@ export default function App() {
       history.pushState(null, '', window.location.href)
     }
 
-    // Push initial state to prevent back navigation
-    try {
-      history.pushState(null, '', window.location.href)
-    } catch (err) {
-      // Ignore history errors (e.g., older browsers or restricted environments)
-    }
+    // Android app: the Back button is MainActivity's (it goes back in real
+    // history, e.g. out of the scoresheet's in-app view, and on the first
+    // page asks "Exit OpenVolley?", utils/appLifecycle.js). An entry pushed
+    // here would make WebView.canGoBack() true, and Back then only replayed
+    // this block instead of asking.
+    const blockHistory = detectAppPlatform() !== 'capacitor'
 
-    // Prevent browser back/forward buttons
-    window.addEventListener('popstate', blockHistoryNavigation)
+    // Push initial state to prevent back navigation
+    if (blockHistory) {
+      try {
+        history.pushState(null, '', window.location.href)
+      } catch (err) {
+        // Ignore history errors (e.g., older browsers or restricted environments)
+      }
+
+      // Prevent browser back/forward buttons
+      window.addEventListener('popstate', blockHistoryNavigation)
+    }
 
     // Prevent refresh keyboard shortcuts
     window.addEventListener('keydown', disableRefreshKeys, { passive: false })
