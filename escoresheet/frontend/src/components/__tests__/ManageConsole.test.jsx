@@ -57,6 +57,17 @@ describe('ManageConsole', () => {
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
+  it('the header "Back to the app" button has an accessible name (its text is hidden on phones)', async () => {
+    asUser(['admin'])
+    const onClose = vi.fn()
+    render(<ManageConsole tab="accounts" onTab={() => {}} onClose={onClose} />)
+    const back = screen.getByRole('button', { name: 'manage.backToApp' })
+    expect(back).toHaveAttribute('aria-label', 'manage.backToApp')
+    fireEvent.click(back)
+    expect(onClose).toHaveBeenCalled()
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
+  })
+
   it('a competition manager lands on saved teams whatever tab was asked', async () => {
     asUser(['competition_manager'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)

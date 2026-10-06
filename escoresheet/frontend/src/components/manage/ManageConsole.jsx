@@ -64,7 +64,7 @@ export default function ManageConsole({ tab, onTab, onClose }) {
         logo={<img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="h-7 w-auto" />}
         eyebrow={t('manage.title')}
         actions={
-          <button type="button" className={consoleHeaderBtn} onClick={onClose}>
+          <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')}>
             <ArrowLeft size={14} aria-hidden />
             <span className="hidden sm:inline">{t('manage.backToApp')}</span>
           </button>

@@ -134,18 +134,22 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       return
     }
     setSavingFields(true)
-    const res = await savedTeamsApi.updateTeam(team.id, {
+    const sent = {
       name: fields.name.trim(),
       short_name: fields.short_name.trim() || null,
       club: fields.club.trim() || null,
       color: fields.color ? fields.color.toLowerCase() : null,
       svrz_team_name: fields.svrz_team_name.trim() || null
-    })
+    }
+    const res = await savedTeamsApi.updateTeam(team.id, sent)
     setSavingFields(false)
     if (res.error) {
       setFieldsError(t(errorKeyOf(res.error)))
       return
     }
+    // Only this section takes the saved values; unsaved players and
+    // officials stay as they are (the editor is not remounted).
+    setFields(Object.fromEntries(Object.entries(sent).map(([k, v]) => [k, v ?? ''])))
     toast.success(t('manage.accounts.saved'))
     onChanged?.()
   }
@@ -242,10 +246,13 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
               <Input value={fields.color} onChange={setField('color')} maxLength={7} placeholder="#rrggbb" className="font-mono" aria-label={`${t('savedTeams.color')} (hex)`} />
             </div>
           </Field>
-          <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')} className="sm:col-span-2">
-            <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
+          {/* Field takes exactly one control (Children.only): the datalist sits beside it */}
+          <div className="min-w-0 sm:col-span-2">
+            <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
+              <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
+            </Field>
             <datalist id={listId}>{svrzNames.map(n => <option key={n} value={n} />)}</datalist>
-          </Field>
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button variant="positive" onClick={saveFields} loading={savingFields} disabled={!online || !fieldsDirty || !fields.name.trim() || savingFields}>{t('manage.accounts.save')}</Button>
