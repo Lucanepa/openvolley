@@ -26,16 +26,18 @@ import {
   triggerContinuousBackup,
   persistPendingLogs,
   restorePendingLogs,
+  discardUnsentLogs,
   buildLogChunk,
   setDebugLogging,
   isDebugOnlyMessage,
   resetLoggerForTests,
   LOG_CURSOR_KEY,
   LOG_PENDING_KEY,
-  LOG_UPLOAD_MIN_INTERVAL_MS
+  LOG_UPLOAD_MIN_INTERVAL_MS,
+  EARLY_UPLOAD_UNSENT
 } from '../logger'
 
-const signIn = () => localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: Date.now() / 1000 + 3600 }))
+const signIn = (userId = 'u1') => localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: Date.now() / 1000 + 3600, user: { id: userId } }))
 const sink = () => ({ log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
 const lines = (body) => body.split('\n').filter(Boolean)
 
@@ -151,7 +153,7 @@ describe('log upload', () => {
     await uploadLogsToCloud('m1', 7)
     captureConsole('warn', ['not sent yet'], sink())
     persistPendingLogs()
-    expect(JSON.parse(localStorage.getItem(LOG_PENDING_KEY))).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem(LOG_PENDING_KEY))).toMatchObject({ uid: 'u1', entries: [{ message: 'not sent yet' }] })
 
     resetLoggerForTests()
     expect(restorePendingLogs()).toBe(1)
@@ -162,6 +164,80 @@ describe('log upload', () => {
     expect(body).toContain('not sent yet')
     expect(body).toContain('new session')
     expect(body).not.toContain('] sent')
+  })
+
+  it('drops saved lines of another account (shared courtside device)', async () => {
+    signIn('alice')
+    captureConsole('warn', ['alice line'], sink())
+    persistPendingLogs()
+
+    resetLoggerForTests()
+    signIn('bob')
+    expect(restorePendingLogs()).toBe(0)
+    expect(localStorage.getItem(LOG_PENDING_KEY)).toBeNull()
+    captureConsole('warn', ['bob line'], sink())
+    await uploadLogsToCloud('m1', 7)
+    expect(storage.uploads[0].body).not.toContain('alice line')
+  })
+
+  it('sign-out discards the saved and in-memory unsent lines', async () => {
+    signIn('alice')
+    captureConsole('warn', ['alice line'], sink())
+    persistPendingLogs()
+    discardUnsentLogs()
+    expect(localStorage.getItem(LOG_PENDING_KEY)).toBeNull()
+    expect(getUnsentLogs()).toHaveLength(0)
+
+    signIn('bob')
+    captureConsole('warn', ['bob line'], sink())
+    await uploadLogsToCloud('m1', 7)
+    expect(storage.uploads[0].body).toContain('bob line')
+    expect(storage.uploads[0].body).not.toContain('alice line')
+  })
+
+  it('a second tab: its earlier lines are not skipped by another tab\'s cursor, saved lines merge', async () => {
+    signIn()
+    captureConsole('warn', ['tab B early'], sink())
+    // Another tab uploaded later lines and moved the shared cursor past this tab's line
+    localStorage.setItem(LOG_CURSOR_KEY, String(getLogs()[0].seq + 10_000))
+    expect(getUnsentLogs().map(e => e.message)).toEqual(['tab B early'])
+    await uploadLogsToCloud('m1', 7)
+    expect(storage.uploads[0].body).toContain('tab B early')
+    // The shared cursor never moves back
+    expect(Number(localStorage.getItem(LOG_CURSOR_KEY))).toBe(getLogs()[0].seq + 10_000)
+
+    // Saved lines of another tab (same account) are merged, not overwritten
+    localStorage.setItem(LOG_PENDING_KEY, JSON.stringify({ uid: 'u1', entries: [{ seq: Number.MAX_SAFE_INTEGER - 1, timestamp: 't', level: 'warn', message: 'tab A pending' }] }))
+    captureConsole('warn', ['tab B pending'], sink())
+    persistPendingLogs()
+    const saved = JSON.parse(localStorage.getItem(LOG_PENDING_KEY)).entries.map(e => e.message)
+    expect(saved).toEqual(['tab B pending', 'tab A pending'])
+
+    // Next start: both come back and go up, although below the shared cursor
+    resetLoggerForTests()
+    expect(restorePendingLogs()).toBe(2)
+    await uploadLogsToCloud('m1', 7)
+    const last = storage.uploads[storage.uploads.length - 1].body
+    expect(last).toContain('tab B pending')
+    expect(last).toContain('tab A pending')
+  })
+
+  it('an upload removes its lines from the saved copy', async () => {
+    signIn()
+    captureConsole('warn', ['hidden then sent'], sink())
+    persistPendingLogs()
+    await uploadLogsToCloud('m1', 7)
+    expect(localStorage.getItem(LOG_PENDING_KEY)).toBeNull()
+  })
+
+  it('counts unsent lines evicted from a full buffer in the next chunk', async () => {
+    signIn()
+    for (let i = 0; i < 1005; i++) captureConsole('warn', [`line ${i}`], sink())
+    await uploadLogsToCloud('m1', 7)
+    expect(storage.uploads[0].body).toMatch(/^\[logger\] 5 lines dropped/)
+    captureConsole('warn', ['after'], sink())
+    await uploadLogsToCloud('m1', 7)
+    expect(storage.uploads[1].body).not.toContain('lines dropped')
   })
 
   it('retries a failed upload with the same lines, skips lines refused for good', async () => {
@@ -234,6 +310,21 @@ describe('every-action backup', () => {
     const all = storage.uploads.filter(u => u.path.startsWith('logs/')).flatMap(u => lines(u.body))
     expect(all.filter(l => l.endsWith('rally 0'))).toHaveLength(1)
     expect(all).toHaveLength(11)
+  })
+
+  it('uploads early when many lines wait, without the 60 s wait', async () => {
+    signIn()
+    vi.useFakeTimers({ now: new Date('2026-10-06T08:00:00Z') })
+    const getBackupData = async () => ({ match: { gameN: 7 }, sets: [] })
+    const logUploads = () => storage.uploads.filter(u => u.path.startsWith('logs/')).length
+    captureConsole('warn', ['first'], sink())
+    await triggerContinuousBackup('m1', getBackupData, 7)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(logUploads()).toBe(1)
+    for (let i = 0; i < EARLY_UPLOAD_UNSENT; i++) captureConsole('warn', [`burst ${i}`], sink())
+    await triggerContinuousBackup('m1', getBackupData, 7)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(logUploads()).toBe(2)
   })
 
   it('a set/match end upload is not rate limited', async () => {

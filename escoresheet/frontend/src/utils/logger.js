@@ -19,7 +19,14 @@
  * every-action backup sends logs at most once a minute; set end, match end,
  * coin toss and match creation send at once. Entries not uploaded yet are
  * kept in localStorage when the page is hidden or closed and come back at the
- * next start. Nothing is sent without a stored session.
+ * next start, for the same account only (sign-out and account deletion drop
+ * them). Nothing is sent without a stored session.
+ *
+ * The upload cursor in memory is this tab's own: a second scorer tab's lines
+ * are not skipped because another tab uploaded later ones. The buffer holds
+ * MAX_BUFFER_SIZE lines; the every-action backup uploads early once
+ * EARLY_UPLOAD_UNSENT lines wait, and lines evicted before they were sent are
+ * counted in a "[logger] N lines dropped" line at the top of the next chunk.
  */
 
 import { apiStorage, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
@@ -132,6 +139,9 @@ function formatLogEntry(level, args) {
 function addToBuffer(entry) {
   logBuffer.push(entry)
   if (logBuffer.length > MAX_BUFFER_SIZE) {
+    const evicted = logBuffer.length - MAX_BUFFER_SIZE
+    const cursor = readCursor()
+    for (let i = 0; i < evicted; i++) if (logBuffer[i].seq > cursor) droppedUnsent++
     logBuffer = logBuffer.slice(-MAX_BUFFER_SIZE)
   }
 }
@@ -242,10 +252,14 @@ export const LOG_PENDING_KEY = 'ov_log_pending'
 export const LOG_UPLOAD_MIN_INTERVAL_MS = 60 * 1000
 /** One chunk stays well under the 5 MiB storage cap; the oldest lines are cut first. */
 export const MAX_LOG_CHUNK_BYTES = 1024 * 1024
+/** The every-action backup uploads at once (no 60 s wait) when this many lines wait. */
+export const EARLY_UPLOAD_UNSENT = 600
 const MAX_PENDING_ENTRIES = 500
 const MAX_PENDING_CHARS = 512 * 1024
 
 let memoryCursor = 0
+let cursorLoaded = false
+let droppedUnsent = 0 // unsent lines evicted from the buffer since the last upload
 let lastLogUploadAt = 0
 let logUploadInFlight = false
 let queuedLogUpload = null
@@ -264,32 +278,77 @@ export function hasStoredSession() {
   }
 }
 
-function readCursor() {
+/** The signed-in user's id from the stored session, or null. */
+function storedSessionUserId() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) : null
+    const session = raw ? JSON.parse(raw) : null
+    return session?.user?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+function readStoredCursor() {
   try {
     const stored = Number(localStorage.getItem(LOG_CURSOR_KEY))
-    if (Number.isFinite(stored) && stored > memoryCursor) memoryCursor = stored
-  } catch { /* storage blocked: memory only */ }
+    return Number.isFinite(stored) ? stored : 0
+  } catch {
+    return 0 // storage blocked: memory only
+  }
+}
+
+// This tab's cursor: the stored one once at start, then only its own uploads
+function readCursor() {
+  if (!cursorLoaded) {
+    cursorLoaded = true
+    memoryCursor = Math.max(memoryCursor, readStoredCursor())
+  }
   return memoryCursor
 }
 
 function writeCursor(seq) {
+  readCursor()
   if (seq > memoryCursor) memoryCursor = seq
-  try { localStorage.setItem(LOG_CURSOR_KEY, String(memoryCursor)) } catch { /* memory only */ }
+  // Never move the shared copy back (another tab may have uploaded later lines)
+  const stored = Math.max(readStoredCursor(), memoryCursor)
+  try { localStorage.setItem(LOG_CURSOR_KEY, String(stored)) } catch { /* memory only */ }
 }
 
-/** Entries the cloud does not have yet (after the upload cursor). */
+/** Entries the cloud does not have yet (after this tab's upload cursor). */
 export function getUnsentLogs() {
   const cursor = readCursor()
   return logBuffer.filter(e => e.seq > cursor)
 }
 
+function readPending() {
+  const raw = localStorage.getItem(LOG_PENDING_KEY)
+  if (!raw) return null
+  const saved = JSON.parse(raw)
+  if (Array.isArray(saved)) return { uid: null, entries: saved } // untagged (older build)
+  if (saved && Array.isArray(saved.entries)) return { uid: saved.uid ?? null, entries: saved.entries }
+  return null
+}
+
 /**
  * Keep the entries not uploaded yet for the next start of the app (pagehide,
- * tab hidden). Capped; the newest entries win.
+ * tab hidden), tagged with the signed-in account. Lines another scorer tab of
+ * the same account saved are merged, not overwritten. Capped; the newest
+ * entries win.
  */
 export function persistPendingLogs() {
   try {
-    const pending = getUnsentLogs().slice(-MAX_PENDING_ENTRIES)
+    const uid = storedSessionUserId()
+    let previous = []
+    try {
+      const saved = readPending()
+      if (saved && saved.uid === uid) previous = saved.entries
+    } catch { /* unreadable: overwrite */ }
+    const bySeq = new Map()
+    for (const e of [...previous, ...getUnsentLogs()]) {
+      if (e && Number.isFinite(e.seq) && typeof e.message === 'string') bySeq.set(e.seq, e)
+    }
+    const pending = [...bySeq.values()].sort((a, b) => a.seq - b.seq).slice(-MAX_PENDING_ENTRIES)
     let chars = 0
     let from = pending.length
     while (from > 0 && chars + pending[from - 1].message.length <= MAX_PENDING_CHARS) {
@@ -298,27 +357,54 @@ export function persistPendingLogs() {
     }
     const kept = pending.slice(from)
     if (kept.length === 0) localStorage.removeItem(LOG_PENDING_KEY)
-    else localStorage.setItem(LOG_PENDING_KEY, JSON.stringify(kept))
+    else localStorage.setItem(LOG_PENDING_KEY, JSON.stringify({ uid, entries: kept }))
   } catch { /* storage full or blocked */ }
 }
 
+/** Remove uploaded entries from the saved pending lines (this tab saved them earlier). */
+function prunePending(uploaded) {
+  try {
+    const saved = readPending()
+    if (!saved) return
+    const seqs = new Set(uploaded.map(e => e.seq))
+    const left = saved.entries.filter(e => !seqs.has(e?.seq))
+    if (left.length === saved.entries.length) return
+    if (left.length === 0) localStorage.removeItem(LOG_PENDING_KEY)
+    else localStorage.setItem(LOG_PENDING_KEY, JSON.stringify({ uid: saved.uid, entries: left }))
+  } catch { /* storage blocked */ }
+}
+
 /**
- * Put the entries saved by persistPendingLogs back into the buffer (those
- * still after the upload cursor).
+ * Forget every line not uploaded yet (saved and in memory): sign-out and
+ * account deletion, so the next account on this device never uploads them.
+ */
+export function discardUnsentLogs() {
+  try { localStorage.removeItem(LOG_PENDING_KEY) } catch { /* storage blocked */ }
+  const last = Math.max(lastSeq, logBuffer.length > 0 ? logBuffer[logBuffer.length - 1].seq : 0)
+  if (last > 0) writeCursor(last)
+  droppedUnsent = 0
+}
+
+/**
+ * Put the entries saved by persistPendingLogs back into the buffer, only when
+ * the same account (or none) is signed in now. Not filtered by the shared
+ * cursor: another scorer tab may have uploaded later lines; an upload removes
+ * its lines from the saved copy instead (prunePending).
  * @returns {number} how many came back
  */
 export function restorePendingLogs() {
   try {
-    const raw = localStorage.getItem(LOG_PENDING_KEY)
-    if (!raw) return 0
+    const saved = readPending()
     localStorage.removeItem(LOG_PENDING_KEY)
-    const cursor = readCursor()
+    if (!saved || saved.uid !== storedSessionUserId()) return 0
     const have = new Set(logBuffer.map(e => e.seq))
-    const saved = JSON.parse(raw)
-    const restored = (Array.isArray(saved) ? saved : []).filter(e =>
-      e && Number.isFinite(e.seq) && e.seq > cursor && !have.has(e.seq) && typeof e.message === 'string')
+    const restored = saved.entries.filter(e =>
+      e && Number.isFinite(e.seq) && !have.has(e.seq) && typeof e.message === 'string')
     if (restored.length === 0) return 0
     for (const e of restored) if (e.seq > lastSeq) lastSeq = e.seq
+    // This tab sends them, even below the shared cursor (another tab's uploads)
+    const firstRestored = Math.min(...restored.map(e => e.seq))
+    if (readCursor() >= firstRestored) memoryCursor = firstRestored - 1
     logBuffer = [...restored, ...logBuffer].sort((a, b) => a.seq - b.seq).slice(-MAX_BUFFER_SIZE)
     return restored.length
   } catch {
@@ -379,6 +465,9 @@ export async function uploadLogsToCloud(matchId = null, gameNumber = null, { min
   const entries = getUnsentLogs()
   if (entries.length === 0) return null
   const lastEntrySeq = entries[entries.length - 1].seq
+  const dropped = droppedUnsent
+  const chunk = buildLogChunk(entries)
+  const body = dropped > 0 ? `[logger] ${dropped} lines dropped (buffer full before upload)\n${chunk}` : chunk
 
   // Use gameNumber if available for human-readable paths, fall back to matchId
   const folderName = gameNumber ? `game_${gameNumber}` : (matchId ? `match_${matchId}` : 'general')
@@ -389,7 +478,7 @@ export async function uploadLogsToCloud(matchId = null, gameNumber = null, { min
   try {
     const { data, error } = await apiStorage
       .from('backup')
-      .upload(filename, buildLogChunk(entries), {
+      .upload(filename, body, {
         contentType: 'text/plain',
         upsert: true // the same chunk sent again replaces itself
       })
@@ -398,6 +487,8 @@ export async function uploadLogsToCloud(matchId = null, gameNumber = null, { min
       if (isPermanentUploadError(error)) {
         // Refused for good (size, path): skip these lines rather than retry forever
         writeCursor(lastEntrySeq)
+        prunePending(entries)
+        droppedUnsent = Math.max(0, droppedUnsent - dropped)
         console.warn('[Logger] Log upload refused, these lines are skipped:', error)
       } else {
         console.warn('[Logger] Log upload failed, will retry:', error)
@@ -406,6 +497,8 @@ export async function uploadLogsToCloud(matchId = null, gameNumber = null, { min
     }
 
     writeCursor(lastEntrySeq)
+    prunePending(entries)
+    droppedUnsent = Math.max(0, droppedUnsent - dropped)
     return data?.path || filename
   } catch (err) {
     console.warn('[Logger] Error uploading logs:', err)
@@ -423,6 +516,8 @@ export function resetLoggerForTests() {
   logBuffer = []
   lastSeq = 0
   memoryCursor = 0
+  cursorLoaded = false
+  droppedUnsent = 0
   lastLogUploadAt = 0
   logUploadInFlight = false
   queuedLogUpload = null
@@ -618,8 +713,11 @@ export async function triggerContinuousBackup(matchId, getBackupData, gameNumber
       // Upload in parallel (non-blocking)
       Promise.all([
         uploadBackupToCloud(matchId, backupData),
-        // Logs: only the new lines, at most once a minute (set/match end send at once)
-        uploadLogsToCloud(matchId, gameNumber, { minIntervalMs: LOG_UPLOAD_MIN_INTERVAL_MS })
+        // Logs: only the new lines, at most once a minute (set/match end send
+        // at once), or at once when the buffer is filling up
+        uploadLogsToCloud(matchId, gameNumber, {
+          minIntervalMs: getUnsentLogs().length >= EARLY_UPLOAD_UNSENT ? 0 : LOG_UPLOAD_MIN_INTERVAL_MS
+        })
       ]).catch(() => {
         // Silent fail - don't block UI
       })
