@@ -1,0 +1,5 @@
+OpenVolley 2.1.0
+- Connect tablets: LAN, Server and Bluetooth for every role; livescore works on the venue network without internet.
+- Approved scorer accounts (admin approval or club invite code); one cloud match per official game; closed matches are locked on the server.
+- Saved teams: load a roster from the competition manager.
+- The scoresheet opens inside the app; questions use the app's own dialog.
