@@ -215,6 +215,27 @@ describe('publicColumns: the match relay bundle', () => {
     assert.deepEqual(publicPeople([{ number: 1, dob: DOB, country: 'SUI', email: 'a@b' }, null]), [{ number: 1 }, null])
     assert.equal(publicRelayMatch(null), null)
   })
+
+  it('publicRelayMatch drops openbeach\'s pending team1/team2 rosters and filters its team rosters', () => {
+    const roster = { players: [{ number: 1, lastName: 'Muster', dob: DOB }] }
+    const out = publicRelayMatch({
+      id: 3,
+      team1Name: 'Muster / Beispiel',
+      pendingTeam1Roster: roster,
+      pendingTeam2Roster: roster,
+      pending_team1_roster: roster,
+      pending_team2_roster: roster,
+      players_team1: [{ number: 1, lastName: 'Muster', dob: DOB }],
+      team2Players: [{ number: 2, lastName: 'Rossi', dateOfBirth: DOB }]
+    })
+    assert.deepEqual(out, {
+      id: 3,
+      team1Name: 'Muster / Beispiel',
+      players_team1: [{ number: 1, lastName: 'Muster' }],
+      team2Players: [{ number: 2, lastName: 'Rossi' }]
+    })
+    assert.equal(json(out).includes(DOB), false)
+  })
 })
 
 // ---------------------------------------------------------------------------
