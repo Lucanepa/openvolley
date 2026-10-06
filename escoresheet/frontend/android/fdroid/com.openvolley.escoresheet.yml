@@ -1,0 +1,40 @@
+Categories:
+  - Sports & Health
+License: GPL-3.0-only
+AuthorName: Luca Canepa
+WebSite: https://openvolley.app
+SourceCode: https://github.com/Lucanepa/openvolley
+IssueTracker: https://github.com/Lucanepa/openvolley/issues
+
+AutoName: OpenVolley
+
+RepoType: git
+Repo: https://github.com/Lucanepa/openvolley.git
+
+Builds:
+  - versionName: 1.48.19
+    versionCode: 10480192
+    commit: android-v1.48.19
+    subdir: escoresheet/frontend/android/app
+    sudo:
+      - curl -Lo node.tar.xz https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz
+      - echo "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de node.tar.xz"
+        | sha256sum -c -
+      - tar xJf node.tar.xz --strip-components=1 -C /usr/local/
+    init:
+      - cd ../..
+      - npm ci --ignore-scripts
+    gradle:
+      - yes
+    prebuild:
+      - cd ../..
+      - CAPACITOR=true VITE_BACKEND_URL=https://backend.openvolley.app npx vite build
+        --outDir dist-capacitor --emptyOutDir
+      - npx cap sync android
+    scandelete:
+      - escoresheet/frontend/node_modules
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^android-v[\d.]+$
+CurrentVersion: 1.48.19
+CurrentVersionCode: 10480192
