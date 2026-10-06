@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  bluetoothNetwork, displayedWifi, generateWifiPassword, hotspot, isTabletNetworkAvailable, netError, rememberedWifi, renewWifiPassword
+  bluetoothNetwork, displayedWifi, firewall, generateWifiPassword, hotspot, isTabletNetworkAvailable, needsFirewallStep, netError,
+  rememberedWifi, renewWifiPassword
 } from '../tabletNetwork'
 
 function fakeTauri(handlers) {
@@ -89,5 +90,20 @@ describe('tabletNetwork', () => {
     expect(netError({ code: 'no-ap-mode', detail: 'wlp1s0' })).toEqual({ code: 'no-ap-mode', detail: 'wlp1s0' })
     expect(netError('boom')).toEqual({ code: 'failed', detail: 'boom' })
     expect(netError(new Error('x'))).toEqual({ code: 'failed', detail: 'x' })
+  })
+
+  it('firewall: asks the app, and shows the manual step only on Windows without the rule', async () => {
+    const { win, invoke } = fakeTauri({ firewall_status: () => ({ platform: 'windows', supported: true, ready: true }) })
+    expect(await firewall.status(win)).toEqual({ platform: 'windows', supported: true, ready: true })
+    expect(invoke).toHaveBeenCalledWith('firewall_status', {})
+    await expect(firewall.status({})).rejects.toMatchObject({ code: 'not-desktop' })
+
+    expect(needsFirewallStep({ platform: 'windows', ready: true }, null)).toBe(false)
+    expect(needsFirewallStep({ platform: 'windows', ready: false, reason: 'rule-missing' }, null)).toBe(true)
+    // no answer from the check: the hotspot's platform decides, and the step shows
+    expect(needsFirewallStep(null, { platform: 'windows' })).toBe(true)
+    expect(needsFirewallStep({ platform: 'linux', ready: false }, { platform: 'linux' })).toBe(false)
+    expect(needsFirewallStep(null, { platform: 'linux' })).toBe(false)
+    expect(needsFirewallStep(null, null)).toBe(false)
   })
 })

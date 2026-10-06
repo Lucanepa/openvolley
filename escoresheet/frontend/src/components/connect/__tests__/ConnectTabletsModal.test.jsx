@@ -324,6 +324,46 @@ describe('ConnectTabletsModal', () => {
     await waitFor(() => expect(screen.getByText(/Allow an app through firewall › OpenVolley › tick “Public”/)).toBeInTheDocument())
   })
 
+  it('Windows with the installer’s firewall rule: no manual firewall step, on either Wi-Fi', async () => {
+    const win = tauri({
+      firewall_status: () => ({ platform: 'windows', supported: true, ready: true, reason: null }),
+      hotspot_status: () => ({ supported: true, active: true, platform: 'windows', method: 'mobile-hotspot', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', gatewayIp: '192.168.137.1' }),
+      bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
+    })
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win })
+    await waitFor(() => expect(screen.getByText('http://192.168.137.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    await waitFor(() => expect(win.invoke).toHaveBeenCalledWith('firewall_status', {}))
+    expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument()
+    expect(screen.queryByText(/tick “Public”/)).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Hall Wi-Fi' }))
+    await waitFor(() => expect(screen.getByText('http://192.168.1.42:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    expect(screen.queryByTestId('firewall-step')).toBeNull()
+  })
+
+  it('Windows without the rule (dev build, rule removed): the manual step on the hall Wi-Fi too', async () => {
+    const win = tauri({
+      firewall_status: () => ({ platform: 'windows', supported: true, ready: false, reason: 'rule-missing' }),
+      hotspot_status: () => ({ supported: true, active: false, platform: 'windows', method: 'mobile-hotspot', ssid: 'OpenVolley-AB12', password: 'example-Pq2m' }),
+      bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
+    })
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win })
+    await waitFor(() => expect(screen.getByTestId('firewall-step')).toHaveTextContent('Allow an app through firewall › OpenVolley › tick “Public”'))
+  })
+
+  it('Linux: never a Windows firewall step', async () => {
+    const win = tauri({
+      firewall_status: () => ({ platform: 'linux', supported: false, ready: false, reason: 'unsupported-os' }),
+      hotspot_status: () => ({ supported: true, active: true, platform: 'linux', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', gatewayIp: '10.42.0.1' }),
+      bluetooth_status: () => ({ supported: false })
+    })
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win })
+    await waitFor(() => expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument())
+    await waitFor(() => expect(win.invoke).toHaveBeenCalledWith('firewall_status', {}))
+    expect(screen.queryByText(/tick “Public”/)).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Hall Wi-Fi' }))
+    expect(screen.queryByTestId('firewall-step')).toBeNull()
+  })
+
   it('create Wi-Fi: cancelling the "leave the hall Wi-Fi" question starts nothing', async () => {
     relayTablets.value = { connections: { dashboardClients: 3 }, watchers: 3, referee: 1, benchHome: 1, benchAway: 0 }
     const win = tauri({
