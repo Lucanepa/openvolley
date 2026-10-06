@@ -183,6 +183,8 @@
     "noRefereeHistory": "No kei Schiri-Historie. Gebed Sie Schiri manuell ii und sie werdet für zukünftigi Spiil gspeicheret."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Geburtsdatum vom Schriber: für d Usloosig nötig",
+    "dobRequiredForCoinToss": "Für d Usloosig nötig",
     "title": "Spiiliihrichtig",
     "scoresheet": "eMatchblatt",
     "options": "Optione",

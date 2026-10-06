@@ -183,6 +183,8 @@
     "noRefereeHistory": "Nessuno storico arbitri. Inserisci gli arbitri manualmente e verranno salvati per le prossime partite."
   },
   "matchSetup": {
+    "scorerDobForCoinToss": "Data di nascita del segnapunti: necessaria per il sorteggio",
+    "dobRequiredForCoinToss": "Richiesta per il sorteggio",
     "title": "Configurazione partita",
     "scoresheet": "Scheda punteggio",
     "options": "Opzioni",
