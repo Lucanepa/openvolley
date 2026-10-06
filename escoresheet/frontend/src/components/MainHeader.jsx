@@ -427,7 +427,7 @@ export default function MainHeader({
               setMatchInfoMenuOpen(!matchInfoMenuOpen)
             }}
             className={cn(
-              'inline-flex h-7 min-w-[100px] items-center justify-center gap-1 rounded-full border px-3 text-[11px] font-semibold uppercase tracking-[0.08em] tabular-nums transition-colors cursor-pointer',
+              'inline-flex h-7 min-w-[100px] items-center justify-center gap-1 rounded-full border px-3 text-xs font-semibold tabular-nums transition-colors cursor-pointer',
               FOCUS_RING,
               isTest
                 ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200/70'
