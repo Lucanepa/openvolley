@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, openSocket, provisionDatabase, subscribe } from './helpers/e2eServer.js'
+import { grantRoles } from './helpers/pgTestDb.js'
 
 const PIN_SECRET = randomBytes(32).toString('base64url')
 const GAME_PIN = '582914'
@@ -91,6 +92,9 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
     })
     users.alice = await account('alice') // beach scorer
     users.ivan = await account('ivan') // indoor scorer
+    // new accounts are pending (db/007): approve both as scorers
+    await grantRoles(sql, users.alice.id)
+    await grantRoles(sql, users.ivan.id)
   })
 
   after(async () => {

@@ -1248,7 +1248,6 @@
     "noWinner": "No winner (match stopped)",
     "pdfGenerationFailed": "Match approved, but the PDF could not be created. You can create it from the scoresheet button.",
     "reopenMatch": "Reopen match",
-    "unlockTooManyAttempts": "Too many attempts. Please wait and try again.",
     "reopenAdminOnlyTitle": "Only an admin can reopen this match",
     "reopenAdminOnlyBody": "Game {{game}} is closed on the server. Ask an admin to reopen it, then tap “Reopen match” again.",
     "reopenNeedsConnection": "Reopening a closed match needs a connection to the server.",

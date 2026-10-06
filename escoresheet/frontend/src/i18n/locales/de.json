@@ -2032,7 +2032,6 @@
     "noWinner": "Kein Sieger (Spiel abgebrochen)",
     "pdfGenerationFailed": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Sie können es über die Schaltfläche eMatchblatt erstellen.",
     "reopenMatch": "Spiel wieder öffnen",
-    "unlockTooManyAttempts": "Zu viele Versuche. Bitte warten und erneut versuchen.",
     "reopenAdminOnlyTitle": "Nur ein Admin kann dieses Spiel wieder öffnen",
     "reopenAdminOnlyBody": "Spiel {{game}} ist auf dem Server abgeschlossen. Bitte einen Admin, es wieder zu öffnen, und tippe dann nochmals auf «Spiel wieder öffnen».",
     "reopenNeedsConnection": "Zum Wiederöffnen eines abgeschlossenen Spiels braucht es eine Verbindung zum Server.",

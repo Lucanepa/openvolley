@@ -1247,7 +1247,6 @@
     "noWinner": "Nessun vincitore (partita interrotta)",
     "pdfGenerationFailed": "Partita approvata, ma non è stato possibile creare il PDF. Puoi crearlo dal pulsante eScoresheet.",
     "reopenMatch": "Riapri partita",
-    "unlockTooManyAttempts": "Troppi tentativi. Attendi e riprova.",
     "reopenAdminOnlyTitle": "Solo un admin può riaprire questa partita",
     "reopenAdminOnlyBody": "La partita {{game}} è chiusa sul server. Chiedi a un admin di riaprirla, poi tocca di nuovo «Riapri partita».",
     "reopenNeedsConnection": "Per riaprire una partita chiusa serve una connessione al server.",

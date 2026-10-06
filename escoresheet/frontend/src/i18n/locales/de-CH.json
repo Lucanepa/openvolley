@@ -1246,7 +1246,6 @@
     "noWinner": "Kein Sieger (Spiil abbroche)",
     "pdfGenerationFailed": "Spiil gnehmigt, aber s PDF hät nöd chöne erstellt werde. Sie chönd s über de Chnopf eMatchblatt erstelle.",
     "reopenMatch": "Spiil wieder ufmache",
-    "unlockTooManyAttempts": "Z vill Versüech. Bitte warte und nomal probiere.",
     "reopenAdminOnlyTitle": "Nur ein Admin kann dieses Spiel wieder öffnen",
     "reopenAdminOnlyBody": "Spiel {{game}} ist auf dem Server abgeschlossen. Bitte einen Admin, es wieder zu öffnen, und tippe dann nochmals auf «Spiel wieder öffnen».",
     "reopenNeedsConnection": "Zum Wiederöffnen eines abgeschlossenen Spiels braucht es eine Verbindung zum Server.",

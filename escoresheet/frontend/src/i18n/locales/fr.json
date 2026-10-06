@@ -1245,7 +1245,6 @@
     "noWinner": "Pas de vainqueur (match arrêté)",
     "pdfGenerationFailed": "Match approuvé, mais le PDF n'a pas pu être créé. Vous pouvez le créer depuis le bouton eScoresheet.",
     "reopenMatch": "Rouvrir le match",
-    "unlockTooManyAttempts": "Trop de tentatives. Veuillez patienter et réessayer.",
     "reopenAdminOnlyTitle": "Seul un admin peut rouvrir ce match",
     "reopenAdminOnlyBody": "Le match {{game}} est clôturé sur le serveur. Demande à un admin de le rouvrir, puis touche à nouveau « Rouvrir le match ».",
     "reopenNeedsConnection": "Rouvrir un match clôturé nécessite une connexion au serveur.",
