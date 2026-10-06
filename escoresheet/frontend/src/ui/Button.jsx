@@ -18,6 +18,11 @@
 //
 // `bg-red-600` is the Swiss Volley brand (#e2001a): tokens.css overrides
 // red-600/red-700, so "primary" and "danger" share a colour on purpose.
+//
+// OpenVolley deviation from the volleyui skill kit (keep on resync): every
+// emerald confirm (Button `positive`, Modal `modalSaveClass`, tones
+// `CONFIRM_ACCEPT.ok`) is emerald-700 / hover emerald-800, not 600 / 700.
+// White on emerald-600 is 3.8:1, below AA for this text size; on 700 it is 5.5:1.
 import { createElement, isValidElement } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from './cn.js';

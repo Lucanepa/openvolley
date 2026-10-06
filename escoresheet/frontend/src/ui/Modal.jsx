@@ -241,7 +241,8 @@ export const modalCancelClass =
 /** Brand-neutral primary ("Done", "Close"). App.tsx:806; full-width variant App.tsx:10689 */
 export const modalPrimaryClass =
   `h-10 px-5 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors ${FOCUS_RING}`;
-/** Positive commit ("Save"). App.tsx:10214-10221, ConfirmDialog.tsx:139-140 */
+/** Positive commit ("Save"). App.tsx:10214-10221, ConfirmDialog.tsx:139-140.
+ *  emerald-700, not the kit's 600: an OpenVolley AA deviation (see Button.jsx header). */
 export const modalSaveClass =
   `h-10 px-4 rounded-lg bg-emerald-700 text-white text-sm font-medium hover:bg-emerald-800 transition-colors ${FOCUS_RING}`;
 /** Destructive commit ("Delete", "Reset"). App.tsx:10220, ConfirmDialog.tsx:139 */

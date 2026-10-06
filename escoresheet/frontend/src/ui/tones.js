@@ -94,7 +94,8 @@ export const TOAST_ACCENT = {
 
 // ── Confirm accept button ──────────────────────────────────────────────────
 // ui/ConfirmDialog.tsx:138-139. A neutral "yes" is emerald, a destructive one
-// is brand red.
+// is brand red. `ok` is emerald-700, not the kit's 600: an OpenVolley AA
+// deviation (see the Button.jsx header), keep it on a kit resync.
 export const CONFIRM_ACCEPT = {
   danger: 'bg-red-600 hover:bg-red-700',
   ok: 'bg-emerald-700 hover:bg-emerald-800',
