@@ -21,6 +21,9 @@ rust-embed = "8"
 mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"
+# OS randomness for the tablet Wi-Fi password (hotspot.rs). Already in the
+# tree (0.8 through tauri), so this adds no new crate.
+rand = "0.8"
 
 # GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
 # in the tree through tauri (wry/tao), so this adds no new crate.
@@ -29,6 +32,24 @@ gtk = "0.18"
 # connect WebKit's window.close() of a popup to its app window (popups.rs);
 # in the tree through wry, no new crate.
 webkit2gtk = "2.0"
+# NetworkManager over D-Bus: the tablet Wi-Fi (hotspot) and the Bluetooth
+# network (hotspot/linux.rs). On the tokio runtime the app already runs.
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+# Mobile Hotspot (WinRT tethering) and the Wi-Fi Direct legacy access point
+# (hotspot/windows.rs). Same version as tauri's (wry/webview2-com), so only
+# features are added.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Foundation",
+  "Foundation_Collections",
+  "Foundation_Metadata",
+  "Networking_Connectivity",
+  "Networking_NetworkOperators",
+  "Devices_WiFiDirect",
+  "Security_Credentials",
+  "Win32_System_Com",
+] }
 
 [dev-dependencies]
 # mock runtime for the IPC/ACL test of the backup commands (main.rs)

@@ -11,7 +11,7 @@ import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
-import ConnectionSetupModal from './options/ConnectionSetupModal'
+import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
@@ -19524,18 +19524,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         />
       )}
 
-      {/* Connection Setup Modal */}
-      <ConnectionSetupModal
-        open={connectionSetupModal}
-        onClose={() => setConnectionSetupModal(false)}
-        matchId={matchId}
-        matchSeedKey={data?.match?.seed_key || data?.match?.externalId}
-        match={data?.match}
-        refereePin={data?.match?.refereePin}
-        homeTeamPin={data?.match?.homeTeamPin}
-        awayTeamPin={data?.match?.awayTeamPin}
-        gameNumber={data?.match?.gameNumber}
-      />
+      {/* Connect tablets (Options > Connections) */}
+      {connectionSetupModal && (
+        <ConnectTabletsModal
+          open
+          onClose={() => setConnectionSetupModal(false)}
+          match={data?.match || null}
+        />
+      )}
 
       {/* Help & Video Guides Modal */}
       {showHelpModal && (

@@ -216,9 +216,26 @@ The WebView origin is `https://localhost`, which has no backend behind it
 (`isNativeApp()` in `backendConfig.js` treats it like a static deployment). By
 default everything goes to the cloud (`https://backend.openvolley.app`). At a
 venue: **Options → Server → Change server → Local server**, enter the relay's
-LAN address (e.g. `192.168.1.20:8080`); the app checks `/health`, stores the
-address and reloads. **Options → Use this tablet as** opens the bundled
+LAN address: the desktop app's as the Connect tablets dialog shows it
+(`192.168.1.20:5173`), the venue server's with its one port
+(`192.168.1.20:8080`). The app checks `/health`, asks the relay's
+`/api/server/status` for its WebSocket port (the desktop relays take the
+WebSocket on 8080, not on 5173; `learnRelayWsPort` in `backendConfig.js`,
+with 5173 → 8080 as the default until it answered), stores the address and
+reloads. **Options → Use this tablet as** opens the bundled
 referee, bench or livescore view; they share the chosen server.
+
+**Joining a scoretable (follow-up, not built).** The desktop's Connect tablets
+dialog shows a Wi-Fi QR code (when the laptop creates the Wi-Fi) and a QR code
+per role. In the app there is no scanner yet: the Wi-Fi QR is scanned with
+Android's own Settings › Wi-Fi › QR icon, and a role QR opens Chrome, not the
+app (no App Links intent-filter, no `@capacitor/app`). A "Join a scoretable"
+flow would need a camera / barcode plugin (and the CAMERA permission), a small
+native plugin for `WifiNetworkSuggestion` / `WifiNetworkSpecifier` (Android 10+
+asks the user once) and then open `/referee/index.html?server=http://<laptop>:5173&match=…`.
+The app reaches the desktop relay there: `?server=` goes through
+`applyServerParam`, so the relay WebSocket is `ws://<laptop>:8080` (or the
+port the relay's `/api/server/status` names), not `ws://<laptop>:5173`.
 
 ## Automatic backups
 

@@ -18,6 +18,9 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
 vi.mock('../auth/LoginModal', () => ({ default: ({ open }) => (open ? <div role="dialog">login-modal</div> : null) }))
 vi.mock('../auth/SignUpModal', () => ({ default: () => null }))
 vi.mock('../auth/ProfileModal', () => ({ default: ({ open }) => (open ? <div role="dialog">profile-modal</div> : null) }))
+vi.mock('../connect/ConnectTabletsModal', () => ({
+  default: ({ match }) => <div role="dialog">connect-tablets {match?.seed_key || 'no match'}</div>
+}))
 vi.mock('../auth/MatchHistory', () => ({ default: ({ open }) => (open ? <div role="dialog">history-modal</div> : null) }))
 
 import MainHeader from '../MainHeader'
@@ -69,6 +72,14 @@ describe('scorer header menu', () => {
     expect(menuIsOpen()).toBe(true)
     rerender(<MainHeader {...baseProps} matchId={7} showMatchSetup currentPage="setup" />)
     expect(menuIsOpen()).toBe(false)
+  })
+
+  it('opens Connect tablets for the current match, also without a local server', () => {
+    render(<MainHeader {...baseProps} currentMatch={{ id: 7, seed_key: 'match_1_abc' }} />)
+    fireEvent.click(menuButton())
+    fireEvent.click(screen.getByTestId('header-connect-tablets'))
+    expect(menuIsOpen()).toBe(false)
+    expect(screen.getByText('connect-tablets match_1_abc')).toBeInTheDocument()
   })
 
   it('closes when Login is chosen and the login dialog stays up', () => {

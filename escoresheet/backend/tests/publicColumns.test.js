@@ -251,6 +251,10 @@ describe('publicColumns: the match relay bundle', () => {
     // No status counts as scheduled; finished matches are not listed
     assert.equal(relayMatchListRow({ matchId: 'x', match: {} }).status, 'scheduled')
     assert.equal(relayMatchListRow({ matchId: 'x', match: { status: 'final' } }), null)
+    // ?finished=1 (the livescore): finished ones too
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { status: 'final' } }, { includeFinished: true }).status, 'final')
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { status: 'ended' } }, { includeFinished: true }).status, 'ended')
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { status: 'cancelled' } }, { includeFinished: true }), null)
     // Team names from the match when the bundle has none; defaults otherwise
     assert.deepEqual(
       [relayMatchListRow({ matchId: 'x', match: { homeTeamName: 'A' } }).homeTeam, relayMatchListRow({ matchId: 'x', match: {} }).awayTeam],

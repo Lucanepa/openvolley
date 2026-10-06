@@ -439,6 +439,31 @@ describe('backend WebSocket relay protocol', () => {
     assert.equal(containsPin(text), false)
     assert.ok(!/dob|lastName|officials|ignature/.test(text))
 
+    // ?finished=1 (the livescore): the finished match too, same row shape
+    const all = await fetch(`http://127.0.0.1:${port}/api/match/list?finished=1`)
+    const allText = await all.text()
+    const allMine = JSON.parse(allText).matches.filter((m) => String(m.id).startsWith('list-'))
+    assert.deepEqual(allMine.map((m) => m.id).sort(), ['list-beach', 'list-court-a', 'list-final', 'list-test'])
+    const final = allMine.find((m) => m.id === 'list-final')
+    assert.equal(final.status, 'final')
+    assert.deepEqual(Object.keys(final).sort(), Object.keys(mine[1]).sort())
+    assert.equal(containsPin(allText), false)
+    assert.ok(!/dob|lastName|officials|ignature/.test(allText))
+
+    // A livescore viewer (no PIN) follows it: the summary, then live states
+    const viewer = await openClient(wsUrl)
+    viewer.send({ type: 'subscribe-match', matchId: 'list-court-a', device: 'livescore' })
+    const first = await viewer.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(first.access, 'summary')
+    assert.deepEqual(first.homePlayers, [])
+    courtA.send({ type: 'live-state-update', matchId: 'list-court-a', liveState: { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 } })
+    const live = await viewer.waitFor((m) => m.type === 'live-state-update')
+    assert.deepEqual(live.liveState, { points_a: 4, points_b: 2, serving_team: 'right', timeouts_b: 1 })
+    const seen = JSON.stringify(viewer.messages)
+    assert.equal(containsPin(seen), false)
+    assert.ok(!/dob|lastName|officials|ignature/.test(seen))
+    viewer.ws.close()
+
     // The beach teams also name the public summary an anonymous display gets
     const display = await openClient(wsUrl)
     display.send({ type: 'subscribe-match', matchId: 'list-beach' })
