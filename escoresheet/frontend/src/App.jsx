@@ -596,7 +596,9 @@ export default function App() {
         try {
           const controller = new AbortController()
           const fetchTimeout = setTimeout(() => controller.abort(), 5000)
-          const response = await fetch('/api/match/list', { signal: controller.signal })
+          // A health check: /api/server/status (every relay has it), not the
+          // match list, which grows with every published match
+          const response = await fetch('/api/server/status', { signal: controller.signal })
           clearTimeout(fetchTimeout)
           if (response.ok) {
             updateStatus('api', 'connected', { status: 'connected', message: 'API endpoint responding' })
