@@ -594,7 +594,17 @@ hand (APT: `sudo apt upgrade`).
   page loaded (otherwise the notice and Options say why, and the app refuses
   `update_install_now` whatever the page asks); install on a confirmed quit
   only with no live match. The OS ending the app (logout, shutdown, SIGTERM)
-  never installs.
+  never installs. "Restart and update" checks the restart gate twice: before
+  the install and again right before the restart, since the install can take
+  minutes (the APT helper waits for the dpkg lock and downloads). If a
+  match started or a tablet connected in the meantime, the update stays
+  installed and the app does not restart. It shows "Restart to finish" and
+  offers the restart again once the gate opens.
+- **Windows administrator prompt cancelled** ("Restart and update"): the app
+  keeps running with its window and tray icon. The plugin's before-exit hook
+  only stops the tablet network and hides the tray icon before the prompt;
+  the icon comes back if the installer does not start. The plugin's default,
+  `cleanup_before_exit`, would drop the tray and hide every window for good.
 - **The page** gets the status from `update_status` and the `ov-update`
   window event (numbered: an older answer never replaces a newer event). The
   notice is a small card on the home screen only, hidden during a live match,

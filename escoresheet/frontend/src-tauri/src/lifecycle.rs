@@ -809,6 +809,15 @@ pub fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// The tray icon out of the notification area and back (updater.rs: around
+/// the Windows installer's start, which the scorer can cancel). The icon
+/// itself, its menu and the gate's `has_tray` stay.
+pub fn set_tray_visible<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_visible(visible);
+    }
+}
+
 /// The downloaded update the tray offers ("Restart to update to {v}"), or
 /// None while it cannot be installed (updater.rs).
 pub fn set_update_offer<R: Runtime>(app: &AppHandle<R>, version: Option<String>) {
