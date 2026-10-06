@@ -12,12 +12,16 @@ import { getBackendUrl, isServedFromLocalServer } from './backendConfig'
 
 /**
  * Loopback, private (RFC 1918), link-local, CGNAT / Tailscale (100.64/10),
- * IPv6 loopback / ULA / link-local, and the usual LAN-only names.
+ * IPv6 loopback / ULA / link-local, the usual LAN-only names, and single-label
+ * names (http://scoretable:3000, http://openvolley/): public DNS names
+ * always have a dot.
  * @param {string} hostname
  */
 export function isLocalNetworkHost(hostname) {
   const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '')
   if (!h) return false
+  // Single label (no dot, not IPv6): a LAN name resolved by the router / hosts file
+  if (!h.includes('.') && !h.includes(':')) return true
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.lan') || h.endsWith('.home.arpa')) return true
   if (h === '::1' || h.startsWith('fe80:') || /^f[cd][0-9a-f]{2}:/.test(h)) return true
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
