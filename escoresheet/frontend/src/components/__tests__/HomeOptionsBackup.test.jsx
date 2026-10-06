@@ -43,6 +43,7 @@ describe('Options > Backup', () => {
     expect(screen.queryByText('options.limitedBrowserSupport')).toBeNull()
     expect(screen.getByText('options.nativeBackupOn')).toBeInTheDocument()
     expect(screen.getByTestId('native-backup-folder')).toHaveTextContent('/home/scorer/.local/share/OpenVolley/backups')
+    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent(/^options\.nativeBackupPrivacy$/)
 
     fireEvent.click(screen.getByRole('button', { name: 'options.openBackupFolder' }))
     expect(backup.openBackupFolder).toHaveBeenCalled()
@@ -55,6 +56,8 @@ describe('Options > Backup', () => {
     render(<HomeOptionsModal {...baseProps} backup={nativeBackup({ platform: 'capacitor', canOpenBackupFolder: false, backupFolder: '/storage/emulated/0/Documents/OpenVolley/backups' })} />)
     expect(screen.getByTestId('native-backup-folder')).toHaveTextContent('/storage/emulated/0/Documents/OpenVolley/backups')
     expect(screen.getByText('options.nativeBackupCopyHint')).toBeInTheDocument()
+    // personal data, readable by whoever has the tablet, kept after uninstall
+    expect(screen.getByTestId('native-backup-privacy')).toHaveTextContent('options.nativeBackupPrivacyAndroid')
     expect(screen.queryByRole('button', { name: 'options.openBackupFolder' })).toBeNull()
   })
 
