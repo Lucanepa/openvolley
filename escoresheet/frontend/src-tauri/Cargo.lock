@@ -2238,6 +2238,7 @@ version = "1.48.19"
 dependencies = [
  "axum",
  "futures-util",
+ "gtk",
  "local-ip-address",
  "mime_guess",
  "rust-embed",

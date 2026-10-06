@@ -3,9 +3,7 @@
 
 mod relay;
 
-use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
 
 const DEFAULT_HTTP_PORT: u16 = 5173;
 const DEFAULT_WS_PORT: u16 = 8080;
@@ -43,30 +41,15 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .menu(|handle| {
-            let tablet = MenuItem::with_id(handle, "connect_tablet", "Connect a Tablet…", true, None::<&str>)?;
-            let help = Submenu::with_items(handle, "Help", true, &[&tablet])?;
-            Menu::with_items(handle, &[&help])
-        })
-        .on_menu_event(move |app, event| {
-            if event.id() == "connect_tablet" {
-                let ip = relay::local_ip_string();
-                let msg = format!(
-                    "Tablets on the same Wi-Fi can open:\n\n\
-                     Scoretable:  http://{ip}:{http}/\n\
-                     Referee:     http://{ip}:{http}/referee\n\
-                     Bench:       http://{ip}:{http}/bench\n\
-                     Livescore:   http://{ip}:{http}/livescore\n\n\
-                     The tablet must be on the same Wi-Fi/LAN as this computer.\n\
-                     (Camera/QR scanning works on this desktop, not on tablets over plain HTTP.)"
-                );
-                app.dialog()
-                    .message(msg)
-                    .title("Connect a Tablet")
-                    .show(|_| {});
-            }
-        })
+        // No native menu bar on Linux / Windows: it held only Help > Connect a
+        // Tablet and rendered in the GTK system theme (dark on a dark desktop).
+        // The app's own header menu has Connect tablets (LAN addresses + QR),
+        // help and the version. macOS keeps Tauri's default app menu (quit,
+        // copy / paste).
         .setup(move |app| {
+            #[cfg(target_os = "linux")]
+            force_light_gtk_theme();
+
             // Start the LAN relay on Tauri's async runtime.
             let st = state.clone();
             tauri::async_runtime::spawn(async move {
@@ -95,6 +78,37 @@ fn main() {
         .expect("error while running tauri application");
 }
 
+/// The light variant of a GTK theme name, or None when it is not a dark one:
+/// "Yaru-dark" -> "Yaru", "Yaru-blue-dark" -> "Yaru-blue", "Adwaita-dark" ->
+/// "Adwaita". Ubuntu's dark style switches the GTK 3 theme itself (not just
+/// gtk-application-prefer-dark-theme), so Theme::Light alone left the title
+/// bar, menus and scrollbars dark.
+pub fn light_gtk_theme_name(name: &str) -> Option<String> {
+    let lower = name.to_ascii_lowercase();
+    for suffix in ["-dark", "_dark", ":dark"] {
+        if lower.ends_with(suffix) && name.len() > suffix.len() {
+            return Some(name[..name.len() - suffix.len()].to_string());
+        }
+    }
+    None
+}
+
+/// Light only (volleyui): no dark variant and no dark GTK theme for the
+/// window's title bar, pickers and scrollbars. GTK_THEME set by the user
+/// still wins (GTK reads it before these settings).
+#[cfg(target_os = "linux")]
+fn force_light_gtk_theme() {
+    use gtk::prelude::GtkSettingsExt;
+    let Some(settings) = gtk::Settings::default() else { return };
+    settings.set_gtk_application_prefer_dark_theme(false);
+    if let Some(dark) = settings.gtk_theme_name() {
+        if let Some(light) = light_gtk_theme_name(dark.as_str()) {
+            eprintln!("[theme] GTK theme {dark} -> {light} (the scoretable is light only)");
+            settings.set_gtk_theme_name(Some(&light));
+        }
+    }
+}
+
 fn run_server_only(http: u16, ws: u16) {
     let http_listener = std::net::TcpListener::bind(("0.0.0.0", http)).expect("bind http");
     let ws_listener = std::net::TcpListener::bind(("0.0.0.0", ws)).expect("bind ws");
@@ -105,4 +119,26 @@ fn run_server_only(http: u16, ws: u16) {
         .expect("tokio runtime");
     println!("relay listening: http :{http}  ws :{ws}  (server-only)");
     rt.block_on(relay::serve(state, http_listener, ws_listener));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::light_gtk_theme_name;
+
+    #[test]
+    fn strips_the_dark_variant_of_a_gtk_theme() {
+        assert_eq!(light_gtk_theme_name("Yaru-dark").as_deref(), Some("Yaru"));
+        assert_eq!(light_gtk_theme_name("Yaru-blue-dark").as_deref(), Some("Yaru-blue"));
+        assert_eq!(light_gtk_theme_name("Adwaita-dark").as_deref(), Some("Adwaita"));
+        assert_eq!(light_gtk_theme_name("Pop-Dark").as_deref(), Some("Pop"));
+        assert_eq!(light_gtk_theme_name("Adwaita:dark").as_deref(), Some("Adwaita"));
+    }
+
+    #[test]
+    fn keeps_a_light_theme() {
+        assert_eq!(light_gtk_theme_name("Yaru"), None);
+        assert_eq!(light_gtk_theme_name("Adwaita"), None);
+        assert_eq!(light_gtk_theme_name("Darkmode"), None);
+        assert_eq!(light_gtk_theme_name("-dark"), None);
+    }
 }
