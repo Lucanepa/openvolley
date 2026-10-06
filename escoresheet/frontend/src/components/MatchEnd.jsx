@@ -21,6 +21,7 @@ import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { waitForScoresheetPdf } from '../utils/scoresheetPdfRequest'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
@@ -825,26 +826,11 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       }
       sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
-      // Create a promise that resolves when we receive the PDF blob
-      const pdfPromise = new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          window.removeEventListener('message', handler)
-          reject(new Error('PDF generation timed out'))
-        }, 30000) // 30 second timeout
-
-        const handler = (event) => {
-          if (event.data?.type === 'pdfBlob') {
-            clearTimeout(timeout)
-            window.removeEventListener('message', handler)
-            const blob = new Blob([event.data.arrayBuffer], { type: 'application/pdf' })
-            resolve({ blob, filename: event.data.filename })
-          }
-        }
-        window.addEventListener('message', handler)
-      })
-
-      // Open scoresheet window with getBlob action
-      openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob`, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
+      // Open the scoresheet with the getBlob action and wait for its PDF
+      // (or its word that the capture failed: no 30 s wait for nothing)
+      const pdfPromise = waitForScoresheetPdf(() =>
+        openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob`, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
+      )
 
       // Wait for PDF blob - but don't let failures block approval
       let pdfResult = null

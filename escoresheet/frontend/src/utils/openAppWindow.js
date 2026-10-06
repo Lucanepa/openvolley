@@ -18,7 +18,10 @@
  *   system browser (Capacitor hands non-app URLs to Android).
  *
  * The page inside the in-app view talks to it through appWindowGuest.js
- * (close, PDF blob for the opener, save a PDF to Documents).
+ * (close, PDF blob for the opener, save a PDF to Documents). An
+ * openAppWindow() made inside the in-app view is handed to the app under it
+ * (MSG_OPEN): the iframe has no Capacitor bridge of its own, so it would take
+ * the browser path, where window.open does nothing useful in a WebView.
  */
 
 import i18n from 'i18next'
@@ -26,6 +29,7 @@ import i18n from 'i18next'
 export const APP_VIEW_ATTR = 'data-ov-app-window'
 export const MSG_CLOSE = 'ov-app-window:close'
 export const MSG_SAVE_PDF = 'ov-app-window:save-pdf'
+export const MSG_OPEN = 'ov-app-window:open'
 export const PDF_SUBDIR = 'OpenVolley/scoresheets'
 
 const t = (key, fallback, opts) => {
@@ -49,6 +53,15 @@ export function detectAppPlatform(win = typeof window !== 'undefined' ? window :
   return 'web'
 }
 
+/** True inside the Android app's in-app view (an iframe of the app). */
+export function isInAppView(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    return !!win && win.parent !== win && !!win.frameElement?.hasAttribute?.(APP_VIEW_ATTR)
+  } catch {
+    return false // a cross-origin parent: not ours
+  }
+}
+
 /** { href, sameOrigin, scheme } for a URL relative to the current page. */
 export function resolveAppUrl(url, win = window) {
   try {
@@ -64,8 +77,24 @@ export function resolveAppUrl(url, win = window) {
  * @param {{ features?: string, title?: string, win?: Window, platform?: string }} [opts]
  * @returns {{ ok: boolean, mode: 'popup'|'window'|'in-app'|'external'|'blocked', platform: string, window: Window|null, close?: () => void }}
  */
-export function openAppWindow(url, { features = 'width=1200,height=900', title, win = window, platform = detectAppPlatform(win) } = {}) {
+export function openAppWindow(url, { features = 'width=1200,height=900', title, win = window, platform } = {}) {
+  if (!platform && isInAppView(win)) {
+    return { ...delegateToApp(url, { title, win }), platform: 'capacitor' }
+  }
+  platform = platform || detectAppPlatform(win)
   return { ...openOn(platform, url, { features, title, win }), platform }
+}
+
+// Inside the in-app view: the app under it opens the page (it replaces the
+// page shown in the view) or the external link. The URL is resolved here,
+// against this page (e.g. "?date=...&action=save" of the scoresheet list).
+function delegateToApp(url, { title, win }) {
+  const { href, sameOrigin, scheme } = resolveAppUrl(url, win)
+  if (!sameOrigin && !/^(https?|mailto):$/.test(scheme)) {
+    return { ok: false, mode: 'blocked', window: null }
+  }
+  win.parent.postMessage({ type: MSG_OPEN, href, title }, win.location.origin)
+  return { ok: true, mode: sameOrigin ? 'in-app' : 'external', window: null }
 }
 
 /**
@@ -173,6 +202,10 @@ export function showInAppView(href, { title, win = window } = {}) {
     const type = event.data?.type
     if (type === MSG_CLOSE) close()
     else if (type === MSG_SAVE_PDF) savePdf(event.data, status)
+    else if (type === MSG_OPEN && typeof event.data.href === 'string') {
+      // openOn checks the URL again (same origin, or http(s) / mailto only)
+      openAppWindow(event.data.href, { title: typeof event.data.title === 'string' ? event.data.title : undefined, win })
+    }
   }
   // Android Back: MainActivity goes back in the WebView history; the entry
   // pushed here makes that a popstate on this page, which closes the view.

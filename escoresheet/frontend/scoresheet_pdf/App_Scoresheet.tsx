@@ -20,7 +20,7 @@ import {
   getFirstServeTeamKey
 } from './utils/scoresheetModel';
 import { PhoneIcon } from '../src/components/icons';
-import { closeAppWindow, getOpenerWindow, savePdfThroughApp } from '../src/utils/appWindowGuest';
+import { deliverPdfToOpener, isOwnDownload, savePdfThroughApp } from '../src/utils/appWindowGuest';
 
 interface AppScoresheetProps {
   matchData: {
@@ -2373,6 +2373,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   // the dialog plugin replaces it and this window may not call it.
   const [pdfNotice, setPdfNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The file name of this window's last "Save PDF" download: on Linux every
+  // window hears every download (the scoretable's match-end ZIP too).
+  const pendingDownload = useRef<string | null>(null);
   const showPdfNotice = (text: string) => {
     setPdfNotice(text);
     clearTimeout(noticeTimer.current);
@@ -2380,7 +2383,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   };
   useEffect(() => {
     const onFinished = (e: Event) => {
-      const detail = (e as CustomEvent<{ path?: string | null; success?: boolean }>).detail || {};
+      const detail = (e as CustomEvent<{ path?: string | null; fileName?: string | null; success?: boolean }>).detail || {};
+      if (!isOwnDownload(detail, pendingDownload.current)) return;
+      pendingDownload.current = null;
       showPdfNotice(detail.success
         ? t('appWindow.pdfSaved', { path: detail.path || t('appWindow.downloadsFolder', 'Downloads') })
         : t('appWindow.downloadFailed', 'The download did not finish.'));
@@ -2455,6 +2460,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       } else if (!(await savePdfThroughApp(pdf.output('blob'), filename))) {
         // Save PDF (a download). In the Android app's in-app view the WebView
         // cannot download: savePdfThroughApp hands it to the app instead.
+        pendingDownload.current = filename;
         pdf.save(filename);
       }
 
@@ -2479,20 +2485,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       if (autoAction === 'print' || autoAction === 'save') {
         handleSavePdf();
       } else if (autoAction === 'getBlob') {
-        // Generate PDF blob and send to parent window
+        // Generate the PDF and hand it to the opener (MatchEnd's approval),
+        // or tell it the capture failed so it does not wait for its timeout;
+        // then close this window / the in-app view either way.
         const result = await handleSavePdf(true);
-        const opener = getOpenerWindow();
-        if (result && opener) {
-          // Convert blob to ArrayBuffer for postMessage
-          const arrayBuffer = await result.blob.arrayBuffer();
-          opener.postMessage({
-            type: 'pdfBlob',
-            arrayBuffer,
-            filename: result.filename
-          }, window.location.origin);
-          // Close this window (or the in-app view) after sending
-          closeAppWindow();
-        }
+        await deliverPdfToOpener(result || null);
       }
     }, 500);
 
