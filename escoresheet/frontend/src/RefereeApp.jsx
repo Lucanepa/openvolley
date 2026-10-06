@@ -552,7 +552,7 @@ export default function RefereeApp() {
       {/* Main content */}
       <EntryPage className="overflow-y-auto">
         <EntryCard
-          art={<Whistle size={96} className="text-stone-900" />}
+          art={<Whistle size={96} strokeWidth={1.5} className="text-stone-900" />}
           title={t('refereeDashboard.dashboardTitle')}
         >
           {/* Show "no active game" when server is connected but no games available */}

@@ -947,11 +947,13 @@ export default function HomeOptionsModal({
               </div>
             )}
           </Row>
-          {/* Licence + credits. The loading spinner's ball and whistle (the whistle is
-              also the referee view's entry art) are Game Icons artwork (CC BY 3.0,
-              see ui/AppSpinner.jsx): the licence needs
-              a visible credit, and this screen is reachable in every build
-              (web, desktop, Android). Remove the credit only with the icons. */}
+          {/* Licence + credits. The icons are the same packs as wiedisync:
+              Lucide (ISC) for the UI glyphs and the whistle, Phosphor (MIT) for
+              the volleyball (see components/icons and ui/AppSpinner.jsx). Both
+              licences ask for their notice to travel with the code; naming them
+              here keeps the credit visible in every build (web, desktop,
+              Android). The Game Icons (CC BY 3.0) ball and whistle are gone, so
+              their credit went with them. */}
           <Row>
             <p className="text-xs leading-relaxed text-stone-500" data-testid="credits">
               OpenVolley · {t('options.freeSoftware', 'Free software')} (GPL-3.0-or-later) ·{' '}
@@ -959,9 +961,8 @@ export default function HomeOptionsModal({
                 {t('options.sourceCode', 'Source code')}
               </a>
               {' · '}{t('options.icons', 'Icons')}{' '}
-              <a href="https://game-icons.net/" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Game Icons</a>{' '}
-              <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">CC BY 3.0</a>
-              {', '}<a href="https://lucide.dev/license" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Lucide</a> (ISC)
+              <a href="https://lucide.dev/license" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Lucide</a> (ISC)
+              {', '}<a href="https://github.com/phosphor-icons/react/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Phosphor</a> (MIT)
               {' · '}{t('options.fonts', 'Fonts')} Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono (SIL OFL 1.1)
             </p>
           </Row>
