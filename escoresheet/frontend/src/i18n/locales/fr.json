@@ -1503,7 +1503,9 @@
       "failedToFindMatch": "Impossible de trouver le match. Vérifiez que la eScoresheet principale est en cours.",
       "failedToLoadData": "Échec du chargement des données",
       "failedToLoadDataConnection": "Échec du chargement des données. Vérifiez que la eScoresheet principale est en cours."
-    }
+    },
+    "final": "Terminé",
+    "serving": "Au service"
   },
   "auth": {
     "signIn": "Se connecter",

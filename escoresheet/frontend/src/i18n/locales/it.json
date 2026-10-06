@@ -1535,7 +1535,9 @@
       "failedToFindMatch": "Impossibile trovare la partita. Assicurati che l'eScoresheet principale sia in esecuzione.",
       "failedToLoadData": "Impossibile caricare i dati",
       "failedToLoadDataConnection": "Impossibile caricare i dati. Assicurati che l'eScoresheet principale sia in esecuzione."
-    }
+    },
+    "final": "Finale",
+    "serving": "Al servizio"
   },
   "auth": {
     "signIn": "Accedi",

@@ -1376,7 +1376,9 @@
       "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stellen Sie sicher, dass der Haupt-eMatchblatt läuft.",
       "failedToLoadData": "Daten konnten nicht geladen werden",
       "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stellen Sie sicher, dass der Haupt-eMatchblatt läuft."
-    }
+    },
+    "final": "Endstand",
+    "serving": "Aufschlag"
   },
   "auth": {
     "signIn": "Anmelden",
