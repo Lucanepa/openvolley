@@ -1507,10 +1507,6 @@
       "livescore": "Livescore"
     }
   },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet"
-  },
   "loadOfficialMatch": {
     "title": "Carica partita dal calendario",
     "button": "Carica partita dal calendario",
@@ -1709,20 +1705,6 @@
     "messageLabel": "Messaggio:",
     "connectionIssueDetected": "Problema di connessione rilevato"
   },
-  "lanTablets": {
-    "title": "Collega tablet",
-    "description": "I tablet sulla stessa rete Wi-Fi aprono questi indirizzi nel browser. Internet non necessario.",
-    "scoretable": "Referto",
-    "referee": "Arbitro",
-    "bench": "Panchina",
-    "livescore": "Livescore",
-    "qr": "QR",
-    "copy": "Copia",
-    "copied": "Copiato",
-    "loading": "Lettura del server locale…",
-    "unavailable": "Il server locale non risponde. Riavvia l’app e riprova.",
-    "hint": "Il tablet deve essere sulla stessa rete Wi-Fi di questo computer. La fotocamera (caricamento roster via QR) funziona solo su questo computer, non sui tablet in http."
-  },
   "connectTablets": {
     "account": "Account",
     "address": "Indirizzo",
@@ -1784,7 +1766,8 @@
     "kind": {
       "ethernet": "Ethernet",
       "other": "Rete",
-      "wifi": "Wi-Fi"
+      "wifi": "Wi-Fi",
+      "hotspot": "Hotspot di questo computer"
     },
     "lanHall": "Wi-Fi della palestra",
     "lanLaptop": "Crea Wi-Fi per i tablet",
@@ -1838,7 +1821,21 @@
     "travelRouter": "Niente Wi-Fi in palestra? Va bene anche un piccolo router da viaggio, senza internet: accendilo, collega questo computer e i tablet, poi scegli «Wi-Fi della palestra».",
     "wifiDirect": "L’hotspot mobile di Windows non è disponibile qui: si usa invece una rete Wi-Fi diretta.",
     "networkName": "Nome Wi-Fi",
-    "networkPassword": "Password"
+    "networkPassword": "Password",
+    "newPassword": "Nuova password",
+    "hotspotExternal": "L’hotspot di questo computer è stato attivato nelle impostazioni di sistema. I tablet collegati possono usare i link qui sotto; disattivalo da lì.",
+    "windowsFirewall": "I tablet entrano nel Wi-Fi ma la pagina non si carica? Sicurezza di Windows › Firewall e protezione della rete › Consenti app attraverso il firewall › OpenVolley › spunta «Pubblica».",
+    "btExternal": "Questa rete Bluetooth non è stata avviata da questa sessione dell’app. Fermala nelle impostazioni di rete del sistema.",
+    "livescoreNeedsInternet": "Serve internet: usa la scheda «Server»",
+    "confirm": {
+      "tabletsOn": "Tablet collegati ora: {{count}}.",
+      "itsWifi": "il suo Wi-Fi",
+      "leaveTitle": "Lasciare il Wi-Fi della palestra?",
+      "leaveMessage": "Questo computer lascia {{network}}: i tablet collegati perdono la connessione e la sincronizzazione cloud si ferma finché il computer non vi rientra (o è collegato con un cavo di rete).",
+      "stopWifiTitle": "Fermare il Wi-Fi dei tablet?",
+      "stopMessage": "I tablet collegati perdono la connessione.",
+      "stopBtTitle": "Fermare la rete Bluetooth?"
+    }
   },
   "startupConnectivity": {
     "cloudWaits": "Nessuna connessione internet: la sincronizzazione cloud parte appena questo dispositivo è online. Le partite restano qui e sul server locale.",
@@ -1901,12 +1898,6 @@
   },
   "officialAutocomplete": {
     "selectFromHistory": "Seleziona dalla cronologia"
-  },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "QR code arbitro",
-    "cloudQRCodeAlt": "QR code cloud"
   },
   "contextHelp": {
     "helpButton": "Aiuto",

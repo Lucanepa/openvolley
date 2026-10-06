@@ -108,15 +108,30 @@ export function statusInterfaces(status) {
   return [{ name: '', ip, kind: 'other' }]
 }
 
-/** Addresses of the hall network: Wi-Fi first, then Ethernet, then other. */
+/**
+ * Addresses tablets on a network this computer is on can open: the hall
+ * Wi-Fi first, then Ethernet, other, and last a hotspot of this computer.
+ * The hotspot is listed too because one switched on outside the app
+ * (Windows quick settings, GNOME "Turn On Wi-Fi Hotspot") is a network the
+ * tablets may already be on, which the app did not start and so does not
+ * show under "Create Wi-Fi". Bluetooth is never a hall network.
+ */
 export function hallInterfaces(status) {
-  const order = { wifi: 0, ethernet: 1, other: 2 }
+  const order = { wifi: 0, ethernet: 1, other: 2, hotspot: 3 }
   return statusInterfaces(status)
     .filter(i => i.kind in order)
     .sort((a, b) => order[a.kind] - order[b.kind])
 }
 
 export const firstOfKind = (status, kind) => statusInterfaces(status).find(i => i.kind === kind) || null
+
+/**
+ * Roles a LAN or Bluetooth link cannot serve yet, with why. Livescore reads
+ * the cloud's live table (/api/db match_live_state), which the desktop
+ * relay does not have: on the laptop's own network the page would list no
+ * match. It works on the Server tab (tablets with internet).
+ */
+export const LAN_UNAVAILABLE_ROLES = { livescore: 'needs-internet' }
 
 /**
  * Escape a value for the Wi-Fi QR format (ZXing / Wi-Fi Alliance `WIFI:`

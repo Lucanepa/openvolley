@@ -1508,10 +1508,6 @@
       "livescore": "Livescore"
     }
   },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet"
-  },
   "loadOfficialMatch": {
     "title": "Load match from schedule",
     "button": "Load match from schedule",
@@ -1710,20 +1706,6 @@
     "messageLabel": "Message:",
     "connectionIssueDetected": "Connection issue detected"
   },
-  "lanTablets": {
-    "title": "Connect tablets",
-    "description": "Tablets on the same Wi-Fi open these addresses in their browser. No internet needed.",
-    "scoretable": "Scoretable",
-    "referee": "Referee",
-    "bench": "Bench",
-    "livescore": "Livescore",
-    "qr": "QR",
-    "copy": "Copy",
-    "copied": "Copied",
-    "loading": "Reading the local server…",
-    "unavailable": "The local server does not answer. Restart the app, then try again.",
-    "hint": "The tablet must be on the same Wi-Fi as this computer. The camera (QR roster upload) works on this computer only, not on tablets over plain http."
-  },
   "connectTablets": {
     "account": "Account",
     "address": "Address",
@@ -1785,7 +1767,8 @@
     "kind": {
       "ethernet": "Ethernet",
       "other": "Network",
-      "wifi": "Wi-Fi"
+      "wifi": "Wi-Fi",
+      "hotspot": "This computer’s hotspot"
     },
     "lanHall": "Hall Wi-Fi",
     "lanLaptop": "Create Wi-Fi for tablets",
@@ -1839,7 +1822,21 @@
     "travelRouter": "No hall Wi-Fi? A small travel router works too, no internet needed: switch it on, connect this computer and the tablets to it, then use Hall Wi-Fi.",
     "wifiDirect": "Windows’ mobile hotspot is unavailable here: a direct Wi-Fi network is used instead.",
     "networkName": "Wi-Fi name",
-    "networkPassword": "Password"
+    "networkPassword": "Password",
+    "newPassword": "New password",
+    "hotspotExternal": "This computer’s hotspot was switched on in the system settings. The tablets on it can use the links below; switch it off there.",
+    "windowsFirewall": "Tablets join but the page does not load? Windows Security › Firewall & network protection › Allow an app through firewall › OpenVolley › tick “Public”.",
+    "btExternal": "This Bluetooth network was not started by this app run. Stop it in the system’s network settings.",
+    "livescoreNeedsInternet": "Needs internet: use the “Server” tab",
+    "confirm": {
+      "tabletsOn": "Tablets connected right now: {{count}}.",
+      "itsWifi": "its Wi-Fi",
+      "leaveTitle": "Leave the hall Wi-Fi?",
+      "leaveMessage": "This computer leaves {{network}}: tablets on it disconnect and cloud sync pauses until the computer is back on it (or on a network cable).",
+      "stopWifiTitle": "Stop the tablets’ Wi-Fi?",
+      "stopMessage": "The tablets on it disconnect.",
+      "stopBtTitle": "Stop the Bluetooth network?"
+    }
   },
   "startupConnectivity": {
     "cloudWaits": "No internet: cloud sync starts as soon as this device is online. Matches are kept here and on the local server.",
@@ -1902,12 +1899,6 @@
   },
   "officialAutocomplete": {
     "selectFromHistory": "Select from history"
-  },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "Referee QR code",
-    "cloudQRCodeAlt": "Cloud QR code"
   },
   "contextHelp": {
     "helpButton": "Help",

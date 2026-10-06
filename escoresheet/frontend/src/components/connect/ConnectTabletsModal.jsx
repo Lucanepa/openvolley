@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Bluetooth, Cloud, Tablet, Wifi } from 'lucide-react'
-import { Modal, SegmentedControl } from '../../ui'
-import { useAuth } from '../../contexts/AuthContext'
+import { Modal, SegmentedControl, confirmDialog } from '../../ui'
+import { AuthContext } from '../../contexts/AuthContext'
 import LoginModal from '../auth/LoginModal'
 import { useSyncStatus } from '../../hooks/useSyncQueue'
 import { useRelayTablets } from '../../hooks/useRealtimeConnection'
@@ -12,9 +12,11 @@ import { relayMatchKey, matchTeamNames } from '../../utils/serverDataSync'
 import { buildConnectionPins } from '../../utils/connectionPins'
 import { db } from '../../db/db'
 import {
-  TABLET_ROLES, cloudRoleUrl, firstOfKind, hallInterfaces, lanRoleUrl, roleAccess, wifiQrString
+  LAN_UNAVAILABLE_ROLES, TABLET_ROLES, cloudRoleUrl, firstOfKind, hallInterfaces, lanRoleUrl, roleAccess, wifiQrString
 } from '../../utils/tabletLinks'
-import { bluetoothNetwork, displayedWifi, hotspot, isTabletNetworkAvailable, netError } from '../../utils/tabletNetwork'
+import {
+  bluetoothNetwork, displayedWifi, hotspot, isTabletNetworkAvailable, netError, renewWifiPassword
+} from '../../utils/tabletNetwork'
 import { QrPanel, RoleRows } from './RoleLinks'
 import { BluetoothPanel, HallPanel, HotspotPanel, ServerPanel } from './NetworkPanels'
 
@@ -68,6 +70,9 @@ function usePoll(active, load) {
  *   - Bluetooth: a Bluetooth network this laptop serves (desktop app on
  *     Linux; Windows cannot serve one).
  *
+ * Livescore has no LAN / Bluetooth link: it reads the cloud's live table,
+ * which the relay does not have (tabletLinks LAN_UNAVAILABLE_ROLES).
+ *
  * Links only preselect the match; each tablet asks for its role's PIN, which
  * is shown here and never put in a link or a QR code. The game PIN is never
  * shown (the relay accepts it for every role).
@@ -75,8 +80,7 @@ function usePoll(active, load) {
 export default function ConnectTabletsModal({ open, onClose, match = null, fetchImpl = fetch, win = typeof window !== 'undefined' ? window : undefined }) {
   const { t } = useTranslation()
   // Outside an AuthProvider (a test, an embedded page) there is no account
-  let auth = null
-  try { auth = useAuth() } catch { auth = null }
+  const auth = useContext(AuthContext) || null
   const syncStatus = useSyncStatus()
   const desktop = isTabletNetworkAvailable(win)
   const statusUrl = getLocalServerStatusUrl()
@@ -97,6 +101,8 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const [qrRole, setQrRole] = useState('referee')
   const [showLogin, setShowLogin] = useState(false)
   const [roleOverride, setRoleOverride] = useState({})
+  // Bumped when the remembered Wi-Fi password changes (it lives in localStorage)
+  const [, setWifiRev] = useState(0)
 
   // -- local server status (addresses of every network) --
   const loadRelay = useCallback((cancelled) => {
@@ -168,13 +174,72 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
 
   const relayTablets = useRelayTablets(open && seedKey ? String(seedKey) : null, match, { enabled: open, intervalMs: 5000 })
   const devices = relayTablets.connections?.dashboardClients ?? relayTablets.watchers ?? null
+  // Referee and bench tablets on this match right now (the relay's view)
+  const tabletsOnMatch = (relayTablets.referee || 0) + (relayTablets.benchHome || 0) + (relayTablets.benchAway || 0)
+
+  /** Ask before cutting tablets off; true when there is nothing to ask. */
+  const confirmCut = (title, message, confirmLabel) => confirmDialog({
+    title,
+    message,
+    confirmLabel,
+    cancelLabel: t('common.cancel', 'Cancel'),
+    tone: 'danger'
+  })
+  const tabletsGone = (count) => (count > 0
+    ? ` ${t('connectTablets.confirm.tabletsOn', 'Tablets connected right now: {{count}}.', { count })}`
+    : '')
+
+  // One stray click must not break a running match: creating the Wi-Fi on
+  // the laptop's only Wi-Fi card leaves the hall Wi-Fi at once (every tablet
+  // on it drops off, cloud sync pauses), and stopping a network drops the
+  // tablets on it.
+  const startHotspot = async () => {
+    if (hs.status?.takesOverWifi) {
+      const network = hs.status.leavesNetwork || t('connectTablets.confirm.itsWifi', 'its Wi-Fi')
+      const ok = await confirmCut(
+        t('connectTablets.confirm.leaveTitle', 'Leave the hall Wi-Fi?'),
+        t('connectTablets.confirm.leaveMessage', 'This computer leaves {{network}}: tablets on it disconnect and cloud sync pauses until the computer is back on it (or on a network cable).', { network }) + tabletsGone(tabletsOnMatch),
+        t('connectTablets.hotspotStart', 'Create Wi-Fi')
+      )
+      if (!ok) return
+    }
+    act(setHs, () => hotspot.start(win))
+  }
+  const stopHotspot = async () => {
+    const count = Math.max(tabletsOnMatch, hs.status?.clients || 0)
+    if (count > 0) {
+      const ok = await confirmCut(
+        t('connectTablets.confirm.stopWifiTitle', 'Stop the tablets’ Wi-Fi?'),
+        t('connectTablets.confirm.stopMessage', 'The tablets on it disconnect.') + tabletsGone(count),
+        t('connectTablets.hotspotStop', 'Stop Wi-Fi')
+      )
+      if (!ok) return
+    }
+    act(setHs, () => hotspot.stop(win))
+  }
+  const stopBluetooth = async () => {
+    if (tabletsOnMatch > 0) {
+      const ok = await confirmCut(
+        t('connectTablets.confirm.stopBtTitle', 'Stop the Bluetooth network?'),
+        t('connectTablets.confirm.stopMessage', 'The tablets on it disconnect.') + tabletsGone(tabletsOnMatch),
+        t('connectTablets.btStop', 'Stop Bluetooth network')
+      )
+      if (!ok) return
+    }
+    act(setBt, () => bluetoothNetwork.stop(win))
+  }
 
   // -- links for the chosen connection --
   const port = relay.status?.port || (typeof window !== 'undefined' ? window.location.port : '') || null
   const halls = hallInterfaces(relay.status)
   const hallAddress = halls.find(i => i.ip === hallIp)?.ip || halls[0]?.ip || null
   const hotspotIp = hs.status?.active ? (hs.status.gatewayIp || firstOfKind(relay.status, 'hotspot')?.ip || null) : null
-  const btIp = (bt.status?.active && bt.status?.ip) || firstOfKind(relay.status, 'bluetooth')?.ip || null
+  // Only a Bluetooth network this computer serves: never one it merely joined
+  // (tethered to a phone), which the tablets cannot reach. The desktop app
+  // knows; a page elsewhere has only the relay's report.
+  const btIp = desktop
+    ? ((bt.status?.active && bt.status?.supported && bt.status?.ip) || null)
+    : (firstOfKind(relay.status, 'bluetooth')?.ip || null)
 
   let ip = null
   let noUrlText = ''
@@ -198,18 +263,26 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   }
   const cloudBlocked = isCloudBlockedOnThisPort()
   const cloudApiBase = cloudBlocked ? null : getCloudApiBaseUrl()
-  const rows = TABLET_ROLES.map(role => ({
-    role,
-    url: view.tab === 'server'
-      ? (cloudBlocked ? null : cloudRoleUrl(role, seedKey, { cloudApiBase }))
-      : lanRoleUrl(ip, port, role, seedKey)
-  }))
+  const lanNotes = {
+    'needs-internet': t('connectTablets.livescoreNeedsInternet', 'Needs internet: use the “Server” tab')
+  }
+  const rows = TABLET_ROLES.map(role => {
+    if (view.tab === 'server') return { role, url: cloudBlocked ? null : cloudRoleUrl(role, seedKey, { cloudApiBase }) }
+    const unavailable = LAN_UNAVAILABLE_ROLES[role]
+    if (unavailable) return { role, url: null, note: lanNotes[unavailable] }
+    return { role, url: lanRoleUrl(ip, port, role, seedKey) }
+  })
   const qrRow = rows.find(r => r.role === qrRole) || rows[1]
 
   const wifi = displayedWifi(hs.status)
-  const wifiQr = view.tab === 'lan' && view.lanMode === 'laptop' && hs.status?.active && wifi?.ssid
+  // A hotspot started outside the app without a known password gets no
+  // Wi-Fi code (it would say "no password")
+  const wifiQr = view.tab === 'lan' && view.lanMode === 'laptop' && hs.status?.active && wifi?.ssid && wifi?.password
     ? { qr: wifiQrString({ ssid: wifi.ssid, password: wifi.password }), ssid: wifi.ssid }
     : null
+  const newPassword = () => {
+    if (renewWifiPassword(wifi)) setWifiRev(n => n + 1)
+  }
 
   const tabs = [
     { value: 'lan', label: t('connectTablets.tab.lan', 'LAN'), icon: Wifi },
@@ -263,8 +336,9 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
                     busy={hs.busy}
                     error={hs.error}
                     wifi={wifi}
-                    onStart={() => act(setHs, () => hotspot.start(win))}
-                    onStop={() => act(setHs, () => hotspot.stop(win))}
+                    onStart={startHotspot}
+                    onStop={stopHotspot}
+                    onNewPassword={newPassword}
                   />
                 )}
               </>
@@ -288,7 +362,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
                 error={bt.error}
                 ip={btIp}
                 onStart={() => act(setBt, () => bluetoothNetwork.start(win))}
-                onStop={() => act(setBt, () => bluetoothNetwork.stop(win))}
+                onStop={stopBluetooth}
               />
             )}
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { bluetoothNetwork, displayedWifi, hotspot, isTabletNetworkAvailable, netError, rememberedWifi } from '../tabletNetwork'
+import {
+  bluetoothNetwork, displayedWifi, generateWifiPassword, hotspot, isTabletNetworkAvailable, netError, rememberedWifi, renewWifiPassword
+} from '../tabletNetwork'
 
 function fakeTauri(handlers) {
   const invoke = vi.fn(async (cmd, args) => {
@@ -30,6 +32,44 @@ describe('tabletNetwork', () => {
 
     await hotspot.start(win)
     expect(invoke).toHaveBeenLastCalledWith('hotspot_start', { ssid: 'OpenVolley-NEW1', password: 'genpass12345' })
+  })
+
+  it('forgets remembered credentials the app refuses and starts with its own', async () => {
+    localStorage.setItem('ov_tablet_wifi', JSON.stringify({ ssid: 'Bad;Name', password: 'short' }))
+    const { win, invoke } = fakeTauri({
+      hotspot_start: (args) => {
+        if (args.ssid) throw { code: 'invalid-credentials', detail: 'the network name may only use letters' }
+        return { active: true, ssid: 'OpenVolley-SES1', password: 'session12345', gatewayIp: '10.42.0.1' }
+      }
+    })
+    const status = await hotspot.start(win)
+    expect(invoke).toHaveBeenNthCalledWith(1, 'hotspot_start', { ssid: 'Bad;Name', password: 'short' })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'hotspot_start', {})
+    expect(status.ssid).toBe('OpenVolley-SES1')
+    expect(rememberedWifi()).toEqual({ ssid: 'OpenVolley-SES1', password: 'session12345' })
+  })
+
+  it('does not retry other start errors, and never remembers a hotspot started elsewhere', async () => {
+    localStorage.setItem('ov_tablet_wifi', JSON.stringify({ ssid: 'OpenVolley-OLD1', password: 'oldpass12345' }))
+    const failing = fakeTauri({ hotspot_start: () => { throw { code: 'wifi-off', detail: '' } } })
+    await expect(hotspot.start(failing.win)).rejects.toMatchObject({ code: 'wifi-off' })
+    expect(failing.invoke).toHaveBeenCalledTimes(1)
+    expect(rememberedWifi()).toEqual({ ssid: 'OpenVolley-OLD1', password: 'oldpass12345' })
+    expect(displayedWifi({ active: true, external: true, ssid: 'Luca-PC', password: 'home-secret' })).toEqual({ ssid: 'Luca-PC', password: 'home-secret' })
+    expect(displayedWifi({ active: true, external: true, ssid: '' })).toBeNull()
+  })
+
+  it('makes a new password with the app\'s rules and keeps the name', () => {
+    for (let i = 0; i < 50; i++) {
+      const p = generateWifiPassword()
+      expect(p).toMatch(/^[a-km-np-zA-HJKMNP-Z2-9]{12}$/)
+      expect(p).toMatch(/[g-zG-Z]/)
+    }
+    expect(renewWifiPassword(null)).toBeNull()
+    const next = renewWifiPassword({ ssid: 'OpenVolley-AB12', password: 'leaked123456' })
+    expect(next.ssid).toBe('OpenVolley-AB12')
+    expect(next.password).not.toBe('leaked123456')
+    expect(rememberedWifi()).toEqual(next)
   })
 
   it('shows the remembered credentials until the Wi-Fi runs', () => {

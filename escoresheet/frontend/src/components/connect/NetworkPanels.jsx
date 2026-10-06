@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { Bluetooth, Loader2, LogIn, Power, Router, Wifi } from 'lucide-react'
-import { Button, Notice, StatusPill } from '../../ui'
+import { Bluetooth, KeyRound, Loader2, LogIn, Power, Router, Wifi } from 'lucide-react'
+import { Button, Notice, Select, StatusPill } from '../../ui'
 
 // Inner block (kit Block recipe): no shadow, one radius down from the dialog.
 const BLOCK = 'rounded-xl border border-stone-200/70 bg-stone-50/60 p-3'
@@ -82,8 +82,11 @@ export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp 
   const kindLabel = (k) => ({
     wifi: t('connectTablets.kind.wifi', 'Wi-Fi'),
     ethernet: t('connectTablets.kind.ethernet', 'Ethernet'),
+    hotspot: t('connectTablets.kind.hotspot', 'This computer’s hotspot'),
     other: t('connectTablets.kind.other', 'Network')
   }[k] || k)
+  // The hotspot's adapter name ("Local Area Connection* 10") says nothing
+  const addressLabel = (i) => `${i.ip} · ${kindLabel(i.kind)}${i.name && i.kind !== 'hotspot' ? ` (${i.name})` : ''}`
 
   if (!served) {
     return (
@@ -107,16 +110,12 @@ export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp 
         <Wifi size={16} className="shrink-0 text-stone-400" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-sm text-stone-700">{t('connectTablets.hallIntro', 'Tablets join the same Wi-Fi as this computer.')}</p>
         {interfaces.length > 1 ? (
-          <select
+          <Select
             aria-label={t('connectTablets.address', 'Address')}
-            className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500"
             value={selectedIp || ''}
             onChange={(e) => onSelectIp(e.target.value)}
-          >
-            {interfaces.map(i => (
-              <option key={i.ip} value={i.ip}>{`${i.ip} · ${kindLabel(i.kind)}${i.name ? ` (${i.name})` : ''}`}</option>
-            ))}
-          </select>
+            options={interfaces.map(i => ({ value: i.ip, label: addressLabel(i) }))}
+          />
         ) : (
           <span className="font-mono text-xs text-stone-600">{`${interfaces[0].ip} · ${kindLabel(interfaces[0].kind)}`}</span>
         )}
@@ -126,7 +125,7 @@ export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp 
 }
 
 /** Wi-Fi from this laptop (desktop app): start / stop, name, password. */
-export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onStart, onStop }) {
+export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onStart, onStop, onNewPassword }) {
   const { t } = useTranslation()
   const errorText = useNetErrorText()
 
@@ -151,6 +150,10 @@ export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onSt
   }
 
   const active = !!status?.active
+  // On, but switched on outside the app (system settings): the app did not
+  // start it and cannot stop it.
+  const external = active && !!status?.external
+  const windows = status?.platform === 'windows'
   return (
     <div className={BLOCK} data-testid="hotspot-panel">
       <div className="flex flex-wrap items-start gap-3">
@@ -159,7 +162,7 @@ export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onSt
           <Credential label={t('connectTablets.networkPassword', 'Password')} value={wifi?.password || '–'} testId="network-password" />
         </dl>
         {active ? (
-          <Button variant="ghost" icon={Power} loading={busy} onClick={onStop}>
+          <Button variant="ghost" icon={Power} loading={busy} disabled={external} onClick={onStop}>
             {t('connectTablets.hotspotStop', 'Stop Wi-Fi')}
           </Button>
         ) : (
@@ -181,9 +184,17 @@ export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onSt
             {t('connectTablets.hotspotClients', '{{count}} of {{max}} devices joined', { count: status.clients, max: status.maxClients ?? '–' })}
           </span>
         )}
+        {!active && onNewPassword && wifi?.ssid && (
+          <Button variant="ghost" size="sm" icon={KeyRound} disabled={busy} onClick={onNewPassword} className="ml-auto">
+            {t('connectTablets.newPassword', 'New password')}
+          </Button>
+        )}
         {status?.method === 'wifi-direct' && <span>{t('connectTablets.wifiDirect', 'Windows’ mobile hotspot is unavailable here: a direct Wi-Fi network is used instead.')}</span>}
       </div>
 
+      {external && (
+        <Notice tone="info" className="mt-2">{t('connectTablets.hotspotExternal', 'This computer’s hotspot was switched on in the system settings. The tablets on it can use the links below; switch it off there.')}</Notice>
+      )}
       {!active && status?.takesOverWifi && (
         <Notice tone="warning" className="mt-2">{t('connectTablets.takesOverWifi', 'This computer leaves its current Wi-Fi while the tablets’ Wi-Fi is on. Cloud sync pauses unless it is on a network cable.')}</Notice>
       )}
@@ -200,7 +211,8 @@ export function HotspotPanel({ desktop, status, loading, busy, error, wifi, onSt
         <Steps items={[
           t('connectTablets.joinIpad', 'iPad: open the Camera, point it at the Wi-Fi code, tap “Join”.'),
           t('connectTablets.joinAndroid', 'Android: Settings › Wi-Fi › QR icon (or the camera), scan the Wi-Fi code.'),
-          t('connectTablets.joinNoInternet', '“No internet”? Choose “Stay connected”, then scan the role’s code.')
+          t('connectTablets.joinNoInternet', '“No internet”? Choose “Stay connected”, then scan the role’s code.'),
+          ...(windows ? [t('connectTablets.windowsFirewall', 'Tablets join but the page does not load? Windows Security › Firewall & network protection › Allow an app through firewall › OpenVolley › tick “Public”.')] : [])
         ]} />
       )}
     </div>
@@ -294,6 +306,7 @@ export function BluetoothPanel({ desktop, status, loading, busy, error, ip, onSt
   }
 
   const active = !!status?.active
+  const external = active && !!status?.external
   return (
     <div className={BLOCK} data-testid="bluetooth-panel">
       <div className="flex flex-wrap items-center gap-3">
@@ -303,7 +316,7 @@ export function BluetoothPanel({ desktop, status, loading, busy, error, ip, onSt
           <span className="ml-2 inline-flex"><StatusPill tone="planned">{t('connectTablets.experimental', 'Experimental')}</StatusPill></span>
         </div>
         {active ? (
-          <Button variant="ghost" icon={Power} loading={busy} onClick={onStop}>{t('connectTablets.btStop', 'Stop Bluetooth network')}</Button>
+          <Button variant="ghost" icon={Power} loading={busy} disabled={external} onClick={onStop}>{t('connectTablets.btStop', 'Stop Bluetooth network')}</Button>
         ) : (
           <Button icon={Bluetooth} loading={busy} onClick={onStart}>{t('connectTablets.btStart', 'Start Bluetooth network')}</Button>
         )}
@@ -313,6 +326,7 @@ export function BluetoothPanel({ desktop, status, loading, busy, error, ip, onSt
         {active && ip && <span className="font-mono">{ip}</span>}
         {active && status?.discoverable && <span>{t('connectTablets.btVisible', 'Visible for pairing for 3 minutes')}</span>}
       </div>
+      {external && <Notice tone="info" className="mt-2">{t('connectTablets.btExternal', 'This Bluetooth network was not started by this app run. Stop it in the system’s network settings.')}</Notice>}
       {!active && status?.needsAdmin && <p className="mt-2 text-xs text-stone-500">{t('connectTablets.needsAdmin', 'Your system may ask for an administrator password.')}</p>}
       {error && (
         <div className="mt-2">

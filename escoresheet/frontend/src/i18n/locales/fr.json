@@ -1677,20 +1677,6 @@
     "messageLabel": "Message :",
     "connectionIssueDetected": "Problème de connexion détecté"
   },
-  "lanTablets": {
-    "title": "Connecter des tablettes",
-    "description": "Les tablettes sur le même Wi-Fi ouvrent ces adresses dans leur navigateur. Pas besoin d’internet.",
-    "scoretable": "Feuille de match",
-    "referee": "Arbitre",
-    "bench": "Banc",
-    "livescore": "Livescore",
-    "qr": "QR",
-    "copy": "Copier",
-    "copied": "Copié",
-    "loading": "Lecture du serveur local…",
-    "unavailable": "Le serveur local ne répond pas. Redémarrez l’app, puis réessayez.",
-    "hint": "La tablette doit être sur le même Wi-Fi que cet ordinateur. La caméra (import du roster par QR) fonctionne seulement sur cet ordinateur, pas sur les tablettes en http."
-  },
   "connectTablets": {
     "account": "Compte",
     "address": "Adresse",
@@ -1752,7 +1738,8 @@
     "kind": {
       "ethernet": "Ethernet",
       "other": "Réseau",
-      "wifi": "Wi-Fi"
+      "wifi": "Wi-Fi",
+      "hotspot": "Point d’accès de cet ordinateur"
     },
     "lanHall": "Wi-Fi de la salle",
     "lanLaptop": "Créer un Wi-Fi pour les tablettes",
@@ -1806,7 +1793,21 @@
     "travelRouter": "Pas de Wi-Fi dans la salle ? Un petit routeur de voyage fonctionne aussi, sans internet : allumez-le, connectez-y cet ordinateur et les tablettes, puis choisissez « Wi-Fi de la salle ».",
     "wifiDirect": "Le point d’accès mobile de Windows n’est pas disponible ici : un réseau Wi-Fi direct est utilisé à la place.",
     "networkName": "Nom du Wi-Fi",
-    "networkPassword": "Mot de passe"
+    "networkPassword": "Mot de passe",
+    "newPassword": "Nouveau mot de passe",
+    "hotspotExternal": "Le point d’accès de cet ordinateur a été activé dans les réglages du système. Les tablettes connectées peuvent utiliser les liens ci-dessous ; désactivez-le là-bas.",
+    "windowsFirewall": "Les tablettes rejoignent le Wi-Fi mais la page ne se charge pas ? Sécurité Windows › Pare-feu et protection du réseau › Autoriser une application via le pare-feu › OpenVolley › cochez « Public ».",
+    "btExternal": "Ce réseau Bluetooth n’a pas été lancé par cette session de l’app. Arrêtez-le dans les réglages réseau du système.",
+    "livescoreNeedsInternet": "Internet requis : utilisez l’onglet « Serveur »",
+    "confirm": {
+      "tabletsOn": "Tablettes connectées en ce moment : {{count}}.",
+      "itsWifi": "son Wi-Fi",
+      "leaveTitle": "Quitter le Wi-Fi de la salle ?",
+      "leaveMessage": "Cet ordinateur quitte {{network}} : les tablettes qui y sont perdent la connexion et la synchronisation cloud est en pause jusqu’à ce que l’ordinateur y revienne (ou soit relié par câble réseau).",
+      "stopWifiTitle": "Arrêter le Wi-Fi des tablettes ?",
+      "stopMessage": "Les tablettes connectées perdent la connexion.",
+      "stopBtTitle": "Arrêter le réseau Bluetooth ?"
+    }
   },
   "startupConnectivity": {
     "cloudWaits": "Pas d’internet : la synchronisation cloud démarre dès que cet appareil est en ligne. Les matchs restent ici et sur le serveur local.",
@@ -1869,12 +1870,6 @@
   },
   "officialAutocomplete": {
     "selectFromHistory": "Sélectionner dans l'historique"
-  },
-  "connectionSetup": {
-    "lan": "LAN",
-    "internet": "Internet",
-    "refereeQRCodeAlt": "QR code arbitre",
-    "cloudQRCodeAlt": "QR code cloud"
   },
   "contextHelp": {
     "helpButton": "Aide",
