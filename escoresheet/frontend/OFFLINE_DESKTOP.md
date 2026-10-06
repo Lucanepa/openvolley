@@ -103,6 +103,55 @@ Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 `windows-latest` runner) — WebView2/NSIS can't be cross-built from Linux. Push a
 `desktop-v*` tag or run the workflow manually to get Windows + Linux artifacts.
 
+### Windows install (per machine, firewall rule)
+
+The NSIS installer installs **for all users** (`bundle.windows.nsis.installMode`
+`perMachine`, owner's decision): `C:\Program Files\Openvolley eScoresheet`,
+Start menu and desktop shortcuts for everyone, uninstall entry under HKLM, and
+**one administrator prompt** (UAC) at install. A standard user needs an
+administrator's password once; running the app never does. Each Windows user
+keeps their own data: matches in `%LOCALAPPDATA%\com.openvolley.escoresheet`
+(WebView2 IndexedDB), backups in `%APPDATA%\OpenVolley\backups`.
+
+The installer hooks (`src-tauri/windows/installer-hooks.nsh`, `installerHooks`):
+
+- **Firewall** (after the files are in place): one Windows Defender Firewall
+  inbound rule, **OpenVolley eScoresheet (tablets on the local network)**:
+  allow, program `<install dir>\openvolley-escoresheet.exe`, TCP, profiles
+  **private and public** (the laptop's own Wi-Fi and a newly joined hall Wi-Fi
+  are usually Public), remote address **LocalSubnet** (the tablets' network
+  only, never the internet), no port filter (the app listens on 5173 / 8080, or
+  the `OPENVOLLEY_*_PORT` ones). `netsh advfirewall` (64-bit, via `Sysnative`),
+  delete-then-add, so a reinstall never makes a second one. Domain networks are
+  not covered (Defender asks there). If netsh fails the install goes on and
+  Defender asks at the first start, as before. Removed after an uninstall.
+- **Upgrade from a per-user install** (2.0.x / 2.1.0 installed into
+  `%LOCALAPPDATA%\Openvolley eScoresheet`, HKCU): Tauri's own "already
+  installed" page only reads HKLM in per-machine mode, so on its own the
+  installer would leave two installs and two Start menu entries. Before copying,
+  the hook finds the installing user's old uninstaller (HKCU uninstall entry),
+  asks to close the app if it runs, and runs it silently in place
+  (`uninstall.exe /S _?=<dir>`). Silent never ticks **Delete the application
+  data**, so matches and settings stay; no uninstaller ever touches the backups
+  folder. Then it deletes the leftover `uninstall.exe` and folder and the
+  Defender rules Windows made for the old exe path. A failure is logged and the
+  install goes on (the old copy can be removed in Settings › Apps; its data
+  stays either way). Known limit: when a **standard user** installs with an
+  administrator's password, the installer runs as that administrator and sees
+  the administrator's HKCU, not the standard user's: the standard user's old
+  per-user copy stays (two Start menu entries) until it is uninstalled in
+  Settings › Apps. Matches are not lost: both copies use the same data folder.
+- The app checks the rule itself (`firewall_status`, `src-tauri/src/firewall.rs`,
+  read through the firewall's COM API, main window only): Connect tablets shows
+  the manual "tick Public" step only while the rule is missing (a dev build, a
+  copy run from elsewhere, a rule removed by IT or group policy).
+
+Checked on Linux only: the config against the Tauri schema, and the real Tauri
+NSIS template with these hooks compiled by `makensis` 3.11 (`npx tauri bundle
+--bundles nsis --target x86_64-pc-windows-msvc` with a placeholder exe and
+`makensis` from a container). The installer itself must be run on Windows (see
+**Must be tested on real hardware**).
+
 Headless / server-only (no window — a plain "server for tablets"):
 
 ```bash
@@ -208,11 +257,15 @@ Android 10+ → Settings › Wi-Fi › QR icon (or the camera); answer
   name, password and band (older builds) and the timeout flag while the Wi-Fi
   runs, so a crash cannot leave them replaced. Status and stop use the
   connection profile the hotspot was started from (an uplink plugged in later
-  does not confuse them). **Firewall**: the first run asks Windows Defender
-  Firewall for access — tick **Public** too (the hotspot network is usually
-  Public), or tablets join the Wi-Fi and get no page; the dialog shows this
-  step on Windows once the Wi-Fi is on (Windows Security › Firewall & network
-  protection › Allow an app through firewall › OpenVolley › Public).
+  does not confuse them). **Firewall**: the installer adds an inbound rule for
+  the tablets (private + public networks, local subnet only; see **Windows
+  install** above), so tablets get their page without any prompt. Without that
+  rule (dev build, a copy run from elsewhere, rule removed) the first run asks
+  Windows Defender Firewall for access — tick **Public** too (the hotspot
+  network is usually Public), or tablets join the Wi-Fi and get no page; the
+  dialog then shows this step on Windows, on both Wi-Fi tabs (Windows Security ›
+  Firewall & network protection › Allow an app through firewall › OpenVolley ›
+  Public), and hides it once `firewall_status` finds the installer's rule.
   Third-party security suites may block `192.168.137.x`.
 - **Browser / web build**: no button; the dialog explains the desktop app and
   the travel-router way (a small router, no internet, everyone on it, then Hall
@@ -276,6 +329,28 @@ The network code is unit-tested and type-checked (Linux build; Windows
   Mobile Hotspot switched on in quick settings first: shown as on (external)
   with its name, password and links, Stop disabled; 2-hour match with tablets
   idle.
+- Windows installer (per machine, firewall rule; Windows 10 22H2 and 11):
+  fresh install as an administrator and as a standard user (one UAC prompt,
+  installs into Program Files, shortcuts for all users); `wf.msc` shows
+  **OpenVolley eScoresheet (tablets on the local network)**: inbound, allow,
+  the exe in Program Files, TCP, Private + Public, remote LocalSubnet; first
+  start shows **no** Defender prompt; a tablet on the laptop's Mobile Hotspot
+  (Public) and on a hall Wi-Fi set to Public gets the page; Connect tablets
+  shows no "tick Public" step. Reinstall the same version and install a newer
+  one: still exactly one rule (`netsh advfirewall firewall show rule
+  name="OpenVolley eScoresheet (tablets on the local network)"`). Uninstall:
+  the rule is gone; cancel the "app is running" question during uninstall:
+  the rule stays. Upgrade **from 2.1.0 per-user** (with matches, a backup and
+  a ticked-Public Defender rule): the old app running → the close question
+  appears first; afterwards one entry in Settings › Apps, one Start menu
+  entry, no `%LOCALAPPDATA%\Openvolley eScoresheet` folder, the old Defender
+  rules for that path gone, and the matches, settings, remembered tablet Wi-Fi
+  and `%APPDATA%\OpenVolley\backups` all still there in the new app. The
+  same upgrade by a standard user with an administrator's password (expected:
+  the old copy stays, data intact). Silent install `/S` from an elevated
+  prompt over 2.1.0. Delete the rule by hand, start the app: the dialog shows
+  the step again. Group policy that ignores local rules (domain laptop): note
+  what happens.
 - Android 10–15 and iPad: Wi-Fi QR join, "no internet" prompt, mobile data on
   (the local address must still go over the Wi-Fi), WebSocket reconnects.
 - Bluetooth (Linux): pairing + "Internet access" on Android, iPad join (or not),
@@ -369,11 +444,6 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
 - **Tablet HTTPS + camera** — only if QR scanning on tablets is needed.
 - **Auto-update** — wire `tauri-plugin-updater` (or `electron-updater`) once a
   release channel is chosen.
-- **Windows firewall rule in the installer** (owner's decision) — the NSIS bundle installs per
-  user (no admin), so it cannot add an inbound rule for 5173 / 8080; today the
-  Defender prompt on first run does it (tick Public too). A per-machine
-  install mode with an NSIS post-install `netsh advfirewall` hook would make
-  the tablets' Wi-Fi work without that prompt.
 - **Android app joins by QR** — scan the Wi-Fi QR (connect through a
   `WifiNetworkSuggestion`) and the role QR (open the bundled view with
   `server` / `match` / `team`) inside the app. Needs a camera / scanner plugin
