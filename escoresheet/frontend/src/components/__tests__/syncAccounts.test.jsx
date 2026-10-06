@@ -44,7 +44,8 @@ describe('ConnectionStatus sync indicator', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     render(<ConnectionStatus connectionStatuses={{ ...ONLINE_STATUSES, supabase: 'offline', server: 'connected', websocket: 'connected' }} queueStats={{ pending: 3, error: 0, failed: 0 }} />)
     expect(screen.queryByText(/^Offline/)).toBeNull()
-    expect(screen.getByText('Syncing...')).toBeInTheDocument()
+    // the venue runs on the local server; the cloud copy waits
+    expect(screen.getByText('Local only (3 waiting)')).toBeInTheDocument()
   })
 
   it('an unreachable cloud without a local server reads as offline', () => {
