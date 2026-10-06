@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { allowLeaving } from '../utils/leaveGuard'
 
 const CACHE_BUST_PARAM = 'cache_bust'
 
@@ -109,6 +110,7 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
     await Promise.all(registrations.map((reg) => reg.unregister()))
   }
   if (includeLocalStorage) localStorage.clear()
+  allowLeaving()
   window.location.replace(buildReloadUrl())
   return true
 }
@@ -123,7 +125,10 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
  * the app still loads offline right after the update.
  */
 export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
-  const reload = () => window.location.replace(buildReloadUrl())
+  const reload = () => {
+    allowLeaving()
+    window.location.replace(buildReloadUrl())
+  }
   try {
     if (clearIndexedDB) await deleteAllIndexedDB()
 

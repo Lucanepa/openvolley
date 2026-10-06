@@ -16,6 +16,7 @@ import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, X } from 'lucide-react'
 import { cn, IconButton, SegmentedControl, Switch } from '../../ui'
+import { allowLeaving } from '../../utils/leaveGuard'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -215,6 +216,7 @@ export default function ScoreboardOptionsModal({
     setShowCloudBackups(false)
     setRestoreConfirm(null)
     onClose?.()
+    allowLeaving()
     window.location.reload()
   }
 
