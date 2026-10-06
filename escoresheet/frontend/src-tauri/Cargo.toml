@@ -26,6 +26,9 @@ futures-util = "0.3"
 # in the tree through tauri (wry/tao), so this adds no new crate.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+# connect WebKit's window.close() of a popup to its app window (popups.rs);
+# in the tree through wry, no new crate.
+webkit2gtk = "2.0"
 
 [dev-dependencies]
 # mock runtime for the IPC/ACL test of the backup commands (main.rs)
