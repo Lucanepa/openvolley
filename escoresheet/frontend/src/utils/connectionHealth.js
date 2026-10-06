@@ -65,7 +65,7 @@ export function getTabletStatusSummary(match) {
   if (match.homeTeamConnectionEnabled) {
     roles.push({
       role: 'bench_home',
-      label: 'Home Bench',
+      label: 'Home bench',
       enabled: true,
       ...getHeartbeatHealth(match.lastHomeTeamHeartbeat)
     })
@@ -74,7 +74,7 @@ export function getTabletStatusSummary(match) {
   if (match.awayTeamConnectionEnabled) {
     roles.push({
       role: 'bench_away',
-      label: 'Away Bench',
+      label: 'Away bench',
       enabled: true,
       ...getHeartbeatHealth(match.lastAwayTeamHeartbeat)
     })

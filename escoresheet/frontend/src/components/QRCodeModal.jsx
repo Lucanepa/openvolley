@@ -7,9 +7,9 @@ import { useState } from 'react'
 import { cn, FOCUS_RING } from '../ui'
 
 const ROLE_LABELS = {
-  referee: 'Referee Dashboard',
-  bench_home: 'Home Bench',
-  bench_away: 'Away Bench',
+  referee: 'Referee dashboard',
+  bench_home: 'Home bench',
+  bench_away: 'Away bench',
   livescore: 'Livescore'
 }
 

@@ -933,7 +933,7 @@ export default function App() {
       document.title = 'Openvolley eScoresheet'
     } else {
       // Official match - show game number only
-      const gameNumber = currentMatch.externalId || 'Official Match'
+      const gameNumber = currentMatch.externalId || 'Official match'
       document.title = `Openvolley eScoresheet - ${gameNumber}`
     }
   }, [currentMatch])
@@ -1881,11 +1881,11 @@ export default function App() {
     // Require PIN confirmation if match has a gamePin
     if (deleteMatchModal.gamePin) {
       if (!deletePinInput.trim()) {
-        setDeletePinError('Please enter the Game PIN to confirm deletion')
+        setDeletePinError('Please enter the game PIN to confirm deletion')
         return
       }
       if (deletePinInput.trim() !== deleteMatchModal.gamePin) {
-        setDeletePinError('Incorrect PIN. Please enter the correct Game PIN.')
+        setDeletePinError('Incorrect PIN. Please enter the correct game PIN.')
         return
       }
     }
@@ -2919,7 +2919,7 @@ export default function App() {
             {/* Delete Match Modal */}
             {deleteMatchModal && (
               <Modal
-                title="Delete Match"
+                title="Delete match"
                 open={true}
                 onClose={cancelDeleteMatch}
                 width={420}
@@ -2936,7 +2936,7 @@ export default function App() {
                   {deleteMatchModal.gamePin && (
                     <div className="mt-5">
                       <label htmlFor="delete-match-pin" className="mb-1.5 block text-sm font-medium text-stone-700">
-                        Enter Game PIN to confirm deletion:
+                        Enter game PIN to confirm deletion:
                       </label>
                       <Input
                         id="delete-match-pin"
@@ -3079,7 +3079,7 @@ export default function App() {
                             })
                             setCloudBackups(merged)
                             if (merged.length === 0) {
-                              setCloudBackupError('No backups found for this Game Number')
+                              setCloudBackupError('No backups found for this game number')
                             }
                           } catch (err) {
                             setCloudBackupError(err.message || 'Failed to list backups')
@@ -3268,7 +3268,7 @@ export default function App() {
                               restorePreviewData.source === 'cloud' ? 'bg-violet-100 text-violet-800' : 'bg-amber-100 text-amber-800'
                           )}>
                             {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From database') :
-                              restorePreviewData.source === 'pocketbase' ? 'PocketBase Backup' :
+                              restorePreviewData.source === 'pocketbase' ? 'PocketBase backup' :
                               restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
                           </span>
                           {restorePreviewData.backupName && (
@@ -3392,7 +3392,7 @@ export default function App() {
                         {sets.length > 0 && (
                           <div className="mb-6">
                             <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                              Set Scores
+                              Set scores
                             </h4>
                             <div className="flex flex-wrap gap-2">
                               {[...sets].sort((a, b) => (a.index || 0) - (b.index || 0)).map(s => (
@@ -3503,7 +3503,7 @@ export default function App() {
             {/* New Match Modal */}
             {newMatchModal && (
               <Modal
-                title="Create New Match"
+                title="Create new match"
                 open={true}
                 onClose={cancelNewMatch}
                 width={400}
