@@ -1,15 +1,37 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { db } from '../db/db'
 import { useSyncQueueStats } from '../hooks/useSyncQueue'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
 import { StatusPill } from '../ui/StatusPill.jsx'
+import { backendOnLocalNetwork } from '../utils/localNetwork'
 import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 // The local server + WebSocket path (LAN relay) works on its own, cloud or not
 function isServerWebsocketViable(serverStatus, websocketStatus) {
   return serverStatus === 'connected' && (websocketStatus === 'connected' || websocketStatus === 'no_match')
+}
+
+const REACHABLE = new Set(['connected', 'live', 'synced', 'syncing'])
+
+/**
+ * The statuses shown in the menu while the browser is offline. With a cloud
+ * backend nothing remote answers: server, API and cloud sync read Offline,
+ * the WebSocket Disconnected. With a LAN / local backend the polled statuses
+ * stand, except a WebSocket the local server does not back up.
+ */
+function offlineStatuses(statuses, lanBackend) {
+  if (lanBackend) {
+    return statuses.websocket === 'connected' && statuses.server !== 'connected'
+      ? { ...statuses, websocket: 'disconnected' }
+      : statuses
+  }
+  const out = { ...statuses }
+  for (const key of ['api', 'server', 'supabase']) {
+    if (REACHABLE.has(out[key])) out[key] = 'offline'
+  }
+  if (REACHABLE.has(out.websocket)) out.websocket = 'disconnected'
+  return out
 }
 
 export default function ConnectionStatus({
@@ -47,13 +69,15 @@ export default function ConnectionStatus({
     }
   }, [])
 
-  // Offline as far as the browser knows: a socket to the cloud relay can stay
-  // OPEN without any data flowing (no close until a send times out), so a
-  // 'connected' WebSocket is not believed then, unless the local server answers
-  // too (offline desktop app / LAN scoretable, where the relay is local).
-  const shownStatuses = browserOffline && connectionStatuses.websocket === 'connected' && connectionStatuses.server !== 'connected'
-    ? { ...connectionStatuses, websocket: 'disconnected' }
-    : connectionStatuses
+  // Offline as far as the browser knows. The server / WebSocket / cloud
+  // statuses are polled (every 30-60 s), and a socket to the cloud relay can
+  // stay OPEN without any data flowing, so their last 'connected' is not
+  // believed: the pill says Offline at once. Only a backend on this machine or
+  // the venue LAN (offline desktop app, Pi scoretable) can still answer; then
+  // the polled statuses keep counting.
+  const lanBackend = useMemo(() => backendOnLocalNetwork(), [])
+  const shownStatuses = browserOffline ? offlineStatuses(connectionStatuses, lanBackend) : connectionStatuses
+  const localPathViable = lanBackend && isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket)
 
   const [showConnectionMenu, setShowConnectionMenu] = useState(false)
   const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
@@ -234,7 +258,7 @@ export default function ConnectionStatus({
   // No network as far as the browser knows, but a local server (offline
   // desktop / LAN scoretable serving tablets) can still be connected: then the
   // match runs normally and only the cloud copy waits ('Syncing...' + count).
-  const overallStatus = browserOffline && !isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket)
+  const overallStatus = browserOffline && !localPathViable
     ? 'offline'
     : errorCount > 0
       ? 'attention'
