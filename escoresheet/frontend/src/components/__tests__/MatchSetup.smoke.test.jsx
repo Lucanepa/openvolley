@@ -59,7 +59,8 @@ vi.mock('../../db/db', () => {
     where: () => collection([]),
     orderBy: () => collection([]),
     filter: () => collection([]),
-    clear: async () => rowsOf(name).clear()
+    clear: async () => rowsOf(name).clear(),
+    hook: () => {} // useSyncQueue installs a 'creating' hook on sync_queue at module load
   })
   const db = new Proxy({}, {
     get: (_, prop) => {
@@ -81,7 +82,15 @@ vi.mock('../../lib/apiClient', () => {
     })
     return b
   }
-  return { apiFrom: () => chain(), apiStorage: { from: () => chain() } }
+  return {
+    apiFrom: () => chain(),
+    apiStorage: { from: () => chain() },
+    // useSyncQueue (via utils/syncToast) installs its auth listeners at module load
+    AUTH_TOKEN_CHANGE_EVENT: 'ov-test-auth-token-change',
+    AUTH_TOKEN_STORAGE_KEY: 'api_auth_token',
+    apiMatchRestore: () => chain(),
+    apiMatchClaim: () => chain()
+  }
 })
 vi.mock('../../utils/logger', () => ({ uploadBackupToCloud: vi.fn(), uploadLogsToCloud: vi.fn() }))
 vi.mock('../../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.js worker import
