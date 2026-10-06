@@ -2098,7 +2098,17 @@
   "tabletStatus": {
     "title": "Tablet-Status",
     "allConnected": "Alli Grät verbunde",
-    "issuesDetected": "{{count}} Grät mit Problem"
+    "issuesDetected": "{{count}} Grät mit Problem",
+    "role": {
+      "referee": "Schiri",
+      "bench_home": "Heimbank",
+      "bench_away": "Gäschtbank"
+    },
+    "status": {
+      "connected": "Verbunde",
+      "stale": "Verzögeret",
+      "disconnected": "Trännt"
+    }
   },
   "appWindow": {
     "couldNotOpen": "S Fänschter hät nöd chöne ufgah. Bitte nomal probiere.",

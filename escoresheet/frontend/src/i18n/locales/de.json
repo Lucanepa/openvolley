@@ -1974,7 +1974,17 @@
   "tabletStatus": {
     "title": "Tablet-Status",
     "allConnected": "Alle Geräte verbunden",
-    "issuesDetected": "{{count}} Gerät(e) mit Problemen"
+    "issuesDetected": "{{count}} Gerät(e) mit Problemen",
+    "role": {
+      "referee": "Schiedsrichter",
+      "bench_home": "Heimbank",
+      "bench_away": "Gästebank"
+    },
+    "status": {
+      "connected": "Verbunden",
+      "stale": "Verzögert",
+      "disconnected": "Getrennt"
+    }
   },
   "appWindow": {
     "couldNotOpen": "Das Fenster konnte nicht geöffnet werden. Bitte erneut versuchen.",
