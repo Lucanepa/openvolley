@@ -39,12 +39,39 @@ is set.
 
 - `versionName` = `version` in `package.json` (e.g. `1.48.19`).
 - `versionCode` = `(MAJOR * 1000000 + MINOR * 1000 + PATCH) * 10 + androidBuild`,
-  e.g. 1.48.19 with `androidBuild = 1` → `10480191`.
+  e.g. 1.48.19 with `androidBuild = 2` → `10480192` (10480191 was the first
+  private-repo build; 10480192 adds the F-Droid preparation).
 - `androidBuild` (0–9, `android/app/build.gradle`) is for a native-only fix
   without a web version bump: raise it for such a rebuild, reset it to 0 when
   `package.json`'s version changes. F-Droid only offers an update when the
   `versionCode` grows, so never publish the same code twice.
 - Monotonic while MINOR and PATCH stay below 1000.
+- Both values are **literals** in `defaultConfig` of `android/app/build.gradle`
+  (`versionCode 10480192`, `versionName "1.48.19"`): F-Droid's update checker
+  reads them with a regex and cannot evaluate Groovy. The build fails if they
+  do not match `package.json` + `androidBuild`, so update them together
+  (`scripts/bump-version.js` does it when it bumps `package.json`).
+
+## F-Droid (official catalogue)
+
+The app is prepared for f-droid.org, which builds it from source itself:
+
+- Listing text, icon and screenshots: `fastlane/metadata/android/` at the
+  **repo root** (fdroidserver only looks there or in the build subdir). Add a
+  `changelogs/<versionCode>.txt` for every release.
+- Recipe for fdroiddata: `android/fdroid/com.openvolley.escoresheet.yml`
+  (reference copy; the live one is in gitlab.com/fdroid/fdroiddata).
+- A release for F-Droid = an annotated tag `android-v<versionName>` on the
+  commit whose `build.gradle` carries that version. F-Droid's checkupdates
+  finds the tag, reads versionName/versionCode from `build.gradle` and builds
+  it (no further action needed once the app is in the catalogue).
+- F-Droid signs with its own key, so its APK cannot update one from the
+  private repo (and vice versa) unless reproducible builds are set up
+  (`Binaries` + `AllowedAPKSigningKeys`; see the yml). For that the private
+  build must come from a clean checkout of the tag with no local `.env`
+  (vite would read `VITE_REOPEN_PASSWORD_HASH` from it; F-Droid does not have it).
+- No Google services plugin, no proprietary libraries: keep it that way
+  (Capacitor plugins that pull Firebase/Play Services would block inclusion).
 
 ## Signing key
 
