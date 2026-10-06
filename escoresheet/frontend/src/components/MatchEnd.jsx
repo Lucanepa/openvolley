@@ -1368,7 +1368,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {!isApproved && (
         <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
           <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.teamCaptains', 'Team captains')}</h3></div>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <div className="stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <SignatureBox role="captain-a" />
             <SignatureBox role="captain-b" />
           </div>
@@ -1383,7 +1383,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             <Button
               variant="secondary"
               size="md"
-              className="relative font-medium after:absolute after:-inset-1 after:content-['']"
+              className="relative font-medium after:absolute after:-inset-1 after:content-[''] stack:h-11 stack:px-4"
               onClick={() => {
                 setRemarksText(match?.remarks || '')
                 setShowRemarksModal(true)
@@ -1416,7 +1416,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <div className="stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             {/* Assistant Scorer (if present) */}
             {hasAsstScorer && (
               <SignatureBox role="asst-scorer" disabled={false} />
@@ -1709,8 +1709,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               onChange={e => setRemarksText(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"
               style={{
-                minHeight: '200px',
-                fontSize: '14px'
+                minHeight: '200px'
               }}
               autoFocus
             />

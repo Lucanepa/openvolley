@@ -32,6 +32,8 @@ import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn } from '../ui'
 import CaptainToggle from './CaptainToggle'
+import StackLabel from './StackLabel'
+import { useFormStack } from '../hooks/useFormStack'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -229,7 +231,7 @@ const ToggleSwitch = memo(function ToggleSwitch({ on, onToggle, label }) {
     <Switch
       checked={on}
       onCheckedChange={() => onToggle()}
-      className="p-0"
+      className="p-0 stack:after:absolute stack:after:-inset-x-1 stack:after:-inset-y-3 stack:after:content-['']"
       aria-label={label}
       title={label}
     />
@@ -294,7 +296,7 @@ const OfficialCard = memo(function OfficialCard({
             <Button
               variant="ghost"
               size="sm"
-              className="bg-white px-2"
+              className="bg-white px-2 stack:h-11 stack:px-3"
               onClick={(e) => {
                 e.stopPropagation()
                 onOpenDatabase(e, selectorKey)
@@ -310,7 +312,7 @@ const OfficialCard = memo(function OfficialCard({
       </div>
       {!isCollapsed && (
         <div className="p-4">
-          <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))]">
+          <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(120px,1fr))] stack:grid-cols-1">
             <Field tone="compact" className={FIELD} label={t('matchSetup.lastName')}><Input aria-label={t('matchSetup.lastName')} className="capitalize" value={lastName} onChange={e => setLastName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.firstName')}><Input aria-label={t('matchSetup.firstName')} className="capitalize" value={firstName} onChange={e => setFirstName(e.target.value)} /></Field>
             <Field tone="compact" className={FIELD} label={t('matchSetup.country')}><Input aria-label={t('matchSetup.country')} value={country} onChange={e => setCountry(e.target.value)} /></Field>
@@ -412,6 +414,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
+  // Portrait: the libero select's empty option reads "No libero" (its column
+  // head is hidden there); landscape keeps the blank option. The option is
+  // keyed on the orientation, so turning back replaces the node: a select
+  // keeps the width of a longer text when only its option's text changes.
+  const formStack = useFormStack()
   // MatchSetup uses 25% larger scale by default
   const scaleFactor = baseScaleFactor * 1.25
   // Helper for scaled pixel values
@@ -3244,13 +3251,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
           <div className="flex flex-col items-center gap-2">
             <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
-            <Button variant="toolbar" size="md" onClick={() => setLoadOfficialMatchModal(true)}>
+            <Button variant="toolbar" size="md" className="stack:h-11 stack:px-4" onClick={() => setLoadOfficialMatchModal(true)}>
               {t('loadOfficialMatch.button')}
             </Button>
           </div>
           <div />
         </div>
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-5 gap-4 stack:grid-cols-1">
           <div className={OFFICIAL_BOX}>
             <div className={OFFICIAL_HEAD}>
               <span className={OFFICIAL_TITLE}>{t('matchSetup.dateTime')}</span>
@@ -3371,7 +3378,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <span className={OFFICIAL_TITLE}>{t('matchSetup.gameDetails')}</span>
             </div>
             <div className="flex flex-col gap-3 p-4">
-              <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 stack:grid-cols-1">
                 <Field tone="compact" className={FIELD} label={t('matchSetup.gameNumber')}><Input aria-label={t('matchSetup.gameNumber')} className="tabular-nums" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></Field>
                 <Field tone="compact" className={FIELD} label={t('matchSetup.league')}><Input aria-label={t('matchSetup.league')} className="capitalize" value={league} onChange={e => setLeague(e.target.value)} /></Field>
               </div>
@@ -3385,7 +3392,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Match Officials Row */}
-          <div className="col-span-5 grid grid-cols-5 items-start gap-4">
+          <div className="col-span-5 grid grid-cols-5 items-start gap-4 stack:col-span-1 stack:grid-cols-1">
             <OfficialCard
               title={t('matchSetup.referee1')}
               officialKey="ref1"
@@ -3470,9 +3477,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
 
           {/* Teams - full width row at bottom: a section on its head rule, no box */}
-          <div className="col-span-5 pt-2">
+          <div className="col-span-5 pt-2 stack:col-span-1">
             <SectionHeader title={t('matchSetup.teams')} as="h2" className="mb-4" />
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-6 stack:flex-col stack:items-stretch stack:gap-3">
               {/* Home Team */}
               <div data-help-id="setup-home-team-card" className="flex-1 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
                 {/* Header row: Trikot container + Title */}
@@ -3513,8 +3520,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     {t('matchSetup.homeTeam').toUpperCase()}
                   </div>
                 </div>
-                <div className="flex items-end gap-4">
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%]')} label={t('matchSetup.teamName')}>
+                <div className="flex items-end gap-4 stack:flex-col stack:items-stretch stack:gap-3">
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%] stack:basis-auto')} label={t('matchSetup.teamName')}>
                     <Input
                       size="lg"
                       aria-label={`${t('common.home')} ${t('matchSetup.teamName')}`}
@@ -3525,7 +3532,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       className="text-center font-semibold"
                     />
                   </Field>
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)]')} label={t('matchSetup.short')}>
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)] stack:basis-auto')} label={t('matchSetup.short')}>
                     <Input
                       size="lg"
                       aria-label={`${t('common.home')} ${t('matchSetup.short')}`}
@@ -3541,7 +3548,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
 
               {/* VS Divider */}
-              <div className="mt-6 flex flex-col items-center justify-center px-3">
+              <div className="mt-6 flex flex-col items-center justify-center px-3 stack:mt-0">
                 <span className="text-sm font-semibold text-stone-400">vs</span>
               </div>
 
@@ -3586,8 +3593,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     </div>
                   </div>
                 </div>
-                <div className="flex items-end gap-4">
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%]')} label={t('matchSetup.teamName')}>
+                <div className="flex items-end gap-4 stack:flex-col stack:items-stretch stack:gap-3">
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%] stack:basis-auto')} label={t('matchSetup.teamName')}>
                     <Input
                       size="lg"
                       aria-label={`${t('common.away')} ${t('matchSetup.teamName')}`}
@@ -3598,7 +3605,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       className="text-center font-semibold"
                     />
                   </Field>
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)]')} label={t('matchSetup.short')}>
+                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)] stack:basis-auto')} label={t('matchSetup.short')}>
                     <Input
                       size="lg"
                       aria-label={`${t('common.away')} ${t('matchSetup.short')}`}
@@ -3861,7 +3868,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {/* Upload Methods for Home Team + Player Stats */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
           <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
             <div className="flex flex-col gap-2">
@@ -3893,7 +3900,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {/* Local/Remote Toggle */}
                 <SegmentedControl
                   ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 shrink-0 [&_button]:p-0"
+                  className="w-44 shrink-0 [&_button]:p-0 stack:[&_button]:h-11"
                   value={homeUploadMode}
                   onChange={setHomeUploadMode}
                   options={[
@@ -4106,23 +4113,28 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {/* Add new player section */}
         {homeRoster.length < 14 && (
-          <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+          <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3 stack:w-full">
             <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-stone-500">{t('matchSetup.addNewPlayer')}</div>
-            <div data-help-id="setup-add-player" className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
+            <div data-help-id="setup-add-player" className={`roster-grid roster-add${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
-                <input aria-label={t('matchSetup.playerNumber', 'Player number')} placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
+                <input aria-label={t('matchSetup.playerNumber', 'Player number')} className="cell-head" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <select aria-label={t('matchSetup.libero', 'Libero')} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
+                <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
+                <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
                   }
                   setHomeLibero(newValue)
                 }}>
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!homeRoster.some(p => p.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -4222,6 +4234,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (homeLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (homeLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
+                <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder="#"
@@ -4230,7 +4243,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={isDuplicate ? 'border-red-400 bg-red-50 text-red-700' : undefined}
+                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700')}
                   aria-invalid={isDuplicate || undefined}
                   title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4252,6 +4265,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setHomeRoster(sorted)
                   }}
                 />
+                <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
                   className="capitalize"
@@ -4264,6 +4278,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setHomeRoster(updated)
                   }}
                 />
+                <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
                   className="capitalize"
@@ -4276,6 +4291,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setHomeRoster(updated)
                   }}
                 />
+                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.dateOfBirth')}
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
@@ -4288,8 +4304,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setHomeRoster(updated)
                   }}
                 />
+                <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
+                  className="cell-libero"
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...homeRoster]
@@ -4324,7 +4342,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                 >
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -4397,7 +4415,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const originalIdx = benchHome.findIndex(b => b === m)
             return (
               <div key={`bh-${originalIdx}`} className="bench-grid-row">
-                <select aria-label={t('matchSetup.role')} value={m.role || 'Coach'} onChange={e => {
+                <StackLabel head>{t('matchSetup.role')}</StackLabel>
+                <select aria-label={t('matchSetup.role')} className="cell-head" value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchHome.some((b, idx) => idx !== originalIdx && b.role === newRole)
                   if (isRoleTaken) return
@@ -4416,8 +4435,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
+                <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
                   <Button variant="danger-outline" size="md" onClick={() => {
@@ -4461,7 +4483,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <p className="mt-1 mb-4 text-xs text-stone-500">
             {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4 stack:flex-col">
             {/* Coach Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">
@@ -4953,7 +4975,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         </div>
         {/* Upload Methods for Away Team + Player Stats */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 stack:flex-col">
           {/* Left: Upload section */}
           <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
             <div className="flex flex-col gap-2">
@@ -4984,7 +5006,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {/* Local/Remote Toggle */}
                 <SegmentedControl
                   ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 shrink-0 [&_button]:p-0"
+                  className="w-44 shrink-0 [&_button]:p-0 stack:[&_button]:h-11"
                   value={awayUploadMode}
                   onChange={setAwayUploadMode}
                   options={[
@@ -5197,14 +5219,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         </div>
         {/* Add new player section */}
         {awayRoster.length < 14 && (
-          <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3">
+          <div className="mx-auto w-max rounded-xl border border-stone-200 bg-stone-50/60 p-3 stack:w-full">
             <div className="mb-2 text-center text-[11px] font-bold uppercase tracking-wide text-stone-500">{t('matchSetup.addNewPlayer')}</div>
-            <div className={`roster-grid${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: 'max-content', margin: '0 auto' }}>
+            <div className={`roster-grid roster-add${lfpTrackingEnabled ? ' has-lfp' : ''}`}>
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
+                <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder={t('matchSetup.numberPlaceholder')}
+                  className="cell-head"
                   type="number"
                   inputMode="numeric"
                   min="1"
@@ -5213,17 +5237,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onChange={e => setAwayNum(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 />
+                <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
-                <select aria-label={t('matchSetup.libero', 'Libero')} value={awayLibero} onChange={e => {
+                <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
+                <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" value={awayLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
                   }
                   setAwayLibero(newValue)
                 }}>
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!awayRoster.some(p => p.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -5321,6 +5349,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (awayLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (awayLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
+                <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.playerNumber', 'Player number')}
                   placeholder="#"
@@ -5329,7 +5358,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={isDuplicate ? 'border-red-400 bg-red-50 text-red-700' : undefined}
+                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700')}
                   aria-invalid={isDuplicate || undefined}
                   title={isDuplicate ? t('scoreboard.duplicateJersey') : undefined}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5350,6 +5379,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setAwayRoster(sorted)
                   }}
                 />
+                <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
                   className="capitalize"
@@ -5362,6 +5392,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setAwayRoster(updated)
                   }}
                 />
+                <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
                   className="capitalize"
@@ -5374,6 +5405,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setAwayRoster(updated)
                   }}
                 />
+                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.dateOfBirth')}
                   placeholder={t('matchSetup.dateOfBirthPlaceholder')}
@@ -5386,8 +5418,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     setAwayRoster(updated)
                   }}
                 />
+                <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
+                  className="cell-libero"
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...awayRoster]
@@ -5418,7 +5452,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                 >
-                  <option value=""></option>
+                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
                   {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
                     <option value="libero1">{t('matchSetup.libero1')}</option>
                   )}
@@ -5491,7 +5525,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const originalIdx = benchAway.findIndex(b => b === m)
             return (
               <div key={`ba-${originalIdx}`} className="bench-grid-row">
-                <select aria-label={t('matchSetup.role')} value={m.role || 'Coach'} onChange={e => {
+                <StackLabel head>{t('matchSetup.role')}</StackLabel>
+                <select aria-label={t('matchSetup.role')} className="cell-head" value={m.role || 'Coach'} onChange={e => {
                   const newRole = e.target.value || 'Coach'
                   const isRoleTaken = benchAway.some((b, idx) => idx !== originalIdx && b.role === newRole)
                   if (isRoleTaken) return
@@ -5510,8 +5545,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     )
                   })}
                 </select>
+                <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
                 <div className="cell-action">
                   <Button variant="danger-outline" size="md" onClick={() => {
@@ -5555,7 +5593,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <p className="mt-1 mb-4 text-xs text-stone-500">
             {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
           </p>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4 stack:flex-col">
             {/* Coach Signature */}
             <div className="min-w-[150px] flex-1">
               <div className="mb-1.5 text-xs font-medium text-stone-600">

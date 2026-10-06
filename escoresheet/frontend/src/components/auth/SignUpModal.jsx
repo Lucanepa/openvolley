@@ -113,7 +113,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
             <>
               <form onSubmit={handleSubmit} className="space-y-3">
                 {/* Name fields */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
                   <Field label={t('auth.firstName', 'First name')}>
                     <Input
                       size="lg"
@@ -137,7 +137,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                 </div>
 
                 {/* Country and DOB */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
                   <Field label={t('auth.country', 'Country')}>
                     <Input
                       size="lg"
@@ -210,7 +210,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
                 <button
                   type="button"
                   onClick={onSwitchToLogin}
-                  className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
+                  className={cn('min-h-11 rounded stack:px-1 font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
                 >
                   {t('auth.signIn', 'Sign in')}
                 </button>

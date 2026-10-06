@@ -439,7 +439,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
             {t('loadOfficialMatch.loading', 'Loading...')}
           </div>
         ) : (
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end gap-3 stack:flex-col stack:items-stretch">
             {/* Gender Dropdown */}
             <div>
               <label className={LABEL_CLS}>{t('loadOfficialMatch.gender', 'Gender')}</label>
@@ -447,7 +447,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 value={gender}
                 onChange={e => setGender(e.target.value)}
                 aria-label={t('loadOfficialMatch.gender', 'Gender')}
-                className={SELECT_CLS}
+                className={cn(SELECT_CLS, 'stack:w-full')}
               >
                 <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
                 <option value="men">{t('matchSetup.men', 'Men')} ♂</option>
@@ -463,7 +463,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                   value={league}
                   onChange={e => setLeague(e.target.value)}
                   aria-label={t('loadOfficialMatch.league', 'League')}
-                  className={SELECT_CLS}
+                  className={cn(SELECT_CLS, 'stack:min-w-0 stack:flex-1')}
                   disabled={!gender}
                 >
                   <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
@@ -484,7 +484,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                       }}
                       aria-expanded={showLeagueWarning}
                       aria-label={t('warnings.clickForDetails')}
-                      className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-amber-50', FOCUS_RING)}
+                      className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full stack:h-11 stack:w-11 text-amber-600 transition-colors hover:bg-amber-50', FOCUS_RING)}
                       title={t('warnings.clickForDetails')}
                     >
                       <AlertTriangle size={18} aria-hidden="true" />
@@ -524,7 +524,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
       {/* Search and Date Filters - shown when matches are loaded */}
       {matches.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="mb-3 flex flex-wrap items-center gap-3 stack:flex-col stack:items-stretch">
           {/* Search Input */}
           <div className="relative min-w-[150px] flex-1">
             <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" aria-hidden="true" />

@@ -311,6 +311,7 @@
     "dateOfBirthPlaceholder": "Data di nascita (gg/mm/aaaa)",
     "libero1": "Libero 1",
     "libero2": "Libero 2",
+    "noLibero": "Nessun libero",
     "captain": "Capitano",
     "role": "Ruolo",
     "signatures": "Firme",
