@@ -123,6 +123,10 @@ export function AuthProvider({ children }) {
           setProfile(null)
         }
         setLoading(false)
+        // A sign-in is a moment the app is in use and online: the update
+        // checks listen for it (utils/androidUpdate.js); this context stays
+        // unaware of them.
+        if (event === 'SIGNED_IN') window.dispatchEvent(new CustomEvent('ov-signed-in'))
       }
     )
 
