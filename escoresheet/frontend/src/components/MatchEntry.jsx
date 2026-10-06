@@ -1063,10 +1063,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           aspectRatio: '1 / 1',
           position: 'relative'
         }}>
+          {/* One team's half: a single grid column. The scoreboard's .court is a
+              two-column grid (95% wide), which gave this side only half the box
+              and cut the front row (and the away bench's II/III/IV labels) off
+              at the middle. */}
           <div className="court" style={{
             width: '100%',
+            maxWidth: '100%',
             height: '100%',
-            position: 'relative'
+            position: 'relative',
+            gridTemplateColumns: '1fr'
           }}>
             {/* 3m line */}
             <div className="court-attack-line" style={{
