@@ -25,7 +25,7 @@ export default function SaveRosterToTeamModal({ open, onClose, userId, access, r
 
 function SaveBody({ onClose, userId, access, roster, bench, meta, suggestedTeamId }) {
   const { t } = useTranslation()
-  const { teams, competitions } = useSavedTeams({ userId, access, refreshOnMount: true })
+  const { teams, competitions, reload } = useSavedTeams({ userId, access, refreshOnMount: true })
   const online = isOnline()
 
   const openCompetitions = useMemo(
@@ -109,11 +109,21 @@ function SaveBody({ onClose, userId, access, roster, bench, meta, suggestedTeamI
       label = res.data?.team?.name || name.trim()
     }
     const put = await savedTeamsApi.putRoster(id, body)
-    setBusy(false)
     if (put.error) {
+      // The team was created but its roster was not saved: a retry must not
+      // create it again (409 duplicate). Refresh the cache and pick the new
+      // team under "existing", so the next tap saves the roster into it.
+      if (!target && id) {
+        await refreshSavedTeams({ force: true, access, userId }).catch(() => {})
+        try { await reload?.() } catch { /* the cache is best effort */ }
+        setMode('existing')
+        setTeamId(id)
+      }
+      setBusy(false)
       setError(put.error.code === 'OV_INVALID_REQUEST' && put.error.details ? `${t('manage.errors.generic')} (${put.error.details})` : t(errorKeyOf(put.error)))
       return
     }
+    setBusy(false)
     await refreshSavedTeams({ force: true, access, userId }).catch(() => {})
     toast.success(t('savedTeams.saved', { name: label }))
     onClose?.()

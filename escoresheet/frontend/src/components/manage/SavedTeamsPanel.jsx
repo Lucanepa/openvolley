@@ -90,8 +90,10 @@ export default function SavedTeamsPanel({ userId }) {
       <section>
         <PanelHead title={team.name} />
         <OfflineBanner online={online} />
+        {/* Keyed on the id only: a save reloads the bundle (new updated_at),
+            and a remount would drop the other section's unsaved edits. */}
         <TeamEditor
-          key={`${team.id}:${team.updated_at}`}
+          key={team.id}
           team={team}
           competition={competition}
           online={online}

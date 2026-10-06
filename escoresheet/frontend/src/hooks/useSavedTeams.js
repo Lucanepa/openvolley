@@ -43,5 +43,6 @@ export function useSavedTeams({ userId, access, enabled = true, refreshOnMount =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, userId])
 
-  return { teams, competitions: competitionsOf(teams), meta, loading, lastStatus, refresh, reload }
+  // meta is already limited to this account (reload)
+  return { teams, competitions: competitionsOf(teams, meta), meta, loading, lastStatus, refresh, reload }
 }

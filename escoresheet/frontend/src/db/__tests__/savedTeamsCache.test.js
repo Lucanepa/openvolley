@@ -7,7 +7,7 @@ vi.mock('../../lib/accountApi', () => ({
 
 import { db } from '../db'
 import { savedTeamsApi } from '../../lib/accountApi'
-import { refreshSavedTeams, getSavedTeams, clearSavedTeams, bundleToRows, getSavedTeamsMeta } from '../savedTeams'
+import { refreshSavedTeams, getSavedTeams, clearSavedTeams, bundleToRows, getSavedTeamsMeta, competitionsOf } from '../savedTeams'
 import { accessFromRoles } from '../../lib/access'
 
 const scorer = accessFromRoles(['scorer'])
@@ -49,6 +49,19 @@ describe('saved teams cache', () => {
     expect((await db.saved_teams.toArray()).map(r => r.id)).toEqual(['t1'])
     expect(await getSavedTeamsMeta()).toMatchObject({ version: '7', userId: 'u1' })
     expect((await getSavedTeams({ userId: 'u1' })).map(r => r.id)).toEqual(['t1'])
+  })
+
+  it('keeps every competition, also one without teams yet (its first team can be saved from MatchSetup)', async () => {
+    const b = bundle('8')
+    b.competitions.push({ id: 'c-empty', name: '3. Liga Herren', season: '2026/27', gender: 'men', category: null, vm_leagues: [], archived: false })
+    savedTeamsApi.fetchBundle.mockResolvedValue({ data: b, error: null, status: 200 })
+    await refreshSavedTeams({ access: scorer, userId: 'u1', online: true })
+    const meta = await getSavedTeamsMeta()
+    const rows = await getSavedTeams({ userId: 'u1' })
+    expect(competitionsOf(rows, meta).map(c => c.id).sort()).toEqual(['c-empty', 'c1'])
+    expect(competitionsOf(rows, meta).find(c => c.id === 'c-empty')).toMatchObject({ name: '3. Liga Herren', archived: false })
+    // a cache written before the list was kept still lists the embedded ones
+    expect(competitionsOf(rows, null).map(c => c.id)).toEqual(['c1'])
   })
 
   it('skips the request when the cache is under 10 minutes old, unless forced', async () => {

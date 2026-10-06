@@ -44,9 +44,9 @@ function notify() {
   try { window.dispatchEvent(new Event(SAVED_TEAMS_CHANGED_EVENT)) } catch { /* no window */ }
 }
 
-/** API bundle → cache rows (camelCase, with the competition embedded). */
-export function bundleToRows(bundle) {
-  const competitions = new Map((bundle?.competitions || []).map(c => [c.id, {
+/** API bundle → the cache's competition objects (every one, also those without teams yet). */
+export function bundleCompetitions(bundle) {
+  return (bundle?.competitions || []).filter(c => c && c.id).map(c => ({
     id: c.id,
     name: c.name || '',
     season: c.season || '',
@@ -54,7 +54,12 @@ export function bundleToRows(bundle) {
     category: c.category ?? null,
     vmLeagues: Array.isArray(c.vm_leagues) ? c.vm_leagues : [],
     archived: !!c.archived
-  }]))
+  }))
+}
+
+/** API bundle → cache rows (camelCase, with the competition embedded). */
+export function bundleToRows(bundle) {
+  const competitions = new Map(bundleCompetitions(bundle).map(c => [c.id, c]))
   return (bundle?.teams || []).map(t => ({
     id: t.id,
     competitionId: t.competition_id,
@@ -72,9 +77,15 @@ export function bundleToRows(bundle) {
   }))
 }
 
-/** The competitions of a bundle as cache objects (for pickers). */
-export function competitionsOf(rows) {
+/**
+ * The cached competitions (for pickers): the bundle's list kept in the meta
+ * row, so a competition without teams can still take its first team; plus
+ * any competition embedded in a team row (a cache written before the list
+ * was kept).
+ */
+export function competitionsOf(rows, meta = null) {
   const map = new Map()
+  for (const c of Array.isArray(meta?.competitions) ? meta.competitions : []) if (c?.id && !map.has(c.id)) map.set(c.id, c)
   for (const row of rows || []) if (row.competition && !map.has(row.competition.id)) map.set(row.competition.id, row.competition)
   return [...map.values()]
 }
@@ -123,7 +134,8 @@ export async function storeSavedTeamsBundle(bundle, userId) {
       key: META_KEY,
       version: String(bundle?.version ?? '0'),
       fetchedAt: bundle?.fetched_at || new Date().toISOString(),
-      userId
+      userId,
+      competitions: bundleCompetitions(bundle)
     })
   })
   notify()
