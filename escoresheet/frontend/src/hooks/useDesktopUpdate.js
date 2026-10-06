@@ -12,6 +12,10 @@
  *
  * A sign-in (AuthContext fires `ov-signed-in`) asks the app to check; the app
  * skips it when it checked in the last 15 minutes or automatic checks are off.
+ *
+ * Every status carries the app's `seq`: an answer computed before a newer
+ * event (the page just loaded and asks while it reports that the match is
+ * over) never replaces the newer status.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -52,16 +56,24 @@ function hookSignIn(win, invoke) {
   }
 }
 
+/** The newer of two statuses (by the app's `seq`; one without counts as 0). */
+export function newerStatus(prev, next) {
+  if (!next || typeof next !== 'object') return prev
+  if (!prev) return next
+  return (Number(next.seq) || 0) >= (Number(prev.seq) || 0) ? next : prev
+}
+
 export function useDesktopUpdate({ win = typeof window !== 'undefined' ? window : undefined } = {}) {
   const active = isDesktopScoretable(win)
-  const [status, setStatus] = useState(null)
+  const [status, setRawStatus] = useState(null)
+  const setStatus = useCallback((next) => setRawStatus((prev) => newerStatus(prev, next)), [])
 
   useEffect(() => {
     if (!active) return undefined
     const invoke = invoker(win)
     let alive = true
     Promise.resolve(invoke('update_status'))
-      .then((s) => { if (alive && s) setStatus(s) })
+      .then((s) => { if (alive) setStatus(s) })
       .catch((e) => console.warn('[update] update_status failed', e))
     const onUpdate = (event) => {
       if (event?.detail && typeof event.detail === 'object') setStatus(event.detail)
@@ -73,7 +85,7 @@ export function useDesktopUpdate({ win = typeof window !== 'undefined' ? window 
       win.removeEventListener(UPDATE_EVENT, onUpdate)
       unhookSignIn()
     }
-  }, [active, win])
+  }, [active, win, setStatus])
 
   const call = useCallback(async (cmd, args) => {
     const invoke = invoker(win)
@@ -81,7 +93,7 @@ export function useDesktopUpdate({ win = typeof window !== 'undefined' ? window 
     const s = await invoke(cmd, args)
     if (s && typeof s === 'object') setStatus(s)
     return s
-  }, [win])
+  }, [win, setStatus])
 
   const checkNow = useCallback(
     () => call('update_check_now', { reason: 'manual' }).catch((e) => { console.warn('[update] check failed', e); return null }),
