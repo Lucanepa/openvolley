@@ -52,7 +52,7 @@ export const BUTTON_VARIANTS = {
   danger: 'bg-red-600 text-white hover:bg-red-700 disabled:bg-stone-300',
   'danger-outline': 'border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50',
   'danger-soft': 'rounded-lg border border-red-100 bg-red-50 font-medium text-red-600 shadow-sm hover:bg-red-100',
-  positive: 'bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50',
+  positive: 'bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50',
   text: 'px-0 text-xs text-stone-500 hover:text-stone-700 disabled:text-stone-300',
   toolbar: 'rounded-lg border border-stone-200 bg-white font-medium text-stone-700 shadow-sm hover:bg-stone-50',
   // AuthGate's primaryButtonClass, whole: use with block and no size.

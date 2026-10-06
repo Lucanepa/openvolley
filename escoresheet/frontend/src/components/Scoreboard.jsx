@@ -17662,7 +17662,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           padding: 'calc(16px * var(--scale-factor)) 0',
                           fontSize: 'calc(18px * var(--scale-factor))',
                           fontWeight: 700,
-                          background: '#059669', // emerald-600: the kit confirm (white text reads AA)
+                          background: '#047857', // emerald-700: the kit confirm (white text reads AA, 5.5:1)
                           color: '#fff',
                           border: 'none',
                           borderRadius: 'calc(12px * var(--scale-factor))',
@@ -23415,9 +23415,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '8px 12px',
                         fontSize: '12px',
                         fontWeight: 600,
-                        background: '#059669',
+                        background: '#047857',
                         color: '#fff',
-                        border: '1px solid #059669',
+                        border: '1px solid #047857',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         textAlign: 'left',
@@ -23429,11 +23429,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         width: '100%'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#047857'
+                        e.currentTarget.style.background = '#065f46'
                         e.currentTarget.style.transform = 'scale(1.02)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#059669'
+                        e.currentTarget.style.background = '#047857'
                         e.currentTarget.style.transform = 'scale(1)'
                       }}
                     >
@@ -24870,9 +24870,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       padding: '8px 12px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      background: canSubstitute ? '#059669' : 'var(--panel-2)',
+                      background: canSubstitute ? '#047857' : 'var(--panel-2)',
                       color: canSubstitute ? '#fff' : 'var(--muted)',
-                      border: canSubstitute ? '1px solid #059669' : '1px solid var(--border)',
+                      border: canSubstitute ? '1px solid #047857' : '1px solid var(--border)',
                       borderRadius: '6px',
                       cursor: canSubstitute ? 'pointer' : 'not-allowed',
                       textAlign: 'left',
@@ -24886,13 +24886,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                     onMouseEnter={(e) => {
                       if (canSubstitute) {
-                        e.currentTarget.style.background = '#047857'
+                        e.currentTarget.style.background = '#065f46'
                         e.currentTarget.style.transform = 'scale(1.02)'
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (canSubstitute) {
-                        e.currentTarget.style.background = '#059669'
+                        e.currentTarget.style.background = '#047857'
                         e.currentTarget.style.transform = 'scale(1)'
                       }
                     }}
@@ -24910,9 +24910,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         padding: '8px 12px',
                         fontSize: '12px',
                         fontWeight: 600,
-                        background: '#059669',
+                        background: '#047857',
                         color: '#fff',
-                        border: '1px solid #059669',
+                        border: '1px solid #047857',
                         borderRadius: '6px',
                         cursor: 'pointer',
                         textAlign: 'left',
@@ -24924,11 +24924,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         width: '100%'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#047857'
+                        e.currentTarget.style.background = '#065f46'
                         e.currentTarget.style.transform = 'scale(1.02)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#059669'
+                        e.currentTarget.style.background = '#047857'
                         e.currentTarget.style.transform = 'scale(1)'
                       }}
                     >

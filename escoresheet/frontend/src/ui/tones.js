@@ -97,7 +97,7 @@ export const TOAST_ACCENT = {
 // is brand red.
 export const CONFIRM_ACCEPT = {
   danger: 'bg-red-600 hover:bg-red-700',
-  ok: 'bg-emerald-600 hover:bg-emerald-700',
+  ok: 'bg-emerald-700 hover:bg-emerald-800',
 };
 
 // ── Status dots ────────────────────────────────────────────────────────────

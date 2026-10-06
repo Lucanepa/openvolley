@@ -6153,7 +6153,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     <span
       className={cn(
         'mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold leading-none',
-        ready ? 'bg-emerald-600 text-white' : pending ? 'bg-sky-600 text-white' : 'border border-amber-300 bg-amber-100 text-amber-800'
+        ready ? 'bg-emerald-700 text-white' : pending ? 'bg-sky-600 text-white' : 'border border-amber-300 bg-amber-100 text-amber-800'
       )}
       aria-label={ready ? t('scoreboard.complete') : pending ? t('scoreboard.readyToConfirm') : t('scoreboard.incomplete')}
       title={ready ? t('scoreboard.complete') : pending ? t('scoreboard.readyToConfirm') : t('scoreboard.incomplete')}
