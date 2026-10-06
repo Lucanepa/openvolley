@@ -61,9 +61,10 @@ jobs:
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
+        # No VITE_BACKEND_URL on purpose: the desktop window is served by the
+        # app's own LAN relay, and a fixed backend URL would send the scorer's
+        # match relay to the cloud instead of to the venue tablets.
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_OPTIONS: '--max-old-space-size=4096'
         with:
           projectPath: escoresheet/frontend
