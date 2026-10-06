@@ -515,3 +515,19 @@ pub async fn bluetooth_stop(inner: &mut Inner) -> Result<(), NetError> {
 /// Nothing to recover: bind-activation already took a crashed run's
 /// networks down.
 pub fn recover<R: Runtime>(_app: &AppHandle<R>) {}
+
+#[cfg(test)]
+mod tests {
+    /// Read-only probe of this machine (no network is started):
+    /// `cargo test -- --ignored --nocapture probe_this_machine`
+    #[test]
+    #[ignore = "talks to this machine's NetworkManager / BlueZ"]
+    fn probe_this_machine() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let mut inner = super::Inner::default();
+            println!("hotspot: {:#?}", super::hotspot_status(&mut inner).await);
+            println!("bluetooth: {:#?}", super::bluetooth_status(&mut inner).await);
+        });
+    }
+}
