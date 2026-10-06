@@ -29,7 +29,7 @@ import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // statically. It is only *instantiated* in DATABASE_URL mode.
 import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
-import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
+import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
 import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole } from './lib/matchAccess.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
@@ -1754,6 +1754,8 @@ const server = createServer((req, res) => {
   // fields only (relayMatchListRow). Not listed: a match whose scoreboard has
   // been gone longer than the relay holds it for (STALE_TAKEOVER_MS), and on
   // the cloud a test (rehearsal) match: those belong to the venue's relay.
+  // The cloud shows a match with the referee connection off only to its own
+  // venue's address (cloudListsMatch), never to anonymous callers worldwide.
   if (url.pathname === '/api/match/list') {
     if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
@@ -1762,10 +1764,21 @@ const server = createServer((req, res) => {
     }
     try {
       const now = Date.now()
+      const requesterIp = getClientIp(req)
+      const requesterIpKey = ipBucketKey(requesterIp)
       const matches = []
       for (const entry of activeMatches.values()) {
         if (IS_CLOUD && entry.match?.test === true) continue
-        if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && ownersOf(entry.matchId).length === 0) continue
+        const owners = ownersOf(entry.matchId)
+        if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
+        // The cloud: a match without the referee connection only to its own
+        // venue (same public address as its scoreboard), see cloudListsMatch
+        if (IS_CLOUD && !cloudListsMatch({
+          refereeConnectionEnabled: entry.match?.refereeConnectionEnabled === true,
+          requesterIp,
+          requesterIpKey,
+          ownerIpKeys: owners.map(c => c.ipKey)
+        })) continue
         const row = relayMatchListRow(entry)
         if (row) matches.push(row)
       }

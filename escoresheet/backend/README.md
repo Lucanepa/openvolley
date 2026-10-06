@@ -568,10 +568,18 @@ Every scheduled or live match a scorer currently publishes on this relay,
 newest `scheduledAt` first, whatever its referee connection: display devices
 (the point-hub LedBox bridge) pick their match here and need no PIN. Rows are
 public: `{ id, gameNumber, homeTeam, awayTeam, scheduledAt, dateTime, status,
-test, refereeConnectionEnabled }`, never PINs or people. Not listed: a match
-whose scoreboard left more than 10 minutes ago, and on the cloud a test
-(rehearsal) match, which belongs to the venue's relay (the cloud also drops its
-`live-state-update`). Same rule on every relay (lanRelayCore, Tauri).
+test, refereeConnectionEnabled, homeTeamConnectionEnabled,
+awayTeamConnectionEnabled }`, never PINs or people (`dateTime` is a display
+string, or `null` on the Tauri relay: clients format `scheduledAt`). Not
+listed: a match whose scoreboard left more than 10 minutes ago, and on the
+cloud a test (rehearsal) match, which belongs to the venue's relay (the cloud
+also drops its `live-state-update`). Same rule on every LAN relay
+(lanRelayCore, Tauri). The cloud lists a match whose referee connection is off
+only to a caller on the same public address as its scoreboard (the venue's
+own displays behind its NAT; needs `TRUST_PROXY=cloudflare` behind the proxy),
+so the room keys of official matches are not handed out worldwide. The
+referee and bench apps offer only the matches they can join
+(`refereeConnectionEnabled`, `home`/`awayTeamConnectionEnabled`).
 openbeach's `team1Team` / `team2Team` are taken as the home / away team.
 
 ### `GET /api/match/:matchId`

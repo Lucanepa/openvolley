@@ -429,7 +429,9 @@ describe('backend WebSocket relay protocol', () => {
       dateTime: mine[1].dateTime,
       status: 'scheduled',
       test: false,
-      refereeConnectionEnabled: false
+      refereeConnectionEnabled: false,
+      homeTeamConnectionEnabled: true,
+      awayTeamConnectionEnabled: false
     })
     assert.equal(mine[0].homeTeam, 'Muster / Meier')
     assert.equal(mine[0].awayTeam, 'Rossi / Bianchi')
@@ -504,14 +506,19 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const rehearsal = await openClient(wsUrl)
     const official = await openClient(wsUrl)
-    rehearsal.send(syncMessage({ id: 1, seedKey: 'cloud-test', test: true, status: 'live' }))
-    official.send(syncMessage(makeMatch({ id: 1, seed_key: 'cloud-real', gamePin: '545454', refereeConnectionEnabled: false })))
-    for (const c of [rehearsal, official]) {
+    const hidden = await openClient(wsUrl)
+    rehearsal.send(syncMessage({ id: 1, seedKey: 'cloud-test', test: true, status: 'live', refereeConnectionEnabled: true }))
+    official.send(syncMessage(makeMatch({ id: 1, seed_key: 'cloud-real', gamePin: '545454', refereeConnectionEnabled: true })))
+    // Referee connection off: only its own venue's public address sees it on
+    // the cloud (cloudListsMatch), and loopback is no venue
+    hidden.send(syncMessage(makeMatch({ id: 1, seed_key: 'cloud-off', gamePin: '565656', refereeConnectionEnabled: false })))
+    for (const c of [rehearsal, official, hidden]) {
       c.send({ type: 'ping' })
       await c.waitFor((m) => m.type === 'pong')
     }
     const list = await (await fetch(`http://127.0.0.1:${port}/api/match/list`)).json()
     assert.deepEqual(list.matches.map((m) => m.id), ['cloud-real'])
+    hidden.ws.close()
 
     const display = await openClient(wsUrl)
     display.send({ type: 'subscribe-match', matchId: 'cloud-test' })
