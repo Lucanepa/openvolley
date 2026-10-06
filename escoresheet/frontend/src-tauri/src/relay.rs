@@ -981,10 +981,15 @@ fn match_list_entry(id: &str, bundle: &Value) -> Option<Value> {
         "homeTeam": home,
         "awayTeam": away,
         "scheduledAt": m.get("scheduledAt").cloned().unwrap_or(Value::Null),
+        // No display string here (no time zone data): clients format scheduledAt
+        "dateTime": Value::Null,
         "status": status,
         "test": m.get("test") == Some(&json!(true)),
         // PINs intentionally NOT returned: validated via /api/match/validate-pin
         "refereeConnectionEnabled": m.get("refereeConnectionEnabled") == Some(&json!(true)),
+        // The referee / bench apps offer only the matches they can join
+        "homeTeamConnectionEnabled": m.get("homeTeamConnectionEnabled") == Some(&json!(true)),
+        "awayTeamConnectionEnabled": m.get("awayTeamConnectionEnabled") == Some(&json!(true)),
     }))
 }
 
@@ -2320,6 +2325,7 @@ mod tests {
         a["match"]["refereeConnectionEnabled"] = json!(false);
         a["match"]["scheduledAt"] = json!("2026-10-05T17:00:00.000Z");
         a["match"]["gameNumber"] = json!(4242);
+        a["match"]["homeTeamConnectionEnabled"] = json!(true);
         a["match"]["officials"] = json!([{ "lastName": "Ref", "dob": "1980-01-01" }]);
         a["homeTeam"] = json!({ "name": "Home VC" });
         a["awayTeam"] = json!({ "name": "Away VC" });
@@ -2338,8 +2344,8 @@ mod tests {
         assert_eq!(ids, vec!["seed-b", "seed-a", "test-seed"]);
         assert_eq!(rows[1], json!({
             "id": "seed-a", "gameNumber": 4242, "homeTeam": "Home VC", "awayTeam": "Away VC",
-            "scheduledAt": "2026-10-05T17:00:00.000Z", "status": "scheduled", "test": false,
-            "refereeConnectionEnabled": false,
+            "scheduledAt": "2026-10-05T17:00:00.000Z", "dateTime": null, "status": "scheduled", "test": false,
+            "refereeConnectionEnabled": false, "homeTeamConnectionEnabled": true, "awayTeamConnectionEnabled": false,
         }));
         assert_eq!(rows[2]["test"], json!(true));
         let text = Value::Array(rows).to_string();

@@ -44,6 +44,12 @@ const PERSONAL = {
 const containsPersonal = (text) => Object.values(PERSONAL).some((v) => text.includes(v)) ||
   /"officials"|"signatures"|ignature"|"pendingHomeRoster"|"manualChanges"/.test(text)
 
+// GET /api/match/list: the keys of every row, on every relay (sorted)
+const LIST_ROW_KEYS = [
+  'awayTeam', 'awayTeamConnectionEnabled', 'dateTime', 'gameNumber', 'homeTeam', 'homeTeamConnectionEnabled',
+  'id', 'refereeConnectionEnabled', 'scheduledAt', 'status', 'test'
+]
+
 function makeMatch(overrides = {}) {
   return {
     id: 7,
@@ -636,9 +642,12 @@ describe('lanRelayCore protocol', () => {
       dateTime: expect.any(String),
       status: 'scheduled',
       test: false,
-      refereeConnectionEnabled: false
+      refereeConnectionEnabled: false,
+      homeTeamConnectionEnabled: true,
+      awayTeamConnectionEnabled: false
     })
     expect(matches[2]).toMatchObject({ test: true, status: 'live' })
+    for (const row of matches) expect(Object.keys(row).sort()).toEqual(LIST_ROW_KEYS)
     const text = JSON.stringify(res.body)
     expect(containsPin(text)).toBe(false)
     expect(containsPersonal(text)).toBe(false)
@@ -854,7 +863,16 @@ async function relayScenario({ httpBase, wsUrl }) {
   expect(list.status).toBe(200)
   const listed = JSON.parse(listText).matches
   expect(listed.map((m) => m.id)).toEqual([7, 'seed-off'])
-  expect(listed[1]).toMatchObject({ homeTeam: 'Home VC', awayTeam: 'Away VC', status: 'scheduled', refereeConnectionEnabled: false })
+  expect(listed[1]).toMatchObject({
+    homeTeam: 'Home VC', awayTeam: 'Away VC', status: 'scheduled', test: false,
+    refereeConnectionEnabled: false, homeTeamConnectionEnabled: true, awayTeamConnectionEnabled: false
+  })
+  // One row shape on every relay (dateTime: a display string, or null where
+  // the relay has no time zone data and the client formats scheduledAt)
+  for (const row of listed) {
+    expect(Object.keys(row).sort()).toEqual(LIST_ROW_KEYS)
+    expect(row.dateTime === null || typeof row.dateTime === 'string').toBe(true)
+  }
   expect(containsPin(listText)).toBe(false)
   expect(containsPersonal(listText)).toBe(false)
   second.send({ type: 'delete-match', matchId: 'seed-off' })

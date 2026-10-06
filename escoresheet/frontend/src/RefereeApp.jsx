@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
+import { refereeJoinableMatches } from './utils/relayMatchList'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
@@ -238,11 +239,14 @@ export default function RefereeApp() {
       let result = await listAvailableMatchesSupabase()
       let source = 'supabase'
 
-      // If Supabase fails or returns no matches, try WebSocket server
+      // If Supabase fails or returns no matches, try WebSocket server. The
+      // relay lists every published match (display devices pick theirs
+      // there): offer only those with the referee connection on.
       if (!result.success || (result.matches && result.matches.length === 0)) {
         const wsResult = await listAvailableMatches()
-        if (wsResult.success && wsResult.matches && wsResult.matches.length > 0) {
-          result = wsResult
+        const joinable = refereeJoinableMatches(wsResult?.matches)
+        if (wsResult.success && joinable.length > 0) {
+          result = { ...wsResult, matches: joinable }
           source = 'websocket'
         }
       }

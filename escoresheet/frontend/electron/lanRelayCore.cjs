@@ -86,11 +86,14 @@
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
  *   GET /api/match/list  { success, matches: [{ id, gameNumber, homeTeam, awayTeam, scheduledAt,
- *                     dateTime, status, test, refereeConnectionEnabled }] }: every match a
+ *                     dateTime, status, test, refereeConnectionEnabled,
+ *                     homeTeamConnectionEnabled, awayTeamConnectionEnabled }] }: every match a
  *                     scorer currently publishes here (see matchListEntry), newest
  *                     scheduledAt first, whatever its referee connection: display devices
- *                     (the point-hub LedBox bridge) pick their match from it. Public
- *                     fields only, no PINs, no people.
+ *                     (the point-hub LedBox bridge) pick their match from it; the referee /
+ *                     bench apps filter it to what they can join (utils/relayMatchList).
+ *                     Public fields only, no PINs, no people. dateTime is a display
+ *                     string here (null on the Tauri relay: clients format scheduledAt).
  *
  * openbeach's scorer sends its teams as team1Team / team2Team (team1 / team2 in
  * its periodic sync): the relay takes them as homeTeam / awayTeam.
@@ -543,6 +546,9 @@ function matchListEntry(key, bundle) {
     test: match.test === true,
     // PINs intentionally NOT returned — validated via /api/match/validate-pin
     refereeConnectionEnabled: match.refereeConnectionEnabled === true,
+    // The referee / bench apps offer only the matches they can join
+    homeTeamConnectionEnabled: match.homeTeamConnectionEnabled === true,
+    awayTeamConnectionEnabled: match.awayTeamConnectionEnabled === true,
   }
 }
 
