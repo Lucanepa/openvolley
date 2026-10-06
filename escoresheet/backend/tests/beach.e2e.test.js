@@ -371,6 +371,34 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
       await scoreboard.waitFor((m) => m.type === 'pong')
       assert.equal(scoreboard.messages.some((m) => m.type === 'error'), false, JSON.stringify(scoreboard.messages.filter((m) => m.type === 'error')))
 
+      // An indoor room whose referee PIN collides with the beach one: the
+      // relay's validate-pin answers each sport with its own room only
+      const indoorBoard = await openSocket(srv.wsUrl)
+      all.push(indoorBoard)
+      indoorBoard.send({
+        type: 'sync-match-data',
+        matchId: 2,
+        match: { id: 2, seed_key: indoorExt, status: 'live', gamePin: INDOOR_GAME_PIN, refereePin: PINS.referee, refereeConnectionEnabled: true },
+        homeTeam: { name: 'Home VC' },
+        awayTeam: { name: 'Away VC' },
+        homePlayers: [],
+        awayPlayers: []
+      })
+      indoorBoard.send({ type: 'ping' })
+      await indoorBoard.waitFor((m) => m.type === 'pong')
+      assert.equal(indoorBoard.messages.some((m) => m.type === 'error'), false, JSON.stringify(indoorBoard.messages))
+      const relayPin = (body) => api(srv.base, '/api/match/validate-pin', { proto: null, headers: { 'cf-connecting-ip': nextIp() }, body })
+      const asBeach = await relayPin({ pin: PINS.referee, type: 'referee', sport: 'beach' })
+      assert.equal(asBeach.status, 200, asBeach.text)
+      assert.equal(asBeach.json.match.id, ext)
+      assert.equal(asBeach.json.match.sportType, 'beach')
+      const asIndoor = await relayPin({ pin: PINS.referee, type: 'referee' })
+      assert.equal(asIndoor.status, 200, asIndoor.text)
+      assert.equal(asIndoor.json.match.id, indoorExt, 'no sport: indoor rooms only')
+      assert.equal('sportType' in asIndoor.json.match, false, 'the indoor answer is unchanged')
+      assert.equal((await relayPin({ pin: PINS.referee, type: 'referee', sport: 'snow' })).status, 400)
+      indoorBoard.ws.close()
+
       // the listing shows it with the team1/team2 names
       const list = await api(srv.base, '/api/match/list', { method: 'GET', proto: null })
       const listed = list.json.matches.find((m) => m.id === ext)

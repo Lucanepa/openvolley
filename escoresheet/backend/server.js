@@ -764,7 +764,7 @@ async function executePocketBaseSync(matchId, matchData) {
       match_id: String(matchId),
       external_id: matchData.match?.external_id || matchData.match?.seed_key || '',
       status: matchData.match?.status || 'unknown',
-      sport_type: matchData.match?.sport_type || 'indoor',
+      sport_type: matchData.sportType || matchData.match?.sport_type || 'indoor',
       game_number: matchData.match?.gameN || matchData.match?.gameNumber || matchData.match?.game_n || 0,
       match_data: matchData.match || {},
       home_team: matchData.homeTeam || {},
@@ -856,6 +856,7 @@ async function loadMatchesFromPocketBase() {
         sets: record.sets || [],
         events: record.events || [],
         gameNumber: record.game_number || record.match_data?.gameN,
+        sportType: record.sport_type === 'beach' ? 'beach' : 'indoor',
         updatedAt: record.updated_at || record.updated,
         updatedBy: 'pocketbase-recovery',
         orphanedAt: Date.now() // no scoreboard connected yet
@@ -1675,7 +1676,15 @@ const server = createServer((req, res) => {
           return
         }
 
-        const { pin, type = 'referee' } = JSON.parse(body)
+        const { pin, type = 'referee', sport = 'indoor' } = JSON.parse(body)
+
+        // The sport of the asking app (openbeach: 'beach'); a PIN never finds
+        // a room of the other sport. Without it: indoor, as before.
+        if (sport !== 'indoor' && sport !== 'beach') {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid request' }))
+          return
+        }
 
         if (!isValidPin(pin)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -1697,6 +1706,7 @@ const server = createServer((req, res) => {
         for (const [matchId, matchData] of activeMatches.entries()) {
           const match = matchData.match || matchData
           if (!match) continue
+          if ((matchData.sportType || 'indoor') !== sport) continue
 
           let matchPin = null
           if (type === 'referee') {
@@ -1731,7 +1741,8 @@ const server = createServer((req, res) => {
           // Strip all PINs from the response — knowing one PIN must not disclose the others.
           res.end(JSON.stringify({
             success: true,
-            match: publicMatch(matchFound),
+            // A beach answer names its sport (the indoor answer is unchanged)
+            match: sport === 'beach' ? { ...publicMatch(matchFound), sportType: 'beach' } : publicMatch(matchFound),
             // Capability for this match's full bundle (relay, GET /api/match/:id)
             token: isTokenRole(type) ? matchTokens.issue({ matchKey: String(matchFound.id), role: type, pin: pinStr }) : null
           }))
@@ -4177,8 +4188,16 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   }
   const carryLiveState = (claimed.kind === 'owner' || claimed.kind === 'proved') &&
     gamePinOf(previous?.match) === gamePinOf(match)
+  // The sport of the room: openbeach syncs team1/team2 (or names its sport);
+  // a sync without teams keeps the sport the same scorer set before.
+  const beachSync = !!(message.team1Team || message.team2Team || message.team1Players || message.team2Players) ||
+    match.sportType === 'beach' || match.sport_type === 'beach'
+  const sportType = beachSync
+    ? 'beach'
+    : ((claimed.kind === 'owner' || claimed.kind === 'proved') && previous?.sportType) || 'indoor'
   activeMatches.set(matchId, {
     matchId,
+    sportType,
     match,
     homeTeam,
     awayTeam,
@@ -4218,7 +4237,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   console.log(`📤 Match data synced for ${matchId} (Game #${match?.gameN || 'unknown'})`)
 
   // Queue PocketBase backup sync (fire-and-forget, debounced)
-  syncToPocketBase(matchId, { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
+  syncToPocketBase(matchId, { match, sportType, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
 }
 
 // Handle match-action from frontend
