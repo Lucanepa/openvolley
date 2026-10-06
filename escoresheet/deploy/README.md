@@ -48,7 +48,8 @@ network, and carries `traefik.enable=false`.
 | `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
 | `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else |
 | `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`) |
-| `publish-pkgs.sh` | lenovoserver | Adds `.deb`/signed `.apk`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. See [Public downloads](#public-downloads-getopenvolleyapp) |
+| `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` |
+| `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
@@ -139,27 +140,48 @@ tunnel as the backend:
 | Path | What | Signed by |
 |---|---|---|
 | `/` | Install page (`pkgs/index.html`, versions filled in at publish time) | n/a |
+| `/install.sh` | One-line Linux installer (`pkgs/install.sh`), served as `text/plain` | pins the APT key fingerprint below |
 | `/apt/` | APT repo: `dists/stable` (component `main`, arch `amd64`), `pool/main/*.deb`, `openvolley.gpg` (binary keyring), `openvolley.asc` | GPG key **OpenVolley packages <packages@openvolley.app>**, ed25519, no expiry, fingerprint `AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C` |
 | `/fdroid/repo/` | F-Droid repo **OpenVolley** with `com.openvolley.escoresheet` | Index: repo key `CN=openvolley, OU=F-Droid`, RSA 4096, to 2054, fingerprint `61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`. APKs: the OpenVolley app key (`frontend/ANDROID.md`), never re-signed |
 
 The Windows installer and an APK copy (`OpenVolley-<version>.apk`) are assets of the GitHub
 release `desktop-v<version>`; the page links there.
 
-User commands (also on the page):
+User commands (also on the page). Linux, one line:
+
+```bash
+curl -fsSL https://get.openvolley.app/install.sh | sudo sh
+```
+
+`install.sh` (POSIX sh, Debian/Ubuntu and derivatives, amd64, root): installs `curl`,
+`ca-certificates` and `gpg` if missing, downloads `apt/openvolley.gpg` and refuses it unless it
+holds exactly one primary key with fingerprint `AB469DA8DC3EC90F8057320D285B18D76C16B82C`
+(not revoked or expired), writes it to `/usr/share/keyrings/openvolley.gpg`, writes
+`/etc/apt/sources.list.d/openvolley.list` (`signed-by` that keyring), then `apt-get update` and
+`apt-get install -y openvolley-escoresheet`. Running it again rewrites the same two files and
+upgrades the package. `OV_PKGS_BASE=http://host:port` points it at another server (tests only).
+The same by hand:
 
 ```bash
 curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg >/dev/null
-echo 'deb [signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
-sudo apt update && sudo apt install openvolley-e-scoresheet
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
+sudo apt update && sudo apt install openvolley-escoresheet
 ```
 
 F-Droid: add `https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`.
 
-**Package name.** The `.deb` is called `openvolley-e-scoresheet` because Tauri derives it from
-`productName` ("Openvolley eScoresheet"); the binary is `openvolley-escoresheet`. The CI `.deb`
-is published unchanged, so the name stays; renaming would mean a repack (a different file from
-the release asset) or changing `productName` in `tauri.conf.json`, which also renames the
-Windows installer and the window title.
+**Package name.** The APT package is `openvolley-escoresheet` and the command
+`/usr/bin/openvolley-escoresheet` (`openvolley-escoresheet --server-only` for the tablet relay
+alone). Tauri derives the `.deb` name from `productName` in kebab case, so
+`frontend/src-tauri/tauri.linux.conf.json` overrides `productName` (and pins `mainBinaryName`)
+to `openvolley-escoresheet` on Linux only; `tauri.conf.json` keeps "Openvolley eScoresheet" so
+the Windows installer still upgrades in place. That deb provides, replaces and conflicts with
+`openvolley-e-scoresheet` (the name of the GitHub `.deb` up to 1.48.19) and `openvolley`.
+`publish-pkgs.sh` repacks any `.deb` published under another name the same way (same version,
+depends and files, deterministic bytes) and migrates old-name files left in the pool, so the
+repo only ever lists `openvolley-escoresheet`. Someone who installed `openvolley-e-scoresheet`
+(the GitHub `.deb`, or this repo before the rename) moves over with the installer or
+`sudo apt install openvolley-escoresheet`; plain `apt upgrade` does not switch package names.
 
 **Keys** (lenovoserver only, never on the VM, never in git), all under
 `~/.config/openvolley-pkgs/` (mode 700):
@@ -181,6 +203,8 @@ stays private and is not touched by any of this.
    ```bash
    gh release download desktop-v<version> --repo Lucanepa/openvolley --pattern '*.deb' -D /tmp/ovrel
    ```
+   (Releases built before the Linux rename ship `Openvolley.eScoresheet_<version>_amd64.deb`,
+   package `openvolley-e-scoresheet`; `publish-pkgs.sh` repacks it, see Package name.)
 2. Android: `escoresheet/frontend/scripts/release-android.sh` builds and signs the APK and puts
    it in the private repo as `/srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk`
    (`frontend/ANDROID.md`). Attach it to the release for direct download:
@@ -193,11 +217,12 @@ stays private and is not touched by any of this.
    escoresheet/deploy/publish-pkgs.sh /tmp/ovrel/*.deb \
      /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk
    ```
-   It refuses an APK not signed by the OpenVolley app key and a package that would overwrite a
-   different file under the same version. `--no-sync` builds `~/.config/openvolley-pkgs/public`
+   It refuses an APK not signed by the OpenVolley app key, a `.deb` that is not the desktop app,
+   and a package that would overwrite a different file under the same version. It also copies
+   `pkgs/install.sh` (after checking it pins the APT key and the package name). `--no-sync` builds `~/.config/openvolley-pkgs/public`
    without uploading. Clients see the new indexes within 60 s (cache), packages are immutable.
-4. Check: `curl -fsS https://get.openvolley.app/apt/dists/stable/InRelease | head` and the
-   version on the page.
+4. Check: `curl -fsS https://get.openvolley.app/apt/dists/stable/InRelease | head`, the
+   version on the page, and `curl -fsSI https://get.openvolley.app/install.sh` (200, text/plain).
 
 To withdraw a version: delete it from `~/.config/openvolley-pkgs/public/apt/pool/main/` or
 `~/.config/openvolley-pkgs/fdroid/repo/` and run `publish-pkgs.sh` again.

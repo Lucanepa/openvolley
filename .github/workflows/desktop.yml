@@ -113,7 +113,9 @@ jobs:
             ### Install
             - **Windows**: download and run the `…x64-setup.exe` installer.
             - **Linux (AppImage)**: download, `chmod +x` it, run it.
-            - **Linux (Debian/Ubuntu)**: `sudo dpkg -i` the `.deb`.
+            - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh`
+              (signed APT repository, package `openvolley-escoresheet`; `sudo apt upgrade` keeps it current),
+              or download the `.deb` and `sudo apt install ./openvolley-escoresheet_*_amd64.deb`.
           files: |
             artifacts/escoresheet-desktop-windows/**/*.exe
             artifacts/escoresheet-desktop-linux/**/*.AppImage

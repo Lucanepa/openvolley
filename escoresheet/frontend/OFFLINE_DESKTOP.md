@@ -49,6 +49,31 @@ npx tauri build            # → src-tauri/target/release/bundle/
 #   Linux:   an .AppImage and a .deb
 ```
 
+Names. `productName` in `tauri.conf.json` ("Openvolley eScoresheet") names the
+Windows installer and its install directory; keep it, or Windows installs stop
+upgrading in place. On Linux `tauri.linux.conf.json` overrides `productName` and
+`mainBinaryName` with `openvolley-escoresheet`, because Tauri derives the `.deb`
+package name from `productName` in kebab case ("Openvolley eScoresheet" gave
+`openvolley-e-scoresheet`). So the Linux files are
+`openvolley-escoresheet_<version>_amd64.deb` / `.AppImage`, the package and the
+command are `openvolley-escoresheet`, and the desktop entry (template
+`src-tauri/openvolley-escoresheet.desktop`) keeps the menu name **OpenVolley
+eScoresheet**. The `.deb` provides, replaces and conflicts with
+`openvolley-e-scoresheet` and `openvolley`, so `apt install
+openvolley-escoresheet` takes over an older install. The bundle `identifier`
+(`com.openvolley.escoresheet`) is the same everywhere: it keys the app's stored
+data.
+
+Install on Debian/Ubuntu (amd64) from the signed APT repository:
+
+```bash
+curl -fsSL https://get.openvolley.app/install.sh | sudo sh   # once
+sudo apt update && sudo apt upgrade                           # later updates
+```
+
+(`escoresheet/deploy/README.md`, Public downloads, has what the installer does
+and how packages get published.)
+
 Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 `windows-latest` runner) — WebView2/NSIS can't be cross-built from Linux. Push a
 `desktop-v*` tag or run the workflow manually to get Windows + Linux artifacts.
@@ -60,6 +85,8 @@ npx tauri build            # or use the debug binary
 ./src-tauri/target/release/openvolley-escoresheet --server-only
 # ports overridable: OPENVOLLEY_HTTP_PORT / OPENVOLLEY_WS_PORT
 ```
+
+Installed from the APT repository it is `openvolley-escoresheet --server-only`.
 
 ## Build — Electron (alternative)
 
