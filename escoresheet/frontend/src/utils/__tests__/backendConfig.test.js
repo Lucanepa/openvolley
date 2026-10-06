@@ -15,7 +15,8 @@ import {
   getCloudApiUrl,
   getCloudWebSocketUrl,
   isCloudApiSplit,
-  isLanBackendUrl
+  isLanBackendUrl,
+  isServedFromLanOrigin
 } from '../backendConfig'
 
 beforeEach(() => {
@@ -251,11 +252,33 @@ describe('cloud API split from the relay', () => {
     expect(getRelayWebSocketUrl()).toBe('ws://localhost:8080')
   })
 
-  it('venue tablets served by the desktop / Pi relay: relay on the LAN, cloud in the cloud', () => {
+  it('the desktop window on 127.0.0.1 is loopback too: cloud in the cloud', () => {
+    setLocation('http://127.0.0.1:5173/')
+    expect(isServedFromLanOrigin()).toBe(false)
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(isCloudApiSplit()).toBe(true)
+  })
+
+  it('venue tablets served from a LAN address never try the cloud (it rejects LAN origins): cloud calls stay on their own relay', () => {
     setLocation('http://192.168.1.20:5173/referee')
+    expect(isServedFromLanOrigin()).toBe(true)
     expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
     expect(getApiUrl('/api/match/list')).toBe('http://192.168.1.20:5173/api/match/list')
-    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    // the relay answers /api/db with an instant 404: no cloud, relay fallback at once
+    expect(getCloudApiUrl('/api/db')).toBe('http://192.168.1.20:5173/api/db')
+    expect(getCloudWebSocketUrl()).toBe('ws://192.168.1.20:5173')
+    expect(isCloudApiSplit()).toBe(false)
+    // a build-level VITE_CLOUD_API_URL does not make a LAN tablet hit a CORS wall either
+    vi.stubEnv('VITE_CLOUD_API_URL', 'https://backend.openvolley.app')
+    expect(getCloudApiUrl('/api/db')).toBe('http://192.168.1.20:5173/api/db')
+  })
+
+  it('the Pi on its mDNS name and a self-hosted domain keep cloud calls on the page origin', () => {
+    setLocation('http://openvolley.local/')
+    expect(getCloudApiUrl('/api/db')).toBe('http://openvolley.local/api/db')
+    setLocation('https://scores.myclub.ch/')
+    expect(getCloudApiUrl('/api/db')).toBe('https://scores.myclub.ch/api/db')
+    expect(isCloudApiSplit()).toBe(false)
   })
 
   it('web build on *.openvolley.app: one backend for both (unchanged)', () => {

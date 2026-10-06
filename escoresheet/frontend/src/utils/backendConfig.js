@@ -316,6 +316,25 @@ export function isLanBackendUrl(url) {
   return false
 }
 
+const isLoopbackHost = (hostname) => {
+  const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase()
+  return host === 'localhost' || host === '::1' || /^127\.(\d{1,3}\.){2}\d{1,3}$/.test(host)
+}
+
+/**
+ * Is this page served by a local / self-hosted server from an address other
+ * than loopback (a venue tablet at http://192.168.1.20:5173/referee, the Pi
+ * at http://openvolley.local, a self-hosted domain)? The cloud backend's CORS
+ * never trusts such an origin. The desktop window itself (http://localhost)
+ * is not one.
+ */
+export function isServedFromLanOrigin() {
+  if (!isServedFromLocalServer()) return false
+  const { protocol, hostname } = window.location || {}
+  if (protocol !== 'http:' && protocol !== 'https:') return false
+  return !isLoopbackHost(hostname)
+}
+
 const stripTrailingSlash = (url) => String(url).replace(/\/+$/, '')
 
 /**
@@ -324,20 +343,33 @@ const stripTrailingSlash = (url) => String(url).replace(/\/+$/, '')
  * database realtime socket. Kept apart from the relay (getBackendUrl /
  * getRelayWebSocketUrl), which carries the match to the venue tablets:
  *
+ *   - A page served by a local relay from a LAN / non-loopback host (venue
+ *     tablets at http://<laptop-IP>:5173/referee, a browser on the Pi's LAN
+ *     address, a self-hosted server on its own domain): the page's own server,
+ *     exactly like the relay (getBackendUrl). The cloud backend only trusts
+ *     its own origins and the loopback / native app origins, so a cloud call
+ *     from a LAN origin could never succeed — and a hall Wi-Fi without uplink
+ *     would make each one hang on DNS before the relay fallback. The relay
+ *     answers /api/db with an instant 404 (no cloud: relay only); a
+ *     self-hosted server with a database answers it itself.
  *   - VITE_CLOUD_API_URL, when the build sets one.
  *   - A runtime override (?server= / connection screen / Android "Change
  *     server") that is a cloud host serves both. One on the LAN is a venue
  *     relay without a database: the cloud stays the cloud.
  *   - VITE_BACKEND_URL (web builds on *.openvolley.app: one backend for both).
  *   - Static deployments and the native app: backend.openvolley.app.
- *   - A page served by a local relay (Tauri desktop app, Pi, standalone LAN
- *     server, the tablets that load from them): those relays have no /api/db,
- *     so cloud calls go to backend.openvolley.app whenever it is reachable,
- *     while the relay keeps the venue running offline.
+ *   - A page served by a local relay on loopback (the Tauri desktop window
+ *     at http://localhost:5173): that relay has no /api/db, so cloud calls go
+ *     to backend.openvolley.app (which trusts that origin) whenever it is
+ *     reachable, while the relay keeps the venue running offline.
  *   - Dev server: same as getBackendUrl (unchanged).
  * @returns {string|null}
  */
 export function getCloudApiBaseUrl() {
+  if (isServedFromLanOrigin()) {
+    const base = getBackendUrl()
+    return base ? stripTrailingSlash(base) : null
+  }
   if (import.meta.env.VITE_CLOUD_API_URL) return stripTrailingSlash(import.meta.env.VITE_CLOUD_API_URL)
   const override = getBackendOverride()
   if (override && !isLanBackendUrl(override)) return stripTrailingSlash(override)
