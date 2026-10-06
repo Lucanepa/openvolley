@@ -181,6 +181,10 @@ and failed-guess buckets; a wrong `X-OV-Match-Pin` on `GET /api/match/:id`
 counts as a failed guess too, and a wrong `subscribe-match` PIN 5 per socket /
 20 per IP and minute. Role sockets: 200 per IP in cloud mode (50 on
 the LAN), 2000 in total; `?purpose=live` sockets: 500 per IP, 3000 in total.
+`/api/admin/*` and `/api/saved-teams*` 300 per user; `/api/match/official-check`
+120 per user; `/api/account/redeem-invite` at most **10 failed attempts per
+account and per IP (/64) in 10 minutes** (a success is refunded; 429
+`OV_TOO_MANY_ATTEMPTS` with `Retry-After: 600`).
 Writes (`/api/db` insert/update/upsert/delete and `/api/match/restore`) need
 the request header `X-OV-Proto: 2` (426 `OV_CLIENT_TOO_OLD` otherwise); CORS
 allows that header.
@@ -254,6 +258,60 @@ authorised by that team's upload PIN of that match, which writes only
 `connections.pending_{home|away}_roster` and the team's coach/captain signatures,
 and only while the match is in `setup` (409 after the coin toss). A second
 scorer takes over with the game PIN as above.
+
+### Approved scorers, official games and closed matches (`db/007`)
+
+The rules of `db/007_scorer_accounts.sql` (design: `../docs/scorer-accounts-spec.md`).
+Roles live in `profiles.roles` and are read from the database (`lib/access.js`,
+cached 30 s per process; a role change through the API takes effect at once),
+never from the request: sign-up drops client `roles`, `/api/db` cannot write
+them, and only the admin roles endpoint, invite redemption and SQL change them.
+
+| Role | Grants |
+|---|---|
+| (none) | **Pending.** New accounts get no role. They score **test matches** only: a non-test match (or its sets, events, live state) is refused with **403 `OV_SCORER_REQUIRED`**, and so is a scoresheet upload (backups stay allowed). Official matches stay on the device until the account is approved. |
+| `scorer` | Writes official (non-test) matches, uploads scoresheets, reads saved teams. Given by an admin (`POST /api/admin/accounts/:id/roles`) or an invite code (`POST /api/account/redeem-invite`). |
+| `referee` | Recognised (not pending); no extra rights yet. |
+| `competition_manager` | Reads and writes saved teams (`/api/saved-teams*`). |
+| `admin`, `super_admin` | Everything above plus `/api/admin/*`. Only a super admin changes a super admin's roles; `super_admin` itself is SQL only; nobody removes their own `admin` (409 `OV_SELF_DEMOTE`). |
+
+**One cloud match per official game.** Key: (beach or not, `game_n`, season),
+season = the Europe/Zurich year of `coalesce(scheduled_at, created_at)` minus
+one before July. VolleyManager numbers repeat across seasons, so `game_n`
+alone would block next season's game. A partial unique index enforces it for
+non-test matches with `game_n > 0` that are not `official_game_exempt`; the
+server checks first and answers **409 `OV_GAME_TAKEN`** with
+`error.claim = { game_n, season, sport, status, scorer_name, mine, scheduled_at }`
+(never PINs, emails, ids or `external_id`). The second scorer joins with game
+number + game PIN (`restore-by-pin` with a session makes it an editor), or an
+admin adds it as editor or releases the game. Matches without a game number
+(friendlies) are not covered. The migration exempts and reports pre-existing
+duplicates (the first created match keeps the claim) instead of failing.
+
+**Closed matches are read-only.** The first write that puts a non-test match
+into `approved` or `final` stamps `closed_at` / `closed_by` (the acting account,
+`ov.user_id` of the write's transaction) and writes a `match.close` audit
+entry. From then on the match, its sets and its events refuse every change,
+for admins too (**409 `OV_MATCH_CLOSED`**, SQLSTATE `OVC01`); allowed are a
+no-op rewrite (a resent job) and `approved` -> `final`. `match_live_state` is
+not locked (ephemeral display data). Only `POST /api/admin/matches/:id/reopen`
+(reason required, audit-logged) lifts it; the old client reopen password and
+`/api/verify-reopen-password` are gone. A restore of a backup that is already
+`approved`/`final` writes the match as `ended`, then its sets and events, and
+sets the closing status last, in one transaction.
+
+**Audit log** (`public.audit_log`, read through `GET /api/admin/audit`):
+`account.roles`, `invite.create|revoke|redeem`, `match.claim_game`,
+`match.claim_pin`, `match.game_taken` (once per account, game and season a
+day), `match.close`, `match.reopen`, `match.editor_add`, `match.release_game`.
+
+**Invite codes** are 12 characters of the Crockford alphabet (60 bits), shown
+once as `XXXX-XXXX-XXXX`; only `sha256('ov-invite:' + code)` and the last 4
+characters are stored. Typing is forgiving (case, spaces, dashes, O/0, I/L/1).
+
+**Saved teams** (competitions, teams, players with dates of birth and licence
+numbers, officials) are served by `/api/saved-teams*` only: never on the
+`/api/db` allowlist, never anonymous, never in a public projection.
 
 ### Match data before and after the PIN step (cloud and LAN)
 
@@ -412,7 +470,8 @@ hour per mailbox (across IPs; `name+tag@` counts as `name@`), and 300 created
 accounts per hour in total (requests for existing addresses or that fail are
 not counted, so nobody can use the budget up without creating that many
 accounts); client `roles` in the metadata are dropped and `profiles.roles` is
-never writable by a client.
+never writable by a client. A new account has no role: it is pending until an
+admin approves it or it redeems an invite code (see "Approved scorers").
 
 ### Still open (accepted, with impact)
 
@@ -616,7 +675,34 @@ HMACs ("PINs at rest"). The roster lands in `connections.pending_{team}_roster`
 of the match row; the scorer reads it with "Search for roster" (its own match
 row, by `external_id`), and Accept / Reject clears it on the server. The
 Upload Roster app calls the relay's `PATCH /api/match/:id` only on a LAN
-relay: this backend has no PATCH route.
+relay: this backend has no `PATCH /api/match/:id` route.
+
+### Accounts, admin console and saved teams (cloud, session)
+
+`lib/manageApi.js` routes these; `lib/accounts.js` and `lib/savedTeams.js`
+answer. JSON envelope `{ data, error }` (snake_case), `Cache-Control: no-store`.
+Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
+(`details: '<field>: <reason>'`), 404 `OV_NOT_FOUND`, 503 `OV_DB_UNAVAILABLE`
+(retryable, `Retry-After: 5`). `X-OV-Proto` is not required.
+
+| Route | Who | Answer |
+|---|---|---|
+| `POST /api/account/redeem-invite {code}` | any account | `{ roles, role_granted, already_had }`; 404 `OV_INVITE_INVALID`, 410 `OV_INVITE_EXPIRED`, 409 `OV_INVITE_USED_UP`, 429 `OV_TOO_MANY_ATTEMPTS` |
+| `POST /api/match/official-check {game_n, scheduled_at, sport_type, external_id}` | scorer | `{ taken: false }` or `{ taken: true, claim }`; 403 `OV_SCORER_REQUIRED` |
+| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at }] }` |
+| `POST /api/admin/accounts/:userId/roles {add, remove}` | admin | `{ id, roles }`; 400 `OV_INVALID_ROLE`, 403, 404, 409 `OV_SELF_DEMOTE` |
+| `GET /api/admin/invites`, `POST /api/admin/invites {label, club?, role?, max_uses?, expires_at?}` | admin | list; create **201** `{ invite, code }` (the only time the code is shown; default 1 use, 30 days) |
+| `POST /api/admin/invites/:id/revoke` | admin | `{ invite }` (idempotent) |
+| `GET /api/admin/official-games?from=&to=&q=` | admin | `svrz_games` rows (default Zurich today -1 .. +14, at most 120 days) with the claiming match, if any |
+| `GET /api/admin/matches?state=closed\|open\|all&q=&limit=` | admin | non-test matches with scorer, editors, `closed_at`, `closed_by_name` |
+| `POST /api/admin/matches/:id/reopen {reason}` | admin | `{ match: { id, external_id, status: 'ended', closed_at: null } }`; 409 `OV_NOT_CLOSED` |
+| `POST /api/admin/matches/:id/editors {email}` | admin | `{ role: 'editor'\|'creator' }` |
+| `POST /api/admin/matches/:id/release-game {reason}` | admin | `{ match: { id, official_game_exempt: true } }` (closed matches too) |
+| `GET /api/admin/audit?limit=&before=&action=` | admin | `{ entries, next_before }`, newest first |
+| `GET /api/saved-teams` | scorer, competition manager, admin | `{ version, fetched_at, competitions, teams: [{ …, players, staff }] }` (archived competitions included) |
+| `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades) |
+| `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` |
+| `PUT /api/saved-teams/teams/:id/roster {players, staff}` | competition manager, admin | `{ team }`. At most 40 players and 10 officials; `last_name` required; numbers 0-99 unique among active players; one active captain; `dob` `YYYY-MM-DD`; staff roles `Coach`, `Assistant Coach 1/2`, `Physiotherapist`, `Medic`. Rows keep their `id`; an id of another team is 400. |
 
 ### `POST /api/match/send-info`
 
@@ -645,7 +731,7 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | Action | Behaviour |
 |---|---|
 | `sign-in` `{email, password}` | 200 `{user, session:{access_token, token_type, expires_in, expires_at, user}}`; 400 `invalid_credentials`; 429 `account_locked` / `rate_limited` |
-| `sign-up` `{email, password, metadata}` | Creates `auth.users` + `profiles` in one transaction (the `handle_new_user` mapping; client `roles` are dropped). 200 `{user}`, no session; 422 on duplicates or bad input |
+| `sign-up` `{email, password, metadata}` | Creates `auth.users` + `profiles` in one transaction (the `handle_new_user` mapping; client `roles` are dropped and the account gets **no role**: pending, see "Approved scorers"). 200 `{user}`, no session; 422 on duplicates or bad input |
 | `get-user` `{access_token}` | 200 `{user, session:{expires_at, expires_in}}`; **401 `invalid_token`** when unknown, expired or revoked |
 | `sign-out` `{access_token}` | Deletes the session; always 200 |
 | `delete-account` `{access_token}` | Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". 503 and nothing deleted when the files cannot be removed |
@@ -698,6 +784,7 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `004_live_state_best_of.sql` | after 003 | `match_live_state.best_of` (written by the scoreboard, missing on Supabase) |
 | `005_match_ownership.sql` | after 004 | `matches.created_by` (FK `auth.users`, `ON DELETE SET NULL`) and `match_editors` (see "Security model"). Existing rows stay without an owner. Without it every guarded write answers 503 `OV_OWNERSHIP_UNAVAILABLE` (retryable), never an unguarded write. |
 | `006_matches_updated_at.sql` | after 005 | `BEFORE UPDATE` trigger: `matches.updated_at` (and `sets.updated_at` when the column exists) = `now()` on every update. Idempotent; the trigger function is `SECURITY INVOKER`, so `ov_app` needs no EXECUTE grant. Not on `match_live_state` (the realtime hub orders it by the scorer's `updated_at`). Without it, updates through `/api/db` still get a fresh `updated_at` (`lib/pgQuery.js` drops the client's value; the column keeps its old value only for writes that bypass the API). |
+| `007_scorer_accounts.sql` | after 006 | Approved scorers (`profiles.roles` default `'{}'`; existing roles untouched), `matches.closed_at/closed_by/official_game_exempt`, the official-game index (duplicates exempted and reported with NOTICEs), the closed-match triggers (existing non-test `approved`/`final` matches become closed), `audit_log`, `invite_codes`/`invite_redemptions`, and the saved-team tables. One transaction, idempotent; trigger functions need no EXECUTE for `ov_app`. Read its NOTICEs on production (duplicates) and check them in the admin page. |
 | `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:

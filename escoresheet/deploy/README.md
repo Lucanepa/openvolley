@@ -71,7 +71,7 @@ These names are shared with the self-host wiring in `escoresheet/backend` and mu
 | `PORT` | `8080` | HTTP **and** WebSocket. `server.js` attaches `ws` to the HTTP server (`new WebSocketServer({ server })`), so there is no separate WS port and the tunnel needs one origin only |
 | `PUBLIC_ORIGINS` | from `.env` | Comma-separated CORS origins |
 | `TRUST_PROXY` | `cloudflare` | Client IP from `cf-connecting-ip`. Safe because the tunnel is the only way in: no host port exists that could be hit with a forged header |
-| `RESEND_API_KEY`, `RESEND_FROM`, `SMTP_*`, `CONTACT_EMAIL`, `REOPEN_PASSWORD_HASH` | from `.env` | Unchanged from today |
+| `RESEND_API_KEY`, `RESEND_FROM`, `SMTP_*`, `CONTACT_EMAIL` | from `.env` | Unchanged from today. (`REOPEN_PASSWORD_HASH` was replaced by the admin reopen of db/007 and is no longer read.) |
 | `IS_CLOUD` | `1` | Existing switch for HSTS/CSP in `server.js` |
 | `OV_MIN_MATCHES` | from `.env` | `/health` row-count floor |
 
