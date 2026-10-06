@@ -63,7 +63,7 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
 
   it('the creator may update, upsert and delete; created_by never changes', async () => {
     const m = await matchOf(alice)
-    let r = await q('matches', 'update', { data: { status: 'final' }, filters: [eq('external_id', m.external_id)] }, as(alice))
+    let r = await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('external_id', m.external_id)] }, as(alice))
     assert.equal(r.status, 200, JSON.stringify(r.body))
     r = await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'live' }, onConflict: 'external_id' }, as(alice))
     assert.equal(r.status, 200, JSON.stringify(r.body))
@@ -78,13 +78,13 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
 
   it('a stranger gets 403 for update, upsert and delete, and nothing changes', async () => {
     const m = await matchOf(alice, { status: 'setup' })
-    assertNotOwner(await q('matches', 'update', { data: { status: 'final' }, filters: [eq('external_id', m.external_id)] }, as(bob)))
-    assertNotOwner(await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'final' }, onConflict: 'external_id' }, as(bob)))
-    assertNotOwner(await q('matches', 'upsert', { data: [{ external_id: uniq('new'), status: 'x' }, { external_id: m.external_id, status: 'final' }], onConflict: 'external_id' }, as(bob)))
+    assertNotOwner(await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('external_id', m.external_id)] }, as(bob)))
+    assertNotOwner(await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'ended' }, onConflict: 'external_id' }, as(bob)))
+    assertNotOwner(await q('matches', 'upsert', { data: [{ external_id: uniq('new'), status: 'x' }, { external_id: m.external_id, status: 'ended' }], onConflict: 'external_id' }, as(bob)))
     assertNotOwner(await q('matches', 'delete', { filters: [eq('id', m.id)] }, as(bob)))
     // A filter that matches the stranger's own row AND someone else's: all refused
     const own = await matchOf(bob)
-    assertNotOwner(await q('matches', 'update', { data: { status: 'final' }, filters: [{ type: 'in', column: 'id', value: [own.id, m.id] }] }, as(bob)))
+    assertNotOwner(await q('matches', 'update', { data: { status: 'ended' }, filters: [{ type: 'in', column: 'id', value: [own.id, m.id] }] }, as(bob)))
     const rows = (await raw.query('SELECT id, status, created_by FROM matches WHERE id = ANY($1)', [[m.id, own.id]])).rows
     assert.equal(rows.find(r => r.id === m.id).status, 'setup')
     assert.equal(rows.find(r => r.id === own.id).status, 'live')
@@ -122,9 +122,9 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
 
   it('an editor (match_editors) may write; the creator stays the creator', async () => {
     const m = await matchOf(alice)
-    assertNotOwner(await q('matches', 'update', { data: { status: 'final' }, filters: [eq('id', m.id)] }, as(carol)))
+    assertNotOwner(await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('id', m.id)] }, as(carol)))
     await raw.query('INSERT INTO match_editors (match_id, user_id) VALUES ($1, $2)', [m.id, carol])
-    let r = await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'final' }, onConflict: 'external_id', returning: 'created_by', single: true }, as(carol))
+    let r = await q('matches', 'upsert', { data: { external_id: m.external_id, status: 'ended' }, onConflict: 'external_id', returning: 'created_by', single: true }, as(carol))
     assert.equal(r.status, 200, JSON.stringify(r.body))
     assert.equal(r.body.data.created_by, alice)
     r = await q('sets', 'insert', { data: { external_id: `${m.external_id}:s:1`, match_id: m.id, index: 1 } }, as(carol))
@@ -135,21 +135,21 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
     const ext = uniq('L')
     const { rows: [{ id }] } = await raw.query("INSERT INTO matches (external_id, status) VALUES ($1, 'live') RETURNING id", [ext])
     for (const u of [alice, bob]) {
-      assertNotOwner(await q('matches', 'update', { data: { status: 'final' }, filters: [eq('id', id)] }, as(u)))
-      assertNotOwner(await q('matches', 'upsert', { data: { external_id: ext, status: 'final' }, onConflict: 'external_id' }, as(u)))
+      assertNotOwner(await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('id', id)] }, as(u)))
+      assertNotOwner(await q('matches', 'upsert', { data: { external_id: ext, status: 'ended' }, onConflict: 'external_id' }, as(u)))
       assertNotOwner(await q('sets', 'insert', { data: { external_id: `${ext}:s:1`, match_id: id, index: 1 } }, as(u)))
     }
     const read = await q('matches', 'select', { columns: 'id,status', filters: [eq('id', id)] }, {})
     assert.deepEqual(read.body.data, [{ id, status: 'live' }])
     // no matchOwner (an admin, or trusted server code): unguarded
-    const admin = await q('matches', 'update', { data: { status: 'final' }, filters: [eq('id', id)] }, { proto: 2 })
+    const admin = await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('id', id)] }, { proto: 2 })
     assert.equal(admin.status, 200)
   })
 
   it('an admin writes any match unchecked, and a match it creates records it as creator', async () => {
     const admin = { proto: 2, matchOwner: { userId: carol, admin: true } }
     const theirs = await matchOf(alice)
-    assert.equal((await q('matches', 'update', { data: { status: 'final' }, filters: [eq('id', theirs.id)] }, admin)).status, 200)
+    assert.equal((await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('id', theirs.id)] }, admin)).status, 200)
     assert.equal((await q('sets', 'insert', { data: { external_id: `${theirs.external_id}:s:1`, match_id: theirs.id, index: 1 } }, admin)).status, 200)
     const r = await q('matches', 'upsert', { data: { external_id: theirs.external_id, status: 'live' }, onConflict: 'external_id', returning: 'created_by', single: true }, admin)
     assert.equal(r.body.data.created_by, alice, 'the creator stays')

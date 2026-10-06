@@ -39,10 +39,15 @@ const here = dirname(fileURLToPath(import.meta.url))
 // The backend's own migrations that the synthetic schema does not carry
 // (they run on the production database through restore.sh): applied after it,
 // and after a template copy (all of them are idempotent).
-export const MIGRATIONS_SQL = ['005_match_ownership.sql']
+// 007 needs 006's ov_touch_updated_at().
+export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
   .join('\n')
-export const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8') + '\n' + MIGRATIONS_SQL
+const SYNTHETIC_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
+export const SCHEMA_SQL = SYNTHETIC_SQL + '\n' + MIGRATIONS_SQL
+// The synthetic schema with 005 only (no 006 trigger, no 007): for the suites
+// that test pgQuery's own behaviour without the later triggers.
+export const SCHEMA_SQL_005_ONLY = SYNTHETIC_SQL + '\n' + readFileSync(join(here, '..', '..', 'db', '005_match_ownership.sql'), 'utf8')
 
 // Test-only objects the synthetic schema has and a production copy does not:
 // pgcrypto (crypt() in the auth tests) and a table that is NOT on the allowlist.
