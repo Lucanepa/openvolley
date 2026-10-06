@@ -203,6 +203,15 @@ p {
   padding: 2px;
 }
 
+/* App.jsx gives the page panel `flex: 1 1 auto` inline but also a `flexGrow`
+   while match setup is open; when setup closes React removes that key and the
+   browser clears the grow part of the shorthand. The scoreboard then only got
+   its content height. Keep the grow here so .match-record always fills the
+   window and the court can size itself from the height that is left. */
+.container > .panel {
+  flex-grow: 1;
+}
+
 /* Laptop mode: allow overflow for scoreboard (960px - 1400px) */
 @media (min-width: 961px) and (max-width: 1400px) {
   .panel {
@@ -1427,6 +1436,11 @@ button:disabled {
   display: grid;
   gap: 6px;
   grid-template-columns: minmax(10px, 1fr) minmax(0, 4fr) minmax(10px, 1fr);
+  /* One row exactly as tall as the space under the toolbar: the centre column
+     then knows its height and the court (.court-slot) shrinks to fit, instead
+     of the rally controls overflowing into a hidden inner scroll at 16:10. */
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
   align-items: stretch;
   flex: 1 1 auto;
   height: auto;
@@ -1605,6 +1619,29 @@ button:disabled {
   border: 2px solid rgba(255, 255, 255, 0.08);
   container-type: size;
   container-name: court;
+}
+
+/* Height budget of the scoreboard centre column: the court gets whatever the
+   score row, referee lines and rally controls leave over. Its width stays the
+   old 95% of the column when there is room (1024x768 looks as before) and is
+   capped by the slot height times the court's 2.2:1 ratio on wider screens.
+   The min-height keeps a usable court on very short windows (the column then
+   scrolls as before). */
+.court-slot {
+  flex: 1 1 0;
+  min-height: 140px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+  container-name: court-slot;
+}
+
+.court-slot > .court {
+  width: min(calc(95% * var(--scale-factor, 1)), calc((100cqh - 4px) * 2.2));
+  max-width: min(calc(95% * var(--scale-factor, 1)), calc((100cqh - 4px) * 2.2));
+  flex-shrink: 0;
 }
 
 .court-side {

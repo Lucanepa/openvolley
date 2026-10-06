@@ -16073,6 +16073,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   ) : <div style={{ width: '80px' }} />}
                 </div>
 
+                {/* The court takes the height left over by the score row and the rally
+                    controls (styles.css .court-slot), so 16:10 / 16:9 tablets keep
+                    Undo, Replay rally and Stop timeout on screen. */}
+                <div className="court-slot">
                 <div className="court" style={{ marginTop: isCompactMode ? '4px' : '2px', marginBottom: isCompactMode ? '2px' : '1px' }}>
                   <div className="court-attack-line court-attack-left" />
                   <div className="court-attack-line court-attack-right" />
@@ -17360,6 +17364,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                   </div>
                 </div>
+                </div>
 
                 {/* LFP counters at bottom corners of court */}
                 {lfpTrackingEnabled && (leftTeamLineupSet || rightTeamLineupSet) && (
@@ -17546,12 +17551,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       fontWeight: 600,
                       color: 'var(--muted)',
                       textAlign: 'center',
-                      marginBottom: '8px'
+                      marginBottom: '4px'
                     }}>
                       Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
                     </div>
                     <div style={{
                       fontSize: '48px',
+                      lineHeight: 1.1,
                       fontWeight: 700,
                       color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
                       textAlign: 'center',
@@ -17566,8 +17572,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       background: 'var(--panel)',
                       borderRadius: '4px',
                       overflow: 'hidden',
-                      marginTop: '8px',
-                      marginBottom: '16px',
+                      marginTop: '6px',
+                      marginBottom: '10px',
                       marginLeft: 'auto',
                       marginRight: 'auto'
                     }}>
@@ -17583,7 +17589,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <button
                       className="secondary"
                       onClick={stopTimeout}
-                      style={{ width: 'auto' }}
+                      style={{ width: 'auto', minHeight: '44px', minWidth: '140px', alignSelf: 'center', fontSize: '15px' }}
                     >
                       {t('scoreboard.buttons.stopTimeout')}
                     </button>
@@ -17806,8 +17812,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         disabled={!canUndo}
                         style={{
                           flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none',
-                          padding: '8px 12px',
-                          fontSize: '13px'
+                          padding: '8px 16px',
+                          fontSize: '14px',
+                          minHeight: '44px'
                         }}
                       >
                         {t('scoreboard.buttons.undo')}
