@@ -1757,6 +1757,8 @@ const server = createServer((req, res) => {
   // the cloud a test (rehearsal) match: those belong to the venue's relay.
   // The cloud shows a match with the referee connection off only to its own
   // venue's address (cloudListsMatch), never to anonymous callers worldwide.
+  // ?finished=1 lists finished matches too: the livescore served by a venue
+  // relay (frontend utils/relayLivescore), which then subscribes without a PIN.
   if (url.pathname === '/api/match/list') {
     if (isRateLimited(getClientIp(req), DB_RATE_LIMIT_MAX, 'relay')) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' })
@@ -1767,6 +1769,8 @@ const server = createServer((req, res) => {
       const now = Date.now()
       const requesterIp = getClientIp(req)
       const requesterIpKey = ipBucketKey(requesterIp)
+      // ?finished=1: finished matches too (the livescore on a venue relay)
+      const includeFinished = url.searchParams.get('finished') === '1'
       const matches = []
       for (const entry of activeMatches.values()) {
         if (IS_CLOUD && entry.match?.test === true) continue
@@ -1780,7 +1784,7 @@ const server = createServer((req, res) => {
           requesterIpKey,
           ownerIpKeys: owners.map(c => c.ipKey)
         })) continue
-        const row = relayMatchListRow(entry)
+        const row = relayMatchListRow(entry, { includeFinished })
         if (row) matches.push(row)
       }
       const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)

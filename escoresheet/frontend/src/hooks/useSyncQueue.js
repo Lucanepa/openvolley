@@ -1212,6 +1212,21 @@ function publishSyncStatus(status) {
   for (const listener of syncStatusListeners) listener(status)
 }
 
+/**
+ * The shared sync status only, without running a queue of its own (the
+ * Connect tablets dialog shows it): offline, online_no_supabase, connecting,
+ * auth_required, syncing, synced, error.
+ */
+export function useSyncStatus() {
+  const [syncStatus, setLocalSyncStatus] = useState(currentSyncStatus)
+  useEffect(() => {
+    syncStatusListeners.add(setLocalSyncStatus)
+    setLocalSyncStatus(currentSyncStatus)
+    return () => { syncStatusListeners.delete(setLocalSyncStatus) }
+  }, [])
+  return syncStatus
+}
+
 export function useSyncQueue() {
   const [syncStatus, setLocalSyncStatus] = useState(currentSyncStatus)
   const setSyncStatus = publishSyncStatus

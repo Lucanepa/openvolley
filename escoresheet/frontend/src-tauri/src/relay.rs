@@ -246,12 +246,6 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
     })
 }
 
-pub fn local_ip_string() -> String {
-    local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string())
-}
-
 /// IPv4-mapped IPv6 (`::ffff:a.b.c.d`) as plain IPv4.
 fn canonical_ip(ip: IpAddr) -> IpAddr {
     match ip {
@@ -750,7 +744,8 @@ async fn health() -> Response {
 }
 
 async fn server_status(State(state): State<Arc<AppState>>) -> Response {
-    let ip = local_ip_string();
+    let interfaces = crate::netifs::tablet_interfaces();
+    let ip = crate::netifs::preferred_ip(&interfaces, local_ip_address::local_ip().ok().map(|ip| ip.to_string()));
     let p = state.http_port;
     let ws = state.ws_port;
     let main = state.main_instance.lock().await.clone();
@@ -766,6 +761,9 @@ async fn server_status(State(state): State<Arc<AppState>>) -> Response {
             "localIP": ip,
             "port": p,
             "wsPort": ws,
+            // every address a tablet may open, with its network: hotspot,
+            // wifi, ethernet, bluetooth, other (netifs.rs)
+            "interfaces": interfaces,
             "urls": {
                 "main": format!("http://{ip}:{p}/"),
                 "mainIP": format!("http://{ip}:{p}/"),
@@ -955,8 +953,9 @@ fn team_name(team: Option<&Value>) -> Option<&str> {
 /// not listed (lanRelayCore `matchListEntry`). Listed: status "scheduled" or
 /// "live" (none counts as "scheduled"), whatever the referee connection:
 /// display devices (the point-hub LedBox bridge) need no PIN and pick their
-/// match from this list. Public fields only: no PINs, no people.
-fn match_list_entry(id: &str, bundle: &Value) -> Option<Value> {
+/// match from this list; with `include_finished` (`?finished=1`, the
+/// livescore) a finished one too. Public fields only: no PINs, no people.
+fn match_list_entry(id: &str, bundle: &Value, include_finished: bool) -> Option<Value> {
     let empty = json!({});
     let m = bundle.get("match").filter(|m| m.is_object()).unwrap_or(&empty);
     let status = match m.get("status") {
@@ -965,7 +964,8 @@ fn match_list_entry(id: &str, bundle: &Value) -> Option<Value> {
         Some(Value::String(s)) => s.clone(),
         Some(other) => other.to_string(),
     };
-    if status != "scheduled" && status != "live" {
+    let finished = FINISHED_STATUSES.contains(&status.to_ascii_lowercase().as_str());
+    if status != "scheduled" && status != "live" && !(include_finished && finished) {
         return None;
     }
     let home = team_name(bundle.get("homeTeam")).or_else(|| team_name(m.get("homeTeamName"))).unwrap_or("Home");
@@ -995,8 +995,9 @@ fn match_list_entry(id: &str, bundle: &Value) -> Option<Value> {
 
 /// Every match a scorer currently publishes here (match_list_entry), newest
 /// first: not one whose scoreboard left longer ago than an unfinished match
-/// is held for it (STALE_TAKEOVER). Takes one lock at a time.
-async fn match_list_rows(state: &Arc<AppState>) -> Vec<Value> {
+/// is held for it (STALE_TAKEOVER). Finished ones only with
+/// `include_finished`. Takes one lock at a time.
+async fn match_list_rows(state: &Arc<AppState>, include_finished: bool) -> Vec<Value> {
     let stale: HashSet<String> = {
         let owners = state.owners.lock().await;
         let orphaned = state.orphaned_since.lock().await;
@@ -1010,7 +1011,7 @@ async fn match_list_rows(state: &Arc<AppState>) -> Vec<Value> {
     let mut list: Vec<Value> = matches
         .iter()
         .filter(|(id, _)| !stale.contains(*id))
-        .filter_map(|(id, bundle)| match_list_entry(id, bundle))
+        .filter_map(|(id, bundle)| match_list_entry(id, bundle, include_finished))
         .collect();
     drop(matches);
     // Newest first (ISO dates sort lexically; none last)
@@ -1022,8 +1023,10 @@ async fn match_list_rows(state: &Arc<AppState>) -> Vec<Value> {
     list
 }
 
-async fn match_list(State(state): State<Arc<AppState>>) -> Response {
-    let list = match_list_rows(&state).await;
+/// GET /api/match/list (`?finished=1`: finished matches too, for the livescore).
+async fn match_list(State(state): State<Arc<AppState>>, Query(params): Query<HashMap<String, String>>) -> Response {
+    let include_finished = params.get("finished").map(|v| v == "1").unwrap_or(false);
+    let list = match_list_rows(&state, include_finished).await;
     json_response(StatusCode::OK, json!({ "success": true, "matches": list }))
 }
 
@@ -2315,6 +2318,45 @@ mod tests {
         assert!(!pin_grants_access(Some(&json!({ "status": "live" })), ""));
     }
 
+    /// The livescore on the laptop's Wi-Fi / Bluetooth (utils/relayLivescore):
+    /// subscribe-match without a PIN, then the summary and every live state.
+    #[tokio::test]
+    async fn a_livescore_viewer_follows_the_score_without_a_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.60").await;
+        let (tx1, _rx1) = mpsc::unbounded_channel::<Message>();
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<Message>();
+        state.clients.lock().await.insert(2, tx2.clone());
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["seed_key"] = json!("seed-1");
+        m["officials"] = json!([{ "lastName": "Ref", "dob": "1980-01-01" }]);
+        let players = json!([{ "number": 7, "lastName": "Player", "dob": "2001-04-17" }]);
+        let sets = json!([{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true, "matchId": 1 }]);
+        let sync_msg = json!({ "type": "sync-match-data", "matchId": 1, "match": m, "homePlayers": players, "sets": sets, "homeTeam": { "name": "Home VC", "color": "#e2001a", "coach": "Cora" } });
+        handle_ws_message(&state, 1, &tx1, &sync_msg.to_string()).await;
+        let next = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Value {
+            let Ok(Message::Text(t)) = rx.try_recv() else { panic!("expected a message") };
+            serde_json::from_str(&t).unwrap()
+        };
+        handle_ws_message(&state, 2, &tx2, &json!({ "type": "subscribe-match", "matchId": "seed-1", "device": "livescore" }).to_string()).await;
+        let s = next(&mut rx2);
+        assert_eq!(s["access"], json!("summary"));
+        assert_eq!(s["sets"], json!([{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }]));
+        assert_eq!(s["homeTeam"], json!({ "name": "Home VC", "color": "#e2001a" }));
+        let live = json!({ "points_a": 3, "points_b": 1, "serving_team": "left", "timeouts_a": 1, "match_status": "live" });
+        handle_ws_message(&state, 1, &tx1, &json!({ "type": "live-state-update", "matchId": 1, "liveState": live }).to_string()).await;
+        let l = next(&mut rx2);
+        assert_eq!((l["type"].clone(), l["matchId"].clone(), l["liveState"].clone()), (json!("live-state-update"), json!("seed-1"), live.clone()));
+        handle_ws_message(&state, 1, &tx1, &sync_msg.to_string()).await;
+        let u = next(&mut rx2);
+        assert_eq!((u["type"].clone(), u["access"].clone(), u["liveState"].clone()), (json!("match-data-update"), json!("summary"), live));
+        let text = format!("{s}{l}{u}");
+        for secret in ["111111", "314159", "dob", "lastName", "Cora", "officials", "coach"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+    }
+
     #[tokio::test]
     async fn the_match_list_shows_every_published_match_for_display_devices() {
         let state = new_state(0, 0);
@@ -2339,7 +2381,7 @@ mod tests {
         sync(&state, 3, "test-seed", t).await.unwrap();
         sync(&state, 4, "seed-d", bundle(1, "444444", "final")).await.unwrap();
 
-        let rows = match_list_rows(&state).await;
+        let rows = match_list_rows(&state, false).await;
         let ids: Vec<&str> = rows.iter().map(|r| r["id"].as_str().unwrap()).collect();
         assert_eq!(ids, vec!["seed-b", "seed-a", "test-seed"]);
         assert_eq!(rows[1], json!({
@@ -2353,11 +2395,23 @@ mod tests {
             assert!(!text.contains(secret), "{secret} in {text}");
         }
 
+        // The livescore (?finished=1) lists the finished one too, same row shape
+        let all = match_list_rows(&state, true).await;
+        let ids: Vec<&str> = all.iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&"seed-d"));
+        let done = all.iter().find(|r| r["id"] == json!("seed-d")).unwrap();
+        assert_eq!(done["status"], json!("final"));
+        assert_eq!(done.as_object().unwrap().len(), 11);
+        assert!(!Value::Array(all.clone()).to_string().contains("444444"));
+        assert_eq!(match_list_entry("x", &bundle(1, "1", "ended"), false), None);
+        assert!(match_list_entry("x", &bundle(1, "1", "ended"), true).is_some());
+
         // A scorer gone for longer than the relay holds its match drops out
         leave(&state, 2, "seed-b", Duration::from_secs(120)).await;
-        assert_eq!(match_list_rows(&state).await.len(), 3);
+        assert_eq!(match_list_rows(&state, false).await.len(), 3);
         leave(&state, 2, "seed-b", STALE_TAKEOVER + Duration::from_secs(1)).await;
-        assert_eq!(match_list_rows(&state).await.len(), 2);
+        assert_eq!(match_list_rows(&state, false).await.len(), 2);
     }
 
     #[test]
@@ -2368,14 +2422,14 @@ mod tests {
             "team2Team": { "name": "Rossi / Bianchi" },
         }))
         .unwrap();
-        let row = match_list_entry("beach-1", &b).unwrap();
+        let row = match_list_entry("beach-1", &b, false).unwrap();
         assert_eq!(row["homeTeam"], json!("Muster / Meier"));
         assert_eq!(row["awayTeam"], json!("Rossi / Bianchi"));
         let summary = summary_bundle(&b);
         assert_eq!(summary["homeTeam"], json!({ "name": "Muster / Meier", "color": "#e2001a" }));
         // Its periodic sync names them team1 / team2; homeTeam wins when both are sent
         let p = bundle_from(&json!({ "match": { "id": 1 }, "team1": { "name": "A" }, "homeTeam": { "name": "H" }, "team2": "B" })).unwrap();
-        let row = match_list_entry("beach-2", &p).unwrap();
+        let row = match_list_entry("beach-2", &p, false).unwrap();
         assert_eq!((row["homeTeam"].clone(), row["awayTeam"].clone(), row["status"].clone()), (json!("H"), json!("B"), json!("scheduled")));
     }
 

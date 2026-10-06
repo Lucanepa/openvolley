@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bluetooth-stop"
+description = "Enables the bluetooth_stop command without any pre-configured scope."
+commands.allow = ["bluetooth_stop"]
+
+[[permission]]
+identifier = "deny-bluetooth-stop"
+description = "Denies the bluetooth_stop command without any pre-configured scope."
+commands.deny = ["bluetooth_stop"]

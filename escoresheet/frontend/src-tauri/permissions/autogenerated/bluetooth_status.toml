@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bluetooth-status"
+description = "Enables the bluetooth_status command without any pre-configured scope."
+commands.allow = ["bluetooth_status"]
+
+[[permission]]
+identifier = "deny-bluetooth-status"
+description = "Denies the bluetooth_status command without any pre-configured scope."
+commands.deny = ["bluetooth_status"]

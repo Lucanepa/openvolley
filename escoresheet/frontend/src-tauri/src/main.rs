@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backup;
+mod netifs;
+mod netshare;
 mod popups;
 mod relay;
 
@@ -48,7 +50,7 @@ fn main() {
 
     let state = relay::new_state(http, ws);
 
-    with_backup_commands(tauri::Builder::default().plugin(tauri_plugin_dialog::init()))
+    with_app_commands(tauri::Builder::default().plugin(tauri_plugin_dialog::init()))
         // No native menu bar on Linux / Windows: it held only Help > Connect a
         // Tablet and rendered in the GTK system theme (dark on a dark desktop).
         // The app's own header menu has Connect tablets (LAN addresses + QR),
@@ -57,6 +59,9 @@ fn main() {
         .setup(move |app| {
             #[cfg(target_os = "linux")]
             force_light_gtk_theme();
+
+            // A tablet Wi-Fi a crashed run left on (Windows) goes off.
+            netshare::recover(app.handle());
 
             // Start the LAN relay on Tauri's async runtime.
             let st = state.clone();
@@ -100,8 +105,15 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Quitting: the tablets' Wi-Fi / Bluetooth network goes down with
+            // the app (and the user's own hotspot settings come back).
+            if let tauri::RunEvent::Exit = event {
+                netshare::shutdown(app);
+            }
+        });
 }
 
 /// The light variant of a GTK theme name, or None when it is not a dark one:
@@ -150,15 +162,24 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
     }
 }
 
-/// Automatic match backups (see backup.rs; ACL in capabilities/backup.json).
-fn with_backup_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder.invoke_handler(tauri::generate_handler![
+/// The scoretable window's native commands: automatic match backups
+/// (backup.rs; ACL in capabilities/backup.json) and the networks the laptop
+/// creates for the tablets (netshare/; capabilities/netshare.json). One
+/// invoke handler: a second call would replace the first.
+fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder.manage(netshare::NetShare::new()).invoke_handler(tauri::generate_handler![
         backup::backup_info,
         backup::backup_write,
         backup::backup_list,
         backup::backup_remove,
         backup::backup_open_dir,
-        backup::backup_pick_file
+        backup::backup_pick_file,
+        netshare::hotspot_status,
+        netshare::hotspot_start,
+        netshare::hotspot_stop,
+        netshare::bluetooth_status,
+        netshare::bluetooth_start,
+        netshare::bluetooth_stop
     ])
 }
 
@@ -225,7 +246,7 @@ mod ipc_acl_tests {
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("OPENVOLLEY_BACKUP_DIR", &root);
 
-        let app = super::with_backup_commands(mock_builder())
+        let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
@@ -263,11 +284,11 @@ mod ipc_acl_tests {
 
     /// A scoresheet window (window.open of /scoresheet/, label "popup-<n>",
     /// popups.rs) loads the same http://localhost origin as the scoretable,
-    /// so only the capabilities naming "main" keep the backup commands from
-    /// it. A later `"windows": ["*"]` or a new capability must fail here.
+    /// so only the capabilities naming "main" keep the backup and tablet-network
+    /// commands from it. A later `"windows": ["*"]` or a new capability must fail here.
     #[test]
     fn scoresheet_windows_may_not_back_up() {
-        let app = super::with_backup_commands(mock_builder())
+        let app = super::with_app_commands(mock_builder())
             .build(tauri::generate_context!())
             .expect("mock app");
         let label = crate::popups::next_popup_label();
@@ -280,10 +301,43 @@ mod ipc_acl_tests {
             "contents": "{}",
             "latest": true
         });
-        for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file"] {
+        for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
+                    "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
             assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
+        }
+    }
+
+    #[test]
+    fn only_the_scoretable_page_may_start_a_tablet_network() {
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+
+        // the scoretable page reaches the command; bad input is refused by the
+        // command itself (strict checks), before any system call
+        let pass = "x".repeat(8);
+        let bad = serde_json::json!({ "ssid": "x;$(reboot)", "password": pass });
+        let err = get_ipc_response(&window, request("hotspot_start", "http://localhost:5173/", bad.clone()))
+            .expect_err("invalid name refused");
+        assert_eq!(err["code"], "invalid-credentials", "got {err}");
+        let half = serde_json::json!({ "ssid": "OpenVolley-AB12" });
+        let err = get_ipc_response(&window, request("hotspot_start", "http://localhost:5173/", half))
+            .expect_err("name without password refused");
+        assert_eq!(err["code"], "invalid-credentials", "got {err}");
+
+        // a tablet on the LAN, another site, a look-alike host: the ACL refuses
+        let cmds = ["hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop"];
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in cmds {
+                let err = get_ipc_response(&window, request(cmd, url, bad.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
         }
     }
 }

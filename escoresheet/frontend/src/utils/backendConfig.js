@@ -248,12 +248,134 @@ export function getWebSocketUrl() {
   return null
 }
 
+// The desktop relays (Tauri, Electron, frontend/server.js) serve the pages and
+// /api/* on 5173 and take the WebSocket on 8080 only; the venue server
+// (backend/server.js) and the cloud take both on one port.
+const DESKTOP_RELAY_HTTP_PORT = '5173'
+const DESKTOP_RELAY_WS_PORT = '8080'
+// localStorage: { "<relay origin>": <its WS port> }, from its /api/server/status
+const RELAY_WS_PORTS_KEY = 'openvolley_relay_ws_ports'
+const MAX_REMEMBERED_RELAYS = 8
+
+const originOf = (url) => {
+  try { return new URL(url).origin } catch { return null }
+}
+
+const validPort = (value) => {
+  const n = Number(value)
+  return Number.isInteger(n) && n > 0 && n < 65536 ? String(n) : null
+}
+
+function readRelayWsPorts() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RELAY_WS_PORTS_KEY) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * The WebSocket port a relay told us it uses (rememberRelayWsPort), or null.
+ * @param {string} baseUrl  the relay's http(s) URL
+ */
+export function relayWsPortFor(baseUrl) {
+  const origin = originOf(baseUrl)
+  return origin ? validPort(readRelayWsPorts()[origin]) : null
+}
+
+/**
+ * Remember the WebSocket port of the relay at `baseUrl` (its
+ * /api/server/status `wsPort`). Null forgets it.
+ * @param {string} baseUrl
+ * @param {number|string|null} wsPort
+ */
+export function rememberRelayWsPort(baseUrl, wsPort) {
+  const origin = originOf(baseUrl)
+  if (!origin) return
+  try {
+    const ports = readRelayWsPorts()
+    delete ports[origin]
+    const port = validPort(wsPort)
+    if (port) ports[origin] = Number(port)
+    // Newest last; only a few relays are worth remembering
+    const keys = Object.keys(ports)
+    for (const k of keys.slice(0, Math.max(0, keys.length - MAX_REMEMBERED_RELAYS))) delete ports[k]
+    localStorage.setItem(RELAY_WS_PORTS_KEY, JSON.stringify(ports))
+  } catch { /* localStorage unavailable */ }
+}
+
+/**
+ * Ask the relay at `baseUrl` (a server chosen on the connection screen or by
+ * ?server=) which port its WebSocket is on, and remember it for
+ * getRelayWebSocketUrl. Every relay answers /api/server/status with `wsPort`.
+ * Never throws; null when the relay did not say.
+ * @param {string} baseUrl
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
+ * @returns {Promise<string|null>}
+ */
+export async function learnRelayWsPort(baseUrl, { fetchImpl = typeof fetch === 'function' ? fetch : null, timeoutMs = 4000 } = {}) {
+  const origin = originOf(baseUrl)
+  // Only a venue relay on an explicit port: the cloud (and a LAN relay behind
+  // a proxy on the default port) reports its container's port, not the
+  // public one, and takes the WebSocket on its own origin anyway.
+  if (!origin || !fetchImpl || !isLanBackendUrl(origin) || !new URL(origin).port) return null
+  const controller = typeof AbortController === 'function' ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
+  try {
+    const res = await fetchImpl(`${origin}/api/server/status`, controller ? { signal: controller.signal } : undefined)
+    if (!res?.ok) return null
+    const body = await res.json()
+    const port = validPort(body?.wsPort)
+    if (port) rememberRelayWsPort(origin, port)
+    return port
+  } catch {
+    return null
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * A role link's ?server= (referee, bench, livescore): the backend override for
+ * this and later visits (a bare host is https), and for a venue relay its
+ * WebSocket port, learnt in the background (the 5173 -> 8080 default of
+ * getRelayWebSocketUrl covers the desktop app until then).
+ * @param {string|null} serverParam
+ */
+export function applyServerParam(serverParam) {
+  if (!serverParam) return
+  const url = serverParam.startsWith('http') ? serverParam : `https://${serverParam}`
+  setBackendOverride(url)
+  if (getBackendOverride() === url) void learnRelayWsPort(url)
+}
+
+/**
+ * WebSocket URL of a relay chosen as the backend override. The port its
+ * /api/server/status named (learnRelayWsPort) wins. Without one, a LAN relay
+ * on the desktop relays' HTTP port 5173 takes its WebSocket on 8080 (the
+ * desktop app, Electron and frontend/server.js do not accept it on 5173);
+ * anything else (the venue server, the cloud) on its own port.
+ * @param {string} override
+ */
+function overrideWebSocketUrl(override) {
+  const url = new URL(override)
+  const protocol = url.protocol === 'https:' ? 'wss' : 'ws'
+  if (!url.port || !isLanBackendUrl(override)) return httpToWsUrl(override)
+  const learned = relayWsPortFor(override)
+  if (learned) return `${protocol}://${url.hostname}:${learned}`
+  if (url.port === DESKTOP_RELAY_HTTP_PORT) return `${protocol}://${url.hostname}:${DESKTOP_RELAY_WS_PORT}`
+  return httpToWsUrl(override)
+}
+
 /**
  * WebSocket URL of the match relay (sync-match-data / subscribe-match). Every
  * relay client (scorer, referee, bench, livescore, tablet status) resolves it
  * here, so the scorer publishes where its tablets listen.
  *
- * Same precedence as getBackendUrl: the ?server= / connection-screen override,
+ * Same precedence as getBackendUrl: the ?server= / connection-screen override
+ * (on the port its relay named, see overrideWebSocketUrl: the Android app at
+ * http://<laptop>:5173 reaches the desktop relay's WebSocket on 8080),
  * VITE_BACKEND_URL, the cloud relay on *.openvolley.app — those relays take the
  * WebSocket on their HTTP port. A page served by a LAN relay (Pi, desktop app)
  * or the dev server reaches it on the relay's own WS port: `wsPort` when the
@@ -265,7 +387,7 @@ export function getWebSocketUrl() {
  */
 export function getRelayWebSocketUrl({ wsPort = null } = {}) {
   const override = getBackendOverride()
-  if (override) return httpToWsUrl(override)
+  if (override) return overrideWebSocketUrl(override)
   if (import.meta.env.VITE_BACKEND_URL) return httpToWsUrl(import.meta.env.VITE_BACKEND_URL)
   if (typeof window === 'undefined' || !window.location) return null
   if (isStaticDeployment()) return httpToWsUrl(CLOUD_RELAY_URL)

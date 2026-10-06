@@ -10,7 +10,9 @@ import { Button, IconButton } from '../../ui'
  * Android app only (Capacitor): the bundled app has no server of its own and
  * opens on the cloud backend. At a venue without internet the scorer points it
  * at the local relay (desktop app, standalone server, venue box) by typing its
- * LAN address — plain http, e.g. 192.168.1.20:8080 — and can open the referee,
+ * LAN address — plain http, e.g. 192.168.1.20:5173 for the desktop app (its
+ * WebSocket on 8080 is found by itself) or 192.168.1.20:8080 for the venue
+ * server — and can open the referee,
  * bench and livescore views bundled in the same app.
  *
  * The choice is the shared backend override (backendConfig), so the referee /

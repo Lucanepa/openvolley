@@ -94,6 +94,10 @@
  *                     bench apps filter it to what they can join (utils/relayMatchList).
  *                     Public fields only, no PINs, no people. dateTime is a display
  *                     string here (null on the Tauri relay: clients format scheduledAt).
+ *   GET /api/match/list?finished=1  the same, finished matches (status 'ended', 'final',
+ *                     ...) included: the livescore lists a match that ended for a while
+ *                     (utils/relayLivescore). Its scores come from subscribe-match
+ *                     without a PIN: the public summary and every live-state-update.
  *
  * openbeach's scorer sends its teams as team1Team / team2Team (team1 / team2 in
  * its periodic sync): the relay takes them as homeTeam / awayTeam.
@@ -528,13 +532,18 @@ function teamNameOf(team, fallback) {
  * One GET /api/match/list row for a stored bundle, or null when the match is
  * not listed. Listed: status 'scheduled' or 'live' (none counts as
  * 'scheduled'), whatever the referee connection — display devices (the LedBox
- * bridge) need no PIN and pick their match from this list. Public fields only:
- * no PINs, no people. Same rule in backend/server.js and src-tauri/src/relay.rs.
+ * bridge) need no PIN and pick their match from this list — and with
+ * `includeFinished` (?finished=1, the livescore) a finished one too. Public
+ * fields only: no PINs, no people. Same rule in backend/lib/publicColumns.js
+ * relayMatchListRow and src-tauri/src/relay.rs match_list_entry.
+ * @param {string} key
+ * @param {object} bundle
+ * @param {{ includeFinished?: boolean }} [options]
  */
-function matchListEntry(key, bundle) {
+function matchListEntry(key, bundle, { includeFinished = false } = {}) {
   const match = (bundle && bundle.match) || {}
   const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
-  if (!LISTED_STATUSES.has(status)) return null
+  if (!LISTED_STATUSES.has(status) && !(includeFinished && FINISHED_STATUSES.has(status.toLowerCase()))) return null
   return {
     id: publicMatchId(key),
     gameNumber: match.gameNumber || match.game_n || key,
@@ -1187,12 +1196,14 @@ function createLanRelay(options = {}) {
    * GET /api/match/list: every match a scorer currently publishes here
    * (matchListEntry) — not one left without its scoreboard for longer than an
    * unfinished match is held for it (staleTakeoverMs) — newest first.
+   * `includeFinished` (?finished=1): finished matches too.
+   * @param {{ includeFinished?: boolean }} [options]
    */
-  function listMatches() {
+  function listMatches({ includeFinished = false } = {}) {
     const matches = []
     for (const [key, bundle] of store) {
       if (isAbandonedFor(key, staleTakeoverMs)) continue
-      const m = matchListEntry(key, bundle)
+      const m = matchListEntry(key, bundle, { includeFinished })
       if (m) matches.push(m)
     }
     const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)
@@ -1298,7 +1309,7 @@ function createLanRelay(options = {}) {
       return true
     }
     if (path === '/api/match/list' && method === 'GET') {
-      reply(listMatches())
+      reply(listMatches({ includeFinished: parsed.searchParams.get('finished') === '1' }))
       return true
     }
     if (path === '/api/match/by-game-number' && method === 'GET') {
