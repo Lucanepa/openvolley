@@ -399,6 +399,21 @@ export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = n
   }
 }
 
+/**
+ * Publishes one live-state snapshot along liveStateTargets: the relay push
+ * first (so an offline hall or a slow cloud never holds up the referee and
+ * the LedBox), then the cloud work (lookup, upsert, retry marks), which runs
+ * only when `targets.cloud`. Everything that touches the cloud goes in
+ * `toCloud`: a test (rehearsal) match never reaches it.
+ * @param {{ targets: { relay: boolean, cloud: boolean }, toRelay: () => void, toCloud: () => Promise<any> }} args
+ * @returns {Promise<any>} what `toCloud` returned, or undefined when skipped
+ */
+export async function publishLiveState({ targets, toRelay, toCloud }) {
+  if (targets?.relay) toRelay()
+  if (!targets?.cloud) return undefined
+  return toCloud()
+}
+
 export const RELAY_RECONNECT_BASE_MS = 5000
 export const RELAY_RECONNECT_MAX_MS = 60000
 
