@@ -1,5 +1,5 @@
 [Desktop Entry]
-Categories={{categories}}
+Categories=Utility;Sports;
 {{#if comment}}
 Comment={{comment}}
 {{/if}}
