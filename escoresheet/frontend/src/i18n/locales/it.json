@@ -2288,6 +2288,25 @@
     "signUpPendingNote": "I nuovi account devono essere approvati prima che le partite ufficiali vengano sincronizzate nel cloud. Chiedi un codice d’invito al tuo club.",
     "officialMatchLocalOnly": "Questa partita resta su questo dispositivo finché il tuo account non è approvato come segnapunti."
   },
+  "managerSite": {
+    "eyebrow": "Gestione",
+    "signInHeading": "Gestisci OpenVolley",
+    "signInBody": "Account, codici d’invito, partite ufficiali, partite chiuse e squadre salvate – per admin e responsabili di competizione.",
+    "signIn": "Accedi",
+    "noAccountYet": "Non hai ancora un account? Crealo nell’app del segnapunti.",
+    "openApp": "App del segnapunti",
+    "openAppLong": "Apri l’app del segnapunti",
+    "signOut": "Esci",
+    "signedInAs": "Accesso come {{name}}",
+    "noAccessTitle": "Nessun accesso alla gestione",
+    "noAccessBody": "Il tuo account non ha il ruolo di admin o di responsabile di competizione. Chiedi l’accesso a un admin del tuo club o inserisci un codice d’invito ricevuto.",
+    "pendingBody": "Il tuo account è in attesa di approvazione. Chiedi a un admin del tuo club o inserisci un codice d’invito ricevuto.",
+    "loadingAccount": "Caricamento del tuo account…",
+    "accountNotLoaded": "Non è stato possibile caricare il tuo account – controlla la connessione e riprova.",
+    "retry": "Riprova",
+    "language": "Lingua",
+    "openManager": "Apri {{host}}"
+  },
   "manage": {
     "title": "Gestione",
     "backToApp": "Torna all’app",

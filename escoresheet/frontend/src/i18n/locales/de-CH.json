@@ -2261,6 +2261,25 @@
     "signUpPendingNote": "Neue Konten brauchen eine Freigabe, bevor offizielle Spiele in die Cloud synchronisiert werden. Frage deinen Verein nach einem Einladungscode.",
     "officialMatchLocalOnly": "Dieses Spiel bleibt auf diesem Gerät, bis dein Konto als Schreiber freigegeben ist."
   },
+  "managerSite": {
+    "eyebrow": "Verwaltung",
+    "signInHeading": "OpenVolley verwalten",
+    "signInBody": "Konten, Einladungscodes, offizielle Spiele, abgeschlossene Spiele und gespeicherte Teams – für Admins und Wettbewerbsverantwortliche.",
+    "signIn": "Anmelden",
+    "noAccountYet": "Noch kein Konto? Erstelle eines in der Schreiber-App.",
+    "openApp": "Schreiber-App",
+    "openAppLong": "Schreiber-App öffnen",
+    "signOut": "Abmelden",
+    "signedInAs": "Angemeldet als {{name}}",
+    "noAccessTitle": "Kein Zugang zur Verwaltung",
+    "noAccessBody": "Dein Konto hat weder die Rolle Admin noch Wettbewerbsverantwortlicher. Bitte einen Admin deines Vereins um Zugang oder gib einen erhaltenen Einladungscode ein.",
+    "pendingBody": "Dein Konto wartet auf Freigabe. Frage einen Admin deines Vereins oder gib einen erhaltenen Einladungscode ein.",
+    "loadingAccount": "Dein Konto wird geladen…",
+    "accountNotLoaded": "Dein Konto konnte nicht geladen werden – bitte prüfe die Verbindung und versuche es nochmals.",
+    "retry": "Erneut versuchen",
+    "language": "Sprache",
+    "openManager": "{{host}} öffnen"
+  },
   "manage": {
     "title": "Verwaltung",
     "backToApp": "Zurück zur App",
