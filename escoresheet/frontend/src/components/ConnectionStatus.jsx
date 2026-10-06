@@ -4,6 +4,7 @@ import { db } from '../db/db'
 import { useSyncQueueStats } from '../hooks/useSyncQueue'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../ui/cn.js'
+import { StatusPill } from '../ui/StatusPill.jsx'
 import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
 // The local server + WebSocket path (LAN relay) works on its own, cloud or not
@@ -333,8 +334,7 @@ export default function ConnectionStatus({
                 >
                   <span className="font-semibold text-stone-700">{labelMap[key] || key}:</span>
                   <div className="flex items-center gap-1.5">
-                    <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', itemTone.dot)}></span>
-                    <span className={cn('font-medium', status === 'no_match' ? 'text-stone-500' : itemTone.text)}>{displayText}</span>
+                    <StatusPill className={itemTone.tint}>{displayText}</StatusPill>
                     {expandable && (
                       <ChevronDown size={12} aria-hidden="true" className={cn('text-stone-400 transition-transform', showDebugMenu === key && 'rotate-180')} />
                     )}

@@ -33,6 +33,9 @@ export const HEADER_BTN = `inline-flex shrink-0 items-center justify-center gap-
 /** The same button while its panel is open / its mode is on (selection = slate-900). */
 export const HEADER_BTN_ON = 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
 
+/** The Online / Offline switch in the bar: the header button face holding a word and a switch track. */
+export const HEADER_SWITCH = `inline-flex shrink-0 items-center gap-2 h-8 pl-2.5 pr-1.5 rounded-lg border border-stone-200 bg-white text-xs font-medium tracking-normal whitespace-nowrap text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer ${FOCUS_RING}`
+
 /** Header title / section name beside the menu (svrz app title). */
 export const HEADER_TITLE = 'truncate text-sm font-semibold tracking-normal text-stone-900'
 export const HEADER_META = 'truncate text-[11px] font-medium tracking-normal text-stone-500'
@@ -81,17 +84,26 @@ export const MENU_ICON = 'flex w-5 shrink-0 items-center justify-center text-sto
 export const MENU_COUNT = 'inline-flex items-center rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums tracking-normal text-stone-600'
 
 /**
- * Status pill (Connected / Ready / Offline / Error), RESTYLE-SPEC 3.5.
- * Each tone: the pill, its dot and the hover. A word always sits beside the dot.
+ * Header status trigger (Connected / Ready / Offline / Error, the dashboards
+ * and tablets counts). It opens a panel, so it is a control and wears the svrz
+ * header button (AdminConsole.tsx:1225: white, stone-200 hairline, rounded-lg),
+ * at the bar's h-8, never a tinted state pill (volleyui: a status is never a
+ * control). The state is a coloured dot plus the word in its tone (`tone.pill`).
  */
-export const STATUS_PILL = 'inline-flex shrink-0 items-center gap-1.5 h-7 px-2.5 rounded-full border text-xs font-medium tracking-normal whitespace-nowrap transition-colors cursor-pointer'
+export const STATUS_PILL = 'inline-flex shrink-0 items-center gap-1.5 h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-medium tracking-normal whitespace-nowrap text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer'
+
+/**
+ * Each tone: `pill` the word colour on a STATUS_PILL trigger, `dot` its dot,
+ * `text` a word on white, `tint` the kit StatusPill face for a state inside a
+ * panel or menu (`<StatusPill className={tone.tint}>`, rounded-full, no border).
+ */
 export const STATUS_TONES = {
-  ok: { pill: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100', dot: 'bg-emerald-500', text: 'text-emerald-800' },
-  warn: { pill: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100', dot: 'bg-amber-500', text: 'text-amber-800' },
-  error: { pill: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100', dot: 'bg-red-500', text: 'text-red-700' },
-  info: { pill: 'border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100', dot: 'bg-sky-500', text: 'text-sky-800' },
-  neutral: { pill: 'border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-200/70', dot: 'bg-stone-400', text: 'text-stone-600' },
-  violet: { pill: 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100', dot: 'bg-violet-500', text: 'text-violet-800' },
+  ok: { pill: 'text-emerald-800', dot: 'bg-emerald-500', text: 'text-emerald-800', tint: 'bg-emerald-100 text-emerald-800' },
+  warn: { pill: 'text-amber-800', dot: 'bg-amber-500', text: 'text-amber-800', tint: 'bg-amber-100 text-amber-800' },
+  error: { pill: 'text-red-700', dot: 'bg-red-500', text: 'text-red-700', tint: 'bg-red-50 text-red-700' },
+  info: { pill: 'text-sky-800', dot: 'bg-sky-500', text: 'text-sky-800', tint: 'bg-sky-100 text-sky-800' },
+  neutral: { pill: 'text-stone-700', dot: 'bg-stone-400', text: 'text-stone-600', tint: 'bg-stone-100 text-stone-600' },
+  violet: { pill: 'text-violet-800', dot: 'bg-violet-500', text: 'text-violet-800', tint: 'bg-violet-100 text-violet-800' },
 }
 
 /**
