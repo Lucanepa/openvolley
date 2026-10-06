@@ -4,10 +4,13 @@ import { db } from './db/db'
 import { apiFrom, apiStorage } from './lib/apiClient'
 import './i18n' // the scoresheet components call useTranslation (own entry, own i18n init)
 import App from '../scoresheet_pdf/App_Scoresheet'
-import { ArrowLeft, ChevronRight, ClipboardList, FileX2, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, ClipboardList, FileX2, Lock, LogOut, X } from 'lucide-react'
 import { cn } from './ui/cn.js'
 import { Card } from './ui/Card.jsx'
-import { FOCUS_RING } from './ui/Button.jsx'
+import { Button, FOCUS_RING } from './ui/Button.jsx'
+import { Field } from './ui/Field.jsx'
+import { Input } from './ui/Input.jsx'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { Row, RowList, DateRail } from './ui/Row.jsx'
 import { Chip, CountBadge } from './ui/Chip.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
@@ -68,6 +71,73 @@ const fetchArchiveMatches = async () => {
     console.error('[Archive] Error fetching matches:', error)
     return []
   }
+}
+
+// Scoresheets open only for the account that uploaded them (backend README
+// "Who can read a scoresheet"). The session is per origin (localStorage), so
+// this site signs in on its own; the scorer app's session does not reach it.
+const OWNER_ONLY_NOTE = 'Scoresheets open only for the scorer account that uploaded them. Sign in with that account to view or download yours.'
+
+// Email + password sign-in (no sign-up or reset here: an account without
+// scoresheets has nothing to open on this site).
+const ArchiveSignIn = ({ onDone, autoFocus = false }) => {
+  const { signIn } = useAuth()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    const { error: signInError } = await signIn(email.trim(), password)
+    setBusy(false)
+    if (signInError) {
+      setError(signInError.message || 'Sign-in failed')
+      return
+    }
+    setPassword('')
+    onDone?.()
+  }
+  return (
+    <form onSubmit={submit} className="space-y-3 text-left" aria-label="Sign in">
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+      )}
+      <Field label="Email">
+        <Input size="lg" type="email" autoComplete="email" required autoFocus={autoFocus} value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <Field label="Password">
+        <Input size="lg" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+      </Field>
+      <Button variant="hero" block type="submit" loading={busy} disabled={busy}>
+        {busy ? 'Signing in...' : 'Sign in'}
+      </Button>
+    </form>
+  )
+}
+
+// Signed in: who, and sign out. Anonymous: the sign-in toggle.
+const AccountBar = ({ onSignIn, signInOpen }) => {
+  const { user, signOut, loading } = useAuth()
+  if (loading) return null
+  if (user) {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+        <span className="min-w-0 truncate text-sm text-stone-600" title={user.email}>
+          <span className="sr-only">Signed in as </span>{user.email}
+        </span>
+        <Button variant="secondary" size="xl" className="bg-white" onClick={() => signOut()}>
+          <LogOut className="h-4 w-4" aria-hidden /> Sign out
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <Button variant="dark" size="xl" onClick={onSignIn} aria-expanded={signInOpen}>
+      <Lock className="h-4 w-4" aria-hidden /> Sign in
+    </Button>
+  )
 }
 
 // Grouping sort orders
@@ -284,30 +354,67 @@ const MatchCard = ({ match }) => {
 
 // Scoresheet viewer component
 const ScoresheetViewer = ({ date, game, action }) => {
+  const { user, loading: authLoading, signOut } = useAuth()
   const [matchData, setMatchData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const userId = user?.id || null
 
   useEffect(() => {
+    if (authLoading) return
+    // No session on this site: storage would only answer 401, so ask for the
+    // sign-in straight away (no failing request in the console).
+    if (!userId) {
+      setError(describeScoresheetLoadError({ status: 401, code: 'missing_token' }, `${date}, game ${game}`))
+      setLoading(false)
+      return
+    }
+    let cancelled = false
     const loadData = async () => {
+      setLoading(true)
+      setError(null)
       try {
         const { data, error: loadError } = await fetchFromStorage(date, game)
+        if (cancelled) return
         if (data) {
           setMatchData(data)
         } else {
           setError(describeScoresheetLoadError(loadError, `${date}, game ${game}`))
         }
       } catch (err) {
-        setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`))
+        if (!cancelled) setError(describeScoresheetLoadError({ message: err instanceof Error ? err.message : undefined }, `${date}, game ${game}`))
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     loadData()
-  }, [date, game])
+    return () => { cancelled = true }
+  }, [date, game, userId, authLoading])
 
-  if (loading) {
+  if (loading || authLoading) {
     return <PageLoading label="Loading scoresheet..." />
+  }
+
+  const backToList = { label: 'Back to list', icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { window.location.href = window.location.pathname } }
+
+  if (error?.kind === 'signin') {
+    return (
+      <div className="ov-kit flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
+        <div className="w-full max-w-sm rounded-3xl border border-stone-200/70 bg-white p-6 shadow-card-lg sm:p-8">
+          <Lock className="mx-auto h-8 w-8 text-red-600" aria-hidden />
+          <h1 className="mt-3 text-center text-base font-semibold text-stone-900">Sign in to open this scoresheet</h1>
+          <p className="mt-1.5 mb-5 text-center text-sm text-stone-600">{OWNER_ONLY_NOTE}</p>
+          <ArchiveSignIn autoFocus />
+          <button
+            type="button"
+            onClick={backToList.onClick}
+            className={cn('mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg text-sm text-stone-600 transition-colors hover:text-stone-900', FOCUS_RING)}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden /> Back to list
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (error) {
@@ -317,7 +424,8 @@ const ScoresheetViewer = ({ date, game, action }) => {
           icon={FileX2}
           title={error.title}
           body={error.message}
-          action={{ label: 'Back to list', icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { window.location.href = '/' } }}
+          action={backToList}
+          secondary={userId && (error.kind === 'forbidden' || error.kind === 'notfound') ? { label: 'Sign in with another account', onClick: () => signOut() } : undefined}
         />
       </div>
     )
@@ -328,6 +436,8 @@ const ScoresheetViewer = ({ date, game, action }) => {
 
 // Scoresheet list component with hierarchical grouping
 const ScoresheetList = () => {
+  const { user } = useAuth()
+  const [signInOpen, setSignInOpen] = useState(false)
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -364,15 +474,32 @@ const ScoresheetList = () => {
     <div className="ov-kit min-h-screen bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6 sm:py-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
-        <Card className="flex items-center gap-4">
+        <Card className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="h-10 w-10 shrink-0" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">Scoresheet archive</h1>
             <p className="text-sm text-stone-500">
               {matches.length} scoresheet{matches.length !== 1 ? 's' : ''} available
             </p>
           </div>
+          <div className="ml-auto">
+            <AccountBar signInOpen={signInOpen} onSignIn={() => setSignInOpen((o) => !o)} />
+          </div>
         </Card>
+
+        {!user && (
+          <Card>
+            <p className="flex items-start gap-2 text-sm text-stone-600">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-stone-500" aria-hidden />
+              <span>{OWNER_ONLY_NOTE}</span>
+            </p>
+            {signInOpen && (
+              <div className="mt-4 max-w-sm">
+                <ArchiveSignIn autoFocus onDone={() => setSignInOpen(false)} />
+              </div>
+            )}
+          </Card>
+        )}
 
         {matches.length === 0 ? (
           <Card>
@@ -529,6 +656,14 @@ const MatchIdViewer = ({ matchId, action }) => {
 
 // Main app component
 export default function ScoresheetApp() {
+  return (
+    <AuthProvider>
+      <ScoresheetRoutes />
+    </AuthProvider>
+  )
+}
+
+function ScoresheetRoutes() {
   const { date, game, matchId, action } = getUrlParams()
 
   // Priority: 1. matchId (from local IndexedDB), 2. date+game (from Supabase storage), 3. list
