@@ -1506,6 +1506,10 @@
     }
   },
   "auth": {
+    "deleteAccountWhatStays": "Les matchs que vous avez marqués et leurs feuilles de match : ce sont les procès-verbaux officiels des clubs, et votre nom y reste comme marqueur. Rien n’est supprimé sur cet appareil.",
+    "deleteAccountWhatStaysTitle": "Conservé, sans votre compte",
+    "deleteAccountWhatGoes": "Votre compte et votre profil, vos connexions, votre liste « Mes matchs », vos droits d’édition sur des matchs, vos sauvegardes et journaux dans le cloud, et votre accès aux feuilles de match que vous avez téléversées.",
+    "deleteAccountWhatGoesTitle": "Supprimé du serveur",
     "signIn": "Se connecter",
     "signUp": "S'inscrire",
     "signOut": "Se déconnecter",
@@ -1555,7 +1559,7 @@
     "deleteAccountWarning": "La suppression de votre compte est définitive et irréversible.",
     "deleteAccount": "Supprimer le compte",
     "confirmDeleteAccount": "Confirmer la suppression du compte",
-    "deleteAccountConfirmMessage": "Cette action est définitive. Toutes vos données seront supprimées.",
+    "deleteAccountConfirmMessage": "Cette action est définitive et irréversible.",
     "typeEmailToConfirm": "Saisissez votre email pour confirmer :",
     "emailDoesNotMatch": "L'email ne correspond pas",
     "deleting": "Suppression...",

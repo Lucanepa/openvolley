@@ -1507,6 +1507,10 @@
     }
   },
   "auth": {
+    "deleteAccountWhatStays": "D Spiil, wo Sie gschribe händ, und ihri Matchblätter: Das sind di offizielle Spielbricht vo de Verein, und Ihre Name blibt druff als Schriber. Uf däm Grät wird nüt glöscht.",
+    "deleteAccountWhatStaysTitle": "Blibt erhalte, ohni Ihres Konto",
+    "deleteAccountWhatGoes": "Ihres Konto und Profil, Ihri Aamäldige, Ihri Liste «Mini Spiil», Ihri Bearbeitigsrächt a Spiil, Ihri Cloud-Backups und Protokoll und Ihre Zuegriff uf d Matchblätter, wo Sie uueglade händ.",
+    "deleteAccountWhatGoesTitle": "Vom Server glöscht",
     "signIn": "Aamälde",
     "signUp": "Registriere",
     "signOut": "Abmälde",
@@ -1556,7 +1560,7 @@
     "deleteAccountWarning": "S Lösche vo Ihrem Konto isch duurhaft und chan nöd rückgängig gmacht werde.",
     "deleteAccount": "Konto lösche",
     "confirmDeleteAccount": "Kontolöschig bestätige",
-    "deleteAccountConfirmMessage": "Die Aktion isch duurhaft. Alli Ihri Date werdet glöscht.",
+    "deleteAccountConfirmMessage": "Die Aktion isch duurhaft und chan nöd rückgängig gmacht werde.",
     "typeEmailToConfirm": "Gänd Sie Ihri E-Mail zur Bestätigung ii:",
     "emailDoesNotMatch": "E-Mail stimmt nöd überii",
     "deleting": "Wird glöscht...",
