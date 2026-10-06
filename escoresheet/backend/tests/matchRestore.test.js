@@ -49,13 +49,16 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
   const W = { proto: 2 }
   const count = async (table, matchId) => (await raw.query(`SELECT count(*)::int n FROM ${table} WHERE match_id = $1`, [matchId])).rows[0].n
 
-  function backup (ext, { sets = 2, events = 5, gameN = 7, pin = '424242' } = {}) {
+  // One cloud match per official game (db/007): each backup its own game number by default
+  let gameSeq = 70000
+  function backup (ext, { sets = 2, events = 5, gameN = gameSeq++, pin = '424242', scheduledAt } = {}) {
     return {
       match: {
         external_id: ext,
         game_n: gameN,
         game_pin: pin,
         status: 'live',
+        ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
         connection_pins: { referee: '111111' },
         home_team: { name: 'Home' },
         id: '00000000-0000-0000-0000-00000000dead' // ignored: keyed by external_id
@@ -180,7 +183,7 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       return {
         match: {
           external_id: ext,
-          game_n: 88,
+          game_n: 88000 + (seq++),
           game_pin: '246810',
           status: 'live',
           home_team: { name: 'Home', short_name: 'HOM', color: '#f00' },
@@ -364,9 +367,14 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     })
 
     it('picks the most recently updated match when game number and PIN repeat', async () => {
-      const older = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999' }), W)
-      const newer = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999' }), W)
+      // Game numbers repeat across seasons (db/007 allows one cloud match per game and season)
+      const older = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999', scheduledAt: '2024-10-05T16:00:00Z' }), W)
+      const newer = await restore.restoreMatch(backup(uniq(), { gameN: 4242, pin: '999999', scheduledAt: '2025-10-05T16:00:00Z' }), W)
+      // (db/006's trigger would reset updated_at: back-date it with the user triggers off)
+      await raw.query('BEGIN')
+      await raw.query("SET LOCAL session_replication_role = 'replica'")
       await raw.query("UPDATE matches SET updated_at = now() - interval '1 day' WHERE id = $1", [older.body.data.id])
+      await raw.query('COMMIT')
       const r = await restore.restoreByPin({ gameN: 4242, pin: '999999' }, { limitKey: 'ip-dup' })
       assert.equal(r.body.data.match.id, newer.body.data.id)
     })

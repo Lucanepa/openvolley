@@ -52,10 +52,13 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
   const uniq = (p = 'm') => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`
   const q = (table, action, params = {}, opts = {}) => db.runQuery({ table, action, params }, opts)
   const eq = (column, value) => ({ type: 'eq', column, value })
+  // One cloud match per official game (db/007): every non-test match gets its own game number.
+  let gameSeq = 100000
+  const nextGameN = () => gameSeq++
 
   async function newMatch (extra = {}) {
     const external_id = extra.external_id || uniq('M')
-    const r = await q('matches', 'insert', { data: { external_id, game_n: 1, status: 'live', ...extra }, returning: 'id', single: true }, W)
+    const r = await q('matches', 'insert', { data: { external_id, game_n: nextGameN(), status: 'live', ...extra }, returning: 'id', single: true }, W)
     assert.equal(r.status, 200, JSON.stringify(r.body))
     return { id: r.body.data.id, external_id }
   }
@@ -295,8 +298,8 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
 
     it('single and maybeSingle with 0, 1 and 2 rows', async () => {
       const ext = uniq('S')
-      await newMatch({ external_id: `${ext}-1`, game_n: 5 })
-      await newMatch({ external_id: `${ext}-2`, game_n: 5 })
+      await newMatch({ external_id: `${ext}-1` })
+      await newMatch({ external_id: `${ext}-2` })
       const like = { type: 'like', column: 'external_id', value: `${ext}-*` }
       const one = [like, eq('external_id', `${ext}-1`)]
       const none = [like, eq('external_id', 'none')]
@@ -442,8 +445,9 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       const ext = uniq('R')
       let r = await q('matches', 'insert', { data: { external_id: ext } }, W)
       assert.deepEqual(r.body, { data: null, error: null, count: undefined })
-      r = await q('matches', 'update', { data: { status: 'final' }, filters: [eq('external_id', ext)], returning: 'external_id, status' }, W)
-      assert.deepEqual(r.body.data, [{ external_id: ext, status: 'final' }])
+      // ('ended', not 'final': a final match is closed by db/007 and could not be deleted below)
+      r = await q('matches', 'update', { data: { status: 'ended' }, filters: [eq('external_id', ext)], returning: 'external_id, status' }, W)
+      assert.deepEqual(r.body.data, [{ external_id: ext, status: 'ended' }])
       r = await q('matches', 'update', { data: { status: 'x' }, filters: [eq('external_id', 'nope')], returning: '*', count: 'exact' }, W)
       assert.deepEqual(r.body.data, []); assert.equal(r.body.count, 0)
       r = await q('matches', 'delete', { filters: [eq('external_id', ext)], returning: '*', count: 'exact', head: true }, W)
