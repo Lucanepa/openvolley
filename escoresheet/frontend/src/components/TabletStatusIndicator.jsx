@@ -76,7 +76,7 @@ export default function TabletStatusIndicator({ match }) {
           type="button"
           onClick={openMenu}
           aria-expanded={menuOpen}
-          title={t('tabletStatus.title', 'Tablet Status')}
+          title={t('tabletStatus.title', 'Tablet status')}
           className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill)}
         >
           {/* Status dot */}
@@ -97,7 +97,7 @@ export default function TabletStatusIndicator({ match }) {
           }}
         >
           <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
-            {t('tabletStatus.title', 'Tablet Status')}
+            {t('tabletStatus.title', 'Tablet status')}
           </div>
 
           <div className="divide-y divide-stone-100">

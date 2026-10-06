@@ -89,7 +89,7 @@ export default function WsDebugOverlay({ matchId }) {
             onClick={handleForceReconnect}
             className="inline-flex h-8 items-center rounded-lg border-0 bg-amber-400 px-3 font-sans text-[11px] font-semibold text-slate-900 hover:bg-amber-300 transition-colors cursor-pointer"
           >
-            Force Reconnect
+            Force reconnect
           </button>
           <button
             type="button"

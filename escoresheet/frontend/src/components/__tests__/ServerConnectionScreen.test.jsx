@@ -36,7 +36,7 @@ describe('ServerConnectionScreen', () => {
 
   it('renders the connection screen', () => {
     render(<ServerConnectionScreen onConnected={mockOnConnected} />)
-    expect(screen.getByText('Connect to Server')).toBeInTheDocument()
+    expect(screen.getByText('Connect to server')).toBeInTheDocument()
   })
 
   it('shows input field for server URL', () => {

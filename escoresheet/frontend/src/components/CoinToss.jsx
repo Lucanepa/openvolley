@@ -1051,10 +1051,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
     // --- Pre-game connection checks (non-blocking, informational only) ---
     const checks = {
-      websocket: { status: 'pending', label: t('coinToss.checks.websocket', 'WebSocket Server') },
-      supabase: { status: 'pending', label: t('coinToss.checks.supabase', 'Cloud Database') },
-      matchData: { status: 'pending', label: t('coinToss.checks.matchData', 'Match Data in Cloud') },
-      devices: { status: 'pending', label: t('coinToss.checks.devices', 'Connected Devices') }
+      websocket: { status: 'pending', label: t('coinToss.checks.websocket', 'WebSocket server') },
+      supabase: { status: 'pending', label: t('coinToss.checks.supabase', 'Cloud database') },
+      matchData: { status: 'pending', label: t('coinToss.checks.matchData', 'Match data in cloud') },
+      devices: { status: 'pending', label: t('coinToss.checks.devices', 'Connected devices') }
     }
 
     setInitModal({ status: 'checking', message: t('coinToss.runningChecks', 'Running connection checks...'), checks })
@@ -1203,7 +1203,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       const ref1 = match?.officials?.find(o => o.role === '1st referee')
       const scorer = match?.officials?.find(o => o.role === 'scorer')
       if (!ref1?.lastName || !ref1?.firstName) {
-        validationErrors.push('1st Referee name is not set')
+        validationErrors.push('1st referee name is not set')
       }
       if (!scorer?.lastName || !scorer?.firstName) {
         validationErrors.push('Scorer name is not set')
@@ -2394,10 +2394,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       {/* Initialization Modal */}
       {initModal && (
         <Modal
-          title={initModal.status === 'success' ? t('coinToss.initialized', 'Match Initialized') :
-            initModal.status === 'error' ? t('coinToss.initError', 'Initialization Error') :
-            initModal.status === 'checking' || initModal.status === 'check_results' ? t('coinToss.connectionChecks', 'Connection Checks') :
-              t('coinToss.initializing', 'Initializing Match')}
+          title={initModal.status === 'success' ? t('coinToss.initialized', 'Match initialized') :
+            initModal.status === 'error' ? t('coinToss.initError', 'Initialization error') :
+            initModal.status === 'checking' || initModal.status === 'check_results' ? t('coinToss.connectionChecks', 'Connection checks') :
+              t('coinToss.initializing', 'Initializing match')}
           open={true}
           onClose={initModal.status === 'error' ? () => setInitModal(null) : undefined}
           width={450}
@@ -2524,7 +2524,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     if (window.__coinTossCheckResolve) window.__coinTossCheckResolve()
                   }}
                 >
-                  {t('coinToss.proceedAnyway', 'Proceed Anyway')}
+                  {t('coinToss.proceedAnyway', 'Proceed anyway')}
                 </Button>
               </div>
             )}
@@ -2585,10 +2585,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         open={openSignature !== null}
         onClose={() => setOpenSignature(null)}
         onSave={handleSignatureSave}
-        title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-          openSignature === 'home-captain' ? 'Home Captain Signature' :
-            openSignature === 'away-coach' ? 'Away Coach Signature' :
-              openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+        title={openSignature === 'home-coach' ? 'Home coach signature' :
+          openSignature === 'home-captain' ? 'Home captain signature' :
+            openSignature === 'away-coach' ? 'Away coach signature' :
+              openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
         existingSignature={
           openSignature === 'home-coach' ? homeCoachSignature :
             openSignature === 'home-captain' ? homeCaptainSignature :

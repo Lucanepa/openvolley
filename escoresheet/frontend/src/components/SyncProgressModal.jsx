@@ -144,7 +144,7 @@ export default function SyncProgressModal({
               onClick={onProceed}
               className={cn('inline-flex h-11 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800', FOCUS_RING)}
             >
-              {t('scoreboard.sync.proceedAnyway', 'Proceed Anyway')}
+              {t('scoreboard.sync.proceedAnyway', 'Proceed anyway')}
             </button>
           </div>
         )}

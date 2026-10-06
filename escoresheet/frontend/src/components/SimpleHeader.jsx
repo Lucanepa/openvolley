@@ -255,7 +255,7 @@ export default function SimpleHeader({
                   className={cn(MENU_ROW, MENU_ROW_DANGER)}
                 >
                   <span className={cn(MENU_ICON, 'text-red-500')}><TrashIcon size={13} /></span>
-                  <span className="flex-1">{t('options.clearCache', 'Clear Cache')}</span>
+                  <span className="flex-1">{t('options.clearCache', 'Clear cache')}</span>
                 </button>
               ) : (
                 <div className="px-3 py-2">
@@ -299,8 +299,8 @@ export default function SimpleHeader({
             onClick={onFullscreen}
             aria-pressed={isFullscreen}
             className={cn(HEADER_BTN, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
-            aria-label={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
-            title={isFullscreen ? t('header.exitFullscreen', 'Exit Fullscreen') : t('header.fullscreen', 'Fullscreen')}
+            aria-label={isFullscreen ? t('header.exitFullscreen', 'Exit fullscreen') : t('header.fullscreen', 'Fullscreen')}
+            title={isFullscreen ? t('header.exitFullscreen', 'Exit fullscreen') : t('header.fullscreen', 'Fullscreen')}
           >
             <Maximize size={15} aria-hidden="true" />
           </button>

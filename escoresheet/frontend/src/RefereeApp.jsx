@@ -562,7 +562,7 @@ export default function RefereeApp() {
                     onClick={() => { loadMatches(); checkConnectionStatuses() }}
                     disabled={loadingMatches}
                   >
-                    {loadingMatches ? t('common.loading', 'Loading...') : t('refereeDashboard.loadGames', 'Load Games')}
+                    {loadingMatches ? t('common.loading', 'Loading...') : t('refereeDashboard.loadGames', 'Load games')}
                   </Button>
                 }
               >
@@ -579,7 +579,7 @@ export default function RefereeApp() {
                       variant="outline"
                       className="h-11 w-11"
                       icon={loadingMatches ? <Loader2 size={16} className="animate-spin" aria-hidden /> : RefreshCw}
-                      label={t('refereeDashboard.loadGames', 'Load Games')}
+                      label={t('refereeDashboard.loadGames', 'Load games')}
                       onClick={() => { loadMatches(); checkConnectionStatuses() }}
                       disabled={loadingMatches}
                     />

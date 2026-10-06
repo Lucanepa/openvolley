@@ -796,8 +796,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const tabs = [
     { id: 'scores', label: t('manualAdjustmentsEditor.tabScores', 'Scores'), helpId: 'manual-scores-tab' },
     { id: 'teams', label: t('manualAdjustmentsEditor.tabTeams', 'Teams'), helpId: 'manual-teams-tab' },
-    { id: 'events', label: t('manualAdjustmentsEditor.tabEvents', 'Timeouts & Subs'), helpId: 'manual-events-tab' },
-    { id: 'info', label: t('manualAdjustmentsEditor.tabInfo', 'Match Info') }
+    { id: 'events', label: t('manualAdjustmentsEditor.tabEvents', 'Timeouts & subs'), helpId: 'manual-events-tab' },
+    { id: 'info', label: t('manualAdjustmentsEditor.tabInfo', 'Match info') }
   ]
 
   // volleyui (RESTYLE-SPEC P3b). This editor is almost all shared inline
@@ -864,7 +864,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         background: 'var(--ov-card)'
       }}>
         <h1 className="text-xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>
-          {t('manualAdjustmentsEditor.title', 'Manual Adjustments')}
+          {t('manualAdjustmentsEditor.title', 'Manual adjustments')}
         </h1>
         <div className="ov-kit" style={{ display: 'flex', gap: '12px' }}>
           <Button variant="secondary" size="xl" className="px-5 font-medium" onClick={onClose}>
@@ -892,7 +892,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         borderBottom: '1px solid var(--ov-hairline-soft)',
         background: 'var(--ov-card)'
       }}>
-      <div role="group" aria-label={t('manualAdjustmentsEditor.title', 'Manual Adjustments')} className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1">
+      <div role="group" aria-label={t('manualAdjustmentsEditor.title', 'Manual adjustments')} className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -914,7 +914,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         {activeTab === 'scores' && (
           <div>
             <h2 style={{ ...cardTitleStyle, fontSize: '17px' }}>
-              {t('manualAdjustmentsEditor.setScores', 'Set Scores')}
+              {t('manualAdjustmentsEditor.setScores', 'Set scores')}
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {editedSets.map(set => (
@@ -991,8 +991,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
                     {editedMatch?.coinTossTeamA === 'away'
-                      ? t('manualAdjustmentsEditor.teamBHome', 'Team B (Home)')
-                      : t('manualAdjustmentsEditor.teamAHome', 'Team A (Home)')}
+                      ? t('manualAdjustmentsEditor.teamBHome', 'Team B (home)')
+                      : t('manualAdjustmentsEditor.teamAHome', 'Team A (home)')}
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
@@ -1006,13 +1006,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       />
                     </div>
                     <div>
-                      <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short Name (max 8)')}</label>
+                      <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}</label>
                       <input
                         type="text"
                         maxLength={8}
                         value={editedHomeTeam?.shortName || ''}
                         onChange={(e) => updateTeam('shortName', e.target.value.toUpperCase(), true)}
-                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short Name (max 8)')}`}
+                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -1036,7 +1036,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       </div>
                     </div>
                     <div>
-                      <label style={labelStyle}>{t('manualAdjustmentsEditor.swapTeams', 'Swap Teams')}</label>
+                      <label style={labelStyle}>{t('manualAdjustmentsEditor.swapTeams', 'Swap teams')}</label>
                       <span className={KIT_SCOPE}><Button variant="secondary" size="lg" className={ROW_TOOL} onClick={swapTeamDesignation}>{t('manualAdjustmentsEditor.swapAB', 'Swap A/B')}</Button></span>
                     </div>
                   </div>
@@ -1050,8 +1050,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
                     {editedMatch?.coinTossTeamA === 'away'
-                      ? t('manualAdjustmentsEditor.teamAAway', 'Team A (Away)')
-                      : t('manualAdjustmentsEditor.teamBAway', 'Team B (Away)')}
+                      ? t('manualAdjustmentsEditor.teamAAway', 'Team A (away)')
+                      : t('manualAdjustmentsEditor.teamBAway', 'Team B (away)')}
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
@@ -1065,13 +1065,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       />
                     </div>
                     <div>
-                      <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short Name (max 8)')}</label>
+                      <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}</label>
                       <input
                         type="text"
                         maxLength={8}
                         value={editedAwayTeam?.shortName || ''}
                         onChange={(e) => updateTeam('shortName', e.target.value.toUpperCase(), false)}
-                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short Name (max 8)')}`}
+                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -1123,7 +1123,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               </div>
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
                 <span className={KIT_SCOPE}><Button variant="dark" size="xl" onClick={() => setShowAddTimeout(true)}>
-                  {t('manualAdjustmentsEditor.addTimeout', '+ Add Timeout')}
+                  {t('manualAdjustmentsEditor.addTimeout', '+ Add timeout')}
                 </Button></span>
               </div>
             </div>
@@ -1155,7 +1155,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               </div>
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
                 <span className={KIT_SCOPE}><Button variant="dark" size="xl" onClick={() => setShowAddSub(true)}>
-                  {t('manualAdjustmentsEditor.addSubstitution', '+ Add Substitution')}
+                  {t('manualAdjustmentsEditor.addSubstitution', '+ Add substitution')}
                 </Button></span>
               </div>
             </div>
@@ -1163,7 +1163,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             {/* Sanctions Section */}
             <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
               <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.allSanctions', 'All Sanctions')} ({sanctionEvents.length})
+                {t('manualAdjustmentsEditor.allSanctions', 'All sanctions')} ({sanctionEvents.length})
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
                 {sanctionEvents.map(event => (
@@ -1199,7 +1199,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             {/* Match Details */}
             <div style={cardStyle}>
               <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.matchDetails', 'Match Details')}
+                {t('manualAdjustmentsEditor.matchDetails', 'Match details')}
               </h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
@@ -1233,22 +1233,22 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.championshipType', 'Championship Type')}</label>
+                  <label style={labelStyle}>{t('manualAdjustmentsEditor.championshipType', 'Championship type')}</label>
                   <input
                     type="text"
                     value={editedMatch.championshipType || ''}
                     onChange={(e) => updateMatchInfo('championshipType', e.target.value)}
-                    aria-label={t('manualAdjustmentsEditor.championshipType', 'Championship Type')}
+                    aria-label={t('manualAdjustmentsEditor.championshipType', 'Championship type')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.gameNumber', 'Game Number')}</label>
+                  <label style={labelStyle}>{t('manualAdjustmentsEditor.gameNumber', 'Game number')}</label>
                   <input
                     type="text"
                     value={editedMatch.gameN || editedMatch.gameNumber || ''}
                     onChange={(e) => updateMatchInfo('gameN', e.target.value)}
-                    aria-label={t('manualAdjustmentsEditor.gameNumber', 'Game Number')}
+                    aria-label={t('manualAdjustmentsEditor.gameNumber', 'Game number')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1268,11 +1268,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.matchTypeGender', 'Match Type (Gender)')}</label>
+                  <label style={labelStyle}>{t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}</label>
                   <select
                     value={editedMatch.match_type_2 || 'M'}
                     onChange={(e) => updateMatchInfo('match_type_2', e.target.value)}
-                    aria-label={t('manualAdjustmentsEditor.matchTypeGender', 'Match Type (Gender)')}
+                    aria-label={t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}
                     style={{ ...inputStyle, width: '100%' }}
                   >
                     <option value="M">{t('manualAdjustmentsEditor.genderMen', 'Men')}</option>
@@ -1281,12 +1281,12 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled Date/Time')}</label>
+                  <label style={labelStyle}>{t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}</label>
                   <input
                     type="datetime-local"
                     value={editedMatch.scheduledAt ? new Date(editedMatch.scheduledAt).toISOString().slice(0, 16) : ''}
                     onChange={(e) => updateMatchInfo('scheduledAt', e.target.value ? new Date(e.target.value).toISOString() : null)}
-                    aria-label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled Date/Time')}
+                    aria-label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
@@ -1296,27 +1296,27 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             {/* Match Officials */}
             <div style={cardStyle}>
               <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.matchOfficials', 'Match Officials')}
+                {t('manualAdjustmentsEditor.matchOfficials', 'Match officials')}
               </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* 1st Referee */}
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st Referee')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
+                      placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
                       value={editedOfficials.ref1.firstName}
                       onChange={(e) => updateOfficial('ref1', 'firstName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${t('manualAdjustmentsEditor.firstName', 'First name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
+                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last name')}
                       value={editedOfficials.ref1.lastName}
                       onChange={(e) => updateOfficial('ref1', 'lastName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${t('manualAdjustmentsEditor.lastName', 'Last name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1324,14 +1324,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.country', 'Country')}
                       value={editedOfficials.ref1.country}
                       onChange={(e) => updateOfficial('ref1', 'country', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.ref1.dob)}
                       onChange={(e) => updateOfficial('ref1', 'dob', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st Referee')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.firstReferee', '1st referee')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1339,22 +1339,22 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* 2nd Referee */}
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd Referee')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd referee')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
+                      placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
                       value={editedOfficials.ref2.firstName}
                       onChange={(e) => updateOfficial('ref2', 'firstName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${t('manualAdjustmentsEditor.firstName', 'First name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
+                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last name')}
                       value={editedOfficials.ref2.lastName}
                       onChange={(e) => updateOfficial('ref2', 'lastName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${t('manualAdjustmentsEditor.lastName', 'Last name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
@@ -1362,14 +1362,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       placeholder={t('manualAdjustmentsEditor.country', 'Country')}
                       value={editedOfficials.ref2.country}
                       onChange={(e) => updateOfficial('ref2', 'country', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${t('manualAdjustmentsEditor.country', 'Country')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.ref2.dob)}
                       onChange={(e) => updateOfficial('ref2', 'dob', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd Referee')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.secondReferee', '2nd referee')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1381,25 +1381,25 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
+                      placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
                       value={editedOfficials.scorer.firstName}
                       onChange={(e) => updateOfficial('scorer', 'firstName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.firstName', 'First name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
+                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last name')}
                       value={editedOfficials.scorer.lastName}
                       onChange={(e) => updateOfficial('scorer', 'lastName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.scorer.dob)}
                       onChange={(e) => updateOfficial('scorer', 'dob', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.scorer', 'Scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1407,29 +1407,29 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
                 {/* Assistant Scorer */}
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.firstName', 'First Name')}
+                      placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
                       value={editedOfficials.asstScorer.firstName}
                       onChange={(e) => updateOfficial('asstScorer', 'firstName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')} ${t('manualAdjustmentsEditor.firstName', 'First Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')} ${t('manualAdjustmentsEditor.firstName', 'First name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="text"
-                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last Name')}
+                      placeholder={t('manualAdjustmentsEditor.lastName', 'Last name')}
                       value={editedOfficials.asstScorer.lastName}
                       onChange={(e) => updateOfficial('asstScorer', 'lastName', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last Name')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')} ${t('manualAdjustmentsEditor.lastName', 'Last name')}`}
                       style={{ ...inputStyle, padding: '6px 8px' }}
                     />
                     <input
                       type="date"
                       value={toISODate(editedOfficials.asstScorer.dob)}
                       onChange={(e) => updateOfficial('asstScorer', 'dob', e.target.value)}
-                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant Scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of Birth')}`}
+                      aria-label={`${t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')} ${t('manualAdjustmentsEditor.dob', 'Date of birth')}`}
                       style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                     />
                   </div>
@@ -1443,7 +1443,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         {changes.length > 0 && (
           <div style={{ marginTop: '32px', padding: '12px 16px', background: 'var(--ov-warning-soft)', borderRadius: 'var(--ov-radius)', border: '1px solid var(--ov-warning-border)' }}>
             <h3 style={{ fontSize: '13px', fontWeight: 600, margin: '0 0 8px', color: 'var(--ov-warning-text)' }}>
-              {t('manualAdjustmentsEditor.pendingChanges', 'Pending Changes')} ({changes.length})
+              {t('manualAdjustmentsEditor.pendingChanges', 'Pending changes')} ({changes.length})
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '150px', overflowY: 'auto' }}>
               {changes.map((change, i) => (
@@ -1477,7 +1477,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             overflowY: 'auto'
           }}>
             <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
+              {t('manualAdjustmentsEditor.addSanction', 'Add sanction')}
             </h3>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '13px', color: 'var(--ov-text-secondary)', marginBottom: '4px' }}>
@@ -1488,17 +1488,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.sanctionType', 'Sanction Type')}</label>
+                <label style={labelStyle}>{t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}</label>
                 <select
                   value={newSanctionData.type}
                   onChange={(e) => setNewSanctionData(prev => ({ ...prev, type: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction Type')}
+                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
-                  <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (Yellow)')}</option>
-                  <option value="penalty">{t('manualAdjustmentsEditor.penaltyRed', 'Penalty (Red)')}</option>
-                  <option value="expulsion">{t('manualAdjustmentsEditor.expulsionRedYellow', 'Expulsion (Red+Yellow)')}</option>
-                  <option value="disqualification">{t('manualAdjustmentsEditor.disqualificationRedYellow', 'Disqualification (Red+Yellow)')}</option>
+                  <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (yellow)')}</option>
+                  <option value="penalty">{t('manualAdjustmentsEditor.penaltyRed', 'Penalty (red)')}</option>
+                  <option value="expulsion">{t('manualAdjustmentsEditor.expulsionRedYellow', 'Expulsion (red+yellow)')}</option>
+                  <option value="disqualification">{t('manualAdjustmentsEditor.disqualificationRedYellow', 'Disqualification (red+yellow)')}</option>
                 </select>
               </div>
               <div>
@@ -1557,7 +1557,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 className="px-5"
                 onClick={handleAddSanctionSubmit}
               >
-                {t('manualAdjustmentsEditor.addSanction', 'Add Sanction')}
+                {t('manualAdjustmentsEditor.addSanction', 'Add sanction')}
               </Button>
             </div>
           </div>
@@ -1585,21 +1585,21 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             overflowY: 'auto'
           }}>
             <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.editSanction', 'Edit Sanction')}
+              {t('manualAdjustmentsEditor.editSanction', 'Edit sanction')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.sanctionType', 'Sanction Type')}</label>
+                <label style={labelStyle}>{t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}</label>
                 <select
                   value={editingSanction.type || 'warning'}
                   onChange={(e) => setEditingSanction(prev => ({ ...prev, type: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction Type')}
+                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
-                  <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (Yellow)')}</option>
-                  <option value="penalty">{t('manualAdjustmentsEditor.penaltyRed', 'Penalty (Red)')}</option>
-                  <option value="expulsion">{t('manualAdjustmentsEditor.expulsionRedYellow', 'Expulsion (Red+Yellow)')}</option>
-                  <option value="disqualification">{t('manualAdjustmentsEditor.disqualificationRedYellow', 'Disqualification (Red+Yellow)')}</option>
+                  <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (yellow)')}</option>
+                  <option value="penalty">{t('manualAdjustmentsEditor.penaltyRed', 'Penalty (red)')}</option>
+                  <option value="expulsion">{t('manualAdjustmentsEditor.expulsionRedYellow', 'Expulsion (red+yellow)')}</option>
+                  <option value="disqualification">{t('manualAdjustmentsEditor.disqualificationRedYellow', 'Disqualification (red+yellow)')}</option>
                 </select>
               </div>
               <div>
@@ -1655,7 +1655,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 className="px-5"
                 onClick={handleEditSanctionSubmit}
               >
-                {t('manualAdjustmentsEditor.saveChanges', 'Save Changes')}
+                {t('manualAdjustmentsEditor.saveChanges', 'Save changes')}
               </Button>
             </div>
           </div>
@@ -1683,7 +1683,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             overflowY: 'auto'
           }}>
             <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
+              {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add timeout')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
@@ -1754,7 +1754,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 className="px-5"
                 onClick={handleAddTimeoutSubmit}
               >
-                {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add Timeout')}
+                {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add timeout')}
               </Button>
             </div>
           </div>
@@ -1782,7 +1782,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             overflowY: 'auto'
           }}>
             <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
+              {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
@@ -1811,11 +1811,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerOut', 'Player Out')}</label>
+                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerOut', 'Player out')}</label>
                 <select
                   value={newSubData.playerOut}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, playerOut: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player Out')}
+                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player out')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1825,11 +1825,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerIn', 'Player In')}</label>
+                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerIn', 'Player in')}</label>
                 <select
                   value={newSubData.playerIn}
                   onChange={(e) => setNewSubData(prev => ({ ...prev, playerIn: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player In')}
+                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player in')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1882,7 +1882,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 onClick={handleAddSubSubmit}
                 disabled={!newSubData.playerOut || !newSubData.playerIn}
               >
-                {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add Substitution')}
+                {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add substitution')}
               </Button>
             </div>
           </div>
@@ -1910,7 +1910,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             overflowY: 'auto'
           }}>
             <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.editSubstitutionTitle', 'Edit Substitution')}
+              {t('manualAdjustmentsEditor.editSubstitutionTitle', 'Edit substitution')}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
               <div>
@@ -1933,11 +1933,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerOut', 'Player Out')}</label>
+                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerOut', 'Player out')}</label>
                 <select
                   value={editingSub.playerOut || editingSub.payload?.playerOut || ''}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, playerOut: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player Out')}
+                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player out')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -1947,11 +1947,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerIn', 'Player In')}</label>
+                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerIn', 'Player in')}</label>
                 <select
                   value={editingSub.playerIn || editingSub.payload?.playerIn || ''}
                   onChange={(e) => setEditingSub(prev => ({ ...prev, playerIn: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player In')}
+                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player in')}
                   style={{ ...inputStyle, width: '100%' }}
                 >
                   <option value="">Select player...</option>
@@ -2000,7 +2000,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 className="px-5"
                 onClick={handleEditSubSubmit}
               >
-                {t('manualAdjustmentsEditor.saveChanges', 'Save Changes')}
+                {t('manualAdjustmentsEditor.saveChanges', 'Save changes')}
               </Button>
             </div>
           </div>

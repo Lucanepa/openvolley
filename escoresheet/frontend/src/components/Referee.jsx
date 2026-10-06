@@ -2273,7 +2273,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             {/* Awaiting Coin Toss Message */}
             <div className="flex justify-center">
               <StatusPill tone="todo" className="px-3 py-1 text-xs">
-                {t('refereeDashboard.awaitingCoinToss', 'Awaiting Coin Toss')}
+                {t('refereeDashboard.awaitingCoinToss', 'Awaiting coin toss')}
               </StatusPill>
             </div>
 
@@ -3388,7 +3388,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         cursor: 'pointer'
                       }}
                     >
-                      {t('refereeDashboard.showLineup', 'Show Line-up')}
+                      {t('refereeDashboard.showLineup', 'Show line-up')}
                     </button>
                   </div>
                 )}
@@ -3551,7 +3551,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                         cursor: 'pointer'
                       }}
                     >
-                      {t('refereeDashboard.showLineup', 'Show Line-up')}
+                      {t('refereeDashboard.showLineup', 'Show line-up')}
                     </button>
                   </div>
                 )}

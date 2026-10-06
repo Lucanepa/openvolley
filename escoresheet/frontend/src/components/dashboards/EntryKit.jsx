@@ -150,7 +150,7 @@ export function NarrowScreenOverlay({ t }) {
           <Smartphone size={26} strokeWidth={1.75} aria-hidden />
         </div>
         <h2 className="text-lg font-bold text-stone-900">
-          {t('common.screenTooSmall', 'Screen too Small')}
+          {t('common.screenTooSmall', 'Screen too small')}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-stone-600">
           {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
@@ -167,7 +167,7 @@ export function NarrowScreenOverlay({ t }) {
           }}
         >
           <span aria-hidden>⛶</span>
-          <span>{t('common.tryFullscreen', 'Try Fullscreen')}</span>
+          <span>{t('common.tryFullscreen', 'Try fullscreen')}</span>
         </Button>
         <p className="mt-3 text-xs text-stone-500">
           {t('common.fullscreenHint', 'Fullscreen may provide more space by hiding browser UI.')}
