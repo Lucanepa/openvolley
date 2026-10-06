@@ -218,9 +218,52 @@ export function isLiveStateDirty(matchKey) {
   try { return localStorage.getItem(LIVE_DIRTY_PREFIX + matchKey) === '1' } catch { return false }
 }
 
-/** A live-state write error worth an error dialog (not offline, signed out or a backend hiccup). */
+// The server's answers that say "this account may not write this match's live
+// state" (not approved, the game is another account's, the match is closed,
+// not an owner, or the row belongs to another match). Retrying every rally
+// changes nothing, so they never open a dialog: the scoreboard stops pushing
+// the cloud live state of that match for a while (LIVE_REFUSAL_PAUSE_MS) or
+// until the account's access changes. Local scoring is never blocked.
+export const LIVE_STATE_REFUSAL_CODES = Object.freeze([
+  'OV_SCORER_REQUIRED', 'OV_MATCH_CLOSED', 'OV_GAME_TAKEN', 'OV_NOT_MATCH_OWNER', 'OV_UNSCOPED_WRITE'
+])
+export const LIVE_REFUSAL_PAUSE_MS = 5 * 60 * 1000
+const liveRefusals = new Map() // matchKey -> { code, at }
+
+/** Is this live-state write error the server refusing the account (see LIVE_STATE_REFUSAL_CODES)? */
+export function isLiveStateRefusal(error) {
+  if (!error || error.network) return false
+  const status = error.status ?? 0
+  return (status === 403 || status === 409) && LIVE_STATE_REFUSAL_CODES.includes(error.code)
+}
+
+export function markLiveStateRefused(matchKey, code, now = Date.now()) {
+  if (matchKey == null) return
+  liveRefusals.set(String(matchKey), { code: code || null, at: now })
+}
+
+/** The refusal of this match's live state is recent: do not push it to the cloud now. */
+export function isLiveStateRefused(matchKey, now = Date.now()) {
+  if (matchKey == null) return false
+  const r = liveRefusals.get(String(matchKey))
+  if (!r) return false
+  if (now - r.at >= LIVE_REFUSAL_PAUSE_MS) {
+    liveRefusals.delete(String(matchKey))
+    return false
+  }
+  return true
+}
+
+/** Forget a refusal (one match, or all when matchKey is omitted): the account's access changed. */
+export function clearLiveStateRefused(matchKey) {
+  if (matchKey == null) liveRefusals.clear()
+  else liveRefusals.delete(String(matchKey))
+}
+
+/** A live-state write error worth an error dialog (not offline, signed out, refused or a backend hiccup). */
 export function isLiveStateErrorWorthAlert(error) {
   if (!error || error.network) return false
+  if (isLiveStateRefusal(error)) return false
   const status = error.status ?? 0
   return !(status === 0 || status === 401 || status === 429 || status >= 500)
 }
