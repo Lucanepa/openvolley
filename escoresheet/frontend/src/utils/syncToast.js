@@ -8,9 +8,10 @@
  * sign-in), and each roster confirm needed an OK. Now:
  *   - the jobs of THIS save are watched (not every queued job); a save that
  *     queued none (test match) shows nothing;
- *   - offline or signed out, the outcome is known at once: an info toast
- *     "saved locally (sync pending)" (the Not signed in banner / offline pill
- *     explain why);
+ *   - signed out: no toast; the Not signed in banner already says the match
+ *     is kept on this device (a toast covered its Sign in button);
+ *   - offline, the outcome is known at once: an info toast "saved locally
+ *     (sync pending)";
  *   - otherwise the first of: all sent -> success toast, refused/errored ->
  *     error toast, still waiting after timeoutMs -> info toast;
  *   - toasts dismiss themselves, so no stale message stays up; the card sync
@@ -41,14 +42,16 @@ const kitLang = (lang) => (String(lang || '').toLowerCase().startsWith('de') ? '
  * @param {object} opts
  * @param {{synced: string, failed: string, pending: string}} opts.messages
  * @param {(id: number) => Promise<object|undefined>} opts.getJob
- * @param {() => boolean} opts.canSync  online and signed in
+ * @param {() => boolean} opts.canSync  the cloud can take the jobs now (online)
+ * @param {() => boolean} [opts.explained]  the screen already explains the wait
+ *   (signed out: the Not signed in banner); then no toast at all
  * @param {string} [opts.lang]  i18n language (for the toast's dismiss label)
  * @param {number} [opts.timeoutMs]
  * @param {number} [opts.pollMs]
  * @param {typeof toast} [opts.notify]
  * @returns {() => void} stop watching (no toast after that)
  */
-export function toastSyncOutcome(jobIds, { messages, getJob, canSync, lang, timeoutMs = 10000, pollMs = 500, notify = toast }) {
+export function toastSyncOutcome(jobIds, { messages, getJob, canSync, explained = () => false, lang, timeoutMs = 10000, pollMs = 500, notify = toast }) {
   const ids = (jobIds || []).filter(Boolean)
   const toastOpts = { lang: kitLang(lang) }
   let stopped = false
@@ -59,12 +62,13 @@ export function toastSyncOutcome(jobIds, { messages, getJob, canSync, lang, time
     timer = null
   }
 
-  // Nothing went to the queue (test match, no cloud id): nothing to report
-  if (ids.length === 0) {
+  // Nothing went to the queue (test match, no cloud id), or the screen already
+  // says why it waits (the Not signed in banner): no toast on top of it
+  if (ids.length === 0 || explained()) {
     stop()
     return stop
   }
-  // Offline or signed out: it waits on this device, say so at once
+  // Offline: it waits on this device, say so at once
   if (!canSync()) {
     notify.info(messages.pending, toastOpts)
     stop()
@@ -98,8 +102,8 @@ export function toastSyncOutcome(jobIds, { messages, getJob, canSync, lang, time
 }
 
 /**
- * toastSyncOutcome for jobs in the local sync queue: online and signed in
- * decide whether the cloud can take them now.
+ * toastSyncOutcome for jobs in the local sync queue: signed out stays quiet
+ * (the banner explains), offline says 'sync pending' at once.
  * @param {Array<number|null|undefined>} jobIds
  * @param {{synced: string, failed: string, pending: string}} messages
  * @param {string} [lang]
@@ -109,6 +113,7 @@ export function toastQueuedSync(jobIds, messages, lang) {
     messages,
     lang,
     getJob: (id) => db.sync_queue.get(id),
-    canSync: () => (typeof navigator === 'undefined' || navigator.onLine !== false) && hasStoredSessionToken()
+    canSync: () => typeof navigator === 'undefined' || navigator.onLine !== false,
+    explained: () => !hasStoredSessionToken()
   })
 }
