@@ -564,7 +564,15 @@ tablet status and the LAN server dashboard.
 
 ### `GET /api/match/list`
 
-List active matches with referee connections enabled.
+Every scheduled or live match a scorer currently publishes on this relay,
+newest `scheduledAt` first, whatever its referee connection: display devices
+(the point-hub LedBox bridge) pick their match here and need no PIN. Rows are
+public: `{ id, gameNumber, homeTeam, awayTeam, scheduledAt, dateTime, status,
+test, refereeConnectionEnabled }`, never PINs or people. Not listed: a match
+whose scoreboard left more than 10 minutes ago, and on the cloud a test
+(rehearsal) match, which belongs to the venue's relay (the cloud also drops its
+`live-state-update`). Same rule on every relay (lanRelayCore, Tauri).
+openbeach's `team1Team` / `team2Team` are taken as the home / away team.
 
 ### `GET /api/match/:matchId`
 

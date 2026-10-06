@@ -433,6 +433,51 @@ export function relaySummaryBundle(entry) {
   return out
 }
 
+const LISTED_STATUSES = new Set(['scheduled', 'live'])
+
+/** A team's display name: a team object or plain string, else `fallback`. */
+function teamNameOf(team, fallback) {
+  const name = typeof team === 'string' ? team : (team && typeof team === 'object' ? team.name : null)
+  return typeof name === 'string' && name.trim() ? name : fallback
+}
+
+function formatListDateTime(scheduledAt) {
+  if (!scheduledAt) return 'TBD'
+  try {
+    const d = new Date(scheduledAt)
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return `${dateStr} ${timeStr}`
+  } catch {
+    return 'TBD'
+  }
+}
+
+/**
+ * One GET /api/match/list row for a relay entry ({ matchId, match, homeTeam,
+ * awayTeam, gameNumber? }), or null when the match is not listed. Listed:
+ * status 'scheduled' or 'live' (none counts as 'scheduled'), whatever the
+ * referee connection — display devices (the point-hub LedBox bridge) need no
+ * PIN and pick their match from this list. Public fields only: no PINs, no
+ * people. Same rule as lanRelayCore matchListEntry and relay.rs match_list.
+ */
+export function relayMatchListRow(entry) {
+  const match = (entry?.match && typeof entry.match === 'object') ? entry.match : {}
+  const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
+  if (!LISTED_STATUSES.has(status)) return null
+  return {
+    id: entry.matchId,
+    gameNumber: entry.gameNumber || match.gameNumber || match.game_n || entry.matchId,
+    homeTeam: teamNameOf(entry.homeTeam, teamNameOf(match.homeTeamName, 'Home')),
+    awayTeam: teamNameOf(entry.awayTeam, teamNameOf(match.awayTeamName, 'Away')),
+    scheduledAt: match.scheduledAt ?? null,
+    dateTime: formatListDateTime(match.scheduledAt),
+    status,
+    test: match.test === true,
+    refereeConnectionEnabled: match.refereeConnectionEnabled === true
+  }
+}
+
 /** A roster array (or anything else, returned as is) without personal keys. */
 export const publicPeople = (list) => (Array.isArray(list) ? list.map(publicPerson) : list)
 
