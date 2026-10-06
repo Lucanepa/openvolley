@@ -17,6 +17,7 @@ import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getBackendUrl } from '../utils/backendConfig'
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
+import { toastQueuedSync } from '../utils/syncToast'
 import { apiFrom } from '../lib/apiClient'
 import { generateMatchSeedKey, relayMatchKey } from '../utils/serverDataSync'
 import { scorerLiveOrder, scorerRelay } from '../utils/relayPublisher'
@@ -381,7 +382,7 @@ function formatDobForSync(dob) {
 }
 
 export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
@@ -2144,11 +2145,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       setMatchInfoConfirmed(true)
       setCurrentView('main')
-      setNoticeModal({
-        message: isCreating ? t('matchSetup.modals.matchCreatedSyncing') : t('matchSetup.modals.matchUpdatedSyncing'),
-        type: 'success',
-        syncing: true
-      })
 
       // Send match info email if provided (non-blocking)
       if (notificationEmail && notificationEmail.trim() && match?.gamePin) {
@@ -2192,30 +2188,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         uploadLogsToCloud(matchId, gameN || null)
       }).catch(err => console.warn('[MatchSetup] Cloud backup failed:', err))
 
-      // Poll to check when sync completes
-      const checkSyncStatus = async () => {
-        let attempts = 0
-        const maxAttempts = 20 // 10 seconds max
-        const interval = setInterval(async () => {
-          attempts++
-          try {
-            const job = await db.sync_queue.get(syncJobId)
-            if (!job || job.status === 'sent') {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSynced'), type: 'success' })
-            } else if (job.status === 'error') {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncFailed'), type: 'error' })
-            } else if (attempts >= maxAttempts) {
-              clearInterval(interval)
-              setNoticeModal({ message: t('matchSetup.modals.matchSavedLocalSyncPending'), type: 'success' })
-            }
-          } catch (err) {
-            clearInterval(interval)
-          }
-        }, 500)
-      }
-      checkSyncStatus()
+      // One non-blocking toast with the outcome of this save (utils/syncToast)
+      toastQueuedSync([syncJobId], {
+        synced: t('matchSetup.modals.matchSynced'),
+        failed: t('matchSetup.modals.matchSavedLocalSyncFailed'),
+        pending: t('matchSetup.modals.matchSavedLocalSyncPending')
+      }, i18n?.language)
     } catch (error) {
       console.error('Error confirming match info:', error)
       setNoticeModal({ message: t('matchSetup.errorGeneric', { error: error.message }), type: 'error' })
@@ -4707,10 +4685,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               await db.matches.update(matchId, updateData)
 
               // Sync home team data to Supabase as JSONB
+              let homeSyncJobId = null
               if (match?.seed_key) {
                 const homeCoachSig = homeCoachSignature || savedSignatures.homeCoach || null
                 const homeCaptainSig = homeCaptainSignature || savedSignatures.homeCaptain || null
-                await db.sync_queue.add({
+                homeSyncJobId = await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
@@ -4765,28 +4744,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Poll to check when sync completes
-              setNoticeModal({ message: t('matchSetup.homeSaved'), type: 'success', syncing: true })
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.homeSynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.homeSavedLocal'), type: 'success' })
-                    }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
-              }
-              checkSyncStatus()
+              // One non-blocking toast for this roster's own sync job
+              toastQueuedSync([homeSyncJobId], {
+                synced: t('matchSetup.homeSynced'),
+                failed: t('matchSetup.modals.matchSavedLocalSyncFailed'),
+                pending: t('matchSetup.homeSavedLocal')
+              }, i18n?.language)
             }
             setCurrentView('main')
             }}>{t('common.confirm')}</Button>
@@ -5866,10 +5829,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               await db.matches.update(matchId, updateData)
 
               // Sync away team data to Supabase as JSONB
+              let awaySyncJobId = null
               if (match?.seed_key) {
                 const awayCoachSig = awayCoachSignature || savedSignatures.awayCoach || null
                 const awayCaptainSig = awayCaptainSignature || savedSignatures.awayCaptain || null
-                await db.sync_queue.add({
+                awaySyncJobId = await db.sync_queue.add({
                   resource: 'match',
                   action: 'update',
                   payload: {
@@ -5925,28 +5889,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 }
               }
 
-              // Poll to check when sync completes
-              setNoticeModal({ message: t('matchSetup.awaySaved'), type: 'success', syncing: true })
-              const checkSyncStatus = async () => {
-                let attempts = 0
-                const maxAttempts = 20
-                const interval = setInterval(async () => {
-                  attempts++
-                  try {
-                    const queued = await db.sync_queue.where('status').equals('queued').count()
-                    if (queued === 0) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.awaySynced'), type: 'success' })
-                    } else if (attempts >= maxAttempts) {
-                      clearInterval(interval)
-                      setNoticeModal({ message: t('matchSetup.awaySavedLocal'), type: 'success' })
-                    }
-                  } catch (err) {
-                    clearInterval(interval)
-                  }
-                }, 500)
-              }
-              checkSyncStatus()
+              // One non-blocking toast for this roster's own sync job
+              toastQueuedSync([awaySyncJobId], {
+                synced: t('matchSetup.awaySynced'),
+                failed: t('matchSetup.modals.matchSavedLocalSyncFailed'),
+                pending: t('matchSetup.awaySavedLocal')
+              }, i18n?.language)
             }
             setCurrentView('main')
             }}>{t('common.confirm')}</Button>
