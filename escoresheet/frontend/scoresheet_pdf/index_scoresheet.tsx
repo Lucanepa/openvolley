@@ -409,6 +409,15 @@ const StorageScoresheet: React.FC<{ date: string; game: string; action: 'preview
           {error.title}
         </div>
         <div style={{ color: '#666', maxWidth: '32rem', textAlign: 'center', padding: '0 16px' }}>{error.message}</div>
+        {error.kind === 'signin' && (
+          // Same origin as the scorer app: its sign-in gives this page the session
+          <a
+            href="/"
+            style={{ display: 'inline-flex', alignItems: 'center', minHeight: '44px', padding: '0 20px', borderRadius: '12px', background: '#0f172a', color: '#fff', fontWeight: 600, fontSize: '14px', textDecoration: 'none' }}
+          >
+            Open the scorer app to sign in
+          </a>
+        )}
       </div>
     );
   }
