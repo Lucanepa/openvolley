@@ -8,10 +8,10 @@ import SignaturePad from './SignaturePad'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
-import mikasaVolleyball from '../mikasa_v200w.png'
+import ballFallback from '../ball_fallback.png'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { parseRosterPdf } from '../utils/parseRosterPdf'
 import { getBackendUrl } from '../utils/backendConfig'

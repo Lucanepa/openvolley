@@ -6,9 +6,9 @@ import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
-import mikasaVolleyball from './mikasa_v200w.png'
+import ballFallback from './ball_fallback.png'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
@@ -235,7 +235,7 @@ export default function BenchApp() {
   // Preload assets that are used later (e.g., volleyball image)
   useEffect(() => {
     const assetsToPreload = [
-      mikasaVolleyball
+      ballFallback
     ]
 
     assetsToPreload.forEach(src => {
@@ -752,7 +752,7 @@ export default function BenchApp() {
 
         <EntryPage>
           <EntryCard
-            art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
+            art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
             title={teamName}
             subtitle={t('benchDashboard.enterPin')}
           >
@@ -808,7 +808,7 @@ export default function BenchApp() {
 
         <EntryPage>
           <EntryCard
-            art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
+            art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
             title={t('benchDashboard.selectTeam')}
             subtitle={benchGameLabel(t, selectedMatch.gameNumber)}
           >
@@ -877,7 +877,7 @@ export default function BenchApp() {
       <EntryPage>
         <EntryCard
           width="md"
-          art={<img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" className="h-20 w-20" />}
+          art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
           title={t('benchDashboard.title')}
         >
         {loadingMatches ? (
