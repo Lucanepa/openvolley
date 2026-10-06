@@ -96,7 +96,7 @@ export default function TabletStatusIndicator({ match }) {
             zIndex: 1000
           }}
         >
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
             {t('tabletStatus.title', 'Tablet Status')}
           </div>
 
@@ -114,7 +114,7 @@ export default function TabletStatusIndicator({ match }) {
                   <div className={cn('flex shrink-0 items-center gap-1.5 text-[11px] font-medium', tone.text)}>
                     <span>{t(`tabletStatus.status.${role.status}`, role.status)}</span>
                     {role.ageMs != null && (
-                      <span className="font-mono text-[10px] text-stone-400">
+                      <span className="font-mono text-[10px] text-stone-500">
                         {formatAge(role.ageMs)}
                       </span>
                     )}

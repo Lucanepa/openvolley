@@ -323,14 +323,14 @@ export default function MainHeader({
         style={{ zIndex: 1000 }}
       >
         {/* Match Number */}
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t('header.notSynced')}</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{t('header.notSynced')}</div>
         <div className="text-sm font-bold text-stone-900 tabular-nums">
           {t('header.match')} {(matchData.match.gameNumber || matchData.match.game_n) ? (matchData.match.gameNumber || matchData.match.game_n) : t('header.notSet')}
         </div>
 
         {/* Match ID - for debugging/support */}
         {matchId && (
-          <div className="font-mono text-[10px] text-stone-400">
+          <div className="font-mono text-[10px] text-stone-500">
             ID: {matchId}
           </div>
         )}
@@ -599,7 +599,7 @@ export default function MainHeader({
                     zIndex: 1000
                   }}
                 >
-                  <div className="border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+                  <div className="border-b border-stone-100 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
                     {t('header.dashboardConnectionInfo')}
                   </div>
 
