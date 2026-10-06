@@ -50,6 +50,7 @@ import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
+import AndroidUpdateNotice from './components/AndroidUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
@@ -59,6 +60,7 @@ import { Button, cn, FormError, Input } from './ui'
 import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
+import { installAndroidUpdates } from './utils/androidUpdate'
 import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
@@ -457,6 +459,8 @@ export default function App() {
   // before it quits, Android's Back asks before it exits, a browser asks
   // before it leaves a live match (utils/appLifecycle.js)
   useEffect(() => installAppLifecycle(), [])
+  // Android app: who installed it, the opt-in update check (utils/androidUpdate.js)
+  useEffect(() => installAndroidUpdates(), [])
   const activeMatchStatus = activeMatch?.status
   const activeMatchIsTest = !!activeMatch?.test
   useEffect(() => {
@@ -2973,6 +2977,7 @@ export default function App() {
               ) : !matchId ? (
                 <>
                   <UpdateBanner showClearDataOption={true} />
+                  <AndroidUpdateNotice />
                   <HomePage
                     favicon={openvolleyLogo}
                     newMatchMenuOpen={newMatchMenuOpen}

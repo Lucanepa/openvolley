@@ -2562,5 +2562,19 @@
     "exitMatchBody": "The match is saved on this device: open OpenVolley again to continue it.",
     "exitConfirm": "Exit",
     "stay": "Stay"
+  },
+  "update": {
+    "available": "OpenVolley {{version}} is available",
+    "fromFdroid": "Updates come from F-Droid.",
+    "openFdroid": "Open in F-Droid",
+    "notFromFdroid": "Installed without F-Droid, so it does not update itself.",
+    "notifyOption": "Notify me about new versions",
+    "notifyHint": "Asks get.openvolley.app about once a day, never during a match. Nothing else is sent.",
+    "askTitle": "Get notified about new versions?",
+    "askBody": "OpenVolley would ask get.openvolley.app about once a day whether a new version is out. Nothing else is sent. You can change this in the options.",
+    "askYes": "Notify me",
+    "askNo": "No, thanks",
+    "getFdroid": "Get it from F-Droid (updates itself from then on)",
+    "downloadApk": "Download APK"
   }
 }
