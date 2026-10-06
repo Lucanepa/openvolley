@@ -246,12 +246,6 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
     })
 }
 
-pub fn local_ip_string() -> String {
-    local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string())
-}
-
 /// IPv4-mapped IPv6 (`::ffff:a.b.c.d`) as plain IPv4.
 fn canonical_ip(ip: IpAddr) -> IpAddr {
     match ip {
@@ -750,7 +744,8 @@ async fn health() -> Response {
 }
 
 async fn server_status(State(state): State<Arc<AppState>>) -> Response {
-    let ip = local_ip_string();
+    let interfaces = crate::netifs::tablet_interfaces();
+    let ip = crate::netifs::preferred_ip(&interfaces, local_ip_address::local_ip().ok().map(|ip| ip.to_string()));
     let p = state.http_port;
     let ws = state.ws_port;
     let main = state.main_instance.lock().await.clone();
@@ -766,6 +761,9 @@ async fn server_status(State(state): State<Arc<AppState>>) -> Response {
             "localIP": ip,
             "port": p,
             "wsPort": ws,
+            // every address a tablet may open, with its network: hotspot,
+            // wifi, ethernet, bluetooth, other (netifs.rs)
+            "interfaces": interfaces,
             "urls": {
                 "main": format!("http://{ip}:{p}/"),
                 "mainIP": format!("http://{ip}:{p}/"),
