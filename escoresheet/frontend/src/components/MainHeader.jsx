@@ -127,7 +127,6 @@ export default function MainHeader({
 }) {
   const { t } = useTranslation()
   const { scaleFactor, userScaleOverride, setUserScaleOverride } = useScaledLayout()
-  const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [scaleMenuOpen, setScaleMenuOpen] = useState(false)
 
@@ -399,7 +398,7 @@ export default function MainHeader({
         <div className={cn(
           'rounded-lg border px-3 py-1.5 text-sm font-semibold',
           matchData.match.test
-            ? 'border-amber-200 bg-amber-50 text-xs tracking-[0.08em] text-amber-800'
+            ? 'border-amber-200 bg-amber-50 text-[11px] uppercase tracking-[0.08em] text-amber-800'
             : 'border-stone-200 bg-stone-50 font-mono tracking-[0.3em] text-stone-900'
         )}>
           {matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
@@ -818,18 +817,11 @@ export default function MainHeader({
                       </button>
                     )}
 
-                    {/* Version Action */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setVersionMenuOpen(!versionMenuOpen)
-                      }}
-                      className={cn(MENU_ROW, versionMenuOpen && 'bg-stone-100')}
-                    >
+                    {/* Version (about) */}
+                    <div className={cn(MENU_ROW, 'cursor-default text-stone-500 hover:bg-transparent')} data-testid="header-version">
                       <span className={MENU_ICON}><ClipboardIcon size={14} /></span>
-                      <span className="tabular-nums">v{currentVersion}</span>
-                    </button>
+                      <span className="flex-1 tabular-nums">{t('header.versionLabel', 'Version {{version}}', { version: currentVersion })}</span>
+                    </div>
 
                     {/* Language Selector Action */}
                     <button
@@ -946,7 +938,6 @@ export default function MainHeader({
                     e.stopPropagation()
                     setActionsMenuOpen(!actionsMenuOpen)
                     setLanguageMenuOpen(false)
-                    setVersionMenuOpen(false)
                     setScaleMenuOpen(false)
                   }}
                   className={cn(HEADER_BTN, 'w-9 px-0', actionsMenuOpen && HEADER_BTN_ON)}
@@ -1041,20 +1032,11 @@ export default function MainHeader({
                     {/* Scale Options - nested */}
                     {scaleMenuOpen && scaleOptionsList}
 
-                    {/* Version / Changelog */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setVersionMenuOpen(!versionMenuOpen)
-                      }}
-                      className={cn(MENU_ROW, 'text-stone-500', versionMenuOpen && 'bg-stone-100')}
-                    >
+                    {/* Version (about) */}
+                    <div className={cn(MENU_ROW, 'cursor-default text-stone-500 hover:bg-transparent')} data-testid="header-version">
                       <span className={MENU_ICON}><ClipboardIcon size={14} /></span>
-                      <span className="flex-1 tabular-nums">v{currentVersion}</span>
-                    </button>
-
-                    {/* Version history removed */}
+                      <span className="flex-1 tabular-nums">{t('header.versionLabel', 'Version {{version}}', { version: currentVersion })}</span>
+                    </div>
 
                     {/* Divider */}
                     <div className={MENU_SEP} />

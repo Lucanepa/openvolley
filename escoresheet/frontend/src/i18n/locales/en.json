@@ -830,6 +830,7 @@
     "de-CH": "Swiss German"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "Online",
     "notSynced": "Not synced",
     "supportAndFeedback": "Support & feedback",
@@ -853,9 +854,9 @@
     "moreOptions": "More options...",
     "match": "Match",
     "notSet": "Not set",
-    "testMatch": "TEST MATCH",
-    "matchNumber": "MATCH #{{number}}",
-    "test": "TEST",
+    "testMatch": "Test match",
+    "matchNumber": "Match #{{number}}",
+    "test": "Test",
     "versionHistory": "Version history",
     "current": "Current",
     "exitFullscreen": "Exit fullscreen",

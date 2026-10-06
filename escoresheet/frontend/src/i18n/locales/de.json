@@ -840,6 +840,7 @@
     "de-CH": "Schweizerdeutsch"
   },
   "header": {
+    "versionLabel": "Version {{version}}",
     "online": "Online",
     "notSynced": "Nicht synchronisiert",
     "supportAndFeedback": "Support & Feedback",
@@ -863,9 +864,9 @@
     "moreOptions": "Weitere Optionen...",
     "match": "Spiel",
     "notSet": "Nicht festgelegt",
-    "testMatch": "TESTSPIEL",
-    "matchNumber": "SPIEL #{{number}}",
-    "test": "TEST",
+    "testMatch": "Testspiel",
+    "matchNumber": "Spiel #{{number}}",
+    "test": "Test",
     "versionHistory": "Versionsverlauf",
     "current": "Aktuell",
     "exitFullscreen": "Vollbild beenden",
