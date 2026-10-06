@@ -8,7 +8,7 @@ import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { isServedFromLocalServer } from './utils/backendConfig'
 import { setBackendOverride } from './utils/backendConfig'
-import refereeIcon from './ref.png'
+import { Whistle } from './ui/AppSpinner.jsx'
 import { db } from './db/db'
 import { Check, ChevronRight, CalendarX2, Loader2, RefreshCw } from 'lucide-react'
 import { Button } from './ui/Button.jsx'
@@ -147,17 +147,6 @@ export default function RefereeApp() {
     setServerReady(true)
   }, [])
 
-  // Preload assets that are used later (e.g., referee icon)
-  useEffect(() => {
-    const assetsToPreload = [
-      refereeIcon
-    ]
-
-    assetsToPreload.forEach(src => {
-      const img = new Image()
-      img.src = src
-    })
-  }, [])
 
   // Check connection statuses
   const checkConnectionStatuses = async () => {
@@ -561,7 +550,7 @@ export default function RefereeApp() {
       {/* Main content */}
       <EntryPage className="overflow-y-auto">
         <EntryCard
-          art={<img src={refereeIcon} alt="Referee Icon" className="h-24 w-auto" />}
+          art={<Whistle size={96} className="text-stone-900" />}
           title={t('refereeDashboard.dashboardTitle')}
         >
           {/* Show "no active game" when server is connected but no games available */}

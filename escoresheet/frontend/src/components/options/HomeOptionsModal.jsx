@@ -860,13 +860,14 @@ export default function HomeOptionsModal({
               </div>
             )}
           </Row>
-          {/* Licence + credits. The loading spinner's ball and whistle are Game
-              Icons artwork (CC BY 3.0, see ui/AppSpinner.jsx): the licence needs
+          {/* Licence + credits. The loading spinner's ball and whistle (the whistle is
+              also the referee view's entry art) are Game Icons artwork (CC BY 3.0,
+              see ui/AppSpinner.jsx): the licence needs
               a visible credit, and this screen is reachable in every build
               (web, desktop, Android). Remove the credit only with the icons. */}
           <Row>
             <p className="text-xs leading-relaxed text-stone-500" data-testid="credits">
-              OpenVolley · {t('options.freeSoftware', 'Free software')} (GPL-3.0) ·{' '}
+              OpenVolley · {t('options.freeSoftware', 'Free software')} (GPL-3.0-or-later) ·{' '}
               <a href="https://github.com/Lucanepa/openvolley" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">
                 {t('options.sourceCode', 'Source code')}
               </a>
