@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, us
 import { apiFrom, apiAuth } from '../lib/apiClient'
 import { getApiUrl } from '../utils/backendConfig'
 import { profileUpdateColumns, confirmedProfileRow, PROFILE_NOT_SAVED } from '../components/auth/profileWrite'
+import { discardUnsentLogs } from '../utils/logger'
 
 const AuthContext = createContext(null)
 
@@ -186,6 +187,9 @@ export function AuthProvider({ children }) {
       setUser(null)
       setProfile(null)
       localStorage.removeItem('cachedProfile')
+      // Console lines not uploaded yet belong to this account: never upload
+      // them under the next one signing in on this device
+      discardUnsentLogs()
     }
 
     return { error }
@@ -272,6 +276,7 @@ export function AuthProvider({ children }) {
       setUser(null)
       setProfile(null)
       localStorage.removeItem('cachedProfile')
+      discardUnsentLogs()
 
       return { error: null }
     } catch (err) {
