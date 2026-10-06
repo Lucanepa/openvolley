@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
+import NativeServerSection from './NativeServerSection'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
 import { SatelliteDishIcon } from '../icons'
@@ -476,6 +477,9 @@ export default function HomeOptionsModal({
             />
           </Row>
         </Section>
+
+        {/* Android app only: cloud or venue LAN relay, other bundled views */}
+        <NativeServerSection />
 
         <Section title={t('options.displayMode')}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>

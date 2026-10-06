@@ -53,7 +53,7 @@ import { setExtId } from './utils/syncIds'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
-import { getLocalServerStatusUrl, isStaticHost } from './utils/backendConfig'
+import { getBackendOverride, getLocalServerStatusUrl, isStaticHost } from './utils/backendConfig'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
@@ -544,8 +544,10 @@ export default function App() {
     // (backendConfig.isStaticHost: *.openvolley.app, *.pages.dev, *.github.io)
     const isStaticDeployment = !import.meta.env.DEV && isStaticHost(window.location.hostname)
 
-    // Check if we have a configured backend URL (cloud backend)
-    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
+    // Check if we have a configured backend URL (cloud backend), or the venue
+    // LAN relay the Android app was pointed at (NativeServerSection)
+    const configuredBackendUrl = getBackendOverride() || import.meta.env.VITE_BACKEND_URL
+    const hasBackendUrl = !!configuredBackendUrl
 
     // --- Run async checks in parallel ---
     const asyncChecks = []
@@ -565,7 +567,7 @@ export default function App() {
         updateStatus('scoreboard', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
       } else if (hasBackendUrl) {
         try {
-          const backendUrl = import.meta.env.VITE_BACKEND_URL
+          const backendUrl = configuredBackendUrl
           const controller = new AbortController()
           const fetchTimeout = setTimeout(() => controller.abort(), 5000)
           const response = await fetch(`${backendUrl}/health`, { signal: controller.signal })

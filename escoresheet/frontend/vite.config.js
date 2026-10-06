@@ -32,6 +32,10 @@ const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 
 const appVersion = packageJson.version
 
 const isElectron = process.env.ELECTRON === 'true'
+// Android app build (scripts/release-android.sh): the WebView loads the bundled
+// files, so no service worker — an old precache would otherwise keep serving
+// the previous version after an APK update until the user accepted the prompt.
+const isCapacitor = process.env.CAPACITOR === 'true'
 
 // HTTPS configuration for dev server
 const useHttps = process.env.VITE_HTTPS === 'true' || process.env.HTTPS === 'true'
@@ -185,6 +189,7 @@ export default defineConfig({
       }
     },
     VitePWA({
+      disable: isCapacitor,
       registerType: 'prompt',
       includeAssets: ['openvolley_no_bg.png', 'favicon.ico', 'ball.png', 'fonts/*.woff2'],
       workbox: {
