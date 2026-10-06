@@ -1032,7 +1032,14 @@ before the new rows.
 - `restoreByPin(body, { limitKey })` gets the client IP (`cf-connecting-ip`
   with `TRUST_PROXY=cloudflare`), IPv6 keyed by /64.
 - `validate-connection-pin` scans setup/live indoor matches with
-  `{ internal: true, maxRows: 20000 }`, newest `scheduled_at` first.
+  `{ internal: true, maxRows: 20000 }`, newest `scheduled_at` first. With
+  `sport: 'beach'` (openbeach) it scans the beach matches instead: types
+  `referee`, `bench_team1` / `bench_team2` (flags `team1_bench_enabled` /
+  `team2_bench_enabled`, PIN keys `bench_team1` / `bench_team2`, the old
+  `team1_data` / `team2_data` keys accepted), `upload_team1` / `upload_team2`;
+  the answer names the teams `team1Team` / `team2Team` and carries
+  `sportType: 'beach'`. A PIN never finds a match of the other sport
+  (`lib/matchAccess.js` `CONNECTION_PIN_TYPES`).
 - Successful writes publish their `changes` to `?purpose=live` subscribers.
 - `/api/db` writes on matches/sets/events/match_live_state and
   `/api/match/restore` pass `matchOwner: { userId }` (omitted for admins):
