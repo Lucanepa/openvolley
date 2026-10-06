@@ -234,3 +234,40 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
   variant of a dark system theme (`Yaru-dark` → `Yaru`), so the title bar,
   pickers and scrollbars stay light on a dark desktop. A `GTK_THEME` set by the
   user still wins. The app logs `[theme] GTK theme … -> …` when it switches.
+
+## Scoresheet windows, links and downloads
+
+Every `window.open` of the app goes through `src/utils/openAppWindow.js`; the
+desktop side is `src-tauri/src/popups.rs` (new-window handler on the main
+window and on the windows it opens):
+
+- The app's own pages (`http://localhost:<port>/…`: the scoresheet, its
+  print / save / approval-PDF modes) open as an **app window** (label
+  `popup-<n>`, in no capability, so no app commands). It is the webview the
+  opener asked for: same web process and data store (the scoresheet reads the
+  match from the same IndexedDB) and `window.opener` (the match-end approval
+  PDF comes back by `postMessage`). `window.close()` in it closes the window.
+- Web links and `mailto:` go to the system browser / mail app (`xdg-open`,
+  `open`, `rundll32 url.dll,FileProtocolHandler`); other schemes are refused.
+- WebKitGTK only asks the handler about a `window.open` made during a click;
+  the app's buttons first read IndexedDB, so scripts may open windows (the
+  handler decides what opens).
+- Downloads ("Save PDF" is a blob download) go to the Downloads folder
+  (`~/Downloads` when there is no `user-dirs.dirs`) under a free name; the
+  windows get an `ov-download-finished` event and the scoresheet shows where
+  the file went. One handler on the main window: the popups share its context.
+
+Known limits:
+
+- **Save PDF on Linux fails**: html-to-image turns the scoresheet into a
+  ~73 MB `data:image/svg+xml` URL and WebKitGTK refuses data URLs above
+  ~64 MB ("Not allowed to load local resource"); a `blob:` URL loads but
+  taints the canvas. The scoresheet now says "The PDF could not be created on
+  this device". Windows (WebView2, Chromium) is not affected. Fix options: a
+  smaller SVG (html-to-image `includeStyleProperties`), capturing the sheet in
+  parts, or `window.print()` to the GTK print dialog (Print to file).
+- **`alert()` / `confirm()` in the desktop app**: `tauri-plugin-dialog`
+  replaces both with IPC calls (`plugin:dialog|message` / `|confirm`) that no
+  capability allows, so `alert()` shows nothing and `confirm()` returns a
+  Promise, which is truthy: the action-log deletes and the LFP warning in the
+  scoreboard (`if (confirm(...))`) go ahead without asking. Not changed here.

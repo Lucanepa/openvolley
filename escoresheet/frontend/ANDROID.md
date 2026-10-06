@@ -169,6 +169,29 @@ The app is prepared for f-droid.org, which builds it from source itself:
   `isAllowedBackendUrl` in `src/utils/backendConfig.js` (localhost, RFC 1918,
   `*.local`, `*.openvolley.app`).
 
+## Scoresheet and links (in-app view)
+
+A WebView has no second window, and leaving the page would unmount the
+scorer's screen. `src/utils/openAppWindow.js` opens the app's own pages (the
+scoresheet and its print / save / approval-PDF modes) in a full-screen
+**in-app view**: an iframe on the same origin (`https://localhost`, so the
+same IndexedDB) under a white bar with **Back**. Back, the Android Back
+button (a pushed history entry, closed on `popstate`) or Escape close it; the
+screen underneath (match setup, scoreboard, match end) stays mounted, with
+its state. The page in the view talks to the app through
+`src/utils/appWindowGuest.js`: the approval PDF goes to the app,
+`window.close()` closes the view, and **Save PDF** hands the PDF to the app,
+which writes it with `@capacitor/filesystem` to
+`Documents/OpenVolley/scoresheets/` (Files app, USB; fallback: the app's
+external files folder) and says where in the bar. The WebView has no print
+and cannot download a blob, so there is no print dialog. External links and
+`mailto:` are navigations Capacitor hands to Android's browser / mail app.
+
+Checked in Chrome with a Capacitor stub, not yet on a device: the scoresheet
+shows the match, Back returns to match setup untouched, Save PDF reaches the
+Filesystem call. The match-end ZIP and log downloads (`MatchEnd.jsx`) are
+still blob downloads and do nothing in the WebView.
+
 ## Servers in the app
 
 The WebView origin is `https://localhost`, which has no backend behind it
