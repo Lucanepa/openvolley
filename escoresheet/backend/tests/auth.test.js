@@ -309,6 +309,9 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
     // connection due to administrator command"). That error must not become an
     // uncaught exception of whichever test created the client.
     pool.on('connect', (client) => client.on('error', () => {}))
+    // pg-pool re-emits an idle client's error on the pool itself, which throws
+    // when the pool has no 'error' listener (CI run 37452520361).
+    pool.on('error', () => {})
     await pool.query(testSchemaSql())
     const migration = await readFile(path.join(BACKEND, 'db/002_app_sessions.sql'), 'utf8')
     await pool.query(migration)
@@ -839,6 +842,7 @@ describe('auth against Postgres', { skip: PG_TEST_URL ? false : 'PG_TEST_URL not
       u.username = role
       u.password = 'test'
       appPool = new pg.Pool({ connectionString: u.toString(), max: 3 })
+      appPool.on('error', () => {}) // see the main pool: teardown may terminate idle clients
     })
 
     after(async () => {
