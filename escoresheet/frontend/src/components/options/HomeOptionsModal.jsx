@@ -4,6 +4,8 @@ import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import NativeServerSection from './NativeServerSection'
+import DesktopUpdateSection from './DesktopUpdateSection'
+import { useDesktopUpdate } from '../../hooks/useDesktopUpdate'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
 import { SatelliteDishIcon } from '../icons'
@@ -232,6 +234,9 @@ export default function HomeOptionsModal({
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const [updateCheck, setUpdateCheck] = useState({ checking: false, result: null }) // result: 'available' | 'latest' | 'error'
   const [newVersion, setNewVersion] = useState(null)
+  // The desktop app updates itself (updater.rs): its own status, not the web
+  // build's version.json, which in the app is always the bundled one.
+  const desktopUpdate = useDesktopUpdate()
   const [keybindingsModalOpen, setKeybindingsModalOpen] = useState(false)
   const [editingKey, setEditingKey] = useState(null)
   const [keyBindings, setKeyBindings] = useState(() => {
@@ -894,6 +899,9 @@ export default function HomeOptionsModal({
         )}
 
         <Section title={t('options.appVersion')}>
+          {/* The desktop app: its own update status (DesktopUpdateSection).
+              Elsewhere the web build's version check. */}
+          {desktopUpdate.active ? <DesktopUpdateSection update={desktopUpdate} /> : (
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div className="flex items-center justify-between">
               <div>
@@ -947,6 +955,7 @@ export default function HomeOptionsModal({
               </div>
             )}
           </Row>
+          )}
           {/* Licence + credits. The icons are the same packs as wiedisync:
               Lucide (ISC) for the UI glyphs and the whistle, Phosphor (MIT) for
               the volleyball (see components/icons and ui/AppSpinner.jsx). Both

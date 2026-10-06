@@ -69,6 +69,14 @@ export function setLiveMatch(next) {
 
 export const getLiveMatch = () => live
 
+/** Follow the live match (e.g. the update notice hides during a match).
+ *  @returns {() => void} unsubscribe */
+export function onLiveMatchChange(listener) {
+  const l = (value) => listener(value)
+  liveListeners.add(l)
+  return () => liveListeners.delete(l)
+}
+
 // ---------------------------------------------------------------------------
 // Questions (plain data, tested)
 
@@ -141,6 +149,7 @@ export function exitQuestion({ live: liveNow = 'none' } = {}) {
 export function trayLabels() {
   // {{count}} stays in the text: the app fills it in (lifecycle.rs)
   const tablets = t('appLifecycle.trayTablets', '{{count}} tablets connected', { count: '{{count}}' })
+  const updateReady = t('update.trayReady', 'Restart to update to {{version}}', { version: '{{version}}' })
   return {
     tooltip: t('appLifecycle.trayTooltip', 'OpenVolley eScoresheet'),
     show: t('appLifecycle.trayShow', 'Show OpenVolley'),
@@ -158,6 +167,10 @@ export function trayLabels() {
     quitTestMatchBody: t('appLifecycle.quitTestMatchLive', 'A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.'),
     quitConfirm: t('appLifecycle.quitConfirm', 'Quit OpenVolley'),
     keepRunning: t('appLifecycle.keepRunning', 'Keep running'),
+    // a downloaded update (updater.rs): the tray item and the status line;
+    // {{version}} stays in the text, the app fills it in
+    updateReady: updateReady.includes('{{version}}') ? updateReady : 'Restart to update to {{version}}',
+    updateStatus: t('update.trayStatus', 'Update ready'),
   }
 }
 

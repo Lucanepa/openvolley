@@ -9,7 +9,12 @@
         "conflicts": ["openvolley-e-scoresheet", "openvolley"],
         "replaces": ["openvolley-e-scoresheet", "openvolley"],
         "depends": ["libayatana-appindicator3-1 | libappindicator3-1"],
-        "desktopTemplate": "openvolley-escoresheet.desktop"
+        "recommends": ["pkexec | policykit-1"],
+        "desktopTemplate": "openvolley-escoresheet.desktop",
+        "files": {
+          "/usr/libexec/openvolley-escoresheet/apt-upgrade": "linux/apt-upgrade",
+          "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": "linux/com.openvolley.escoresheet.update.policy"
+        }
       }
     }
   }

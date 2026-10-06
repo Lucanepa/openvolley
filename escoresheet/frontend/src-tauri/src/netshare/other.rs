@@ -7,6 +7,12 @@ use tauri::{AppHandle, Runtime};
 #[derive(Default)]
 pub struct Inner;
 
+impl Inner {
+    pub fn running(&self) -> bool {
+        false
+    }
+}
+
 pub async fn hotspot_status(_inner: &mut Inner) -> HotspotStatus {
     HotspotStatus { reason: Some("unsupported-os"), ..Default::default() }
 }

@@ -21,12 +21,18 @@ const APP_COMMANDS: &[&str] = &[
     "app_hide",
     "app_quit",
     "app_quit_ack",
+    // automatic updates (updater.rs)
+    "update_status",
+    "update_check_now",
+    "update_install_now",
+    "update_set_prefs",
 ];
 
 fn main() {
     // An app ACL manifest: these commands are denied unless a capability
     // grants them (capabilities/backup.json, capabilities/netshare.json,
-    // capabilities/app.json: only the main window, only from http://localhost).
+    // capabilities/app.json, capabilities/update.json: only the main window,
+    // only from http://localhost).
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(APP_COMMANDS)),
