@@ -402,6 +402,7 @@
       "pinCode": "000000"
     },
     "syncStatus": {
+      "savedOnDevice": "Salvato sul dispositivo",
       "notSynced": "Non sincronizzato",
       "offline": "Non in linea",
       "synced": "Sincronizzato",

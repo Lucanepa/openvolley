@@ -403,6 +403,7 @@
       "pinCode": "000000"
     },
     "syncStatus": {
+      "savedOnDevice": "Saved on device",
       "notSynced": "Not synced",
       "offline": "Offline",
       "synced": "Synced",
