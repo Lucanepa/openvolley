@@ -110,7 +110,7 @@ vi.mock('../../lib/apiClient', () => {
   }
 })
 
-vi.mock('../../utils/backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}` }))
+vi.mock('../../utils/backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 
 import {
   runQueuePass,

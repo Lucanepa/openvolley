@@ -549,3 +549,41 @@ describe('live-state order: sequence numbers, not the scorer\'s wall clock', () 
     expect(tracker.bundle(fromRow)).toBe(fromRow)
   })
 })
+
+describe('desktop app: cloud endpoints in the cloud, relay endpoints on the local relay', () => {
+  let realFetch
+  let realLocation
+  beforeEach(() => {
+    realFetch = globalThis.fetch
+    realLocation = window.location
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('VITE_CLOUD_API_URL', '')
+    Object.defineProperty(window, 'location', {
+      value: { hostname: 'localhost', protocol: 'http:', port: '5173', origin: 'http://localhost:5173', host: 'localhost:5173' },
+      writable: true,
+      configurable: true
+    })
+  })
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
+    vi.unstubAllEnvs()
+    forgetMatchAccess()
+  })
+  const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, headers: { get: () => 'application/json' } })
+
+  it('PIN check and roster upload go to backend.openvolley.app, tablet status to the relay', async () => {
+    globalThis.fetch = vi.fn(async () => json({ success: true, match: { id: SEED } }))
+    await validatePinSupabase('314159', 'referee')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('https://backend.openvolley.app/api/match/validate-connection-pin')
+
+    const fetchImpl = vi.fn(async () => json({ success: true }))
+    await uploadRosterToCloud(SEED, 'home', '975310', { players: [] }, { fetchImpl })
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://backend.openvolley.app/api/match/upload-roster')
+
+    const relay = vi.fn(async () => json({ connections: [] }))
+    await fetchRelayConnections('match_desktop_case', { fetchImpl: relay })
+    expect(relay.mock.calls[0][0]).toBe('http://localhost:5173/api/server/connections?matchId=match_desktop_case')
+  })
+})

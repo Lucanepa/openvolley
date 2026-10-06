@@ -8,7 +8,7 @@
 import { db } from '../db/db'
 import { apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
-import { getApiUrl } from './backendConfig'
+import { getCloudApiUrl } from './backendConfig'
 import { filterMatchPayload } from '../db/matchRepository'
 import { setExtId, eventExtId, jobMatchKey } from './syncIds'
 import { buildConnectionPins } from './connectionPins'
@@ -1289,7 +1289,7 @@ export function saveBackupSettings(settings) {
 export async function listPocketBaseBackups(gameN) {
   const params = new URLSearchParams()
   if (gameN) params.set('game_number', String(gameN))
-  const url = getApiUrl(`/api/pocketbase/matches?${params.toString()}`)
+  const url = getCloudApiUrl(`/api/pocketbase/matches?${params.toString()}`)
   if (!url) return []
   try {
     const res = await fetch(url)
@@ -1324,7 +1324,7 @@ export async function listPocketBaseBackups(gameN) {
  */
 export async function fetchPocketBaseMatch(matchId, gamePin) {
   const query = gamePin ? `?gamePin=${encodeURIComponent(String(gamePin).trim())}` : ''
-  const url = getApiUrl(`/api/pocketbase/matches/${encodeURIComponent(matchId)}${query}`)
+  const url = getCloudApiUrl(`/api/pocketbase/matches/${encodeURIComponent(matchId)}${query}`)
   if (!url) throw new Error('Backend not available')
   const res = await fetch(url)
   if (res.status === 403) throw new Error('The game PIN does not match this backup')

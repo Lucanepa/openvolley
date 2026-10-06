@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { apiFrom, apiAuth } from '../lib/apiClient'
-import { getApiUrl } from '../utils/backendConfig'
+import { getCloudApiUrl } from '../utils/backendConfig'
 import { profileUpdateColumns, confirmedProfileRow, PROFILE_NOT_SAVED } from '../components/auth/profileWrite'
 import { discardUnsentLogs } from '../utils/logger'
 
@@ -19,7 +19,7 @@ function cacheProfile(profile) {
 }
 
 // Check if backend proxy is available (for auth operations)
-const hasBackend = () => !!getApiUrl('/api/auth/sign-in')
+const hasBackend = () => !!getCloudApiUrl('/api/auth/sign-in')
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
