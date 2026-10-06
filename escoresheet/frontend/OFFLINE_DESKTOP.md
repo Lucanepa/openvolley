@@ -64,7 +64,7 @@ There are two implementations of the same idea; **Tauri is the recommended one.*
 ## Build — Tauri (recommended)
 
 Prereqs: Rust (`rustup`), Node, and on Linux the WebView deps
-(`libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf`).
+(`libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf`).
 
 ```bash
 cd escoresheet/frontend
@@ -380,6 +380,66 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
   and a native Wi-Fi plugin; today a QR opens Chrome (see ANDROID.md).
 - **Port-in-use UX** — surface a friendly message when the relay can't bind.
 
+## Closing, the tray and quitting
+
+The scoretable is also the tablets' server, so closing its window does not
+quit (`src-tauri/src/lifecycle.rs`, page side `src/utils/appLifecycle.js`):
+
+- **Close button / Alt+F4** hides the scoretable and its scoresheet windows
+  to a **tray icon** (the app icon, tooltip "OpenVolley eScoresheet"). The
+  relay keeps serving the tablets, the laptop's Wi-Fi / Bluetooth for the
+  tablets keeps running, the match is untouched. The first close of each run
+  shows an in-app notice first ("OpenVolley keeps running in the tray",
+  Hide window / Keep open); later closes hide at once.
+- **Tray icon**: on Windows a left click shows the window, the right click
+  opens the menu; on Linux (AppIndicator) every click opens the menu. Menu:
+  **Show OpenVolley**, a status line (tablets connected, "Match in progress" /
+  "Test match in progress"), **Quit OpenVolley…**. The menu is in the app's
+  language: the page sends its translated texts (`app_page_state`, again on
+  every language change); until the page has loaded they are English. The
+  tablet count is the relay's WebSocket connections from other machines,
+  polled every 3 s.
+- **Quitting** asks first: "Quit OpenVolley…" in the tray menu or in the
+  app's header menu shows the window and an in-app question (danger tone):
+  tablets on this computer's network disconnect; when the app runs the
+  laptop's own Wi-Fi / Bluetooth for tablets, it says that stops too (a
+  hotspot switched on outside the app is not mentioned: the app does not stop
+  it); with a live match it says so (official or test match), that the match
+  is saved on this computer and continues from the home screen. Only
+  **Quit OpenVolley** exits, cleanly as before (the tablets' network is
+  stopped on `RunEvent::Exit`, the relay goes with the process).
+- **Exit rules** (`ExitGate`, unit-tested): a close hides; an exit nobody
+  confirmed (`RunEvent::ExitRequested` while the scoretable window exists) is
+  prevented and turned into the question; a confirmed quit exits; the OS is
+  never held up: Linux `SIGTERM` (logout, shutdown, `kill`), `SIGINT`,
+  `SIGHUP` quit at once (a second signal, or 10 s without an exit, ends the
+  process), Windows ends the event loop itself on `WM_ENDSESSION`. A window
+  with no loaded page (blank / broken) quits without asking, so the app can
+  never become impossible to quit.
+- **One app per computer** (`tauri-plugin-single-instance`): starting it
+  again while it runs (e.g. in the tray) shows the running window and the
+  second process exits, instead of failing on the busy ports. The ports are
+  bound after that check. On Linux this uses the session D-Bus; without one
+  the app still starts and a second launch fails on the ports as before.
+- **Linux tray**: needs `libayatana-appindicator3` (or `libappindicator3`) at
+  run time, which the `.deb` depends on (`libayatana-appindicator3-1 |
+  libappindicator3-1`) and Tauri's AppImage bundler copies from the build
+  machine (CI installs `libayatana-appindicator3-dev`; not yet checked on a
+  built AppImage), and a StatusNotifier host
+  on the session bus. KDE, Xfce, Cinnamon, MATE and Ubuntu's GNOME have one;
+  plain GNOME (Fedora, Debian) needs the "AppIndicator and KStatusNotifierItem
+  Support" extension. Without either, the app logs `[tray] no tray icon: …`
+  and the close button **minimises** the window instead of hiding it (the
+  notice then says so), so it can never become unreachable; quit from the
+  header menu. Windows: the tray works natively.
+- Checked under Xvfb (isolated HOME and session bus, a stand-in
+  StatusNotifier host, the tray menu driven over D-Bus): close → hidden,
+  relay still serving; Show → back with its scoresheet window; Quit →
+  question; Keep running → still running; Quit OpenVolley → exited, ports
+  free; second launch → the first shows its window; SIGTERM → clean exit;
+  no StatusNotifier host → minimise fallback. Not yet on a real Windows
+  desktop (type-checked with `cargo check --target x86_64-pc-windows-msvc`).
+
 ## Window chrome
 
 - No native menu bar on Linux / Windows (it held only Help → Connect a Tablet
@@ -403,9 +463,12 @@ window and on the windows it opens):
   match from the same IndexedDB) and `window.opener` (the match-end approval
   PDF comes back by `postMessage`). `window.close()` in it closes the window.
 - The scoresheet windows belong to the scoretable: closing the main window
-  closes them and quits. (Otherwise a scoresheet left open kept the process,
-  the relay and ports 5173 / 8080 alive, and the next launch failed with
-  "Cannot bind HTTP port", silently in a release build.)
+  hides them with it to the tray (and brings them back with it, see
+  "Closing, the tray and quitting"). Should the main window be destroyed
+  anyway (by the OS), they are closed and the app quits. (A scoresheet left
+  open used to keep the process, the relay and ports 5173 / 8080 alive, and
+  the next launch failed with "Cannot bind HTTP port", silently in a release
+  build.)
 - The match-end approval opens the scoresheet with `action=getBlob`. When the
   PDF cannot be made (see below), the scoresheet tells the opener
   (`pdfBlobFailed`) and closes; the approval goes on without the PDF at once
