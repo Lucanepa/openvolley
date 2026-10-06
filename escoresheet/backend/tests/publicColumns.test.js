@@ -94,6 +94,14 @@ describe('publicColumns: live projection', () => {
     assert.deepEqual(live, expected)
   })
 
+  it('keeps the beach live-state columns (server, challenges, technical timeout)', () => {
+    const row = {
+      match_id: MATCH, sport_type: 'beach', points_a: 12, points_b: 9, server_number: 2,
+      challenges_used_a: 0, challenges_used_b: 1, tto_active: true, tto_started_at: '2026-10-06T10:00:00Z'
+    }
+    assert.deepEqual(projectLiveRow('match_live_state', row), row)
+  })
+
   it('events go out without payload or state snapshot; sets unchanged', () => {
     const ev = projectLiveRow('events', { id: 1, match_id: MATCH, external_id: 'seed-1:e:1', type: 'sanction', set_index: 1, payload: { playerName: 'Ana' }, state_snapshot: { x: 1 }, lineup_left: {} })
     assert.deepEqual(ev, { id: 1, match_id: MATCH, external_id: 'seed-1:e:1', type: 'sanction', set_index: 1 })
