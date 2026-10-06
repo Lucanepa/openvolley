@@ -355,6 +355,36 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal(team.players[0].dob, '2004-05-06')
     assert.equal(team.short_name, 'VBC')
 
+    // beach (docs/beach-saved-teams-spec.md): same permissions, filtered by ?sport=
+    assert.equal((await call(null, 'GET', '/api/saved-teams?sport=beach')).status, 401)
+    expectCode(await call(pending, 'GET', '/api/saved-teams?sport=beach'), 403, 'OV_FORBIDDEN')
+    expectCode(await call(users.anna, 'GET', '/api/saved-teams?sport=nope'), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.anna, 'POST', '/api/saved-teams/competitions', { name: 'Tour', season: '2026', sport: 'beach' }), 403, 'OV_FORBIDDEN')
+    const bc = await call(users.cm, 'POST', '/api/saved-teams/competitions', { name: 'Coop Beachtour', season: '2026', gender: 'women', sport: 'beach' })
+    assert.equal(bc.status, 201, bc.text)
+    assert.equal(bc.json.data.competition.sport, 'beach')
+    const bt = await call(users.cm, 'POST', '/api/saved-teams/teams', { competition_id: bc.json.data.competition.id, name: 'Müller / Weber' })
+    assert.equal(bt.status, 201, bt.text)
+    const bput = await call(users.cm, 'PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, {
+      players: [{ number: 1, first_name: 'Anna', last_name: 'Müller', dob: '1998-01-05', country: 'che' }, { number: 2, first_name: 'Sara', last_name: 'Weber' }],
+      staff: [{ role: 'Coach', last_name: 'Kunz' }]
+    })
+    assert.equal(bput.status, 200, bput.text)
+    assert.equal(bput.json.data.team.players[0].country, 'CHE')
+    expectCode(await call(users.cm, 'PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, { players: [{ number: 1, last_name: 'A', is_libero: true }], staff: [] }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.cm, 'PATCH', `/api/saved-teams/competitions/${bc.json.data.competition.id}`, { sport: 'indoor' }), 400, 'OV_INVALID_REQUEST')
+    const beachBundle = await call(users.anna, 'GET', '/api/saved-teams?sport=beach')
+    assert.equal(beachBundle.status, 200, beachBundle.text)
+    assert.equal(beachBundle.json.data.sport, 'beach')
+    assert.ok(beachBundle.json.data.competitions.every((x) => x.sport === 'beach'))
+    assert.equal(beachBundle.json.data.teams.find((x) => x.id === bt.json.data.team.id).players[0].dob, '1998-01-05')
+    // a 2.1.0 client (no ?sport=) never sees a beach row
+    const plain = await call(users.anna, 'GET', '/api/saved-teams')
+    assert.equal(plain.json.data.competitions.some((x) => x.sport === 'beach' || x.id === bc.json.data.competition.id), false)
+    assert.equal(plain.json.data.teams.some((x) => x.id === bt.json.data.team.id), false)
+    const all = await call(users.cm, 'GET', '/api/saved-teams?sport=all')
+    assert.deepEqual([...new Set(all.json.data.competitions.map((x) => x.sport))].sort(), ['beach', 'indoor'])
+
     // never through /api/db (not on the allowlist), anonymous or signed in
     for (const table of ['competitions', 'competition_teams', 'competition_players', 'competition_staff', 'invite_codes', 'invite_redemptions', 'audit_log']) {
       expectCode(await dbCall(null, table, 'select', { columns: '*' }), 400, 'OV_INVALID_REQUEST')

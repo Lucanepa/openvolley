@@ -82,8 +82,9 @@ export const admin = {
 // ── Saved teams ──
 
 export const savedTeamsApi = {
-  fetchBundle() {
-    return apiRequest('GET', '/api/saved-teams')
+  /** sport: 'indoor' | 'beach' | 'all'; none = the server's default (indoor only). */
+  fetchBundle({ sport } = {}) {
+    return apiRequest('GET', sport ? `/api/saved-teams?sport=${encodeURIComponent(sport)}` : '/api/saved-teams')
   },
   createCompetition(body) {
     return apiRequest('POST', '/api/saved-teams/competitions', body)

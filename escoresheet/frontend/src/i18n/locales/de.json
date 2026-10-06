@@ -2288,7 +2288,8 @@
     "errors": {
       "duplicateNumber": "Die Nummer {{number}} kommt zweimal vor.",
       "twoCaptains": "Nur ein Captain pro Team.",
-      "lastNameRequired": "Der Nachname fehlt."
+      "lastNameRequired": "Der Nachname fehlt.",
+      "countryFormat": "Land: 3 Buchstaben, z. B. CHE"
     },
     "load": "Gespeichertes Team laden",
     "pickerTitle": "Gespeichertes Team laden",
@@ -2314,7 +2315,18 @@
     "saveNew": "Neues Team",
     "saveConfirmTitle": "Gespeicherten Kader von {{name}} überschreiben?",
     "saveConfirmBody": "Die gespeicherten Spieler und Offiziellen dieses Teams werden durch diesen Kader ersetzt.",
-    "saved": "Gespeichert in {{name}}."
+    "saved": "Gespeichert in {{name}}.",
+    "sport": "Sportart",
+    "sportIndoor": "Indoor",
+    "sportBeach": "Beach",
+    "beachPlayer": "Spieler/in {{number}}",
+    "country": "Land",
+    "countryHint": "Code mit 3 Buchstaben, z. B. CHE",
+    "coach": "Trainer",
+    "addCoach": "Trainer hinzufügen",
+    "removeCoach": "Trainer entfernen",
+    "clearPlayer": "Spieler/in {{number}} leeren",
+    "beachTeamHint": "Ein Beach-Team ist ein Paar: Spieler/in 1 und 2, optional mit Trainer."
   },
   "cloudBlock": {
     "scorerRequired": "Nicht synchronisiert: Dein Konto wartet auf Freigabe. Das Spiel ist auf diesem Gerät sicher.",
