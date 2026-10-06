@@ -89,7 +89,10 @@ describe('accountApi endpoints', () => {
     await admin.releaseGame('m-1', { reason: 'wrong number' })
     await admin.listAudit({ before: 10, action: 'match.reopen' })
     await savedTeamsApi.fetchBundle()
+    await savedTeamsApi.fetchBundle({ sport: 'beach' })
+    await savedTeamsApi.fetchBundle({ sport: 'all' })
     await savedTeamsApi.createCompetition({ name: 'L', season: '2026/27' })
+    await savedTeamsApi.createCompetition({ name: 'Tour', season: '2026', sport: 'beach', vm_leagues: [] })
     await savedTeamsApi.updateCompetition('c-1', { archived: true })
     await savedTeamsApi.deleteCompetition('c-1')
     await savedTeamsApi.createTeam({ competition_id: 'c-1', name: 'T' })
@@ -112,6 +115,9 @@ describe('accountApi endpoints', () => {
       'POST /api/admin/matches/m-1/release-game',
       'GET /api/admin/audit?before=10&action=match.reopen',
       'GET /api/saved-teams',
+      'GET /api/saved-teams?sport=beach',
+      'GET /api/saved-teams?sport=all',
+      'POST /api/saved-teams/competitions',
       'POST /api/saved-teams/competitions',
       'PATCH /api/saved-teams/competitions/c-1',
       'DELETE /api/saved-teams/competitions/c-1',
@@ -125,7 +131,11 @@ describe('accountApi endpoints', () => {
     expect(calls[3].body).toEqual({ add: ['scorer'], remove: [] })
     expect(calls[4].body).toEqual({ label: 'Club', club: null, role: 'scorer', max_uses: null, expires_at: null })
     expect(calls[8].body).toEqual({ reason: 'typo' })
-    expect(calls[19].body).toEqual({ players: [], staff: [] })
+    expect(calls[22].body).toEqual({ players: [], staff: [] })
+    expect(calls[13].body).toBeUndefined()
+    expect(calls[14].body).toBeUndefined()
+    expect(calls[12].body).toBeUndefined()
+    expect(calls[16].body).toEqual({ name: 'Tour', season: '2026', sport: 'beach', vm_leagues: [] })
   })
 })
 
