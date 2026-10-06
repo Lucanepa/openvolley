@@ -120,6 +120,10 @@ expect hit  supabase-secret-api-key       auth.test.js "const k = 'sb_""secret_$
 
 # Known openvolley look-alikes.
 expect miss generic-api-key b.json "{\"seed_key\": \"match_$(rnd 10)_$(rnd 10)\"}"
+# F-Droid recipe: public signing-certificate fingerprint; a key-named hex value still hits.
+hex64() { python3 -c "import secrets;print(secrets.token_hex(32))"; }
+expect miss generic-api-key app.yml "AllowedAPKSigningKeys: $(hex64)"
+expect hit  generic-api-key app.yml "api_key: $(hex64)"
 
 if (( fails > 0 )); then
   echo "$fails case(s) failed"; exit 1

@@ -8,7 +8,7 @@ import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange } from './utils/livescoreModel'
-import mikasaVolleyball from './mikasa_v200w.png'
+import ballFallback from './ball_fallback.png'
 import { AlertTriangle, Radio, RefreshCw, Server } from 'lucide-react'
 import { cn } from './ui/cn.js'
 import { BANNER_BASE, BANNER } from './ui/tones.js'
@@ -31,7 +31,7 @@ function shouldAutoConnectNow() {
   })
 }
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 
 /**
@@ -284,7 +284,7 @@ export default function LivescoreApp() {
     const serveBall = (side) => (
       <span aria-hidden={servingTeam !== side} style={{ display: 'flex', flex: '0 0 auto', width: 'clamp(32px, min(12vmin, 9vw), 200px)', justifyContent: 'center' }}>
         {servingTeam === side && (
-          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt={t('livescore.serving', 'Serving')} style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1' }} />
+          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt={t('livescore.serving', 'Serving')} style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1' }} />
         )}
       </span>
     )
@@ -484,7 +484,7 @@ export default function LivescoreApp() {
                   : rawGender
               const tone = isMatchEnded ? 'emerald' : 'red'
               const serveBall = (
-                <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt={t('livescore.serving', 'Serving')} className="inline-block h-5 w-5 shrink-0" />
+                <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt={t('livescore.serving', 'Serving')} className="inline-block h-5 w-5 shrink-0" />
               )
 
               return (

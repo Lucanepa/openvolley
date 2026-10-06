@@ -87,4 +87,4 @@ Contributions are welcome! See the [Installation guide](escoresheet/wiki/Install
 
 ## License
 
-[GPL-3.0](LICENSE) -- Free and open source forever.
+[GPL-3.0-or-later](LICENSE) -- Free and open source forever.

@@ -2,11 +2,18 @@ apply plugin: 'com.android.application'
 
 // versionName = the web app version in package.json (MAJOR.MINOR.PATCH).
 // versionCode = (MAJOR * 1000000 + MINOR * 1000 + PATCH) * 10 + androidBuild
-//   1.48.19, androidBuild 1 -> 10480191
-// androidBuild (0-9) lets a native-only fix ship without a web version bump:
-// raise it for such a rebuild, reset it to 0 when package.json's version
-// changes. Monotonic while MINOR/PATCH stay below 1000. See ANDROID.md.
-def androidBuild = 1
+//   1.48.20, androidBuild 0 -> 10480200
+// androidBuild stays 0 from 1.48.20 on: every Android release, a native-only
+// fix included, bumps PATCH in package.json, so each release has its own
+// android-v<versionName> tag (F-Droid builds tags, and a tag it has built must
+// never move). The *10 stays so codes keep growing past the earlier
+// 10480191/10480192. Monotonic while MINOR/PATCH stay below 1000. See ANDROID.md.
+//
+// The two values are written out as literals in defaultConfig below because
+// F-Droid's update checker reads versionCode/versionName from this file with
+// a regex and cannot evaluate Groovy. The check below fails the build when
+// they no longer match package.json + androidBuild, so they cannot drift.
+def androidBuild = 0
 def webVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
 def (vMajor, vMinor, vPatch) = webVersion.tokenize('.-')[0..2].collect { it as int }
 def webVersionCode = (vMajor * 1000000 + vMinor * 1000 + vPatch) * 10 + androidBuild
@@ -18,8 +25,8 @@ android {
         applicationId "com.openvolley.escoresheet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode webVersionCode
-        versionName webVersion
+        versionCode 10480200
+        versionName "1.48.20"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -30,9 +37,22 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            // No META-INF/version-control-info.textproto: its content depends
+            // on how the tree was checked out (git clone, worktree, tarball),
+            // which would make the owner's build and F-Droid's differ.
+            vcsInfo.include false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+def declaredCode = android.defaultConfig.versionCode
+def declaredName = android.defaultConfig.versionName
+if (declaredName != webVersion || declaredCode != webVersionCode) {
+    throw new GradleException(
+        "android/app/build.gradle is out of date: defaultConfig has ${declaredName} (${declaredCode}), " +
+        "package.json ${webVersion} with androidBuild ${androidBuild} needs ${webVersion} (${webVersionCode}). " +
+        "Update the two literals in defaultConfig (ANDROID.md, Version rule).")
 }
 
 repositories {
@@ -54,12 +74,3 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
-
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}

@@ -1,0 +1,27 @@
+OpenVolley is an electronic scoresheet for indoor volleyball, made for the scorer's table. It follows the FIVB rules and the Swiss Volley regulations and replaces the paper scoresheet.
+
+Scoring
+- Match setup: teams, rosters, liberos, bench officials, referees, match details
+- Coin toss, line-ups and rotations, service order
+- Rally-by-rally scoring with undo and decision changes
+- Timeouts, substitutions (regular and exceptional), libero replacements
+- Improper requests, delay warnings and sanctions
+- Set intervals, set and match end, signatures
+- Scoresheet PDF of the finished match
+- Test matches with sample teams to practise
+
+Offline first
+Every match is stored on the tablet. Scoring never waits for the network: the app keeps working with no connection at all and catches up when it is back online.
+
+Tablets around the court
+The same app can open the referee, bench (team) and livescore views, so a second tablet can follow the match live for the 2nd referee, a coach or the audience. Choose them under Options, "Use this tablet as".
+
+Venue server (no internet)
+At venues without internet, the tablets connect to a local OpenVolley server on the same network (the OpenVolley desktop app, the standalone server or a small venue box). Enter its address, for example 192.168.1.20:8080, under Options, Server.
+
+Cloud sync
+With internet, matches are synchronised with the OpenVolley backend (backend.openvolley.app), so the referee, bench and livescore views on other devices follow the match. The backend is free software from the same repository and can be self-hosted. Test matches are never uploaded.
+
+Languages: English, German, Swiss German, French, Italian.
+
+Built for tablets in landscape orientation.
