@@ -2462,7 +2462,8 @@
     "errors": {
       "duplicateNumber": "Il numero {{number}} è usato due volte.",
       "twoCaptains": "Un solo capitano per squadra.",
-      "lastNameRequired": "Il cognome è obbligatorio."
+      "lastNameRequired": "Il cognome è obbligatorio.",
+      "countryFormat": "Nazione: 3 lettere, p. es. CHE"
     },
     "load": "Carica squadra salvata",
     "pickerTitle": "Carica una squadra salvata",
@@ -2488,7 +2489,18 @@
     "saveNew": "Nuova squadra",
     "saveConfirmTitle": "Sovrascrivere la rosa salvata di {{name}}?",
     "saveConfirmBody": "I giocatori e gli ufficiali salvati di questa squadra vengono sostituiti da questa rosa.",
-    "saved": "Salvato in {{name}}."
+    "saved": "Salvato in {{name}}.",
+    "sport": "Sport",
+    "sportIndoor": "Indoor",
+    "sportBeach": "Beach",
+    "beachPlayer": "Giocatore/trice {{number}}",
+    "country": "Nazione",
+    "countryHint": "Codice di 3 lettere, p. es. CHE",
+    "coach": "Allenatore",
+    "addCoach": "Aggiungi allenatore",
+    "removeCoach": "Rimuovi allenatore",
+    "clearPlayer": "Svuota giocatore {{number}}",
+    "beachTeamHint": "Una squadra beach è una coppia: giocatori 1 e 2, allenatore facoltativo."
   },
   "cloudBlock": {
     "scorerRequired": "Non sincronizzata: il tuo account è in attesa di approvazione. La partita è al sicuro su questo dispositivo.",
