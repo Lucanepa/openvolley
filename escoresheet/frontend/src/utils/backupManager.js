@@ -1122,7 +1122,7 @@ export async function selectBackupFile() {
     try {
       const [fileHandle] = await window.showOpenFilePicker({
         types: [{
-          description: 'JSON Backup Files',
+          description: 'JSON backup files',
           accept: { 'application/json': ['.json'] }
         }],
         multiple: false

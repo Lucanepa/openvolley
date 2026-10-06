@@ -445,13 +445,13 @@ export default function TestModeControls({ matchId, onRefresh }) {
           Sub
         </Button>
         <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerSetEnd}>
-          Set End
+          Set end
         </Button>
         <Button variant="secondary" className={TOOL_CLASS} onClick={handleTriggerMatchEnd}>
-          Match End
+          Match end
         </Button>
         <Button variant="secondary" className={TOOL_CLASS} onClick={handleCallReferee}>
-          Call Ref
+          Call ref
         </Button>
       </div>
 

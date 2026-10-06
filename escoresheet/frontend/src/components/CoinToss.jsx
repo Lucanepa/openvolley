@@ -1203,7 +1203,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       const ref1 = match?.officials?.find(o => o.role === '1st referee')
       const scorer = match?.officials?.find(o => o.role === 'scorer')
       if (!ref1?.lastName || !ref1?.firstName) {
-        validationErrors.push('1st Referee name is not set')
+        validationErrors.push('1st referee name is not set')
       }
       if (!scorer?.lastName || !scorer?.firstName) {
         validationErrors.push('Scorer name is not set')
@@ -2585,10 +2585,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         open={openSignature !== null}
         onClose={() => setOpenSignature(null)}
         onSave={handleSignatureSave}
-        title={openSignature === 'home-coach' ? 'Home Coach Signature' :
-          openSignature === 'home-captain' ? 'Home Captain Signature' :
-            openSignature === 'away-coach' ? 'Away Coach Signature' :
-              openSignature === 'away-captain' ? 'Away Captain Signature' : 'Sign'}
+        title={openSignature === 'home-coach' ? 'Home coach signature' :
+          openSignature === 'home-captain' ? 'Home captain signature' :
+            openSignature === 'away-coach' ? 'Away coach signature' :
+              openSignature === 'away-captain' ? 'Away captain signature' : 'Sign'}
         existingSignature={
           openSignature === 'home-coach' ? homeCoachSignature :
             openSignature === 'home-captain' ? homeCaptainSignature :

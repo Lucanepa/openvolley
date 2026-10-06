@@ -12659,7 +12659,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             color: '#ffffff',
             marginBottom: '16px'
           }}>
-            Please Rotate Your Device
+            Please rotate your device
           </h2>
           <p style={{
             fontSize: '16px',
@@ -14253,7 +14253,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         borderRadius: '8px',
                         cursor: 'pointer'
                       }}>
-                        Stop Timeout
+                        Stop timeout
                       </button>
                     </>
                   ) : betweenSetsCountdown ? (
@@ -14404,7 +14404,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           borderRadius: '8px',
                           cursor: 'pointer'
                         }}>
-                          End Set Interval
+                          End set interval
                         </button>
                       )}
                     </>
@@ -14426,7 +14426,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         opacity: (isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)) ? 0.5 : 1
                       }}
                     >
-                      {isFirstRally ? 'Start Set' : 'Start Rally'}
+                      {isFirstRally ? 'Start set' : 'Start rally'}
                     </button>
                   ) : (
                     <>
@@ -14481,7 +14481,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             opacity: leftTimeouts >= 2 ? 0.5 : 1
                           }}
                         >
-                          TO Left
+                          TO left
                         </button>
                         <button
                           onClick={handleUndo}
@@ -14516,7 +14516,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             opacity: rightTimeouts >= 2 ? 0.5 : 1
                           }}
                         >
-                          TO Right
+                          TO right
                         </button>
                       </div>
                     </>
@@ -14918,7 +14918,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         color: '#f87171'
                       }}
                     >
-                      Redesignate Libero
+                      Redesignate libero
                     </button>
                   </div>
                 )
@@ -15611,7 +15611,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               gap: '1.25cqw'
                             }}
                           >
-                            <RefreshIcon size="1em" /> Redesignate Libero
+                            <RefreshIcon size="1em" /> Redesignate libero
                           </button>
                         )
                       })()}
@@ -18298,7 +18298,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         color: '#f87171'
                       }}
                     >
-                      Redesignate Libero
+                      Redesignate libero
                     </button>
                   </div>
                 )
@@ -18976,7 +18976,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               gap: '1.25cqw'
                             }}
                           >
-                            <RefreshIcon size="1em" /> Redesignate Libero
+                            <RefreshIcon size="1em" /> Redesignate libero
                           </button>
                         )
                       })()}
@@ -19324,7 +19324,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled === true && (
                       <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
                         <div className={SB_LABEL}>
-                          {data?.homeTeam?.name || 'Home Team'} Bench PIN
+                          {data?.homeTeam?.name || 'Home team'} bench PIN
                         </div>
                         <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                           {String(data.match.homeTeamPin).padStart(6, '0')}
@@ -19335,7 +19335,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled === true && (
                       <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
                         <div className={SB_LABEL}>
-                          {data?.awayTeam?.name || 'Away Team'} Bench PIN
+                          {data?.awayTeam?.name || 'Away team'} bench PIN
                         </div>
                         <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                           {String(data.match.awayTeamPin).padStart(6, '0')}
@@ -19518,16 +19518,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' }}>
                   {[
-                    { id: 'recording-points', title: 'Recording Points', description: 'How to record points and update the score' },
+                    { id: 'recording-points', title: 'Recording points', description: 'How to record points and update the score' },
                     { id: 'timeouts', title: 'Timeouts', description: 'How to request and manage timeouts' },
                     { id: 'substitutions', title: 'Substitutions', description: 'How to make player substitutions' },
-                    { id: 'libero', title: 'Libero Substitutions', description: 'How to handle libero exchanges' },
+                    { id: 'libero', title: 'Libero substitutions', description: 'How to handle libero exchanges' },
                     { id: 'sanctions', title: 'Sanctions', description: 'How to record warnings, penalties, and expulsions' },
-                    { id: 'ending-set', title: 'Ending a Set', description: 'What happens when you end a set' },
-                    { id: 'match-end', title: 'Match End', description: 'What happens when the match ends' },
-                    { id: 'undo', title: 'Undo Actions', description: 'How to undo mistakes' },
-                    { id: 'lineup', title: 'Setting Lineup', description: 'How to set initial lineup' },
-                    { id: 'set-5', title: 'Set 5 (Tie-break)', description: 'Special rules for the deciding set' }
+                    { id: 'ending-set', title: 'Ending a set', description: 'What happens when you end a set' },
+                    { id: 'match-end', title: 'Match end', description: 'What happens when the match ends' },
+                    { id: 'undo', title: 'Undo actions', description: 'How to undo mistakes' },
+                    { id: 'lineup', title: 'Setting lineup', description: 'How to set initial lineup' },
+                    { id: 'set-5', title: 'Set 5 (tie-break)', description: 'Special rules for the deciding set' }
                   ].map((topic) => (
                     <div
                       key={topic.id}
@@ -19612,19 +19612,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 switch (event.type) {
                   case 'point': return 'Point'
                   case 'timeout': return 'Timeout'
-                  case 'substitution': return event.payload?.isExceptional ? 'Exc. Sub' : 'Substitution'
+                  case 'substitution': return event.payload?.isExceptional ? 'Exc. sub' : 'Substitution'
                   case 'set_start': return t('scoreboard.actionLog.setStart')
                   case 'set_end': return t('scoreboard.actionLog.setEnd')
                   case 'rally_start': return 'Rally'
                   case 'replay': return 'Replay'
                   case 'decision_change': return 'Decision'
-                  case 'coin_toss': return 'Coin Toss'
-                  case 'lineup': return event.payload?.isInitial ? 'Lineup' : 'Lineup Chg'
-                  case 'libero_entry': return 'Libero In'
-                  case 'libero_exit': return 'Libero Out'
-                  case 'libero_exchange': return 'Libero Exch'
-                  case 'libero_unable': return 'Libero Unable'
-                  case 'libero_redesignation': return 'Libero Redes'
+                  case 'coin_toss': return 'Coin toss'
+                  case 'lineup': return event.payload?.isInitial ? 'Lineup' : 'Lineup chg'
+                  case 'libero_entry': return 'Libero in'
+                  case 'libero_exit': return 'Libero out'
+                  case 'libero_exchange': return 'Libero exch'
+                  case 'libero_unable': return 'Libero unable'
+                  case 'libero_redesignation': return 'Libero redes'
                   case 'sanction': {
                     const sanctionType = event.payload?.sanctionType
                     if (sanctionType === 'warning') return 'Warning'
@@ -20078,7 +20078,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderBottom: '1px solid var(--border)'
                           }}
                         >
-                          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Teams Setup</div>
+                          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Teams setup</div>
                           <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
                             Current court positions and serving team
                           </div>
@@ -21421,9 +21421,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   <option value="penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Penalty</option>
                                   <option value="expulsion" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Expulsion</option>
                                   <option value="disqualification" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Disqualif.</option>
-                                  <option value="improper_request" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Improper Req</option>
-                                  <option value="delay_warning" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay Warn</option>
-                                  <option value="delay_penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay Pen</option>
+                                  <option value="improper_request" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Improper req</option>
+                                  <option value="delay_warning" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay warn</option>
+                                  <option value="delay_penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay pen</option>
                                 </select>
                                 <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
                                 {playerNumber !== undefined && playerNumber !== null && (
@@ -21603,11 +21603,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }}>
                                 <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
                                 <span style={{ fontSize: '9px', fontWeight: 600, minWidth: '70px' }}>
-                                  {eventType === 'libero_entry' ? 'Libero Entry'
-                                    : eventType === 'libero_exit' ? 'Libero Exit'
-                                      : eventType === 'libero_exchange' ? 'Libero Exchange'
-                                        : eventType === 'libero_redesignation' ? 'Libero Re-designation'
-                                          : 'Libero Unable'}
+                                  {eventType === 'libero_entry' ? 'Libero entry'
+                                    : eventType === 'libero_exit' ? 'Libero exit'
+                                      : eventType === 'libero_exchange' ? 'Libero exchange'
+                                        : eventType === 'libero_redesignation' ? 'Libero re-designation'
+                                          : 'Libero unable'}
                                 </span>
                                 <select
                                   value={team || 'home'}
@@ -21718,7 +21718,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 )}
                                 {eventType === 'libero_exit' && (
                                   <>
-                                    <span style={{ fontSize: '10px' }}>L Out:</span>
+                                    <span style={{ fontSize: '10px' }}>L out:</span>
                                     <input
                                       type="number"
                                       min="1"
@@ -21744,7 +21744,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                         color: 'var(--text)'
                                       }}
                                     />
-                                    <span style={{ fontSize: '10px' }}>P In:</span>
+                                    <span style={{ fontSize: '10px' }}>P in:</span>
                                     <input
                                       type="number"
                                       min="1"
@@ -21981,7 +21981,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         borderBottom: '1px solid var(--border)'
                       }}
                     >
-                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Set Times</div>
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit set times</div>
                       <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
                         Edit start and end times for sets.
                       </div>
@@ -21998,7 +21998,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <div style={{ fontWeight: 600, fontSize: '12px' }}>{t('common.setIndex', { index: set.index })}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <label style={{ fontSize: '11px', minWidth: '80px' }}>Start Time:</label>
+                                <label style={{ fontSize: '11px', minWidth: '80px' }}>Start time:</label>
                                 <input
                                   type="datetime-local"
                                   defaultValue={(() => {
@@ -22027,7 +22027,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 />
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <label style={{ fontSize: '11px', minWidth: '80px' }}>End Time:</label>
+                                <label style={{ fontSize: '11px', minWidth: '80px' }}>End time:</label>
                                 <input
                                   type="datetime-local"
                                   defaultValue={(() => {
@@ -22073,13 +22073,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       borderTop: '1px solid var(--border)'
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Add New Event</div>
+                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Add new event</div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
                       Manually add a new event to the match history.
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '100px' }}>Event Type:</label>
+                        <label style={{ fontSize: '12px', minWidth: '100px' }}>Event type:</label>
                         <select
                           id="newEventType"
                           style={{
@@ -22097,12 +22097,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           <option value="substitution" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Substitution</option>
                           <option value="sanction" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Sanction</option>
                           <option value="lineup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Lineup</option>
-                          <option value="libero_entry" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Entry</option>
-                          <option value="libero_exit" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Exit</option>
-                          <option value="libero_exchange" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Exchange</option>
-                          <option value="libero_unable" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero Unable</option>
+                          <option value="libero_entry" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero entry</option>
+                          <option value="libero_exit" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero exit</option>
+                          <option value="libero_exchange" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero exchange</option>
+                          <option value="libero_unable" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero unable</option>
                           <option value="replay" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Replay</option>
-                          <option value="rally_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Rally Start</option>
+                          <option value="rally_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Rally start</option>
                           <option value="set_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.actionLog.setStart')}</option>
                           <option value="set_end" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.actionLog.setEnd')}</option>
                         </select>
@@ -22219,7 +22219,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         borderTop: '1px solid var(--border)'
                       }}
                     >
-                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Delete Events (Quick)</div>
+                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Delete events (quick)</div>
                       <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
                         Quick delete for any event. Use with caution.
                       </div>
@@ -22832,8 +22832,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
                     const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
                     const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
-                    const leftTeamName = leftTeamData?.name || 'Left Team'
-                    const rightTeamName = rightTeamData?.name || 'Right Team'
+                    const leftTeamName = leftTeamData?.name || 'Left team'
+                    const rightTeamName = rightTeamData?.name || 'Right team'
                     const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
                     const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
 
@@ -23835,7 +23835,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 gap: '8px'
                               }}
                             >
-                              <span>Injury / Illness</span>
+                              <span>Injury / illness</span>
                               <span style={{ fontSize: '14px' }}>✚</span>
                             </button>
                           </div>
@@ -25425,15 +25425,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.keybindings.instruction', 'Click on a key to change it. Press the new key to assign, or Escape to cancel.')}
             </p>
             {[
-              { key: 'pointLeft', labelKey: 'scoreboard.keybindings.pointLeftTeam', descKey: 'scoreboard.keybindings.pointLeftTeamDesc', label: 'Point Left Team', description: 'Award point to left team' },
-              { key: 'pointRight', labelKey: 'scoreboard.keybindings.pointRightTeam', descKey: 'scoreboard.keybindings.pointRightTeamDesc', label: 'Point Right Team', description: 'Award point to right team' },
-              { key: 'timeoutLeft', labelKey: 'scoreboard.keybindings.timeoutLeftTeam', descKey: 'scoreboard.keybindings.timeoutLeftTeamDesc', label: 'Timeout Left Team', description: 'Call timeout for left team' },
-              { key: 'timeoutRight', labelKey: 'scoreboard.keybindings.timeoutRightTeam', descKey: 'scoreboard.keybindings.timeoutRightTeamDesc', label: 'Timeout Right Team', description: 'Call timeout for right team' },
-              { key: 'exchangeLiberoLeft', labelKey: 'scoreboard.keybindings.exchangeLiberoLeft', descKey: 'scoreboard.keybindings.exchangeLiberoLeftDesc', label: 'Exchange Libero Left', description: 'Exchange L1/L2 for left team' },
-              { key: 'exchangeLiberoRight', labelKey: 'scoreboard.keybindings.exchangeLiberoRight', descKey: 'scoreboard.keybindings.exchangeLiberoRightDesc', label: 'Exchange Libero Right', description: 'Exchange L1/L2 for right team' },
+              { key: 'pointLeft', labelKey: 'scoreboard.keybindings.pointLeftTeam', descKey: 'scoreboard.keybindings.pointLeftTeamDesc', label: 'Point left team', description: 'Award point to left team' },
+              { key: 'pointRight', labelKey: 'scoreboard.keybindings.pointRightTeam', descKey: 'scoreboard.keybindings.pointRightTeamDesc', label: 'Point right team', description: 'Award point to right team' },
+              { key: 'timeoutLeft', labelKey: 'scoreboard.keybindings.timeoutLeftTeam', descKey: 'scoreboard.keybindings.timeoutLeftTeamDesc', label: 'Timeout left team', description: 'Call timeout for left team' },
+              { key: 'timeoutRight', labelKey: 'scoreboard.keybindings.timeoutRightTeam', descKey: 'scoreboard.keybindings.timeoutRightTeamDesc', label: 'Timeout right team', description: 'Call timeout for right team' },
+              { key: 'exchangeLiberoLeft', labelKey: 'scoreboard.keybindings.exchangeLiberoLeft', descKey: 'scoreboard.keybindings.exchangeLiberoLeftDesc', label: 'Exchange libero left', description: 'Exchange L1/L2 for left team' },
+              { key: 'exchangeLiberoRight', labelKey: 'scoreboard.keybindings.exchangeLiberoRight', descKey: 'scoreboard.keybindings.exchangeLiberoRightDesc', label: 'Exchange libero right', description: 'Exchange L1/L2 for right team' },
               { key: 'undo', labelKey: 'scoreboard.keybindings.undo', descKey: 'scoreboard.keybindings.undoDesc', label: 'Undo', description: 'Undo last action' },
-              { key: 'startRally', labelKey: 'scoreboard.keybindings.startRallyConfirm', descKey: 'scoreboard.keybindings.startRallyConfirmDesc', label: 'Start Rally / Confirm', description: 'Start rally or confirm modal' },
-              { key: 'cancel', labelKey: 'scoreboard.keybindings.cancelClose', descKey: 'scoreboard.keybindings.cancelCloseDesc', label: 'Cancel / Close', description: 'Cancel or close menus' }
+              { key: 'startRally', labelKey: 'scoreboard.keybindings.startRallyConfirm', descKey: 'scoreboard.keybindings.startRallyConfirmDesc', label: 'Start rally / confirm', description: 'Start rally or confirm modal' },
+              { key: 'cancel', labelKey: 'scoreboard.keybindings.cancelClose', descKey: 'scoreboard.keybindings.cancelCloseDesc', label: 'Cancel / close', description: 'Cancel or close menus' }
             ].map(({ key, labelKey, descKey, label, description }) => (
               <div
                 key={key}
@@ -26370,7 +26370,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setReopenSetConfirm(null)
                 }}
               >
-                Yes, Reopen
+                Yes, reopen
               </SbButton>
               <SbButton variant="secondary"
                 onClick={() => setReopenSetConfirm(null)}
@@ -26624,7 +26624,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           gap: '8px'
                         }}
                       >
-                        <span>Injury / Illness</span>
+                        <span>Injury / illness</span>
                         <span style={{ fontSize: '14px' }}>✚</span>
                       </button>
                     </div>
@@ -26748,7 +26748,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 border: '2px solid #ef4444'
               }}>
                 <div style={{ fontSize: '12px', color: '#991b1b', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase' }}>
-                  Libero Unable to Play
+                  Libero unable to play
                 </div>
                 <div style={{ fontSize: '28px', fontWeight: 700, color: '#991b1b' }}>
                   #{liberoUnableModal.liberoNumber}
@@ -26777,12 +26777,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         setLiberoUnableModal(null)
                       }}
                     >
-                      Yes, Redesignate
+                      Yes, redesignate
                     </SbButton>
                     <SbButton variant="secondary"
                       onClick={() => setLiberoUnableModal(null)}
                     >
-                      No, Later
+                      No, later
                     </SbButton>
                   </div>
                 </>
@@ -26840,7 +26840,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }}
                     >
                       <div>
-                        <div style={{ fontWeight: 700 }}>Injury / Illness</div>
+                        <div style={{ fontWeight: 700 }}>Injury / illness</div>
                         <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '4px' }}>
                           Libero is injured or ill
                         </div>
@@ -27014,8 +27014,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           timeoutDetails={toSubDetailsModal.type === 'timeout' ? getTimeoutDetails(toSubDetailsModal.side) : null}
           substitutionDetails={toSubDetailsModal.type === 'substitution' ? getSubstitutionDetails(toSubDetailsModal.side) : null}
           teamName={toSubDetailsModal.side === 'left'
-            ? (leftIsHome ? (data?.homeTeam?.name || 'Left Team') : (data?.awayTeam?.name || 'Left Team'))
-            : (leftIsHome ? (data?.awayTeam?.name || 'Right Team') : (data?.homeTeam?.name || 'Right Team'))}
+            ? (leftIsHome ? (data?.homeTeam?.name || 'Left team') : (data?.awayTeam?.name || 'Left team'))
+            : (leftIsHome ? (data?.awayTeam?.name || 'Right team') : (data?.homeTeam?.name || 'Right team'))}
           onClose={() => setToSubDetailsModal(null)}
         />
       )}
@@ -27030,9 +27030,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Apply {sanctionConfirm.type === 'improper_request' ? 'Improper Request' :
-                sanctionConfirm.type === 'delay_warning' ? 'Delay Warning' :
-                  'Delay Penalty'} to Team {(() => {
+              Apply {sanctionConfirm.type === 'improper_request' ? 'improper request' :
+                sanctionConfirm.type === 'delay_warning' ? 'delay warning' :
+                  'delay penalty'} to team {(() => {
                     const sideTeamKey = sanctionConfirm.side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
                     return sideTeamKey === teamAKey ? 'A' : 'B'
                   })()}?
@@ -27121,7 +27121,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 marginBottom: '8px'
               }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
-                  {connectionModal === 'referee' ? 'Referee Connection' : connectionModal === 'teamA' ? `Team ${teamAShortName} Connection` : `Team ${teamBShortName} Connection`}
+                  {connectionModal === 'referee' ? 'Referee connection' : connectionModal === 'teamA' ? `Team ${teamAShortName} connection` : `Team ${teamBShortName} connection`}
                 </span>
                 <button
                   onClick={() => setConnectionModal(null)}
@@ -27248,7 +27248,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Edit PIN Modal */}
       {editPinModal && (
         <Modal
-          title={editPinType === 'referee' ? 'Edit Referee PIN' : editPinType === 'teamA' ? `Edit Team ${teamAShortName} PIN` : `Edit Team ${teamBShortName} PIN`}
+          title={editPinType === 'referee' ? 'Edit referee PIN' : editPinType === 'teamA' ? `Edit team ${teamAShortName} PIN` : `Edit team ${teamBShortName} PIN`}
           open={true}
           onClose={() => {
             setEditPinModal(false)
@@ -27436,7 +27436,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <SbButton variant="danger-soft"
                     onClick={() => handleExceptionalSubstitutionChoice('forfait')}
                   >
-                    {forfaitScopeNow === 'match' ? 'Confirm Forfait (match)' : 'Confirm Forfait (set)'}
+                    {forfaitScopeNow === 'match' ? 'Confirm forfait (match)' : 'Confirm forfait (set)'}
                   </SbButton>
                 </div>
               )}
@@ -29228,7 +29228,7 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
 
   return (
     <Modal
-      title={`Set ${setIndex} Start Time`}
+      title={`Set ${setIndex} start time`}
       open={true}
       onClose={onCancel}
       width={400}
@@ -29397,7 +29397,7 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
 
   return (
     <Modal
-      title={isMatchEnd ? 'Match End' : `Set ${setIndex} End`}
+      title={isMatchEnd ? 'Match end' : `Set ${setIndex} end`}
       open={true}
       onClose={onDecisionChange}
       width={400}
