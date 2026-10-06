@@ -146,7 +146,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
         {t('manage.menuAdmin')}
       </button>
     )}
-    {access?.canManageTeams && !access?.isAdmin && (
+    {access?.canManageTeams && (
       <button type="button" onClick={() => { close(); openManage('teams') }} className={rowClass}>
         <Users size={iconPx} aria-hidden="true" className="text-stone-400" />
         {t('manage.menuSavedTeams')}
