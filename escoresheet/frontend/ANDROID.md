@@ -139,9 +139,26 @@ The app is prepared for f-droid.org, which builds it from source itself:
   Android 15+). The keyboard never resizes the page (that would drop it under
   the app's 600 px minimum height and unmount the form being typed in); the
   WebView slides up just enough to show the focused field.
-- **Back button**: goes back inside the app (referee view → scorer); on the
-  first page it only sends the app to the background, so it never closes a
-  running match.
+- **Back button**: goes back inside the app first (out of the scoresheet's
+  in-app view, referee view → scorer). On the first page (home, match setup,
+  scoreboard) it asks in the in-app dialog **"Exit OpenVolley?"**; with a live
+  match "Exit OpenVolley during the match?" and that the match is saved on
+  the device. Only **Exit** closes the app (the activity finishes, through the
+  app's own one-method Capacitor plugin `OpenVolleyApp`,
+  `AppExitPlugin.java`; no `@capacitor/app` dependency); **Stay** keeps it.
+  MainActivity asks the page through `window.__ovAndroidBack`
+  (`src/utils/appLifecycle.js`); a page without that handler (still loading)
+  sends the app to the background as before. The scorer page does not push
+  its "block Back" history entry in the app (it made every other Back press
+  a silent no-op).
+- **Swiping the app away** in the recent apps cannot be prevented by any app
+  (an Android rule; it also gets no reliable callback). The match is in
+  IndexedDB and the automatic backups, so it continues on the next start. On
+  a dedicated scorer tablet use Android's **App pinning** (Settings ›
+  Security › App pinning, then pin OpenVolley from the recent apps): Home,
+  Recents and swiping away are blocked until it is unpinned. (The
+  scoreboard's lock below is an orientation lock only; it does not stop
+  this.)
 - **Orientation**: the app rotates freely (`screenOrientation="unspecified"`):
   home, match setup and the forms work in portrait (one field per row). Only
   the scoreboard is landscape-only: while it is mounted it locks the activity
