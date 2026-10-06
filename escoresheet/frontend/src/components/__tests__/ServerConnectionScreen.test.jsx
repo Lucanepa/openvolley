@@ -12,7 +12,8 @@ vi.mock('../../utils/backendConfig', () => ({
   getBackendUrl: vi.fn(),
   getBackendOverride: vi.fn(),
   setBackendOverride: vi.fn(),
-  clearBackendOverride: vi.fn()
+  clearBackendOverride: vi.fn(),
+  learnRelayWsPort: vi.fn(async () => null)
 }))
 
 vi.mock('html5-qrcode', () => ({
@@ -24,6 +25,7 @@ vi.mock('html5-qrcode', () => ({
 }))
 
 import ServerConnectionScreen from '../ServerConnectionScreen'
+import { learnRelayWsPort, setBackendOverride } from '../../utils/backendConfig'
 
 describe('ServerConnectionScreen', () => {
   const mockOnConnected = vi.fn()
@@ -107,5 +109,24 @@ describe('ServerConnectionScreen', () => {
         expect.objectContaining({ method: 'GET' })
       )
     })
+  })
+
+  // A desktop relay serves the page on 5173 and the WebSocket on 8080: the
+  // screen asks the relay for its WebSocket port before the views connect.
+  it('learns the relay WebSocket port before storing the server', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true })
+    const order = []
+    learnRelayWsPort.mockImplementation(async () => { order.push('learn'); return '8080' })
+    setBackendOverride.mockImplementation(() => { order.push('override') })
+    const onConnected = vi.fn(() => order.push('connected'))
+
+    render(<ServerConnectionScreen onConnected={onConnected} />)
+    fireEvent.change(screen.getByPlaceholderText(/192\.168/), { target: { value: '192.168.1.20:5173' } })
+    fireEvent.click(screen.getByText('Connect'))
+
+    await waitFor(() => expect(onConnected).toHaveBeenCalled())
+    expect(learnRelayWsPort).toHaveBeenCalledWith('http://192.168.1.20:5173')
+    expect(setBackendOverride).toHaveBeenCalledWith('http://192.168.1.20:5173')
+    expect(order).toEqual(['learn', 'override', 'connected'])
   })
 })

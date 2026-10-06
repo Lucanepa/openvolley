@@ -11,6 +11,7 @@ vi.mock('../utils/backendConfig', () => ({
   isServedFromLocalServer: () => env.localServer,
   getBackendOverride: () => env.override,
   setBackendOverride: vi.fn(),
+  applyServerParam: vi.fn(),
   getBackendUrl: () => 'https://backend.openvolley.app',
   clearBackendOverride: vi.fn()
 }))

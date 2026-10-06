@@ -17,7 +17,11 @@ import {
   isCloudApiSplit,
   isLanBackendUrl,
   isServedFromLanOrigin,
-  isCloudBlockedOnThisPort
+  isCloudBlockedOnThisPort,
+  learnRelayWsPort,
+  applyServerParam,
+  relayWsPortFor,
+  rememberRelayWsPort
 } from '../backendConfig'
 
 beforeEach(() => {
@@ -192,6 +196,66 @@ describe('native app (Capacitor WebView on https://localhost)', () => {
     setBackendOverride('http://192.168.1.20:8080')
     expect(getBackendUrl()).toBe('http://192.168.1.20:8080')
     expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+  })
+
+  // The desktop relays (Tauri, Electron, frontend/server.js) serve the pages
+  // and /health on 5173 but take the WebSocket on 8080 only: the app pointed
+  // at http://<laptop>:5173 used to open ws://<laptop>:5173 and never connected.
+  it('reaches a desktop relay at <laptop>:5173 on its WebSocket port 8080', () => {
+    setBackendOverride('http://192.168.1.20:5173')
+    expect(getBackendUrl()).toBe('http://192.168.1.20:5173')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+    // The hotspot / Bluetooth addresses of the laptop too
+    setBackendOverride('http://10.42.0.1:5173')
+    expect(getRelayWebSocketUrl()).toBe('ws://10.42.0.1:8080')
+  })
+
+  it('uses the WebSocket port the relay named in /api/server/status', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ wsPort: 8091 }) }))
+    setBackendOverride('http://192.168.1.20:5174')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:5174') // not known yet
+    await expect(learnRelayWsPort('http://192.168.1.20:5174', { fetchImpl })).resolves.toBe('8091')
+    expect(fetchImpl).toHaveBeenCalledWith('http://192.168.1.20:5174/api/server/status', expect.anything())
+    expect(relayWsPortFor('http://192.168.1.20:5174/')).toBe('8091')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8091')
+    // The venue server takes both on one port and says so
+    rememberRelayWsPort('http://192.168.1.30:8080', 8080)
+    setBackendOverride('http://192.168.1.30:8080')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.30:8080')
+    // A named port wins over the 5173 -> 8080 default
+    rememberRelayWsPort('http://192.168.1.20:5173', 9000)
+    setBackendOverride('http://192.168.1.20:5173')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:9000')
+  })
+
+  it('applies a role link ?server= and learns a venue relay port in the background', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ wsPort: 8085 }) })
+    applyServerParam('http://192.168.1.20:5175')
+    expect(getBackendOverride()).toBe('http://192.168.1.20:5175')
+    await vi.waitFor(() => expect(relayWsPortFor('http://192.168.1.20:5175')).toBe('8085'))
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8085')
+    fetchSpy.mockClear()
+    applyServerParam('backend.openvolley.app') // bare host: https, never asked
+    expect(getBackendOverride()).toBe('https://backend.openvolley.app')
+    applyServerParam('http://evil.example.com:5173') // refused override: nothing fetched
+    expect(getBackendOverride()).toBe('https://backend.openvolley.app')
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+
+  it('never asks the cloud for a port, nor trusts a bad answer', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ wsPort: 8080 }) }))
+    await expect(learnRelayWsPort('https://backend.openvolley.app', { fetchImpl })).resolves.toBeNull()
+    await expect(learnRelayWsPort('http://openvolley.local', { fetchImpl })).resolves.toBeNull() // proxy on the default port
+    expect(fetchImpl).not.toHaveBeenCalled()
+    setBackendOverride('https://backend.openvolley.app')
+    expect(getRelayWebSocketUrl()).toBe('wss://backend.openvolley.app')
+
+    const bad = vi.fn(async () => ({ ok: true, json: async () => ({ wsPort: 'nope' }) }))
+    await expect(learnRelayWsPort('http://192.168.1.20:5173', { fetchImpl: bad })).resolves.toBeNull()
+    const down = vi.fn(async () => { throw new Error('offline') })
+    await expect(learnRelayWsPort('http://192.168.1.20:5173', { fetchImpl: down })).resolves.toBeNull()
+    expect(relayWsPortFor('http://192.168.1.20:5173')).toBeNull()
   })
 })
 

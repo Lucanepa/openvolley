@@ -6,7 +6,7 @@ import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { setBackendOverride, isServedFromLocalServer } from './utils/backendConfig'
+import { applyServerParam, isServedFromLocalServer } from './utils/backendConfig'
 import { loadMatchList } from './utils/matchListSource'
 import ballFallback from './ball_fallback.png'
 
@@ -134,7 +134,7 @@ export default function BenchApp() {
     const teamParam = params.get('team')
 
     if (serverParam) {
-      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+      applyServerParam(serverParam)
     }
 
     if (matchParam) {

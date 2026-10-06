@@ -5,7 +5,7 @@ import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
-import { setBackendOverride, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
+import { applyServerParam, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
 import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange } from './utils/livescoreModel'
 import ballFallback from './ball_fallback.png'
@@ -76,7 +76,7 @@ export default function LivescoreApp() {
   useEffect(() => {
     const serverParam = new URLSearchParams(window.location.search).get('server')
     if (serverParam) {
-      setBackendOverride(serverParam.startsWith('http') ? serverParam : `https://${serverParam}`)
+      applyServerParam(serverParam)
     }
   }, [])
 
