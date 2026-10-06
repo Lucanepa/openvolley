@@ -15,8 +15,10 @@
  *   store ('other'): the app asks once "Get notified about new versions?"
  *   (default off, Yes and No look the same). With yes it reads the public
  *   F-Droid index (index-v2.json, about 4 kB) at start, when it comes back to
- *   the foreground and at sign-in, at most once per 24 h, never during a live
- *   match. A newer version shows a notice on the home screen (never over the
+ *   the foreground, at sign-in and when the device is back online, at most
+ *   once per 24 h after a check that worked (an hour after one that failed),
+ *   never offline and never during a live match (not even before the app
+ *   knows whether one is live). A newer version shows a notice on the home screen (never over the
  *   scoreboard): get it from F-Droid (it then updates itself) or download the
  *   APK.
  *
@@ -43,6 +45,9 @@ export const FDROID_REPO_WEB = `https://fdroid.link/#${REPO_URL}?fingerprint=${R
 export const INSTALL_PAGE = 'https://get.openvolley.app/'
 
 export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
+// After a failed check (offline, a venue hotspot without internet): try again
+// this much later, not a day later
+export const RETRY_AFTER_FAILURE_MS = 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 15000
 
 export const NOTIFY_KEY = 'ov.update.notify'
@@ -113,10 +118,25 @@ export function latestFromIndex(json, { indexUrl = INDEX_URL, appId = APP_ID } =
   return best
 }
 
-/** latest is a newer release than the running app (the build digit is ignored). */
-export function isNewer(latest, current = APP_VERSION) {
+/**
+ * latest is newer than the running app. With the installed versionCode (from
+ * the plugin) the whole code counts, so an Android-only rebuild (same
+ * versionName, build digit +1) is announced too; without it only
+ * MAJOR.MINOR.PATCH of the version name.
+ */
+export function isNewer(latest, current = APP_VERSION, installedCode = null) {
   if (!latest || !Number.isFinite(latest.versionCode)) return false
+  if (Number.isSafeInteger(installedCode) && installedCode > 0) return latest.versionCode > installedCode
   return Math.floor(latest.versionCode / 10) > Math.floor(versionCode(current) / 10)
+}
+
+/**
+ * The lastCheck to store after a failed check: due again in
+ * RETRY_AFTER_FAILURE_MS, unless an earlier success already set a later time.
+ */
+export function lastCheckAfterFailure(now, last, interval = CHECK_INTERVAL_MS, retry = RETRY_AFTER_FAILURE_MS) {
+  const retryAt = now - interval + retry
+  return Number.isFinite(last) && last > retryAt && last <= now ? last : retryAt
 }
 
 /** An automatic check is due: never checked, 24 h passed, or the clock went back. */
@@ -178,6 +198,7 @@ function writeLastCheck(storage, at) {
  * family: 'fdroid' | 'sideload' | 'other' | 'unknown' (null until known)
  * notify: the user's answer, 'yes' | 'no' | 'unset'
  * asking: the opt-in question is waiting for the home screen
+ * installedCode: the installed versionCode (null until known / unknown)
  * status: 'idle' | 'checking' | 'upToDate' | 'available' | 'failed'
  * latest: the newest version seen ({versionName, versionCode, apkUrl})
  * dismissed: the version whose notice got "Later" (until the next start)
@@ -185,6 +206,7 @@ function writeLastCheck(storage, at) {
 const INITIAL = Object.freeze({
   active: false,
   family: null,
+  installedCode: null,
   notify: 'unset',
   asking: false,
   status: 'idle',
@@ -195,6 +217,10 @@ const INITIAL = Object.freeze({
 let state = INITIAL
 const listeners = new Set()
 let ctx = null
+// App.jsx's live-match query has answered (liveMatchKnown): until then
+// getLiveMatch() says 'none' without knowing, e.g. right after a restart
+// in the middle of a match
+let liveKnown = false
 
 function update(patch) {
   state = { ...state, ...patch }
@@ -247,7 +273,7 @@ async function check() {
   if (state.status === 'checking') return state
   const { storage, fetchImpl, now, indexUrl } = ctx
   update({ status: 'checking' })
-  writeLastCheck(storage, now())
+  const startedAt = now()
   const controller = typeof AbortController === 'function' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS) : null
   try {
@@ -260,9 +286,11 @@ async function check() {
     if (!res.ok) throw new Error(`index ${res.status}`)
     const latest = latestFromIndex(await res.json(), { indexUrl })
     if (!latest) throw new Error('app not in the index')
-    update({ status: isNewer(latest) ? 'available' : 'upToDate', latest })
+    writeLastCheck(storage, startedAt)
+    update({ status: isNewer(latest, APP_VERSION, state.installedCode) ? 'available' : 'upToDate', latest })
   } catch (e) {
     console.warn('[update] check failed', e)
+    writeLastCheck(storage, lastCheckAfterFailure(startedAt, readLastCheck(storage)))
     update({ status: 'failed' })
   } finally {
     if (timer) clearTimeout(timer)
@@ -272,9 +300,21 @@ async function check() {
 
 async function autoCheck() {
   if (!ctx || !autoFamily(state.family) || state.notify !== 'yes') return
+  if (!liveKnown) return // again once App.jsx knows (liveMatchKnown)
   if (getLiveMatch() !== 'none') return // again when the match ends
+  if (ctx.win.navigator?.onLine === false) return // again on 'online'
   if (!checkDue(ctx.now(), readLastCheck(ctx.storage))) return
   await check()
+}
+
+/**
+ * App.jsx: its live-match query has answered and setLiveMatch has the real
+ * value. Automatic checks wait for this.
+ */
+export function liveMatchKnown() {
+  if (liveKnown) return
+  liveKnown = true
+  ctx?.auto?.()
 }
 
 /** Options → "Check for updates". */
@@ -348,18 +388,23 @@ export function installAndroidUpdates({
   const onVisible = () => { if (win.document?.visibilityState === 'visible') auto() }
   win.document?.addEventListener?.('visibilitychange', onVisible)
   win.addEventListener('ov-signed-in', auto)
+  me.auto = auto
+  win.addEventListener('online', auto)
   const offLive = onLiveMatchChange((live) => { if (live === 'none') auto() })
 
   pluginBox(me)
     .then(({ plugin: p }) => p.getInstallSource())
-    .then((src) => (FAMILIES.has(src?.family) ? src.family : src ? familyOf(src) : 'unknown'))
+    .then((src) => ({
+      family: FAMILIES.has(src?.family) ? src.family : src ? familyOf(src) : 'unknown',
+      installedCode: Number.isSafeInteger(src?.versionCode) && src.versionCode > 0 ? src.versionCode : null,
+    }))
     .catch((e) => {
       console.warn('[update] install source unknown', e)
-      return 'unknown'
+      return { family: 'unknown', installedCode: null }
     })
-    .then((family) => {
+    .then(({ family, installedCode }) => {
       if (disposed) return
-      update({ family, asking: autoFamily(family) && state.notify === 'unset' })
+      update({ family, installedCode, asking: autoFamily(family) && state.notify === 'unset' })
       auto()
     })
 
@@ -367,6 +412,7 @@ export function installAndroidUpdates({
     disposed = true
     win.document?.removeEventListener?.('visibilitychange', onVisible)
     win.removeEventListener('ov-signed-in', auto)
+    win.removeEventListener('online', auto)
     offLive()
     if (ctx === me) {
       ctx = null
@@ -380,4 +426,5 @@ export function resetAndroidUpdateForTests() {
   state = INITIAL
   listeners.clear()
   ctx = null
+  liveKnown = false
 }

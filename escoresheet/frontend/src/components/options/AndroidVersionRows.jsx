@@ -24,7 +24,7 @@ export default function AndroidVersionRows() {
 
   return (
     <>
-      <div className={`${ROW} items-center justify-between gap-3`}>
+      <div className={`${ROW} items-center justify-between gap-3`} data-testid="android-version-rows">
         <div>
           <div className="text-sm font-semibold text-stone-900">{t('options.currentVersion')}</div>
           <div className="mt-0.5 text-xs tabular-nums text-stone-500">v{currentVersion}</div>
@@ -36,24 +36,24 @@ export default function AndroidVersionRows() {
 
       {fromFdroid ? (
         <div className={`${ROW} items-center justify-between gap-3`}>
-          <p className="text-sm text-stone-700">{t('update.fromFdroid')}</p>
+          <p className="text-sm text-stone-700">{t('androidUpdate.fromFdroid')}</p>
           <Button variant="secondary" size="xl" onClick={() => update.openInFdroid()}>
-            {t('update.openFdroid')}
+            {t('androidUpdate.openFdroid')}
           </Button>
         </div>
       ) : mayNotify ? (
         <label className={`${ROW} cursor-pointer items-center justify-between gap-4`}>
           <span>
-            <span className="block text-sm font-semibold text-stone-900">{t('update.notifyOption')}</span>
+            <span className="block text-sm font-semibold text-stone-900">{t('androidUpdate.notifyOption')}</span>
             <span className="mt-0.5 block text-xs leading-relaxed text-stone-500">
-              {t('update.notFromFdroid')} {t('update.notifyHint')}
+              {t('androidUpdate.notFromFdroid')} {t('androidUpdate.notifyHint')}
             </span>
           </span>
           <Switch
             size="lg"
             checked={update.notify === 'yes'}
             onCheckedChange={(on) => update.setNotify(on)}
-            aria-label={t('update.notifyOption')}
+            aria-label={t('androidUpdate.notifyOption')}
           />
         </label>
       ) : null}
@@ -63,20 +63,28 @@ export default function AndroidVersionRows() {
           {update.newer ? (
             <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
               <div className="text-sm font-semibold text-green-800">
-                {t('update.available', { version: update.latest.versionName })}
+                {t('androidUpdate.available', { version: update.latest.versionName })}
               </div>
               <div className="mt-0.5 text-xs tabular-nums text-stone-600">
                 {currentVersion} → {update.latest.versionName}
               </div>
+              {/* the check reads the OpenVolley repo; an f-droid.org install
+                  gets the version only once f-droid.org has built it */}
+              {fromFdroid && (
+                <p className="mt-1 text-xs leading-relaxed text-stone-600">{t('androidUpdate.fdroidRepoHint')}</p>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {fromFdroid ? (
-                  <Button variant="dark" size="md" onClick={() => update.openInFdroid()}>{t('update.openFdroid')}</Button>
+                  <>
+                    <Button variant="dark" size="md" onClick={() => update.openInFdroid()}>{t('androidUpdate.openFdroid')}</Button>
+                    <Button variant="secondary" size="md" onClick={() => update.getFromFdroid()}>{t('androidUpdate.addRepo')}</Button>
+                  </>
                 ) : (
                   <>
                     <Button variant="dark" size="md" onClick={() => update.getFromFdroid()} className="h-auto min-h-9 py-1.5 text-left">
-                      {t('update.getFdroid')}
+                      {t('androidUpdate.getFdroid')}
                     </Button>
-                    <Button variant="secondary" size="md" onClick={() => update.downloadApk()}>{t('update.downloadApk')}</Button>
+                    <Button variant="secondary" size="md" onClick={() => update.downloadApk()}>{t('androidUpdate.downloadApk')}</Button>
                   </>
                 )}
               </div>
