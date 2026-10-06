@@ -711,7 +711,8 @@ export function createStorage(options = {}) {
    * this user:
    *   - every object under {bucket}/{userId}/ of the owner-scoped buckets
    *     ('prefix'/'require' scope; backup/ by default: match backups and
-   *     interaction logs) is removed, with its folders;
+   *     interaction logs) is removed, with its folders, except in the
+   *     uploader-only buckets, whose objects are always kept;
    *   - in the uploader-only buckets (scoresheets/) the user is dropped from
    *     every owner record. A record left without owners is deleted; the
    *     object itself stays (a scoresheet is the match's official record, like
@@ -725,7 +726,10 @@ export function createStorage(options = {}) {
     const result = { objectsRemoved: 0, bytesRemoved: 0, foldersRemoved: 0, ownerRecordsUpdated: 0, ownerRecordsRemoved: 0 }
     if (ownerScope === 'prefix' || ownerScope === 'require') {
       for (const bucket of buckets) {
-        if (!ownerScopeBuckets.has(bucket)) continue
+        // An uploader-only bucket keeps its objects (official records) even
+        // when it is also owner-scoped (STORAGE_OWNER_SCOPE_BUCKETS=all): only
+        // the owner entries go, below.
+        if (!ownerScopeBuckets.has(bucket) || uploaderReadBuckets.has(bucket)) continue
         const top = await resolve(bucket, [userId], { isDir: true })
         if (top) await removeTree(rr, bucket, [userId], result)
       }

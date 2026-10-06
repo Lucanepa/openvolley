@@ -365,7 +365,7 @@ belong to the clubs and the federation, not to the scorer's account.
 | the profile (name, date of birth, licence, roles) | `public.profiles` |
 | My Matches links | `public.user_matches` |
 | editor rights on other accounts' matches | `public.match_editors` |
-| match backups and interaction logs | storage `backup/{user id}/` (whole folder) |
+| match backups and interaction logs | storage `backup/{user id}/` (whole folder; the same for any other owner-scoped bucket, except the uploader-only `scoresheets`, whose files stay even with `STORAGE_OWNER_SCOPE_BUCKETS=all`) |
 | the right to read the scoresheets it uploaded | the account's entry in every `.owners/scoresheets/*.json` record (a record left without owners is deleted) |
 
 | Kept | Why |
@@ -375,6 +375,27 @@ belong to the clubs and the federation, not to the scorer's account.
 | the scoresheet files it uploaded (`scoresheets/…`) | the approved scoresheet is the match's official record. With no owner left nobody can read it through the API; an operator can grant it to the club or federation account (`scripts/storage-owner.mjs grant`). |
 | beach competition matches it created or claimed, with `created_by`/`claimed_by` NULL | competition records, same reasoning |
 | anything on the user's devices (IndexedDB matches, cached profile) | not the server's to delete; the app clears the stored session and cached profile |
+| copies in the host backups, until they expire (see below) | they exist to restore the service after a loss; they are GPG-encrypted to a key that is not on the server and cannot be edited row by row |
+
+**Host backups still hold a deleted account until they rotate out.** The
+account's rows (email, password hash, profile with date of birth, licence,
+sessions, user_matches, match_editors) are in every database dump taken before
+the deletion, and its `backup/{user id}/` files are in the nightly storage
+snapshots (`deploy/backup-openvolley.sh`). Retention:
+
+| Copy | Kept |
+|---|---|
+| hourly database dumps on the server (`db-*.dump.gpg`) | 48 h (`OV_DB_KEEP_MIN`) |
+| nightly `scoresheets-*`/`snapshots-*.tar.gpg` on the server | 7 days (`OV_FILES_KEEP_DAYS`) |
+| NAS pull (`deploy/nas-pull.sh`): dumps / file archives | 30 days (`NP_KEEP_DB_DAYS`) / 90 days (`NP_KEEP_FILES_DAYS`) |
+| NAS btrfs snapshots of that folder (Synology Snapshot Replication) | 7 daily, 4 weekly, 6 monthly |
+
+So the last copy is gone about 7 months after the deletion (a monthly NAS
+snapshot taken up to a month later, still holding a dump from before it, is
+kept 6 months). A restore from one of these backups brings the account back:
+after restoring, delete it again (or re-run the deletion for every account
+deleted since the dump was taken). The delete dialog says this in one line
+(`auth.deleteAccountWhatGoes`).
 
 Order (`lib/auth.js` `deleteAccount`): the files go first
 (`storage.deleteUserData`); when that fails the answer is 503 and **no row is
@@ -453,7 +474,7 @@ Scoresheets (`scoresheets/{YYYY-MM-DD}/game{n}_{key}[_final].{json,pdf}`) carry 
 - **Ownership comes from creating the file, not from uploading to its path.** The first upload of a path records its account as the owner in `{STORAGE_DIR}/.owners/{bucket}/{sha256(path)}.json` (`{"key":"<path>","owners":["<user uuid>"]}`, written atomically). An upload to an existing file by anyone else is refused with 403 and changes nothing: there is no way to add yourself to someone else's file. Owner check, record and commit of one path run under one lock in the server process, so a download never sees a file under an older record. (One server process per `STORAGE_DIR`.)
 - **The path cannot be claimed in advance.** Game numbers and dates are public (`/api/db` reads), so a key-less name could be squatted by anyone who uploads first. The scorer app therefore names the files with `{key}` = `k` + 128 random bits that it keeps on the scoring device (localStorage, never on the match record, which is synced and backed up). `n` is the game number, or the external id of a match without one (no shared `unknown` name).
 - **Finding your own file.** `list` in an uploader-only bucket shows the caller only its own files (folders are always shown), so the random part never leaks. The viewer (`/scoresheet/?date=…&game=…`, opened from **My Matches**) lists the date folder and opens the caller's newest approved file of that game. The session lives in the browser per origin, so the standalone archive site (scoresheet subdomain, `frontend/src/ScoresheetApp.jsx`) has its own email/password sign-in: its View links ask for it and then open the scoresheet for its uploader; nobody else can open it there either.
-- **Deleting.** `POST /api/storage/remove {bucket, paths:[…]}` (1-100 paths) deletes the caller's own objects only: in `scoresheets/` an owner of the object, in `backup/` the caller's own folder; any other bucket is 403. The object's owner record (`.owners/{bucket}/{sha256}.json`) is deleted with it, under the same lock. Answer `{data:[{name}]}` with the paths removed (missing ones are skipped).
+- **Deleting.** `POST /api/storage/remove {bucket, paths:[…]}` (1-100 paths) deletes the caller's own objects only: in `scoresheets/` an owner of the object, in `backup/` the caller's own folder; any other bucket is 403. The object's owner record (`.owners/{bucket}/{sha256}.json`) is deleted with it, under the same lock. Answer `{data:[{name}]}` with the paths removed (missing ones are skipped). So the uploader of a scoresheet may withdraw it, just as it may already replace it with a new upload: "kept as the official record" (see "Deleting an account") means the server never deletes it on the uploader's behalf, not that the uploader cannot. No app screen calls `remove` today.
 - **Clean-up.** `sweep()` (5 min after start, then daily, with the backup sweep) removes owner records whose file is gone (after a few minutes' grace, under the same lock), in every bucket's `.owners` folder, so a stale record can never hand rights to a file written later at the same path. That is also what clears records left by objects deleted outside the API (a test clean-up with `rm`): the server log line `[Storage] sweep {…"ownerRecordsRemoved":N}` counts them. Uploads only ever record one owner; the list is capped at 16 for operator grants.
 
 Why not a share link: a link is a bearer secret that keeps working for whoever it is forwarded to and ends up in browser history, chat logs and referrers. Why not "the match's owner": rows written before `db/005_match_ownership.sql` have no server-verified owner, and any account can write a `user_matches` row for any match, so they cannot prove who scored a match.
