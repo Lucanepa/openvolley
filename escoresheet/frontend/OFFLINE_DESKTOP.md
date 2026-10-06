@@ -122,16 +122,104 @@ npm run electron:build:win     # → dist-electron/  (NSIS installer + portable 
 npm run electron:build:linux   # → dist-electron/  (AppImage, .deb, .rpm)
 ```
 
-## Connect a tablet
+## Connect tablets
 
-1. Make sure the tablet is on the **same Wi-Fi/LAN** as the computer.
-2. On the desktop, open the header menu (☰) → **Connect tablets** to see the
-   addresses (with copy buttons and a QR code), e.g.:
-   - Scoretable: `http://192.168.1.42:5173/`
-   - Referee:    `http://192.168.1.42:5173/referee`
-   - Bench:      `http://192.168.1.42:5173/bench`
-   - Livescore:  `http://192.168.1.42:5173/livescore`
-3. Type the address into the tablet's browser and enter the match PIN.
+Header menu (☰) → **Connect tablets** (also Options → Connections on the home
+screen and the scoreboard). Three tabs, and on each every role: scoretable,
+referee, home bench, away bench, livescore — link, large QR code, Copy. The
+referee and bench rows show their **PIN on the scorer's screen only** (never in
+a link or QR code; the game PIN is never shown) and the switch that lets the
+role in. A link only preselects the match (`?match=<seed key>`, benches
+`&team=home|away`); the tablet still asks for the PIN.
+
+### LAN — Hall Wi-Fi
+
+The tablet joins the same Wi-Fi / LAN as the computer and opens
+`http://<laptop address>:5173/referee?match=…` etc. The addresses come from
+`/api/server/status` → `interfaces` (`[{name, ip, kind}]`, kind `wifi`,
+`ethernet`, `hotspot`, `bluetooth`, `other`; container / VM / VPN interfaces
+left out). With several hall addresses the dialog lets the scorer pick one.
+
+### LAN — Create Wi-Fi for tablets (desktop app)
+
+The laptop becomes the access point, no router and no internet needed:
+**Create Wi-Fi** shows the network name (`OpenVolley-XXXX`) and password, a
+Wi-Fi QR code (step 1, `WIFI:T:WPA;S:…;P:…;;`) next to the role's QR code
+(step 2, on the laptop's address in the new network). The name and password
+are made once per run; the dialog remembers the last ones, so tablets rejoin
+by themselves next time. Joining: iPad → Camera app on the Wi-Fi code;
+Android 10+ → Settings › Wi-Fi › QR icon (or the camera); answer
+"Stay connected" when the tablet says the Wi-Fi has no internet.
+
+- **Linux** (`src-tauri/src/netshare/linux.rs`): NetworkManager over D-Bus
+  (zbus, no shell). A WPA2 (RSN/CCMP, PMF off) 2.4 GHz access point,
+  `ipv4.method shared` (laptop `10.42.0.1`, DHCP by dnsmasq), firewalld zone
+  `trusted` (the default `nm-shared` zone blocks ports 5173 / 8080), owned by
+  the desktop user (no admin password with the stock polkit rules), volatile
+  and bound to the app's D-Bus connection: if the app crashes or quits,
+  NetworkManager takes the network down and the laptop's normal Wi-Fi comes
+  back. Needs NetworkManager, `dnsmasq` (`dnsmasq-base` on Debian/Ubuntu) and
+  a card with AP mode. **The laptop leaves its own Wi-Fi while it runs** (one
+  card); cloud sync pauses unless it is on a cable or has a second Wi-Fi
+  adapter. No NetworkManager (iwd / ConnMan only): the dialog says so — use the
+  system's hotspot or a travel router and Hall Wi-Fi.
+- **Windows** (`netshare/win.rs`): the Mobile Hotspot through WinRT
+  (`NetworkOperatorTetheringManager`), also offline (it tethers from any
+  connection profile Windows allows, not only the internet one). Windows 11
+  24H2+ takes the name / password for this session only; older builds store
+  them as the user's own hotspot settings, which are put back on stop. The
+  "turn off when no devices are connected" timeout is off while it runs. The
+  laptop stays on its own Wi-Fi (`192.168.137.1` on the virtual adapter).
+  Fallback when tethering is not possible: a Wi-Fi Direct legacy access point.
+  Stopped on exit and at the next start after a crash. **Firewall**: the
+  first run asks Windows Defender Firewall for access — tick **Public** too
+  (the hotspot network is usually Public), or tablets get no page.
+  Third-party security suites may block `192.168.137.x`.
+- **Browser / web build**: no button; the dialog explains the desktop app and
+  the travel-router way (a small router, no internet, everyone on it, then Hall
+  Wi-Fi).
+
+### Server
+
+Cloud links for each role on the role sites next to the scorer's deployment
+(`referee.openvolley.app` …, `dev-…` on dev) with `?server=<backend>`, the
+game number, the account (Sign in when signed out) and the match sync state.
+Tablets need internet; the match must be synced and the role switched on.
+
+### Bluetooth
+
+- **Linux desktop app** (experimental): **Start Bluetooth network** adds a
+  NetworkManager Bluetooth NAP bridge (`pan-openvolley`, shared addressing,
+  e.g. `10.42.1.1`) on the first adapter and makes the laptop visible for
+  pairing for 3 minutes. Android: pair, ⚙ → "Internet access" (Wi-Fi off if it
+  does not connect). iPad: may not work (Apple documents PAN for cellular
+  tethering only). Slow (first page several seconds), about 6 devices.
+- **Windows**: cannot serve a Bluetooth network (PANU only) — the tab says so.
+- **Not built**: a direct BLE link (GATT) for the Android app. Browsers on
+  tablets cannot use Bluetooth (no Web Bluetooth on iPadOS; plain-http pages
+  are not a secure context), so it would be app-only and needs a second
+  transport on both ends.
+
+### Must be tested on real hardware
+
+The network code is unit-tested and type-checked (Linux build; Windows
+`cargo check --target x86_64-pc-windows-msvc`), not run on a real laptop:
+
+- Linux (Ubuntu 24.04, Framework): Create Wi-Fi as the desktop user (no polkit
+  prompt), dnsmasq present, `10.42.0.1` shown, tablets get pages; quit / kill
+  the app → the hotspot goes and the normal Wi-Fi comes back; Fedora: firewalld
+  zone `trusted` lets 5173 / 8080 through; iPad joins (PMF off).
+- Windows 10 22H2 / 11 23H2 / 11 24H2, standard (non-admin) user: Create Wi-Fi
+  with no internet; with zero saved profiles (Wi-Fi Direct fallback); the
+  firewall prompt / rule for 5173 and 8080 on the hotspot adapter; the user's
+  own hotspot name and password back after Stop (older builds); crash → off at
+  the next start; 2-hour match with tablets idle.
+- Android 10–15 and iPad: Wi-Fi QR join, "no internet" prompt, mobile data on
+  (the local address must still go over the Wi-Fi), WebSocket reconnects.
+- Bluetooth (Linux): pairing + "Internet access" on Android, iPad join (or not),
+  4–6 tablets.
+- `cargo test -- --ignored --nocapture probe_this_machine` prints what the
+  dialog will be told on a Linux laptop, without starting anything.
 
 ## Display devices (LedBox) and rehearsals
 
@@ -219,10 +307,15 @@ trusted local CA certificate on each tablet and serve HTTPS, or use an mDNS
 - **Tablet HTTPS + camera** — only if QR scanning on tablets is needed.
 - **Auto-update** — wire `tauri-plugin-updater` (or `electron-updater`) once a
   release channel is chosen.
-- **electronAPI shim in Tauri** — inject `window.electronAPI` backed by Tauri
-  commands so the in-app connection/QR panels (which check for Electron) light
-  up natively. Today the LAN addresses are shown in the header menu
-  (**Connect tablets**, read from `/api/server/status`).
+- **Windows firewall rule in the installer** — the NSIS bundle installs per
+  user (no admin), so it cannot add an inbound rule for 5173 / 8080; today the
+  Defender prompt on first run does it (tick Public too). A per-machine
+  install mode with an NSIS post-install `netsh advfirewall` hook would make
+  the tablets' Wi-Fi work without that prompt.
+- **Android app joins by QR** — scan the Wi-Fi QR (connect through a
+  `WifiNetworkSuggestion`) and the role QR (open the bundled view with
+  `server` / `match` / `team`) inside the app. Needs a camera / scanner plugin
+  and a native Wi-Fi plugin; today a QR opens Chrome (see ANDROID.md).
 - **Port-in-use UX** — surface a friendly message when the relay can't bind.
 
 ## Window chrome
