@@ -32,10 +32,10 @@ describe('createTauriStore', () => {
     await store.info()
     expect(invoke.mock.calls.filter(c => c[0] === 'backup_info')).toHaveLength(1) // cached
 
-    await store.write('game1-x', 'a.json', '{}', { latest: true })
+    expect(await store.write('game1-x', 'a.json', '{}', { latest: true })).toEqual({})
     expect(invoke).toHaveBeenCalledWith('backup_write', { matchDir: 'game1-x', fileName: 'a.json', contents: '{}', latest: true })
 
-    expect(await store.list()).toEqual([{ dir: 'game1-x', files: [{ name: 'latest.json' }] }])
+    expect(await store.list()).toEqual([{ dir: 'game1-x', files: [{ name: 'latest.json', size: 3 }] }])
 
     await store.remove('game1-x', [])
     expect(invoke.mock.calls.some(c => c[0] === 'backup_remove')).toBe(false)
@@ -45,6 +45,11 @@ describe('createTauriStore', () => {
     expect(await store.openFolder()).toBe(true)
     expect(invoke).toHaveBeenCalledWith('backup_open_dir')
     expect(await store.pickFile()).toEqual({ version: 1, match: {} })
+  })
+
+  it('passes on the warning when only latest.json could not be replaced', async () => {
+    const store = createTauriStore(async () => 'cannot write latest.json: in use')
+    expect(await store.write('game1-x', 'a.json', '{}')).toEqual({ warning: 'cannot write latest.json: in use' })
   })
 
   it('returns null when the file dialog is cancelled', async () => {
@@ -83,7 +88,12 @@ function fakeFilesystem({ refuse = [] } = {}) {
         const isDir = tail.length > 0 || dirs.has(key)
         if (!children.has(head) || isDir) children.set(head, isDir ? 'directory' : 'file')
       }
-      return { files: [...children].map(([name, type]) => ({ name, type })) }
+      return { files: [...children].map(([name, type]) => ({ name, type, size: type === 'file' ? files.get(prefix + name).length : 0 })) }
+    }),
+    copy: vi.fn(async ({ from, to, directory, toDirectory }) => {
+      const key = `${directory}:${from}`
+      if (!files.has(key)) throw new Error('missing')
+      files.set(`${toDirectory ?? directory}:${to}`, files.get(key))
     }),
     deleteFile: vi.fn(async ({ path, directory }) => { files.delete(`${directory}:${path}`) })
   }
@@ -98,6 +108,14 @@ describe('createCapacitorStore', () => {
     expect(fs.files.get(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/20261006T100000.000Z-00001.json`)).toBe('{"v":1}')
     expect(fs.files.get(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/latest.json`)).toBe('{"v":1}')
     expect(fs.Filesystem.writeFile).toHaveBeenCalledWith(expect.objectContaining({ encoding: 'utf8', recursive: true }))
+    // the match JSON crosses the bridge once: latest.json is a native copy
+    expect(fs.Filesystem.writeFile).toHaveBeenCalledTimes(1)
+    expect(fs.Filesystem.copy).toHaveBeenCalledWith({
+      from: `${BACKUP_SUBDIR}/game5-s/20261006T100000.000Z-00001.json`,
+      to: `${BACKUP_SUBDIR}/game5-s/latest.json`,
+      directory: 'DOCUMENTS',
+      toDirectory: 'DOCUMENTS'
+    })
     expect(await store.info()).toEqual({ folder: `/storage/emulated/0/DOCUMENTS/${BACKUP_SUBDIR}` })
     expect(store.canOpenFolder).toBe(false)
   })
@@ -106,14 +124,18 @@ describe('createCapacitorStore', () => {
     const fs = fakeFilesystem()
     const warn = vi.fn()
     const store = createCapacitorStore(fs, { log: { warn } })
-    const realWrite = fs.Filesystem.writeFile.getMockImplementation()
-    fs.Filesystem.writeFile.mockImplementation(async (opts) => {
-      if (opts.path.endsWith('/latest.json')) throw new Error('EACCES')
-      return realWrite(opts)
-    })
-    await expect(store.write('game5-s', 'a.json', '{}')).resolves.toBeUndefined()
+    fs.Filesystem.copy.mockRejectedValue(new Error('EACCES'))
+    const result = await store.write('game5-s', 'a.json', '{}')
+    expect(result.warning).toMatch(/latest\.json.*EACCES/)
     expect(fs.files.has(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/a.json`)).toBe(true)
-    expect(warn).toHaveBeenCalled()
+  })
+
+  it('writes latest.json itself when the plugin has no copy', async () => {
+    const fs = fakeFilesystem()
+    delete fs.Filesystem.copy
+    const store = createCapacitorStore(fs, { log: { warn: () => {} } })
+    await store.write('game5-s', 'a.json', '{"v":2}')
+    expect(fs.files.get(`DOCUMENTS:${BACKUP_SUBDIR}/game5-s/latest.json`)).toBe('{"v":2}')
   })
 
   it('falls back to the app folder when Documents is refused', async () => {
@@ -134,6 +156,7 @@ describe('createCapacitorStore', () => {
     const listed = await store.list()
     expect(listed.map(d => d.dir).sort()).toEqual(['game1-a', 'game2-b'])
     expect(listed.find(d => d.dir === 'game1-a').files.map(f => f.name).sort()).toEqual(['latest.json', 'x.json'])
+    expect(listed.find(d => d.dir === 'game1-a').files.every(f => f.size === 2)).toBe(true)
 
     fs.Filesystem.deleteFile.mockRejectedValueOnce(new Error('EACCES'))
     await store.remove('game1-a', ['x.json', 'latest.json'])

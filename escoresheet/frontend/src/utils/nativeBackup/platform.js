@@ -14,7 +14,8 @@
  * Every store has the same shape:
  *   info()                               -> { folder: string }
  *   write(dir, name, text, { latest })   writes <dir>/<name> (+ <dir>/latest.json)
- *   list()                               -> [{ dir, files: [{ name }] }]
+ *                                        -> { warning? } (latest.json not updated: not an error)
+ *   list()                               -> [{ dir, files: [{ name, size }] }]
  *   remove(dir, names)
  *   openFolder()                         -> true when a file manager was opened
  *   pickFile()                           -> parsed JSON | null (cancelled) | undefined (not supported)
@@ -51,11 +52,14 @@ export function createTauriStore(invoke) {
       return { folder }
     },
     async write(dir, name, text, { latest = true } = {}) {
-      await invoke('backup_write', { matchDir: dir, fileName: name, contents: text, latest })
+      // Ok(Some(warning)) when only latest.json could not be replaced (Windows:
+      // a virus scan or the Explorer preview holds it); the event file is saved.
+      const warning = await invoke('backup_write', { matchDir: dir, fileName: name, contents: text, latest })
+      return warning ? { warning } : {}
     },
     async list() {
       const dirs = await invoke('backup_list')
-      return (dirs || []).map(d => ({ dir: d.dir, files: (d.files || []).map(f => ({ name: f.name })) }))
+      return (dirs || []).map(d => ({ dir: d.dir, files: (d.files || []).map(f => ({ name: f.name, size: f.size || 0 })) }))
     },
     async remove(dir, names) {
       if (!names?.length) return
@@ -139,15 +143,22 @@ export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log 
     },
     async write(dir, name, text, { latest = true } = {}) {
       const d = await directory()
-      await writeOne(d, `${BACKUP_SUBDIR}/${dir}/${name}`, text)
-      if (latest) {
-        try {
-          await writeOne(d, `${BACKUP_SUBDIR}/${dir}/${LATEST_FILE}`, text)
-        } catch (e) {
-          // The event file is saved. On Android 11+ a latest.json left by a
-          // previous install of the app cannot be overwritten: not an error.
-          log.warn?.(`[NativeBackup] cannot update ${dir}/${LATEST_FILE}:`, e?.message || e)
+      const path = `${BACKUP_SUBDIR}/${dir}/${name}`
+      await writeOne(d, path, text)
+      if (!latest) return {}
+      const latestPath = `${BACKUP_SUBDIR}/${dir}/${LATEST_FILE}`
+      try {
+        // A native copy: the match JSON crosses the WebView bridge once, not twice
+        if (typeof Filesystem.copy === 'function') {
+          await Filesystem.copy({ from: path, to: latestPath, directory: d, toDirectory: d })
+        } else {
+          await writeOne(d, latestPath, text)
         }
+        return {}
+      } catch (e) {
+        // The event file is saved. On Android 11+ a latest.json left by a
+        // previous install of the app cannot be overwritten: not an error.
+        return { warning: `cannot update ${dir}/${LATEST_FILE}: ${e?.message || e}` }
       }
     },
     async list() {
@@ -158,7 +169,7 @@ export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log 
         if (entry.type !== 'directory') continue
         try {
           const { files } = await Filesystem.readdir({ path: `${BACKUP_SUBDIR}/${entry.name}`, directory: d })
-          dirs.push({ dir: entry.name, files: (files || []).filter(f => f.type !== 'directory').map(f => ({ name: f.name })) })
+          dirs.push({ dir: entry.name, files: (files || []).filter(f => f.type !== 'directory').map(f => ({ name: f.name, size: f.size || 0 })) })
         } catch (e) {
           log.warn?.('[NativeBackup] cannot list', entry.name, e?.message || e)
         }
