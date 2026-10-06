@@ -1571,7 +1571,14 @@
     "noMatches": "No kei Spiil",
     "noMatchesHint": "Spiil, wo Sie schribed, erschiined da",
     "unknown": "Unbekannt",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Matchblatt öffnen",
+    "status": {
+      "live": "Live",
+      "final": "Beendet",
+      "approved": "Genehmigt",
+      "setup": "Vorbereitung"
+    }
   },
   "backupTable": {
     "noActions": "Kei Aktione",

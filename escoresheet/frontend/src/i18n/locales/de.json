@@ -1443,7 +1443,14 @@
     "noMatches": "Noch keine Spiele",
     "noMatchesHint": "Spiele, die Sie schreiben, erscheinen hier",
     "unknown": "Unbekannt",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Spielbericht öffnen",
+    "status": {
+      "live": "Live",
+      "final": "Beendet",
+      "approved": "Genehmigt",
+      "setup": "Vorbereitung"
+    }
   },
   "backupTable": {
     "noActions": "Keine Aktionen",

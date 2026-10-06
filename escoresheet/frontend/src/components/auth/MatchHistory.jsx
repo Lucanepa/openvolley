@@ -3,9 +3,34 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { apiFrom } from '../../lib/apiClient'
 import { ClipboardIcon } from '../icons'
-import { Loader2, X } from 'lucide-react'
+import { ChevronRight, Loader2, X } from 'lucide-react'
 import { Button, cn, IconButton } from '../../ui'
 import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
+
+/**
+ * Status pill of a My matches row. The database says 'live', 'final',
+ * 'ended', 'approved' or 'setup' ('finished' in older rows). A finished match
+ * is the done state (emerald), a running one the brand red, setup neutral.
+ * Amber (warning) is not used: 'Final' used to fall through to it.
+ * @returns {{ key: string, fallback: string, className: string }}
+ */
+export function matchStatusPill(status) {
+  switch (status) {
+    case 'live':
+    case 'in_progress':
+      return { key: 'matchHistory.status.live', fallback: 'Live', className: 'border-red-200 bg-red-50 text-red-700' }
+    case 'final':
+    case 'finished':
+    case 'ended':
+      return { key: 'matchHistory.status.final', fallback: 'Final', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    case 'approved':
+      return { key: 'matchHistory.status.approved', fallback: 'Approved', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    case 'setup':
+      return { key: 'matchHistory.status.setup', fallback: 'Setup', className: 'border-stone-200 bg-stone-50 text-stone-600' }
+    default:
+      return { key: '', fallback: String(status || ''), className: 'border-stone-200 bg-stone-50 text-stone-600' }
+  }
+}
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
@@ -109,14 +134,6 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
     return team.name || team.teamName || t('matchHistory.unknown', 'Unknown')
   }
 
-  // Kit status pill tones: live = emerald (done/active), finished = stone, else amber (to do).
-  const getStatusPill = (status) => {
-    switch (status) {
-      case 'live': return 'bg-emerald-100 text-emerald-800'
-      case 'finished': return 'bg-stone-100 text-stone-600'
-      default: return 'bg-amber-100 text-amber-800'
-    }
-  }
 
   return (
     <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
@@ -158,11 +175,29 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
             </div>
           ) : (
             <div className="divide-y divide-stone-100">
-              {matches.map((match, index) => (
+              {matches.map((match, index) => {
+                const openable = canOpen(match)
+                const pill = match.status ? matchStatusPill(match.status) : null
+                return (
                 <div
                   key={`${match.match_external_id || index}:${match.userRole || ''}`}
-                  onClick={() => openMatch(match)}
-                  className={cn('rounded-md px-2 py-3 transition-colors', canOpen(match) && 'cursor-pointer hover:bg-stone-50')}
+                  // An openable row is a keyboard-reachable button (Enter / Space)
+                  {...(openable ? {
+                    role: 'button',
+                    tabIndex: 0,
+                    'aria-label': `${getTeamName(match.home_team)} – ${getTeamName(match.away_team)}${match.final_score ? ` ${match.final_score}` : ''}: ${t('matchHistory.openScoresheet', 'Open scoresheet')}`,
+                    onClick: () => openMatch(match),
+                    onKeyDown: (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        openMatch(match)
+                      }
+                    }
+                  } : {})}
+                  className={cn(
+                    'rounded-md px-2 py-3 transition-colors',
+                    openable && 'cursor-pointer hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60'
+                  )}
                 >
                   {/* Top row: Teams and score */}
                   <div className="mb-1.5 flex items-center justify-between gap-3">
@@ -193,15 +228,19 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                       <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-[3px] text-[11px] font-semibold capitalize leading-none text-stone-600">
                         {match.userRole || 'scorer'}
                       </span>
-                      {match.status && (
-                        <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium capitalize', getStatusPill(match.status))}>
-                          {match.status}
+                      {pill && (
+                        <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium', pill.className)}>
+                          {pill.key ? t(pill.key, pill.fallback) : pill.fallback}
                         </span>
+                      )}
+                      {openable && (
+                        <ChevronRight size={16} aria-hidden="true" className="text-stone-400" />
                       )}
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

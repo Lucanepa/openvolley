@@ -1602,7 +1602,14 @@
     "noMatches": "Nessuna partita ancora",
     "noMatchesHint": "Le partite che segni appariranno qui",
     "unknown": "Sconosciuto",
-    "vs": "vs"
+    "vs": "vs",
+    "openScoresheet": "Apri il referto",
+    "status": {
+      "live": "In corso",
+      "final": "Terminata",
+      "approved": "Approvata",
+      "setup": "Preparazione"
+    }
   },
   "backupTable": {
     "noActions": "Nessuna azione",
