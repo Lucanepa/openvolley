@@ -297,7 +297,97 @@ export function isStandaloneMode() {
   return !isBackendAvailable()
 }
 
-// Build API URL
+/**
+ * Is this URL on this machine or the local network (localhost, *.local, RFC1918)?
+ * Such a host is a venue relay (desktop app, Pi, standalone server), never
+ * the cloud backend.
+ * @param {string|null|undefined} url
+ */
+export function isLanBackendUrl(url) {
+  if (!url) return false
+  let host
+  try { host = new URL(url).hostname } catch { return false }
+  host = host.replace(/^\[|\]$/g, '')
+  if (host === 'localhost' || host === '::1' || host.endsWith('.local')) return true
+  if (/^127\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
+  if (/^10\.(\d{1,3}\.){2}\d{1,3}$/.test(host)) return true
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  return false
+}
+
+const stripTrailingSlash = (url) => String(url).replace(/\/+$/, '')
+
+/**
+ * Base URL of the CLOUD API: /api/db, /api/auth/*, /api/storage/*, the match
+ * restore / claim / PIN endpoints, official matches, contact, and the
+ * database realtime socket. Kept apart from the relay (getBackendUrl /
+ * getRelayWebSocketUrl), which carries the match to the venue tablets:
+ *
+ *   - VITE_CLOUD_API_URL, when the build sets one.
+ *   - A runtime override (?server= / connection screen / Android "Change
+ *     server") that is a cloud host serves both. One on the LAN is a venue
+ *     relay without a database: the cloud stays the cloud.
+ *   - VITE_BACKEND_URL (web builds on *.openvolley.app: one backend for both).
+ *   - Static deployments and the native app: backend.openvolley.app.
+ *   - A page served by a local relay (Tauri desktop app, Pi, standalone LAN
+ *     server, the tablets that load from them): those relays have no /api/db,
+ *     so cloud calls go to backend.openvolley.app whenever it is reachable,
+ *     while the relay keeps the venue running offline.
+ *   - Dev server: same as getBackendUrl (unchanged).
+ * @returns {string|null}
+ */
+export function getCloudApiBaseUrl() {
+  if (import.meta.env.VITE_CLOUD_API_URL) return stripTrailingSlash(import.meta.env.VITE_CLOUD_API_URL)
+  const override = getBackendOverride()
+  if (override && !isLanBackendUrl(override)) return stripTrailingSlash(override)
+  if (import.meta.env.VITE_BACKEND_URL) return stripTrailingSlash(import.meta.env.VITE_BACKEND_URL)
+  if (override) return CLOUD_RELAY_URL
+  if (isStaticDeployment()) return CLOUD_RELAY_URL
+  if (isServedFromLocalServer()) return CLOUD_RELAY_URL
+  const base = getBackendUrl()
+  return base ? stripTrailingSlash(base) : null
+}
+
+/**
+ * Do cloud calls go somewhere else than the relay (desktop app, venue LAN
+ * relay)? Then a cloud failure says nothing about the venue, and vice versa.
+ */
+export function isCloudApiSplit() {
+  const cloud = getCloudApiBaseUrl()
+  const relay = getBackendUrl()
+  if (!cloud || !relay) return false
+  return stripTrailingSlash(cloud) !== stripTrailingSlash(relay)
+}
+
+/**
+ * Full URL of a cloud API endpoint (see getCloudApiBaseUrl), or null.
+ * @param {string} path
+ */
+export function getCloudApiUrl(path) {
+  const base = getCloudApiBaseUrl()
+  if (!base) return null
+  return `${base}${path.startsWith('/') ? path : '/' + path}`
+}
+
+/**
+ * WebSocket base of the cloud database realtime (relayRealtime, ?purpose=live).
+ * Same backend as the cloud API when the two are split; otherwise unchanged
+ * (getWebSocketUrl).
+ */
+export function getCloudWebSocketUrl() {
+  if (isCloudApiSplit()) {
+    try { return httpToWsUrl(getCloudApiBaseUrl()) } catch { return null }
+  }
+  return getWebSocketUrl()
+}
+
+/**
+ * URL of a RELAY endpoint: the server that carries the match to the tablets
+ * (/api/server/*, /api/match/list, /api/match/:id, validate-pin). On the
+ * cloud web build this is the same backend as getCloudApiUrl.
+ * @param {string} path
+ */
 export function getApiUrl(path) {
   const backendUrl = getBackendUrl()
 

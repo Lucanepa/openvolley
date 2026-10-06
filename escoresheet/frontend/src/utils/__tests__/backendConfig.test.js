@@ -11,7 +11,11 @@ import {
   getLocalServerStatusUrl,
   getBackendUrl,
   getRelayWebSocketUrl,
-  getApiUrl
+  getApiUrl,
+  getCloudApiUrl,
+  getCloudWebSocketUrl,
+  isCloudApiSplit,
+  isLanBackendUrl
 } from '../backendConfig'
 
 beforeEach(() => {
@@ -213,5 +217,105 @@ describe('getApiUrl', () => {
   it('does not double-slash', () => {
     setBackendOverride('http://localhost:8080')
     expect(getApiUrl('/api/test')).toBe('http://localhost:8080/api/test')
+  })
+})
+
+describe('cloud API split from the relay', () => {
+  const setLocation = (url) => {
+    const u = new URL(url)
+    Object.defineProperty(window, 'location', {
+      value: { hostname: u.hostname, protocol: u.protocol, port: u.port, origin: u.origin, host: u.host },
+      writable: true,
+      configurable: true
+    })
+  }
+  beforeEach(() => {
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('VITE_CLOUD_API_URL', '')
+  })
+  afterEach(() => {
+    delete window.Capacitor
+    vi.unstubAllEnvs()
+  })
+
+  it('desktop app: cloud calls go to backend.openvolley.app, the relay stays on localhost', () => {
+    setLocation('http://localhost:5173/')
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(getCloudApiUrl('api/auth/sign-in')).toBe('https://backend.openvolley.app/api/auth/sign-in')
+    expect(getCloudWebSocketUrl()).toBe('wss://backend.openvolley.app')
+    expect(isCloudApiSplit()).toBe(true)
+    // the relay side is unchanged
+    expect(getBackendUrl()).toBe('http://localhost:5173')
+    expect(getApiUrl('/api/server/connections')).toBe('http://localhost:5173/api/server/connections')
+    expect(getRelayWebSocketUrl()).toBe('ws://localhost:8080')
+  })
+
+  it('venue tablets served by the desktop / Pi relay: relay on the LAN, cloud in the cloud', () => {
+    setLocation('http://192.168.1.20:5173/referee')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+    expect(getApiUrl('/api/match/list')).toBe('http://192.168.1.20:5173/api/match/list')
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+  })
+
+  it('web build on *.openvolley.app: one backend for both (unchanged)', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.openvolley.app')
+    setLocation('https://app.openvolley.app/')
+    expect(getCloudApiUrl('/api/db')).toBe(getApiUrl('/api/db'))
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(getCloudWebSocketUrl()).toBe('wss://backend.openvolley.app')
+    expect(isCloudApiSplit()).toBe(false)
+  })
+
+  it('a static build without VITE_BACKEND_URL still uses the cloud for both', () => {
+    setLocation('https://app.openvolley.app/')
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(getApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(isCloudApiSplit()).toBe(false)
+  })
+
+  it('Android app pointed at a venue LAN relay keeps cloud sync on the cloud', () => {
+    setLocation('https://localhost/')
+    window.Capacitor = { isNativePlatform: () => true }
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    setBackendOverride('http://192.168.1.20:8080')
+    expect(getRelayWebSocketUrl()).toBe('ws://192.168.1.20:8080')
+    expect(getApiUrl('/api/server/connections')).toBe('http://192.168.1.20:8080/api/server/connections')
+    expect(getCloudApiUrl('/api/db')).toBe('https://backend.openvolley.app/api/db')
+    expect(getCloudWebSocketUrl()).toBe('wss://backend.openvolley.app')
+    // a build's VITE_BACKEND_URL names the cloud; the LAN override never takes its place
+    vi.stubEnv('VITE_BACKEND_URL', 'https://dev-backend.openvolley.app')
+    expect(getCloudApiUrl('/api/db')).toBe('https://dev-backend.openvolley.app/api/db')
+  })
+
+  it('a cloud override (?server=dev-backend.openvolley.app) serves both', () => {
+    setLocation('https://app.openvolley.app/')
+    setBackendOverride('https://dev-backend.openvolley.app')
+    expect(getCloudApiUrl('/api/db')).toBe('https://dev-backend.openvolley.app/api/db')
+    expect(getApiUrl('/api/db')).toBe('https://dev-backend.openvolley.app/api/db')
+  })
+
+  it('VITE_CLOUD_API_URL wins for the cloud and never moves the relay', () => {
+    vi.stubEnv('VITE_CLOUD_API_URL', 'https://cloud.example.org/')
+    setLocation('http://localhost:5173/')
+    expect(getCloudApiUrl('/api/db')).toBe('https://cloud.example.org/api/db')
+    expect(getRelayWebSocketUrl()).toBe('ws://localhost:8080')
+    expect(getApiUrl('/api/match/list')).toBe('http://localhost:5173/api/match/list')
+  })
+
+  it('the dev server keeps one origin for both', () => {
+    vi.stubEnv('DEV', true)
+    setLocation('http://localhost:5173/')
+    expect(getCloudApiUrl('/api/db')).toBe('http://localhost:5173/api/db')
+    expect(isCloudApiSplit()).toBe(false)
+  })
+
+  it('isLanBackendUrl tells venue relays from cloud hosts', () => {
+    for (const u of ['http://localhost:8080', 'http://127.0.0.1:5173', 'http://192.168.1.20:8080', 'http://10.0.0.183:5173', 'http://172.20.1.2', 'http://openvolley.local:5173', 'http://[::1]:8080']) {
+      expect(isLanBackendUrl(u), u).toBe(true)
+    }
+    for (const u of ['https://backend.openvolley.app', 'https://cloud.example.org', 'http://172.32.0.1', null, '', 'not a url']) {
+      expect(isLanBackendUrl(u), String(u)).toBe(false)
+    }
   })
 })
