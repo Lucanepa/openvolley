@@ -226,6 +226,18 @@ pub async fn bluetooth_stop(state: State<'_, NetShare>) -> Result<BluetoothStatu
     Ok(bt(platform::bluetooth_status(&mut inner).await))
 }
 
+/// Whether a network this app started for the tablets is up (the update
+/// gate, updater.rs: a restart would take it down). While a start or stop is
+/// still running the answer is yes: never restart in the middle of one.
+pub fn app_network_on<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let Some(state) = app.try_state::<NetShare>() else { return false };
+    let on = match state.inner.try_lock() {
+        Ok(inner) => inner.running(),
+        Err(_) => true,
+    };
+    on
+}
+
 /// Stop whatever this app started (the app is quitting). Linux would tear
 /// down by itself (bind-activation), Windows would not.
 pub fn shutdown<R: Runtime>(app: &AppHandle<R>) {

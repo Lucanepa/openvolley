@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  OpenVolley eScoresheet: the app upgrades itself from its APT repo in the
+  background (src-tauri/src/updater.rs), never during a match.
+
+  The local active session may run the helper without a password: it takes
+  no input and can only upgrade the package openvolley-escoresheet from the
+  repo whose signing key is pinned in /etc/apt/sources.list.d/openvolley.list
+  (install.sh). Remote and inactive sessions need an administrator.
+-->
+<policyconfig>
+  <vendor>OpenVolley</vendor>
+  <vendor_url>https://openvolley.app</vendor_url>
+  <icon_name>openvolley-escoresheet</icon_name>
+
+  <action id="com.openvolley.escoresheet.update">
+    <description>Update OpenVolley eScoresheet</description>
+    <message>Authentication is required to update OpenVolley eScoresheet</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/openvolley-escoresheet/apt-upgrade</annotate>
+  </action>
+</policyconfig>

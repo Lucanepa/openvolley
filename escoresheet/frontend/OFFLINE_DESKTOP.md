@@ -553,6 +553,80 @@ quit (`src-tauri/src/lifecycle.rs`, page side `src/utils/appLifecycle.js`):
   page's handler gone → native question. Not yet on a real Windows
   desktop (type-checked with `cargo check --target x86_64-pc-windows-msvc`).
 
+## Automatic updates (from 2.2.0)
+
+The app updates itself, never during a match (`src-tauri/src/updater.rs`,
+page side `src/hooks/useDesktopUpdate.js`, `src/components/DesktopUpdateNotice.jsx`,
+Options > App version). 2.1.x and older have no updater: install 2.2.0 once by
+hand (APT: `sudo apt upgrade`).
+
+- **When it checks:** a minute after the scoretable page first loaded, every
+  6 hours, at a sign-in (at most every 15 minutes) and on "Check for updates".
+  Never at startup, never during a live match, and automatic checks and
+  downloads wait 5 minutes after a match. It reads
+  `https://get.openvolley.app/desktop/latest.json`, then
+  `https://github.com/Lucanepa/openvolley/releases/latest/download/latest.json`.
+  `OPENVOLLEY_UPDATE_CHANNEL=staging` reads `desktop/staging.json` (canary).
+- **Windows (NSIS) and the AppImage:** the file downloads in the background
+  (stopped when a match starts) and is verified with the updater key
+  (`plugins.updater.pubkey` in tauri.conf.json, minisign; `requireSignedVersion`:
+  the signature must name the announced version, `tauri signer sign
+  --app-version`, CLI 2.12+). It installs when the scorer **quits** OpenVolley
+  (confirmed quit, no live match; Windows: one administrator prompt, the
+  installer runs passive and does not relaunch the app; a declined prompt is
+  not asked again on quit for that version for 3 days), or at once with
+  **Restart and update** (home screen notice, Options, tray item "Restart to
+  update to {v}").
+- **Linux .deb from the APT repo** (`/etc/apt/sources.list.d/openvolley.list`,
+  written by install.sh): no download by the app. While no match is live the
+  app runs `pkexec /usr/libexec/openvolley-escoresheet/apt-upgrade` (shipped in
+  the .deb, `src-tauri/linux/`; polkit action
+  `com.openvolley.escoresheet.update`, `allow_active=yes`: no password for the
+  local active session). The helper takes no input and upgrades only this
+  package from this repo. The running app keeps its old binary and says
+  "Restart to finish the update to {v}"; it notices an `apt upgrade` or
+  unattended-upgrades the same way (`/proc/self/exe` ends in " (deleted)").
+  Without pkexec (or refused) Options shows `sudo apt update && sudo apt upgrade`.
+  A .deb installed by hand (no repo) shows the install.sh command once.
+- **The gate**, in Rust, checked before every download / install / restart:
+  download only with no live match; **restart** only with no live match, no
+  tablet connected, no tablet Wi-Fi / Bluetooth of the app running and the
+  page loaded (otherwise the notice and Options say why, and the app refuses
+  `update_install_now` whatever the page asks); install on a confirmed quit
+  only with no live match. The OS ending the app (logout, shutdown, SIGTERM)
+  never installs. "Restart and update" checks the restart gate twice: before
+  the install and again right before the restart, since the install can take
+  minutes (the APT helper waits for the dpkg lock and downloads). If a
+  match started or a tablet connected in the meantime, the update stays
+  installed and the app does not restart. It shows "Restart to finish" and
+  offers the restart again once the gate opens.
+- **Windows administrator prompt cancelled** ("Restart and update"): the app
+  keeps running with its window and tray icon. The plugin's before-exit hook
+  only stops the tablet network and hides the tray icon before the prompt;
+  the icon comes back if the installer does not start. The plugin's default,
+  `cleanup_before_exit`, would drop the tray and hide every window for good.
+- **The page** gets the status from `update_status` and the `ov-update`
+  window event (numbered: an older answer never replaces a newer event). The
+  notice is a small card on the home screen only, hidden during a live match,
+  quiet while checking or downloading; Later hides it for that version until
+  the next start. Options > App version: status, Check for updates, Restart
+  and update (or why it waits), "Check for updates automatically", "Install
+  updates automatically" (`<config dir>/update.json`), What's new. The
+  updater plugin's own JS commands are granted to no window
+  (`capabilities/update.json` has the app's four commands only).
+- **Checked** under Xvfb with the debug AppImages 2.1.1 → 2.2.0 from a local
+  server, signed with a throwaway key (the debug-only
+  `OPENVOLLEY_UPDATE_TEST_ENDPOINT` / `_PUBKEY` / `_FIRST_DELAY` / `_TICK` /
+  `_KIND` / `_EXE` overrides; a release build has none): found and downloaded
+  in the background; a live test match hides the notice, the app refuses the
+  restart (matchLive) and the tray offers none; after the match "Restart and
+  update" replaced the AppImage and restarted into 2.2.0 (single-instance
+  active, not handed back to the old process); SIGTERM did not install; a
+  confirmed quit installed. Not yet on Windows (UAC, passive installer,
+  relaunch) nor a real APT upgrade through polkit (`cargo check --target
+  x86_64-pc-windows-msvc`; the .deb's helper and policy checked with
+  shellcheck, the XML and `dpkg-deb -c`).
+
 ## Window chrome
 
 - No native menu bar on Linux / Windows (it held only Help → Connect a Tablet

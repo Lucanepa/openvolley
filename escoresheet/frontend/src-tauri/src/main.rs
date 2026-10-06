@@ -8,6 +8,7 @@ mod netifs;
 mod netshare;
 mod popups;
 mod relay;
+mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -104,18 +105,26 @@ fn main() {
             });
 
             // Closing the window hides it to the tray (lifecycle.rs); its
-            // status line counts the tablets.
-            if lifecycle::create_tray(app.handle()) {
+            // status line counts the tablets, and so does the update gate
+            // (updater.rs: no restart while a tablet is connected), with or
+            // without a tray.
+            lifecycle::create_tray(app.handle());
+            {
                 let st = state.clone();
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     loop {
                         lifecycle::set_tablet_count(&handle, relay::tablet_count(&st).await);
+                        // the tray's "Restart to update" follows the gate
+                        updater::push(&handle);
                         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                     }
                 });
             }
             lifecycle::quit_on_signals(app.handle());
+            // automatic updates: the first check a minute after the page
+            // loaded, never during a match (updater.rs)
+            updater::start(app.handle().clone());
 
             // Load the desktop window from the local relay so window.location is
             // a real http origin (the existing LAN client code + the scoresheet
@@ -175,6 +184,9 @@ fn main() {
         .run(|app, event| match event {
             // Only a confirmed quit, the OS or a scoretable window that is
             // gone ends the app; any other exit becomes the question.
+            // A restart into an update (updater.rs) is never asked: the
+            // gate was checked before.
+            tauri::RunEvent::ExitRequested { code: Some(tauri::RESTART_EXIT_CODE), .. } => {}
             tauri::RunEvent::ExitRequested { api, .. } => {
                 if lifecycle::on_exit_requested(app) {
                     api.prevent_exit();
@@ -251,12 +263,16 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 /// (backup.rs; ACL in capabilities/backup.json), the networks the laptop
 /// creates for the tablets (netshare/; capabilities/netshare.json) and the
 /// check of the installer's firewall rule (firewall.rs; same capability) and
-/// the close-to-tray / quit handshake (lifecycle.rs; capabilities/app.json). One
-/// invoke handler: a second call would replace the first.
+/// the close-to-tray / quit handshake (lifecycle.rs; capabilities/app.json) and
+/// the automatic updates (updater.rs; capabilities/update.json; the updater
+/// plugin's own commands are granted to no window). One invoke handler: a
+/// second call would replace the first.
 fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(netshare::NetShare::new())
         .manage(lifecycle::Lifecycle::new())
+        .manage(updater::Updates::new())
         .invoke_handler(tauri::generate_handler![
         backup::backup_info,
         backup::backup_write,
@@ -275,7 +291,11 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         lifecycle::app_page_gone,
         lifecycle::app_hide,
         lifecycle::app_quit,
-        lifecycle::app_quit_ack
+        lifecycle::app_quit_ack,
+        updater::update_status,
+        updater::update_check_now,
+        updater::update_install_now,
+        updater::update_set_prefs
     ])
 }
 
@@ -400,7 +420,8 @@ mod ipc_acl_tests {
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
                     "firewall_status",
-                    "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
+                    "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack",
+                    "update_status", "update_check_now", "update_install_now", "update_set_prefs"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
             assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
@@ -433,6 +454,55 @@ mod ipc_acl_tests {
         for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
             for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
                 let err = get_ipc_response(&window, request(cmd, url, state.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
+        }
+    }
+
+    /// Updates: the scoretable page reads the status, asks for a check,
+    /// changes the settings and asks to restart (refused by the Rust gate
+    /// while the page has not reported itself); the updater plugin's own
+    /// commands (download, install) are granted to no window at all.
+    #[test]
+    fn only_the_scoretable_page_may_ask_for_updates_and_never_through_the_plugin() {
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let local = "http://localhost:5173/";
+        let status = get_ipc_response(&window, request("update_status", local, serde_json::json!({})))
+            .expect("update_status from the scoretable page")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(status["kind"], "unsupported", "a test build has no bundle type: got {status}");
+        assert_eq!(status["current"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(status["autoCheck"], true);
+        get_ipc_response(&window, request("update_check_now", local, serde_json::json!({ "reason": "manual" })))
+            .expect("update_check_now from the scoretable page");
+        let prefs = get_ipc_response(&window, request("update_set_prefs", local, serde_json::json!({ "autoInstall": false })))
+            .expect("update_set_prefs from the scoretable page")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!((prefs["autoCheck"].as_bool(), prefs["autoInstall"].as_bool()), (Some(true), Some(false)));
+        // reaches the command; its gate refuses (the page never reported itself)
+        let err = get_ipc_response(&window, request("update_install_now", local, serde_json::json!({})))
+            .expect_err("no restart while the page is not ready");
+        assert_eq!(err["code"], "blocked", "got {err}");
+        assert_eq!(err["blockers"][0]["kind"], "pageNotReady", "got {err}");
+
+        let plugin = ["plugin:updater|check", "plugin:updater|download", "plugin:updater|install", "plugin:updater|download_and_install"];
+        for cmd in plugin {
+            let err = get_ipc_response(&window, request(cmd, local, serde_json::json!({})))
+                .expect_err(&format!("{cmd} must be refused even to the scoretable page"));
+            assert!(err.to_string().contains("not allowed"), "{cmd}: refused by the ACL, got {err}");
+        }
+        let ours = ["update_status", "update_check_now", "update_install_now", "update_set_prefs"];
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ours.iter().chain(plugin.iter()) {
+                let err = get_ipc_response(&window, request(cmd, url, serde_json::json!({})))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
                 assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
             }
