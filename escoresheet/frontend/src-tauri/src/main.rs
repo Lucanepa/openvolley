@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backup;
+mod popups;
 mod relay;
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -77,7 +78,12 @@ fn main() {
             // Light only (volleyui): a dark OS theme must not darken the
             // native title bar, pickers or scrollbars of the scoretable.
             .theme(Some(tauri::Theme::Light))
-            .build()?;
+            // window.open(): the scoresheet etc. as app windows, web links in
+            // the system browser (popups.rs); "Save PDF" into Downloads.
+            .on_new_window(popups::new_window_handler(app.handle().clone(), http))
+            .on_download(popups::on_download)
+            .build()
+            .map(|main| popups::let_scripts_open_windows(&main))?;
 
             Ok(())
         })
