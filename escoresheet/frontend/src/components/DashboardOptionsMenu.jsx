@@ -7,6 +7,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
+import { askConfirm } from '../utils/askConfirm.js'
 import { CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 
 // Available languages with flag image URLs (using flagcdn.com)
@@ -138,9 +139,12 @@ export function DashboardOptionsMenu({
   const handleClearCache = useCallback(async () => {
     if (isClearing) return
 
-    const confirmed = window.confirm(
-      t('dashboardOptions.clearCacheConfirmation', 'Clear all cached data?\n\nThis will:\n- Clear all local match data\n- Clear sync queue\n- Clear service worker caches\n- Log you out of current match\n\nThe page will reload after clearing.')
-    )
+    const confirmed = await askConfirm({
+      title: t('dashboardOptions.clearCacheAndData', 'Clear cache & data'),
+      message: t('dashboardOptions.clearCacheConfirmation', 'Clear all cached data?\n\nThis will:\n- Clear all local match data\n- Clear sync queue\n- Clear service worker caches\n- Log you out of current match\n\nThe page will reload after clearing.'),
+      confirmLabel: t('dashboardOptions.clearCacheAndData', 'Clear cache & data'),
+      tone: 'danger'
+    })
 
     if (!confirmed) return
 

@@ -58,6 +58,7 @@ import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
+import { askConfirm } from '../utils/askConfirm.js'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -20936,7 +20937,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deletePointEvent'))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deletePointEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       const deletedTeam = team || '?'
                                       await discardEvents([event])
                                       await resyncSetScoreFromEvents(setIndex)
@@ -21045,7 +21046,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deleteTimeoutEvent'))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteTimeoutEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       const deletedTeam = team || '?'
                                       await discardEvents([event])
                                       logManualChangeWithRemark('Timeout', 'Delete',
@@ -21305,7 +21306,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deleteSubstitutionEvent'))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteSubstitutionEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       const subSetIndex = event.setIndex
 
                                       // Remove THIS substitution: its own lineup sub-event (seq N.x) is
@@ -21554,7 +21555,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deleteSanctionEvent'))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteSanctionEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       // discardEvents re-derives the team-sanction flags
                                       await discardEvents([event])
                                       logManualChangeWithRemark('Sanction', 'Delete',
@@ -21868,7 +21869,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteEvent', { type: eventType }), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       await discardEvents([event])
                                       logManualChangeWithRemark('Libero', 'Delete',
                                         `${eventType} (Team ${teamLabel})`, null,
@@ -21972,7 +21973,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deleteLineupEvent'))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteLineupEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       await discardEvents([event])
                                     }
                                   }}
@@ -22306,7 +22307,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <button
                                   className={SB_ROW_DELETE}
                                   onClick={async () => {
-                                    if (confirm(t('scoreboard.actionLog.deleteEvent', { type: eventType }))) {
+                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteEvent', { type: eventType }), confirmLabel: t('common.delete'), tone: 'danger' })) {
                                       await discardEvents([event])
                                       if (eventType === 'point') await resyncSetScoreFromEvents(setIndex)
                                       logManualChangeWithRemark('Event', 'Quick Delete',
@@ -28424,7 +28425,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     setConfirmMessage(null)
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const newErrors = {}
     const lineupNumbers = lineup.map(n => (n ? Number(n) : null))
 
@@ -28513,7 +28514,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         return player?.isLfp || player?.is_lfp
       }).length
       if (lfpInLineup < lfpMinimumOnCourt) {
-        const proceed = window.confirm(t('scoreboard.lfpWarning', { count: lfpInLineup, minimum: lfpMinimumOnCourt }))
+        const proceed = await askConfirm({
+          title: t('alert.warning'),
+          message: t('scoreboard.lfpWarning', { count: lfpInLineup, minimum: lfpMinimumOnCourt })
+        })
         if (!proceed) return
       }
     }
