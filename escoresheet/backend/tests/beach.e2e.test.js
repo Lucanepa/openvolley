@@ -301,6 +301,44 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
     }
   })
 
+  it('openbeach\'s whole live-state upsert (incl. tto_active / tto_started_at) is accepted and reaches live subscribers', async () => {
+    // The key set Scoreboard_beach.jsx syncLiveStateToSupabase sends, all of it
+    const ttoAt = new Date().toISOString()
+    const liveStateData = {
+      match_id: beachUuid, sport_type: 'beach', current_set: 2,
+      team_a_name: 'Muster / Beispiel', team_a_short: 'MUS', team_a_color: '#ef4444',
+      team_b_name: 'Rossi / Bianchi', team_b_short: 'ROS', team_b_color: '#3b82f6',
+      sets_won_a: 1, sets_won_b: 0, points_a: 12, points_b: 9, side_a: 'right',
+      lineup_a: { I: 1, II: 2 }, lineup_b: { I: 1, II: 2 },
+      timeouts_a: 0, timeouts_b: 1, server_number: 2, challenges_used_a: 0, challenges_used_b: 1,
+      subs_a: null, subs_b: null, sanctions_a: null, sanctions_b: null,
+      serving_team: 'left', last_event_type: 'technical_to', last_event_team: null, last_event_data: null,
+      last_event_ts: ttoAt, timeout_active: false, timeout_started_at: null,
+      tto_active: true, tto_started_at: ttoAt,
+      set_interval_active: false, set_interval_started_at: null, match_status: 'in_progress',
+      scorer_attention_trigger: null, game_n: 41, league: null, gender: null,
+      updated_at: new Date().toISOString()
+    }
+    const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
+    try {
+      await subscribe(live, 'beach-tto', [{ table: 'match_live_state', event: '*', column: 'sport_type', value: 'beach' }])
+      const r = await dbCall(users.alice, 'match_live_state', 'upsert', { data: liveStateData, onConflict: 'match_id' })
+      assert.equal(r.status, 200, r.text)
+      const u = await live.waitFor((m) => m.type === 'db-change' && m.table === 'match_live_state' && m.new?.match_id === beachUuid && m.new.tto_active === true, 5000, 'beach TTO live state')
+      assert.equal(new Date(u.new.tto_started_at).toISOString(), ttoAt)
+      assert.equal(u.new.challenges_used_b, 1)
+      assert.equal(u.new.points_a, 12)
+      const { rows: [row] } = await sql.query('SELECT tto_active, tto_started_at FROM match_live_state WHERE match_id = $1', [beachUuid])
+      assert.equal(row.tto_active, true)
+      // The TTO ends: live viewers get tto_active false
+      const end = await dbCall(users.alice, 'match_live_state', 'upsert', { data: { ...liveStateData, tto_active: false, tto_started_at: null, last_event_type: 'end_tto', updated_at: new Date(Date.now() + 1000).toISOString() }, onConflict: 'match_id' })
+      assert.equal(end.status, 200, end.text)
+      await live.waitFor((m) => m.type === 'db-change' && m.table === 'match_live_state' && m.new?.match_id === beachUuid && m.new.tto_active === false, 5000, 'TTO ended')
+    } finally {
+      live.ws.close()
+    }
+  })
+
   it('relay: a beach scoreboard\'s team1/team2 bundle is kept, its PINs never relayed, the beach PINs and tokens grant it', async () => {
     const scoreboard = await openSocket(srv.wsUrl)
     const viewer = await openSocket(srv.wsUrl)

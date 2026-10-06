@@ -39,7 +39,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 // The backend's own migrations that the synthetic schema does not carry
 // (they run on the production database through restore.sh): applied after it,
 // and after a template copy (all of them are idempotent).
-export const MIGRATIONS_SQL = ['005_match_ownership.sql']
+export const MIGRATIONS_SQL = ['005_match_ownership.sql', '007_live_state_tto.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
   .join('\n')
 export const SCHEMA_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8') + '\n' + MIGRATIONS_SQL

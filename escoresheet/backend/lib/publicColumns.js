@@ -63,6 +63,9 @@ const MATCH_LIVE_STATE_COLUMNS = Object.freeze({
   set_interval_started_at: true,
   timeout_active: true,
   timeout_started_at: true,
+  // Beach technical timeout (db/007_live_state_tto.sql)
+  tto_active: true,
+  tto_started_at: true,
   team_a_name: true,
   team_a_short: true,
   team_a_color: true,
