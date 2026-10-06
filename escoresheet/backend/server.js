@@ -36,6 +36,7 @@ import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRol
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
 import { createAttemptLimiter } from './lib/matchRestore.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
+import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -79,8 +80,7 @@ if (DB_MODE && !TRUST_PROXY) {
     'The origin port must be reachable only through the tunnel/proxy.')
 }
 // Extra trusted browser origins (comma list), on top of *.openvolley.app.
-const PUBLIC_ORIGINS = String(process.env.PUBLIC_ORIGINS || '')
-  .split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean)
+const PUBLIC_ORIGINS = parsePublicOrigins(process.env.PUBLIC_ORIGINS)
 // Object storage root (bind mount with a .ovdata sentinel). STORAGE_DIR is the
 // older name used by lib/storage.js and its README; STORAGE_ROOT wins.
 const STORAGE_ROOT = process.env.STORAGE_ROOT || process.env.STORAGE_DIR || '/data/storage'
@@ -1331,51 +1331,8 @@ async function fetchAndParseIcal(feedUrl, federation, leagueCode, leagueConfig) 
   }
 }
 
-// Allowed origins for CORS
-const ALLOWED_ORIGINS = [
-  'https://openvolley.app',
-  'https://app.openvolley.app',
-  'https://referee.openvolley.app',
-  'https://bench.openvolley.app',
-  'https://livescore.openvolley.app',
-  'https://roster.openvolley.app',
-  // Native shells: Capacitor (Android androidScheme https, iOS), Tauri
-  // (macOS/Linux, Windows). DATABASE_URL implies strict cloud CORS, so without
-  // these the apps would lose cloud sync. Auth is a bearer token, never a
-  // cookie, so trusting them grants no ambient credentials.
-  'https://localhost',
-  'capacitor://localhost',
-  'tauri://localhost',
-  'http://tauri.localhost',
-  'https://tauri.localhost',
-  // The Tauri desktop app's window (served by its own LAN relay on :5173,
-  // cloud sync comes here) and local development
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000'
-]
-
-// Returns { origin, credentials } — credentials are only allowed when the
-// origin is explicitly trusted, never when we reflect an arbitrary/`*` origin.
-function isTrustedOrigin(origin) {
-  if (!origin) return false
-  if (ALLOWED_ORIGINS.includes(origin)) return true
-  if (PUBLIC_ORIGINS.includes(origin)) return true
-  if (/^https:\/\/[a-z0-9-]+\.openvolley\.app$/.test(origin)) return true
-  // LAN origins for the local/standalone server (http on private ranges + localhost)
-  if (!IS_CLOUD && /^https?:\/\/(localhost|127\.0\.0\.1|(\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(origin)) return true
-  return false
-}
-
-function getCorsOrigin(req) {
-  const origin = req.headers.origin
-  if (isTrustedOrigin(origin)) return { origin, credentials: true }
-  // Non-cloud (LAN) fallback: reflect the origin for read access, but WITHOUT
-  // credentials so a malicious site cannot make credentialed cross-origin calls.
-  if (!IS_CLOUD) return { origin: origin || '*', credentials: false }
-  return { origin: ALLOWED_ORIGINS[0], credentials: false }
-}
+// CORS: the trusted origins (lib/cors.js; manager.openvolley.app included)
+const { getCorsOrigin } = createOriginPolicy({ isCloud: IS_CLOUD, publicOrigins: PUBLIC_ORIGINS })
 
 // connect-src for pages this server serves itself (same-origin bundle).
 // No *.supabase.co any more: realtime runs over this server's own socket.
