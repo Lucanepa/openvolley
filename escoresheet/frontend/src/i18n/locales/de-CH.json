@@ -494,7 +494,7 @@
       "switchSides": "Siite wächsle",
       "switchCourts": "Fäld wächsle",
       "switchServe": "Ufschlag wächsle",
-      "confirmSet5Setup": "Satz 5 Iirichtig bestätige"
+      "confirmSet5Setup": "Satz {{number}} Iirichtig bestätige"
     },
     "sync": {
       "syncing": "Synchronisiere...",
@@ -519,7 +519,7 @@
       "liberoRedesignation": "Libero-Neubezeichnig",
       "courtSwitchRequired": "Sitewechsel erforderlich",
       "teamsMustSwitchCourts": "Teams müend d Siite wächsle",
-      "set5ChooseSideService": "Satz 5 - Site und Ufschlag wähle",
+      "set5ChooseSideService": "Satz {{number}} - Site und Ufschlag wähle",
       "noLegalSubstitution": "Kei regelkonformi Uswächslig verfüegbar",
       "liberoReminder": "Libero-Erinnerig",
       "reopenSet": "Satz wieder öffne",
