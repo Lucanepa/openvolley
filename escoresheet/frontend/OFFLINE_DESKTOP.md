@@ -289,5 +289,10 @@ Known limits:
 - **`alert()` / `confirm()` in the desktop app**: `tauri-plugin-dialog`
   replaces both with IPC calls (`plugin:dialog|message` / `|confirm`) that no
   capability allows, so `alert()` shows nothing and `confirm()` returns a
-  Promise, which is truthy: the action-log deletes and the LFP warning in the
-  scoreboard (`if (confirm(...))`) go ahead without asking. Not changed here.
+  Promise, which is truthy. The app therefore never calls them: every question
+  goes through `src/utils/askConfirm.js` (the in-app volleyui dialog, awaited),
+  the same in the browser, the desktop app and Android. A vitest guard
+  (`src/utils/__tests__/noNativeDialogs.test.jsx`) fails on any bare
+  `confirm(` / `alert(` and on an `askConfirm()` that is not awaited.
+  `prompt()` (the match PIN prompt in MatchSetup) is not replaced by the
+  plugin; it was not checked in the desktop app.
