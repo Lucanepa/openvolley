@@ -899,8 +899,10 @@ export default function HomeOptionsModal({
         )}
 
         <Section title={t('options.appVersion')}>
-          {desktopUpdate.active && <DesktopUpdateSection update={desktopUpdate} />}
-          {!desktopUpdate.active && <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+          {/* The desktop app: its own update status (DesktopUpdateSection).
+              Elsewhere the web build's version check. */}
+          {desktopUpdate.active ? <DesktopUpdateSection update={desktopUpdate} /> : (
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-stone-900">{t('options.currentVersion')}</div>
@@ -952,7 +954,8 @@ export default function HomeOptionsModal({
                 {t('options.couldNotCheckUpdates')}
               </div>
             )}
-          </Row>}
+          </Row>
+          )}
           {/* Licence + credits. The icons are the same packs as wiedisync:
               Lucide (ISC) for the UI glyphs and the whistle, Phosphor (MIT) for
               the volleyball (see components/icons and ui/AppSpinner.jsx). Both
