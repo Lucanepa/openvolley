@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../../db/db', () => ({ db: {} }))
-vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}` }))
+vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 
 const byPin = vi.hoisted(() => ({ calls: [], result: null }))
 vi.mock('../../lib/apiClient', () => ({

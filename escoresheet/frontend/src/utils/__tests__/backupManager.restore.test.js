@@ -40,7 +40,7 @@ function fakeTable(rows = []) {
 
 const fakeDb = vi.hoisted(() => ({}))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
-vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}` }))
+vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
 import { restoreMatchFromJson, restoreMatchInPlace } from '../backupManager'

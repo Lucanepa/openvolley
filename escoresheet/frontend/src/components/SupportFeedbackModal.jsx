@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
-import { getApiUrl } from '../utils/backendConfig'
+import { getCloudApiUrl } from '../utils/backendConfig'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { Check, Paperclip, Send, X } from 'lucide-react'
 import { Button, cn, FOCUS_RING, IconButton } from '../ui'
@@ -229,7 +229,7 @@ export default function SupportFeedbackModal({ open, onClose, currentPage = 'mai
         formData.append(`file_${index}`, file)
       })
 
-      const apiUrl = getApiUrl('/api/contact')
+      const apiUrl = getCloudApiUrl('/api/contact')
 
       if (apiUrl) {
         const response = await fetch(apiUrl, {

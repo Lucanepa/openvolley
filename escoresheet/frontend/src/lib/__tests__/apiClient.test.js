@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('../../utils/backendConfig', () => ({
-  getApiUrl: (path) => `http://backend.test${path}`
+  getApiUrl: (path) => `http://relay.test${path}`,
+  getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
 import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
@@ -23,6 +24,18 @@ describe('apiClient QueryBuilder', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('sends db, storage and auth to the cloud API, never to the relay', async () => {
+    await apiFrom('matches').select('id').limit(1)
+    await apiStorage.from('backup').list('logs')
+    await apiAuth.signInWithPassword({ email: 'a@b.c', password: 'x' })
+    const urls = globalThis.fetch.mock.calls.map(c => c[0])
+    expect(urls).toEqual([
+      'http://backend.test/api/db',
+      'http://backend.test/api/storage/list',
+      'http://backend.test/api/auth/sign-in'
+    ])
   })
 
   it('upsert().select("id").single() keeps the upsert and asks for returning', async () => {

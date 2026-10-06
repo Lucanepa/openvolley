@@ -4,7 +4,7 @@
  */
 
 import { apiFrom } from '../lib/apiClient'
-import { getApiUrl, getBackendUrl, getRelayWebSocketUrl } from './backendConfig'
+import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
 
 /**
@@ -1369,9 +1369,10 @@ export async function listAvailableMatchesSupabase() {
       .order('scheduled_at', { ascending: true })
 
     if (error) {
-      // 404: a LAN relay without /api/db (desktop app) — the caller falls back
-      // to the relay's own match list, nothing is wrong
-      if (error.status !== 404) console.error('[listAvailableMatchesSupabase] Error:', error)
+      // 404 (a relay without /api/db) or no answer (venue offline, or a LAN
+      // tablet origin the cloud does not serve): the caller falls back to the
+      // relay's own match list, nothing is wrong
+      if (error.status !== 404 && !error.network) console.error('[listAvailableMatchesSupabase] Error:', error)
       return { success: false, matches: [], error: error.message }
     }
 
@@ -1531,7 +1532,7 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     // SECURITY: the PIN is validated server-side. Match connection PINs are
     // never sent to the client (previously this read connection_pins for every
     // live match into the browser, defeating the PIN gate).
-    const apiUrl = getApiUrl('/api/match/validate-connection-pin')
+    const apiUrl = getCloudApiUrl('/api/match/validate-connection-pin')
     if (!apiUrl) return { success: false, error: 'Backend not available' }
 
     const response = await fetch(apiUrl, {
@@ -1579,7 +1580,7 @@ export async function validateUploadPinSupabase(team, pin, matchExternalId) {
     if (!pinStr || pinStr.length !== 6) {
       return { success: false, error: 'Invalid PIN format' }
     }
-    const apiUrl = getApiUrl('/api/match/validate-connection-pin')
+    const apiUrl = getCloudApiUrl('/api/match/validate-connection-pin')
     if (!apiUrl) return { success: false, error: 'Backend not available' }
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -1617,7 +1618,7 @@ export async function validateUploadPinSupabase(team, pin, matchExternalId) {
  * @returns {Promise<{success: boolean, status?: number, error?: string}>}
  */
 export async function uploadRosterToCloud(matchExternalId, team, pin, rosterData, { fetchImpl = fetch } = {}) {
-  const apiUrl = getApiUrl('/api/match/upload-roster')
+  const apiUrl = getCloudApiUrl('/api/match/upload-roster')
   if (!apiUrl) return { success: false, error: 'Backend not available' }
   const { coachSignature = null, captainSignature = null, ...roster } = rosterData || {}
   try {
