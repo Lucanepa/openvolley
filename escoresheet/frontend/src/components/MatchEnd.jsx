@@ -7,7 +7,7 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import SignaturePad from './SignaturePad'
 import MenuList from './MenuList'
 import Modal from './Modal'
-import mikasaVolleyball from '../mikasa_v200w.png'
+import ballFallback from '../ball_fallback.png'
 import JSZip from 'jszip'
 import { apiStorage } from '../lib/apiClient'
 import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
@@ -15,7 +15,7 @@ import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStora
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
-// Primary ball image (with mikasa as fallback)
+// Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { sanitizeForFilename, hashPassword } from '../utils/stringUtils'
 import { getApiUrl } from '../utils/backendConfig'
@@ -1285,9 +1285,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
-          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
+          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>{t('matchEnd.title', 'Match complete')}</h1>
-          <img src={ballImage} onError={(e) => e.target.src = mikasaVolleyball} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
+          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
         </div>
 
       </div>
