@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backup-open-dir"
+description = "Enables the backup_open_dir command without any pre-configured scope."
+commands.allow = ["backup_open_dir"]
+
+[[permission]]
+identifier = "deny-backup-open-dir"
+description = "Denies the backup_open_dir command without any pre-configured scope."
+commands.deny = ["backup_open_dir"]
