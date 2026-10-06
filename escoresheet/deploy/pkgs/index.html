@@ -160,6 +160,15 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
     </div>
   </section>
 
+  <section class="card" id="updates">
+    <h2>Automatic updates</h2>
+    <h3>Android</h3>
+    <p>F-Droid keeps the app up to date: on Android 12 and newer it installs updates by itself, with no tap, while the tablet is idle (never while the scoreboard keeps the screen on). Android 7 to 11 shows one <kbd>Update</kbd> tap. On a scorer tablet use the F-Droid client 2.0 or newer, and in F-Droid set <kbd>Settings</kbd> → app auto-updates → <kbd>Only on Wi-Fi</kbd>.</p>
+    <p>Installed the APK from the browser? Open OpenVolley in F-Droid once and tap <kbd>Update</kbd>: from then on F-Droid updates it. Without F-Droid the app can tell you about a new version instead, if you say yes when it asks (about once a day it reads the version list on this site, never during a match; nothing else is sent). It never installs anything itself.</p>
+    <h3>Windows and Linux</h3>
+    <p>From version 2.2.0 the desktop app updates itself: it downloads the update in the background and installs it when you quit OpenVolley, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and runs the new version from the next start. Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
+  </section>
+
   <footer>
     Browse the repositories: <a href="/apt/">/apt/</a> · <a href="/fdroid/repo/">/fdroid/repo/</a> ·
     Source: <a href="https://github.com/Lucanepa/openvolley">github.com/Lucanepa/openvolley</a> · Web app: <a href="https://openvolley.app">openvolley.app</a>
