@@ -10,12 +10,18 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# tray-icon: the app keeps running in the tray when its window is closed
+# (lifecycle.rs). On Linux the tray loads libayatana-appindicator3 at run
+# time (deb depends in tauri.linux.conf.json).
+tauri = { version = "2", features = ["tray-icon"] }
 # native "open file" picker for restoring a backup (backup.rs)
 tauri-plugin-dialog = "2"
+# A second launch shows the running app instead of failing on the busy
+# relay ports ("Cannot bind HTTP port").
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 axum = { version = "0.7", features = ["ws"] }
 rust-embed = "8"
 mime_guess = "2"
@@ -35,6 +41,10 @@ webkit2gtk = "2.0"
 # NetworkManager over D-Bus: the tablet Wi-Fi (hotspot) and the Bluetooth
 # network (hotspot/linux.rs). On the tokio runtime the app already runs.
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+# probe for libayatana-appindicator3 / libappindicator3 before building the
+# tray: tray-icon panics when neither loads (lifecycle.rs). In the tree
+# through tray-icon, no new crate.
+libloading = "0.7"
 
 # Mobile Hotspot (WinRT tethering) and the Wi-Fi Direct legacy access point
 # (hotspot/windows.rs). Same version as tauri's (wry/webview2-com), so only

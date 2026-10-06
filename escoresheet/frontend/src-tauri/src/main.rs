@@ -3,12 +3,13 @@
 
 mod backup;
 mod firewall;
+mod lifecycle;
 mod netifs;
 mod netshare;
 mod popups;
 mod relay;
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 const DEFAULT_HTTP_PORT: u16 = 5173;
 const DEFAULT_WS_PORT: u16 = 8080;
@@ -31,17 +32,6 @@ fn main() {
         return;
     }
 
-    // Pre-bind the ports synchronously so the window can't race ahead of the
-    // server (a queued connection is fine; a refused one would blank the window).
-    let http_listener = std::net::TcpListener::bind(("0.0.0.0", http)).unwrap_or_else(|e| {
-        eprintln!("Cannot bind HTTP port {http}: {e}");
-        std::process::exit(1);
-    });
-    let ws_listener = std::net::TcpListener::bind(("0.0.0.0", ws)).unwrap_or_else(|e| {
-        eprintln!("Cannot bind WebSocket port {ws}: {e}");
-        std::process::exit(1);
-    });
-
     // The cloud backend's CORS trusts the desktop window on port 5173 only:
     // on another port the app runs the venue as usual and says "Cloud sync
     // unavailable on port N" (isCloudBlockedOnThisPort in backendConfig.js).
@@ -51,13 +41,56 @@ fn main() {
 
     let state = relay::new_state(http, ws);
 
-    with_app_commands(tauri::Builder::default().plugin(tauri_plugin_dialog::init()))
+    // One app per computer: a second launch (the app is in the tray, the
+    // scorer clicks its icon again) shows the running one and exits, before
+    // it would fail on the relay's ports. Registered first, so it runs before
+    // anything else.
+    //
+    // `--quit` (the Windows installer and uninstaller, windows/installer-hooks.nsh,
+    // after they asked the user): the running app quits cleanly, so the
+    // tablets' Wi-Fi is switched off and the user's hotspot settings come
+    // back. Without it the installer ended the app with TerminateProcess.
+    let mut builder = tauri::Builder::default();
+    if single_instance_available() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if argv.iter().any(|a| a == lifecycle::QUIT_ARG) {
+                lifecycle::os_exit(app, "the installer asked (--quit)");
+                return;
+            }
+            eprintln!("[app] started again: showing the running app");
+            lifecycle::show_windows(app);
+        }));
+    }
+
+    with_app_commands(builder.plugin(tauri_plugin_dialog::init()))
         // No native menu bar on Linux / Windows: it held only Help > Connect a
         // Tablet and rendered in the GTK system theme (dark on a dark desktop).
         // The app's own header menu has Connect tablets (LAN addresses + QR),
         // help and the version. macOS keeps Tauri's default app menu (quit,
         // copy / paste).
         .setup(move |app| {
+            // `--quit` and no running app to hand it to: only undo a tablet
+            // Wi-Fi a crashed run left on (Windows), then exit, before the
+            // ports are bound or a window opens.
+            if std::env::args().any(|a| a == lifecycle::QUIT_ARG) {
+                eprintln!("[app] --quit: OpenVolley is not running");
+                netshare::recover_now();
+                std::process::exit(0);
+            }
+
+            // Bind the ports synchronously so the window can't race ahead of
+            // the server (a queued connection is fine; a refused one would
+            // blank the window). Here, after the single-instance check: a
+            // second launch never gets this far.
+            let http_listener = std::net::TcpListener::bind(("0.0.0.0", http)).unwrap_or_else(|e| {
+                eprintln!("Cannot bind HTTP port {http}: {e}");
+                std::process::exit(1);
+            });
+            let ws_listener = std::net::TcpListener::bind(("0.0.0.0", ws)).unwrap_or_else(|e| {
+                eprintln!("Cannot bind WebSocket port {ws}: {e}");
+                std::process::exit(1);
+            });
+
             #[cfg(target_os = "linux")]
             force_light_gtk_theme();
 
@@ -70,12 +103,26 @@ fn main() {
                 relay::serve(st, http_listener, ws_listener).await;
             });
 
+            // Closing the window hides it to the tray (lifecycle.rs); its
+            // status line counts the tablets.
+            if lifecycle::create_tray(app.handle()) {
+                let st = state.clone();
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        lifecycle::set_tablet_count(&handle, relay::tablet_count(&st).await);
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    }
+                });
+            }
+            lifecycle::quit_on_signals(app.handle());
+
             // Load the desktop window from the local relay so window.location is
             // a real http origin (the existing LAN client code + the scoresheet
             // popups resolve correctly, and http://localhost keeps camera/QR).
             let main = WebviewWindowBuilder::new(
                 app,
-                "main",
+                lifecycle::MAIN,
                 WebviewUrl::External(format!("http://localhost:{http}/").parse().unwrap()),
             )
             .title("OpenVolley eScoresheet")
@@ -88,33 +135,70 @@ fn main() {
             // the system browser (popups.rs); "Save PDF" into Downloads.
             .on_new_window(popups::new_window_handler(app.handle().clone(), http))
             .on_download(popups::on_download)
+            // a (re)loading page cannot answer "close" / "quit" until it has
+            // called app_page_state again
+            .on_page_load(|window, payload| {
+                if payload.event() == tauri::webview::PageLoadEvent::Started {
+                    lifecycle::page_load_started(window.app_handle());
+                }
+            })
             .build()?;
             popups::let_scripts_open_windows(&main);
-            // The scoresheet windows belong to the scoretable: closing the
-            // scoretable closes them and quits. Tauri only exits when the last
-            // window is gone, so a scoresheet left open kept the process, the
-            // LAN relay and ports 5173 / 8080 alive, and the next launch then
-            // failed with "Cannot bind HTTP port" (no console in a release
-            // build: the app just did not start).
+            // The close button / Alt+F4 hides the scoretable (and its
+            // scoresheet windows) to the tray: the relay and the tablets'
+            // network keep running. Quitting is "Quit OpenVolley…" and a
+            // confirmation (lifecycle.rs).
+            //
+            // Should the window still be destroyed (by the OS), its scoresheet
+            // windows go with it and the app quits: Tauri only exits when the
+            // last window is gone, so a scoresheet left open kept the process,
+            // the LAN relay and ports 5173 / 8080 alive, and the next launch
+            // then failed with "Cannot bind HTTP port".
             let handle = app.handle().clone();
-            main.on_window_event(move |event| {
-                if matches!(event, tauri::WindowEvent::Destroyed) {
+            main.on_window_event(move |event| match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if lifecycle::on_close_requested(&handle) {
+                        api.prevent_close();
+                    }
+                }
+                tauri::WindowEvent::Destroyed => {
                     popups::close_app_windows(&handle);
                     handle.exit(0);
                 }
+                _ => {}
             });
 
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run(|app, event| match event {
+            // Only a confirmed quit, the OS or a scoretable window that is
+            // gone ends the app; any other exit becomes the question.
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                if lifecycle::on_exit_requested(app) {
+                    api.prevent_exit();
+                }
+            }
             // Quitting: the tablets' Wi-Fi / Bluetooth network goes down with
             // the app (and the user's own hotspot settings come back).
-            if let tauri::RunEvent::Exit = event {
-                netshare::shutdown(app);
-            }
+            tauri::RunEvent::Exit => netshare::shutdown(app),
+            _ => {}
         });
+}
+
+/// tauri-plugin-single-instance needs the session bus on Linux (it unwraps
+/// a malformed DBUS_SESSION_BUS_ADDRESS). Without one the app still starts;
+/// a second launch then fails on the busy ports as before.
+fn single_instance_available() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(e) = zbus::Address::session() {
+            eprintln!("[app] no session bus ({e}): a second launch is not redirected to this one");
+            return false;
+        }
+    }
+    true
 }
 
 /// The light variant of a GTK theme name, or None when it is not a dark one:
@@ -166,10 +250,14 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 /// The scoretable window's native commands: automatic match backups
 /// (backup.rs; ACL in capabilities/backup.json), the networks the laptop
 /// creates for the tablets (netshare/; capabilities/netshare.json) and the
-/// check of the installer's firewall rule (firewall.rs; same capability). One
+/// check of the installer's firewall rule (firewall.rs; same capability) and
+/// the close-to-tray / quit handshake (lifecycle.rs; capabilities/app.json). One
 /// invoke handler: a second call would replace the first.
 fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder.manage(netshare::NetShare::new()).invoke_handler(tauri::generate_handler![
+    builder
+        .manage(netshare::NetShare::new())
+        .manage(lifecycle::Lifecycle::new())
+        .invoke_handler(tauri::generate_handler![
         backup::backup_info,
         backup::backup_write,
         backup::backup_list,
@@ -182,7 +270,12 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         netshare::bluetooth_status,
         netshare::bluetooth_start,
         netshare::bluetooth_stop,
-        firewall::firewall_status
+        firewall::firewall_status,
+        lifecycle::app_page_state,
+        lifecycle::app_page_gone,
+        lifecycle::app_hide,
+        lifecycle::app_quit,
+        lifecycle::app_quit_ack
     ])
 }
 
@@ -306,10 +399,43 @@ mod ipc_acl_tests {
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
-                    "firewall_status"] {
+                    "firewall_status",
+                    "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
             assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
+        }
+    }
+
+    /// Close to tray / quit: the scoretable page reports its state; a tablet,
+    /// another site or a look-alike host may not hide or quit the app.
+    #[test]
+    fn only_the_scoretable_page_may_hide_or_quit_the_app() {
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+
+        let state = serde_json::json!({ "handler": "h1", "labels": { "show": "OpenVolley anzeigen" }, "live": "official" });
+        let info = get_ipc_response(&window, request("app_page_state", "http://localhost:5173/", state.clone()))
+            .expect("the scoretable page reports its state")
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(info["tray"], false, "no tray icon in the mock app");
+        // the page's handler goes away (error screen) and takes a quit request
+        get_ipc_response(&window, request("app_quit_ack", "http://localhost:5173/", serde_json::json!({})))
+            .expect("the scoretable page acknowledges a quit request");
+        get_ipc_response(&window, request("app_page_gone", "http://localhost:5173/", serde_json::json!({ "handler": "h1" })))
+            .expect("the scoretable page says its handler is gone");
+
+        for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
+                let err = get_ipc_response(&window, request(cmd, url, state.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
         }
     }
 

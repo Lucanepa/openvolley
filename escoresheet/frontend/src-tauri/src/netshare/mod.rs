@@ -242,3 +242,9 @@ pub fn shutdown<R: Runtime>(app: &AppHandle<R>) {
 pub fn recover<R: Runtime>(app: &AppHandle<R>) {
     platform::recover(app);
 }
+
+/// `--quit` while the app is not running (the Windows installer and
+/// uninstaller run it): undo a tablet Wi-Fi a crashed run left on, now.
+pub fn recover_now() {
+    platform::recover_now();
+}

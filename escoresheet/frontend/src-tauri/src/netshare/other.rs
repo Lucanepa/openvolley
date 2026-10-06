@@ -32,3 +32,5 @@ pub async fn bluetooth_stop(_inner: &mut Inner) -> Result<(), NetError> {
 }
 
 pub fn recover<R: Runtime>(_app: &AppHandle<R>) {}
+
+pub fn recover_now() {}

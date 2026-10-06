@@ -7,7 +7,8 @@ import TabletStatusIndicator from './TabletStatusIndicator'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { BellIcon, SatelliteDishIcon, ClipboardIcon, ZoomInIcon, HomeIcon } from './icons'
-import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Tablet, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Power, Tablet, X } from 'lucide-react'
+import { isDesktopScoretable, requestDesktopQuit } from '../utils/appLifecycle'
 import { cn } from '../ui/cn.js'
 import { SwitchTrack } from '../ui/Switch.jsx'
 import {
@@ -508,6 +509,28 @@ export default function MainHeader({
     </div>
   )
 
+  // Desktop app: closing the window only hides it to the tray (the tablets
+  // stay connected), so quitting is a menu row that asks first
+  // (utils/appLifecycle.js, src-tauri/src/lifecycle.rs).
+  const quitRow = isDesktopScoretable() && (
+    <>
+      <div className={MENU_SEP} />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setActionsMenuOpen(false)
+          requestDesktopQuit()
+        }}
+        className={MENU_ROW}
+        data-testid="header-quit-app"
+      >
+        <span className={MENU_ICON}><Power size={15} /></span>
+        <span>{t('appLifecycle.trayQuit', 'Quit OpenVolley…')}</span>
+      </button>
+    </>
+  )
+
   const helpButton = onToggleHelp && (
     <span className={KIT_SCOPE}>
       <button
@@ -872,7 +895,7 @@ export default function MainHeader({
                       </button>
                     )}
 
-                    {/* Version history removed */}
+                    {quitRow}
                   </div>
                 )}
               </div>
@@ -1051,6 +1074,8 @@ export default function MainHeader({
                       <span className={MENU_ICON}>{isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}</span>
                       <span>{isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}</span>
                     </button>
+
+                    {quitRow}
                   </div>
 
               </div>

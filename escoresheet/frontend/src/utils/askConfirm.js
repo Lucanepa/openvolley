@@ -28,15 +28,17 @@ import { confirmDialog } from '../ui/uiStore.js'
  * @param {string} [opts.confirmLabel] a verb; defaults to common.confirm
  * @param {string} [opts.cancelLabel]  defaults to common.cancel
  * @param {'danger'|'default'} [opts.tone]
+ * @param {AbortSignal} [opts.signal]  aborting it takes the dialog away as a cancel
  * @returns {Promise<boolean>} true only when the user pressed the confirm button
  */
-export async function askConfirm({ title, message, confirmLabel, cancelLabel, tone = 'default' } = {}) {
+export async function askConfirm({ title, message, confirmLabel, cancelLabel, tone = 'default', signal } = {}) {
   const answer = await confirmDialog({
     title,
     message,
     confirmLabel: confirmLabel ?? i18n.t('common.confirm', 'Confirm'),
     cancelLabel: cancelLabel ?? i18n.t('common.cancel', 'Cancel'),
     tone,
+    signal,
   })
   return answer === true
 }

@@ -20,8 +20,17 @@ public class MainActivity extends BridgeActivity {
         "if(!e||e===document.body||!(e.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)))return -1;" +
         "return e.getBoundingClientRect().bottom;})()";
 
+    // JS: the page's Back handler on its first page (src/utils/appLifecycle.js);
+    // "true" when it took the press (it closes an open dialog, or asks
+    // "Exit OpenVolley?")
+    private static final String PAGE_BACK =
+        "(function(){try{return !!(window.__ovAndroidBack&&window.__ovAndroidBack());}" +
+        "catch(e){return false;}})()";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // window.Capacitor plugin "OpenVolleyApp": exitApp() after the page asked
+        registerPlugin(AppExitPlugin.class);
         super.onCreate(savedInstanceState);
         keepWebViewInsideSystemBars();
         handleBackButton();
@@ -29,19 +38,30 @@ public class MainActivity extends BridgeActivity {
 
     /**
      * Back goes back inside the app (e.g. from the referee view to the
-     * scorer); on the first page it only sends the app to the background, so
-     * a stray Back press mid-match never closes the scorer.
+     * scorer, or out of the scoresheet's in-app view). On the first page the
+     * page asks "Exit OpenVolley?" (on the scoreboard: the match is saved)
+     * and only its Exit closes the app (AppExitPlugin). A page
+     * without that handler (still loading, another view) keeps the old
+     * behaviour: the app goes to the background, so a stray Back press
+     * mid-match never closes the scorer.
+     *
+     * Swiping the app away in the recent apps cannot be stopped by any app
+     * (an OS rule); Android's own App pinning is the tool for that (ANDROID.md).
      */
     private void handleBackButton() {
+        WebView webView = getBridge().getWebView();
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                WebView webView = getBridge().getWebView();
                 if (webView.canGoBack()) {
                     webView.goBack();
-                } else {
-                    moveTaskToBack(true);
+                    return;
                 }
+                webView.evaluateJavascript(PAGE_BACK, handled -> {
+                    if (!"true".equals(handled)) {
+                        moveTaskToBack(true);
+                    }
+                });
             }
         });
     }
