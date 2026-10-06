@@ -36,7 +36,7 @@ vi.mock('../lib/apiClient', () => ({
   apiRequest: vi.fn()
 }))
 
-import ManagerApp, { ACCOUNT_LOAD_TIMEOUT_MS } from '../ManagerApp'
+import ManagerApp, { ACCOUNT_LOAD_TIMEOUT_MS, tabFromHash } from '../ManagerApp'
 import { accessFromRoles, NO_ACCESS } from '../lib/access'
 
 function setAuth({ user = { id: 'u-1', email: 'admin@club.ch' }, roles = [], known = true, loading = false, profile } = {}) {
@@ -112,6 +112,24 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     fireEvent.click(railButtons().find(b => b.textContent === 'manage.tabs.invites'))
     expect(window.location.hash).toBe('#invites')
     expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.tabs.invites')
+  })
+
+  it('the hash is handed to the console as is: a tab added there is restored too', () => {
+    // no copy of the console's tab ids in ManagerApp (they would go stale)
+    window.history.replaceState(null, '', '/#competitions')
+    expect(tabFromHash()).toBe('competitions')
+    window.history.replaceState(null, '', '/#teams')
+    expect(tabFromHash()).toBe('teams')
+    window.history.replaceState(null, '', '/')
+    expect(tabFromHash()).toBeNull()
+  })
+
+  it('admin: an unknown tab in the hash opens the first tab', async () => {
+    window.history.replaceState(null, '', '/#no-such-tab')
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.tabs.accounts')
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
   it('competition manager: saved teams only, whatever the hash asks', async () => {

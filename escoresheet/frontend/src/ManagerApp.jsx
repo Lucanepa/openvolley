@@ -21,7 +21,6 @@ import { mainAppUrl } from './utils/managerSite'
  * the account's roles do not allow.
  */
 
-const TAB_IDS = ['accounts', 'invites', 'games', 'matches', 'audit', 'teams']
 // How long a signed-in account may show "loading" before offering a retry.
 export const ACCOUNT_LOAD_TIMEOUT_MS = 8000
 
@@ -33,10 +32,15 @@ const LANGUAGES = [
   { code: 'it', short: 'IT', name: 'Italiano' }
 ]
 
-function tabFromHash() {
+/**
+ * The tab named in the URL hash, or null. No list of tab ids here: the
+ * console owns them and opens its first allowed tab for an id it does not
+ * know (or this account may not see), so a tab added to ManageConsole is
+ * restored from the hash without a change in this file.
+ */
+export function tabFromHash() {
   try {
-    const id = window.location.hash.replace(/^#/, '')
-    return TAB_IDS.includes(id) ? id : null
+    return window.location.hash.replace(/^#/, '') || null
   } catch {
     return null
   }
