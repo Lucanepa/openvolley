@@ -4,7 +4,7 @@ import { isLocalNetworkHost, backendOnLocalNetwork } from '../localNetwork'
 describe('isLocalNetworkHost', () => {
   it('accepts this machine and the venue LAN', () => {
     for (const h of ['localhost', '127.0.0.1', '10.0.0.5', '172.16.0.1', '172.31.255.254', '192.168.1.20',
-      '169.254.3.4', '100.114.142.10', '::1', '[::1]', 'fd12:3456::1', 'fe80::1', 'openvolley.local', 'pi.lan', 'box.home.arpa']) {
+      '169.254.3.4', '100.114.142.10', '::1', '[::1]', 'fd12:3456::1', 'fe80::1', 'openvolley.local', 'pi.lan', 'box.home.arpa', 'scoretable', 'openvolley']) {
       expect(isLocalNetworkHost(h), h).toBe(true)
     }
   })
@@ -21,6 +21,7 @@ describe('backendOnLocalNetwork', () => {
     expect(backendOnLocalNetwork({ backendUrl: 'https://backend.openvolley.app' })).toBe(false)
     expect(backendOnLocalNetwork({ backendUrl: 'http://192.168.1.50:8080' })).toBe(true)
     expect(backendOnLocalNetwork({ backendUrl: 'http://127.0.0.1:5173' })).toBe(true)
+    expect(backendOnLocalNetwork({ backendUrl: 'http://scoretable:3000' })).toBe(true)
   })
 
   it('without a backend URL: local only when served by the local server', () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSyncQueueStats } from '../hooks/useSyncQueue'
 import { ChevronDown } from 'lucide-react'
@@ -75,7 +75,9 @@ export default function ConnectionStatus({
   // believed: the pill says Offline at once. Only a backend on this machine or
   // the venue LAN (offline desktop app, Pi scoretable) can still answer; then
   // the polled statuses keep counting.
-  const lanBackend = useMemo(() => backendOnLocalNetwork(), [])
+  // Read on every render (cheap): a backend chosen at runtime on the server
+  // connection screen counts at once.
+  const lanBackend = backendOnLocalNetwork()
   const shownStatuses = browserOffline ? offlineStatuses(connectionStatuses, lanBackend) : connectionStatuses
   const localPathViable = lanBackend && isServerWebsocketViable(connectionStatuses.server, connectionStatuses.websocket)
 
