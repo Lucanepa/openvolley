@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData, matchTeamNames, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
+import { benchJoinableMatches } from './utils/relayMatchList'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
 import UpdateBanner from './components/UpdateBanner'
@@ -372,7 +373,12 @@ export default function BenchApp() {
       // without an internet uplink never holds up the list.
       const { result, source, cloud } = await loadMatchList({
         listCloud: listAvailableMatchesForBenchSupabase,
-        listRelay: listAvailableMatches,
+        // The relay lists every published match (display devices pick theirs
+        // there): offer only those with a bench connection on.
+        listRelay: async () => {
+          const r = await listAvailableMatches()
+          return r?.success ? { ...r, matches: benchJoinableMatches(r.matches) } : r
+        },
         relayFirst: isServedFromLocalServer(),
         useCloud: useSupabase
       })
@@ -916,8 +922,8 @@ export default function BenchApp() {
                   key={m.id}
                   match={m}
                   lang={i18n.language}
-                  home={m.homeTeamName || t('common.home')}
-                  away={m.awayTeamName || t('common.away')}
+                  home={matchTeamNames(m).home || t('common.home')}
+                  away={matchTeamNames(m).away || t('common.away')}
                   gameLabel={benchGameLabel(t, m.gameNumber)}
                   onOpen={() => handleMatchSelect(m)}
                   status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}

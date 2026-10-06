@@ -30,6 +30,7 @@ export const {
   SUMMARY_MATCH_FIELDS,
   SUMMARY_TEAM_FIELDS,
   SUMMARY_SET_FIELDS,
+  matchListEntry,
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,

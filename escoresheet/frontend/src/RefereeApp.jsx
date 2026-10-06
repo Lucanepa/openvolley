@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { validatePin, listAvailableMatches, validatePinSupabase, listAvailableMatchesSupabase, getMatchData, setRelayDevice, getRelayServerStatus } from './utils/serverDataSync'
+import { refereeJoinableMatches } from './utils/relayMatchList'
 import Referee from './components/Referee'
 import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
@@ -239,7 +240,12 @@ export default function RefereeApp() {
     try {
       const { result, source } = await loadMatchList({
         listCloud: listAvailableMatchesSupabase,
-        listRelay: listAvailableMatches,
+        // The relay lists every published match (display devices pick theirs
+        // there): offer only those with the referee connection on.
+        listRelay: async () => {
+          const r = await listAvailableMatches()
+          return r?.success ? { ...r, matches: refereeJoinableMatches(r.matches) } : r
+        },
         relayFirst: isServedFromLocalServer()
       })
 

@@ -30,6 +30,8 @@
  * only those keys of each element (arrays of objects). `true` keeps it whole.
  */
 
+import { BlockList, isIP } from 'net'
+
 const TEAM_KEYS = Object.freeze(['name', 'short_name', 'shortName', 'color'])
 const MATCH_INFO_KEYS = Object.freeze([
   'hall', 'city', 'league', 'championship_type', 'championship_type_other',
@@ -431,6 +433,88 @@ export function relaySummaryBundle(entry) {
   }
   if (entry?.liveState !== undefined) out.liveState = entry.liveState
   return out
+}
+
+const LISTED_STATUSES = new Set(['scheduled', 'live'])
+
+/** A team's display name: a team object or plain string, else `fallback`. */
+function teamNameOf(team, fallback) {
+  const name = typeof team === 'string' ? team : (team && typeof team === 'object' ? team.name : null)
+  return typeof name === 'string' && name.trim() ? name : fallback
+}
+
+function formatListDateTime(scheduledAt) {
+  if (!scheduledAt) return 'TBD'
+  try {
+    const d = new Date(scheduledAt)
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return `${dateStr} ${timeStr}`
+  } catch {
+    return 'TBD'
+  }
+}
+
+/**
+ * One GET /api/match/list row for a relay entry ({ matchId, match, homeTeam,
+ * awayTeam, gameNumber? }), or null when the match is not listed. Listed:
+ * status 'scheduled' or 'live' (none counts as 'scheduled'), whatever the
+ * referee connection — display devices (the point-hub LedBox bridge) need no
+ * PIN and pick their match from this list. Public fields only: no PINs, no
+ * people. Same rule as lanRelayCore matchListEntry and relay.rs match_list.
+ */
+export function relayMatchListRow(entry) {
+  const match = (entry?.match && typeof entry.match === 'object') ? entry.match : {}
+  const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
+  if (!LISTED_STATUSES.has(status)) return null
+  return {
+    id: entry.matchId,
+    gameNumber: entry.gameNumber || match.gameNumber || match.game_n || entry.matchId,
+    homeTeam: teamNameOf(entry.homeTeam, teamNameOf(match.homeTeamName, 'Home')),
+    awayTeam: teamNameOf(entry.awayTeam, teamNameOf(match.awayTeamName, 'Away')),
+    scheduledAt: match.scheduledAt ?? null,
+    dateTime: formatListDateTime(match.scheduledAt),
+    status,
+    test: match.test === true,
+    refereeConnectionEnabled: match.refereeConnectionEnabled === true,
+    homeTeamConnectionEnabled: match.homeTeamConnectionEnabled === true,
+    awayTeamConnectionEnabled: match.awayTeamConnectionEnabled === true
+  }
+}
+
+// Addresses that are no venue's own public address: on the cloud they are a
+// proxy in front of the relay (Traefik, Docker), shared by every caller.
+const NON_PUBLIC = new BlockList()
+for (const [net, bits] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16]]) {
+  NON_PUBLIC.addSubnet(net, bits, 'ipv4')
+}
+for (const [net, bits] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10]]) NON_PUBLIC.addSubnet(net, bits, 'ipv6')
+
+/** A routable internet address (not loopback, private, CGNAT or link-local). */
+export function isPublicIp(ip) {
+  const s = String(ip || '').replace(/^::ffff:/, '')
+  const family = isIP(s)
+  if (!family) return false
+  return !NON_PUBLIC.check(s, family === 4 ? 'ipv4' : 'ipv6')
+}
+
+/**
+ * Does the CLOUD relay's GET /api/match/list show this match to this caller?
+ * A match with the referee connection on: to everyone (the referee tablets
+ * pick it there). Any other: only to a caller on the same public address
+ * (bucket) as one of the match's scoreboard sockets — the venue's own
+ * displays (the point-hub LedBox bridge) behind the hall's NAT — so the room
+ * keys of every official match are not handed to anonymous callers
+ * worldwide. Behind a proxy whose client address is not passed on, every
+ * caller is the proxy (not public): then only the first rule applies.
+ * A LAN / venue relay lists every match (it is the venue).
+ * @param {{ refereeConnectionEnabled?: boolean, requesterIp?: string, requesterIpKey?: string, ownerIpKeys?: Iterable<string> }} args
+ */
+export function cloudListsMatch({ refereeConnectionEnabled = false, requesterIp = '', requesterIpKey = '', ownerIpKeys = [] } = {}) {
+  if (refereeConnectionEnabled === true) return true
+  if (!requesterIpKey || !isPublicIp(requesterIp)) return false
+  for (const key of ownerIpKeys) if (key === requesterIpKey) return true
+  return false
 }
 
 /** A roster array (or anything else, returned as is) without personal keys. */
