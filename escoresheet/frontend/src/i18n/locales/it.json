@@ -1689,6 +1689,20 @@
     "messageLabel": "Messaggio:",
     "connectionIssueDetected": "Problema di connessione rilevato"
   },
+  "lanTablets": {
+    "title": "Collega tablet",
+    "description": "I tablet sulla stessa rete Wi-Fi aprono questi indirizzi nel browser. Internet non necessario.",
+    "scoretable": "Referto",
+    "referee": "Arbitro",
+    "bench": "Panchina",
+    "livescore": "Livescore",
+    "qr": "QR",
+    "copy": "Copia",
+    "copied": "Copiato",
+    "loading": "Lettura del server locale…",
+    "unavailable": "Il server locale non risponde. Riavvia l’app e riprova.",
+    "hint": "Il tablet deve essere sulla stessa rete Wi-Fi di questo computer. La fotocamera (caricamento roster via QR) funziona solo su questo computer, non sui tablet in http."
+  },
   "startupConnectivity": {
     "cloudWaits": "Nessuna connessione internet: la sincronizzazione cloud parte appena questo dispositivo è online. Le partite restano qui e sul server locale.",
     "connecting": "Connessione in corso...",
