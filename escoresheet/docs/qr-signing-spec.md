@@ -449,6 +449,13 @@ light only like paper):
 | Memory exhaustion | Caps in 4.1, body caps read with a hard stop, a sweeper, and tombstones that keep hashes only. |
 | Tablets seeing signatures | `signatureSources` and every image field match `/signature/i` and are stripped by all relays (unchanged). |
 
+### 7.1 Review of 2026-10-07: what is left on purpose
+
+- **First to submit wins.** Anyone who sees the QR code before the signer can open the link and send a scribble first. The signer's phone then says "already used", and the scorer sees the result before tapping "Use signature" (D5). Binding the link to the first phone that opens it would close this, at the cost of a protocol change on all three relays. It is worth doing if a hall ever reports it.
+- **Plain HTTP on the hall network.** On an open hall Wi-Fi, someone listening can read the token and the strokes, as with every other LAN relay call. The internet way is HTTPS.
+- **A `--local` backend behind a reverse proxy on the same machine** sees every caller as itself, so anyone on the Wi-Fi may start a session there. This only gives them a session of their own and no match data.
+- **Personal data in the relay's memory.** The signer's name and the teams stay in memory for at most 15 minutes, are never logged, and are shown only to whoever holds the token.
+
 ---
 
 ## 8. Tests
