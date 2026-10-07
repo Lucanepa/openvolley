@@ -185,7 +185,9 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     expectCode(await call(users.mia, 'PUT', `/api/beach/draws/${ids.women}/seeds`, { order: [ids.womenEntries[0], ids.womenEntries[0]] }), 400)
     // a withdrawn pair does not play
     const extra = okData(await call(users.mia, 'POST', `/api/beach/draws/${ids.women}/entries`, { player1: { last: 'Late' }, player2: { last: 'Pair' } }), 201).entry
-    okData(await call(users.mia, 'PATCH', `/api/beach/entries/${extra.id}`, { status: 'withdrawn' }))
+    okData(await call(users.mia, 'PATCH', `/api/beach/entries/${extra.id}`, { seed: 13 }))
+    const withdrawn = okData(await call(users.mia, 'PATCH', `/api/beach/entries/${extra.id}`, { status: 'withdrawn' })).entry
+    assert.equal(withdrawn.seed, null, 'a withdrawn pair gives up its seed')
     for (let i = 1; i <= 8; i++) {
       okData(await call(users.mia, 'POST', `/api/beach/draws/${ids.men}/entries`, { seed: i, player1: { last: `M${i}a` }, player2: { last: `M${i}b` } }), 201)
     }
