@@ -2804,6 +2804,7 @@
     "noRepo": "Cette copie ne se met pas à jour seule. Lancez une fois dans un terminal :",
     "installManually": "Installez-la dans un terminal :",
     "notSupported": "Cette version ne se met pas à jour seule.",
+    "managed": "Les mises à jour viennent de votre gestionnaire de paquets (Flatpak, Snap, AUR…).",
     "autoCheck": "Rechercher les mises à jour automatiquement",
     "autoCheckHint": "Interroge get.openvolley.app toutes les 6 heures.",
     "autoInstall": "Installer les mises à jour automatiquement",
