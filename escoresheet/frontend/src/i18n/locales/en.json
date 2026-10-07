@@ -198,6 +198,7 @@
     "delete": "Delete"
   },
   "refereeSelector": {
+    "title": "Referee database",
     "searchReferees": "Search referees...",
     "connectToInternet": "Connect to internet to see referee history",
     "noRefereesFound": "No referees found",

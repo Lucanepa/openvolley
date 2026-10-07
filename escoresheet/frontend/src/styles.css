@@ -2539,40 +2539,48 @@ button.start-rally-button {
   padding: calc(8px * var(--scale-factor)) !important;
 }
 
-/* Modal roll animations */
+/* Popover roll-in (Scoreboard player / substitution / libero menus).
+   A fade and a short slide only, ending at `transform: none`: no scale. These
+   used to run scale(1.2) -> scale(1.5) and then drop back to the real size (1)
+   when the animation ended, so every menu opened, grew and then shrank. */
 @keyframes rollDown {
   from {
     opacity: 0;
-    transform: translateY(-30px) scale(1.2);
+    transform: translateY(-6px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1.5);
+    transform: none;
   }
 }
 
 @keyframes rollUp {
   from {
     opacity: 0;
-    transform: translateY(30px) scale(1.2);
+    transform: translateY(6px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1.5);
+    transform: none;
   }
 }
 
 /* Apply animations to inner divs - wrapper handles positioning */
 .modal-wrapper-roll-down>div {
-  animation: rollDown 0.3s ease-out;
-  transform-origin: center bottom;
+  animation: rollDown 0.15s ease-out;
 }
 
 .modal-wrapper-roll-up>div {
-  animation: rollUp 0.3s ease-out;
-  transform-origin: center top;
+  animation: rollUp 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-wrapper-roll-down>div,
+  .modal-wrapper-roll-up>div {
+    animation: none;
+  }
 }
 
 /* Responsive text visibility for referee view */

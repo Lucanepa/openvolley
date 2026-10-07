@@ -5,6 +5,8 @@ import KitModal from './manage/KitModal'
 import { useSavedTeams } from '../hooks/useSavedTeams'
 import { normalizeName, rosterHasContent } from '../domain/savedTeams'
 import { Select, SearchInput, RowList, Row, Chip, EmptyInset, SkeletonRows, Banner, dayTimeLabel, confirmDialog } from '../ui'
+import { cn } from '../ui/cn.js'
+import { PICKER_RESULTS } from './pickerLayout'
 
 /**
  * Ask before a saved team replaces a roster that already holds players or
@@ -65,11 +67,6 @@ function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, tit
       icon={Users}
       closeLabel={t('common.close', 'Close')}
     >
-      {!online && meta?.fetchedAt && (
-        <Banner tone="info" data-testid="saved-teams-offline">
-          {t('savedTeams.pickerOffline', { date: dayTimeLabel(meta.fetchedAt) })}
-        </Banner>
-      )}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Select
           aria-label={t('savedTeams.pickerCompetition')}
@@ -82,36 +79,47 @@ function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, tit
         </Select>
         <SearchInput size="md" value={q} onChange={e => setQ(e.target.value)} placeholder={t('savedTeams.pickerSearch')} aria-label={t('savedTeams.pickerSearch')} />
       </div>
-      {loading && !teams.length ? (
-        <SkeletonRows rows={4} pill={false} />
-      ) : list.length === 0 ? (
-        <EmptyInset>{t('savedTeams.pickerEmpty')}</EmptyInset>
-      ) : (
-        <RowList>
-          {list.map(team => {
-            const active = (team.players || []).filter(p => p.active !== false).length
-            return (
-              <Row
-                key={team.id}
-                stripe={false}
-                toolsIndent="sm:pl-2"
-                actionIndent="pl-1.5"
-                title={team.name}
-                meta={<>
-                  {team.club && <span>{team.club}</span>}
-                  {team.competition && <span>{team.competition.name} · {team.competition.season}</span>}
-                </>}
-                status={<Chip>{t('savedTeams.pickerPlayers', { count: active })}</Chip>}
-                onOpen={async () => {
-                  if (await confirmReplaceRoster({ roster, bench, teamLabel, t })) onPick(team)
-                }}
-                label={team.name}
-                data-testid="saved-team-row"
-              />
-            )
-          })}
-        </RowList>
-      )}
+      {/* Fixed-height result area (pickerLayout.js): the skeleton, the empty
+          message and the list fill the same box, and the offline note (known
+          only once the cache is read) sits inside it, so the dialog does not
+          resize when the teams arrive or the search narrows them. */}
+      <div data-testid="saved-team-results" className={cn(PICKER_RESULTS, 'space-y-3')}>
+        {!online && meta?.fetchedAt && (
+          <Banner tone="info" data-testid="saved-teams-offline">
+            {t('savedTeams.pickerOffline', { date: dayTimeLabel(meta.fetchedAt) })}
+          </Banner>
+        )}
+        {loading && !teams.length ? (
+          <SkeletonRows rows={4} pill={false} />
+        ) : list.length === 0 ? (
+          <EmptyInset>{t('savedTeams.pickerEmpty')}</EmptyInset>
+        ) : (
+          <RowList>
+            {list.map(team => {
+              const active = (team.players || []).filter(p => p.active !== false).length
+              return (
+                <Row
+                  key={team.id}
+                  stripe={false}
+                  toolsIndent="sm:pl-2"
+                  actionIndent="pl-1.5"
+                  title={team.name}
+                  meta={<>
+                    {team.club && <span>{team.club}</span>}
+                    {team.competition && <span>{team.competition.name} · {team.competition.season}</span>}
+                  </>}
+                  status={<Chip>{t('savedTeams.pickerPlayers', { count: active })}</Chip>}
+                  onOpen={async () => {
+                    if (await confirmReplaceRoster({ roster, bench, teamLabel, t })) onPick(team)
+                  }}
+                  label={team.name}
+                  data-testid="saved-team-row"
+                />
+              )
+            })}
+          </RowList>
+        )}
+      </div>
     </KitModal>
   )
 }
