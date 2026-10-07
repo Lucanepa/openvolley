@@ -64,12 +64,21 @@ export function backdropDismiss(onDismiss, options = {}) {
     const p = presses.get(e.currentTarget);
     if (p) p.up = isOnBackdrop(e);
   };
+  const forget = (e) => {
+    presses.delete(e.currentTarget);
+  };
 
+  // Capture phase: the backdrop records every press and release in its
+  // subtree before any child handler runs, so a child that stops propagation
+  // (a canvas, a slider) cannot leave an old "press on the backdrop" behind
+  // for a later drag out of it to complete.
   return {
-    onPointerDown: press,
-    onMouseDown: press,
-    onPointerUp: release,
-    onMouseUp: release,
+    onPointerDownCapture: press,
+    onMouseDownCapture: press,
+    onPointerUpCapture: release,
+    onMouseUpCapture: release,
+    // A press that turned into a scroll / gesture never completes a tap.
+    onPointerCancelCapture: forget,
     onClick: (e) => {
       if (stopPropagation) e.stopPropagation();
       const el = e.currentTarget;
