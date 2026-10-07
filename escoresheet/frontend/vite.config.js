@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
-import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute } from './pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
@@ -205,7 +205,7 @@ export default defineConfig({
     VitePWA({
       disable: isCapacitor,
       registerType: 'prompt',
-      includeAssets: ['openvolley_no_bg.png', 'favicon.ico', 'ball.png', 'fonts/*.woff2'],
+      includeAssets: PWA_INCLUDE_ASSETS,
       workbox: {
         // Disable workbox console logs in production
         mode: 'production',
@@ -290,11 +290,7 @@ export default defineConfig({
         // Light only: white status bar (a red one would compete with red team
         // colours and red cards courtside; RESTYLE-SPEC 5.3 / R4).
         theme_color: '#ffffff',
-        icons: [
-          // Real 192/512 renditions (openvolley_no_bg.png itself is 1024x1024)
-          { src: 'openvolley_icon_192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'openvolley_icon_512.png', sizes: '512x512', type: 'image/png' }
-        ]
+        icons: PWA_ICONS
       }
     }),
     // Add API routes for dev server (same as production server.js)

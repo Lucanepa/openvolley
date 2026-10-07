@@ -8,6 +8,7 @@ import SignUpForm from './components/auth/SignUpForm'
 import InviteCodeForm from './components/auth/InviteCodeForm'
 import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen } from './ui'
 import { mainAppUrl, SIGN_UP_HASH } from './utils/managerSite'
+import { BRAND } from './brand'
 
 /**
  * manager.openvolley.app: the manage console as a site of its own, for
@@ -85,7 +86,7 @@ function useHashRoute() {
 }
 
 const logo = (cls) => (
-  <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className={cls} />
+  <img src={BRAND.lockup} alt="OpenVolley" className={cls} />
 )
 
 // "Open the scorer app" as a full-width link button
@@ -121,7 +122,7 @@ function Gate({ width, className, children }) {
     <GateScreen
       width={width}
       className={className}
-      logo={logo('h-11 w-auto')}
+      logo={logo('h-9 w-auto')}
       eyebrow={t('managerSite.eyebrow')}
       corner={<LanguageSelect compact />}
       footer={`OpenVolley ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''}`.trim()}

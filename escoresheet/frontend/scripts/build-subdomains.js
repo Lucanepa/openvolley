@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync, ren
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute } from '../pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -136,9 +136,9 @@ export function createIndexHtml(config) {
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
-    <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
     <meta name="theme-color" content="${config.themeColor}" />
@@ -159,9 +159,9 @@ function createScoresheetHtml(config) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/png" sizes="16x16 32x32 48x48 64x64" href="/openvolley_no_bg.png" />
-  <link rel="icon" type="image/png" sizes="128x128 256x256" href="/openvolley_no_bg.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/openvolley_no_bg.png" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <meta name="color-scheme" content="light" />
   <meta name="theme-color" content="${config.themeColor}" />
   <meta name="description" content="${config.description}" />
@@ -277,7 +277,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
         tailwindcss(),
         ...(usesPwa(config) ? [VitePWA({
           registerType: 'prompt',
-          includeAssets: ['openvolley_no_bg.png', 'favicon.ico', 'ball.png', 'fonts/*.woff2'],
+          includeAssets: PWA_INCLUDE_ASSETS,
           workbox: {
             // Same precache/offline rules as the main build (pwa-workbox.js)
             globPatterns: PRECACHE_GLOB_PATTERNS,
@@ -331,11 +331,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
             display: 'standalone',
             background_color: '#ffffff',
             theme_color: config.themeColor,
-            icons: [
-              // Real 192/512 renditions (openvolley_no_bg.png itself is 1024x1024)
-              { src: 'openvolley_icon_192.png', sizes: '192x192', type: 'image/png' },
-              { src: 'openvolley_icon_512.png', sizes: '512x512', type: 'image/png' }
-            ]
+            icons: PWA_ICONS
           }
         })] : [])
       ],

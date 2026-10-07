@@ -22,8 +22,8 @@ describe('build-subdomains: manager.openvolley.app', () => {
     const html = htmlFor(manager)
     expect(html).toContain('<title>OpenVolley Manager</title>')
     expect(html).toContain('<meta name="robots" content="noindex, nofollow" />')
-    expect(html).toContain('href="/openvolley_no_bg.png"')
-    expect(html).toContain('rel="apple-touch-icon"')
+    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg" />')
+    expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />')
     expect(html).toContain('src="/src/manager-main.jsx"')
   })
 
