@@ -5,10 +5,6 @@ import i18n from '../i18n'
 import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker } from '../utils/serverDataSync'
 import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 import { useScaledLayout } from '../hooks/useScaledLayout'
-import ballFallback from '../ball_fallback.png'
-
-// Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } from '../utils/matchFormat'
 import ConnectionStatus from './ConnectionStatus'
 import Modal from './Modal'
@@ -29,6 +25,8 @@ import { StatusPill } from '../ui/StatusPill.jsx'
 import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import PlayerDisc from './referee/PlayerDisc.jsx'
+import { discCapPx } from './referee/discSizing.js'
 import { BRAND } from '../brand'
 
 // Get current version from package.json (injected by Vite at build time)
@@ -2300,7 +2298,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   if (!data) return null
 
-  // Player circle component - BIG responsive sizing with all indicators
+  // One player on the court: works out the marks from the lineup data;
+  // PlayerDisc draws them, sized from the court box (referee/discSizing.js)
   // positionData: for rich format this is { number, isServing, isLibero, replacedNumber, isSubstituted, substitutedFor, hasSanction, sanctions, isCaptain, isCourtCaptain }
   //               for legacy format this is just a number
   const PlayerCircle = ({ number: legacyNumber, positionData, position, team, isServing: legacyIsServing }) => {
@@ -2392,247 +2391,39 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const topRightBadge = safeBadgeValue(liberoReplacedPlayer) || safeBadgeValue(substitutedFor) || null
     const isLiberoReplacementBadge = !!liberoReplacedPlayer
 
-    // Get libero label for bottom-left
+    // Libero label for bottom-left (L, or L1 / L2 with two liberos)
     const liberoType = player?.libero
-    const isUnable = liberoType === 'unable'
-    const isRedesignated = liberoType === 'redesignated'
     const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+    const liberoLabel = !isLibero ? null
+      : liberoCount === 1 ? 'L'
+        : liberoType === 'libero1' ? 'L1'
+          : liberoType === 'libero2' ? 'L2'
+            : 'L'
 
-    // Determine base label
-    let baseLabel = ''
-    if (isLibero) {
-      if (liberoCount === 1) {
-        baseLabel = 'L'
-      } else if (liberoType === 'libero1') {
-        baseLabel = 'L1'
-      } else if (liberoType === 'libero2') {
-        baseLabel = 'L2'
-      } else if (isRedesignated) {
-        baseLabel = 'L'
-      } else {
-        baseLabel = 'L'
-      }
-    }
-
-    // Create display label with special formatting
-    const displayLiberoLabel = isLibero ? (
-      <span style={{ position: 'relative', display: 'inline-block' }}>
-        {baseLabel}
-        {isRedesignated && R}
-        {isUnable && (
-          <span style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            fontSize: '1.2em',
-            color: '#ef4444',
-            fontWeight: 900
-          }}>✕</span>
-        )}
-      </span>
-    ) : null
-
-    const showCaptainBadge = isCaptain || isCourtCaptain // Liberos can be captains too
-    const isLiberoCaptain = isLibero && isCaptain // Special styling for libero who is also team captain
-    const isLiberoCourtCaptain = isLibero && isCourtCaptain && !isCaptain // Libero designated as game captain
+    // Liberos can be captains too: LC (libero captain), LGC (libero game captain)
+    const captain = isLibero
+      ? (isCaptain ? 'LC' : isCourtCaptain ? 'LGC' : null)
+      : (isCaptain ? 'C' : isCourtCaptain ? 'GC' : null)
 
     return (
-      <div style={{
-        position: 'relative',
-        aspectRatio: '1/1',
-        // Sized from the court box (container query on the court grid), not
-        // from the viewport alone: on a landscape tablet the court is ~270 px
-        // tall and three 93 px discs overflowed it (bottom row cut off, rows
-        // touching). 26cqh leaves room for three rows plus gaps; 17cqw keeps a
-        // disc inside its column in portrait. Same disc, colours and numbers.
-        height: `min(26cqh, 17cqw, ${Math.round(vmin(8) * 1.45)}px)`,
-        width: 'auto',
-        boxSizing: 'border-box',
-        padding: '4px',
-        border: isRecentlySub ? '3px solid #f97316' : '1px solid var(--border)',
-        borderRadius: '50%',
-        background: isRecentlySub ? '#fdba74' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)'),
-        color: isRecentlySub ? '#000' : isLibero ? '#000' : '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: `min(${vmin(8)}px, 14cqh, 9cqw)`,
-        lineHeight: 1,
-        fontWeight: isRecentlySub ? 900 : 700,
-        boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
-        flexShrink: 0,
-        animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined
-      }}>
-        {/* Serve ball indicator */}
-        {shouldShowBall && (
-          <img
-            src={ballImage} onError={(e) => e.target.src = ballFallback}
-            alt="Ball"
-            style={{
-              position: 'absolute',
-              // Position outside player box with vmin gap - responsive to viewport
-              left: team === rightTeam ? `calc(100% + ${vmin(1)}px)` : 'auto',
-              right: team === leftTeam ? `calc(100% + ${vmin(1)}px)` : 'auto',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: vmin(7),
-              aspectRatio: '1/1',
-              filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
-            }}
-          />
-        )}
-
-        {/* Top-left: Position badge */}
-        <span style={{
-          position: 'absolute',
-          top: '-6px',
-          left: '-6px',
-          width: 'clamp(16px, 4vw, 22px)',
-          height: 'clamp(16px, 4vw, 22px)',
-          background: 'rgba(15, 23, 42, 0.95)',
-          border: '2px solid var(--border)',
-          borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 'clamp(9px, 2vw, 12px)',
-          fontWeight: 700,
-          color: '#fff'
-        }}>
-          {position}
-        </span>
-
-        {/* Top-center: LFP indicator */}
-        {lfpTrackingEnabled && (
-          <span style={{
-            position: 'absolute',
-            top: '-6px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            padding: '0 4px',
-            height: 'clamp(14px, 3.5vw, 18px)',
-            background: isLfp ? 'rgba(249, 115, 22, 0.95)' : 'rgba(147, 51, 234, 0.95)',
-            border: '1px solid var(--border)',
-            borderRadius: '3px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 'clamp(7px, 1.6vw, 9px)',
-            fontWeight: 700,
-            color: '#fff',
-            whiteSpace: 'nowrap',
-            zIndex: 3
-          }}>
-            {isLfp ? 'LFP' : '!LFP'}
-          </span>
-        )}
-
-        {/* Top-right: Replaced player badge (white for libero replacement, yellow for substitution) */}
-        {topRightBadge && (
-          <span style={{
-            position: 'absolute',
-            top: '-6px',
-            right: '-6px',
-            minWidth: 'clamp(16px, 4vw, 22px)',
-            height: 'clamp(16px, 4vw, 22px)',
-            padding: '0 3px',
-            background: isLiberoReplacementBadge ? '#ffffff' : '#fde047',
-            border: isLiberoReplacementBadge ? '2px solid rgba(0, 0, 0, 0.3)' : '2px solid rgba(0, 0, 0, 0.25)',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 'clamp(9px, 2vw, 12px)',
-            fontWeight: 700,
-            color: '#0f172a',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.25)'
-          }}>
-            {topRightBadge}
-          </span>
-        )}
-
-        {/* Bottom-left: Libero indicator (L, L1, L2) - hide if libero-captain or libero-court-captain (show LC instead) */}
-        {displayLiberoLabel && !isLiberoCaptain && !isLiberoCourtCaptain && (
-          <span style={{
-            position: 'absolute',
-            bottom: '-6px',
-            left: '-6px',
-            minWidth: 'clamp(16px, 4vw, 22px)',
-            height: 'clamp(16px, 4vw, 22px)',
-            padding: '0 3px',
-            background: '#3b82f6',
-            border: '2px solid var(--border)',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 'clamp(9px, 2vw, 12px)',
-            fontWeight: 700,
-            color: '#fff'
-          }}>
-            {displayLiberoLabel}
-          </span>
-        )}
-        {/* Captain badge (C or LC) - show for captains including libero-captains */}
-        {showCaptainBadge && (
-          <span style={{
-            position: 'absolute',
-            bottom: '-6px',
-            // If libero but not libero-captain/court-captain, position next to L badge; otherwise position at left
-            left: (isLibero && !isLiberoCaptain && !isLiberoCourtCaptain) ? 'calc(clamp(16px, 4vw, 22px) + 2px)' : '-6px',
-            minWidth: 'clamp(16px, 4vw, 22px)',
-            height: 'clamp(16px, 4vw, 22px)',
-            padding: '0 3px',
-            // Libero-captain: white bg; Libero-court-captain: blue bg; Regular/Court captain: black bg
-            background: isLiberoCaptain ? '#ffffff' : (isLiberoCourtCaptain ? '#3b82f6' : 'rgba(15, 23, 42, 0.95)'),
-            // Libero-captain: green border; Libero-court-captain: amber border; Regular captain: green border; Court captain: amber border
-            border: isLiberoCaptain ? '2px solid #22c55e' : (isLiberoCourtCaptain ? '2px solid #fbbf24' : (isCaptain ? '2px solid #22c55e' : '2px solid #fbbf24')),
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: (isLiberoCaptain || isLiberoCourtCaptain) ? 'clamp(8px, 1.8vw, 11px)' : 'clamp(9px, 2vw, 12px)',
-            fontWeight: 700,
-            // Libero-captain: green on white; Libero-court-captain: amber on blue; Regular captain: green; Court captain: amber
-            color: isLiberoCaptain ? '#22c55e' : (isLiberoCourtCaptain ? '#fbbf24' : (isCaptain ? '#22c55e' : '#fbbf24'))
-          }}>
-            {(isLiberoCaptain || isLiberoCourtCaptain) ? 'LC' : 'C'}
-          </span>
-        )}
-
-        {/* Bottom-right: Sanction indicators - same height as corner badges */}
-        {(hasWarning || hasPenalty || hasExpulsion || hasDisqualification) && (
-          <div style={{
-            position: 'absolute',
-            bottom: '-6px',
-            right: '-6px',
-            display: 'flex',
-            gap: '2px',
-            background: 'rgba(0, 0, 0, 0.6)',
-            padding: '2px 4px',
-            borderRadius: '4px',
-            height: 'clamp(16px, 4vw, 22px)',
-            alignItems: 'center'
-          }}>
-            {hasWarning && (
-              <div style={{ width: 'clamp(10px, 2.5vw, 14px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#fde047', borderRadius: '2px' }} />
-            )}
-            {(hasPenalty || hasDisqualification) && (
-              <div style={{ width: 'clamp(10px, 2.5vw, 14px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#ef4444', borderRadius: '2px' }} />
-            )}
-            {hasExpulsion && (
-              <div style={{ display: 'flex', gap: '1px' }}>
-                <div style={{ width: 'clamp(8px, 2vw, 11px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#fde047', borderRadius: '2px' }} />
-                <div style={{ width: 'clamp(8px, 2vw, 11px)', height: 'clamp(14px, 3.5vw, 20px)', background: '#ef4444', borderRadius: '2px' }} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Player number */}
-        {number}
-      </div>
+      <PlayerDisc
+        number={number}
+        position={position}
+        capPx={discCapPx(vmin)}
+        side={team === leftTeam ? 'left' : 'right'}
+        background={isRecentlySub ? '#fdba74' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)')}
+        color={isRecentlySub || isLibero ? '#000' : '#fff'}
+        flash={isRecentlySub}
+        showBall={!!shouldShowBall}
+        replacedNumber={topRightBadge}
+        replacedByLibero={isLiberoReplacementBadge}
+        liberoLabel={liberoLabel}
+        liberoRedesignated={liberoType === 'redesignated'}
+        liberoUnable={liberoType === 'unable'}
+        captain={captain}
+        sanctions={{ warning: hasWarning, penalty: hasPenalty, expulsion: hasExpulsion, disqualification: hasDisqualification }}
+        lfp={lfpTrackingEnabled ? !!isLfp : null}
+      />
     )
   }
 
