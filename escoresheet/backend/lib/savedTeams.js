@@ -346,21 +346,25 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     return t ? teamOut(t) : null
   }
 
-  /** GET /api/saved-teams?sport=indoor|beach|all (absent or '' = indoor, for 2.1.0 clients) */
-  async function getBundle ({ sport } = {}) {
+  /**
+   * GET /api/saved-teams?sport=indoor|beach|all (absent or '' = indoor, for 2.1.0 clients).
+   * `sports`: what 'all' covers (the sports the caller may read; default both).
+   */
+  async function getBundle ({ sport, sports = SPORTS } = {}) {
     if (sport === undefined || sport === null || sport === '') sport = 'indoor'
     if (sport !== 'all' && !SPORTS.includes(sport)) return invalid('sport: indoor, beach or all')
+    const all = SPORTS.filter((s) => Array.isArray(sports) && sports.includes(s))
     return guarded('bundle', async () => {
       const { rows: comps } = await pool.query(
-        `SELECT ${COMPETITION_COLS} FROM public.competitions WHERE ($1::text = 'all' OR sport = $1::text) ORDER BY season DESC, lower(name), id`, [sport])
+        `SELECT ${COMPETITION_COLS} FROM public.competitions WHERE (($1::text = 'all' AND sport = ANY($2::text[])) OR sport = $1::text) ORDER BY season DESC, lower(name), id`, [sport, all])
       const { rows: teams } = await pool.query(`SELECT ${TEAM_SELECT}, ${ROSTER_SQL('t')}
         FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
-        WHERE ($1::text = 'all' OR c.sport = $1::text) ORDER BY lower(t.name), t.id`, [sport])
+        WHERE (($1::text = 'all' AND c.sport = ANY($2::text[])) OR c.sport = $1::text) ORDER BY lower(t.name), t.id`, [sport, all])
       const { rows: [v] } = await pool.query(
         `SELECT greatest(
-           (SELECT max(updated_at) FROM public.competitions WHERE ($1::text = 'all' OR sport = $1::text)),
+           (SELECT max(updated_at) FROM public.competitions WHERE (($1::text = 'all' AND sport = ANY($2::text[])) OR sport = $1::text)),
            (SELECT max(t.updated_at) FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id
-             WHERE ($1::text = 'all' OR c.sport = $1::text))) AS version`, [sport])
+             WHERE (($1::text = 'all' AND c.sport = ANY($2::text[])) OR c.sport = $1::text))) AS version`, [sport, all])
       return ok({
         version: v?.version ? iso(v.version) : '0',
         fetched_at: new Date().toISOString(),
@@ -518,5 +522,25 @@ export function createSavedTeams ({ pool, logger = console } = {}) {
     }))
   }
 
-  return { getBundle, createCompetition, updateCompetition, deleteCompetition, createTeam, updateTeam, deleteTeam, putRoster }
+  /**
+   * The sport of a competition or of a team's competition (server.js checks
+   * the role of that sport before a write): { sport } ('indoor' | 'beach'),
+   * { sport: null } when there is no such row (the write answers 404), or
+   * { error } (503). Never throws.
+   */
+  async function sportOf ({ competitionId, teamId } = {}) {
+    const id = competitionId ?? teamId
+    if (!isUuid(id)) return { sport: null }
+    try {
+      const { rows: [r] } = competitionId
+        ? await pool.query('SELECT sport FROM public.competitions WHERE id = $1', [id])
+        : await pool.query('SELECT c.sport FROM public.competition_teams t JOIN public.competitions c ON c.id = t.competition_id WHERE t.id = $1', [id])
+      return { sport: r ? sportOut(r.sport) : null }
+    } catch (err) {
+      log.error?.(`[savedTeams] sport-of failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return { error: unavailable() }
+    }
+  }
+
+  return { getBundle, createCompetition, updateCompetition, deleteCompetition, createTeam, updateTeam, deleteTeam, putRoster, sportOf }
 }
