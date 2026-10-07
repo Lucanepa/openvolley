@@ -110,4 +110,30 @@ describe('applyCorrectionPlan', () => {
     expect(match.remarks).toBe(`Existing remark\nTeam B, Set 2, Result 8:10: player no. ${out} is exceptionally substituted by player no. 7 due to illness.`)
     expect(await db.sync_queue.count()).toBe(0)
   })
+
+  it('a removed point that takes the live set 5 back below 8 undoes the court switch', async () => {
+    await db.open()
+    await Promise.all(db.tables.map(t => t.clear()))
+    const { events, sets } = buildMatch({
+      sets: [
+        { index: 1, points: pointsFor(25, 20), finished: true },
+        { index: 2, points: pointsFor(25, 20), finished: true },
+        { index: 3, points: pointsFor(20, 25), finished: true },
+        { index: 4, points: pointsFor(20, 25), finished: true },
+        { index: 5, points: 'HHHHHHHHA', finished: false }
+      ]
+    })
+    const matchId = await db.matches.add({ ...MATCH, id: undefined, status: 'live', seed_key: SEED, set5CourtSwitched: true })
+    for (const s of sets) await db.sets.add({ ...s, id: undefined, matchId })
+    for (const e of events) await db.events.add({ ...e, id: undefined, matchId })
+    const all = await db.events.where('matchId').equals(matchId).toArray()
+    const eighth = all.filter(e => e.type === 'point' && e.setIndex === 5 && e.payload.team === 'home').sort((a, b) => a.seq - b.seq)[7]
+    const plan = planRemoveGroup(all, eighth.id, { ...ctx(matchId), mode: 'live', liveSetIndex: 5 })
+    expect(plan.error).toBeUndefined()
+    await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+    const match = await db.matches.get(matchId)
+    expect(match.set5CourtSwitched).toBe(false)
+    const set5 = (await db.sets.where('matchId').equals(matchId).toArray()).find(s => s.index === 5)
+    expect([set5.homePoints, set5.awayPoints]).toEqual([7, 1])
+  })
 })

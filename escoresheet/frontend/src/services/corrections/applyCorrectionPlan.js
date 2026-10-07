@@ -104,12 +104,16 @@ export async function applyCorrectionPlan(plan, { matchId, db, mode = 'live', ho
     const changedSets = new Map()
 
     // 2. set scores from the point events; set times
+    let set5Back = false
     for (const setIndex of plan.affectedSets || []) {
       const row = sets.find(s => s.index === setIndex)
       if (!row) continue
       const score = scoreFromPointEvents(events, setIndex)
       await db.sets.update(row.id, score)
       changedSets.set(row.id, { ...row, ...score })
+      // The deciding set's court switch (at 8 points) is undone when a removed
+      // point takes the set being played back below 8, as Undo does
+      if (setIndex === 5 && !row.finished && match.set5CourtSwitched && Math.max(score.homePoints, score.awayPoints) < 8) set5Back = true
       const end = events.find(e => e.type === 'set_end' && (e.setIndex ?? 1) === setIndex)
       if (end) {
         const payload = { ...end.payload, homePoints: score.homePoints, awayPoints: score.awayPoints }
@@ -127,6 +131,7 @@ export async function applyCorrectionPlan(plan, { matchId, db, mode = 'live', ho
 
     // 3-5, 8. the match row
     const patch = {}
+    if (set5Back) patch.set5CourtSwitched = false
     const flags = deriveTeamSanctionFlags(events)
     const sanctions = { ...(match.sanctions || {}), ...flags }
     if (JSON.stringify(sanctions) !== JSON.stringify(match.sanctions || {})) patch.sanctions = sanctions
