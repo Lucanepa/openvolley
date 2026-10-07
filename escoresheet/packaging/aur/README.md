@@ -35,8 +35,9 @@ Updates arrive with `yay -Syu` / `paru -Syu` (or `git pull && makepkg -si`).
 ## What the package contains
 
 From the `.deb`: `/usr/bin/<pkg>`, the desktop file and the 32, 128 and 256 px
-icons (the bundler's `256x256@2` folder is installed as `256x256`), plus
-`/usr/share/licenses/<pkgname>/LICENSE` (GPL-3.0-or-later).
+icons (the bundler's `256x256@2` folder is installed as `256x256`). Added:
+`/usr/share/licenses/<pkgname>/LICENSE` (GPL-3.0-or-later) and the updater
+marker `/usr/lib/<pkg>/package-manager` (below).
 
 Left out: `/usr/libexec/<pkg>/apt-upgrade` and its polkit action, the APT
 updater's root helper. pacman updates the package.
@@ -55,29 +56,34 @@ network the app starts over D-Bus), `bluez` (Bluetooth network), `dnsmasq`
 ## The in-app updater is off
 
 The app updates itself on Windows and the AppImage, and through APT for the
-`.deb` (`src-tauri/src/updater.rs`, `Kind::detect`). It knows how it was
-installed from a stamp the Tauri bundler writes into the binary
-(`__TAURI_BUNDLE_TYPE_VAR_DEB` in the `.deb`). Left as it is, an Arch install
-would count as "a .deb without the APT repo" and tell the scorer to run the
-APT `install.sh`.
+`.deb` (`src-tauri/src/updater.rs`). Under pacman it must not, so the package
+does two things:
 
-So `prepare()` sets the stamp back to `__TAURI_BUNDLE_TYPE_VAR_UNK`, what the
-compiler wrote before the bundler patched it (same length, one occurrence).
-`bundle_type()` then returns nothing, the updater is `Kind::Unsupported`: it
-never checks, downloads or installs, Options > App version says "This build
-does not update itself", and the log says
-`[update] not an installed copy (no bundle type): no automatic updates`.
+1. **The marker file** `/usr/lib/<pkg>/package-manager` (one line: `aur`).
+   The updater's `managed_by()` looks for `<prefix>/lib/<command>/package-manager`
+   next to `<prefix>/bin/<command>`; a release that has it (`Kind::Managed`,
+   commit e323002f on feat/packaging, so 2.4.0 at the earliest) never checks,
+   downloads or runs the APT helper, logs
+   `[update] installed by aur: it updates the app`, and Options > App version
+   says "Updates come from your package manager".
+2. **The bundle-type stamp**, for releases before that (2.3.0, OpenBeach
+   2.0.0). The Tauri bundler writes the bundle type into the binary
+   (`__TAURI_BUNDLE_TYPE_VAR_DEB` in the `.deb`). Left as it is, an Arch
+   install would count as "a .deb without the APT repo" and tell the scorer
+   to run the APT `install.sh`. `prepare()` sets it back to
+   `__TAURI_BUNDLE_TYPE_VAR_UNK`, what the compiler wrote before the bundler
+   patched it (same length). `bundle_type()` then returns nothing, the
+   updater is `Kind::Unsupported`: it never checks, Options > App version
+   says "This build does not update itself", and the log says
+   `[update] not an installed copy (no bundle type): no automatic updates`.
 
-The binary also holds the string `__TAURI_BUNDLE_TYPE_VAR_DEB` as the value
-`bundle_type()` compares against (a table of DEB, RPM, APP, MSI, NSS). The
-patch skips that one (it is directly followed by `...RPM`) and fails the build
-if it does not find exactly one other occurrence, so a future compiler layout
-breaks the build instead of shipping a binary that updates itself.
-
-No source change is needed, and it works for releases already out (2.3.0,
-OpenBeach 2.0.0). If the app later gets its own "packaged" switch (for
-example an env variable or a marker file checked in `detect_kind()`), the
-patch can be dropped.
+   The binary also holds `__TAURI_BUNDLE_TYPE_VAR_DEB` as the value
+   `bundle_type()` compares against (a table of DEB, RPM, APP, MSI, NSS).
+   The patch skips that one (it is directly followed by `...RPM`) and fails
+   the build unless it finds exactly one other occurrence, so a different
+   compiler layout breaks the build instead of shipping a binary that
+   updates itself. Once every packaged release knows the marker, this step
+   can go; until then it costs nothing (the marker wins when both apply).
 
 After a `pacman -Syu` while the app runs, the running copy keeps the old
 version until it is restarted (the "Restart to finish" prompt is for APT
@@ -118,13 +124,18 @@ The Windows firewall rule does not exist on Linux.
   `/usr/lib/libayatana-appindicator3.so.1` present;
 - `desktop-file-validate`: valid (one hint: `Sports` could be paired with
   `Education`/`Science`; the categories are `Utility;Sports;`);
-- the binary's stamp reads `UNK`;
+- the binary's stamp reads `UNK`, the marker file says `aur`;
 - started under Xvfb + a D-Bus session: keeps running, the LAN page answers
   200 on 5173 (OpenBeach: 5174), WebSocket on 8080 (8081), the log says no
-  automatic updates, no panic.
+  automatic updates, no panic. `test.sh` fails if the log has the updater's
+  `checking after the page loaded` line. Control: the unpatched 2.3.0 binary
+  from the `.deb`, run the same way, logs
+  `[update] 2.3.0 DebNoRepo: checking after the page loaded, then every 6 h`.
 
-Not tested: a real desktop session (tray, hotspot, Bluetooth). Those take the
-same code paths as the `.deb`.
+Not tested: a real desktop session (tray, hotspot, Bluetooth), which takes
+the same code paths as the `.deb`; and the marker path with a real binary
+(no release has `Kind::Managed` yet; run `test.sh` again after the first
+release that has it).
 
 ## A new release
 
