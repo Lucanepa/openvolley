@@ -1,25 +1,35 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, RotateCw, ShieldOff, UserPlus } from 'lucide-react'
+import { CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, MailCheck, RotateCw, ShieldOff, UserPlus } from 'lucide-react'
 import { useAuth } from './contexts/AuthContext'
 import ManageConsole, { manageTabsFor } from './components/manage/ManageConsole'
 import LoginModal from './components/auth/LoginModal'
 import SignUpForm from './components/auth/SignUpForm'
 import InviteCodeForm from './components/auth/InviteCodeForm'
+import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
+import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
 import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen } from './ui'
 import { mainAppUrl, SIGN_UP_HASH } from './utils/managerSite'
 import { BRAND } from './brand'
+import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 
 /**
  * manager.openvolley.app: the manage console as a site of its own, for
  * admins (every tab) and competition managers (saved teams).
  *
+ *   #reset?token= / #confirm?token= (the links of the account emails;
+ *   manager-main.jsx strips them from the URL before the first render and
+ *   passes them in as `authLink`; a link opened in a tab that already shows
+ *   the site only changes the hash, useHashRoute takes it then) -> set a new
+ *   password / confirm the email, whether or not someone is signed in. These
+ *   are never routes or tabs.
  *   signed out                  -> sign-in card (the app's LoginModal)
  *   signed out, #signup         -> "Create account" page (SignUpForm); the
  *                                  scorer apps link here: accounts are made
  *                                  on this site only
  *   signed in, profile unknown  -> loading, then "try again"
- *   pending (no role yet)       -> next step: the club's invite code
+ *   pending (no role yet)       -> next step: the club's invite code ("confirm
+ *                                  your email" first while the address is not)
  *   scorer, no manage role      -> "you're all set, sign in in the scorer app"
  *   other roles (referee only)  -> "no access, ask an admin" + invite code
  *   admin / competition manager -> ManageConsole, full screen
@@ -47,24 +57,40 @@ const LANGUAGES = [
  */
 export function tabFromHash() {
   try {
-    return window.location.hash.replace(/^#/, '') || null
+    const hash = window.location.hash
+    // An email link (#reset?token= / #confirm?token=) is no tab
+    if (parseAuthLinkHash(hash)) return null
+    return hash.replace(/^#/, '') || null
   } catch {
     return null
   }
 }
 
-/** The hash route of a signed-out visitor ('signup' or ''), kept in step with the URL. */
-function useHashRoute() {
+/**
+ * The hash route of a signed-out visitor ('signup' or ''), kept in step with
+ * the URL. An email link that arrives as a hash change (opened in a tab that
+ * already shows the site: no reload, so manager-main.jsx never saw it) is no
+ * route: it is taken out of the URL at once and handed to `onAuthLink`.
+ */
+function useHashRoute(onAuthLink) {
   const [route, setRoute] = useState(() => tabFromHash() || '')
   useEffect(() => {
-    const onHash = () => setRoute(tabFromHash() || '')
+    const onHash = () => {
+      const link = takeAuthLinkFromLocation()
+      if (link) {
+        setRoute('')
+        onAuthLink?.(link)
+        return
+      }
+      setRoute(tabFromHash() || '')
+    }
     window.addEventListener('hashchange', onHash)
     window.addEventListener('popstate', onHash)
     return () => {
       window.removeEventListener('hashchange', onHash)
       window.removeEventListener('popstate', onHash)
     }
-  }, [])
+  }, [onAuthLink])
   // A new history entry, so the browser's Back returns to the sign-in card
   const go = useCallback((next) => {
     try {
@@ -132,9 +158,10 @@ function Gate({ width, className, children }) {
   )
 }
 
-function SignInScreen({ onCreateAccount }) {
+function SignInScreen({ initialMode = null, onCreateAccount }) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  // initialMode 'signin' | 'forgot': opened from an email-link page
+  const [open, setOpen] = useState(!!initialMode)
   return (
     <>
       <Gate>
@@ -154,6 +181,7 @@ function SignInScreen({ onCreateAccount }) {
       </Gate>
       <LoginModal
         open={open}
+        initialForgot={initialMode === 'forgot'}
         onClose={() => setOpen(false)}
         onSwitchToSignUp={() => { setOpen(false); onCreateAccount() }}
       />
@@ -276,7 +304,7 @@ function ScorerAppLinks({ primary = false }) {
  * page turns into "you're all set"); without one an admin approves it, which
  * AuthContext picks up on its own (it re-reads a pending profile every minute).
  */
-function InviteStepScreen({ justSignedUp }) {
+function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
   const { t } = useTranslation()
   return (
     <Gate>
@@ -287,6 +315,17 @@ function InviteStepScreen({ justSignedUp }) {
             {t('managerSite.accountCreated')}
           </p>
         )}
+        {/* The server mailed a confirmation link: the account gets no role
+            (no invite code either) until the address is confirmed */}
+        {justSignedUp && linkSentTo && (
+          <p role="status" data-testid="signup-link-sent" className="-mt-2 mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+            <MailCheck size={16} aria-hidden className="mt-0.5 shrink-0 text-sky-600" />
+            {t('authEmail.signUpLinkSent', { email: linkSentTo })}
+          </p>
+        )}
+        {/* Any unconfirmed account, not only a new one: no code works before
+            the confirmation (the server answers OV_EMAIL_UNCONFIRMED) */}
+        <EmailConfirmBanner className="mb-4" />
         <div className="text-center">
           <KeyRound className="mx-auto h-8 w-8 text-stone-400" aria-hidden />
           <h1 className="mt-3 text-base font-semibold text-stone-900">{t('managerSite.inviteStepTitle')}</h1>
@@ -376,12 +415,50 @@ function ConsoleHeaderActions() {
   )
 }
 
-export default function ManagerApp() {
-  const { t } = useTranslation()
-  const { user, access, loading } = useAuth()
+/** The page behind an email link, in the gate card. */
+function AuthLinkScreen({ link, onDone }) {
+  return (
+    <Gate>
+      {link.page === 'reset'
+        ? <ResetPasswordPage token={link.token} lang={link.lang} onSignIn={() => onDone('signin')} onRequestNew={() => onDone('forgot')} />
+        : <ConfirmEmailPage token={link.token} onSignIn={() => onDone('signin')} />}
+    </Gate>
+  )
+}
+
+export default function ManagerApp({ authLink = null }) {
+  const { t, i18n } = useTranslation()
+  const { user, access, loading, signOut, refreshUser } = useAuth()
   const [tab, setTab] = useState(tabFromHash)
-  const [route, goRoute, replaceRoute] = useHashRoute()
+  const [link, setLink] = useState(authLink)
+  const [signInMode, setSignInMode] = useState(null)
+  const takeLink = useCallback((next) => {
+    setLink(next)
+    setSignInMode(null)
+  }, [])
+  const [route, goRoute, replaceRoute] = useHashRoute(takeLink)
   const [justSignedUp, setJustSignedUp] = useState(false)
+  // The address a confirmation link was mailed to at sign-up (this session only)
+  const [linkSentTo, setLinkSentTo] = useState(null)
+
+  // The link carries the language the email was written in (en/de/fr/it):
+  // follow it unless the site already shows that language (de-CH for de).
+  const linkLang = link?.lang
+  useEffect(() => {
+    if (linkLang && String(i18n.language || '').split('-')[0] !== linkLang) i18n.changeLanguage(linkLang)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkLang])
+
+  const leaveLink = useCallback(async (mode) => {
+    // After a reset every session of the account is revoked: drop this one too.
+    if (link?.page === 'reset' && user) {
+      try { await signOut() } catch { /* the server already revoked it */ }
+    }
+    // Confirmed while signed in: the session still holds the unconfirmed user
+    if (link?.page === 'confirm' && user) refreshUser?.()
+    setLink(null)
+    setSignInMode(mode)
+  }, [link, user, signOut, refreshUser])
 
   // Signed in: #signup has done its job (and is no console tab). The route is
   // cleared too, so signing out later shows the sign-in card, not the sign-up page
@@ -394,14 +471,29 @@ export default function ManagerApp() {
   // "Account created" belongs to the session that made the account only
   const isSignedIn = Boolean(user)
   useEffect(() => {
-    if (!isSignedIn) setJustSignedUp(false)
+    if (isSignedIn) return
+    setJustSignedUp(false)
+    setLinkSentTo(null)
   }, [isSignedIn])
+
+  const openSignUp = useCallback(() => {
+    // "Back to sign in" shows the card, not the dialog an email link opened
+    setSignInMode(null)
+    goRoute(SIGN_UP_HASH)
+  }, [goRoute])
+  const onSignedUp = useCallback(({ signedIn, linkSentTo: sentTo = null }) => {
+    if (!signedIn) return
+    setJustSignedUp(true)
+    setLinkSentTo(sentTo)
+  }, [])
 
   // The open tab lives in the URL hash, so a reload or a bookmark keeps it
   const selectTab = useCallback((id) => {
     setTab(id)
     try { window.history.replaceState(window.history.state, '', `#${id}`) } catch { /* no history */ }
   }, [])
+
+  if (link) return <div className="ov-kit"><AuthLinkScreen link={link} onDone={leaveLink} /></div>
 
   if (loading) {
     return (
@@ -414,15 +506,15 @@ export default function ManagerApp() {
     return (
       <div className="ov-kit">
         {route === SIGN_UP_HASH
-          ? <SignUpScreen onSignedUp={({ signedIn }) => { if (signedIn) setJustSignedUp(true) }} onBack={() => goRoute('')} />
-          : <SignInScreen onCreateAccount={() => goRoute(SIGN_UP_HASH)} />}
+          ? <SignUpScreen onSignedUp={onSignedUp} onBack={() => goRoute('')} />
+          : <SignInScreen initialMode={signInMode} onCreateAccount={openSignUp} />}
       </div>
     )
   }
   if (!access.known) return <div className="ov-kit"><AccountLoadingScreen /></div>
   if (manageTabsFor(access).length === 0) {
     let screen = <NoAccessScreen />
-    if (access.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} />
+    if (access.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} linkSentTo={linkSentTo} />
     else if (access.canScore) screen = <AllSetScreen />
     return <div className="ov-kit">{screen}</div>
   }

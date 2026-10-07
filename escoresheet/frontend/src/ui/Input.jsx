@@ -72,8 +72,8 @@ export function Input({ size = 'md', icon, trailing, invalid, numeric, className
 
 /**
  * Search field. 'lg' is the page search (InfosPage.tsx:133-143): magnifier,
- * rounded-xl, h-11. 'md' is the panel search without an icon (App.tsx:8711):
- * `h-10 ... rounded-lg ... focus-visible:ring-red-400`.
+ * rounded-xl, h-11. 'md' is the panel search without an icon (App.tsx:8711),
+ * h-9 like Input md and Button md so a filter row lines up.
  * Always give it an aria-label: the placeholder is not a label.
  */
 export function SearchInput({ size = 'lg', className, ...rest }) {
@@ -81,7 +81,7 @@ export function SearchInput({ size = 'lg', className, ...rest }) {
   return (
     <input
       type="search"
-      className={cn('h-10 w-full px-3 text-sm border border-stone-300 rounded-lg bg-white outline-none focus-visible:ring-2 focus-visible:ring-red-400', className)}
+      className={cn('h-9 w-full px-3 text-sm border border-stone-300 rounded-lg bg-white outline-none focus-visible:ring-2 focus-visible:ring-red-400', className)}
       {...rest}
     />
   );

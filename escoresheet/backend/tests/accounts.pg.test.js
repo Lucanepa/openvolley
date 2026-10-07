@@ -175,7 +175,7 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       const pend = await accounts.listAccounts({ filter: 'pending' })
       assert.equal(pend.status, 200)
       const fresh = pend.body.data.accounts.find((a) => a.id === id)
-      assert.deepEqual(Object.keys(fresh).sort(), ['created_at', 'email', 'first_name', 'id', 'last_name', 'last_sign_in_at', 'pending', 'roles'])
+      assert.deepEqual(Object.keys(fresh).sort(), ['created_at', 'email', 'email_confirmed', 'first_name', 'id', 'last_name', 'last_sign_in_at', 'pending', 'roles'])
       assert.equal(fresh.pending, true)
       assert.equal(pend.body.data.accounts.some((a) => a.id === ids.admin), false)
       const all = await accounts.listAccounts({ filter: 'all', q: 'adm' })

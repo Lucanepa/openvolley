@@ -12,16 +12,25 @@
  * crypto.randomInt, shown once as XXXX-XXXX-XXXX. Only sha256('ov-invite:' +
  * code) and the last 4 characters are stored; the plaintext is never stored
  * or logged.
+ *
+ * Unconfirmed addresses: an account lib/auth.js created with a confirmation
+ * link (raw_app_meta_data.ov_email_confirmation = 'link') may sign in before
+ * it confirms its address, but gets no role until it has: redeem-invite and
+ * an admin's role grant answer 409 OV_EMAIL_UNCONFIRMED. Removing roles stays
+ * possible.
  */
 
 import { createHash, randomInt } from 'node:crypto'
 import { API_GRANTABLE_ROLES, KNOWN_ROLES, accessFromRoles, normalizeRoles } from './access.js'
 import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './officialGame.js'
+import { EMAIL_CONFIRMATION_MARK } from './auth.js'
 
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
 export const AUDIT_ACTIONS = Object.freeze([
   'account.roles',
+  // written by lib/auth.js (email links, db/010)
+  'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
   'invite.create', 'invite.revoke', 'invite.redeem',
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',
@@ -159,6 +168,24 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     }
   }
 
+  // ------------------------------------------------------------------ confirmation
+  const EMAIL_UNCONFIRMED = () => fail(409, 'OV_EMAIL_UNCONFIRMED',
+    'Confirm your email address first: open the link we sent you, or send a new one from your profile')
+  /**
+   * The auth.users row of userId (locked) with `unconfirmed`: true for an
+   * account created with a confirmation link that has not confirmed yet.
+   * to_jsonb, so a users table without these columns reads as confirmed.
+   */
+  async function confirmationOf (client, userId) {
+    const { rows: [u] } = await client.query(
+      `SELECT u.id,
+              (to_jsonb(u) ->> 'email_confirmed_at') IS NULL
+                AND (to_jsonb(u) -> 'raw_app_meta_data' ->> $2) = $3 AS unconfirmed
+         FROM auth.users u WHERE u.id = $1 FOR SHARE`,
+      [userId, EMAIL_CONFIRMATION_MARK.key, EMAIL_CONFIRMATION_MARK.value])
+    return u ? { id: u.id, unconfirmed: u.unconfirmed === true } : null
+  }
+
   // ------------------------------------------------------------------ invites
   const INVITE_SELECT = `
     SELECT i.id, i.code_hint, i.label, i.club, i.role, i.max_uses, i.uses, i.expires_at, i.revoked_at, i.created_at,
@@ -190,6 +217,9 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     const normalized = normalizeInviteCode(code)
     if (!normalized) return fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid')
     return guarded('redeem-invite', () => withTx(async (client) => {
+      // Before the code is looked at: an unconfirmed account learns nothing
+      // about the code and does not use it up.
+      if ((await confirmationOf(client, userId))?.unconfirmed) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [inv] } = await client.query(
         `SELECT id, label, role, max_uses, uses, revoked_at,
                 (expires_at IS NOT NULL AND expires_at <= now()) AS expired
@@ -315,7 +345,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
         where.push(`(u.email ILIKE ${pat} OR p.first_name ILIKE ${pat} OR p.last_name ILIKE ${pat})`)
       }
       const { rows } = await pool.query(
-        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at
+        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at,
+                (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed
            FROM auth.users u
            LEFT JOIN public.profiles p ON p.user_id = u.id
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
@@ -332,7 +363,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
             roles: a.roles,
             pending: a.isPending,
             created_at: iso(r.created_at),
-            last_sign_in_at: iso(r.last_sign_in_at)
+            last_sign_in_at: iso(r.last_sign_in_at),
+            email_confirmed: r.email_confirmed === true
           }
         })
       })
@@ -362,8 +394,9 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
       return fail(409, 'OV_SELF_DEMOTE', 'You cannot remove your own admin role')
     }
     const res = await guarded('set-roles', () => withTx(async (client) => {
-      const { rows: [u] } = await client.query('SELECT id FROM auth.users WHERE id = $1', [userId])
+      const u = await confirmationOf(client, userId)
       if (!u) throw abort(notFound())
+      if (u.unconfirmed && lists.add.length) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
       const before = normalizeRoles(prof?.roles)
       if (before.includes('super_admin') && !actor?.access?.isSuperAdmin) {
