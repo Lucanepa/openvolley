@@ -144,6 +144,22 @@ describe('PhoneSignPanel', () => {
     expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.expired)
   })
 
+  it('an unreachable relay is asked again, but not past the link\'s life', async () => {
+    const api = fakeApi()
+    // The relay is down: every wait fails at once
+    api.waitPhoneSign.mockImplementation(async () => ({ ok: false, status: 0, code: 'OV_SIGN_NETWORK', network: true }))
+    const born = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(born)
+    render(<PhoneSignPanel {...props(api)} />)
+    await waitFor(() => expect(api.waitPhoneSign).toHaveBeenCalledTimes(1))
+    // 16 minutes later (the tablet slept): one more try, then it stops
+    clock.mockReturnValue(born + 16 * 60 * 1000)
+    await waitFor(() => expect(api.waitPhoneSign).toHaveBeenCalledTimes(2), { timeout: 4000 })
+    expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.expired)
+    await new Promise((r) => setTimeout(r, 2500))
+    expect(api.waitPhoneSign).toHaveBeenCalledTimes(2)
+  })
+
   it('closing the dialog aborts the wait and closes the link', async () => {
     const api = fakeApi()
     const { unmount } = render(<PhoneSignPanel {...props(api)} />)

@@ -15,6 +15,7 @@ import { FirewallTip } from '../connect/NetworkPanels'
 
 const LAN_HINT_MS = 45000
 const RETRY_MS = 2000
+const GIVE_UP_AFTER_MS = 5 * 60 * 1000
 
 function readConnectView() {
   try { return JSON.parse(localStorage.getItem('ov_connect_tablets_view') || 'null') || {} } catch { return {} }
@@ -180,6 +181,9 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
         if (!w.ok) {
           if (w.code === 'OV_SIGN_ABORTED') return
           if (w.code === 'OV_SIGN_NOT_FOUND') { setPhase('expired'); return } // the relay restarted (D4)
+          // Unreachable past the link's life (plus the relay's 5 min for a
+          // signature not yet fetched): nothing can come any more, stop asking
+          if (Date.now() > r.handle.startedAt + r.handle.ttlSeconds * 1000 + GIVE_UP_AFTER_MS) { setPhase('expired'); return }
           await new Promise((res) => setTimeout(res, RETRY_MS))
           continue
         }
