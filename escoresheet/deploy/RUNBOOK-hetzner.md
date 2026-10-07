@@ -405,7 +405,15 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
 6. **Check**: manager.openvolley.app, "Sign in", "Forgot password?" with your own address. The
    mail arrives within a minute; the link opens "Set a new password"; afterwards every device is
    signed out and a "password was changed" notice arrives. A failed send is in
-   `docker compose logs ov-backend | grep 'reset-password mail failed'`.
+   `docker compose logs ov-backend | grep 'reset-password mail failed'` (addresses masked).
+7. **Watch** (any time): the mail counters are in the internal health body,
+   `hetzner# docker compose exec -T ov-backend wget -qO- http://127.0.0.1:3000/health` (or the
+   status network), under `mail`: `budgets.account` (reset, password changed) and
+   `budgets.confirm` (confirmation links), 50 each per hour, with `used`, `dropped` this hour
+   and `droppedTotal`; `exhausted` names a budget that is used up; `inboxDropped` counts mails
+   held back because one inbox already got 5 that hour; `failed` counts SMTP errors. A used-up
+   budget only drops mails (logged as `[mail] hourly ... budget ... used up`); the server stays
+   healthy. A burst of sign-ups can use up `confirm` but never `account`.
 
 To switch the mails off again: empty `SMTP_PASS=` in `.env`, `docker compose up -d ov-backend`.
 To rotate the password: set it in Migadu, then run the script again (it replaces the lines).
