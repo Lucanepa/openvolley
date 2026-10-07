@@ -27,8 +27,9 @@ export const FitText: React.FC<{
     useLayoutEffect(() => {
         const el = ref.current;
         if (!el) return;
+        // multiline: also the width, since one long word (no break opportunity) does not wrap
         const overflows = () => (multiline
-            ? el.scrollHeight > el.clientHeight + 0.5
+            ? el.scrollHeight > el.clientHeight + 0.5 || el.scrollWidth > el.clientWidth + 0.5
             : el.scrollWidth > el.clientWidth + 0.5);
         let s = max;
         el.style.fontSize = `${s}px`;

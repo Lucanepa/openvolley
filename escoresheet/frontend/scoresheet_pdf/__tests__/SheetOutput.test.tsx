@@ -272,7 +272,7 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(getAllByTestId('strike-z')).toHaveLength(5)
     // no awarded point drawn as a rally (the grid stays empty)
     expect(container.querySelectorAll('[data-mark="tick"]')).toHaveLength(0)
-    expect(getByTestId('remarks-text').textContent).toContain('Team B declared in default (default), match result 3:0 (25:0, 25:0, 25:0).')
+    expect(getByTestId('remarks-text').textContent).toContain('Team B declared in default, match result 3:0 (25:0, 25:0, 25:0).')
     expect(getByTestId('results-winner').textContent).toBe('KSC Wiedikon H1')
   })
 

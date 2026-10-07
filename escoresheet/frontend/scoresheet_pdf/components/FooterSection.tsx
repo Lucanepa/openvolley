@@ -374,16 +374,18 @@ export const Results: React.FC<ResultsProps> = ({
             </div>
 
             {/* Winner Area */}
-            <div className="border-r border-black p-1 grid grid-cols-[3fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
-                 <div className="relative">
-                     <span className="text-[12px] absolute top-0 left-0 text-gray-500">WINNER</span>
+            {/* one row of exactly the box's height (minmax(0,1fr)): an auto row grew with the
+                unshrunk name (3 lines at 18px), so FitText measured no overflow */}
+            <div className="border-r border-black p-1 grid grid-cols-[3fr_1fr] grid-rows-[minmax(0,1fr)] gap-1 border-t border-black h-14 shrink-0 bg-white">
+                 <div className="relative min-h-0">
+                     <span className="text-[12px] leading-none absolute top-0 left-0 text-gray-500">WINNER</span>
                      {/* the full name (field-spec 9): shrinks to fit, never cut or overflowing the box */}
-                     <div className="w-full h-full flex items-end justify-center pb-0.5 pt-3 min-w-0">
+                     <div className="w-full h-full flex items-end justify-center pb-0.5 pt-[14px] min-w-0">
                          <FitText max={18} min={6} multiline className="w-full h-full text-center font-black uppercase bg-white leading-none" data-testid="results-winner">{winner}</FitText>
                      </div>
                  </div>
                  <div className="relative" >
-                     <span className="text-[12px] absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
+                     <span className="text-[12px] leading-none absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
                      <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">
                          {(() => {
                              // `result` ("3-1", or "3:1" from MatchEntry) is only set once the match

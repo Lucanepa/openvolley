@@ -355,14 +355,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                          </div>
                          <SRSelector initialSelection={leftServes} />
                      </div>
-                     <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white ml-1">{teamNameLeft}</FitText>
+                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameLeft}</FitText>
                  </div>
              </div>
              <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px] border-r border-black" style={{ width: '14.7mm' }}>Points</div>
               {/* Team Right (B or A) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
              <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full justify-end">
-                     <FitText max={12} min={6} className="w-full uppercase font-bold text-center bg-white mr-1">{teamNameRight}</FitText>
+                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center font-bold text-center bg-white mr-1">{teamNameRight}</FitText>
                      <div className="flex items-center gap-1">
                         <SRSelector initialSelection={rightServes} />
                         <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
