@@ -388,9 +388,17 @@ the desktop app, see `OFFLINE_DESKTOP.md`) to the public
 
 ## Icons and splash
 
-`python3 scripts/make-android-icons.py` regenerates the launcher icons
-(`mipmap-*`) from `public/ball.png` and the splash images from
-`public/openvolley_no_bg.png`.
+`python3 scripts/make-brand-assets.py` renders every logo raster from the
+SVGs in `brand/` (see `brand/README.md`): the launcher icons (`mipmap-*`:
+square, round, the adaptive foreground and the monochrome layer that Android
+13+ tints for themed icons), the pre-Android-12 splash images, and the web,
+desktop and store icons. The adaptive icon's background is plain white
+(`values/ic_launcher_background.xml`).
+
+The F-Droid repo shows its own copy of the icon,
+`metadata/com.openvolley.escoresheet/en-US/icon.png` on the F-Droid host
+(see above), outside this repo: after a logo change, copy
+`fastlane/metadata/android/en-US/images/icon.png` there and run `publish.sh`.
 
 ## Testing
 
