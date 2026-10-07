@@ -25,8 +25,11 @@ export const MIN_PASSWORD_LENGTH = 6
  * @param {object} props
  * @param {(result: { signedIn: boolean, confirmByEmail: boolean, linkSentTo: string | null }) => void} [props.onSignedUp]
  * @param {() => void} [props.onSwitchToLogin] "Already have an account? Sign in"
+ * @param {string} [props.existingAccountMessage] shown instead of the server's
+ *   text when the address already has an account (the OpenBeach manager:
+ *   "sign in with your existing password to join OpenBeach")
  */
-export default function SignUpForm({ onSignedUp, onSwitchToLogin }) {
+export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccountMessage }) {
   const { t } = useTranslation()
   const { signUp, signIn } = useAuth()
 
@@ -74,7 +77,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin }) {
     })
 
     if (signUpError) {
-      setError(signUpError.message)
+      setError(existingAccountMessage && signUpError.code === 'user_already_exists' ? existingAccountMessage : signUpError.message)
       setLoading(false)
       return
     }

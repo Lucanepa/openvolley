@@ -12,6 +12,10 @@ import { detectAppPlatform } from './openAppWindow'
 
 export const MANAGER_SITE_URL = 'https://manager.openvolley.app'
 export const MAIN_APP_URL = 'https://app.openvolley.app'
+// OpenBeach's manager (the same console, built as manager-beach; src/managerBrand.js)
+// and its scoring app. OpenBeach's "Create account" opens MANAGER_BEACH_SITE_URL/#signup.
+export const MANAGER_BEACH_SITE_URL = 'https://manager-beach.openvolley.app'
+export const BEACH_APP_URL = 'https://beach.openvolley.app'
 
 const hostOf = (hostname) => String(hostname || '').toLowerCase()
 const currentHost = () => (typeof window !== 'undefined' ? window.location.hostname : '')
@@ -88,4 +92,15 @@ export function mainAppUrl(hostname = currentHost(), origin = typeof window !== 
   if (preview) return `${preview}/`
   if (host === 'localhost' || host === '127.0.0.1') return `${origin}/`
   return `${MAIN_APP_URL}/`
+}
+
+/**
+ * Where a manager of `brand` (src/managerBrand.js) links to its scorer app:
+ * OpenVolley's as mainAppUrl(), OpenBeach's always the public beach app
+ * (it is another repository: no preview or dev server here to pair with).
+ * @param {{ app: string }} [brand]
+ */
+export function scorerAppUrlFor(brand, hostname = currentHost(), origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  if (brand?.app === 'beach') return `${BEACH_APP_URL}/`
+  return mainAppUrl(hostname, origin)
 }

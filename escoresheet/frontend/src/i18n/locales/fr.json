@@ -2317,6 +2317,24 @@
     "allSetBody": "Votre compte est validé pour marquer. Connectez-vous dans l’application du marqueur avec cet email et ce mot de passe.",
     "haveManagerCode": "Vous avez reçu un code d’invitation pour la gestion ? Saisissez-le ici"
   },
+  "managerBeach": {
+    "signInHeading": "Gérer OpenBeach",
+    "signInBody": "Comptes, codes d’invitation et équipes de beach enregistrées – pour les admins et les responsables de compétition.",
+    "noAccountYet": "Pas encore de compte ? Créez-en un ici. Un seul compte vaut pour OpenBeach et OpenVolley.",
+    "signUpBody": "Un seul compte pour OpenBeach et OpenVolley. Chaque application vous valide séparément.",
+    "existingAccount": "Cet email a déjà un compte (OpenVolley ou OpenBeach). Connectez-vous avec votre mot de passe actuel pour rejoindre OpenBeach.",
+    "inviteStepBody": "Votre club, l’organisateur du tournoi ou l’admin OpenBeach vous donne un code ; il fait de vous un marqueur de beach validé immédiatement.",
+    "nativeAppsNote": "Vous utilisez l’application OpenBeach sur Android ? Connectez-vous simplement dans l’application avec cet email et ce mot de passe.",
+    "allSetBody": "Votre compte est validé pour marquer en beach. Connectez-vous dans OpenBeach avec cet email et ce mot de passe.",
+    "openApp": "OpenBeach",
+    "openAppLong": "Ouvrir OpenBeach",
+    "joinTitle": "Rejoindre OpenBeach",
+    "joinBody": "Votre compte vaut pour OpenVolley et OpenBeach, avec le même email et le même mot de passe. Chaque application vous valide séparément : rejoignez OpenBeach, puis saisissez votre code d’invitation.",
+    "joinButton": "Rejoindre OpenBeach",
+    "joinFailed": "L’adhésion n’a pas fonctionné – vérifiez la connexion et réessayez.",
+    "newPasswordBody": "Choisissez un nouveau mot de passe pour votre compte. Il vaut pour OpenBeach et OpenVolley. Ensuite, tous les appareils sont déconnectés.",
+    "confirmBody": "Confirmez que cette adresse appartient à votre compte OpenBeach."
+  },
   "manage": {
     "title": "Gestion",
     "backToApp": "Retour à l’app",

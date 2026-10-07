@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { CircleCheck, KeyRound, LinkIcon, MailCheck } from 'lucide-react'
 import { apiAuth } from '../../lib/apiClient'
 import { BUTTON_VARIANTS, Button, cn, Field, FOCUS_RING, FormError, Input } from '../../ui'
-import { mainAppUrl } from '../../utils/managerSite'
+import { scorerAppUrlFor } from '../../utils/managerSite'
+import { useManagerBrand } from '../../managerBrand'
 
 /**
  * The pages behind the links of the account emails, shown by the manager
@@ -39,16 +40,18 @@ function linkErrorText(t, error) {
 }
 
 function AppLinks({ onSignIn }) {
+  const brand = useManagerBrand()
   const { t } = useTranslation()
   return (
     <div className="mt-6 space-y-1">
-      <a href={mainAppUrl()} className={heroLink}>{t('managerSite.openAppLong')}</a>
+      <a href={scorerAppUrlFor(brand)} className={heroLink}>{t(brand.app === 'beach' ? 'managerBeach.openAppLong' : 'managerSite.openAppLong')}</a>
       <button type="button" onClick={onSignIn} className={quietLink}>{t('managerSite.signIn')}</button>
     </div>
   )
 }
 
 function InvalidLink({ body, onRequestNew, onSignIn }) {
+  const brand = useManagerBrand()
   const { t } = useTranslation()
   return (
     <div data-testid="auth-link-invalid">
@@ -56,7 +59,7 @@ function InvalidLink({ body, onRequestNew, onSignIn }) {
       <div className="mt-6 space-y-1">
         {onRequestNew
           ? <Button variant="hero" block onClick={onRequestNew}>{t('authEmail.requestNewLink')}</Button>
-          : <a href={mainAppUrl()} className={heroLink}>{t('managerSite.openAppLong')}</a>}
+          : <a href={scorerAppUrlFor(brand)} className={heroLink}>{t(brand.app === 'beach' ? 'managerBeach.openAppLong' : 'managerSite.openAppLong')}</a>}
         <button type="button" onClick={onSignIn} className={quietLink}>{t('managerSite.signIn')}</button>
       </div>
     </div>
@@ -66,6 +69,7 @@ function InvalidLink({ body, onRequestNew, onSignIn }) {
 /** #reset?token=: a new password, twice. */
 export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
   const { t } = useTranslation()
+  const brand = useManagerBrand()
   const [password, setPassword] = useState('')
   const [repeat, setRepeat] = useState('')
   const [busy, setBusy] = useState(false)
@@ -80,7 +84,10 @@ export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
     if (new TextEncoder().encode(password).length > MAX_PASSWORD_BYTES) return setError(t('authEmail.genericError'))
     if (password !== repeat) return setError(t('auth.passwordsDoNotMatch'))
     setBusy(true)
-    const res = await apiAuth.confirmPasswordReset(token, password, lang || undefined)
+    // OpenBeach's manager: the "password changed" notice is OpenBeach's
+    const res = brand.app === 'beach'
+      ? await apiAuth.confirmPasswordReset(token, password, lang || undefined, brand.app)
+      : await apiAuth.confirmPasswordReset(token, password, lang || undefined)
     setBusy(false)
     if (!res?.error) {
       setPassword('')
@@ -106,7 +113,7 @@ export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
   }
   return (
     <form data-testid="reset-form" onSubmit={submit} className="space-y-3" noValidate>
-      <Heading icon={KeyRound} title={t('authEmail.newPasswordTitle')}>{t('authEmail.newPasswordBody')}</Heading>
+      <Heading icon={KeyRound} title={t('authEmail.newPasswordTitle')}>{t(brand.app === 'beach' ? 'managerBeach.newPasswordBody' : 'authEmail.newPasswordBody')}</Heading>
       <FormError size="md">{error}</FormError>
       <Field label={t('authEmail.newPassword')} hint={t('authEmail.passwordHint')}>
         <Input size="lg" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" required minLength={MIN_PASSWORD} />
@@ -127,6 +134,7 @@ export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
  */
 export function ConfirmEmailPage({ token, onSignIn }) {
   const { t } = useTranslation()
+  const brand = useManagerBrand()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [state, setState] = useState(token ? 'ask' : 'invalid')
@@ -155,7 +163,7 @@ export function ConfirmEmailPage({ token, onSignIn }) {
   }
   return (
     <div data-testid="confirm-ask" className="space-y-3">
-      <Heading icon={MailCheck} title={t('authEmail.confirmTitle')}>{t('authEmail.confirmBody')}</Heading>
+      <Heading icon={MailCheck} title={t('authEmail.confirmTitle')}>{t(brand.app === 'beach' ? 'managerBeach.confirmBody' : 'authEmail.confirmBody')}</Heading>
       <FormError size="md">{error}</FormError>
       <Button variant="hero" block onClick={confirm} disabled={busy} loading={busy} className="mt-3">
         {busy ? t('authEmail.confirming') : t('authEmail.confirmButton')}

@@ -9,6 +9,28 @@ export const KNOWN_ROLES = ['scorer', 'referee', 'competition_manager', 'admin',
 // Roles an admin can grant or remove through the API (super_admin is SQL-only).
 export const API_GRANTABLE_ROLES = ['scorer', 'referee', 'competition_manager', 'admin']
 
+// OpenBeach's roles (backend lib/access.js SPORT_ROLES.beach): the same three
+// with a prefix. The lists above stay indoor: OpenVolley's screens and its
+// manager show and edit indoor roles only; the OpenBeach manager uses these.
+export const BEACH_ROLES = ['beach:scorer', 'beach:referee', 'beach:competition_manager']
+/** 'beach:scorer' -> 'scorer' (the label key); any other role unchanged. */
+export const plainRole = (role) => String(role || '').replace(/^beach:/, '')
+
+/** The flags of one sport, as the backend's apps.<sport> (admin counts for both). */
+function sportFlags(roles, isAdmin, sport) {
+  const own = sport === 'beach' ? BEACH_ROLES : ['scorer', 'referee', 'competition_manager']
+  const prefix = sport === 'beach' ? 'beach:' : ''
+  const canScore = isAdmin || roles.includes(`${prefix}scorer`)
+  const canManageTeams = isAdmin || roles.includes(`${prefix}competition_manager`)
+  return {
+    roles: roles.filter(r => own.includes(r)),
+    canScore,
+    canManageTeams,
+    canReadTeams: canScore || canManageTeams,
+    isPending: !isAdmin && !own.some(r => roles.includes(r))
+  }
+}
+
 /**
  * Normalise a roles value as the backend does: an array, a Postgres array
  * literal ('{scorer,admin}') or a comma-separated string. Values are trimmed
@@ -31,6 +53,8 @@ export function normalizeRoles(raw) {
 
 /**
  * @param {unknown} rawRoles
+ * The flags are OpenVolley's (indoor), unchanged; accessForApp() gives
+ * OpenBeach's.
  * @returns {{roles: string[], isAdmin: boolean, isSuperAdmin: boolean, canScore: boolean,
  *   canManageTeams: boolean, canReadTeams: boolean, isPending: boolean}}
  */
@@ -43,6 +67,17 @@ export function accessFromRoles(rawRoles) {
   const canReadTeams = canScore || canManageTeams
   const isPending = !roles.some(r => KNOWN_ROLES.includes(r))
   return { roles, isAdmin, isSuperAdmin, canScore, canManageTeams, canReadTeams, isPending }
+}
+
+/**
+ * The flags of `sport` in an access object, with isAdmin, isSuperAdmin and
+ * known carried over: what a console of that app checks. 'indoor' returns
+ * the access itself (unchanged behaviour).
+ */
+export function accessForApp(access, sport) {
+  if (!access || sport !== 'beach') return access
+  const own = sportFlags(normalizeRoles(access.roles), !!access.isAdmin, 'beach')
+  return { ...own, isAdmin: !!access.isAdmin, isSuperAdmin: !!access.isSuperAdmin, known: access.known }
 }
 
 /** Access of a signed-out device: nothing, and not "pending" either. */

@@ -2323,6 +2323,24 @@
     "allSetBody": "Il tuo account è approvato per refertare. Accedi nell’app del segnapunti con questa email e questa password.",
     "haveManagerCode": "Hai ricevuto un codice d’invito per la gestione? Inseriscilo qui"
   },
+  "managerBeach": {
+    "signInHeading": "Gestisci OpenBeach",
+    "signInBody": "Account, codici d’invito e squadre di beach salvate – per admin e responsabili di competizione.",
+    "noAccountYet": "Non hai ancora un account? Crealo qui. Un solo account vale per OpenBeach e OpenVolley.",
+    "signUpBody": "Un solo account per OpenBeach e OpenVolley. Ogni app ti approva separatamente.",
+    "existingAccount": "Questa email ha già un account (OpenVolley o OpenBeach). Accedi con la tua password attuale per unirti a OpenBeach.",
+    "inviteStepBody": "Il tuo club, l’organizzatore del torneo o l’admin di OpenBeach ti dà un codice; ti rende subito segnapunti di beach approvato.",
+    "nativeAppsNote": "Usi l’app OpenBeach su Android? Accedi lì con questa email e questa password.",
+    "allSetBody": "Il tuo account è approvato per refertare nel beach. Accedi in OpenBeach con questa email e questa password.",
+    "openApp": "OpenBeach",
+    "openAppLong": "Apri OpenBeach",
+    "joinTitle": "Unisciti a OpenBeach",
+    "joinBody": "Il tuo account vale per OpenVolley e OpenBeach, con la stessa email e la stessa password. Ogni app ti approva separatamente: unisciti a OpenBeach, poi inserisci il tuo codice d’invito.",
+    "joinButton": "Unisciti a OpenBeach",
+    "joinFailed": "L’adesione non è riuscita – controlla la connessione e riprova.",
+    "newPasswordBody": "Scelga una nuova password per il suo account. Vale per OpenBeach e OpenVolley. Dopo, tutti i dispositivi vengono disconnessi.",
+    "confirmBody": "Confermi che questo indirizzo appartiene al suo account OpenBeach."
+  },
   "manage": {
     "title": "Gestione",
     "backToApp": "Torna all’app",

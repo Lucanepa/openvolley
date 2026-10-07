@@ -2324,6 +2324,24 @@
     "allSetBody": "Your account is approved for scoring. Sign in in the scorer app with this email and password.",
     "haveManagerCode": "Got an invite code for the manager? Enter it here"
   },
+  "managerBeach": {
+    "signInHeading": "Manage OpenBeach",
+    "signInBody": "Accounts, invite codes and saved beach teams – for admins and competition managers.",
+    "noAccountYet": "No account yet? Create one here. One account works for OpenBeach and OpenVolley.",
+    "signUpBody": "One account for OpenBeach and OpenVolley. Each app approves you separately.",
+    "existingAccount": "This email already has an account (OpenVolley or OpenBeach). Sign in with your existing password to join OpenBeach.",
+    "inviteStepBody": "Your club, the tournament organiser or the OpenBeach admin gives you a code; it makes you an approved beach scorer right away.",
+    "nativeAppsNote": "Using the OpenBeach app on Android? Just sign in there with this email and password.",
+    "allSetBody": "Your account is approved for beach scoring. Sign in in OpenBeach with this email and password.",
+    "openApp": "OpenBeach",
+    "openAppLong": "Open OpenBeach",
+    "joinTitle": "Join OpenBeach",
+    "joinBody": "Your account works for OpenVolley and OpenBeach, with the same email and password. Each app approves you separately: join OpenBeach, then enter your invite code.",
+    "joinButton": "Join OpenBeach",
+    "joinFailed": "Joining did not work – please check the connection and try again.",
+    "newPasswordBody": "Choose a new password for your account. It is the password for OpenBeach and OpenVolley. Afterwards every device is signed out.",
+    "confirmBody": "Confirm that this address belongs to your OpenBeach account."
+  },
   "manage": {
     "title": "Manage",
     "backToApp": "Back to the app",

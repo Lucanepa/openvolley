@@ -21,8 +21,8 @@ export function auditDetailsLine(entry) {
   return parts.join(' · ')
 }
 
-/** The audit log, newest first, paged by id (admins). */
-export default function AuditPanel() {
+/** The audit log, newest first, paged by id (admins). `app` 'beach': OpenBeach's entries only. */
+export default function AuditPanel({ app }) {
   const { t } = useTranslation()
   const lang = useKitLang()
   const online = useOnline()
@@ -34,7 +34,7 @@ export default function AuditPanel() {
 
   const load = async (before = null) => {
     setLoading(true)
-    const res = await admin.listAudit({ limit: PAGE, before: before ?? undefined })
+    const res = await admin.listAudit({ limit: PAGE, before: before ?? undefined, ...(app ? { app } : {}) })
     setLoading(false)
     if (res.error) {
       setError(res.error)

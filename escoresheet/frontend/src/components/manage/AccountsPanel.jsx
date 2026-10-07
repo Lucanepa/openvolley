@@ -1,14 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { admin } from '../../lib/accountApi'
-import { API_GRANTABLE_ROLES } from '../../lib/access'
+import { API_GRANTABLE_ROLES, BEACH_ROLES, plainRole } from '../../lib/access'
 import RoleChips from '../auth/RoleChips'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, personName, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, SkeletonRows, Button, Checkbox, Notice, dayLabel, toast } from '../../ui'
 
-/** Accounts: approve pending accounts, grant and revoke roles (admins). */
-export default function AccountsPanel({ selfId }) {
+/**
+ * Accounts: approve pending accounts, grant and revoke roles (admins).
+ * `app` 'beach' (the OpenBeach manager): the members of OpenBeach, pending =
+ * no beach role, and the beach roles only (shown by their plain names).
+ * Left out: as before (every account, indoor roles).
+ */
+export default function AccountsPanel({ selfId, app }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -19,12 +24,13 @@ export default function AccountsPanel({ selfId }) {
   const [busyId, setBusyId] = useState(null)
   const [editing, setEditing] = useState(null)
 
+  const scope = app ? { app } : {}
   const { data, error, loading, reload } = usePanelData(
-    () => admin.listAccounts({ filter, q: query || undefined }),
-    [filter, query],
+    () => admin.listAccounts({ filter, q: query || undefined, ...scope }),
+    [filter, query, app],
     { enabled: online }
   )
-  const pending = usePanelData(() => admin.listAccounts({ filter: 'pending' }), [], { enabled: online })
+  const pending = usePanelData(() => admin.listAccounts({ filter: 'pending', ...scope }), [app], { enabled: online })
   const accounts = data?.accounts || []
   const pendingCount = pending.data?.accounts?.length ?? null
 
@@ -38,7 +44,7 @@ export default function AccountsPanel({ selfId }) {
   const approve = async (account) => {
     setBusyId(account.id)
     setRowError(e => ({ ...e, [account.id]: '' }))
-    const res = await admin.setRoles(account.id, { add: ['scorer'], remove: [] })
+    const res = await admin.setRoles(account.id, { add: [app === 'beach' ? 'beach:scorer' : 'scorer'], remove: [] })
     setBusyId(null)
     if (res.error) {
       setRowError(e => ({ ...e, [account.id]: roleError(res.error) }))
@@ -89,7 +95,7 @@ export default function AccountsPanel({ selfId }) {
                 <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
                 {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
               </>}
-              chips={<RoleChips roles={a.roles} pending={a.pending} />}
+              chips={<RoleChips roles={a.roles} pending={a.pending} app={app} />}
               tools={<>
                 {a.pending && (
                   <RowTool primary disabled={!online || busyId === a.id} onClick={() => approve(a)}>{t('manage.accounts.approve')}</RowTool>
@@ -102,6 +108,7 @@ export default function AccountsPanel({ selfId }) {
         </RowList>
       )}
       <RolesModal
+        app={app}
         account={editing}
         selfId={selfId}
         onClose={() => setEditing(null)}
@@ -112,7 +119,7 @@ export default function AccountsPanel({ selfId }) {
   )
 }
 
-function RolesModal({ account, onClose, onSaved, roleError }) {
+function RolesModal({ app, account, onClose, onSaved, roleError }) {
   const { t } = useTranslation()
   const initial = useMemo(() => new Set(account?.roles || []), [account])
   const [picked, setPicked] = useState(null)
@@ -127,8 +134,11 @@ function RolesModal({ account, onClose, onSaved, roleError }) {
     setPicked(next)
     setError('')
   }
-  const add = API_GRANTABLE_ROLES.filter(r => current.has(r) && !initial.has(r))
-  const remove = API_GRANTABLE_ROLES.filter(r => !current.has(r) && initial.has(r))
+  // OpenBeach's console grants the beach roles only (the global admin role is
+  // managed in OpenVolley's); a role of the other app is never sent
+  const grantable = app === 'beach' ? BEACH_ROLES : API_GRANTABLE_ROLES
+  const add = grantable.filter(r => current.has(r) && !initial.has(r))
+  const remove = grantable.filter(r => !current.has(r) && initial.has(r))
   const save = async () => {
     if (busy || (!add.length && !remove.length)) return
     setBusy(true)
@@ -157,8 +167,8 @@ function RolesModal({ account, onClose, onSaved, roleError }) {
       </>}
     >
       <div className="flex flex-col gap-1.5">
-        {API_GRANTABLE_ROLES.map(role => (
-          <Checkbox key={role} label={t(`access.roles.${role}`)} checked={current.has(role)} onChange={() => toggle(role)} />
+        {grantable.map(role => (
+          <Checkbox key={role} label={t(`access.roles.${plainRole(role)}`)} checked={current.has(role)} onChange={() => toggle(role)} />
         ))}
         {initial.has('super_admin') && <Checkbox label={t('access.roles.super_admin')} checked disabled readOnly />}
       </div>

@@ -539,7 +539,10 @@ export const apiAuth = {
       password,
       metadata: options?.data || {},
       // the language of the confirmation email, when the server sends one
-      ...(options?.lang ? { lang: options.lang } : {})
+      ...(options?.lang ? { lang: options.lang } : {}),
+      // the app it signs up in ('beach': OpenBeach's mail and membership);
+      // left out, the server treats it as before (OpenVolley)
+      ...(options?.app ? { app: options.app } : {})
     })
     return result
   },
@@ -588,23 +591,24 @@ export const apiAuth = {
 
   // Always { data: { requested: true } } for a valid address, known or not
   // (no enumeration); 503 reset_unavailable when the server sends no email.
+  // options.app 'beach': the OpenBeach mail, with a link to its manager.
   async resetPasswordForEmail(email, options) {
-    return authRequest('reset-password', { email, ...(options?.lang ? { lang: options.lang } : {}) })
+    return authRequest('reset-password', { email, ...(options?.lang ? { lang: options.lang } : {}), ...(options?.app ? { app: options.app } : {}) })
   },
 
   // The links of the account emails (utils/authLinks.js). The token goes
   // nowhere else and is never logged.
-  async confirmPasswordReset(token, password, lang) {
-    return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}) })
+  async confirmPasswordReset(token, password, lang, app) {
+    return authRequest('reset-password/confirm', { token, password, ...(lang ? { lang } : {}), ...(app ? { app } : {}) })
   },
 
   async confirmEmail(token) {
     return authRequest('confirm-email', { token })
   },
 
-  async resendConfirmation(lang) {
+  async resendConfirmation(lang, app) {
     const token = getStoredToken()?.access_token
-    return authRequest('resend-confirmation', { access_token: token, ...(lang ? { lang } : {}) })
+    return authRequest('resend-confirmation', { access_token: token, ...(lang ? { lang } : {}), ...(app ? { app } : {}) })
   },
 
   async updateUser({ email }) {

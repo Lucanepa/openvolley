@@ -6,7 +6,7 @@ vi.mock('../../utils/backendConfig', () => ({
 }))
 
 import { apiRequest } from '../apiClient'
-import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../accountApi'
+import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, fetchMe, joinApp, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../accountApi'
 
 function jsonResponse(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -153,5 +153,47 @@ describe('errorKeyOf and formatInviteCode', () => {
     expect(formatInviteCode('abcdefgh')).toBe('ABCD-EFGH')
     expect(formatInviteCode('ab cd-ef gh jk mn pq')).toBe('ABCD-EFGH-JKMN')
     expect(formatInviteCode('ABCD')).toBe('ABCD')
+  })
+})
+
+describe('per-app calls (OpenBeach\'s manager)', () => {
+  beforeEach(() => {
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 'tok', expires_at: Date.now() / 1000 + 3600 }))
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: {}, error: null }))
+  })
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('the admin lists take ?app=; without it the URLs are as before', async () => {
+    await admin.listAccounts({ filter: 'all', app: 'beach' })
+    await admin.listInvites({ app: 'beach' })
+    await admin.listAudit({ limit: 50, app: 'beach' })
+    await admin.listAccounts({ filter: 'pending' })
+    await admin.listInvites()
+    await admin.listAudit({ limit: 50 })
+    expect(globalThis.fetch.mock.calls.map(c => c[0].replace('http://backend.test', ''))).toEqual([
+      '/api/admin/accounts?filter=all&app=beach',
+      '/api/admin/invites?app=beach',
+      '/api/admin/audit?limit=50&app=beach',
+      '/api/admin/accounts?filter=pending',
+      '/api/admin/invites',
+      '/api/admin/audit?limit=50'
+    ])
+  })
+
+  it('a beach invite carries sport; an indoor one sends what it sent', async () => {
+    await admin.createInvite({ label: 'Tour', role: 'scorer', max_uses: 30, sport: 'beach' })
+    await admin.createInvite({ label: 'Club', role: 'scorer' })
+    expect(call(0).body).toEqual({ label: 'Tour', club: null, role: 'scorer', max_uses: 30, sport: 'beach' })
+    expect(call(1).body).toEqual({ label: 'Club', club: null, role: 'scorer', max_uses: 1 })
+  })
+
+  it('GET /api/me and POST /api/account/join', async () => {
+    await fetchMe()
+    await joinApp('beach')
+    expect([call(0).method, call(0).url]).toEqual(['GET', 'http://backend.test/api/me'])
+    expect([call(1).method, call(1).url, call(1).body]).toEqual(['POST', 'http://backend.test/api/account/join', { app: 'beach' }])
   })
 })

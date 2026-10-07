@@ -9,7 +9,8 @@ import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
 import AuditPanel from './AuditPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
-import { BRAND } from '../../brand'
+import { accessForApp } from '../../lib/access'
+import { useManagerBrand } from '../../managerBrand'
 
 const TABS = [
   { id: 'accounts', icon: Users, admin: true },
@@ -20,10 +21,19 @@ const TABS = [
   { id: 'teams', icon: ClipboardList, admin: false }
 ]
 
-/** The tabs an account sees: admins all six, competition managers saved teams. */
-export function manageTabsFor(access) {
+/**
+ * The tabs an account sees: admins all six, competition managers saved teams.
+ * With a brand (src/managerBrand.js) only that brand's tabs, and the saved
+ * teams by that app's role (OpenBeach: beach:competition_manager). Without
+ * one (or OpenVolley's), exactly as before.
+ */
+export function manageTabsFor(access, brand = null) {
   if (!access) return []
-  return TABS.filter(tab => (tab.admin ? access.isAdmin : access.canManageTeams)).map(tab => tab.id)
+  const own = accessForApp(access, brand?.app)
+  return TABS
+    .filter(tab => !brand?.tabs || brand.tabs.includes(tab.id))
+    .filter(tab => (tab.admin ? own.isAdmin : own.canManageTeams))
+    .map(tab => tab.id)
 }
 
 /**
@@ -36,7 +46,11 @@ export function manageTabsFor(access) {
 export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
   const { t } = useTranslation()
   const { user, access } = useAuth()
-  const allowed = useMemo(() => manageTabsFor(access), [access])
+  const brand = useManagerBrand()
+  // the account lists, invites, audit and saved teams of this brand's app
+  // (OpenBeach: ?app=beach); OpenVolley's console asks as before
+  const scope = brand.scope || undefined
+  const allowed = useMemo(() => manageTabsFor(access, brand), [access, brand])
   const current = allowed.includes(tab) ? tab : allowed[0]
   // Panels mount on first visit and then stay mounted (ConsolePanel)
   const [visited, setVisited] = useState(() => new Set(current ? [current] : []))
@@ -66,7 +80,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
   return (
     <div className="ov-kit fixed inset-0 z-[900] overflow-y-auto bg-stone-100" data-testid="manage-console">
       <ConsoleShell
-        logo={<img src={BRAND.lockup} alt="OpenVolley" className="h-7 w-auto" />}
+        logo={<img src={brand.lockup} alt={brand.name} className="h-7 w-auto" />}
         eyebrow={t('manage.title')}
         actions={<>
           {headerActions}
@@ -82,12 +96,12 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
         onSelect={onTab}
         navLabel={t('manage.nav')}
       >
-        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} /></ConsolePanel>}
-        {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel /></ConsolePanel>}
+        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} app={scope} /></ConsolePanel>}
+        {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel /></ConsolePanel>}
-        {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel /></ConsolePanel>}
-        {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} /></ConsolePanel>}
+        {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel app={scope} /></ConsolePanel>}
+        {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} /></ConsolePanel>}
       </ConsoleShell>
     </div>
   )

@@ -2318,6 +2318,24 @@
     "allSetBody": "Dis Konto isch fürs Schriibe freigäh. Mäld dich i de Schriiber-App mit dere E-Mail und däm Passwort aa.",
     "haveManagerCode": "En Iiladigscode für d Verwaltig übercho? Da iigä"
   },
+  "managerBeach": {
+    "signInHeading": "OpenBeach verwalten",
+    "signInBody": "Konten, Einladungscodes und gespeicherte Beach-Teams – für Admins und Wettbewerbsverantwortliche.",
+    "noAccountYet": "No kei Konto? Erstell eis da. Eis Konto gilt für OpenBeach und OpenVolley.",
+    "signUpBody": "Eis Konto für OpenBeach und OpenVolley. Jedi App git dich separat frei.",
+    "existingAccount": "Für die E-Mail gits scho es Konto (OpenVolley oder OpenBeach). Mäld dich mit dim bisherige Passwort aa, zum OpenBeach biiträte.",
+    "inviteStepBody": "Din Verein, d Turnierleitig oder de OpenBeach-Admin git dir en Code; mit däm bisch sofort freigäbne Beach-Schriiber.",
+    "nativeAppsNote": "Bruuchsch d OpenBeach-App uf Android? Mäld dich det eifach mit dere E-Mail und däm Passwort aa.",
+    "allSetBody": "Dis Konto isch fürs Schriibe im Beach freigäh. Mäld dich i OpenBeach mit dere E-Mail und däm Passwort aa.",
+    "openApp": "OpenBeach",
+    "openAppLong": "OpenBeach öffnen",
+    "joinTitle": "OpenBeach beitreten",
+    "joinBody": "Dis Konto gilt für OpenVolley und OpenBeach, mit de gliiche E-Mail und em gliiche Passwort. Jedi App git dich separat frei: Tritt OpenBeach bi und gib denn din Iiladigscode ii.",
+    "joinButton": "OpenBeach beitreten",
+    "joinFailed": "De Biitritt het nöd klappt – bitte prüef d Verbindig und probiers nomal.",
+    "newPasswordBody": "Wähled Sie es neus Passwort für Ihres Konto. Es gilt für OpenBeach und OpenVolley. Nachher werdet alli Grät abgmäldet.",
+    "confirmBody": "Bestätiged Sie, dass die Adresse zu Ihrem OpenBeach-Konto ghört."
+  },
   "manage": {
     "title": "Verwaltung",
     "backToApp": "Zurück zur App",
