@@ -49,7 +49,7 @@ import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../doma
 import { planSubstitutionDeletion } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
-import { appendRemark, removeRemarkLine } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates } from '../domain/lineupEntry'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
@@ -4025,8 +4025,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const logManualChangeWithRemark = useCallback(async (category, field, before, after, description, { setIndex, scoreStr } = {}) => {
     logManualChange(category, field, before, after, description)
-    const now = new Date()
-    const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+    const timeStr = remarkClock(new Date())
     const si = setIndex ?? data?.set?.index ?? '?'
     const sc = scoreStr ?? `${data?.set?.homePoints ?? '?'}-${data?.set?.awayPoints ?? '?'}`
     const remark = `Manual edit (Set ${si}, ${sc}, ${timeStr}): ${description}`
@@ -4149,8 +4148,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     // Build remarks summary and append
-    const now = new Date()
-    const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+    const timeStr = remarkClock(new Date())
     const setIndex = data?.set?.index || '?'
     const header = `${t('scoreboard.reopenRoster.remarkPrefix', 'Roster change after coin toss')} (${teamLabel}, Set ${setIndex}, ${timeStr}):`
     const remarkBlock = [header, ...remarkLines].join('\n')
@@ -9988,19 +9986,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const setIndex = data.set.index
         const teamLabel = team === teamAKey ? 'A' : 'B'
 
-        // Current time (HHhMMm format) - use UTC for consistency
-        const now = new Date()
-        const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-        // Get current score - always put the interested team's score first
+        // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
         const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
         const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-        const scoreStr = `${teamScore}:${opponentScore}`
+        const remarkOf = (text) => eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text })
 
         if (isInjury) {
-          autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} substituted due to injury`
+          autoRemark = remarkOf(`#${playerOut} substituted due to injury`)
         } else if (isExceptional) {
-          autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} exceptionally substituted by Player #${playerIn}`
+          autoRemark = remarkOf(`#${playerOut} exceptionally substituted by #${playerIn}`)
         }
       }
 
@@ -11768,15 +11762,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Get current score: left = team involved, right = other team
     const teamPoints = team === 'home' ? data.set.homePoints : data.set.awayPoints
     const otherPoints = team === 'home' ? data.set.awayPoints : data.set.homePoints
-    const scoreStr = `${teamPoints}:${otherPoints}`
 
-    // Get actual time of day (HHhMMm format, no seconds) - use UTC for consistency
-    const currentTime = new Date()
-    const hours = String(currentTime.getUTCHours()).padStart(2, '0')
-    const minutes = String(currentTime.getUTCMinutes()).padStart(2, '0')
-    const timeStr = `${hours}h${minutes}m`
-
-    const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
+    // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
+    const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore: teamPoints, oppScore: otherPoints, text: `#${newLiberoNumber} re-designated as Libero (replacing #${unableLiberoNumber})` })
 
     // Log the re-designation event. It records the player flags it changes and
     // the remark it writes, so undo can put both back.
@@ -11876,17 +11864,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const setIndex = data.set.index
       const teamLabel = team === teamAKey ? 'A' : 'B'
 
-      // Current time (HHhMMm format) - use UTC for consistency
-      const now = new Date()
-      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-      // Get current score - always put the interested team's score first
+      // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
       const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
       const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-      const scoreStr = `${teamScore}:${opponentScore}`
 
       const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
-      const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Libero #${liberoNumber} ${reasonText}`
+      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `Libero #${liberoNumber} ${reasonText}` })
 
       // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
@@ -24481,13 +24464,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     try {
                       const setIndex = data?.set?.index || 1
                       const teamLabel = team === teamAKey ? 'A' : 'B'
-                      const now = new Date()
-                      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
                       const teamScore = team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
                       const opponentScore = team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
-                      const scoreStr = `${teamScore}:${opponentScore}`
-
-                      const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerNumber} injured on bench`
+                      // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
+                      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
                       const currentRemarks = data?.match?.remarks || ''
                       const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
                       await db.matches.update(matchId, { remarks: newRemarks })
