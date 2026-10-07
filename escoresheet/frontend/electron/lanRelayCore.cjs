@@ -100,7 +100,18 @@
  *                     without a PIN: the public summary and every live-state-update.
  *
  * openbeach's scorer sends its teams as team1Team / team2Team (team1 / team2 in
- * its periodic sync): the relay takes them as homeTeam / awayTeam.
+ * its periodic sync) and its players as team1Players / team2Players: the relay
+ * takes them as homeTeam / awayTeam / homePlayers / awayPlayers (the wire is
+ * home/away for both sports). Its PIN fields (team1Pin, team2Pin, the upload
+ * PINs, matchPin) are secret like the indoor ones, and its bench PINs grant
+ * the match while team1TeamConnectionEnabled / team2TeamConnectionEnabled is on.
+ *   POST /api/match/validate-pin { pin, type, sport? }  sport 'beach' (openbeach)
+ *                     finds beach matches only, 'indoor' (the default) indoor
+ *                     ones only.
+ *
+ * Venue mode: one relay serves every court. Each scorer claims its own match
+ * (room key = seed_key), /api/match/list lists them all, and the
+ * main-instance lock only guards the "/" page (createMainInstanceGate).
  *
  * Match ids are always String(matchId). PINs never leave the relay: PIN
  * validation is answered from the relay's own store, never by a WS client.
@@ -108,11 +119,16 @@
 
 // Secret fields on a match object that must never be returned to a client.
 // PINs are the connection gate for referee/bench, so they are stripped from
-// every match-returning response and every WS message.
+// every match-returning response and every WS message. The team1* / team2*
+// ones are openbeach's names for the bench and upload PINs (team1Pin, older
+// builds team1TeamPin); matchPin is openbeach's PIN that protects the match on
+// the scorer's device. Same list as backend/server.js and src-tauri/src/relay.rs.
 const MATCH_SECRET_FIELDS = [
   'refereePin', 'homeTeamPin', 'awayTeamPin',
   'homeTeamUploadPin', 'awayTeamUploadPin',
   'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
+  'team1Pin', 'team2Pin', 'team1TeamPin', 'team2TeamPin',
+  'team1UploadPin', 'team2UploadPin', 'team1TeamUploadPin', 'team2TeamUploadPin', 'matchPin',
 ]
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
@@ -135,7 +151,13 @@ const STALE_TAKEOVER_MS = 10 * 60 * 1000
 const CLAIM_FAILURE_LIMIT = 5
 // Distinct match ids the sockets of one (non-loopback) IP may own at once, and
 // new ids one IP may claim per minute: stops a LAN device squatting on ids.
-const MAX_OWNED_PER_IP = 4
+// Sized for a venue with several courts: every court tablet has its own
+// address, the relay host (loopback) is exempt, and a tablet keeps the ids of
+// the matches it scored on one connection until it releases them
+// (clear-all-matches / delete-match) or reconnects, so 8 covers a block of
+// matches on one court. The cloud relay allows 20 per address (venue NATs).
+// Same value in src-tauri/src/relay.rs.
+const MAX_OWNED_PER_IP = 8
 const NEW_CLAIM_LIMIT = 10
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 // Wrong PINs offered for a match's bundle (subscribe-match, GET /api/match/:id)
@@ -262,10 +284,22 @@ function safeEqualText(a, b) {
   return diff === 0
 }
 
+/** The first non-empty PIN among `keys` of the match ('' when none). */
+function firstPin(match, keys) {
+  for (const k of keys) {
+    const v = match[k]
+    const s = v === undefined || v === null ? '' : String(v).trim()
+    if (s) return s
+  }
+  return ''
+}
+
 /**
  * Does `pin` prove access to the match: the referee PIN (referee connection
  * on), a bench PIN (that bench connection on) or the game PIN? A match without
- * any of them grants nothing. Same rule as backend/lib/matchAccess.js.
+ * any of them grants nothing. Beach (openbeach) names its benches team1 / team2
+ * (team1TeamConnectionEnabled, team1Pin, older builds team1TeamPin). Same rule
+ * as backend/lib/matchAccess.js.
  */
 function pinGrantsAccess(match, pin) {
   const p = pin === undefined || pin === null ? '' : String(pin).trim()
@@ -274,6 +308,8 @@ function pinGrantsAccess(match, pin) {
   if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
   if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
   if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
+  if (match.team1TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team1Pin', 'team1TeamPin']))
+  if (match.team2TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team2Pin', 'team2TeamPin']))
   candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
   let ok = false
   for (const c of candidates) {
@@ -356,20 +392,48 @@ function rememberKey(set, key, max) {
   set.add(key)
 }
 
-/** Build the stored bundle from a sync-match-data (flat or { matchData }) message. */
+/**
+ * Is this sync from openbeach? It sends its teams as team1Team / team2Team /
+ * team1Players / team2Players (before its home/away wire adapter) or names the
+ * sport on the match. Same rule as backend/server.js handleSyncMatchData.
+ */
+function isBeachSync(src) {
+  const m = src.match
+  return !!(src.team1Team || src.team2Team || src.team1Players || src.team2Players) ||
+    m.sportType === 'beach' || m.sport_type === 'beach'
+}
+
+/** The first array among `keys` of `src`, else []. */
+function firstArray(src, keys) {
+  for (const k of keys) if (Array.isArray(src[k])) return src[k]
+  return []
+}
+
+/**
+ * Build the stored bundle from a sync-match-data (flat or { matchData }) message.
+ * `sportType` ('beach' only, when the sync says so) is the relay's own note for
+ * POST /api/match/validate-pin { sport }: it never goes out (toWireBundle).
+ */
 function bundleFromMessage(msg) {
   const src = msg && msg.matchData && typeof msg.matchData === 'object' ? msg.matchData : msg
   if (!src || !src.match || typeof src.match !== 'object') return null
-  return {
+  const bundle = {
     match: src.match,
     // openbeach names its teams team1Team / team2Team (team1 / team2)
     homeTeam: src.homeTeam ?? src.team1Team ?? src.team1 ?? null,
     awayTeam: src.awayTeam ?? src.team2Team ?? src.team2 ?? null,
-    homePlayers: Array.isArray(src.homePlayers) ? src.homePlayers : [],
-    awayPlayers: Array.isArray(src.awayPlayers) ? src.awayPlayers : [],
+    homePlayers: firstArray(src, ['homePlayers', 'team1Players']),
+    awayPlayers: firstArray(src, ['awayPlayers', 'team2Players']),
     sets: Array.isArray(src.sets) ? src.sets : [],
     events: Array.isArray(src.events) ? src.events : [],
   }
+  if (isBeachSync(src)) bundle.sportType = 'beach'
+  return bundle
+}
+
+/** The sport of a stored bundle: 'beach' or 'indoor'. */
+function bundleSport(bundle) {
+  return bundle && bundle.sportType === 'beach' ? 'beach' : 'indoor'
 }
 
 /**
@@ -437,6 +501,35 @@ function createLocalAddressCheck(networkInterfaces) {
   }
 }
 
+// "Score another court on this device": the "already running" page links to
+// /?court=other, which answers with this cookie and a redirect to "/". A
+// browser that carries it gets the scoresheet even while the main instance is
+// registered (a page navigation cannot send X-Instance-ID). Same names in
+// src-tauri/src/relay.rs.
+const OTHER_COURT_PARAM = 'court'
+const OTHER_COURT_VALUE = 'other'
+const OTHER_COURT_COOKIE = 'ov_other_court'
+
+/** Does the Cookie header carry the other-court opt-in? */
+function hasOtherCourtCookie(cookieHeader) {
+  if (typeof cookieHeader !== 'string') return false
+  return cookieHeader.split(';').some((c) => c.trim() === `${OTHER_COURT_COOKIE}=1`)
+}
+
+const MAIN_INSTANCE_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Main Instance Already Running</title>
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}h1{color:#ef4444}p{color:#666}ul{list-style:none;padding:0}li{margin:8px 0}</style>
+</head><body><h1>Main Scoresheet Already Running</h1>
+<p>Another scoretable is active on this server.</p>
+<p>You can still open:</p>
+<ul>
+<li><a href="/referee">Referee App</a></li>
+<li><a href="/bench">Bench App</a></li>
+<li><a href="/livescore">Livescore App</a></li>
+</ul>
+<p>Scoring a match on another court?</p>
+<ul><li><a href="/?${OTHER_COURT_PARAM}=${OTHER_COURT_VALUE}">Open the scoresheet for another court on this device</a></li></ul>
+</body></html>`
+
 /**
  * Single main-scoresheet lock, the same rule on every relay: only the relay
  * host itself (see createLocalAddressCheck) may register or release it, and it
@@ -444,6 +537,12 @@ function createLocalAddressCheck(networkInterfaces) {
  * out of "/". When the scorer runs on a LAN tablet (headless Pi) nobody
  * registers and the gate stays off — the gate would otherwise block that
  * tablet's own reload, since a page navigation cannot send X-Instance-ID.
+ *
+ * The lock is a page lock, not a match lock: it only keeps a LAN browser from
+ * opening "/" by mistake. Who scores a match is decided per match by the game
+ * PIN (sync-match-data claims), so several courts can share one relay with one
+ * scoretable each: a court tablet in the native app never loads "/", and a LAN
+ * browser opts in with /?court=other (OTHER_COURT_COOKIE).
  */
 function createMainInstanceGate({ isLocal }) {
   let mainInstanceId = null
@@ -463,9 +562,37 @@ function createMainInstanceGate({ isLocal }) {
       mainInstanceId = null // the host may always release its own lock
       return { status: 200, body: { success: true } }
     },
-    /** True when a request for "/" must get the "already running" page. */
-    blocksMainPage(addr, requestingInstanceId) {
-      return mainInstanceId !== null && !isLocal(addr) && requestingInstanceId !== mainInstanceId
+    /**
+     * True when a request for "/" must get the "already running" page.
+     * `cookieHeader`: the request's Cookie header (the other-court opt-in).
+     */
+    blocksMainPage(addr, requestingInstanceId, cookieHeader) {
+      return mainInstanceId !== null && !isLocal(addr) && requestingInstanceId !== mainInstanceId &&
+        !hasOtherCourtCookie(cookieHeader)
+    },
+    /**
+     * The gate for a page request: "/?court=other" sets the other-court cookie
+     * and redirects to "/"; a blocked "/" gets the "already running" page.
+     * Returns true when it answered (anything else is served as usual).
+     */
+    handleMainPage(req, res, path) {
+      if (path !== '/' && path !== '/index.html') return false
+      let query = null
+      try { query = new URL(req.url || '/', 'http://relay.local').searchParams } catch { query = null }
+      if (query && query.get(OTHER_COURT_PARAM) === OTHER_COURT_VALUE) {
+        res.writeHead(302, {
+          Location: '/',
+          'Set-Cookie': `${OTHER_COURT_COOKIE}=1; Path=/; Max-Age=43200; SameSite=Lax`,
+          'Cache-Control': 'no-store',
+        })
+        res.end()
+        return true
+      }
+      const addr = req.socket && req.socket.remoteAddress
+      if (!this.blocksMainPage(addr, req.headers['x-instance-id'], req.headers.cookie)) return false
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+      res.end(MAIN_INSTANCE_PAGE)
+      return true
     },
     /**
      * Serve /api/server/register-main and /api/server/unregister-main.
@@ -867,6 +994,8 @@ function createLanRelay(options = {}) {
     const prev = store.get(matchId)
     if (prev && (kind === 'owner' || kind === 'proved')) {
       bundle = { ...bundle, match: carryMatchSecrets(prev.match, bundle.match) }
+      // A sync without its teams keeps the sport the same scorer set before
+      if (prev.sportType && !bundle.sportType) bundle.sportType = prev.sportType
     }
     const carry = prev && prev.liveState !== undefined && bundle.liveState === undefined &&
       (kind === 'owner' || kind === 'proved') && gamePinOf(prev.match) === gamePinOf(bundle.match)
@@ -1150,18 +1279,27 @@ function createLanRelay(options = {}) {
 
   // --- Relay-owned HTTP API -------------------------------------------------
 
+  /**
+   * POST /api/match/validate-pin { pin, type, sport }: `sport` is the asking
+   * app's ('beach' from openbeach, 'indoor' when left out); a PIN never finds a
+   * match of the other sport (same rule as backend/server.js).
+   */
   function validatePin(body) {
     const pinStr = String((body && body.pin) ?? '').trim()
     const cfg = PIN_TYPES[(body && body.type) || 'referee']
+    const sport = (body && body.sport) ?? 'indoor'
+    if (sport !== 'indoor' && sport !== 'beach') return { status: 400, body: { success: false, error: 'Invalid request' } }
     if (pinStr.length !== 6) return { status: 400, body: { success: false, error: 'Invalid PIN format' } }
     if (!cfg) return { status: 400, body: { success: false, error: 'Invalid PIN type' } }
     for (const [key, bundle] of store) {
       const match = bundle.match
-      if (!match) continue
+      if (!match || bundleSport(bundle) !== sport) continue
       const expected = match[cfg.pin]
       if (expected === undefined || expected === null || String(expected).trim() !== pinStr) continue
       if (match[cfg.enabled] === true && match.status !== 'final') {
-        return { status: 200, body: { success: true, match: publicMatch({ ...match, id: publicMatchId(key) }) } }
+        const found = publicMatch({ ...match, id: publicMatchId(key) })
+        // A beach answer names its sport (the indoor answer is unchanged)
+        return { status: 200, body: { success: true, match: sport === 'beach' ? { ...found, sportType: 'beach' } : found } }
       }
     }
     return {
@@ -1387,5 +1525,7 @@ module.exports = {
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
+  OTHER_COURT_COOKIE,
+  MAX_OWNED_PER_IP,
   createLanRelay,
 }

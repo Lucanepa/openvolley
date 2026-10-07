@@ -25,7 +25,13 @@
 //!     claims are limited per IP / connection and a LAN IP may own few ids;
 //!   - the liveState is kept across syncs only for the same owner / game PIN and
 //!     is mirrored as `data: { liveState }` for the LedBox bridge;
-//!   - only the relay host itself may take / release the main-instance lock;
+//!   - only the relay host itself may take / release the main-instance lock, a
+//!     lock of the "/" page only: several courts share one relay, each scorer
+//!     claims its own match, /api/match/list lists them all, and a LAN browser
+//!     opts in to score another court with `/?court=other`;
+//!   - openbeach's team1 / team2 names (teams, players, PINs, bench connections)
+//!     are taken as home / away, its PINs are secret, and validate-pin
+//!     `{ sport: "beach" }` finds beach matches only;
 //!   - subscribers get the bundle (rosters, events) and match-actions only after
 //!     proving a PIN of the match (subscribe-match `pin`, or the X-OV-Match-Pin
 //!     header on GET /api/match/:id): the referee PIN, an enabled bench PIN or
@@ -61,7 +67,10 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 #[folder = "../dist"]
 struct Assets;
 
-/// PIN/secret fields that must never be returned to a client.
+/// PIN/secret fields that must never be returned to a client. The team1* /
+/// team2* ones are openbeach's names for the bench and upload PINs (team1Pin,
+/// older builds team1TeamPin); matchPin is openbeach's PIN that protects the
+/// match on the scorer's device. Same list as lanRelayCore.cjs / backend server.js.
 const MATCH_SECRET_FIELDS: &[&str] = &[
     "refereePin",
     "homeTeamPin",
@@ -72,6 +81,15 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
     "connectionPins",
     "game_pin",
     "gamePin",
+    "team1Pin",
+    "team2Pin",
+    "team1TeamPin",
+    "team2TeamPin",
+    "team1UploadPin",
+    "team2UploadPin",
+    "team1TeamUploadPin",
+    "team2TeamUploadPin",
+    "matchPin",
 ];
 
 /// Personal data the relay never hands out. Subscribing needs no PIN and the
@@ -151,7 +169,12 @@ const RATE_WINDOW: Duration = Duration::from_secs(60);
 /// address, unlike the cloud relay behind venue NATs (per-IP limit 20 there).
 const CLAIM_FAILURE_LIMIT: u32 = 5;
 /// Distinct match ids one (non-loopback) IP may own, and new ids per window.
-const MAX_OWNED_PER_IP: usize = 4;
+/// Sized for a venue with several courts: every court tablet has its own
+/// address, the relay host (loopback) is exempt, and a tablet keeps the ids of
+/// the matches it scored on one connection until it releases them
+/// (clear-all-matches / delete-match) or reconnects, so 8 covers a block of
+/// matches on one court. Same value as lanRelayCore.cjs (the cloud relay: 20).
+const MAX_OWNED_PER_IP: usize = 8;
 const NEW_CLAIM_LIMIT: u32 = 10;
 /// Same per-IP budgets as the Node relays' HTTP endpoints.
 const VALIDATE_PIN_LIMIT: u32 = 10;
@@ -362,9 +385,13 @@ fn strip_secrets(m: &mut Value) {
     }
 }
 
-/// A bundle as the relay hands it out: public match, players without personal keys.
+/// A bundle as the relay hands it out: public match, players without personal
+/// keys, without the relay's own `sportType` note (see `bundle_from`).
 fn strip_bundle_secrets(bundle: &Value) -> Value {
     let mut b = bundle.clone();
+    if let Some(obj) = b.as_object_mut() {
+        obj.remove("sportType");
+    }
     if let Some(m) = b.get_mut("match") {
         strip_secrets(m);
     }
@@ -451,7 +478,29 @@ fn game_pin_of(m: Option<&Value>) -> Option<String> {
     }
 }
 
+/// Is this sync from openbeach? It sends its teams as team1Team / team2Team /
+/// team1Players / team2Players (before its home/away wire adapter) or names the
+/// sport on the match (lanRelayCore `isBeachSync`, backend handleSyncMatchData).
+fn is_beach_sync(src: &Value, m: &Value) -> bool {
+    let truthy = |k: &str| src.get(k).map_or(false, |v| !matches!(v, Value::Null | Value::Bool(false)));
+    ["team1Team", "team2Team", "team1Players", "team2Players"].iter().any(|k| truthy(k))
+        || m.get("sportType").and_then(|v| v.as_str()) == Some("beach")
+        || m.get("sport_type").and_then(|v| v.as_str()) == Some("beach")
+}
+
+/// The sport of a stored bundle: "beach" or "indoor".
+fn bundle_sport(bundle: &Value) -> &'static str {
+    if bundle.get("sportType").and_then(|v| v.as_str()) == Some("beach") {
+        "beach"
+    } else {
+        "indoor"
+    }
+}
+
 /// Build the stored bundle from a sync (flat or `{ matchData }`) or response payload.
+/// `sportType` ("beach" only, when the sync says so) is the relay's own note
+/// for POST /api/match/validate-pin `{ sport }`: it never goes out
+/// (`strip_bundle_secrets`, `summary_bundle`).
 fn bundle_from(src: &Value) -> Option<Value> {
     let src = match src.get("matchData") {
         Some(md) if md.is_object() => md,
@@ -465,21 +514,31 @@ fn bundle_from(src: &Value) -> Option<Value> {
         Some(v) if v.is_array() => v.clone(),
         _ => json!([]),
     };
+    // The first array among `keys` (openbeach: team1Players / team2Players)
+    let players = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| src.get(*k).filter(|v| v.is_array()).cloned())
+            .unwrap_or_else(|| json!([]))
+    };
     // openbeach names its teams team1Team / team2Team (team1 / team2)
     let team = |keys: &[&str]| {
         keys.iter()
             .find_map(|k| src.get(*k).filter(|v| !v.is_null()).cloned())
             .unwrap_or(Value::Null)
     };
-    Some(json!({
+    let mut bundle = json!({
         "match": m.clone(),
         "homeTeam": team(&["homeTeam", "team1Team", "team1"]),
         "awayTeam": team(&["awayTeam", "team2Team", "team2"]),
-        "homePlayers": arr("homePlayers"),
-        "awayPlayers": arr("awayPlayers"),
+        "homePlayers": players(&["homePlayers", "team1Players"]),
+        "awayPlayers": players(&["awayPlayers", "team2Players"]),
         "sets": arr("sets"),
         "events": arr("events"),
-    }))
+    });
+    if is_beach_sync(src, m) {
+        bundle["sportType"] = json!("beach");
+    }
+    Some(bundle)
 }
 
 /// A flat, PIN-free match message: `{ type, matchId, match, homeTeam, ..., liveState? }`.
@@ -545,8 +604,9 @@ fn ct_eq(a: &str, b: &str) -> bool {
 }
 
 /// Does `pin` prove access to the match: the referee PIN (referee connection
-/// on), a bench PIN (that bench connection on) or the game PIN? A match
-/// without any of them grants nothing (lanRelayCore `pinGrantsAccess`).
+/// on), a bench PIN (that bench connection on; beach: team1 / team2) or the
+/// game PIN? A match without any of them grants nothing (lanRelayCore
+/// `pinGrantsAccess`).
 fn pin_grants_access(m: Option<&Value>, pin: &str) -> bool {
     let p = pin.trim();
     let Some(m) = m.filter(|m| m.is_object()) else { return false };
@@ -563,6 +623,14 @@ fn pin_grants_access(m: Option<&Value>, pin: &str) -> bool {
     }
     if on("awayTeamConnectionEnabled") {
         candidates.push(pin_text(m.get("awayTeamPin")));
+    }
+    // Beach (openbeach) benches: team1 / team2 (team1Pin, older builds team1TeamPin)
+    let first_pin = |keys: &[&str]| keys.iter().find_map(|k| pin_text(m.get(*k)));
+    if on("team1TeamConnectionEnabled") {
+        candidates.push(first_pin(&["team1Pin", "team1TeamPin"]));
+    }
+    if on("team2TeamConnectionEnabled") {
+        candidates.push(first_pin(&["team2Pin", "team2TeamPin"]));
     }
     candidates.push(game_pin_of(Some(m)));
     let mut ok = false;
@@ -834,6 +902,14 @@ async fn validate_pin(
         _ => String::new(),
     };
     let typ = body.get("type").and_then(|v| v.as_str()).unwrap_or("referee").to_string();
+    // The asking app's sport (openbeach: "beach"; left out: "indoor"): a PIN
+    // never finds a match of the other sport (lanRelayCore `validatePin`).
+    let sport = match body.get("sport") {
+        None | Some(Value::Null) => "indoor",
+        Some(Value::String(s)) if s == "indoor" => "indoor",
+        Some(Value::String(s)) if s == "beach" => "beach",
+        _ => return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid request" })),
+    };
     if pin.len() != 6 {
         return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid PIN format" }));
     }
@@ -849,6 +925,9 @@ async fn validate_pin(
     let matches = state.matches.lock().await;
     for (id, bundle) in matches.iter() {
         let Some(m) = bundle.get("match") else { continue };
+        if bundle_sport(bundle) != sport {
+            continue;
+        }
         let match_pin = match m.get(pin_field) {
             Some(Value::String(p)) => Some(p.trim().to_string()),
             Some(Value::Number(n)) => Some(n.to_string()),
@@ -861,6 +940,10 @@ async fn validate_pin(
             strip_secrets(&mut found);
             if let Some(obj) = found.as_object_mut() {
                 obj.insert("id".to_string(), public_id(id));
+                // A beach answer names its sport (the indoor answer is unchanged)
+                if sport == "beach" {
+                    obj.insert("sportType".to_string(), json!("beach"));
+                }
             }
             return json_response(StatusCode::OK, json!({ "success": true, "match": found }));
         }
@@ -1177,6 +1260,40 @@ async fn server_connections(
 // Static file serving (embedded dist) with SPA fallback + main-instance gate
 // ---------------------------------------------------------------------------
 
+/// "Score another court on this device": the "already running" page links to
+/// `/?court=other`, which sets this cookie and redirects to "/"; a browser that
+/// carries it gets the scoresheet while the main instance is registered (a
+/// page navigation cannot send X-Instance-ID). Same names as lanRelayCore.cjs.
+const OTHER_COURT_COOKIE: &str = "ov_other_court";
+
+const MAIN_INSTANCE_PAGE: &str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Main Instance Already Running</title>\
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}h1{color:#ef4444}p{color:#666}ul{list-style:none;padding:0}li{margin:8px 0}</style>\
+</head><body><h1>Main Scoresheet Already Running</h1>\
+<p>Another scoretable is active on this server.</p>\
+<p>You can still open:</p>\
+<ul><li><a href=\"/referee\">Referee App</a></li>\
+<li><a href=\"/bench\">Bench App</a></li>\
+<li><a href=\"/livescore\">Livescore App</a></li></ul>\
+<p>Scoring a match on another court?</p>\
+<ul><li><a href=\"/?court=other\">Open the scoresheet for another court on this device</a></li></ul>\
+</body></html>";
+
+/// Does the query string carry `court=other`?
+fn is_other_court_query(query: &str) -> bool {
+    query.split('&').any(|kv| kv == "court=other")
+}
+
+/// Does the Cookie header carry the other-court opt-in?
+fn has_other_court_cookie(headers: &HeaderMap) -> bool {
+    let want = format!("{OTHER_COURT_COOKIE}=1");
+    headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .any(|v| v.split(';').any(|c| c.trim() == want))
+}
+
 async fn static_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
@@ -1190,23 +1307,33 @@ async fn static_handler(
         return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Not found" }));
     }
 
-    // Single main-instance gate — skipped for the desktop app itself and for a
-    // request that presents the registered instance id.
-    if (path == "/" || path == "/index.html") && !is_local(&addr) {
-        let main = state.main_instance.lock().await.clone();
-        let presented = headers.get("x-instance-id").and_then(|v| v.to_str().ok());
-        if main.is_some() && presented != main.as_deref() {
+    // Single main-instance gate — skipped for the desktop app itself, for a
+    // request that presents the registered instance id and for a browser that
+    // opted in to score another court (lanRelayCore `createMainInstanceGate`:
+    // a page lock, not a match lock; the game PIN decides who scores a match).
+    if path == "/" || path == "/index.html" {
+        if uri.query().map_or(false, is_other_court_query) {
             return (
-                StatusCode::FORBIDDEN,
-                [("content-type", "text/html")],
-                "<!DOCTYPE html><html><head><title>Main Instance Already Running</title></head><body>\
-                 <h1>Main Scoresheet Already Running</h1>\
-                 <p>Another scoretable is active. You can still open:</p>\
-                 <ul><li><a href=\"/referee\">Referee</a></li>\
-                 <li><a href=\"/bench\">Bench</a></li>\
-                 <li><a href=\"/livescore\">Livescore</a></li></ul></body></html>",
+                StatusCode::FOUND,
+                [
+                    ("location", "/".to_string()),
+                    ("set-cookie", format!("{OTHER_COURT_COOKIE}=1; Path=/; Max-Age=43200; SameSite=Lax")),
+                    ("cache-control", "no-store".to_string()),
+                ],
             )
                 .into_response();
+        }
+        if !is_local(&addr) && !has_other_court_cookie(&headers) {
+            let main = state.main_instance.lock().await.clone();
+            let presented = headers.get("x-instance-id").and_then(|v| v.to_str().ok());
+            if main.is_some() && presented != main.as_deref() {
+                return (
+                    StatusCode::FORBIDDEN,
+                    [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store")],
+                    MAIN_INSTANCE_PAGE,
+                )
+                    .into_response();
+            }
         }
     }
 
@@ -1567,6 +1694,12 @@ async fn store_bundle(state: &Arc<AppState>, match_id: &str, mut bundle: Value, 
     if let Some(prev) = matches.get(match_id) {
         if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) {
             carry_match_secrets(prev.get("match"), &mut bundle);
+            // A sync without its teams keeps the sport the same scorer set before
+            if bundle.get("sportType").is_none() {
+                if let Some(sport) = prev.get("sportType").cloned() {
+                    bundle["sportType"] = sport;
+                }
+            }
         }
         let same_pin = game_pin_of(prev.get("match")) == game_pin_of(bundle.get("match"));
         if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) && same_pin && bundle.get("liveState").is_none() {
@@ -2468,6 +2601,146 @@ mod tests {
         let p = bundle_from(&json!({ "match": { "id": 1 }, "team1": { "name": "A" }, "homeTeam": { "name": "H" }, "team2": "B" })).unwrap();
         let row = match_list_entry("beach-2", &p, false).unwrap();
         assert_eq!((row["homeTeam"].clone(), row["awayTeam"].clone(), row["status"].clone()), (json!("H"), json!("B"), json!("scheduled")));
+    }
+
+    /// An openbeach court as it syncs today: team1 / team2 names, its own PINs.
+    fn beach_sync(seed: &str) -> Value {
+        json!({
+            "type": "sync-match-data",
+            "matchId": 1,
+            "match": {
+                "id": 1, "seed_key": seed, "status": "live",
+                "refereeConnectionEnabled": true,
+                "team1TeamConnectionEnabled": true,
+                "team2TeamConnectionEnabled": false,
+                "gamePin": "259730", "refereePin": "360841",
+                "team1Pin": "471952", "team2Pin": "582063",
+                "team1UploadPin": "693174", "team2UploadPin": "704285",
+                "team1TeamUploadPin": "693175", "team2TeamUploadPin": "704286",
+                "team1TeamPin": "471953", "team2TeamPin": "582064",
+                "matchPin": "815396",
+            },
+            "team1Team": { "name": "Keller / Huber" },
+            "team2Team": { "name": "Weber / Frei" },
+            "team1Players": [{ "number": 1, "lastName": "Keller", "dob": "1999-03-14" }],
+            "team2Players": [{ "number": 1, "lastName": "Weber", "dob": "1999-03-14" }],
+        })
+    }
+
+    async fn body_json(r: Response) -> (StatusCode, Value) {
+        let status = r.status();
+        let bytes = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[test]
+    fn openbeach_pins_never_go_out_and_its_bench_pins_grant_the_match() {
+        let b = bundle_from(&beach_sync("beach-court-2")).unwrap();
+        assert_eq!(bundle_sport(&b), "beach");
+        assert_eq!(b["homePlayers"][0]["lastName"], json!("Keller"));
+        assert_eq!(b["awayPlayers"][0]["lastName"], json!("Weber"));
+        // The referee and the team1 bench (connection on) get in; team2 (off),
+        // the upload PINs and openbeach's match-protect PIN do not
+        let m = b.get("match");
+        assert!(pin_grants_access(m, "360841"));
+        assert!(pin_grants_access(m, "471952"));
+        assert!(pin_grants_access(m, "259730"));
+        for pin in ["582063", "693174", "815396", "000000"] {
+            assert!(!pin_grants_access(m, pin), "{pin}");
+        }
+        // Older builds: team1TeamPin when team1Pin is empty
+        let mut old = b.clone();
+        old["match"]["team1Pin"] = json!("");
+        assert!(pin_grants_access(old.get("match"), "471953"));
+        // Nothing the referee gets names a PIN (or the relay's sport note)
+        let full = bundle_message_access("match-full-data", "beach-court-2", &b, None, true);
+        let text = full.to_string();
+        for secret in ["259730", "360841", "471952", "582063", "693174", "704285", "693175", "704286", "471953", "582064", "815396", "Pin\"", "sportType", "1999-03-14"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        assert_eq!(full["homePlayers"][0]["lastName"], json!("Keller"));
+        assert!(!summary_bundle(&b).to_string().contains("sportType"));
+        // The home/away wire shape with sport_type is beach too; indoor is not
+        let wire = bundle_from(&json!({ "match": { "id": 1, "sport_type": "beach" }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(bundle_sport(&wire), "beach");
+        assert_eq!(bundle_sport(&bundle(7, "987654", "live")), "indoor");
+    }
+
+    #[tokio::test]
+    async fn a_scorer_s_team_less_sync_keeps_its_sport() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.31").await;
+        let first = bundle_from(&beach_sync("beach-court-1")).unwrap();
+        sync(&state, 1, "beach-court-1", first).await.unwrap();
+        let mut periodic = beach_sync("beach-court-1");
+        let obj = periodic.as_object_mut().unwrap();
+        for k in ["team1Team", "team2Team", "team1Players", "team2Players"] {
+            obj.remove(k);
+        }
+        obj.insert("team1".into(), json!({ "name": "Keller / Huber" }));
+        sync(&state, 1, "beach-court-1", bundle_from(&periodic).unwrap()).await.unwrap();
+        assert_eq!(bundle_sport(state.matches.lock().await.get("beach-court-1").unwrap()), "beach");
+    }
+
+    #[tokio::test]
+    async fn validate_pin_finds_matches_of_the_asking_sport_only() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.31").await;
+        connect(&state, 2, "192.168.1.32").await;
+        sync(&state, 1, "beach-court-2", bundle_from(&beach_sync("beach-court-2")).unwrap()).await.unwrap();
+        let mut indoor = bundle(7, "987654", "live");
+        indoor["match"]["refereeConnectionEnabled"] = json!(true);
+        sync(&state, 2, "7", indoor).await.unwrap();
+        let addr: SocketAddr = "192.168.1.40:5000".parse().unwrap();
+        let ask = |body: Value| validate_pin(ConnectInfo(addr), State(state.clone()), Json(body));
+
+        let (status, body) = body_json(ask(json!({ "pin": "360841", "type": "referee", "sport": "beach" })).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["match"]["id"], json!("beach-court-2"));
+        assert_eq!(body["match"]["sportType"], json!("beach"));
+        let text = body.to_string();
+        for secret in ["259730", "471952", "582063", "693174", "815396", "Pin\""] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        // No sport: indoor only (the beach court is not found), and the reverse
+        assert_eq!(body_json(ask(json!({ "pin": "360841", "type": "referee" })).await).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(body_json(ask(json!({ "pin": "314159", "type": "referee", "sport": "beach" })).await).await.0, StatusCode::NOT_FOUND);
+        let (status, body) = body_json(ask(json!({ "pin": "314159", "type": "referee" })).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["match"]["id"], json!(7));
+        assert!(body["match"].get("sportType").is_none());
+        assert_eq!(body_json(ask(json!({ "pin": "314159", "sport": "snow" })).await).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_page_lock_lets_a_browser_score_another_court() {
+        let state = new_state(0, 0);
+        *state.main_instance.lock().await = Some("desk".into());
+        let tablet: SocketAddr = "192.168.1.50:40000".parse().unwrap();
+        let page = |headers: HeaderMap, uri: &str| {
+            static_handler(ConnectInfo(tablet), State(state.clone()), headers, uri.parse::<Uri>().unwrap())
+        };
+        // Locked: the "already running" page, with the other-court link
+        let r = page(HeaderMap::new(), "/").await;
+        assert_eq!(r.status(), StatusCode::FORBIDDEN);
+        let html = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&html).contains("/?court=other"));
+        // The link sets the opt-in cookie and goes back to "/"
+        let r = page(HeaderMap::new(), "/?court=other").await;
+        assert_eq!(r.status(), StatusCode::FOUND);
+        assert_eq!(r.headers().get("location").unwrap(), "/");
+        let cookie = r.headers().get("set-cookie").unwrap().to_str().unwrap().to_string();
+        assert!(cookie.starts_with("ov_other_court=1;"), "{cookie}");
+        // With it the tablet gets the scoresheet (reloads included)
+        let mut with_cookie = HeaderMap::new();
+        with_cookie.insert("cookie", HeaderValue::from_static("theme=light; ov_other_court=1"));
+        assert_ne!(page(with_cookie, "/").await.status(), StatusCode::FORBIDDEN);
+        // A look-alike cookie does not count, and other pages were never locked
+        let mut other = HeaderMap::new();
+        other.insert("cookie", HeaderValue::from_static("ov_other_court=10"));
+        assert_eq!(page(other, "/").await.status(), StatusCode::FORBIDDEN);
+        assert_ne!(page(HeaderMap::new(), "/referee").await.status(), StatusCode::FORBIDDEN);
+        assert!(is_other_court_query("x=1&court=other") && !is_other_court_query("court=others"));
     }
 
     #[test]

@@ -89,7 +89,6 @@ function start(opts = {}) {
 
     const requestHandler = (req, res) => {
       const urlPath = req.url.split('?')[0]
-      const remote = req.socket.remoteAddress
 
       // --- CORS (LAN http/https + localhost + openvolley.app) ---
       const origin = req.headers.origin
@@ -167,24 +166,9 @@ function start(opts = {}) {
         return
       }
 
-      // --- Single main-instance gate (skipped for the desktop app itself) ---
-      const isMainPage = urlPath === '/' || urlPath === '/index.html'
-      if (isMainPage) {
-        if (mainGate.blocksMainPage(remote, req.headers['x-instance-id'])) {
-          res.writeHead(403, { 'Content-Type': 'text/html' })
-          res.end(`<!DOCTYPE html><html><head><title>Main Instance Already Running</title>
-            <style>body{font-family:Arial,sans-serif;text-align:center;padding:50px}h1{color:#ef4444}p{color:#666}</style>
-            </head><body><h1>Main Scoresheet Already Running</h1>
-            <p>Another instance of the main scoresheet is already active.</p>
-            <p>You can still access:</p>
-            <ul style="list-style:none;padding:0">
-            <li><a href="/referee">Referee App</a></li>
-            <li><a href="/bench">Bench App</a></li>
-            <li><a href="/livescore">Livescore App</a></li>
-            </ul></body></html>`)
-          return
-        }
-      }
+      // --- Single main-instance gate (skipped for the desktop app itself; a LAN
+      // browser opts in for another court with /?court=other): lanRelayCore ---
+      if (mainGate.handleMainPage(req, res, urlPath)) return
 
       // --- Static file serving with SPA fallback ---
       let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
