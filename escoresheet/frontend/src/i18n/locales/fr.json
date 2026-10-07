@@ -2247,7 +2247,8 @@
       "inviteExpired": "Ce code d’invitation a expiré.",
       "inviteUsedUp": "Ce code d’invitation a déjà été utilisé jusqu’au bout.",
       "tooManyAttempts": "Trop de tentatives. Merci d’attendre quelques minutes.",
-      "offline": "Utiliser un code nécessite une connexion."
+      "offline": "Utiliser un code nécessite une connexion.",
+      "emailUnconfirmed": "Confirme d’abord ton adresse e-mail : ouvre le lien de notre e-mail ou demande-en un nouveau dans ton profil."
     },
     "roles": {
       "scorer": "Marqueur",
@@ -2322,7 +2323,8 @@
       "neverSignedIn": "Jamais connecté",
       "selfDemote": "Tu ne peux pas retirer ton propre rôle d’admin.",
       "superAdminOnly": "Seul un super admin peut modifier ce compte.",
-      "emailUnconfirmed": "E-mail non confirmé"
+      "emailUnconfirmed": "E-mail non confirmé",
+      "confirmEmailFirst": "Ce compte n’a pas encore confirmé son adresse e-mail. Les rôles ne peuvent être attribués qu’ensuite."
     },
     "invites": {
       "new": "Nouveau code d’invitation",
