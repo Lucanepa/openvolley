@@ -399,6 +399,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string, selectedOption: 'swap'|'replay' } | null
+  const [replayConfirm, setReplayConfirm] = useState(false) // "Replay rally" during a rally waits for this confirmation
   const [stopMatchModal, setStopMatchModal] = useState(null) // 'select' | null - Stop the match modal selection
   const [stopMatchTeamSelect, setStopMatchTeamSelect] = useState(null) // { pendingAction: 'forfeit' } | null - Team selection for forfeit
   const [stopMatchConfirm, setStopMatchConfirm] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away' } | null - Confirmation modal
@@ -5282,9 +5283,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration])
 
   const handleReplay = useCallback(async () => {
-    // During rally: just log replay event (no point to undo)
+    // During rally: ask first, confirmReplay logs the replay event (no point to undo)
     if (rallyStatus === 'in_play') {
-      await logEvent('replay')
+      setReplayConfirm(true)
       return
     }
     // After point: show confirmation modal to undo point
@@ -5327,7 +5328,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setReplayRallyConfirm({ event: pointEvent, description, selectedOption: 'swap' }) // Default to swap
       }
     }
-  }, [logEvent, rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
+  }, [rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
+
+  // Confirmed "Replay rally": only while the rally is still in play
+  const confirmReplay = useCallback(async () => {
+    setReplayConfirm(false)
+    if (rallyStatus !== 'in_play') return
+    await logEvent('replay')
+  }, [logEvent, rallyStatus])
+
+  const cancelReplay = useCallback(() => {
+    setReplayConfirm(false)
+  }, [])
 
   // Handle Improper Request sanction
   const handleImproperRequest = useCallback((side) => {
@@ -12039,7 +12051,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Check for modal confirmations first (Enter/Escape)
       // These modals need a decision - don't allow Escape to close them
       const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
-        accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm ||
+        accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm || replayConfirm ||
         replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal
 
       // Confirm key (Enter)
@@ -12074,6 +12086,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         if (undoConfirm) {
           e.preventDefault()
           handleUndo()
+          return
+        }
+        if (replayConfirm) {
+          e.preventDefault()
+          confirmReplay()
           return
         }
         if (replayRallyConfirm) {
@@ -12175,8 +12192,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
-    accidentalPointConfirmModal, undoConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
-    confirmSubstitution, confirmLibero, handleReplayRally, handleDecisionChange
+    accidentalPointConfirmModal, undoConfirm, replayConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
+    confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
 
   // Courtside chips: px floors on the cqw sizes so a 200 px side column still
@@ -27913,6 +27930,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={cancelUndo}
               >
                 Cancel
+              </SbButton>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {replayConfirm && (
+        <Modal
+          title={t('scoreboard.modals.confirmReplay')}
+          open={true}
+          onClose={cancelReplay}
+          width={400}
+        >
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              {t('scoreboard.modals.confirmReplayBody')}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <SbButton variant="positive"
+                onClick={confirmReplay}
+              >
+                {t('scoreboard.buttons.replay')}
+              </SbButton>
+              <SbButton variant="secondary"
+                onClick={cancelReplay}
+              >
+                {t('common.cancel')}
               </SbButton>
             </div>
           </div>

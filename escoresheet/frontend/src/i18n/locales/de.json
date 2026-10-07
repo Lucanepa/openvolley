@@ -545,6 +545,8 @@
       "confirmPoint": "Punkt bestätigen",
       "confirmSanction": "Sanktion bestätigen",
       "confirmUndo": "Rückgängig bestätigen",
+      "confirmReplay": "Ballwechsel wiederholen?",
+      "confirmReplayBody": "Es wird kein Punkt vergeben, dieselbe Mannschaft schlägt erneut auf.",
       "confirmTimeout": "Zeitüberschreitung bestätigen",
       "decisionChange": "Entscheidungs\u00adänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",

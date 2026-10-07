@@ -552,6 +552,8 @@
       "confirmPoint": "Conferma punto",
       "confirmSanction": "Conferma sanzione",
       "confirmUndo": "Conferma annullamento",
+      "confirmReplay": "Ripetere lo scambio?",
+      "confirmReplayBody": "Nessun punto viene assegnato e la stessa squadra serve di nuovo.",
       "confirmTimeout": "Confermare il timeout",
       "decisionChange": "Cambio decisione",
       "exceptionalSubstitution": "Sostituzione eccezionale",
