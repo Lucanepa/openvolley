@@ -8,6 +8,7 @@ mod netifs;
 mod netshare;
 mod popups;
 mod relay;
+mod sign;
 mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
