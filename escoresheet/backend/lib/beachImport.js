@@ -69,10 +69,15 @@ const GENDER_OF = new Map(Object.entries(GENDER_WORDS).flatMap(([g, words]) => w
 const YES = new Set(['yes', 'y', 'ja', 'j', 'oui', 'o', 'si', 'true', 'wahr', 'vrai', 'vero', '1', 'x', 'wc', 'wildcard'])
 const NO = new Set(['no', 'n', 'nein', 'non', 'false', 'falsch', 'faux', 'falso', '0'])
 const PHASE_WORDS = {
-  winners: ['winners', 'winner', 'w', 'wb', 'winnersbracket', 'gewinner', 'gewinnerrunde', 'hauptrunde', 'vainqueurs', 'gagnants', 'vincenti', 'vincitori'],
-  losers: ['losers', 'loser', 'l', 'lb', 'losersbracket', 'verlierer', 'verliererrunde', 'hoffnungsrunde', 'trostrunde', 'perdants', 'perdenti', 'repechage', 'ripescaggio'],
-  final: ['final', 'finals', 'finale', 'finali', 'f', 'sf', 'semifinal', 'semifinals', 'semifinale', 'semifinali', 'halbfinal', 'halbfinale', 'halbfinals', 'demifinale', 'demifinales'],
-  placement: ['placement', 'p3', '3rdplace', 'thirdplace', 'platz3', 'spielumplatz3', 'petitefinale', 'finale3', 'finaleper3', 'klassierung', 'classement', 'classifica'],
+  // the console's own names too (tournaments.phases.*: Gewinnerseite, Tableau des gagnants, Tabellone vincenti)
+  winners: ['winners', 'winner', 'w', 'wb', 'winnersbracket', 'gewinner', 'gewinnerseite', 'gewinnerrunde', 'hauptrunde', 'vainqueurs', 'gagnants',
+    'tableaudesgagnants', 'vincenti', 'vincitori', 'tabellonevincenti'],
+  losers: ['losers', 'loser', 'l', 'lb', 'losersbracket', 'verlierer', 'verliererseite', 'verliererrunde', 'hoffnungsrunde', 'trostrunde', 'perdants',
+    'tableaudesperdants', 'perdenti', 'tabelloneperdenti', 'repechage', 'ripescaggio'],
+  final: ['final', 'finals', 'finale', 'finales', 'finali', 'finalspiele', 'f', 'sf', 'semifinal', 'semifinals', 'semifinale', 'semifinali', 'halbfinal',
+    'halbfinale', 'halbfinals', 'demifinale', 'demifinales'],
+  placement: ['placement', 'p3', '3rdplace', 'thirdplace', 'platz3', 'spielumplatz3', 'petitefinale', 'matchpourla3eplace', 'finale3', 'finaleper3',
+    'finaleperil3posto', 'klassierung', 'classement', 'classifica'],
   pool: ['pool', 'pools', 'gruppe', 'poule', 'girone']
 }
 const PHASE_OF = new Map(Object.entries(PHASE_WORDS).flatMap(([p, words]) => words.map((w) => [w, p])))
