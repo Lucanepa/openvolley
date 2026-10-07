@@ -24,6 +24,7 @@ const { WebSocketServer } = require('ws')
 const { networkInterfaces } = require('os')
 
 const { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } = require('./lanRelayCore.cjs')
+const signCore = require('./signSessionCore.cjs')
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -64,6 +65,7 @@ function getLocalIP() {
 // Module-level singleton so start()/stop()/getStatus() share one instance.
 let httpServer = null
 let wss = null
+let activeRelay = null // for stop(): its sign sessions and timers
 let status = { running: false, port: null, wsPort: null }
 
 /**
@@ -83,7 +85,9 @@ function start(opts = {}) {
     const DIST_DIR = join(__dirname, '..', 'dist')
 
     // Relay state + WS protocol (shared with ../server.js and the dev plugin)
-    const relay = createLanRelay()
+    // Sign on phone (/api/sign/*): the desktop app itself may start a session
+    const relay = createLanRelay({ signCore, isLocal: isLocalAddress })
+    activeRelay = relay
     const wsClients = new Set()
     const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
@@ -225,6 +229,8 @@ function start(opts = {}) {
           'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
             ? 'no-cache'
             : 'public, max-age=31536000',
+          // The phone signing page (/sign): strict CSP, no referrer, no-cache
+          ...(signCore.isSignPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {}),
         })
         res.end(content)
       } catch (err) {
@@ -280,6 +286,8 @@ function stop() {
     const closeWs = () => new Promise((r) => { wss ? wss.close(() => r()) : r() })
     const closeHttp = () => new Promise((r) => { httpServer ? httpServer.close(() => r()) : r() })
     Promise.all([closeWs(), closeHttp()]).then(() => {
+      if (activeRelay) activeRelay.close()
+      activeRelay = null
       httpServer = null
       wss = null
       status = { running: false, port: null, wsPort: null }
