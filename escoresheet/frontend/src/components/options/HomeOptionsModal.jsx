@@ -1041,7 +1041,7 @@ export default function HomeOptionsModal({
         )}
 
         <div className="border-t border-stone-100 pt-4 text-center text-xs text-stone-500">
-          {t('common.support', 'Support:')} luca.canepa@gmail.com
+          {t('common.support', 'Support:')} support@openvolley.app
         </div>
       </div>
       </div>

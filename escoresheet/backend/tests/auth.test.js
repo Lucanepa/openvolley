@@ -239,9 +239,9 @@ describe('auth without a working database', () => {
       assert.equal(a.config.contactEmail, 'env-contact@example.ch')
       delete process.env.CONTACT_EMAIL
       const b = createAuth({ pool: brokenPool, logger: silent })
-      assert.equal(b.config.contactEmail, 'volleyball@lucanepa.com')
+      assert.equal(b.config.contactEmail, 'support@openvolley.app')
       const r = await b.handleAuthRequest('reset-password', {}, { ip: '1.1.1.1' })
-      assert.match(r.body.error.message, /volleyball@lucanepa\.com/)
+      assert.match(r.body.error.message, /support@openvolley\.app/)
     } finally {
       if (saved === undefined) delete process.env.CONTACT_EMAIL
       else process.env.CONTACT_EMAIL = saved
