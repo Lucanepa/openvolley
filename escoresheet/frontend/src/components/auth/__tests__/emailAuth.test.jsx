@@ -52,8 +52,8 @@ describe('reset dialog (LoginModal)', () => {
   })
 
   it('reads the contact address out of the server message', () => {
-    expect(contactFromMessage('Password reset is temporarily unavailable. Contact volleyball@lucanepa.com.')).toBe('volleyball@lucanepa.com')
-    expect(contactFromMessage('something else')).toBe('volleyball@lucanepa.com')
+    expect(contactFromMessage('Password reset is temporarily unavailable. Contact help@club.ch.')).toBe('help@club.ch')
+    expect(contactFromMessage('something else')).toBe('support@openvolley.app')
   })
 
   it('opens on the reset form when asked to (manager "Request a new link")', () => {
