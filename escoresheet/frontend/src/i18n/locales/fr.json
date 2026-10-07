@@ -1171,7 +1171,8 @@
     "nativeServerCloud": "Cloud (backend.openvolley.app)",
     "nativeServerLocal": "Serveur local",
     "nativeServerOnline": "En ligne",
-    "nativeServerTitle": "Serveur"
+    "nativeServerTitle": "Serveur",
+    "copyUrl": "Copier l'URL"
   },
   "matchEnd": {
     "title": "Match terminé",
@@ -1548,7 +1549,28 @@
     "shareWithRemote": "Partager avec appareils distants",
     "refereeUrl": "URL arbitre",
     "gamePin": "PIN du match",
-    "invalidUrl": "URL du serveur invalide"
+    "invalidUrl": "URL du serveur invalide",
+    "noBackendConfigured": "Aucun serveur backend configuré",
+    "scanWithPhone": "Scannez avec l'appareil photo d'un téléphone ou d'une tablette pour vous connecter directement",
+    "role": {
+      "referee": "Tableau de bord arbitre",
+      "bench_home": "Banc local",
+      "bench_away": "Banc visiteur",
+      "livescore": "Livescore"
+    },
+    "serverNotResponding": "Le serveur ne répond pas",
+    "connectionTimeout": "Délai de connexion dépassé",
+    "connectionFailed": "Impossible de joindre le serveur",
+    "checking": "Connexion...",
+    "connectedSuccess": "Connecté !",
+    "retry": "Réessayer",
+    "connectToServer": "Se connecter au serveur",
+    "selectServerMode": "Choisir le mode de connexion",
+    "onlineAutomatic": "En ligne (automatique)",
+    "localServer": "Serveur local",
+    "enterIPAddress": "Entrer l'adresse IP",
+    "connect": "Connecter",
+    "lastUsed": "Dernière utilisation"
   },
   "loadOfficialMatch": {
     "title": "Charger match depuis le calendrier",

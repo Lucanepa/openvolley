@@ -1172,7 +1172,8 @@
     "nativeServerCloud": "Cloud (backend.openvolley.app)",
     "nativeServerLocal": "Lokale Server",
     "nativeServerOnline": "Online",
-    "nativeServerTitle": "Server"
+    "nativeServerTitle": "Server",
+    "copyUrl": "URL kopiere"
   },
   "matchEnd": {
     "title": "Match beendet",
@@ -1549,7 +1550,28 @@
     "shareWithRemote": "Mit entfernte Grät teile",
     "refereeUrl": "Schiri-URL",
     "gamePin": "Spiil-PIN",
-    "invalidUrl": "Ungültigi Server-URL"
+    "invalidUrl": "Ungültigi Server-URL",
+    "noBackendConfigured": "Kei Backend-Server konfiguriert",
+    "scanWithPhone": "Mit de Kamera vom Handy oder Tablet scanne, zum diräkt verbinde",
+    "role": {
+      "referee": "Schiri-Dashboard",
+      "bench_home": "Heimbank",
+      "bench_away": "Gastbank",
+      "livescore": "Livescore"
+    },
+    "serverNotResponding": "Server antwortet nöd",
+    "connectionTimeout": "Verbindig hät z lang duuret",
+    "connectionFailed": "Server isch nöd erreichbar",
+    "checking": "Verbinde...",
+    "connectedSuccess": "Verbunde!",
+    "retry": "Nomal probiere",
+    "connectToServer": "Mit em Server verbinde",
+    "selectServerMode": "Wähled Sie, wie verbunde wird",
+    "onlineAutomatic": "Online (automatisch)",
+    "localServer": "Lokale Server",
+    "enterIPAddress": "IP-Adresse iigäh",
+    "connect": "Verbinde",
+    "lastUsed": "Zletscht bruucht"
   },
   "loadOfficialMatch": {
     "title": "Spiil us em Spiilplan lade",
