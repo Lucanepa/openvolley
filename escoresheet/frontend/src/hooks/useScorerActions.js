@@ -48,6 +48,19 @@ export function runActionEffects(effects, finalSnapshot) {
   }
 }
 
+/** An action failure already shown to the scorer (onError, or by the action itself). */
+export function isReportedActionError(err) {
+  return !!(err && typeof err === 'object' && err.scorerActionReported)
+}
+
+/** Mark a failure as shown to the scorer, so it is not reported twice. */
+export function markActionErrorReported(err) {
+  if (err && typeof err === 'object') {
+    try { err.scorerActionReported = true } catch { /* frozen error object */ }
+  }
+  return err
+}
+
 /**
  * Scorer actions as ONE database transaction each, so the live query emits
  * once per action ("first the ball moves, then the team rotates" came from
@@ -71,16 +84,22 @@ export function runActionEffects(effects, finalSnapshot) {
  * - The event mutex (eventInProgressRef) is held for the whole transaction
  *   (skipMutex: the caller holds it).
  * - If the transaction fails nothing of it is written, its screen changes and
- *   side effects are dropped and the error is rethrown.
+ *   side effects are dropped and the error is rethrown. A keyed action (a
+ *   scorer tap) also passes it to `onError` (the scorer must see that nothing
+ *   was saved) unless it is marked reported already (markActionErrorReported),
+ *   and marks it. So a body must NOT catch a failed write and carry on: the
+ *   writes before it would commit alone (a half-done undo). Rethrow instead.
  * - Only calls from inside the action's transaction (its body and what it
  *   awaits) are part of it: a tap, a timer or an effect that runs meanwhile
  *   is applied / sent at once, as without an action.
  */
-export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot }) {
+export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, onError }) {
   const ctxRef = useRef(null)
   const inFlightRef = useRef(new Set())
   const captureRef = useRef(captureFinalSnapshot)
   captureRef.current = captureFinalSnapshot
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
 
   // The running action, when called from inside its transaction (its body and
   // whatever it awaits); null when called from anywhere else (another tap, a
@@ -142,6 +161,10 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot }
       }
       if (failure) {
         release()
+        if (key != null && onErrorRef.current && !isReportedActionError(failure)) {
+          try { onErrorRef.current(failure) } catch (err) { console.error('[action] onError failed', err) }
+          markActionErrorReported(failure)
+        }
         throw failure
       }
       // The screen changes with the data; then the side effects (their reads,

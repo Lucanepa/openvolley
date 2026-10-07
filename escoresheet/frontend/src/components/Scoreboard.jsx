@@ -8,7 +8,7 @@ import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { useActionLiveQuery } from '../hooks/useActionLiveQuery'
-import { useScorerActions, pickLiveStateSnapshot } from '../hooks/useScorerActions'
+import { useScorerActions, pickLiveStateSnapshot, isReportedActionError, markActionErrorReported } from '../hooks/useScorerActions'
 
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
@@ -464,6 +464,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // that fails must say so: the dialog is no longer there to show it
   const onConfirmFailed = useCallback((err) => {
     console.error('[confirm] action failed after its dialog closed', err)
+    // A scorer action shows its own failure (onActionFailed): once is enough
+    if (isReportedActionError(err)) return
+    showAlert(t('scoreboard.confirmFailed'), 'error')
+  }, [showAlert, t])
+  // A scorer action (runAction) that failed wrote nothing: say so, or the tap
+  // just seems to do nothing
+  const onActionFailed = useCallback((err) => {
+    console.error('[action] failed, nothing was saved', err)
     showAlert(t('scoreboard.confirmFailed'), 'error')
   }, [showAlert, t])
   const runReopenSet = useConfirmAction(onConfirmFailed)
@@ -1478,7 +1486,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     db,
     commits: liveCommits,
     mutexRef: eventInProgressRef,
-    captureFinalSnapshot: async () => (await captureFullStateSnapshot())?.snapshot ?? null
+    captureFinalSnapshot: async () => (await captureFullStateSnapshot())?.snapshot ?? null,
+    onError: onActionFailed
   })
 
   // Restore match state from a snapshot (used by undo)
@@ -1513,6 +1522,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     } catch (err) {
       console.error('[restoreStateFromSnapshot] Error:', err)
+      // Rethrown: inside the undo's transaction a swallowed failure commits
+      // the undo half done (events gone, score not restored)
+      throw err
     }
   }, [matchId])
 
@@ -7055,6 +7067,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     } catch (error) {
       console.error('[handleUndo] Error:', error)
+      // Rethrown: the whole undo rolls back (a swallowed failure committed
+      // the writes made before it) and the scorer is told
+      throw error
     } finally {
       // Sync to Referee and Supabase after undo (after the commit)
       syncToReferee()
@@ -7142,6 +7157,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     } catch (error) {
       console.error('[handleReplayRally] Error:', error)
+      // Rethrown: the replay rolls back as a whole (see handleUndo)
+      throw error
     }
   }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
@@ -7390,6 +7407,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       } catch (error) {
         console.error('[handleDecisionChange] Error swapping point:', error)
+        // Rethrown: a swallowed failure committed the swapped point without
+        // its rotation; now the decision change rolls back as a whole
+        throw error
       }
     } else {
       // Replay rally - use existing logic (joins this action)
@@ -7454,15 +7474,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     try {
       await logEvent('timeout', { team: request.team })
     } catch (err) {
-      // Not recorded: put the request back so the scorer can try again.
+      // Not recorded: rethrown, so the action rolls back (returning here
+      // committed the time-out event written before the failure, and the
+      // scorer, told it was not recorded, could confirm a second one). The
+      // request dialog stays as it was (its 'started' change is dropped with
+      // the action), so the scorer can try again.
       console.error('[TO] time-out not recorded', err)
       timeoutStartTimestampRef.current = null
       timeoutInitialCountdownRef.current = 30
-      deferUi(() => {
-        setTimeoutModal(request)
-        showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
-      })
-      return
+      showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      throw markActionErrorReported(err)
     }
 
     // Debug log: timeout
@@ -11880,7 +11901,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         deferUi(() => setLiberoUnableModal(null))
       }
     } catch (error) {
-      // Silently handle error
+      // Rethrown: the action rolls back as a whole (a swallowed failure
+      // committed the libero's exit without the unable record) and the
+      // scorer is told (onActionFailed)
+      console.error('[confirmLiberoUnable] Error:', error)
+      throw error
     }
   }), [runAction, deferUi, liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, logManualChange, checkLiberoRedesignation, getLiberoOnCourt, teamAKey, teamBKey, matchId])
 
