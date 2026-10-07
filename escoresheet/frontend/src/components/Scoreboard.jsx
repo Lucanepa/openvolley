@@ -4,6 +4,8 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
+import { withActivityContext, currentActivityContext, maxVoidedSeq } from '../db/eventHistory'
+import { randomUuid } from '../utils/deviceId'
 import Modal from './Modal'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
@@ -3724,7 +3726,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .where('[matchId+seq]')
       .between([matchId, Dexie.minKey], [matchId, Dexie.maxKey])
       .last()
-    const maxBaseSeq = lastEvent ? Math.floor(lastEvent.seq || 0) : 0
+    // An undone or deleted event's seq is never given out again (event history)
+    const maxBaseSeq = Math.max(lastEvent ? Math.floor(lastEvent.seq || 0) : 0, Math.floor(await maxVoidedSeq(db, matchId)))
 
     // Coin toss check: only needed if maxBaseSeq is 0 or 1
     if (maxBaseSeq <= 1) {
@@ -3750,7 +3753,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .between([matchId, baseSeq], [matchId, baseSeq + 0.99])
       .last()
 
-    const maxSubSeq = lastRelated ? (lastRelated.seq - baseSeq) : 0
+    // ... nor an undone sub-event's (event history)
+    const voidedSub = await maxVoidedSeq(db, matchId, { from: baseSeq, to: baseSeq + 0.99 })
+    const maxSubSeq = Math.max(lastRelated ? lastRelated.seq : baseSeq, voidedSub || baseSeq) - baseSeq
 
     // If maxSubSeq is 0, it means only the base event exists (no sub-events yet)
     // Round to 1 decimal to avoid floating point drift
@@ -4200,9 +4205,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const renumberMatchUpdate = {}
     if (renumbers?.length) {
       const teamEvents = await db.events.where('matchId').equals(matchId).toArray()
-      for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
-        await db.events.update(id, { payload })
-      }
+      await withActivityContext({ reason: 'roster_reopen' }, async () => {
+        for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
+          await db.events.update(id, { payload })
+        }
+      })
       const matchNow = await db.matches.get(matchId)
       const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
       const renumbered = renumbers.find(r => String(r.from) === String(matchNow?.[courtCaptainField]))
@@ -6754,10 +6761,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // libero flags, court captain, sanction flags). Every manual delete, the
   // decision-change swap and undo go through here so none of them leaves a
   // phantom remark line or a cloud row for an event that no longer exists.
-  const discardEvents = useCallback(async (eventsToRemove) => {
+  // `reason` (event history: 'decision_change', 'forfeit_reversal', ...) is
+  // used when the surrounding action (undo) did not set one; else 'delete'.
+  const discardEvents = useCallback(async (eventsToRemove, reason) => {
     const rows = (eventsToRemove || []).filter(e => e && e.id != null)
     if (rows.length === 0) return
-    await db.events.bulkDelete(rows.map(e => e.id))
+    await withActivityContext({ reason: currentActivityContext()?.reason || reason }, () => db.events.bulkDelete(rows.map(e => e.id)))
     const queued = await db.sync_queue.where('status').equals('queued').toArray()
     const jobs = syncJobsForEvents(queued, rows.map(e => e.id))
     if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
@@ -6775,7 +6784,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!plan.hasForfeit) return plan
 
     const deleteIds = new Set(plan.deleteEventIds)
-    await discardEvents(events.filter(e => deleteIds.has(e.id)))
+    await discardEvents(events.filter(e => deleteIds.has(e.id)), 'forfeit_reversal')
     if (plan.deleteSetIds.length > 0) await db.sets.bulkDelete(plan.deleteSetIds)
     for (const r of plan.restoreSets) {
       await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
@@ -6805,7 +6814,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return plan
   }, [matchId, discardEvents])
 
-  const handleUndo = useCallback(async () => {
+  const handleUndo = useCallback(async () => withActivityContext({ reason: 'undo', actionId: randomUuid() }, async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
       setUndoConfirm(null)
@@ -6980,7 +6989,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }), [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7126,7 +7135,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle decision change - either swap point to other team or replay rally
-  const handleDecisionChange = useCallback(async () => {
+  const handleDecisionChange = useCallback(async () => withActivityContext({ reason: 'decision_change', actionId: randomUuid() }, async () => {
     if (!replayRallyConfirm || !data?.set) {
       setReplayRallyConfirm(null)
       return
@@ -7365,7 +7374,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  }), [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
@@ -25605,7 +25614,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // queued sync jobs and side effects such as remark lines)
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
                   const setsToDelete = allSets.filter(s => s.index > reopenIndex)
-                  await discardEvents(removedEvents)
+                  await discardEvents(removedEvents, 'reopen_set')
                   for (const s of setsToDelete) {
                     await db.sets.delete(s.id)
                   }

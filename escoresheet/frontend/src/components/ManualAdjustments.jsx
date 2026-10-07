@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
+import { withActivityContext } from '../db/eventHistory'
+import { randomUuid } from '../utils/deviceId'
 import { useAlert } from '../contexts/AlertContext'
 import { validateManualSubstitution, validateManualTimeout } from '../domain/substitutions'
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
@@ -556,7 +558,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }, [recordChange])
 
   // ==================== SAVE FUNCTION ====================
-  const handleSave = async () => {
+  // Every event deleted or edited by the save is recorded as a manual
+  // adjustment in the event history (db/eventHistory)
+  const handleSave = async () => withActivityContext({ reason: 'manual_adjustment', actionId: randomUuid() }, async () => {
     if (changes.length === 0) {
       showAlert(t('manualAdjustmentsEditor.noChanges', 'No changes to save'), 'info')
       return
@@ -736,7 +740,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     } finally {
       setSaving(false)
     }
-  }
+  })
 
   // Sync changes to Supabase
   const syncToSupabase = async () => {

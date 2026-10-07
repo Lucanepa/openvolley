@@ -1,6 +1,6 @@
 import Dexie from 'dexie'
 import { rewriteQueuedSyncJobs } from '../utils/syncIds'
-import { installEventHistoryHooks, maxVoidedSeq as maxVoidedSeqOf, wipeMatchEvents as wipeMatchEventsOf } from './eventHistory'
+import { installEventHistoryHooks } from './eventHistory'
 
 /**
  * ============================================================================
@@ -364,16 +364,6 @@ db.version(20).stores({
 
 // Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
 installEventHistoryHooks(db)
-
-/** Highest seq of an event of this match that was undone, deleted or edited (0: none). */
-export const maxVoidedSeq = (matchId) => maxVoidedSeqOf(db, matchId)
-
-/**
- * Delete every event of a match WITHOUT recording it as undone (the match is
- * deleted or replaced by a backup). dropHistory: the match goes away, its
- * event history too.
- */
-export const wipeMatchEvents = (matchId, opts) => wipeMatchEventsOf(db, matchId, opts)
 
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;
 // without this the browser treats it as "best-effort" and may evict it under

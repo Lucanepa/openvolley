@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
+import { withActivityContext, wipeMatchEvents } from '../db/eventHistory'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import SignaturePad from './SignaturePad'
@@ -1287,9 +1288,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       }
 
       // Delete all local data for this match from IndexedDB
-      await db.transaction('rw', db.events, db.sets, db.players, db.teams, db.matches, async () => {
-        // Delete events for this match
-        await db.events.where('matchId').equals(matchId).delete()
+      await db.transaction('rw', db.events, db.event_history, db.sets, db.players, db.teams, db.matches, async () => {
+        // Delete events for this match (a wipe, not an undo: db/eventHistory)
+        await wipeMatchEvents(db, matchId, { dropHistory: true })
 
         // Delete sets for this match
         await db.sets.where('matchId').equals(matchId).delete()
@@ -1458,7 +1459,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       if (forfeitPlan.hasForfeit) {
         console.log('[MatchEnd] Reversing forfeit:', forfeitPlan)
         const deleteIds = new Set(forfeitPlan.deleteEventIds)
-        await db.events.bulkDelete(forfeitPlan.deleteEventIds)
+        await withActivityContext({ reason: 'forfeit_reversal' }, () => db.events.bulkDelete(forfeitPlan.deleteEventIds))
         if (forfeitPlan.deleteSetIds.length > 0) await db.sets.bulkDelete(forfeitPlan.deleteSetIds)
         for (const r of forfeitPlan.restoreSets) {
           await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
@@ -1521,20 +1522,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       if (setEndEvent) {
         console.log('[MatchEnd] Deleting set_end event:', setEndEvent.id)
-        await db.events.delete(setEndEvent.id)
-
-        // Also queue deletion for Supabase
-        if (match?.seed_key) {
-          await db.sync_queue.add({
-            resource: 'event',
-            action: 'delete',
-            payload: {
-              id: setEndEvent.id // Send ID to delete
-            },
-            ts: new Date().toISOString(),
-            status: 'queued'
-          })
-        }
+        // The event history (db/eventHistory) voids the server's copy; the
+        // old 'event delete' job was never handled by the sync queue.
+        await withActivityContext({ reason: 'reopen_set' }, () => db.events.delete(setEndEvent.id))
       }
 
       // Queue sync to Supabase for the set update
