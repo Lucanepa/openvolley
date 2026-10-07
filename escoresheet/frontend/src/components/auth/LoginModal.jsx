@@ -4,7 +4,27 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Check, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 
-export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
+// The contact address in the server's 503 answer ("... Contact x@y.")
+const DEFAULT_CONTACT = 'volleyball@lucanepa.com'
+export function contactFromMessage(message) {
+  const m = /Contact\s+([^\s@]+@[^\s@]+?)\.?$/.exec(String(message || '').trim())
+  return m ? m[1] : DEFAULT_CONTACT
+}
+
+/**
+ * The text for a failed reset request. 503 reset_unavailable: the server sends
+ * no emails (SMTP not configured), so the contact address is the way out.
+ */
+export function resetErrorText(t, error) {
+  if (error?.code === 'reset_unavailable' || error?.status === 503) {
+    return t('authEmail.resetUnavailable', { contact: contactFromMessage(error?.message) })
+  }
+  if (error?.status === 429) return t('authEmail.tooManyAttempts')
+  if (error?.network || error?.status === 0) return t('authEmail.offline')
+  return error?.message || t('authEmail.genericError')
+}
+
+export default function LoginModal({ open, onClose, onSwitchToSignUp, initialForgot = false }) {
   const { t } = useTranslation()
   const { signIn, resetPassword } = useAuth()
 
@@ -12,7 +32,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [showForgotPassword, setShowForgotPassword] = useState(initialForgot)
   const [resetSent, setResetSent] = useState(false)
 
   if (!open) return null
@@ -42,11 +62,12 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
     setError('')
     setLoading(true)
 
-    const { error: resetError } = await resetPassword(email)
+    const { error: resetError } = await resetPassword(email.trim())
 
     if (resetError) {
-      setError(resetError.message)
+      setError(resetErrorText(t, resetError))
     } else {
+      // The same answer whether or not the address has an account
       setResetSent(true)
     }
     setLoading(false)
@@ -88,7 +109,8 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600">
                 <Check size={26} strokeWidth={2.25} aria-hidden="true" />
               </div>
-              <p className="text-sm text-stone-700">{t('auth.resetEmailSent', 'Check your email for a password reset link')}</p>
+              <p className="text-sm font-semibold text-stone-900">{t('authEmail.resetSentTitle')}</p>
+              <p data-testid="reset-sent" className="mt-1 text-sm text-stone-600">{t('authEmail.resetSent', { email: email.trim() })}</p>
               <Button
                 variant="hero"
                 block
@@ -121,7 +143,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
               </Button>
               <button
                 type="button"
-                onClick={() => setShowForgotPassword(false)}
+                onClick={() => { setShowForgotPassword(false); setError('') }}
                 className={quietLink}
               >
                 {t('auth.backToSignIn', 'Back to sign in')}
@@ -157,7 +179,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
 
               <button
                 type="button"
-                onClick={() => setShowForgotPassword(true)}
+                onClick={() => { setShowForgotPassword(true); setError('') }}
                 className={cn(quietLink, 'mt-1')}
               >
                 {t('auth.forgotPassword', 'Forgot password?')}

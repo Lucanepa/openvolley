@@ -6,6 +6,7 @@ import { discardUnsentLogs } from '../utils/logger'
 import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from '../lib/access'
 import { redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
+import i18n from 'i18next'
 
 const AuthContext = createContext(null)
 
@@ -185,6 +186,7 @@ export function AuthProvider({ children }) {
       email,
       password,
       options: {
+        lang: i18n.language,
         data: {
           first_name: profileData.firstName || null,
           last_name: profileData.lastName || null,
@@ -260,11 +262,18 @@ export function AuthProvider({ children }) {
       return { error: { message: 'Backend not configured' } }
     }
 
-    const { data, error } = await apiAuth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
-    })
+    // The email's language follows the app's (the server maps de-CH to de)
+    const { data, error, status } = await apiAuth.resetPasswordForEmail(email, { lang: i18n.language })
 
-    return { data, error }
+    return { data, error, status }
+  }, [])
+
+  // A fresh confirmation link for the signed-in, unconfirmed account
+  const resendConfirmation = useCallback(async () => {
+    if (!hasBackend()) {
+      return { error: { message: 'Backend not configured' } }
+    }
+    return apiAuth.resendConfirmation(i18n.language)
   }, [])
 
   // Update email - sends confirmation to new email
@@ -406,10 +415,11 @@ export function AuthProvider({ children }) {
     updateProfile,
     updateEmail,
     resetPassword,
+    resendConfirmation,
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

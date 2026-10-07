@@ -2349,7 +2349,8 @@
       "lastSignIn": "Ultimo accesso {{date}}",
       "neverSignedIn": "Mai acceduto",
       "selfDemote": "Non puoi rimuovere il tuo ruolo di admin.",
-      "superAdminOnly": "Solo un super admin può modificare questo account."
+      "superAdminOnly": "Solo un super admin può modificare questo account.",
+      "emailUnconfirmed": "E-mail non confermata"
     },
     "invites": {
       "new": "Nuovo codice d’invito",
@@ -2425,7 +2426,10 @@
         "match_close": "Partita chiusa",
         "match_reopen": "Partita riaperta",
         "match_editor_add": "Editor aggiunto da un admin",
-        "match_release_game": "Partita liberata"
+        "match_release_game": "Partita liberata",
+        "account_password_reset_requested": "Ripristino password richiesto",
+        "account_password_reset": "Password reimpostata tramite link e-mail",
+        "account_email_confirmed": "Indirizzo e-mail confermato"
       }
     }
   },
@@ -2610,5 +2614,39 @@
     "trayStatus": "Aggiornamento pronto",
     "copy": "Copia",
     "copied": "Copiato."
+  },
+  "authEmail": {
+    "resetSentTitle": "Controlli la sua casella di posta",
+    "resetSent": "Se esiste un account per {{email}}, gli abbiamo inviato un link per scegliere una nuova password. Il link funziona una sola volta, per 60 minuti. Non è arrivato nulla? Controlli la cartella spam.",
+    "resetUnavailable": "Il ripristino della password non è momentaneamente disponibile. Contatto: {{contact}}.",
+    "newPasswordTitle": "Scegliere una nuova password",
+    "newPasswordBody": "Scelga una nuova password per il suo account OpenVolley. Dopo, tutti i dispositivi vengono disconnessi.",
+    "newPassword": "Nuova password",
+    "repeatPassword": "Ripetere la nuova password",
+    "passwordHint": "Almeno 6 caratteri. Alcune parole di seguito formano una password robusta.",
+    "savePassword": "Salvare la nuova password",
+    "saving": "Salvataggio…",
+    "passwordSavedTitle": "Password modificata",
+    "passwordSaved": "Tutti i dispositivi sono stati disconnessi. Acceda con la nuova password.",
+    "signIn": "Accedere",
+    "invalidLinkTitle": "Questo link non funziona",
+    "invalidLink": "Non è valido, è già stato usato o è scaduto.",
+    "requestNewLink": "Richiedere un nuovo link",
+    "confirmTitle": "Confermare l’indirizzo e-mail",
+    "confirmBody": "Confermi che questo indirizzo appartiene al suo account OpenVolley.",
+    "confirmButton": "Confermare l’indirizzo e-mail",
+    "confirming": "Conferma in corso…",
+    "confirmedTitle": "Indirizzo e-mail confermato",
+    "confirmed": "Grazie. Può chiudere questa pagina.",
+    "alreadyConfirmed": "Il suo indirizzo e-mail era già confermato. Può chiudere questa pagina.",
+    "confirmInvalid": "Non è valido o è scaduto. Acceda all’app del segnapunti e invii un nuovo link dal suo profilo.",
+    "tooManyAttempts": "Troppi tentativi – attenda un momento e riprovi.",
+    "offline": "Nessuna connessione al server – controlli il Wi-Fi o i dati mobili.",
+    "genericError": "Qualcosa è andato storto – riprovi.",
+    "notConfirmed": "Indirizzo e-mail non ancora confermato. Apra il link della nostra e-mail.",
+    "resend": "Inviare un nuovo link",
+    "resent": "Abbiamo inviato un nuovo link a {{email}}.",
+    "resendUnavailable": "Le e-mail di conferma non possono essere inviate al momento – riprovi più tardi.",
+    "signUpLinkSent": "Benvenuto! Abbiamo inviato un link a {{email}}: lo apra per confermare il suo indirizzo."
   }
 }

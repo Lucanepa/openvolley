@@ -86,6 +86,7 @@ export default function AccountsPanel({ selfId }) {
                 <span className="break-all">{a.email}</span>
                 <span>{t('manage.accounts.created', { date: date(a.created_at) })}</span>
                 <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
+                {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
               </>}
               chips={<RoleChips roles={a.roles} pending={a.pending} />}
               tools={<>
