@@ -4,8 +4,8 @@
 
 ## Exploitant
 
-Luca Canepa (personne privée)
-[ADRESSE / ADDRESS]
+Luca Canepa (personne privée)\
+[ADRESSE / ADDRESS]\
 Suisse
 
 E-mail : support@openvolley.app

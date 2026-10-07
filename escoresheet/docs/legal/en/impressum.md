@@ -4,8 +4,8 @@
 
 ## Operator
 
-Luca Canepa (private person)
-[ADRESSE / ADDRESS]
+Luca Canepa (private person)\
+[ADRESSE / ADDRESS]\
 Switzerland
 
 Email: support@openvolley.app

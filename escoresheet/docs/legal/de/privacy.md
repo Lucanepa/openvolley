@@ -26,8 +26,8 @@ Massgebend ist die deutsche Fassung.
 
 Verantwortlich für die Datenbearbeitung ist:
 
-**Luca Canepa**, Privatperson, Schweiz
-Postadresse: siehe [Impressum](impressum.md)
+**Luca Canepa**, Privatperson, Schweiz\
+Postadresse: siehe [Impressum](impressum.md)\
 E-Mail: support@openvolley.app
 
 Ich betreibe OpenVolley als Privatperson. Ich habe keine Datenschutzberaterin
@@ -292,8 +292,8 @@ löscht, auch wenn das Konto, das sie angelegt hat, gelöscht wird.
 
 **Spielansetzungen von Swiss Volley:** Der Server übernimmt täglich die
 offiziellen Spielansetzungen aus dem VolleyManager von Swiss Volley, für den
-Zeitraum von gestern bis 14 Tage voraus: Teams, Halle und Adresse, Liga,
-1. und 2. Schiedsrichter mit Name und Geburtsdatum, Linienrichter, Aufgebote.
+Zeitraum von gestern bis 14 Tage voraus: Teams, Halle und Adresse, Liga, 1.
+und 2. Schiedsrichter mit Name und Geburtsdatum, Linienrichter, Aufgebote.
 Dafür verwendet der Server ein Konto im VolleyManager. Zweck: offizielle
 Spiele mit den richtigen Offiziellen laden. Namen sind öffentlich (Abschnitt
 8), Geburtsdaten sieht nur, wer angemeldet ist.

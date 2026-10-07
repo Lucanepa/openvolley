@@ -14,12 +14,30 @@ step with it (same sections, same numbering). Cross-links are relative
 (`privacy.md`, `impressum.md`, ...); the site build maps them to page URLs.
 The facts behind the texts are in [data-map.md](data-map.md).
 
+**Where they are published:** the openvolley_home repo keeps a copy under
+`legal/<lang>/` and renders it (`legal/build.mjs`, see its `legal/README.md`
+for the copy command) at /datenschutz, /impressum, /nutzungsbedingungen,
+/open-source and /en/…, /fr/…, /it/…. After changing a text here, copy it
+there and rebuild. The converter knows a small markdown subset: end a line
+with `\` for a line break (the address blocks), and never start a wrapped
+line with "1." (it would become a list).
+
+**Where the apps link them:** one constant,
+`escoresheet/frontend/src/legal/legalLinks.js` (copy in
+`escoresheet/backend/lib/legalLinks.js`; a test keeps them equal and checks
+the static `deploy/pkgs/index.html`). OpenBeach still needs its links:
+[openbeach-links.md](openbeach-links.md).
+
 **Not legal advice.** Before go-live, have the texts and the data map
 reviewed by a Swiss lawyer and checked against the FDPIC (EDÖB) guidance for
 private operators, including the open points in data-map.md section 1
 (controller of the match records, GDPR Art. 27 EU representative).
 
-## Placeholders (fill in once per language)
+## Placeholders
+
+Leave them in these files. On the website both are filled in **once** in
+openvolley_home `legal/operator.txt` (address and place of jurisdiction for
+all four languages); until then the pages show them highlighted.
 
 - `[ADRESSE / ADDRESS]`: only in `*/impressum.md`. Privacy policy and terms
   refer to the Impressum for the address.

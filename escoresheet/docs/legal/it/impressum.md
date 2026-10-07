@@ -4,8 +4,8 @@
 
 ## Gestore
 
-Luca Canepa (persona privata)
-[ADRESSE / ADDRESS]
+Luca Canepa (persona privata)\
+[ADRESSE / ADDRESS]\
 Svizzera
 
 E-mail: support@openvolley.app

@@ -27,8 +27,8 @@ version allemande fait foi.
 
 Le responsable du traitement est :
 
-**Luca Canepa**, personne privée, Suisse
-Adresse postale : voir les [mentions légales](impressum.md)
+**Luca Canepa**, personne privée, Suisse\
+Adresse postale : voir les [mentions légales](impressum.md)\
 E-mail : support@openvolley.app
 
 J'exploite OpenVolley en tant que personne privée. Je n'ai pas désigné de

@@ -25,8 +25,8 @@ version is binding.
 
 The controller is:
 
-**Luca Canepa**, private person, Switzerland
-Postal address: see the [legal notice](impressum.md)
+**Luca Canepa**, private person, Switzerland\
+Postal address: see the [legal notice](impressum.md)\
 Email: support@openvolley.app
 
 I run OpenVolley as a private person. I have not appointed a data protection
