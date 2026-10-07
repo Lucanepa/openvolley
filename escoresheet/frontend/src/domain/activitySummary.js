@@ -197,6 +197,9 @@ const CLOSING = ['approved', 'final']
  */
 export const MATCH_KEY_KINDS = Object.freeze([
   [k => k === 'status', 'match.status', (k, before, after) => ({ from: before ?? null, to: after ?? null })],
+  // MatchEnd's "Confirm and approve" sets approved (the local status stays
+  // 'ended'; the cloud row becomes 'approved' and is closed): the close
+  [k => k === 'approved', 'match.close', null],
   [k => /^coinToss/.test(k) || k === 'firstServe', 'match.coin_toss', null],
   [k => /Signature$/.test(k), 'match.signature', (k, before, after) => ({ role: k.replace(/Signature$/, ''), signed: !!after })],
   [k => k === 'accountApprovals', 'match.approval', null],
@@ -248,6 +251,14 @@ export function matchUpdateEntries(mods, row) {
     const after = top === key ? mods[key] : { ...(before || {}), [key.split('.').slice(1).join('.')]: mods[key] }
     if (kind === 'match.status') {
       out.push({ kind: CLOSING.includes(after) && !CLOSING.includes(before) ? 'match.close' : 'match.status', data: build(top, before, after) })
+    } else if (top === 'approved') {
+      const status = 'status' in mods ? mods.status : row?.status
+      if (after === true && before !== true) {
+        out.push({ kind: 'match.close', data: { from: row?.status ?? null, to: 'approved' } })
+      } else if (after !== true && before === true && !changed.includes('status')) {
+        // the approval is withdrawn (reopen) without a status change of its own
+        out.push({ kind: 'match.status', data: { from: 'approved', to: status ?? null } })
+      }
     } else if (kind === 'match.coin_toss') {
       if (seen.has(kind)) continue
       seen.add(kind)

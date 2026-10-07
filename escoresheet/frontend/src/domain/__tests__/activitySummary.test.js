@@ -44,6 +44,14 @@ describe('match row entries', () => {
     const row = { status: 'live', remarks: 'a', homeCoachSignature: null, accountApprovals: null, updatedAt: 1 }
     expect(matchUpdateEntries({ status: 'ended', updatedAt: 2 }, row)).toEqual([{ kind: 'match.status', data: { from: 'live', to: 'ended' } }])
     expect(matchUpdateEntries({ status: 'approved' }, { status: 'ended' })[0].kind).toBe('match.close')
+    // MatchEnd "Confirm and approve": approved, the local status stays 'ended'
+    expect(matchUpdateEntries({ approved: true, approvedAt: '2026-10-07T16:55:30Z', current_set: null }, { status: 'ended', approved: false }))
+      .toEqual([{ kind: 'match.close', data: { from: 'ended', to: 'approved' } }])
+    // reopen: the approval withdrawn, told once
+    expect(matchUpdateEntries({ approved: false, approvedAt: null, status: 'ended' }, { status: 'ended', approved: true }))
+      .toEqual([{ kind: 'match.status', data: { from: 'approved', to: 'ended' } }])
+    expect(matchUpdateEntries({ approved: false, approvedAt: null, status: 'live' }, { status: 'ended', approved: true }))
+      .toEqual([{ kind: 'match.status', data: { from: 'ended', to: 'live' } }])
     expect(matchUpdateEntries({ homeCoachSignature: 'data:image/png;base64,xx' }, row)).toEqual([{ kind: 'match.signature', data: { role: 'homeCoach', signed: true } }])
     expect(matchUpdateEntries({ remarks: 'secret words here' }, row)).toEqual([{ kind: 'match.remarks', data: { length: 17 } }])
     expect(matchUpdateEntries({ accountApprovals: { scorer: { method: 'pin', pin: '1234' } } }, row))
