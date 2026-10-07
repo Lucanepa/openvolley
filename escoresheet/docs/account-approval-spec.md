@@ -193,6 +193,7 @@ it compares strings. A missing points value counts as 0.
      FOR EACH ROW EXECUTE FUNCTION public.ov_match_children_guard();
    ```
    A closed match therefore has frozen approvals (SQLSTATE `OVC01`, which maps to 409 `OV_MATCH_CLOSED`). The admin reopen runs with `ov.allow_closed = on`.
+   As built: the UPDATE trigger (`match_approvals_closed_guard_update`) has a `WHEN` clause that skips updates which only set `user_id`, `requested_by` or `revoked_by` to NULL. Without it, deleting an account that approved a closed match would fail on the `ON DELETE SET NULL`.
 2. **Approvals are append-only.** New function `public.ov_match_approvals_immutable()`, run as a BEFORE UPDATE trigger. An UPDATE may only:
    - set `revoked_at`, `revoked_by` and `revoked_reason` once, from NULL;
    - set `user_id`, `requested_by` or `revoked_by` to NULL (the FK `ON DELETE SET NULL`).
@@ -282,7 +283,7 @@ with the existing `TOO_MANY` body).
   "locked_until": null, "disabled": false }
 ```
 - `available` is false when there is no `OV_PIN_SECRET`. All other fields are then false or null.
-- `eligible` means the account holds `referee` or `scorer` and its email is confirmed.
+- `eligible` means the account holds `referee` or `scorer` and its email is confirmed. As built, "confirmed" here and in 3.1 step 5 and 3.2 step 10 means `email_confirmed_at` is set, whenever the users table has that column.
 - A row with an old `key_id` reads as `set: false`.
 
 **`POST /api/account/approval-pin`** with body `{ "password": "…", "pin": "482917" }` sets or changes the PIN. The checks run in this order:
@@ -339,7 +340,7 @@ The order of the checks is part of the contract:
 5. The caller may write the match (`created_by = caller`, a `match_editors` row, or `access.isAdmin`). If not: 403 `OV_NOT_MATCH_OWNER`.
 6. `closed_at IS NOT NULL`: 409 `OV_MATCH_CLOSED`.
 7. `status <> 'ended'`: 409 `OV_MATCH_NOT_ENDED` `{ details: { status } }`.
-8. `resultKey(server sets)` differs from `resultKey(body.result.sets)`: 409 `OV_RESULT_NOT_SYNCED` `{ details: { server: [[i,h,a],…] } }`. The client syncs and retries.
+8. `resultKey(server sets)` differs from `resultKey(body.result.sets)`, or the server has no finished set at all: 409 `OV_RESULT_NOT_SYNCED` `{ details: { server: [[i,h,a],…] } }`. The client syncs and retries.
 9. Look up the approver with `auth.users` by `lower(email)`. Deleted, banned or blocked users count as unknown. Then `SELECT … FROM auth.approval_pins WHERE user_id = $1 FOR UPDATE`, which is skipped for an unknown user, but `verifyPin` still runs once with the dummy inputs:
    - Disabled or locked: 423 `OV_APPROVAL_PIN_LOCKED` `{ details: { retry_after_sec } \| { disabled: true } }`. Not counted.
    - Wrong PIN, unknown email, no PIN, old `key_id` or bad format: 403 `OV_APPROVAL_PIN_INVALID` (message "Email or PIN not accepted", no details). When a row exists, the failure is counted (1.2) and **committed**.
