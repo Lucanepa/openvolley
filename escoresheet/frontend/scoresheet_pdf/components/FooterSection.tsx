@@ -233,7 +233,7 @@ export const Results: React.FC<ResultsProps> = ({
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamATimeouts !== null;
                             return (
-                             <div key={set} className="grid grid-cols-4 flex-1 border-b ss-rule text-xs relative">
+                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs relative`}>
                                 {matchOver && !isFinished && <RowStrike />}
                                 <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamATimeouts ?? 0) : ''}
@@ -285,7 +285,7 @@ export const Results: React.FC<ResultsProps> = ({
                             // every set label is pre-printed, as on the paper (unplayed rows are struck off)
                             const showSetNumber = true;
                             return (
-                            <div key={set} className="flex-1 border-b ss-rule grid font-bold text-xs bg-white relative" style={{ gridTemplateColumns: '1fr 2fr' }}>
+                            <div key={set} className={`flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} grid font-bold text-xs bg-white relative`} style={{ gridTemplateColumns: '1fr 2fr' }}>
                                 {matchOver && !(setData && setData.teamATimeouts !== null) && <RowStrike />}
                                 <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? displayLabel : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
@@ -326,7 +326,7 @@ export const Results: React.FC<ResultsProps> = ({
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamBTimeouts !== null;
                             return (
-                             <div key={set} className="grid grid-cols-4 flex-1 border-b ss-rule text-xs min-h-[16px] relative">
+                             <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs min-h-[16px] relative`}>
                                 {matchOver && !isFinished && <RowStrike />}
                                 <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamBPoints ?? 0) : ''}
