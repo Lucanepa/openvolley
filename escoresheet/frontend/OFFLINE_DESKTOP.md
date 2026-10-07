@@ -101,7 +101,44 @@ and how packages get published.)
 
 Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 `windows-latest` runner) — WebView2/NSIS can't be cross-built from Linux. Push a
-`desktop-v*` tag or run the workflow manually to get Windows + Linux artifacts.
+`desktop-v*` tag or run the workflow manually to get Windows + Linux + macOS artifacts.
+
+### macOS
+
+A `macos-15` (arm64) runner builds one universal app (`--target
+universal-apple-darwin`, both slices), ad-hoc signed (`tauri.macos.conf.json`:
+`signingIdentity: "-"`, no Apple developer account, so not notarized), as
+`OpenVolley.eScoresheet_<v>_universal.dmg` and the updater's
+`openvolley-escoresheet_<v>_universal.app.tar.gz` (OpenBeach: `OpenBeach_…`,
+`openbeach-escoresheet_…`). The job checks the bundle and smoke-tests it (each
+slice's relay, x86_64 under Rosetta; the app with its window; quit on SIGTERM)
+and uploads a screenshot and `desktop.log`. A failed macOS job does not hold
+back the Windows / Linux release.
+
+On the Mac: the first start is blocked by Gatekeeper (open once, then System
+Settings › Privacy & Security › Open Anyway, or `xattr -dr
+com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"`); Homebrew:
+`brew install --cask lucanepa/tap/openvolley` (`deploy/homebrew`). What differs
+from Windows / Linux:
+
+- The tray icon is in the menu bar; the red button and Cmd+W hide the window
+  like the close button, a Dock click brings it back. Cmd+Q is the app's own
+  menu item and asks like "Quit OpenVolley…"; Dock › Quit, logout and shutdown
+  quit at once (never blocked, the tablet network still stops).
+- No tablet Wi-Fi / Bluetooth from the app (`netshare/other.rs`): venue Wi-Fi,
+  a travel router or macOS Internet Sharing. No firewall check (the macOS
+  application firewall is off by default; when on, macOS asks once per build
+  whether the app may accept incoming connections: Allow).
+- Updates: the `.app.tar.gz` downloads in the background and replaces the
+  bundle on quit (an administrator prompt if the user cannot write it). Only
+  for the app in Applications: run from the disk image or from App
+  Translocation (still quarantined, never moved with the Finder) it has no
+  automatic updates (`desktop.log`: "not an installed app bundle").
+- Logs: `~/Library/Logs/OpenVolley` (OpenBeach: `~/Library/Logs/OpenBeach`);
+  backups: `~/Library/Application Support/OpenVolley/backups`.
+- Known limit: a scoresheet window's own `window.close()` (the match-end PDF
+  window) does nothing on macOS (wry has no `webViewDidClose`); the window
+  stays until the scorer closes it.
 
 ### OpenBeach: the same shell as a second app
 
@@ -679,7 +716,8 @@ hand (APT: `sudo apt upgrade`).
 
 - No native menu bar on Linux / Windows (it held only Help → Connect a Tablet
   and rendered in the GTK system theme). Its items live in the app's header
-  menu: Connect tablets, help (?), version. macOS keeps Tauri's default app menu.
+  menu: Connect tablets, help (?), version. macOS has an app menu (Tauri's
+  default: copy / paste, hide, window) with its own Quit item that asks first.
 - Light only: besides `Theme::Light`, the Linux build asks GTK for the light
   variant of a dark system theme (`Yaru-dark` → `Yaru`), so the title bar,
   pickers and scrollbars stay light on a dark desktop. A `GTK_THEME` set by the
