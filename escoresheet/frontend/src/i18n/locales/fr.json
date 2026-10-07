@@ -3339,7 +3339,8 @@
       "subEvent": "Cette ligne appartient à une autre entrée ; supprimez plutôt celle-ci.",
       "liberoOnCourtRotate": "Un libéro est sur le terrain pour cette équipe : faites la rotation après sa sortie.",
       "removePointNotLast": "Le point de pénalité ne peut être supprimé que s'il est le dernier point du set en cours.",
-      "noScoreChange": "Rien à changer."
+      "noScoreChange": "Rien à changer.",
+      "endBeforeStart": "Le set {{set}} ne peut pas finir avant d’avoir commencé."
     },
     "note": {
       "ladder": "Selon les règles, ce serait un/e {{expected}} ; enregistré selon la décision de l'arbitre.",

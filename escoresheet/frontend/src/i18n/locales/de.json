@@ -3328,7 +3328,8 @@
       "subEvent": "Diese Zeile gehört zu einem anderen Eintrag; entferne stattdessen diesen.",
       "liberoOnCourtRotate": "Ein Libero ist für diese Mannschaft auf dem Feld: rotiere, nachdem der Libero das Feld verlassen hat.",
       "removePointNotLast": "Der Strafpunkt kann nur entfernt werden, solange er der letzte Punkt des laufenden Satzes ist.",
-      "noScoreChange": "Nichts zu ändern."
+      "noScoreChange": "Nichts zu ändern.",
+      "endBeforeStart": "Satz {{set}} kann nicht vor seinem Beginn enden."
     },
     "note": {
       "ladder": "Nach den Regeln wäre das eine {{expected}} gewesen; erfasst, wie der Schiedsrichter entschieden hat.",

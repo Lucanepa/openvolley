@@ -73,7 +73,8 @@ export const ERROR_DEFAULTS = {
   subEvent: 'This row belongs to another entry; remove that entry instead.',
   liberoOnCourtRotate: 'A libero is on court for this team: rotate after the libero has left the court.',
   removePointNotLast: 'The penalty point can only be removed while it is the last point of the set being played.',
-  noScoreChange: 'Nothing to change.'
+  noScoreChange: 'Nothing to change.',
+  endBeforeStart: 'Set {{set}} cannot end before it starts.'
 }
 
 export const NOTE_DEFAULTS = {
@@ -811,6 +812,9 @@ export function planSetTimes(events, sets, { setIndex, startTime, endTime, sched
   if (startTime !== undefined) changes.startTime = startTime
   if (endTime !== undefined) changes.endTime = endTime
   if (Object.keys(changes).length === 0) return fail('noScoreChange')
+  const startAt = tsMs(changes.startTime ?? row.startTime)
+  const endAt = tsMs(changes.endTime ?? row.endTime)
+  if (startAt && endAt && endAt < startAt) return fail('endBeforeStart', { set })
   plan.setUpdates = [{ setIndex, changes }]
   const end = setEvents(events, setIndex).find(e => e.type === 'set_end')
   if (end) plan.update = [{ id: end.id, changes: { payload: { ...end.payload, ...changes } } }]

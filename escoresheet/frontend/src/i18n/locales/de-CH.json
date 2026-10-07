@@ -3340,7 +3340,8 @@
       "subEvent": "Die Ziile ghört zu emene andere Iitrag; entfern stattdesse dä.",
       "liberoOnCourtRotate": "En Libero isch für die Mannschaft uf em Feld: rotier, wenn de Libero s Feld verlah het.",
       "removePointNotLast": "De Strafpunkt chan nur entfernt werde, solang er de letscht Punkt vom laufende Satz isch.",
-      "noScoreChange": "Nüüt z ändere."
+      "noScoreChange": "Nüüt z ändere.",
+      "endBeforeStart": "Satz {{set}} cha nöd vor sim Aafang ändi."
     },
     "note": {
       "ladder": "Nach de Regle wär das e {{expected}} gsi; erfasst, wie de Schiri entschiede het.",
