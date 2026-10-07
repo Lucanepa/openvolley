@@ -88,6 +88,7 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
   const sink = {
     record: (kind, data, opts) => writer.record(kind, data, opts),
     flush: async () => {
+      flushWaiting()
       await writer.flush()
       await fileSink?.flush()
     },
@@ -104,6 +105,9 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
   setActivitySink(sink)
 
   const uninstallHooks = installActivityHooks(db, writer)
+  const flushWaiting = () => {
+    try { uninstallHooks.flushWaiting?.() } catch { /* logging never breaks the app */ }
+  }
   const cleanups = [uninstallHooks, () => afterWrite.delete(fileListener)]
 
   // app.start / app.update
@@ -123,6 +127,7 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
   if (win?.addEventListener) {
     const onHide = (e) => {
       if (e && e.persisted) return // bfcache: the page may come back
+      flushWaiting()
       writer.record('app.quit', {})
       writer.flush().then(() => fileSink?.flush())
     }
