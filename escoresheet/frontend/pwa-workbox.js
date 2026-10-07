@@ -12,12 +12,14 @@
 export const PAGE_ENTRIES = ['referee', 'scoresheet', 'bench', 'livescore', 'upload_roster']
 
 // Precache everything the pages need for a cold offline start: code (incl. .mjs
-// workers), styles, fonts and images (the scoresheet's .jpg logo too).
+// workers), styles, fonts and images (the bundled, content-hashed ball and logo too).
 export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,svg,webp,woff,woff2}']
 
 // Logo files the pages' heads link to (rendered from brand/ by
-// scripts/make-brand-assets.py), and the serve ball.
-export const PWA_INCLUDE_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'ball.png', 'fonts/*.woff2']
+// scripts/make-brand-assets.py). The serve ball is not one of them: the code
+// imports it (src/brand.js, a content-hashed /assets/ URL), so a new build can
+// never be served the cached old /ball.png.
+export const PWA_INCLUDE_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'fonts/*.woff2']
 
 // Manifest icons: the white tile ('any'), and a full-bleed white square with
 // the ball inside the safe zone for launchers that mask ('maskable').

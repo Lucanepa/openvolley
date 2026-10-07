@@ -112,6 +112,40 @@
   }
 }
 
+/* kit: the native <select> look (Select.jsx puts `ov-select` on it).
+   appearance: none on every engine, so WebKitGTK (the Linux desktop app) and
+   Android WebView stop drawing their own grey, inset menulist with its theme
+   padding, which pushed the text down and clipped it in an h-9 box. The
+   chevron is lucide's ChevronDown in stone-500 (3:1 on white), 16 px, 10 px
+   from the right edge; the size classes reserve pr-8 for it. No vertical
+   padding: the size classes set the line height to the inner height, so the
+   text sits in the middle in Blink, WebKit and Gecko alike. Components layer:
+   it beats any element rule below it, and every utility beats it. */
+@layer components {
+  .ov-select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    background-size: 1rem 1rem;
+    /* the UA gives a select the system font, not the page's (Inter) */
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    padding-block: 0;
+    text-transform: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ov-select:disabled {
+    cursor: not-allowed;
+  }
+}
+
 /* Loading spinner orbits (svrz_rc AppSpinner.tsx, index.css:105-122).
    The satellite rides a path set inline as `offset-path`; this only supplies
    the motion. offset-rotate is pinned to 0deg because a tumbling ball reads as

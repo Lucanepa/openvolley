@@ -27,9 +27,11 @@ describe('Approvals cell: account approval stamp', () => {
     expect(getByTestId('approval-stamp-referee1').textContent)
       .toBe('Approved electronically · Muster Anna · 07.10.2026 21:42 · ID 6F1C2A9B')
     expect(queryByAltText('1st Referee signature')).toBeNull()
-    const cls = getByTestId('approval-stamp-referee1').className
-    expect(cls).toContain('text-[6px]')
-    expect(cls).toContain('overflow-hidden')
+    // a readable size (7.5 px, shrinking only when it does not fit), never overflowing its row
+    const stamp = getByTestId('approval-stamp-referee1')
+    expect(stamp.style.fontSize).toBe('7.5px')
+    expect(stamp.style.overflow).toBe('hidden')
+    expect(stamp.className).toContain('h-5')
   })
 
   it('prints the drawn signature when both exist', () => {

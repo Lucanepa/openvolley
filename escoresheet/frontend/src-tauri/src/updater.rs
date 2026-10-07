@@ -49,13 +49,13 @@ use crate::lifecycle::{self, Lifecycle, MatchLive};
 pub const UPDATE_EVENT: &str = "ov-update";
 /// `OPENVOLLEY_UPDATE_CHANNEL=staging`: the canary manifest (still verified
 /// with the same key).
-pub const STAGING_ENDPOINT: &str = "https://get.openvolley.app/desktop/staging.json";
+pub const STAGING_ENDPOINT: &str = crate::flavour::CURRENT.staging_endpoint;
 /// Written by install.sh: the machine gets the app from the APT repo.
 pub const APT_LIST: &str = "/etc/apt/sources.list.d/openvolley.list";
 /// The root helper the .deb ships (linux/apt-upgrade, polkit action
 /// com.openvolley.escoresheet.update).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub const APT_HELPER: &str = "/usr/libexec/openvolley-escoresheet/apt-upgrade";
+pub const APT_HELPER: &str = crate::flavour::CURRENT.apt_helper;
 
 pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 pub const SIGN_IN_EVERY: Duration = Duration::from_secs(15 * 60);
@@ -570,7 +570,7 @@ fn notice_replaced_binary(_updates: &Updates) {}
 #[cfg(target_os = "linux")]
 fn installed_deb_version() -> Option<String> {
     let out = std::process::Command::new("dpkg-query")
-        .args(["-W", "-f=${Version}", "openvolley-escoresheet"])
+        .args(["-W", "-f=${Version}", crate::flavour::CURRENT.package])
         .output()
         .ok()?;
     let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -727,6 +727,33 @@ fn after_failed_install<R: Runtime>(app: &AppHandle<R>) {
     lifecycle::set_tray_visible(app, true);
 }
 
+/// Is this download the other app's installer? OpenVolley and OpenBeach
+/// share the updater key and the GitHub repo: a manifest of the other app
+/// (GitHub's "Latest" on a beach-desktop-v* release, a manifest published to
+/// the wrong place) verifies, and would replace this app with the other one.
+/// Matched on the release tag (.../releases/download/<tag>/<file>) and on the
+/// file name, so neither the layout of get.openvolley.app nor of GitHub has
+/// to stay as it is for this app's own updates to pass.
+pub fn foreign_update(url: &tauri::Url, f: &crate::flavour::Flavour) -> bool {
+    let (tag_prefix, file_prefix) = f.foreign_installers;
+    let segs: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();
+    let n = segs.len();
+    let foreign_tag = n >= 3 && segs[n - 3] == "download" && segs[n - 2].starts_with(tag_prefix);
+    let foreign_file = segs.last().is_some_and(|f| f.to_ascii_lowercase().starts_with(file_prefix));
+    foreign_tag || foreign_file
+}
+
+/// The plugin's check, minus a manifest of the other app (foreign_update).
+async fn check_own(u: &tauri_plugin_updater::Updater) -> Result<Option<Update>, String> {
+    match u.check().await.map_err(|e| e.to_string())? {
+        Some(update) if foreign_update(&update.download_url, crate::flavour::CURRENT) => Err(format!(
+            "the update manifest announces {} at {}: the other app's installer, ignored",
+            update.version, update.download_url
+        )),
+        found => Ok(found),
+    }
+}
+
 fn updater<R: Runtime>(app: &AppHandle<R>) -> Result<tauri_plugin_updater::Updater, String> {
     let h = app.clone();
     // replaces the plugin's own hook (cleanup_before_exit), see before_installer
@@ -772,7 +799,7 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>, reason: Reason) {
     push(app);
 
     let found = match updater(app) {
-        Ok(u) => u.check().await.map_err(|e| e.to_string()),
+        Ok(u) => check_own(&u).await,
         Err(e) => Err(e),
     };
     let found = {
@@ -835,7 +862,7 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>, reason: Reason) {
 async fn download<R: Runtime>(app: &AppHandle<R>) {
     // the Update object is not kept without its file: ask again (cheap)
     let update = match updater(app) {
-        Ok(u) => u.check().await.ok().flatten(),
+        Ok(u) => check_own(&u).await.ok().flatten(),
         Err(_) => None,
     };
     match update {
@@ -1167,6 +1194,43 @@ pub fn update_set_prefs<R: Runtime>(app: AppHandle<R>, auto_check: Option<bool>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both apps trust one updater key: a manifest of the other app verifies,
+    /// so the download URL decides (GitHub's "Latest" on a beach release must
+    /// not turn an OpenVolley install into OpenBeach, nor the reverse).
+    #[test]
+    fn an_update_of_the_other_app_is_refused() {
+        use crate::flavour::{BEACH, OPENVOLLEY};
+        let u = |s: &str| tauri::Url::parse(s).unwrap();
+        let gh = "https://github.com/Lucanepa/openvolley/releases/download";
+        let pool = "https://get.openvolley.app/apt/pool/main";
+        let ov = [
+            format!("{gh}/desktop-v2.2.1/Openvolley%20eScoresheet_2.2.1_x64-setup.exe"),
+            format!("{gh}/desktop-v2.2.1/openvolley-escoresheet_2.2.1_amd64.AppImage"),
+            format!("{pool}/openvolley-escoresheet_2.2.1_amd64.deb"),
+        ];
+        let beach = [
+            format!("{gh}/beach-desktop-v2.0.0/OpenBeach_2.0.0_x64-setup.exe"),
+            format!("{gh}/beach-desktop-v2.0.0/openbeach-escoresheet_2.0.0_amd64.AppImage"),
+            format!("{pool}/openbeach-escoresheet_2.0.0_amd64.deb"),
+        ];
+        for url in &ov {
+            assert!(!foreign_update(&u(url), &OPENVOLLEY), "{url}");
+            assert!(foreign_update(&u(url), &BEACH), "{url}");
+        }
+        for url in &beach {
+            assert!(foreign_update(&u(url), &OPENVOLLEY), "{url}");
+            assert!(!foreign_update(&u(url), &BEACH), "{url}");
+        }
+        // either sign alone is enough: the other app's file under any tag,
+        // any file under the other app's release tag
+        assert!(foreign_update(&u(&format!("{gh}/desktop-v9.0.0/OpenBeach_2.0.0_x64-setup.exe")), &OPENVOLLEY));
+        assert!(foreign_update(&u(&format!("{gh}/beach-desktop-v2.0.0/setup.exe")), &OPENVOLLEY));
+        assert!(foreign_update(&u(&format!("{gh}/desktop-v2.2.1/setup.exe")), &BEACH));
+        // a mirror elsewhere with the app's own file names still passes
+        assert!(!foreign_update(&u("https://mirror.example/x/openvolley-escoresheet_2.2.1_amd64.AppImage"), &OPENVOLLEY));
+        assert!(!foreign_update(&u("https://mirror.example/x/OpenBeach_2.0.0_x64-setup.exe"), &BEACH));
+    }
 
     fn gate(live: MatchLive, tablets: usize, net: bool, page: bool) -> GateInput {
         GateInput { live, tablets, tablet_net_on: net, page_ready: page }

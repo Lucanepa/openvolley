@@ -94,6 +94,26 @@
     "initializing": "Spiel wird initialisiert",
     "confirmBirthdates": "Geburtsdaten bestätigen"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Position auf dem Feld",
+    "sanctions": "Sanktionen",
+    "team": "Team",
+    "teamSanctions": "Mannschaftssanktionen",
+    "server": "Aufschläger",
+    "gameCaptain": "Spielkapitän",
+    "gameCaptainShort": "SK",
+    "setScore": "Satz {{set}}, {{score}}",
+    "delayShort": "V",
+    "improperRequestShort": "UA",
+    "out": {
+      "disqualified": "Disqualifiziert: darf für den Rest des Spiels nicht mehr spielen",
+      "expelled": "Ausgeschlossen: darf in diesem Satz nicht mehr spielen",
+      "exceptional": "Ausnahmsweise ausgewechselt: darf für den Rest des Spiels nicht mehr spielen",
+      "unable": "Libero spielunfähig"
+    },
+    "injured": "Verletzt"
+  },
   "roster": {
     "title": "Kader",
     "titleWithTeam": "{{team}} - Kader",
@@ -118,7 +138,7 @@
     "libero2": "L2",
     "liberoFull1": "Libero 1",
     "liberoFull2": "Libero 2",
-    "none": "keine",
+    "none": "Keine",
     "duplicateNumber": "Doppelte Trikotnummer!",
     "signatures": "Unterschriften",
     "signatureTitle": "{{role}} Unterschrift - {{team}}",
@@ -483,7 +503,16 @@
       "confirm": "Bestätigen",
       "close": "Schliessen",
       "modify": "Ändern",
-      "positionInput": "Spieler auf Position {{pos}}"
+      "positionInput": "Spieler auf Position {{pos}}",
+      "errors": {
+        "required": "Pflichtfeld",
+        "duplicate": "Doppelt",
+        "notOnRoster": "Nicht auf dem Matchblatt",
+        "libero": "Libero nicht erlaubt",
+        "disqualified": "Disqualifiziert",
+        "exceptionallySubstituted": "Ausserordentlich ersetzt",
+        "saveFailed": "Speichern fehlgeschlagen"
+      }
     },
     "lastAction": "Letzte Aktion:",
     "keybindings": {
@@ -547,10 +576,10 @@
       "confirmUndo": "Rückgängig bestätigen",
       "confirmReplay": "Ballwechsel wiederholen?",
       "confirmReplayBody": "Es wird kein Punkt vergeben, dieselbe Mannschaft schlägt erneut auf.",
-      "confirmTimeout": "Zeitüberschreitung bestätigen",
       "decisionChange": "Entscheidungs\u00adänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",
       "exceptionalSubPlayerCantPlay": "Ausserordentliche Auswechslung - Spieler kann nicht mehr teilnehmen",
+      "substitutionLimitImproperRequest": "Das Team hat seine 6 Auswechslungen in diesem Satz gebraucht: ein weiterer Wechselantrag ist eine unzulässige Anfrage.",
       "substituteWithEligible": "Mit einem spielberechtigten Spieler von der Bank ersetzen",
       "liberoRedesignation": "Libero-Neubezeichnung",
       "courtSwitchRequired": "Seitenwechsel erforderlich",
@@ -563,7 +592,6 @@
       "scoresheetAlreadyOpen": "eMatchblatt bereits geöffnet",
       "remarksRecording": "Bemerkungsaufzeichnung",
       "sanctionsAndResults": "Sanktionen und Ergebnisse",
-      "confirmSecondTimeout": "{{ordinal}} Timeout-Anfrage bestätigen?",
       "liberoOut": "Libero RAUS",
       "liberoIn": "Libero REIN",
       "playerReturns": "Spieler kehrt zurück",
@@ -611,14 +639,11 @@
     "confirm": {
       "yesStartRally": "Ja, Ballwechsel starten",
       "yesAwardPoint": "Ja, Punkt vergeben",
-      "yesTimeout": "Ja, Zeitüberschreitung",
       "apply": "Anwenden",
       "rallyStartedQuickly": "Ballwechsel sehr schnell gestartet",
       "areYouSureRallyStarted": "Sind Sie sicher, dass der Ballwechsel tatsächlich begonnen hat?",
       "pointAwardedQuickly": "Punkt sehr schnell vergeben",
-      "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?",
-      "timeoutAlreadyTaken": "Dieses Team hat in diesem Satz bereits eine Auszeit genommen.",
-      "areYouSureAnotherTimeout": "Sind Sie sicher, dass Sie einen weiteren Timeout für {{team}} aufrufen wollen?"
+      "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?"
     },
     "menu": {
       "scoresheet": "eMatchblatt",
@@ -785,6 +810,24 @@
     "toolbar": {
       "hide": "Werkzeugleiste ausblenden",
       "show": "Werkzeugleiste einblenden"
+    },
+    "confirmFailed": "Das wurde nicht gespeichert. Bitte das Matchblatt prüfen und erneut versuchen.",
+    "timeoutRequest": {
+      "title": "Timeout — {{team}}",
+      "first": "Timeout 1 von 2 in diesem Satz für {{team}}.",
+      "second": "Zweites Timeout dieses Satzes für {{team}} (1 von 2 bereits genommen).",
+      "consecutive": "{{team}} hat in dieser Unterbrechung bereits ein Timeout genommen (seither kein Ballwechsel). Jetzt das zweite Timeout erfassen?",
+      "confirmConsecutive": "Ja, zweites Timeout",
+      "notRecorded": "Das Timeout wurde nicht erfasst. Bitte erneut versuchen."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage.",
+      "applyImproperRequest": "Unzulässige Anfrage für {{team}} erfassen?",
+      "applyDelayWarning": "Verzögerungswarnung für {{team}} erfassen?",
+      "applyDelayPenalty": "Verzögerungsstrafe für {{team}} erfassen?",
+      "repeatedImproperRequest": "Die Mannschaft hat bereits eine unzulässige Anfrage, diese zählt deshalb als Verzögerung.",
+      "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
+      "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
     }
   },
   "settings": {
@@ -1616,24 +1659,20 @@
     "account": "Konto",
     "address": "Adresse",
     "allowRole": "{{role}} zulassen",
-    "btAlternative": "Nimm stattdessen «WLAN für Tablets erstellen» im Tab LAN: Das geht mit jedem Tablet.",
+    "btAlternative": "Nimm stattdessen «WLAN von diesem Computer»: Das geht mit jedem Tablet.",
     "btAndroid": "Android: Einstellungen › Bluetooth › mit «{{name}}» koppeln, auf ⚙ daneben tippen und «Internetzugriff» einschalten. Verbindet es nicht, das WLAN des Tablets ausschalten.",
     "btChecking": "Bluetooth wird geprüft…",
     "btDesktopOnly": "Die OpenVolley-Desktop-App unter Linux kann ein Bluetooth-Netz für die Tablets öffnen. Windows kann das nicht (es kann nur einem beitreten).",
-    "btFound": "Bluetooth-Netz gefunden: Mit diesem Computer gekoppelte Tablets öffnen die Links unten.",
+    "btFound": "Bluetooth-Netz gefunden: Mit diesem Computer gekoppelte Tablets können die Codes scannen.",
     "btIpad": "iPad (funktioniert evtl. nicht): Einstellungen › Bluetooth › auf «{{name}}» tippen.",
-    "btLater": "Geplant: eine direkte Bluetooth-Verbindung in der Android-App (Browser auf Tablets können kein Bluetooth).",
     "btStart": "Bluetooth-Netz starten",
     "btStop": "Bluetooth-Netz stoppen",
     "btThen": "Dann den Code der Rolle scannen. Bluetooth ist langsam und fasst etwa 6 Geräte.",
     "btVisible": "3 Minuten zum Koppeln sichtbar",
-    "cloudBlocked": "Cloud-Sync ist in diesem App-Fenster aus (es läuft nicht auf Port 5173). Nimm den Tab LAN.",
-    "connection": "Verbindung",
+    "cloudBlocked": "Cloud-Sync ist in diesem App-Fenster aus (es läuft nicht auf Port 5173). Wähle «WLAN der Halle» oder «WLAN von diesem Computer».",
     "copied": "Kopiert",
-    "copy": "Kopieren",
-    "createWifiFirst": "Zuerst das WLAN erstellen",
-    "description": "Schiedsrichter, Bänke und Livescore verfolgen dieses Spiel auf dem eigenen Tablet. Wähle, wie die Tablets diesen Computer erreichen.",
-    "devices": "Jetzt verbunden: {{count}}.",
+    "createWifiFirst": "Zuerst das WLAN erstellen (Schritt 1)",
+    "description": "Schiedsrichter und Bänke verfolgen dieses Spiel auf dem eigenen Tablet. Drei Schritte: Verbindung wählen, Tablet wählen, scannen und PIN eingeben.",
     "err": {
       "bluetoothFailed": "Das Bluetooth-Netz konnte nicht gestartet werden.",
       "bluetoothOff": "Bluetooth ist aus und liess sich nicht einschalten.",
@@ -1669,44 +1708,31 @@
     "joinAndroid": "Android: Einstellungen › WLAN › QR-Symbol (oder Kamera), WLAN-Code scannen.",
     "joinIpad": "iPad: Kamera öffnen, auf den WLAN-Code richten, «Verbinden» tippen.",
     "joinNoInternet": "«Kein Internet»? «Verbunden bleiben» wählen, dann den Code der Rolle scannen.",
-    "joinWifi": "WLAN verbinden",
     "kind": {
       "ethernet": "Ethernet",
       "other": "Netzwerk",
       "wifi": "WLAN",
       "hotspot": "Hotspot dieses Computers"
     },
-    "lanHall": "WLAN der Halle",
-    "lanLaptop": "WLAN für Tablets erstellen",
-    "lanNeedsServer": "Tablets im lokalen Netz brauchen die OpenVolley-Desktop-App (oder eine Venue-Box) auf diesem Computer: Sie stellt die Seiten für Schiedsrichter, Bank und Livescore bereit. Im Browser den Tab Server nehmen.",
-    "lanWhich": "Welches WLAN",
+    "lanNeedsServer": "Tablets im lokalen Netz brauchen die OpenVolley-Desktop-App (oder eine Venue-Box) auf diesem Computer: Sie stellt die Seiten für Schiedsrichter, Bank und Livescore bereit. Im Browser «Internet» wählen.",
     "loading": "Lokaler Server wird abgefragt…",
     "needsAdmin": "Dein System fragt eventuell nach einem Administratorpasswort.",
     "needsDesktop": "Braucht die Desktop-App",
     "noAddress": "Kein Hallennetz",
     "noHallNetwork": "Dieser Computer ist in keinem Netz. Verbinde ihn mit dem WLAN der Halle oder erstelle ein WLAN für die Tablets.",
-    "noLinkYet": "Noch kein Link",
     "notHere": "Auf diesem Computer nicht verfügbar",
     "notSignedIn": "Nicht angemeldet",
-    "openMatchFirst": "Öffne ein Spiel, um dessen Links und PINs zu sehen.",
-    "pinHint": "Jedes Tablet fragt nach seiner PIN: Lies sie hier vor. Links und QR-Codes enthalten nie eine PIN. Schalte eine Rolle aus, um ihr Tablet auszusperren.",
-    "pinTitle": "Das Tablet fragt nach dieser PIN. Vorlesen; sie steht nie im Link.",
-    "qr": "QR",
     "role": {
-      "bench_away": "Bank (Gast)",
-      "bench_home": "Bank (Heim)",
+      "bench_away": "Gästebank",
+      "bench_home": "Heimbank",
       "livescore": "Livescore",
       "main": "eMatchblatt",
       "referee": "Schiedsrichter"
     },
-    "roleOff": "Aus",
-    "serverHint": "Die Tablets brauchen Internet (WLAN der Halle oder mobile Daten). Jedes Tablet fragt dann nach seiner PIN.",
-    "serverNeedsSignIn": "Über die Cloud erreichen die Tablets dieses Spiel erst, wenn du angemeldet bist und das Spiel synchronisiert ist.",
+    "serverHint": "Die Tablets brauchen Internet (WLAN der Halle oder mobile Daten).",
     "signIn": "Anmelden",
     "signedIn": "Angemeldet",
-    "startBtFirst": "Zuerst das Bluetooth-Netz starten",
-    "step1": "Schritt 1",
-    "step2": "Schritt 2",
+    "startBtFirst": "Zuerst das Bluetooth-Netz starten (Schritt 1)",
     "sync": {
       "authRequired": "Anmeldung nötig",
       "connecting": "Verbinde…",
@@ -1717,11 +1743,6 @@
       "syncing": "Synchronisiere…"
     },
     "syncLabel": "Spiel-Sync",
-    "tab": {
-      "bluetooth": "Bluetooth",
-      "lan": "LAN",
-      "server": "Server"
-    },
     "takesOverWifi": "Dieser Computer verlässt sein aktuelles WLAN, solange das WLAN der Tablets läuft. Der Cloud-Sync pausiert, ausser er hängt am Netzwerkkabel.",
     "thisComputer": "dieser Computer",
     "title": "Tablets verbinden",
@@ -1730,7 +1751,7 @@
     "networkName": "WLAN-Name",
     "networkPassword": "Passwort",
     "newPassword": "Neues Passwort",
-    "hotspotExternal": "Der Hotspot dieses Computers wurde in den Systemeinstellungen eingeschaltet. Tablets darin können die Links unten nutzen; ausschalten dort.",
+    "hotspotExternal": "Der Hotspot dieses Computers wurde in den Systemeinstellungen eingeschaltet. Tablets darin können die Codes scannen; ausschalten dort.",
     "windowsFirewall": "Tablets sind im WLAN, aber die Seite lädt nicht? Windows-Sicherheit › Firewall- & Netzwerkschutz › App durch Firewall zulassen › OpenVolley › «Öffentlich» ankreuzen.",
     "btExternal": "Dieses Bluetooth-Netz wurde nicht von dieser App-Sitzung gestartet. Stoppe es in den Netzwerkeinstellungen des Systems.",
     "confirm": {
@@ -1741,7 +1762,79 @@
       "stopWifiTitle": "WLAN der Tablets stoppen?",
       "stopMessage": "Die Tablets darin verlieren die Verbindung.",
       "stopBtTitle": "Bluetooth-Netz stoppen?"
-    }
+    },
+    "card": {
+      "connected": "Verbunden",
+      "connectedSince": "Verbunden · seit {{time}}",
+      "many": "{{count}} Tablets nutzen diese PIN",
+      "nopin": "Ein · noch keine PIN",
+      "off": "Aus · einschalten, um die PIN zu zeigen",
+      "public": "Öffentlich · keine PIN",
+      "remote": "Ein · Status übers Internet nicht sichtbar",
+      "unknown": "Live-Status nicht verfügbar",
+      "waiting": "Wartet auf das Tablet…"
+    },
+    "copyLink": "Link kopieren",
+    "done": "Fertig",
+    "footer": {
+      "connected": "Verbunden: {{roles}} · {{count}} von {{total}} Tablets",
+      "connectedOnly": "Verbunden: {{roles}}",
+      "none": "Noch kein Tablet verbunden",
+      "thisNetworkOnly": "Der Live-Status zeigt nur Tablets in diesem Netz"
+    },
+    "hallJoin": "Die Tablets verbinden sich mit dem WLAN «{{network}}».",
+    "howToJoin": "So verbinden",
+    "howToPair": "So koppeln",
+    "isolationTip": "Seite lädt nicht auf dem Tablet? Manche Hallen-WLANs trennen die Geräte voneinander: dann «WLAN von diesem Computer» oder «Internet» wählen.",
+    "noMatchText": "Codes und PINs gehören zu einem Spiel.",
+    "noMatchTitle": "Zuerst ein Spiel öffnen",
+    "otherScorer": "Schreiber an einem anderen Computer",
+    "otherScorerText": "Öffnet eine eigene Schreiber-App mit eigenen Spielen. Sie folgt diesem Spiel nicht.",
+    "reason": {
+      "btNotHere": "Auf diesem Computer nicht verfügbar",
+      "cannotCreateWifi": "Dieser Computer kann kein WLAN erstellen",
+      "cloudBlocked": "Cloud ist in diesem App-Fenster aus",
+      "needsDesktop": "Braucht die Desktop-App (Windows, Linux)",
+      "needsLinuxDesktop": "Braucht die Desktop-App unter Linux",
+      "needsServer": "Braucht die Desktop-App oder eine Venue-Box",
+      "noNetwork": "Dieser Computer ist in keinem Netz",
+      "windowsBluetooth": "Windows kann kein Bluetooth-Netz bereitstellen"
+    },
+    "recommended": "Empfohlen",
+    "scan": {
+      "connected": "Tablet verbunden um {{time}} (…{{ip}})",
+      "hideAddress": "Adresse ausblenden",
+      "instruction": "Mit der Kamera des Tablets scannen, dann diese PIN eingeben:",
+      "many": "{{count}} Tablets haben diese PIN eingegeben",
+      "noPin": "Dieses Tablet hat noch keine PIN. Lege eine fest unter Spiel einrichten › Verbindungen.",
+      "noPinInLink": "Links und Codes enthalten nie die PIN.",
+      "off": "{{role}} ist aus. Ein Tablet, das jetzt scannt, bekommt «PIN falsch».",
+      "public": "Mit jedem Handy oder Bildschirm scannen. Keine PIN nötig.",
+      "remote": "Nachfragen, ob sie drin sind",
+      "title": "Tablet: {{role}}",
+      "typeAddress": "Adresse eintippen",
+      "waiting": "Wartet auf das Tablet…"
+    },
+    "serverNotSynced": "Das Spiel ist noch nicht in der Cloud. Die Tablets finden es, sobald der Sync «Synchronisiert» zeigt.",
+    "serverSignIn": "Melde dich an, damit die Tablets dieses Spiel über das Internet finden.",
+    "signInFirst": "Zuerst anmelden (Schritt 1)",
+    "step": {
+      "connect": "Wie die Tablets verbinden",
+      "scan": "Scannen, dann PIN eingeben",
+      "tablet": "Welches Tablet"
+    },
+    "thisComputerAt": "Dieser Computer: {{ip}} ({{kind}})",
+    "transport": {
+      "bluetooth": "Bluetooth",
+      "bluetoothWhen": "Letzter Ausweg, wenn kein WLAN geht. Nur Linux.",
+      "hall": "WLAN der Halle",
+      "hallWhen": "Die Halle hat WLAN und dieser Computer ist darin.",
+      "laptop": "WLAN von diesem Computer",
+      "laptopWhen": "Kein WLAN in der Halle, oder die Tablets erreichen diesen Computer darin nicht. Kein Internet nötig.",
+      "server": "Internet",
+      "serverWhen": "Die Tablets haben mobile Daten, oder das Hallen-WLAN trennt die Geräte. Anmeldung nötig."
+    },
+    "wifiQrCaption": "Zuerst scannen, um diesem WLAN beizutreten"
   },
   "startupConnectivity": {
     "cloudWaits": "Kein Internet: Die Cloud-Synchronisation startet, sobald dieses Gerät online ist. Spiele bleiben hier und auf dem lokalen Server gespeichert.",
@@ -2094,7 +2187,11 @@
     "reopenSetWarning": "Achtung: Alle gesammelten Unterschriften werden gelöscht und müssen nach der Genehmigung neu eingeholt werden.",
     "cancel": "Abbrechen",
     "yesReopen": "Ja, Satz wieder öffnen",
-    "remarksPlaceholder": "Bemerkungen zum Spiel erfassen..."
+    "remarksPlaceholder": "Bemerkungen zum Spiel erfassen...",
+    "resign": "Neu unterschreiben",
+    "clearSignature": "Löschen",
+    "signatureLocked": "Spiel genehmigt oder abgeschlossen: die Unterschriften sind fix",
+    "signatureSaveFailed": "Die Unterschrift konnte nicht gespeichert werden. Versuche es noch einmal."
   },
   "scoresheetPdf": {
     "backToScoresheet": "Zurück zum eMatchblatt",
@@ -2112,7 +2209,18 @@
     "fullscreen": "Vollbild",
     "savePdfTooltip": "Als PDF speichern (Download mit einem Klick)",
     "generating": "Wird erstellt...",
-    "savePdf": "PDF speichern"
+    "savePdf": "PDF speichern",
+    "matchNotFound": "Dieses Spiel ist nicht auf diesem Gerät: Es gibt kein Matchblatt zum Speichern.",
+    "pdfInvalid": "Das PDF konnte nicht korrekt erstellt werden. Bitte erneut versuchen.",
+    "pdfSavedAt": "PDF gespeichert:",
+    "savingFile": "{{fileName}} wird im Ordner Downloads gespeichert...",
+    "pdfDownloaded": "In den Download-Ordner des Browsers heruntergeladen:",
+    "pdfHandedToApp": "Die App speichert {{fileName}}: Die Leiste oben zeigt, wo.",
+    "openFile": "Datei öffnen",
+    "showInFolder": "Im Ordner zeigen",
+    "dismiss": "Schliessen",
+    "fileActionFailed": "Die Datei konnte von hier aus nicht geöffnet werden. Sie liegt in: {{path}}",
+    "checkTheMatch": "Spiel vor der Bestätigung prüfen:"
   },
   "tabletStatus": {
     "title": "Tablet-Status",
@@ -2135,7 +2243,10 @@
     "pdfSaveFailed": "Das PDF konnte nicht gespeichert werden: {{error}}",
     "savingPdf": "PDF wird gespeichert...",
     "downloadFailed": "Der Download wurde nicht abgeschlossen.",
-    "downloadsFolder": "Downloads"
+    "downloadsFolder": "Downloads",
+    "openPdf": "Öffnen",
+    "sharePdf": "Teilen",
+    "pdfActionFailed": "Es konnte nicht geöffnet werden: {{error}}"
   },
   "access": {
     "pendingTitle": "Dein Konto wartet auf Freigabe",
@@ -2525,6 +2636,11 @@
     "quitWifiBluetooth": "Das WLAN und das Bluetooth-Netzwerk des Laptops für die Tablets werden ausgeschaltet.",
     "quitConfirm": "OpenVolley beenden",
     "keepRunning": "Weiterlaufen lassen",
+    "quitAlsoCloses": "Schliesst auch: {{windows}}",
+    "quitWindowGroup_one": "{{name}} ({{count}} Fenster)",
+    "quitWindowGroup_other": "{{name}} ({{count}} Fenster)",
+    "windowScoresheet": "Matchblatt",
+    "quitPdfBusy": "Im Matchblatt-Fenster wird noch ein PDF gespeichert.",
     "closeNoticeTitle": "OpenVolley läuft im Infobereich weiter",
     "closeNoticeBody": "Die Tablets bleiben verbunden. Mit dem OpenVolley-Symbol im Infobereich wieder öffnen; zum Beenden in dessen Menü «OpenVolley beenden…» wählen.",
     "closeNoticeHide": "Fenster ausblenden",
@@ -3071,6 +3187,18 @@
         "referee2": "2. Schiedsrichter",
         "scorer": "Schreiber"
       }
+    },
+    "approveWithPin": "Mit PIN genehmigen",
+    "why": {
+      "signOnly": "Nur Unterschrift: der Assistenz-Schreiber genehmigt nicht mit PIN",
+      "locked": "Spiel genehmigt oder abgeschlossen: die Genehmigungen sind fix",
+      "beach": "Die Genehmigung mit PIN gibt es bei Beachvolleyball-Spielen nicht",
+      "localMatch": "Dieses Spiel ist nicht online gespeichert: die Genehmigung mit PIN braucht ein Online-Spiel",
+      "noCloud": "Keine Online-Verbindung auf diesem Gerät: von Hand unterschreiben",
+      "serverOff": "Die Genehmigung mit PIN ist auf diesem Server ausgeschaltet",
+      "signedOut": "Melde dich auf diesem Gerät an, um mit PIN zu genehmigen",
+      "callerRole": "Das Konto auf diesem Gerät kann keine Genehmigungen senden: es braucht die Rolle Schreiber oder Schiedsrichter",
+      "offline": "Offline: die Genehmigung mit PIN erscheint wieder, sobald du online bist"
     }
   },
   "legal": {
@@ -3395,5 +3523,30 @@
       "signaturesCleared": "Die Unterschriften wurden gelöscht, weil sich das Matchblatt geändert hat. Hole sie am Spielende neu ein.",
       "readOnly": "Das Spiel ist genehmigt: Korrekturen sind schreibgeschützt."
     }
+  },
+  "picker": {
+    "calendar": "Kalender",
+    "openCalendar": "Kalender öffnen",
+    "prevMonth": "Vorheriger Monat",
+    "nextMonth": "Nächster Monat",
+    "month": "Monat",
+    "year": "Jahr",
+    "today": "Heute",
+    "clear": "Leeren",
+    "done": "Fertig",
+    "time": "Uhrzeit",
+    "date": "Datum",
+    "chooseTime": "Uhrzeit wählen",
+    "hours": "Stunden",
+    "minutes": "Minuten",
+    "now": "Jetzt",
+    "datePlaceholder": "TT.MM.JJJJ",
+    "timePlaceholder": "HH:MM",
+    "invalidDate": "Datum als TT.MM.JJJJ eingeben.",
+    "invalidTime": "Uhrzeit als HH:MM eingeben.",
+    "dateBeforeMin": "Frühestens am {{date}}.",
+    "dateAfterMax": "Spätestens am {{date}}.",
+    "timeBeforeMin": "Frühestens um {{time}}.",
+    "timeAfterMax": "Spätestens um {{time}}."
   }
 }

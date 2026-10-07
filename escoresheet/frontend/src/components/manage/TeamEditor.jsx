@@ -5,7 +5,7 @@ import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { InlineError } from './common'
-import { Button, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
+import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
 const HEX = /^#[0-9a-f]{6}$/i
 const STAFF_ROLE_KEYS = {
@@ -399,7 +399,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                       </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                        <Input type="date" value={p.dob} onChange={e => updatePlayer(p.key, { dob: e.target.value })} aria-label={t('savedTeams.dob')} />
+                        <DateField value={p.dob} onChange={v => updatePlayer(p.key, { dob: v })} aria-label={t('savedTeams.dob')} />
                       </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
@@ -462,7 +462,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                       </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                        <Input type="date" value={s.dob} onChange={e => updateStaff(s.key, { dob: e.target.value })} aria-label={t('savedTeams.dob')} />
+                        <DateField value={s.dob} onChange={v => updateStaff(s.key, { dob: v })} aria-label={t('savedTeams.dob')} />
                       </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
@@ -519,7 +519,7 @@ function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, on
                   </label>
                   <label className="block">
                     <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                    <Input type="date" value={p.dob} onChange={e => onSlot(p.number, { dob: e.target.value })} aria-label={`${t('savedTeams.dob')} ${p.number}`} />
+                    <DateField value={p.dob} onChange={v => onSlot(p.number, { dob: v })} aria-label={`${t('savedTeams.dob')} ${p.number}`} />
                   </label>
                   <label className="block">
                     <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
@@ -567,7 +567,7 @@ function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, on
               </label>
               <label className="block">
                 <span className={CELL_LABEL}>{t('savedTeams.dob')}</span>
-                <Input type="date" value={coach.dob} onChange={e => onCoach({ dob: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.dob')}`} />
+                <DateField value={coach.dob} onChange={v => onCoach({ dob: v })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.dob')}`} />
               </label>
               <label className="block">
                 <span className={CELL_LABEL}>{t('savedTeams.license')}</span>

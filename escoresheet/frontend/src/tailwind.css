@@ -432,6 +432,10 @@
     min-height: 44px;
     font-size: 16px;
   }
+  /* the kit Select's line height follows the box (44 - 2 px border) */
+  .ov-form-stack select.ov-select:not(.match-record *) {
+    line-height: 42px;
+  }
   .ov-form-stack textarea:not(.match-record *) {
     font-size: 16px;
   }
@@ -511,10 +515,6 @@
   .ov-form-stack .bench-grid-row > select.cell-head,
   .ov-form-stack .roster-grid-row > select.cell-libero {
     flex: 1 1 0;
-  }
-  /* "No libero" in sentence case (the legacy select rule capitalizes) */
-  .ov-form-stack :is(select.cell-libero, table.ct-cards select) {
-    text-transform: none;
   }
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action {
     margin-left: auto;
@@ -617,9 +617,9 @@
     border: 1px solid var(--ov-hairline-strong) !important;
     border-radius: var(--ov-radius) !important;
   }
-  .ov-form-stack table.ct-cards select {
-    appearance: auto !important;
-  }
+  /* (no `appearance: auto` here any more: every select draws the kit chevron
+     now, styles.css `select:where(:not(.ov-select))`, whose layered
+     !important background and right padding beat the two rules above) */
   .ov-form-stack table.ct-cards input[type="number"] {
     flex: 0 0 96px;
     width: 96px !important;

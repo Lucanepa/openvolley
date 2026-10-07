@@ -28,8 +28,20 @@
 ; comes from the user: the only variable parts are $INSTDIR (a Windows path,
 ; which cannot contain a double quote) and paths read from the registry.
 
-!define OV_FW_RULE "OpenVolley eScoresheet (tablets on the local network)"
-!define OV_FW_DESC "Lets the referee, bench and livescore tablets on the local network reach the built-in server of OpenVolley eScoresheet. Added by its installer, removed when it is uninstalled."
+; One file for both apps built from this shell (src/flavour.rs): OpenBeach
+; (tauri.beach.conf.json, MAINBINARYNAME openbeach-escoresheet) gets its own
+; rule name and texts, so both apps can be installed side by side and each
+; uninstaller removes only its own rule. OV_FW_RULE must match
+; flavour.rs firewall_rule (firewall.rs reads it back).
+!if "${MAINBINARYNAME}" == "openbeach-escoresheet"
+  !define OV_APP_NAME "OpenBeach"
+  !define OV_FW_RULE "OpenBeach (tablets on the local network)"
+  !define OV_FW_DESC "Lets the referee and livescore tablets and the court displays on the local network reach the built-in server of OpenBeach. Added by its installer, removed when it is uninstalled."
+!else
+  !define OV_APP_NAME "OpenVolley"
+  !define OV_FW_RULE "OpenVolley eScoresheet (tablets on the local network)"
+  !define OV_FW_DESC "Lets the referee, bench and livescore tablets on the local network reach the built-in server of OpenVolley eScoresheet. Added by its installer, removed when it is uninstalled."
+!endif
 
 ; $R9 = the 64-bit netsh.exe (the installer itself is a 32-bit program, so
 ; $SYSDIR would be SysWOW64).
@@ -160,7 +172,7 @@
 ; English only, like the rest of this installer (no other NSIS languages are
 ; configured in tauri.conf.json).
 
-!define OV_RUNNING_TEXT "OpenVolley is running.$\r$\n$\r$\nQuit it now? Tablets connected to this computer will disconnect and the computer's Wi-Fi for tablets stops. A match in progress is saved on this computer."
+!define OV_RUNNING_TEXT "${OV_APP_NAME} is running.$\r$\n$\r$\nQuit it now? Tablets connected to this computer will disconnect and the computer's Wi-Fi for tablets stops. A match in progress is saved on this computer."
 
 !macro OV_FIND_APP
   !if "${INSTALLMODE}" == "currentUser"

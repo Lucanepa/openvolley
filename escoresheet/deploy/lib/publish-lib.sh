@@ -5,7 +5,17 @@
 # The caller defines die() and KIT_DIR (escoresheet/deploy), and runs under
 # set -euo pipefail.
 #
-# Desktop updater release (publish-pkgs.sh --desktop VERSION [--staging]):
+# Two apps are published here: OpenVolley eScoresheet and OpenBeach (the same
+# desktop shell, src-tauri/src/flavour.rs; their own Android apps). Each has
+# its own .deb, app id, Android key, GitHub release tags and update manifests:
+#   desktop_app_select APP      openvolley (the default) or beach: sets the
+#                               DESKTOP_* variables the steps below use
+#   apt_name_ok NAME            NAME is one of the APT packages published here
+#   app_cert_sha256 APPID       the signing certificate an APK of APPID needs
+#   check_install_sh FILE       pkgs/install.sh pins the key and the packages
+#   landing_page TEMPLATE PACKAGES INDEXV2 OUT   pkgs/index.html filled in
+#
+# Desktop updater release (publish-pkgs.sh --desktop VERSION [--staging] [--app APP]):
 #   desktop_check_setup         tools, key files, tauri CLI >= 2.12, trusted pubkey
 #   desktop_fetch V DIR         the three installers of desktop-vV into DIR
 #   desktop_sign V FILE...      FILE.sig, bound to version V (tauri signer)
@@ -14,6 +24,7 @@
 #   desktop_manifest V DIR OUT  latest.json for the files desktop_fetch found
 #   desktop_publish_tree V STAGING MANIFEST PUBDIR
 #   desktop_upload V STAGING DIR   .sig files (+ latest.json) to the GitHub release
+#                                  (OpenBeach: latest.json to beach-desktop-latest only)
 # the APT hold-back (the index never runs ahead of desktop/latest.json):
 #   apt_hold_init PUBDIR [V STAGING]   which desktop versions APT must not list yet
 #   apt_held VER                       true if VER is held back
@@ -23,24 +34,172 @@
 
 OV_GH_REPO=Lucanepa/openvolley
 APT_POOL_URL=https://get.openvolley.app/apt/pool/main
+# One updater key for both desktop apps (their Tauri configs pin the same public key).
 DESKTOP_KEYS=${OV_DESKTOP_KEYS:-$HOME/.config/openvolley-desktop}
-# The key the app trusts is the one committed in tauri.conf.json, so signatures
+# The key the app trusts is the one committed in its Tauri config, so signatures
 # are checked against that, never against the .pub file next to the private key.
-DESKTOP_TAURI_CONF=${OV_DESKTOP_TAURI_CONF:-$KIT_DIR/../frontend/src-tauri/tauri.conf.json}
+OPENVOLLEY_TAURI_CONF=${OV_DESKTOP_TAURI_CONF:-$KIT_DIR/../frontend/src-tauri/tauri.conf.json}
+OPENBEACH_TAURI_CONF=${OV_BEACH_TAURI_CONF:-$KIT_DIR/../frontend/src-tauri/tauri.beach.conf.json}
 TAURI_CLI=${OV_TAURI_CLI:-$KIT_DIR/../frontend/node_modules/.bin/tauri}
 # Test input instead of `gh release download` (publish-pkgs.sh allows it with --no-sync only).
 DESKTOP_RELEASE_DIR=${OV_DESKTOP_RELEASE_DIR:-}
 UPDATER_JS="$KIT_DIR/lib/desktop-updater.mjs"
+# What's new: the Android changelogs (fastlane) of each app. OpenBeach's come
+# from the openbeach checkout next to this repo's root (as for the desktop build).
 FASTLANE_CHANGELOGS="$KIT_DIR/../../fastlane/metadata/android/en-US/changelogs"
-DESKTOP_DEB_NAME=openvolley-escoresheet
+BEACH_CHANGELOGS=${OV_BEACH_CHANGELOGS:-$KIT_DIR/../../openbeach/fastlane/metadata/android/en-US/changelogs}
 
+# The APT packages this repository publishes, one per desktop app.
+APT_NAMES=(openvolley-escoresheet openbeach-escoresheet)
+# Every app's package, for the APT hold-back: app -> package, app -> manifest dir.
+declare -A APP_DEB_NAME=([openvolley]=openvolley-escoresheet [beach]=openbeach-escoresheet)
+declare -A APP_DESKTOP_DIR=([openvolley]=desktop [beach]=desktop/beach)
+
+# Set by desktop_app_select.
+DESKTOP_APP='' DESKTOP_NAME='' DESKTOP_TAG_PREFIX='' DESKTOP_DEB_NAME='' DESKTOP_DIR=''
+DESKTOP_TAURI_CONF='' DESKTOP_MAKE_LATEST='' DESKTOP_FALLBACK_TAG=''
 # Set by desktop_fetch.
 DESKTOP_EXE='' DESKTOP_APPIMAGE='' DESKTOP_DEB=''
+
+# desktop_app_select APP: which app's desktop release the desktop_* steps handle.
+#   openvolley  tags desktop-vV, package openvolley-escoresheet, manifests in
+#               desktop/, its release becomes GitHub's "Latest" (the updater's
+#               fallback is releases/latest/download/latest.json)
+#   beach       tags beach-desktop-vV, package openbeach-escoresheet, manifests
+#               in desktop/beach/, never "Latest": its updater's GitHub fallback
+#               is the beach-desktop-latest prerelease, which gets latest.json
+desktop_app_select() {
+  case "$1" in
+    openvolley)
+      DESKTOP_APP=openvolley DESKTOP_NAME=OpenVolley DESKTOP_TAG_PREFIX=desktop-v
+      DESKTOP_TAURI_CONF=$OPENVOLLEY_TAURI_CONF DESKTOP_MAKE_LATEST=1 DESKTOP_FALLBACK_TAG='' ;;
+    beach)
+      DESKTOP_APP=beach DESKTOP_NAME=OpenBeach DESKTOP_TAG_PREFIX=beach-desktop-v
+      DESKTOP_TAURI_CONF=$OPENBEACH_TAURI_CONF DESKTOP_MAKE_LATEST=0 DESKTOP_FALLBACK_TAG=beach-desktop-latest ;;
+    *) die "unknown app $1 (openvolley or beach)" ;;
+  esac
+  DESKTOP_DEB_NAME=${APP_DEB_NAME[$1]} DESKTOP_DIR=${APP_DESKTOP_DIR[$1]}
+}
+desktop_app_select openvolley
+
+apt_name_ok() {
+  local n
+  for n in "${APT_NAMES[@]}"; do [[ "$1" != "$n" ]] || return 0; done
+  return 1
+}
+
+# app_cert_sha256 APPID: the SHA-256 (lowercase hex) of the certificate every
+# APK of APPID must be signed with (publish-pkgs.sh, F-Droid repo). Each app has
+# its own key: OpenVolley's from ANDROID.md; OpenBeach's from
+# $OPENBEACH_CERT_FILE (default ~/.config/openbeach-android/cert.sha256, written
+# when its key was made; Vaultwarden "OpenBeach Android signing key") unless
+# OPENBEACH_APP_CERT_SHA256 is filled in below. Any other app id is refused.
+OPENVOLLEY_APP_CERT_SHA256=2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87
+OPENBEACH_APP_CERT_SHA256=
+OPENBEACH_CERT_FILE=${OV_BEACH_CERT_FILE:-$HOME/.config/openbeach-android/cert.sha256}
+app_cert_sha256() {
+  local cert
+  case "$1" in
+    com.openvolley.escoresheet) cert=$OPENVOLLEY_APP_CERT_SHA256 ;;
+    com.openvolley.beach)
+      cert=$OPENBEACH_APP_CERT_SHA256
+      if [[ -z "$cert" && -r "$OPENBEACH_CERT_FILE" ]]; then
+        cert=$(tr -d ' :\r\n' < "$OPENBEACH_CERT_FILE" | tr 'A-F' 'a-f')
+      fi
+      [[ -n "$cert" ]] ||
+        die "no signing certificate for com.openvolley.beach: put its SHA-256 in $OPENBEACH_CERT_FILE (or OPENBEACH_APP_CERT_SHA256 in lib/publish-lib.sh)"
+      [[ "$cert" != "$OPENVOLLEY_APP_CERT_SHA256" ]] ||
+        die "the com.openvolley.beach certificate is OpenVolley's: OpenBeach must have its own Android key" ;;
+    *) die "app id ${1:-?} is not published here (com.openvolley.escoresheet, com.openvolley.beach)" ;;
+  esac
+  [[ "$cert" =~ ^[0-9a-f]{64}$ ]] || die "the certificate SHA-256 for $1 is not 64 hex digits: $cert"
+  printf '%s\n' "$cert"
+}
+
+# check_install_sh FILE: the one-line installer pins the APT key FPR, defaults
+# to openvolley-escoresheet and installs only the packages published here.
+check_install_sh() {
+  local f=$1 fpr=$2
+  sh -n "$f" || die "$f: syntax error"
+  grep -q "^FPR=$fpr\$" "$f" || die "$f does not pin the APT key $fpr"
+  grep -q "^DEFAULT_PKG=openvolley-escoresheet\$" "$f" || die "$f does not install openvolley-escoresheet by default"
+  grep -qxF "PACKAGES=\"${APT_NAMES[*]}\"" "$f" || die "$f does not allow exactly the packages ${APT_NAMES[*]}"
+}
 
 updater() { node "$UPDATER_JS" "$@"; }
 
 desktop_version_ok() {
   [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]
+}
+
+# --- landing page ---------------------------------------------------------------
+# github_setup_exe_url TAG: the Windows installer (-setup.exe, named after the
+# app's productName) of the GitHub release TAG; offline or not found, the
+# release page.
+github_setup_exe_url() {
+  local rel="https://github.com/$OV_GH_REPO/releases/tag/$1" url
+  url=$(curl -fsS --max-time 20 "https://api.github.com/repos/$OV_GH_REPO/releases/tags/$1" 2>/dev/null |
+    python3 -c 'import json, sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].lower().endswith("-setup.exe")))' 2>/dev/null) || url=$rel
+  [[ "$url" =~ ^https://github\.com/Lucanepa/openvolley/releases/[A-Za-z0-9._/%+-]+$ ]] || url=$rel
+  printf '%s\n' "$url"
+}
+
+# newest_deb PACKAGES NAME: the newest version of NAME in an APT Packages file.
+newest_deb() {
+  awk -v want="$2" '/^Package:/ { p = $2 } /^Version:/ && p == want { print $2 }' "$1" | sort -V | tail -1
+}
+
+# newest_apk INDEXV2 APPID: "<versionName> <file>" of APPID's highest
+# versionCode in the F-Droid index; nothing when the app is not there.
+newest_apk() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+p = d.get("packages", {}).get(sys.argv[2])
+if p and p.get("versions"):
+    v = max(p["versions"].values(), key=lambda v: v["manifest"]["versionCode"])
+    print(v["manifest"]["versionName"], v["file"]["name"].lstrip("/"))
+PY
+}
+
+# landing_page TEMPLATE PACKAGES INDEXV2 OUT: pkgs/index.html with the newest
+# published versions. OpenVolley's .deb and APK must be there. The OpenBeach
+# section (<!--beach--> ... <!--/beach-->) is left out until something of it
+# is published, and within it the desktop (<!--beach-desktop-->) or Android
+# (<!--beach-android-->) part until that is.
+landing_page() {
+  local template=$1 packages=$2 index=$3 out=$4 ver apk_ver='' apk_file='' win_url
+  local b_ver b_apk_ver='' b_apk_file='' b_win='' sed_args=()
+  ver=$(newest_deb "$packages" openvolley-escoresheet)
+  read -r apk_ver apk_file < <(newest_apk "$index" com.openvolley.escoresheet) || true
+  [[ -n "$ver" && -n "$apk_file" ]] || die "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK"
+  win_url=$(github_setup_exe_url "desktop-v$ver")
+  # The per-machine Windows installer (administrator prompt, firewall rule for
+  # the tablets) comes after 2.1.0: up to 2.1.0 the linked setup.exe installs
+  # per user, so the <!--per-machine--> block of the page is left out.
+  local per_user_until=2.1.0
+  [[ "$ver" != "$per_user_until" && "$(printf '%s\n' "$per_user_until" "$ver" | sort -V | tail -1)" == "$ver" ]] ||
+    sed_args+=(-e '/<!--per-machine/,/<!--\/per-machine-->/d')
+
+  b_ver=$(newest_deb "$packages" openbeach-escoresheet)
+  read -r b_apk_ver b_apk_file < <(newest_apk "$index" com.openvolley.beach) || true
+  if [[ -z "$b_ver" && -z "$b_apk_file" ]]; then
+    sed_args+=(-e '/<!--beach-->/,/<!--\/beach-->/d')
+  else
+    if [[ -n "$b_ver" ]]; then
+      b_win=$(github_setup_exe_url "beach-desktop-v$b_ver")
+    else
+      sed_args+=(-e '/<!--beach-desktop-->/,/<!--\/beach-desktop-->/d')
+    fi
+    [[ -n "$b_apk_file" ]] || sed_args+=(-e '/<!--beach-android-->/,/<!--\/beach-android-->/d')
+  fi
+  sed "${sed_args[@]}" \
+    -e "s|@DESKTOP_VERSION@|$ver|g" -e "s|@DEB_PACKAGE@|openvolley-escoresheet|g" -e "s|@WINDOWS_URL@|$win_url|g" \
+    -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \
+    -e "s|@BEACH_DESKTOP_VERSION@|$b_ver|g" -e "s|@BEACH_WINDOWS_URL@|$b_win|g" \
+    -e "s|@BEACH_APK_VERSION@|$b_apk_ver|g" -e "s|@BEACH_APK_FILE@|$b_apk_file|g" \
+    "$template" > "$out"
+  ! grep -q '@[A-Z_]*@' "$out" || die "index.html has unfilled placeholders"
 }
 
 desktop_check_setup() {
@@ -60,29 +219,34 @@ desktop_check_setup() {
   updater pubkey --tauri-conf "$DESKTOP_TAURI_CONF" >/dev/null || die "no usable updater public key in $DESKTOP_TAURI_CONF"
 }
 
+# desktop_tag V: the GitHub release of version V of the selected app.
+desktop_tag() { printf '%s%s\n' "$DESKTOP_TAG_PREFIX" "$1"; }
+
 # desktop_fetch V DIR: the Windows installer, the AppImage and the .deb of the
-# GitHub release desktop-vV (or of $DESKTOP_RELEASE_DIR), each checked to be
-# version V. Sets DESKTOP_EXE, DESKTOP_APPIMAGE, DESKTOP_DEB.
+# GitHub release desktop-vV (OpenBeach: beach-desktop-vV; or of
+# $DESKTOP_RELEASE_DIR), each checked to be version V. Sets DESKTOP_EXE,
+# DESKTOP_APPIMAGE, DESKTOP_DEB.
 desktop_fetch() {
-  local v=$1 dir=$2 f kind found pkg ver arch magic draft pre
+  local v=$1 dir=$2 f kind found pkg ver arch magic draft pre tag
+  tag=$(desktop_tag "$v")
   mkdir -p "$dir"
   if [[ -n "$DESKTOP_RELEASE_DIR" ]]; then
     for f in "$DESKTOP_RELEASE_DIR"/*-setup.exe "$DESKTOP_RELEASE_DIR"/*.AppImage "$DESKTOP_RELEASE_DIR"/*.deb; do
       if [[ -e "$f" ]]; then cp "$f" "$dir/"; fi
     done
   else
-    read -r draft pre < <(gh release view "desktop-v$v" --repo "$OV_GH_REPO" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"') ||
-      die "no GitHub release desktop-v$v"
-    [[ "$draft $pre" == "false false" ]] || die "release desktop-v$v is a draft or a prerelease"
-    gh release download "desktop-v$v" --repo "$OV_GH_REPO" -p '*-setup.exe' -p '*.AppImage' -p '*.deb' -D "$dir" --clobber >/dev/null ||
-      die "could not download the desktop-v$v installers"
+    read -r draft pre < <(gh release view "$tag" --repo "$OV_GH_REPO" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"') ||
+      die "no GitHub release $tag"
+    [[ "$draft $pre" == "false false" ]] || die "release $tag is a draft or a prerelease"
+    gh release download "$tag" --repo "$OV_GH_REPO" -p '*-setup.exe' -p '*.AppImage' -p '*.deb' -D "$dir" --clobber >/dev/null ||
+      die "could not download the $tag installers"
   fi
   for kind in '*-setup.exe' '*.AppImage' '*.deb'; do
     found=()
     for f in "$dir"/$kind; do
       if [[ -e "$f" ]]; then found+=("$f"); fi
     done
-    (( ${#found[@]} == 1 )) || die "desktop-v$v: expected one $kind, found ${#found[@]}"
+    (( ${#found[@]} == 1 )) || die "$tag: expected one $kind, found ${#found[@]}"
     f=${found[0]}
     # Names end up in URLs as they are; GitHub already turned spaces into dots.
     [[ "$(basename "$f")" =~ ^[A-Za-z0-9._+-]+$ ]] || die "$f: unexpected characters in the name"
@@ -145,19 +309,20 @@ desktop_verify() {
   fi
 }
 
-# desktop_notes V OUT: the What's new text for V, from the Android changelog of
-# the same version (fastlane, en-US; versionCode = (MAJ*1e6+MIN*1e3+PATCH)*10
-# + build, the highest build wins), without its "OpenVolley X.Y.Z" title line.
-# Empty when there is none.
+# desktop_notes V OUT: the What's new text for V, from the selected app's
+# Android changelog of the same version (fastlane, en-US; versionCode =
+# (MAJ*1e6+MIN*1e3+PATCH)*10 + build, the highest build wins), without its
+# "OpenVolley X.Y.Z" / "OpenBeach X.Y.Z" title line. Empty when there is none.
 desktop_notes() {
-  local v=${1%%-*} out=$2 maj min pat code b f=
+  local v=${1%%-*} out=$2 maj min pat code b f='' logs=$FASTLANE_CHANGELOGS
+  [[ "$DESKTOP_APP" != beach ]] || logs=$BEACH_CHANGELOGS
   IFS=. read -r maj min pat <<<"$v"
   code=$(( (maj * 1000000 + min * 1000 + pat) * 10 ))
   for b in 9 8 7 6 5 4 3 2 1 0; do
-    if [[ -f "$FASTLANE_CHANGELOGS/$((code + b)).txt" ]]; then f="$FASTLANE_CHANGELOGS/$((code + b)).txt"; break; fi
+    if [[ -f "$logs/$((code + b)).txt" ]]; then f="$logs/$((code + b)).txt"; break; fi
   done
   if [[ -n "$f" ]]; then
-    sed '1{/^OpenVolley /d}' "$f" > "$out"
+    sed "1{/^$DESKTOP_NAME /d}" "$f" > "$out"
   else
     : > "$out"
   fi
@@ -166,14 +331,16 @@ desktop_notes() {
 # desktop_manifest V DIR OUT: latest.json (tauri-plugin-updater static format)
 # for the files desktop_fetch found, signed and verified first.
 desktop_manifest() {
-  local v=$1 dir=$2 out=$3 gh_dl="https://github.com/$OV_GH_REPO/releases/download/desktop-v$1" urls u
+  local v=$1 dir=$2 out=$3 tag gh_dl urls u
+  tag=$(desktop_tag "$v")
+  gh_dl="https://github.com/$OV_GH_REPO/releases/download/$tag"
   desktop_notes "$v" "$dir/notes.txt"
   [[ -s "$dir/notes.txt" ]] || echo "no fastlane changelog for $v: latest.json has no notes"
   if [[ -z "$DESKTOP_RELEASE_DIR" ]]; then
     # The URLs below must be the assets GitHub really serves.
-    urls=$(gh release view "desktop-v$v" --repo "$OV_GH_REPO" --json assets -q '.assets[].url') || die "cannot list the assets of desktop-v$v"
+    urls=$(gh release view "$tag" --repo "$OV_GH_REPO" --json assets -q '.assets[].url') || die "cannot list the assets of $tag"
     for u in "$gh_dl/$(basename "$DESKTOP_EXE")" "$gh_dl/$(basename "$DESKTOP_APPIMAGE")"; do
-      grep -qxF "$u" <<<"$urls" || die "$u is not an asset of desktop-v$v"
+      grep -qxF "$u" <<<"$urls" || die "$u is not an asset of $tag"
     done
   fi
   updater manifest --tauri-conf "$DESKTOP_TAURI_CONF" --version "$v" --out "$out" \
@@ -184,12 +351,12 @@ desktop_manifest() {
   updater check --tauri-conf "$DESKTOP_TAURI_CONF" --version "$v" --dir "$dir" "$out" >/dev/null || die "latest.json does not check out"
 }
 
-# desktop_publish_tree V STAGING MANIFEST PUBDIR: PUBDIR/desktop/ gets
-# latest-V.json (archive, for the kill switch) and staging.json, and
-# latest.json unless STAGING is 1. A channel never goes back to an older
-# version here; rolling back is the kill switch (deploy/README.md).
+# desktop_publish_tree V STAGING MANIFEST PUBDIR: PUBDIR/desktop/ (OpenBeach:
+# PUBDIR/desktop/beach/) gets latest-V.json (archive, for the kill switch) and
+# staging.json, and latest.json unless STAGING is 1. A channel never goes back
+# to an older version here; rolling back is the kill switch (deploy/README.md).
 desktop_publish_tree() {
-  local v=$1 staging=$2 manifest=$3 d="$4/desktop" ch cur cmp
+  local v=$1 staging=$2 manifest=$3 d="$4/$DESKTOP_DIR" ch cur cmp
   mkdir -p "$d"
   for ch in staging latest; do
     if [[ "$ch" == latest && "$staging" == 1 ]]; then continue; fi
@@ -198,56 +365,83 @@ desktop_publish_tree() {
         die "cannot read $d/$ch.json"
       cmp=$(updater compare "$v" "$cur") || die "cannot compare $v with $cur"
       [[ "$cmp" != -1 ]] ||
-        die "desktop/$ch.json announces $cur, newer than $v (to roll back, see the kill switch in deploy/README.md)"
+        die "$DESKTOP_DIR/$ch.json announces $cur, newer than $v (to roll back, see the kill switch in deploy/README.md)"
     fi
   done
   install -m 644 "$manifest" "$d/latest-$v.json"
   install -m 644 "$manifest" "$d/staging.json"
   if [[ "$staging" == 1 ]]; then
-    echo "desktop: staging.json and latest-$v.json now announce $v (latest.json unchanged)"
+    echo "$DESKTOP_DIR: staging.json and latest-$v.json now announce $v (latest.json unchanged)"
   else
     install -m 644 "$manifest" "$d/latest.json"
-    echo "desktop: latest.json, staging.json and latest-$v.json now announce $v"
+    echo "$DESKTOP_DIR: latest.json, staging.json and latest-$v.json now announce $v"
   fi
 }
 
 # desktop_upload V STAGING DIR: the .sig files and, unless STAGING, latest.json
-# to the GitHub release. latest.json there is the updater's fallback endpoint
-# (releases/latest/download/latest.json), so a staging run must not put it there.
+# to the GitHub release. latest.json there is the updater's fallback endpoint,
+# so a staging run must not put it there:
+#   OpenVolley  releases/latest/download/latest.json: its desktop-vV release
+#               becomes GitHub's "Latest"
+#   OpenBeach   releases/download/beach-desktop-latest/latest.json: a
+#               prerelease holding only latest.json (made on first use); its
+#               beach-desktop-vV release never becomes "Latest" and never
+#               carries a latest.json: both apps trust one updater key, so if
+#               GitHub's "Latest" ever landed on it (the newest desktop-v*
+#               release deleted, a manual "Set as latest"), OpenVolley's
+#               fallback would read OpenBeach's manifest and install OpenBeach
 desktop_upload() {
-  local v=$1 staging=$2 dir=$3 files latest
+  local v=$1 staging=$2 dir=$3 files latest tag
+  tag=$(desktop_tag "$v")
   files=("$DESKTOP_EXE.sig" "$DESKTOP_APPIMAGE.sig" "$DESKTOP_DEB.sig")
-  [[ "$staging" == 1 ]] || files+=("$dir/latest.json")
-  gh release upload "desktop-v$v" --repo "$OV_GH_REPO" --clobber "${files[@]}" || die "upload to desktop-v$v failed"
-  echo "uploaded to desktop-v$v: ${files[*]##*/}"
+  [[ "$staging" == 1 || "$DESKTOP_MAKE_LATEST" != 1 ]] || files+=("$dir/latest.json")
+  gh release upload "$tag" --repo "$OV_GH_REPO" --clobber "${files[@]}" || die "upload to $tag failed"
+  echo "uploaded to $tag: ${files[*]##*/}"
   [[ "$staging" != 1 ]] || return 0
+  latest=$(gh api "repos/$OV_GH_REPO/releases/latest" -q .tag_name 2>/dev/null || true)
+  if [[ "$DESKTOP_MAKE_LATEST" != 1 ]]; then
+    if ! gh release view "$DESKTOP_FALLBACK_TAG" --repo "$OV_GH_REPO" >/dev/null 2>&1; then
+      gh release create "$DESKTOP_FALLBACK_TAG" --repo "$OV_GH_REPO" --prerelease --latest=false \
+        --title "$DESKTOP_NAME desktop: update manifest" \
+        --notes "latest.json for the $DESKTOP_NAME desktop updater's fallback endpoint (publish-pkgs.sh --desktop --app $DESKTOP_APP). The installers are in the $DESKTOP_TAG_PREFIX* releases." >/dev/null ||
+        die "could not create the $DESKTOP_FALLBACK_TAG prerelease"
+    fi
+    gh release upload "$DESKTOP_FALLBACK_TAG" --repo "$OV_GH_REPO" --clobber "$dir/latest.json" ||
+      die "upload of latest.json to $DESKTOP_FALLBACK_TAG failed"
+    echo "uploaded to $DESKTOP_FALLBACK_TAG: latest.json"
+    # OpenVolley's updater falls back to whatever GitHub calls "Latest".
+    if [[ "$latest" == "$tag" || "$latest" == "$DESKTOP_FALLBACK_TAG" ]]; then
+      echo "WARNING: GitHub's latest release is $latest; OpenVolley's updater fallback needs a desktop-v* release there (publish-pkgs.sh --desktop <its version>, or gh release edit desktop-v<version> --latest)" >&2
+    fi
+    return 0
+  fi
   # The fallback endpoint is releases/latest/download/latest.json: whatever
   # release GitHub calls "Latest" (a server v* or Android release that took it,
-  # or a newer desktop-v* still on staging) must give way to the one
-  # desktop/latest.json now announces.
-  latest=$(gh api "repos/$OV_GH_REPO/releases/latest" -q .tag_name 2>/dev/null || true)
-  [[ "$latest" != "desktop-v$v" ]] || return 0
-  if gh release edit "desktop-v$v" --repo "$OV_GH_REPO" --latest >/dev/null; then
-    echo "desktop-v$v is now GitHub's latest release (was ${latest:-unknown}): the updater's fallback endpoint"
+  # an OpenBeach release, or a newer desktop-v* still on staging) must give way
+  # to the one desktop/latest.json now announces.
+  [[ "$latest" != "$tag" ]] || return 0
+  if gh release edit "$tag" --repo "$OV_GH_REPO" --latest >/dev/null; then
+    echo "$tag is now GitHub's latest release (was ${latest:-unknown}): the updater's fallback endpoint"
   else
-    echo "WARNING: GitHub's latest release is ${latest:-unknown}, not desktop-v$v, and making it latest failed: the updater's fallback endpoint serves the wrong release (gh release edit desktop-v$v --latest)" >&2
+    echo "WARNING: GitHub's latest release is ${latest:-unknown}, not $tag, and making it latest failed: the updater's fallback endpoint serves the wrong release (gh release edit $tag --latest)" >&2
   fi
 }
 
 # --- APT hold-back -------------------------------------------------------------
 # The in-app .deb updater runs `apt-get install --only-upgrade`, which installs
 # whatever the APT index lists as newest, not the version latest.json
-# announces. So the index must never list a desktop version that
-# desktop/latest.json does not announce yet: a --staging .deb goes into the
-# pool (its URL in staging.json works) but stays out of Packages, and the kill
-# switch (latest.json back to the previous version) takes the bad version out
-# of the index on the next run. The rule, in dpkg version order:
-#   desktop/latest.json exists      hold back every version newer than it
-#   only desktop/staging.json       hold back that version and newer (the
-#                                   first --staging, before any latest.json)
-#   neither                         hold back nothing (releases before 2.2.0)
-# A --desktop V run counts as having already written its manifests.
-APT_HOLD_OP='' APT_HOLD_V=''
+# announces. So the index must never list a desktop version that the app's
+# latest.json does not announce yet: a --staging .deb goes into the pool (its
+# URL in staging.json works) but stays out of Packages, and the kill switch
+# (latest.json back to the previous version) takes the bad version out of the
+# index on the next run. Per app (openvolley-escoresheet: desktop/*.json,
+# openbeach-escoresheet: desktop/beach/*.json), in dpkg version order:
+#   latest.json exists      hold back every version newer than it
+#   only staging.json       hold back that version and newer (the first
+#                           --staging, before any latest.json)
+#   neither                 hold back nothing (OpenVolley releases before 2.2.0)
+# A --desktop V run counts as having already written its app's manifests.
+declare -A APT_HOLD_OP=() APT_HOLD_V=()
 
 # manifest_version FILE: the "version" of a desktop manifest.
 manifest_version() {
@@ -255,40 +449,49 @@ manifest_version() {
     die "cannot read the version in $1"
 }
 
-# apt_hold_init PUBDIR [V STAGING]: sets APT_HOLD_OP (gt, ge or empty) and APT_HOLD_V.
+# apt_hold_init PUBDIR [V STAGING]: sets APT_HOLD_OP[package] (gt, ge or
+# empty) and APT_HOLD_V[package] for every app; V and STAGING are the
+# --desktop run of the selected app (desktop_app_select).
 apt_hold_init() {
-  local d="$1/desktop" v=${2:-} staging=${3:-0} latest='' stg=''
-  if [[ -f "$d/latest.json" ]]; then latest=$(manifest_version "$d/latest.json"); fi
-  if [[ -f "$d/staging.json" ]]; then stg=$(manifest_version "$d/staging.json"); fi
-  if [[ -n "$v" ]]; then
-    stg=$v
-    [[ "$staging" == 1 ]] || latest=$v
-  fi
-  APT_HOLD_OP='' APT_HOLD_V=''
-  if [[ -n "$latest" ]]; then
-    APT_HOLD_OP=gt APT_HOLD_V=$latest
-  elif [[ -n "$stg" ]]; then
-    APT_HOLD_OP=ge APT_HOLD_V=$stg
-  fi
+  local pub=$1 v=${2:-} staging=${3:-0} app d pkg latest stg
+  APT_HOLD_OP=() APT_HOLD_V=()
+  for app in "${!APP_DEB_NAME[@]}"; do
+    pkg=${APP_DEB_NAME[$app]} d="$pub/${APP_DESKTOP_DIR[$app]}" latest='' stg=''
+    if [[ -f "$d/latest.json" ]]; then latest=$(manifest_version "$d/latest.json"); fi
+    if [[ -f "$d/staging.json" ]]; then stg=$(manifest_version "$d/staging.json"); fi
+    if [[ -n "$v" && "$app" == "$DESKTOP_APP" ]]; then
+      stg=$v
+      [[ "$staging" == 1 ]] || latest=$v
+    fi
+    if [[ -n "$latest" ]]; then
+      APT_HOLD_OP[$pkg]=gt APT_HOLD_V[$pkg]=$latest
+    elif [[ -n "$stg" ]]; then
+      APT_HOLD_OP[$pkg]=ge APT_HOLD_V[$pkg]=$stg
+    fi
+  done
 }
 
+# apt_held VER [PACKAGE]: true if APT must not list VER of PACKAGE (default:
+# the selected app's package).
 apt_held() {
-  [[ -n "$APT_HOLD_OP" ]] && dpkg --compare-versions "$1" "$APT_HOLD_OP" "$APT_HOLD_V"
+  local pkg=${2:-$DESKTOP_DEB_NAME}
+  [[ -n "${APT_HOLD_OP[$pkg]:-}" ]] && dpkg --compare-versions "$1" "${APT_HOLD_OP[$pkg]}" "${APT_HOLD_V[$pkg]}"
 }
 
 # apt_hold_packages PACKAGES: rewrite the Packages file without the held-back
-# $DESKTOP_DEB_NAME stanzas; prints each version it leaves out.
+# stanzas of every app; prints each version it leaves out.
 apt_hold_packages() {
-  local file=$1 tmp keep=() pkg ver held=0 why
-  [[ -n "$APT_HOLD_OP" ]] || return 0
-  if [[ "$APT_HOLD_OP" == gt ]]; then
-    why="desktop/latest.json announces $APT_HOLD_V"
-  else
-    why="$APT_HOLD_V is only on staging, no desktop/latest.json yet"
-  fi
+  local file=$1 tmp keep=() pkg ver held=0 why app dir
+  (( ${#APT_HOLD_OP[@]} )) || return 0
   # One line per stanza: "<package> <version>", in file order.
   while read -r pkg ver; do
-    if [[ "$pkg" == "$DESKTOP_DEB_NAME" ]] && apt_held "$ver"; then
+    if [[ -n "${APT_HOLD_OP[$pkg]:-}" ]] && apt_held "$ver" "$pkg"; then
+      for app in "${!APP_DEB_NAME[@]}"; do [[ "${APP_DEB_NAME[$app]}" != "$pkg" ]] || dir=${APP_DESKTOP_DIR[$app]}; done
+      if [[ "${APT_HOLD_OP[$pkg]}" == gt ]]; then
+        why="$dir/latest.json announces ${APT_HOLD_V[$pkg]}"
+      else
+        why="${APT_HOLD_V[$pkg]} is only on staging, no $dir/latest.json yet"
+      fi
       keep+=(0)
       echo "held back from APT: $pkg $ver ($why)"
       held=$((held + 1))

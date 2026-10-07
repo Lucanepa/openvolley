@@ -1,27 +1,84 @@
 name: Build Desktop App (Tauri)
 
-# Builds the offline scoretable desktop app (Rust/Tauri) for Windows + Linux.
-# Trigger manually, or push a tag like `desktop-v1.20.0`.
+# Builds the offline scoretable desktop apps (Rust/Tauri) for Windows + Linux.
+# One shell, two apps (src-tauri/src/flavour.rs):
+#   - OpenVolley eScoresheet: push a tag like `desktop-v2.2.0`;
+#   - OpenBeach: push a tag like `beach-desktop-v2.0.0`. It builds the
+#     Lucanepa/openbeach frontend at the same tag name (tag both repos), checked
+#     out at ./openbeach (tauri.beach.conf.json reads it from there).
+# Or trigger it manually and pick the app (and, for OpenBeach, the openbeach ref).
 on:
   workflow_dispatch:
+    inputs:
+      flavour:
+        description: 'App to build'
+        type: choice
+        options: [openvolley, beach]
+        default: openvolley
+      openbeach_ref:
+        description: 'OpenBeach only: Lucanepa/openbeach branch, tag or commit (default main)'
+        required: false
+        default: ''
   push:
     tags:
       - 'desktop-v*'
+      - 'beach-desktop-v*'
 
 jobs:
+  # Which app this run builds (the flavour axis of the build matrix) and,
+  # for OpenBeach, which openbeach ref.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      flavours: ${{ steps.pick.outputs.flavours }}
+      openbeach_ref: ${{ steps.pick.outputs.openbeach_ref }}
+    steps:
+      - id: pick
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_FLAVOUR: ${{ inputs.flavour }}
+          INPUT_REF: ${{ inputs.openbeach_ref }}
+        run: |
+          case "$REF" in
+            refs/tags/beach-desktop-v*) flavour=beach; ref=$REF_NAME ;;
+            refs/tags/desktop-v*) flavour=openvolley; ref= ;;
+            *) flavour=${INPUT_FLAVOUR:-openvolley}; ref=${INPUT_REF:-main} ;;
+          esac
+          [ "$flavour" = beach ] || ref=
+          echo "flavours=[\"$flavour\"]" >> "$GITHUB_OUTPUT"
+          echo "openbeach_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "building $flavour${ref:+ (openbeach $ref)}"
+
   build:
+    needs: setup
     strategy:
       fail-fast: false
       matrix:
+        flavour: ${{ fromJSON(needs.setup.outputs.flavours) }}
+        platform: [windows, linux]
         include:
-          - os: windows-latest
+          - platform: windows
+            os: windows-latest
             label: windows
-          - os: ubuntu-22.04
+          - platform: linux
+            os: ubuntu-22.04
             label: linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+
+      # OpenBeach's frontend (tauri.beach.conf.json: frontendDist and version
+      # from ./openbeach/escoresheet/frontend)
+      - name: Check out openbeach
+        if: matrix.flavour == 'beach'
+        uses: actions/checkout@v4
+        with:
+          repository: Lucanepa/openbeach
+          ref: ${{ needs.setup.outputs.openbeach_ref }}
+          path: openbeach
+          persist-credentials: false
 
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-22.04'
@@ -38,7 +95,8 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: escoresheet/frontend/package-lock.json
+          # OpenVolley's lock file, and openbeach's when it is checked out
+          cache-dependency-path: '**/escoresheet/frontend/package-lock.json'
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -59,7 +117,36 @@ jobs:
         run: |
           if [ -d "node_modules/canvas" ]; then rm -rf node_modules/canvas; fi
 
+      # OpenVolley's identity (identifier, names, ports, package, firewall
+      # rule, update endpoints) never changes, and OpenBeach shares none of it.
+      - name: Check the desktop app identities
+        if: matrix.platform == 'linux'
+        working-directory: escoresheet/frontend
+        run: npx vitest run src/__tests__/desktopFlavours.test.js
+
+      # Before the long build: the tag must be the version OpenBeach reports
+      # (release-beach checks it again on the files it publishes).
+      - name: Check the tag matches the OpenBeach version
+        if: startsWith(github.ref, 'refs/tags/beach-desktop-v')
+        shell: bash
+        run: |
+          tag=${GITHUB_REF_NAME#beach-desktop-v}
+          app=$(jq -r .version openbeach/escoresheet/frontend/package.json)
+          if [ "$tag" != "$app" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is version $tag, openbeach's escoresheet/frontend/package.json says $app"
+            exit 1
+          fi
+
+      - name: Install openbeach frontend dependencies
+        if: matrix.flavour == 'beach'
+        working-directory: openbeach/escoresheet/frontend
+        shell: bash
+        run: |
+          npm ci
+          if [ -d "node_modules/canvas" ]; then rm -rf node_modules/canvas; fi
+
       - name: Build Tauri app
+        if: matrix.flavour == 'openvolley'
         uses: tauri-apps/tauri-action@v0
         # No VITE_BACKEND_URL on purpose: the desktop window is served by the
         # app's own LAN relay, and a fixed backend URL would send the scorer's
@@ -72,27 +159,56 @@ jobs:
         with:
           projectPath: escoresheet/frontend
 
+      # OpenBeach: the same shell with tauri.beach.conf.json (+ the Linux one)
+      # merged on top; its beforeBuildCommand builds ./openbeach. Same reason
+      # for no VITE_BACKEND_URL as above.
+      - name: Build Tauri app (OpenBeach)
+        if: matrix.flavour == 'beach'
+        working-directory: escoresheet/frontend
+        shell: bash
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        run: |
+          args=(--ci --config src-tauri/tauri.beach.conf.json)
+          if [ "${{ matrix.platform }}" = linux ]; then args+=(--config src-tauri/tauri.beach.linux.conf.json); fi
+          npx tauri build "${args[@]}"
+
       # The .deb updates itself through a root helper and a polkit policy
       # (src-tauri/linux, updater.rs): lint both, and check that the helper is
       # packaged as an executable owned by root (the bundler's tar writes the
       # numeric owner, 0/0).
+      # Each app's .deb: its own package name, command, desktop entry, update
+      # helper and polkit action, and none of the other app's.
       - name: Check the deb's update helper
         if: matrix.os == 'ubuntu-22.04'
         working-directory: escoresheet/frontend/src-tauri
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${{ matrix.flavour }}" = beach ]; then
+            pkg=openbeach-escoresheet; action=com.openvolley.beach.update; name=OpenBeach; dir=linux/beach; other=openvolley-escoresheet
+          else
+            pkg=openvolley-escoresheet; action=com.openvolley.escoresheet.update; name='OpenVolley eScoresheet'; dir=linux; other=openbeach-escoresheet
+          fi
           sudo apt-get install -y shellcheck libxml2-utils
-          shellcheck linux/apt-upgrade
-          xmllint --noout linux/*.policy
+          shellcheck "$dir/apt-upgrade"
+          xmllint --noout "$dir"/*.policy
           deb=$(ls target/release/bundle/deb/*.deb | head -n1)
-          dpkg-deb -c "$deb" | grep -E '^-rwxr-xr-x (root/root|0/0) .*usr/libexec/openvolley-escoresheet/apt-upgrade$'
-          dpkg-deb -c "$deb" | grep -E '^-rw-r--r-- (root/root|0/0) .*usr/share/polkit-1/actions/com\.openvolley\.escoresheet\.update\.policy$'
+          [ "$(dpkg-deb -f "$deb" Package)" = "$pkg" ]
+          files=$(dpkg-deb -c "$deb")
+          grep -E "^-rwxr-xr-x (root/root|0/0) .*usr/libexec/$pkg/apt-upgrade\$" <<<"$files"
+          grep -E "^-rw-r--r-- (root/root|0/0) .*usr/share/polkit-1/actions/${action//./\\.}\.policy\$" <<<"$files"
+          grep -E " (\./)?usr/bin/$pkg\$" <<<"$files"
+          if grep "$other" <<<"$files"; then echo "::error::$pkg ships files of $other"; exit 1; fi
+          entry="$RUNNER_TEMP/$pkg.desktop"
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO --wildcards "*usr/share/applications/$pkg.desktop" > "$entry"
+          grep -qxF "Name=$name" "$entry"
+          grep -qxF 'Categories=Utility;Sports;' "$entry"
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: escoresheet-desktop-${{ matrix.label }}
+          name: ${{ matrix.flavour == 'beach' && 'openbeach' || 'escoresheet' }}-desktop-${{ matrix.label }}
           path: |
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.exe
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.msi
@@ -174,3 +290,75 @@ jobs:
             artifacts/escoresheet-desktop-linux/**/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # OpenBeach's installers as a GitHub release of this repo, never GitHub's
+  # "Latest": OpenVolley's updater falls back to
+  # releases/latest/download/latest.json, so "Latest" stays on the newest
+  # desktop-v* release. OpenBeach's updater reads
+  # get.openvolley.app/desktop/beach/latest.json first and falls back to the
+  # beach-desktop-latest prerelease (publish-pkgs.sh --desktop V --app beach
+  # puts latest.json there).
+  release-beach:
+    needs: [setup, build]
+    if: startsWith(github.ref, 'refs/tags/beach-desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Lucanepa/openbeach
+          ref: ${{ needs.setup.outputs.openbeach_ref }}
+          sparse-checkout: escoresheet/frontend/package.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        id: version
+        run: |
+          tag=${GITHUB_REF_NAME#beach-desktop-v}
+          app=$(jq -r .version escoresheet/frontend/package.json)
+          if [ "$tag" != "$app" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is version $tag, openbeach's escoresheet/frontend/package.json says $app"
+            exit 1
+          fi
+          echo "version=$app" >> "$GITHUB_OUTPUT"
+
+      - name: Download the OpenBeach artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: openbeach-desktop-*
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: OpenBeach desktop ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          make_latest: "false"
+          body: |
+            ## OpenBeach: offline beach volleyball scoretable + LAN tablet server
+
+            Runs the beach volleyball e-scoresheet **fully offline** and doubles as a LAN
+            server for the referee and livescore tablets and the court displays on the same
+            Wi-Fi: no internet, no accounts. It runs next to OpenVolley eScoresheet on the
+            same computer (OpenBeach uses ports 5174 and 8081).
+
+            ### Install
+            - **Windows**: download and run the `OpenBeach_…_x64-setup.exe` installer. It installs
+              for all users and asks once for an administrator, so it can let the tablets on the
+              local network through Windows Firewall.
+            - **Linux (AppImage)**: download, `chmod +x` it, run it.
+            - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet`
+              (signed APT repository, package `openbeach-escoresheet`; `sudo apt upgrade` keeps it current),
+              or download the `.deb` and `sudo apt install ./openbeach-escoresheet_*_amd64.deb`.
+
+            ### Updates
+            The app updates itself: it downloads in the background and installs when you quit,
+            never during a match. On Windows each update asks once for an administrator.
+          files: |
+            artifacts/openbeach-desktop-windows/**/*.exe
+            artifacts/openbeach-desktop-linux/**/*.AppImage
+            artifacts/openbeach-desktop-linux/**/*.deb

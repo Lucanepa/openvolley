@@ -34,6 +34,9 @@ public class MainActivity extends BridgeActivity {
         // window.Capacitor plugin "UpdateSource": who installed the app, open
         // it in F-Droid (src/utils/androidUpdate.js)
         registerPlugin(UpdateSourcePlugin.class);
+        // window.Capacitor plugin "OpenVolleyFiles": Open / Share a saved
+        // scoresheet PDF (src/utils/openAppWindow.js)
+        registerPlugin(ScoresheetFilesPlugin.class);
         super.onCreate(savedInstanceState);
         keepWebViewInsideSystemBars();
         handleBackButton();
