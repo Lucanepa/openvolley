@@ -43,8 +43,8 @@ export const MANAGER_BRANDS = Object.freeze({
     siteUrl: 'https://manager-beach.openvolley.app',
     scorerAppUrl: 'https://beach.openvolley.app',
     // No official games (VolleyManager) and no closed-match list here: those
-    // stay in OpenVolley's console. Tournaments come with phase T1.
-    tabs: Object.freeze(['accounts', 'invites', 'audit', 'teams']),
+    // stay in OpenVolley's console. Tournaments: phase T1.
+    tabs: Object.freeze(['accounts', 'invites', 'audit', 'teams', 'tournaments']),
     scope: 'beach'
   })
 })

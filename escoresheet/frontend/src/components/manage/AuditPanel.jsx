@@ -19,6 +19,11 @@ export function auditDetailsLine(entry, { roleLabel } = {}) {
   if (Array.isArray(d.added) && d.added.length) parts.push(`+ ${d.added.map(role).join(', ')}`)
   if (Array.isArray(d.removed) && d.removed.length) parts.push(`− ${d.removed.map(role).join(', ')}`)
   if (d.game_n) parts.push(`#${d.game_n}`)
+  // OpenBeach tournaments (tournament.*): the match code, the tournament, the pair
+  if (d.code) parts.push(String(d.code))
+  if (d.title) parts.push(String(d.title))
+  if (d.category) parts.push(String(d.category))
+  if (d.name) parts.push(String(d.name))
   if (d.label) parts.push(String(d.label))
   if (d.role && !d.added) parts.push(role(d.role))
   if (d.via) parts.push(String(d.via))
