@@ -2204,6 +2204,7 @@
       "from": "Von",
       "to": "Bis",
       "search": "Team oder Spielnummer suchen",
+      "searchButton": "Suchen",
       "notClaimed": "Nicht übernommen",
       "scoredBy": "Geführt von {{name}}",
       "unknownScorer": "Unbekannter Schreiber",
