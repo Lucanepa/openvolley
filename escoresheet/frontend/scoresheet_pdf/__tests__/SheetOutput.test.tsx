@@ -138,7 +138,7 @@ describe('the generated sheet', () => {
     // 1, 3, 7, 12 in shirt-number order, ISO dates as DD.MM.YYYY
     expect(home).toMatch(/01\.03\.19981Home1, A\.03\.03\.19983Home3, A\.07\.03\.19987Home7, A\.03\.03\.199812Home12, A\./)
     // the away short name was empty: the team name
-    expect(text).toContain('Volley Spada Academica H1BDoBNoName')
+    expect(text).toContain('BVolley Spada Academica H1DoBNoName')
     expect(text).toContain('02.03.19982Away2, X.')
     expect(text).not.toContain('Lic.')
   })
@@ -311,5 +311,32 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     const { getAllByTestId, getByTestId } = render(<App matchData={{ ...base, events }} autoAction="preview" />)
     expect(getAllByTestId('sanction-row')).toHaveLength(9)
     expect(getByTestId('remarks-text').textContent).toContain('Sanctions (overflow):\nTeam A, Set 1, Score 0:0, Warning, (13)')
+  })
+})
+
+describe('round 2 (owner review 2026-10-07)', () => {
+  it('both roster headers centre the short name, the A/B circle at the outer side', () => {
+    const { getAllByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
+    const names = getAllByTestId('roster-team-name')
+    expect(names).toHaveLength(2)
+    for (const n of names) expect(n.className).toContain('text-center')
+  })
+
+  it('the coin-toss signatures are in the roster boxes as soon as the match record has them', () => {
+    const sig = 'data:image/png;base64,iVBORw0KGgo='
+    const data = fixture({ match: { status: 'setup', homeCaptainSignature: sig, awayCoachSignature: sig, coinTossTeamA: undefined } })
+    const { getAllByTestId, queryAllByTestId, rerender } = render(<App matchData={data} autoAction="preview" />)
+    expect(getAllByTestId('roster-captain-signature')).toHaveLength(1)
+    expect(getAllByTestId('roster-coach-signature')).toHaveLength(1)
+    // removed from the record (re-sign / clear): gone from the sheet too
+    rerender(<App matchData={fixture({ match: { status: 'setup' } })} autoAction="preview" />)
+    expect(queryAllByTestId('roster-captain-signature')).toHaveLength(0)
+  })
+
+  it('every roster player row is ruled, the remarks box has its writing lines', () => {
+    const { getAllByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
+    expect(getAllByTestId('roster-row')).toHaveLength(28)
+    for (const r of getAllByTestId('roster-row').slice(0, 13)) expect(r.className).toContain('border-b')
+    expect(getAllByTestId('remarks-rule')).toHaveLength(3)
   })
 })

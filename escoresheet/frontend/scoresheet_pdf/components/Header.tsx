@@ -33,8 +33,9 @@ interface HeaderProps {
 /** One category box: the square, an X when it applies, its label. */
 const CategoryBox: React.FC<{ checked: boolean; label: React.ReactNode }> = ({ checked, label }) => (
   <div className="flex items-center gap-0.5 min-w-0">
-    <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative shrink-0">
-      {checked && <span className="text-[10px] font-bold leading-none">X</span>}
+    {/* a box a hand X fits in (audit 2026-10: 2.6 mm was too small) */}
+    <div className="w-3 h-3 border border-black bg-white flex items-center justify-center relative shrink-0">
+      {checked && <span className="text-[11px] font-bold leading-none">X</span>}
     </div>
     {typeof label === 'string' ? <span className="text-[8px] whitespace-nowrap">{label}</span> : label}
   </div>
@@ -181,21 +182,22 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
         </div>
 
         {/* City, Hall, Date, Time */}
-        <div className="col-span-6 px-2 flex flex-col justify-center min-w-0 min-h-0 overflow-hidden">
-          <div className="flex gap-1 w-full min-w-0">
-            <div className="flex flex-col flex-[2] min-w-0">
+        {/* four separate fields, ruled apart as on the Matchblatt */}
+        <div className="col-span-6 flex flex-col min-w-0 min-h-0 overflow-hidden">
+          <div className="flex w-full min-w-0 h-full items-stretch" data-testid="header-venue">
+            <div className="flex flex-col justify-center flex-[2] min-w-0 px-2">
               <span className="text-[11px] leading-tight text-gray-500">City/Country</span>
               <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.city || ''}</FitText>
             </div>
-            <div className="flex flex-col flex-[4] min-w-0">
+            <div className="flex flex-col justify-center flex-[4] min-w-0 px-1.5 border-l border-black">
               <span className="text-[11px] leading-tight text-gray-500">Hall/Gym</span>
               <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.hall || ''}</FitText>
             </div>
-            <div className="flex flex-col flex-[1.5] min-w-0">
+            <div className="flex flex-col justify-center flex-[1.5] min-w-0 px-1.5 border-l border-black">
               <span className="text-[11px] leading-tight text-gray-500">Date</span>
               <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap" data-testid="header-date">{dateStr}</div>
             </div>
-            <div className="flex flex-col flex-[1.2] min-w-0">
+            <div className="flex flex-col justify-center flex-[1.2] min-w-0 px-1.5 border-l border-black">
               <span className="text-[11px] leading-tight text-gray-500">Time</span>
               <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap">{timeStr}</div>
             </div>
