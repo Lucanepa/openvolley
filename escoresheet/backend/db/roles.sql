@@ -174,6 +174,14 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, ov_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ov_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ov_app;
 
+-- Append-only for the app (db/015, db/016): the event history and the
+-- activity log are written with INSERT and removed with DELETE (retention,
+-- account deletion, delete on request), never rewritten. The ON DELETE SET
+-- NULL of their account columns runs as the table owner.
+SELECT format('REVOKE UPDATE ON %s FROM ov_app', t)
+  FROM unnest(ARRAY['public.event_revisions', 'public.activity_log']) AS t
+ WHERE to_regclass(t) IS NOT NULL \gexec
+
 -- No public table is held back: the daily VolleyManager sync (lib/vmSync.js,
 -- scheduled by the backend in cloud mode) writes svrz_games and svrz_sync_log
 -- (INSERT ... RETURNING id, so it needs svrz_sync_log_id_seq too) as ov_app.
