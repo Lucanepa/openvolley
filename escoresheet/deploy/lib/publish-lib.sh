@@ -14,6 +14,7 @@
 #   app_cert_sha256 APPID       the signing certificate an APK of APPID needs
 #   check_install_sh FILE       pkgs/install.sh pins the key and the packages
 #   landing_page TEMPLATE PACKAGES INDEXV2 OUT   pkgs/index.html filled in
+#   pacman_repo_fpr ARCHDIR     the published pacman repo key's fingerprint (checked)
 #
 # Desktop updater release (publish-pkgs.sh --desktop VERSION [--staging] [--app APP]):
 #   desktop_check_setup         tools, key files, tauri CLI >= 2.12, trusted pubkey
@@ -181,6 +182,8 @@ PY
 # is published, and within it the desktop (<!--beach-desktop-->) or Android
 # (<!--beach-android-->) part until that is. Each app's macOS part
 # (<!--mac-->, <!--beach-mac-->) only when its GitHub release has a .dmg.
+# The Flatpak parts and the pacman card (<!--pacman-->) once those are
+# published next to OUT (OUT's directory: flatpak/, arch/).
 landing_page() {
   local template=$1 packages=$2 index=$3 out=$4 ver apk_ver='' apk_file='' win_url mac_url
   local b_ver b_apk_ver='' b_apk_file='' b_win='' b_mac='' sed_args=()
@@ -216,14 +219,45 @@ landing_page() {
   flat="$(dirname "$out")/flatpak"
   [[ -f "$flat/com.openvolley.escoresheet.flatpakref" ]] || sed_args+=(-e 's|<!--flatpak-->.*<!--/flatpak-->||' -e '/<!--flatpak-->/,/<!--\/flatpak-->/d')
   [[ -f "$flat/com.openvolley.beach.flatpakref" ]] || sed_args+=(-e '/<!--beach-flatpak-->/,/<!--\/beach-flatpak-->/d')
+  # The pacman card once publish-pacman.sh published the repo next to this
+  # page (its key's fingerprint filled in), each app's line once its package is.
+  local arch fpr='' fpr_grouped=''
+  arch="$(dirname "$out")/arch"
+  if [[ -f "$arch/x86_64/openvolley.db" ]]; then
+    fpr=$(pacman_repo_fpr "$arch")
+    fpr_grouped=$(sed 's/..../& /g; s/ $//' <<<"$fpr")
+    compgen -G "$arch/x86_64/openvolley-escoresheet-bin-*.pkg.tar.zst" >/dev/null ||
+      sed_args+=(-e '/<!--pacman-ov-->/,/<!--\/pacman-ov-->/d')
+    compgen -G "$arch/x86_64/openbeach-escoresheet-bin-*.pkg.tar.zst" >/dev/null ||
+      sed_args+=(-e '/<!--beach-pacman-->/,/<!--\/beach-pacman-->/d')
+  else
+    sed_args+=(-e 's|<!--pacman-->.*<!--/pacman-->||' -e '/<!--pacman-->/,/<!--\/pacman-->/d')
+  fi
   sed "${sed_args[@]}" \
     -e "s|@DESKTOP_VERSION@|$ver|g" -e "s|@DEB_PACKAGE@|openvolley-escoresheet|g" -e "s|@WINDOWS_URL@|$win_url|g" \
     -e "s|@MAC_URL@|$mac_url|g" -e "s|@BEACH_MAC_URL@|$b_mac|g" \
     -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \
     -e "s|@BEACH_DESKTOP_VERSION@|$b_ver|g" -e "s|@BEACH_WINDOWS_URL@|$b_win|g" \
     -e "s|@BEACH_APK_VERSION@|$b_apk_ver|g" -e "s|@BEACH_APK_FILE@|$b_apk_file|g" \
+    -e "s|@PACMAN_FPR@|$fpr|g" -e "s|@PACMAN_FPR_GROUPED@|$fpr_grouped|g" \
     "$template" > "$out"
   ! grep -q '@[A-Z_]*@' "$out" || die "index.html has unfilled placeholders"
+}
+
+# pacman_repo_fpr ARCHDIR: the fingerprint in ARCHDIR/fingerprint.txt, after
+# checking that ARCHDIR/openvolley.gpg (what users import) is that key.
+pacman_repo_fpr() {
+  local arch=$1 fpr key_fpr home
+  [[ -f "$arch/fingerprint.txt" && -f "$arch/openvolley.gpg" ]] ||
+    die "$arch has a database but no fingerprint.txt / openvolley.gpg (run publish-pacman.sh)"
+  fpr=$(tr -d '[:space:]' < "$arch/fingerprint.txt")
+  [[ "$fpr" =~ ^[0-9A-F]{40}$ ]] || die "$arch/fingerprint.txt: not a key fingerprint"
+  home=$(mktemp -d)
+  key_fpr=$(gpg --homedir "$home" --batch --with-colons --show-keys "$arch/openvolley.gpg" 2>/dev/null |
+    awk -F: '$1 == "fpr" { print $10; exit }') || true
+  rm -rf "$home"
+  [[ "$key_fpr" == "$fpr" ]] || die "$arch/openvolley.gpg is not the key $fpr of fingerprint.txt"
+  echo "$fpr"
 }
 
 desktop_check_setup() {

@@ -10,6 +10,9 @@
 #                   latest-<version>.json (publish-pkgs.sh --desktop)
 #   /flatpak/       signed Flatpak (OSTree) repository repo/, openvolley.flatpakrepo,
 #                   <app id>.flatpakref (packaging/flatpak/publish-flatpak.sh)
+#   /arch/          signed pacman repository: openvolley.gpg, fingerprint.txt,
+#                   x86_64/{openvolley.db,openvolley.files,*.pkg.tar.zst} and their .sig
+#                   (packaging/pacman/publish-pacman.sh)
 #
 # TLS ends at Cloudflare; ov-tunnel reaches this on http://ov-pkgs:80 over the
 # compose network ov-edge. No admin API, no ACME, no state on disk.
@@ -38,6 +41,10 @@
 	@script path /install.sh
 	@flatpakref path *.flatpakref
 	@flatpakrepo path *.flatpakrepo
+	# pacman: the databases (gzip tar), the packages (zstd tar), detached signatures
+	@pacmandb path /arch/*/*.db /arch/*/*.files
+	@pacmanpkg path /arch/*/*.pkg.tar.zst
+	@pacmansig path /arch/*/*.sig
 	header @deb Content-Type application/vnd.debian.binary-package
 	header @apk Content-Type application/vnd.android.package-archive
 	header @jar Content-Type application/java-archive
@@ -51,15 +58,26 @@
 	# Opened by the software centre (GNOME Software, Discover) from a browser.
 	header @flatpakref Content-Type application/vnd.flatpak.ref
 	header @flatpakrepo Content-Type application/vnd.flatpak.repo
+	# octet-stream and zstd are never re-compressed by encode below (pacman
+	# checks the bytes it gets against the signature)
+	header @pacmandb Content-Type application/octet-stream
+	header @pacmanpkg Content-Type application/zstd
+	header @pacmansig Content-Type application/pgp-signature
 
 	# Caching: packages are named by version and never rewritten, so they are
 	# immutable. Everything else (APT dists/, F-Droid index and entry files,
 	# keys, this page, listings) changes on every publish: 60 s, revalidate.
 	# OSTree objects are named by the hash of their content, so
 	# immutable too; the Flatpak summary, refs and deltas are not.
-	@immutable path *.deb *.apk /flatpak/repo/objects/*
-	@mutable not path *.deb *.apk /flatpak/repo/objects/*
+	# pacman packages (name-version-pkgrel) and their signatures never change.
+	# The pacman database and its signature are fetched as a pair on every
+	# pacman -Sy: never cached, so a client never gets a new database with an
+	# old signature (pacman sends If-Modified-Since, so this costs a 304).
+	@immutable path *.deb *.apk /flatpak/repo/objects/* /arch/*/*.pkg.tar.zst /arch/*/*.pkg.tar.zst.sig
+	@nocache path /arch/*/*.db /arch/*/*.db.sig /arch/*/*.files /arch/*/*.files.sig
+	@mutable not path *.deb *.apk /flatpak/repo/objects/* /arch/*/*.pkg.tar.zst /arch/*/*.pkg.tar.zst.sig /arch/*/*.db /arch/*/*.db.sig /arch/*/*.files /arch/*/*.files.sig
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	header @nocache Cache-Control "no-cache"
 	header @mutable Cache-Control "public, max-age=60, must-revalidate"
 
 	# The Android app (sideloaded installs, opt-in) reads the F-Droid index to

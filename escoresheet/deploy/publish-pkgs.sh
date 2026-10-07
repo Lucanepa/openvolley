@@ -2,7 +2,7 @@
 # Rebuild and publish the public package repos behind https://get.openvolley.app
 #
 #   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
-#   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--no-sync] [FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--pacman] [--no-sync] [FILE.apk ...]
 #
 # Runs on lenovoserver (never on the VM: the signing keys live only here).
 #
@@ -65,9 +65,17 @@
 #      needs flatpak, flatpak-builder, ostree and the Flatpak repo key in
 #      flatpak-gpg/). Without --flatpak public/flatpak/ is left as it is (and
 #      still synced): run publish-flatpak.sh VERSION by hand, then this script.
+#   3c. --pacman (with --desktop, never with --staging: pacman -Syu would
+#      install it at once): builds the AUR PKGBUILD (../packaging/aur/<package>-bin,
+#      which must be at VERSION: run aur/bump.sh and commit first) from the
+#      .deb of step 0 and adds it, signed, to the pacman repo public/arch/
+#      (../packaging/pacman/publish-pacman.sh; needs docker and the pacman repo
+#      key in pacman-gpg/). Without --pacman public/arch/ is left as it is (and
+#      still synced): run publish-pacman.sh by hand, then this script.
 #   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
 #      The page's OpenBeach section appears once an OpenBeach .deb or APK is
-#      published; install.sh takes the package name (default openvolley-escoresheet).
+#      published, the Flatpak and Arch (pacman) cards once those repos are;
+#      install.sh takes the package name (default openvolley-escoresheet).
 #   5. Refuses if anything key-like ended up in the public tree, then rsyncs
 #      that tree to ${OV_PKGS_DEST} (default hetzner:/data/openvolley/pkgs/),
 #      unless --no-sync.
@@ -82,8 +90,11 @@
 #                       desktop/{latest,staging,latest-<version>}.json
 #                       desktop/beach/{latest,staging,latest-<version>}.json (OpenBeach)
 #                       flatpak/{repo/,openvolley.flatpakrepo,<app id>.flatpakref,openvolley-flatpak.gpg}
+#                       arch/{openvolley.gpg,fingerprint.txt,x86_64/}  (pacman repo [openvolley])
 #   flatpak-gpg/      Flatpak repo signing key (GNUPGHOME), flatpak-gpg-passphrase its
 #                     passphrase. Vaultwarden: "OpenVolley Flatpak repo key"
+#   pacman-gpg/       pacman repo signing key (GNUPGHOME), pacman-gpg-passphrase its
+#                     passphrase. Vaultwarden: "OpenVolley pacman repo key"
 # Desktop updater key under ${OV_DESKTOP_KEYS} (default ~/.config/openvolley-desktop):
 #   updater.key       tauri signer private key, key-password its password (both
 #                     mode 600). Vaultwarden: "OpenVolley desktop updater key"
@@ -119,6 +130,7 @@ DESKTOP_V=
 STAGING=0
 APP=
 FLATPAK=0
+PACMAN=0
 while (( $# )); do
   case "$1" in
     --no-sync) SYNC=0 ;;
@@ -136,6 +148,7 @@ while (( $# )); do
       ;;
     --staging) STAGING=1 ;;
     --flatpak) FLATPAK=1 ;;
+    --pacman) PACMAN=1 ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) FILES+=("$1") ;;
@@ -146,8 +159,20 @@ done
 [[ -z "$APP" ]] || [[ -n "$DESKTOP_V" ]] || die "--app needs --desktop VERSION"
 (( ! FLATPAK )) || [[ -n "$DESKTOP_V" ]] || die "--flatpak needs --desktop VERSION (or run ../packaging/flatpak/publish-flatpak.sh VERSION, then this script)"
 (( ! FLATPAK || ! STAGING )) || die "--flatpak cannot go with --staging: Flatpak users would get the staging version at once"
+(( ! PACMAN )) || [[ -n "$DESKTOP_V" ]] || die "--pacman needs --desktop VERSION (or run ../packaging/pacman/publish-pacman.sh, then this script)"
+(( ! PACMAN || ! STAGING )) || die "--pacman cannot go with --staging: pacman -Syu would install the staging version at once"
 FLATPAK_PUBLISH="$KIT_DIR/../packaging/flatpak/publish-flatpak.sh"
+PACMAN_PUBLISH="$KIT_DIR/../packaging/pacman/publish-pacman.sh"
 desktop_app_select "${APP:-openvolley}"
+if (( PACMAN )); then
+  # The PKGBUILD must already be at this release (aur/bump.sh needs the GitHub
+  # release, which --desktop downloads from anyway): checked before any signing.
+  pb="${OV_PACMAN_PKGBUILDS:-$KIT_DIR/../packaging/aur}/$DESKTOP_DEB_NAME-bin/PKGBUILD"
+  [[ -f "$pb" ]] || die "--pacman: no $pb"
+  pb_ver=$(sed -n 's/^pkgver=//p' "$pb" | head -n1)
+  [[ "$pb_ver" == "$DESKTOP_V" ]] ||
+    die "--pacman: $pb is at $pb_ver, not $DESKTOP_V: run packaging/aur/bump.sh $([[ ${APP:-openvolley} == beach ]] && echo openbeach || echo openvolley) $DESKTOP_V and commit it first"
+fi
 [[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
 
 for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3; do
@@ -160,6 +185,11 @@ if (( FLATPAK )); then
   [[ -x "$FLATPAK_PUBLISH" ]] || die "$FLATPAK_PUBLISH not found"
   for t in flatpak flatpak-builder ostree; do command -v "$t" >/dev/null || die "--flatpak: $t not found"; done
   [[ -d "${OV_FLATPAK_GNUPG:-$PKGS/flatpak-gpg}" ]] || die "--flatpak: no Flatpak repo key in ${OV_FLATPAK_GNUPG:-$PKGS/flatpak-gpg} (publish-flatpak.sh --init-key, or restore it from Vaultwarden)"
+fi
+if (( PACMAN )); then
+  [[ -x "$PACMAN_PUBLISH" ]] || die "$PACMAN_PUBLISH not found"
+  command -v docker >/dev/null || die "--pacman: docker not found"
+  [[ -d "${OV_PACMAN_GNUPG:-$PKGS/pacman-gpg}" ]] || die "--pacman: no pacman repo key in ${OV_PACMAN_GNUPG:-$PKGS/pacman-gpg} (publish-pacman.sh --init-key, or restore it from Vaultwarden)"
 fi
 
 build_tool() {
@@ -358,6 +388,12 @@ if (( FLATPAK )); then
   OV_PKGS_HOME="$PKGS" "$FLATPAK_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
 fi
 
+# --- 3c. pacman (--pacman) --------------------------------------------------------
+# The AUR PKGBUILD built from the same .deb (makepkg checks its sha256).
+if (( PACMAN )); then
+  OV_PKGS_HOME="$PKGS" "$PACMAN_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+fi
+
 # --- 4. landing page and installer -----------------------------------------
 # The newest .deb and APK of each app fill the version links in the template
 # (lib/publish-lib.sh landing_page; OpenBeach's section only once published).
@@ -396,6 +432,18 @@ if [[ -f "$PUB/flatpak/repo/config" ]] && command -v ostree >/dev/null; then
   for r in $(ostree --repo="$PUB/flatpak/repo" refs | grep '^app/'); do
     echo "  flatpak $r: $(ostree --repo="$PUB/flatpak/repo" log "$r" | awk '/^    [^ ]/ { sub(/^ +/, ""); print; exit }')"
   done
+fi
+
+if [[ -f "$PUB/arch/x86_64/openvolley.db" ]]; then
+  python3 - "$PUB/arch/x86_64/openvolley.db" <<'EOF'
+import sys, tarfile
+with tarfile.open(sys.argv[1]) as t:
+    for m in sorted(t.getmembers(), key=lambda m: m.name):
+        if m.name.endswith("/desc"):
+            lines = t.extractfile(m).read().decode().split("\n")
+            f = {lines[i]: lines[i + 1] for i in range(len(lines) - 1) if lines[i].startswith("%")}
+            print(f"  pacman  {f['%NAME%']} {f['%VERSION%']}")
+EOF
 fi
 
 if (( SYNC )); then

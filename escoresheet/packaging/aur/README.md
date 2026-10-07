@@ -22,6 +22,10 @@ cd openvolley-escoresheet-bin && makepkg -si
 
 Updates arrive with `yay -Syu` / `paru -Syu` (or `git pull && makepkg -si`).
 
+The same PKGBUILDs are also built and published, signed, in our own pacman
+repository (`../pacman/`, https://get.openvolley.app/arch/): plain
+`pacman -Syu`, no AUR helper.
+
 ## Files
 
 | File | What |
@@ -30,6 +34,7 @@ Updates arrive with `yay -Syu` / `paru -Syu` (or `git pull && makepkg -si`).
 | `<pkg>/.SRCINFO` | generated from the PKGBUILD (`makepkg --printsrcinfo`); the AUR reads it |
 | `bump.sh` | points a package at a new release: pkgver, pkgrel, sha256sums, .SRCINFO |
 | `test.sh` | builds, installs and checks a package in a clean `archlinux` container |
+| `check-installed.sh` | the checks of an installed package (libraries, desktop file, updater off, runs under Xvfb); used by `test.sh` and `../pacman/test.sh` |
 | `publish.sh` | owner-run: pushes PKGBUILD + .SRCINFO to aur.archlinux.org |
 
 ## What the package contains
