@@ -15,7 +15,8 @@
 #      stamp, the app runs under Xvfb and does not update itself).
 #   4. A newer pkgrel of OpenVolley is published: pacman -Syu installs it.
 #   5. Tampering is rejected: a changed database, a database or a package
-#      signed by another key, a changed package. After each, the real files
+#      signed by another key, a database or a package without its signature,
+#      a changed package. After each, the real files
 #      are put back and pacman works again.
 #
 #   escoresheet/packaging/pacman/test.sh
@@ -191,11 +192,22 @@ client 'pacman -Syy --noconfirm --noprogressbar >/dev/null 2>&1' || bad "pacman 
 # copy when it starts; after the good sync above, nothing is left to say)
 [[ -z "$(client 'pacman -Sl openvolley 2>&1 >/dev/null')" ]] || bad "pacman still reports an error after the good sync"
 ok "a database signed by another key is refused; the real one syncs again"
+# What the page's SigLevel line is for: pacman's default (DatabaseOptional)
+# would take a database without a signature.
+rm "$RX/openvolley.db.sig"
+client_fails "openvolley\.db\.sig.*404" 'pacman -Syy --noconfirm --noprogressbar'
+restore
+client 'pacman -Syy --noconfirm --noprogressbar >/dev/null 2>&1' || bad "pacman -Syy after putting the database signature back"
+ok "a database without its signature is refused (SigLevel DatabaseRequired)"
 
 client "pacman -Rns --noconfirm $OB >/dev/null && rm -f /var/cache/pacman/pkg/$OB-*"
 OBF="$RX/$OB-$OB_VER-x86_64.pkg.tar.zst"
 other_sign "$OBF"
 client_fails "$OB.*(Mallory.*(unknown|marginal|never) trust|signature.*invalid)" "pacman -S --noconfirm --noprogressbar $OB"
+client "rm -f /var/cache/pacman/pkg/$OB-*"
+restore
+rm "$OBF.sig"
+client_fails "$OB-.*\.sig.*404" "pacman -S --noconfirm --noprogressbar $OB"
 client "rm -f /var/cache/pacman/pkg/$OB-*"
 restore
 flip "$OBF"
@@ -205,7 +217,7 @@ client "! pacman -Q $OB >/dev/null 2>&1" || bad "a tampered $OB got installed"
 restore
 client "pacman -S --noconfirm --noprogressbar $OB >/dev/null" || bad "the real $OB does not install after the tampering tests"
 [[ "$(client "pacman -Q $OB")" == "$OB $OB_VER" ]] || bad "reinstall"
-ok "a package signed by another key and a changed package are refused; the real one installs"
+ok "a package signed by another key, one without its signature and a changed package are refused; the real one installs"
 
 echo
 echo "all $PASS checks passed (throwaway key $FPR)"
