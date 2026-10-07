@@ -6,7 +6,7 @@ import { cn } from '../../ui/cn.js'
 import { FOCUS_RING } from '../../ui/Button.jsx'
 import { SegmentedControl } from '../../ui/SegmentedControl.jsx'
 import { Textarea } from '../../ui/Textarea.jsx'
-import { Input } from '../../ui/Input.jsx'
+import { TimeField } from '../../ui/DateField.jsx'
 import { Checkbox } from '../../ui/Checkbox.jsx'
 import { Switch } from '../../ui/Switch.jsx'
 import {
@@ -526,11 +526,11 @@ export function SetTimesForm({ ctx, events, sets, setRow, match, busy, onCancel,
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="ov-corr-start" className="block text-sm font-medium text-stone-700 mb-1.5">{tr(t, 'corrections.field.startTime', 'Start')}</label>
-          <Input id="ov-corr-start" type="time" size="lg" value={start} onChange={(e) => setStart(e.target.value)} />
+          <TimeField id="ov-corr-start" size="lg" value={start} onChange={setStart} />
         </div>
         <div>
           <label htmlFor="ov-corr-end" className="block text-sm font-medium text-stone-700 mb-1.5">{tr(t, 'corrections.field.endTime', 'End')}</label>
-          <Input id="ov-corr-end" type="time" size="lg" value={end} onChange={(e) => setEnd(e.target.value)} />
+          <TimeField id="ov-corr-end" size="lg" value={end} onChange={setEnd} />
         </div>
       </div>
     </CorrectionForm>
