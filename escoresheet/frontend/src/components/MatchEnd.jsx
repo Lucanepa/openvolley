@@ -37,7 +37,8 @@ import { askConfirm } from '../utils/askConfirm.js'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
-import { X, Check, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { X, Check, AlertTriangle, ShieldCheck, Smartphone } from 'lucide-react'
+import { approvalSignatureSources, phoneSignContext, signatureUpdate, signedOnPhone, SLOT_OF_ROLE } from '../domain/phoneSignature'
 import { Button } from '../ui/Button.jsx'
 import { RowTool } from '../ui/Row.jsx'
 import { toast } from '../ui/uiStore.js'
@@ -338,7 +339,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       events
     }
   }, [matchId])
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
@@ -711,19 +712,23 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const currentStep = getCurrentStep()
   const allSignaturesDone = currentStep === 'complete'
 
-  const handleSaveSignature = async (role, signatureData) => {
-    cLogger.logHandler('handleSaveSignature', { role })
-    const fieldMap = {
-      'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
-      'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
-      'asst-scorer': 'asstScorerSignature',
-      'scorer': 'scorerSignature',
-      'ref2': 'ref2Signature',
-      'ref1': 'ref1Signature'
-    }
-    const field = fieldMap[role]
+  // The match field of a slot (A / B follow the coin toss)
+  const signatureFieldOf = (role) => ({
+    'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    'asst-scorer': 'asstScorerSignature',
+    'scorer': 'scorerSignature',
+    'ref2': 'ref2Signature',
+    'ref1': 'ref1Signature'
+  })[role] || null
+
+  // meta: { source: 'device' } or { source: 'phone', transport } (SignaturePad):
+  // the image and its "signed on phone" record go in one update
+  const handleSaveSignature = async (role, signatureData, meta) => {
+    cLogger.logHandler('handleSaveSignature', { role, source: meta?.source || 'device' })
+    const field = signatureFieldOf(role)
     if (field) {
-      await db.matches.update(matchId, { [field]: signatureData })
+      await db.matches.update(matchId, signatureUpdate(field, signatureData, meta))
     }
     // A drawn signature completes the slot: a stale account approval of it
     // (the result changed since) is dropped from the local copy
@@ -768,6 +773,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const SignatureBox = ({ role, disabled = false }) => {
     const signatureData = getSignatureData(role)
     const isSigned = !!signatureData
+    const viaPhone = isSigned && signedOnPhone(match, signatureFieldOf(role))
     const canApprove = !!ROLE_TO_SLOT[role]
     const approval = canApprove ? approvalFor(match, role) : null
     const approvalValid = !isSigned && isApprovalValid(approval, sets)
@@ -824,15 +830,27 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             data-testid={approvalStale ? `account-approval-stale-${role}` : undefined}
           >
             {signatureData ? (
-              <img
-                src={signatureData}
-                alt={t('common.signature')}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '56px',
-                  objectFit: 'contain'
-                }}
-              />
+              <>
+                <img
+                  src={signatureData}
+                  alt={t('common.signature')}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '56px',
+                    objectFit: 'contain'
+                  }}
+                />
+                {viaPhone && (
+                  <span
+                    className="absolute right-1.5 top-1.5 text-emerald-700"
+                    title={t('phoneSign.signedOnPhone')}
+                    aria-label={t('phoneSign.signedOnPhone')}
+                    data-testid={`signed-on-phone-${role}`}
+                  >
+                    <Smartphone size={12} aria-hidden="true" />
+                  </span>
+                )}
+              </>
             ) : approvalStale ? (
               <div className="flex items-center gap-1.5 px-2 text-center text-sm font-medium">
                 <AlertTriangle size={15} aria-hidden="true" className="shrink-0" />
@@ -1128,6 +1146,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             ref1: match.ref1Signature || null,
             ref2: match.ref2Signature || null
           },
+          // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
+          signatureSources: approvalSignatureSources(match),
           // Approved with an account: names and short IDs only (no user ids, no emails)
           accounts: approvalSummary(match, allSets)
         }
@@ -1876,8 +1896,24 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         open={!!openSignature}
         title={openSignature ? getSignatureLabel(openSignature) : ''}
         existingSignature={openSignature ? getSignatureData(openSignature) : null}
-        onSave={(signatureData) => handleSaveSignature(openSignature, signatureData)}
+        onSave={(signatureData, meta) => handleSaveSignature(openSignature, signatureData, meta)}
         onClose={() => setOpenSignature(null)}
+        phone={openSignature ? {
+          slot: SLOT_OF_ROLE[openSignature],
+          matchKey: match.seed_key || match.seedKey || null,
+          gamePin: match.gamePin || null,
+          context: phoneSignContext({
+            match,
+            slot: SLOT_OF_ROLE[openSignature],
+            homeTeam,
+            awayTeam,
+            homeCaptain,
+            awayCaptain,
+            lang: i18n.language,
+            fallbackHome: t('common.home'),
+            fallbackAway: t('common.away')
+          })
+        } : null}
       />
 
       {/* Approve with an account (scorer, 2nd and 1st referee) */}
