@@ -249,11 +249,20 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(0)
   })
 
-  it('at the change: the left team\'s points only in the box, an inverted T over them in panel 3', () => {
+  it('at the change: the left team\'s points only in the box, no T / reverse T in the points columns (owner 2026-10-07)', () => {
     // home (left) 5, then away reaches 8: the change at 5:8
     const { getByTestId, container } = render(<App matchData={set5('hhhhh' + 'aaaaaaaa' + 'h')} autoAction="preview" />)
     expect(getByTestId('set5-points-at-change').textContent).toBe('5')
-    expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(5)
+    expect(container.querySelectorAll('[data-mark="reverseT"], [data-mark="T"]')).toHaveLength(0)
+    // panel 3 (the last points grid): 1-5 stay plain, the 6th point is ticked
+    const grids = container.querySelectorAll('[data-testid="points-grid"]')
+    const panel3 = grids[grids.length - 1]
+    const mark = (n: number) => panel3.querySelector(`[data-point="${n}"]`)?.getAttribute('data-mark')
+    expect([1, 2, 3, 4, 5].map(mark)).toEqual(['', '', '', '', ''])
+    expect(mark(6)).toBe('tick')
+    // panels 2 and 3 print 1-30 (3 x 10), sets 1-4 print 1-48
+    expect(panel3.querySelectorAll('[data-point]')).toHaveLength(30)
+    expect(grids[0].querySelectorAll('[data-point]')).toHaveLength(48)
   })
 
   it('a default before the start: the grids struck off, the result and the remark written', () => {
