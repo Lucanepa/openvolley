@@ -16,6 +16,12 @@ import { useCallback, useRef } from 'react'
  * decision change showed the already-swapped score. Closing first removes
  * that window.
  *
+ * The scorer dialogs now run their writes as one transaction
+ * (useScorerActions.runAction) and request the close with deferUi before the
+ * first write: it is applied in the very render that shows the written data,
+ * which keeps the guarantee (the dialog never draws the new data) without a
+ * frame of the closed dialog over the old board.
+ *
  * The returned `run(action)` also refuses to start while a previous run is
  * still in flight, so a double tap (or Enter + click) writes once. It resolves
  * to false when the call was refused.
