@@ -8,7 +8,7 @@
 # not work inside the snap.
 name: openbeach-escoresheet
 title: OpenBeach
-version: '2.0.0'
+version: '2.0.1'
 summary: Open Source Beach Volleyball eScoresheet
 description: |
   Fully offline beach volleyball e-scoresheet. Runs the scoretable and a
@@ -74,9 +74,9 @@ slots:
 parts:
   openbeach-escoresheet:
     plugin: dump
-    source: https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.0/openbeach-escoresheet_2.0.0_amd64.deb
+    source: https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.1/openbeach-escoresheet_2.0.1_amd64.deb
     source-type: deb
-    source-checksum: sha256/cd4d9557c4417179733852d732568416f887cf4d86ad204728ecb11e7e0559ec
+    source-checksum: sha256/84e09b7ec98ba8880457e2f1c3a2ad59e9455b66511630730837bdbc6b7b133b
     # GTK 3, WebKitGTK 4.1, libsoup 3 and libayatana-appindicator3 (the
     # tray) all come from the gnome-46-2404 runtime: nothing is staged
     prime:
