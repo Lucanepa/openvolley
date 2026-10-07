@@ -72,7 +72,16 @@ function useHashRoute() {
     } catch { /* no history */ }
     setRoute(next || '')
   }, [])
-  return [route, go]
+  // The same, in place: no history entry (replaceState fires no hashchange,
+  // so the route state is set here too, or it would keep the old hash)
+  const replace = useCallback((next) => {
+    try {
+      const { pathname, search } = window.location
+      window.history.replaceState(window.history.state, '', next ? `#${next}` : `${pathname}${search}`)
+    } catch { /* no history */ }
+    setRoute(next || '')
+  }, [])
+  return [route, go, replace]
 }
 
 const logo = (cls) => (
@@ -370,18 +379,22 @@ export default function ManagerApp() {
   const { t } = useTranslation()
   const { user, access, loading } = useAuth()
   const [tab, setTab] = useState(tabFromHash)
-  const [route, goRoute] = useHashRoute()
+  const [route, goRoute, replaceRoute] = useHashRoute()
   const [justSignedUp, setJustSignedUp] = useState(false)
 
-  // Signed in: #signup has done its job (and is no console tab)
+  // Signed in: #signup has done its job (and is no console tab). The route is
+  // cleared too, so signing out later shows the sign-in card, not the sign-up page
   useEffect(() => {
     if (!user || route !== SIGN_UP_HASH) return
-    try {
-      const { pathname, search } = window.location
-      window.history.replaceState(window.history.state, '', `${pathname}${search}`)
-    } catch { /* no history */ }
+    replaceRoute('')
     setTab(null)
-  }, [user, route])
+  }, [user, route, replaceRoute])
+
+  // "Account created" belongs to the session that made the account only
+  const isSignedIn = Boolean(user)
+  useEffect(() => {
+    if (!isSignedIn) setJustSignedUp(false)
+  }, [isSignedIn])
 
   // The open tab lives in the URL hash, so a reload or a bookmark keeps it
   const selectTab = useCallback((id) => {

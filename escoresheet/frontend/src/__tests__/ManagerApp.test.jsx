@@ -315,6 +315,49 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     expect(window.location.hash).toBe('')
   })
 
+  it('sign up, then sign out: the sign-in card, and another pending account gets no "account created"', async () => {
+    setAuth({ user: null })
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    const { rerender } = render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, valid)
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    expect(screen.getByText('managerSite.accountCreated')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe(''))
+
+    // Sign out (the session goes): the sign-in card, not "Create your account"
+    setAuth({ user: null })
+    rerender(<ManagerApp />)
+    expect(screen.getByTestId('manager-sign-in')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-sign-up')).toBeNull()
+
+    // Another account, still pending, signs in in the same tab
+    setAuth({ user: { id: 'u-other', email: 'max@club.ch' }, roles: [] })
+    rerender(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    expect(within(step).queryByText('managerSite.accountCreated')).toBeNull()
+  })
+
+  it('signed in from the #signup page\'s own dialog, then out: the sign-in card', async () => {
+    setAuth({ user: null })
+    const { rerender } = render(<ManagerApp />)
+    expect(screen.getByTestId('manager-sign-up')).toBeInTheDocument()
+    setAuth({ user: { id: 'u-1', email: 'lea@club.ch' }, roles: [] })
+    rerender(<ManagerApp />)
+    expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe(''))
+    setAuth({ user: null })
+    rerender(<ManagerApp />)
+    expect(screen.getByTestId('manager-sign-in')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-sign-up')).toBeNull()
+  })
+
   it('sends the trimmed fields, the ISO date of birth (null when left empty)', async () => {
     setAuth({ user: null })
     render(<ManagerApp />)
