@@ -27,6 +27,8 @@ Notation:
 - `T` means a vertical stroke with a bar on top, drawn through the printed numbers that were
   not used.
 - `⊥` means a reverse T: a vertical stroke with a bar at the bottom.
+- **Owner decision (2026-10-07):** the generated sheet draws **neither `T` nor `⊥`** in the
+  points columns (see section 16). Both are described below only as the paper convention.
 - A score written `a:b` always puts **the concerned team's points first**. The concerned team is
   the team that asked for the time-out or substitution, or the team that was sanctioned or is
   named in a remark (SC p.46, 51, 55, 69).
@@ -262,7 +264,8 @@ the next round box (1, 2, … 8).
 3. **Circle the final points in the service boxes of BOTH teams.** For the loser, this is its
    last closed box. **Do not circle in the points column.**
 4. In the points columns of **both** teams, draw a `T` from the first unused number to the
-   bottom of the column.
+   bottom of the column. **Not on the generated sheet (owner decision 2026-10-07, section 16):**
+   the points columns show only the points actually scored.
 5. Check the box counts:
    - The team that **served first** wins: both circled finals are at the **same** service count.
    - The team that **received first** wins: the winner has **one service box more** than the
@@ -324,8 +327,10 @@ Other differences from sets 1 to 4:
 1. Write the **left team's points at the change** (only the left team's points) in the
    "Pte. beim Seitenwechsel" box of panel 3.
 2. In **panel 3's points column**, draw a **reverse T `⊥`** over numbers 1..N, the points
-   already scored.
+   already scored. **Not on the generated sheet (owner decision 2026-10-07, section 16):**
+   1..N stay plain printed numbers.
 3. In **panel 1's points column**, draw a standard **T** over the numbers not ticked (N+1 to 8).
+   **Not on the generated sheet (section 16):** N+1..8 stay plain printed numbers.
 4. Copy **all time-outs and substitutions**, with their scores and circles, from panel 1 to
    panel 3.
 5. Service boxes:
@@ -341,8 +346,8 @@ Other differences from sets 1 to 4:
 
 **Winning set 5** (FIVB 6.3.2): 15 points with a lead of at least 2, for example 15:13 or 17:15.
 
-**End of set 5**: same steps as section 4.7, applied to panels 2 and 3. Panel 1 already has its
-T. The end time goes in panel 2's **Ende** field.
+**End of set 5**: same steps as section 4.7, applied to panels 2 and 3 (without the T, section
+16). The end time goes in panel 2's **Ende** field.
 
 **Best-of-3 formats**:
 
@@ -510,7 +515,7 @@ Rows, from top to bottom:
 |---|---|
 | Set won 25:23 | Points column ticked to 25 and 23. T marks from 26 and from 24. Circled finals in the service boxes. W = 1/0. |
 | Set won 30:28 | Same as above with 30 and 28. The 48-number column is enough. |
-| Tie-break 15:x | Section 6: change of courts at 8, ⊥ and T marks, finals circled in panels 2 and 3. |
+| Tie-break 15:x | Section 6: change of courts at 8, finals circled in panels 2 and 3 (no ⊥ / T marks, section 16). |
 | Winner was receiving on set point | Final written in the next server's box, round number **not** ticked, circled (SC p.64). |
 | Time-out | `req:opp` on a T line (4.5). Counted in the result "T". |
 | Third time-out request | Improper request: cross the team letter (7.1). On a repeat: delay sanction. |
@@ -638,3 +643,18 @@ These are pointers for the implementation phase, not a complete audit.
    2 minutes (paper practice, SC p.27)? This spec assumes the recorded minute.
 3. Best-of-3 deciding set: printed in the set-5 grid and labelled "3" (section 6). Is that
    right for Swiss youth formats?
+
+---
+
+## 16. Owner decisions, 2026-10-07 (scoresheet review, round 2)
+
+These override the paper conventions above wherever they differ. The audit must not flag them.
+
+1. **No `T` / `⊥` in the points columns.** Owner: "here no need to do the inverse T. just write
+   the points actually scored". The generated sheet (preview and PDF, every set, set 5 included)
+   draws no `T` through the unused numbers at set end, no `T` in set-5 panel 1 at the change of
+   courts and no reverse `⊥` over the points already scored in panel 3. The points columns show
+   the pre-printed numbers, the ticks of the points won and the circles of the points awarded
+   (penalty, delay penalty, default); nothing else. This departs from SC p.39, 64 and 77-79
+   (sections 4.7 step 4 and 6 steps 2-3).
+

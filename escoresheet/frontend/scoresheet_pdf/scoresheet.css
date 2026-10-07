@@ -12,3 +12,14 @@
 
 /* Make sure the scoresheet_pdf components are scanned for utility classes. */
 @source '.';
+
+/*
+ * Two line weights, as the Matchblatt (field-spec 1): the frames of the sets and
+ * tables stay solid black (border-black); the inner cell rules (points
+ * sub-columns, service-box rows, roster / sanction / result rows, remarks lines)
+ * are a dark grey hairline. Never lighter than #777: lighter rules vanished in
+ * the PDF (audit 2026-10, result table).
+ */
+.ss-rule {
+  border-color: #6b6b6b;
+}
