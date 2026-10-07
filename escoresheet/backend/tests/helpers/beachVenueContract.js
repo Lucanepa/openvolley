@@ -12,7 +12,8 @@
  * sport_type 'beach'); court 2 the shape openbeach sends today (team1Team,
  * team1Players, team1Pin, matchPin, team1TeamConnectionEnabled, no sport).
  * Then:
- *   - GET /api/match/list lists every open match (both courts and indoor)
+ *   - GET /api/match/list lists every open match (both courts and indoor),
+ *     each row with its sportType ('beach' / 'indoor')
  *   - a referee with the court's referee PIN gets both teams with players
  *   - a court's PINs grant that court only; a bench PIN only while its
  *     connection is on (beach: team1 / team2)
@@ -170,6 +171,8 @@ export async function runBeachVenueContract ({ httpBase, wsUrl, openClient, tag 
     assert.equal(row(seed2).homeTeam, 'Keller / Huber')
     assert.equal(row(seed2).awayTeam, 'Weber / Frei')
     assert.equal(row(seed2).status, 'scheduled')
+    // Each row names its sport: openbeach lists its courts, OpenVolley its indoor match
+    assert.deepEqual([seed1, seed2, seedIndoor].map((id) => row(id).sportType), ['beach', 'beach', 'indoor'])
     assert.equal(leaksPin(listText), false, 'no PINs in the match list')
     assert.equal(listText.includes(DOB), false)
 

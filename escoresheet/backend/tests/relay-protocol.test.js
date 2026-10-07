@@ -428,6 +428,7 @@ describe('backend WebSocket relay protocol', () => {
       scheduledAt: '2026-10-05T17:00:00.000Z',
       dateTime: mine[1].dateTime,
       status: 'scheduled',
+      sportType: 'indoor',
       test: false,
       refereeConnectionEnabled: false,
       homeTeamConnectionEnabled: true,
@@ -435,6 +436,8 @@ describe('backend WebSocket relay protocol', () => {
     })
     assert.equal(mine[0].homeTeam, 'Muster / Meier')
     assert.equal(mine[0].awayTeam, 'Rossi / Bianchi')
+    assert.equal(mine[0].sportType, 'beach')
+    assert.equal(mine[2].sportType, 'indoor')
     assert.equal(mine[2].test, true)
     assert.equal(containsPin(text), false)
     assert.ok(!/dob|lastName|officials|ignature/.test(text))

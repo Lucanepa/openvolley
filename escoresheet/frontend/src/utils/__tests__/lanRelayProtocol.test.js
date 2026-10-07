@@ -51,7 +51,7 @@ const containsPersonal = (text) => Object.values(PERSONAL).some((v) => text.incl
 // GET /api/match/list: the keys of every row, on every relay (sorted)
 const LIST_ROW_KEYS = [
   'awayTeam', 'awayTeamConnectionEnabled', 'dateTime', 'gameNumber', 'homeTeam', 'homeTeamConnectionEnabled',
-  'id', 'refereeConnectionEnabled', 'scheduledAt', 'status', 'test'
+  'id', 'refereeConnectionEnabled', 'scheduledAt', 'sportType', 'status', 'test'
 ]
 
 function makeMatch(overrides = {}) {
@@ -653,6 +653,7 @@ describe('lanRelayCore protocol', () => {
       scheduledAt: '2026-10-05T17:00:00.000Z',
       dateTime: expect.any(String),
       status: 'scheduled',
+      sportType: 'indoor',
       test: false,
       refereeConnectionEnabled: false,
       homeTeamConnectionEnabled: true,
@@ -771,7 +772,8 @@ describe('lanRelayCore protocol', () => {
     const viewer = connect(relay, '192.168.1.20')
     const beach = { ...syncMessage(makeMatch({ seed_key: 'beach-1' })), homeTeam: undefined, awayTeam: undefined }
     msg(relay, scorer, { ...beach, team1Team: { id: 1, name: 'Muster / Meier', color: '#e2001a' }, team2Team: { id: 2, name: 'Rossi / Bianchi' } })
-    expect(relay.listMatches().body.matches[0]).toMatchObject({ homeTeam: 'Muster / Meier', awayTeam: 'Rossi / Bianchi' })
+    // Its row names the sport: openbeach lists only its own matches
+    expect(relay.listMatches().body.matches[0]).toMatchObject({ homeTeam: 'Muster / Meier', awayTeam: 'Rossi / Bianchi', sportType: 'beach' })
     msg(relay, viewer, { type: 'subscribe-match', matchId: 'beach-1' })
     const summary = viewer.last('match-full-data')
     expect(summary.access).toBe('summary')
@@ -780,6 +782,8 @@ describe('lanRelayCore protocol', () => {
     // Its periodic sync names them team1 / team2
     msg(relay, scorer, { ...beach, team1: { name: 'Muster / Meier' }, team2: { name: 'Keller / Huber' } })
     expect(relay.listMatches().body.matches[0].awayTeam).toBe('Keller / Huber')
+    // The same scorer's sync without team1Team keeps the court a beach one
+    expect(relay.listMatches().body.matches[0].sportType).toBe('beach')
   })
 
   it('accepts the legacy nested `data` shape in the client reader', () => {
@@ -984,7 +988,7 @@ async function relayScenario({ httpBase, wsUrl }) {
   const listed = JSON.parse(listText).matches
   expect(listed.map((m) => m.id)).toEqual([7, 'seed-off'])
   expect(listed[1]).toMatchObject({
-    homeTeam: 'Home VC', awayTeam: 'Away VC', status: 'scheduled', test: false,
+    homeTeam: 'Home VC', awayTeam: 'Away VC', status: 'scheduled', sportType: 'indoor', test: false,
     refereeConnectionEnabled: false, homeTeamConnectionEnabled: true, awayTeamConnectionEnabled: false
   })
   // One row shape on every relay (dateTime: a display string, or null where
