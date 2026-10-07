@@ -1013,7 +1013,7 @@ export default function App() {
   // Update document title based on match type
   useEffect(() => {
     if (!currentMatch) {
-      document.title = 'Openvolley eScoresheet'
+      document.title = 'OpenVolley eScoresheet'
       return
     }
 
@@ -1021,11 +1021,11 @@ export default function App() {
 
     if (isTestMatch) {
       // Test matches don't have a game number - just show base title
-      document.title = 'Openvolley eScoresheet'
+      document.title = 'OpenVolley eScoresheet'
     } else {
       // Official match - show game number only
       const gameNumber = currentMatch.externalId || 'Official match'
-      document.title = `Openvolley eScoresheet - ${gameNumber}`
+      document.title = `OpenVolley eScoresheet - ${gameNumber}`
     }
   }, [currentMatch])
 
