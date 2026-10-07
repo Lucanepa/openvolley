@@ -1,12 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { extractKeys, extractUses, findMissingKeys, hasKey, hasPrefix } from '../../../scripts/check-i18n-keys.js'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { extractKeys, extractUses, findMissingKeys, findMissingKeysByLocale, hasKey, hasPrefix, LOCALES } from '../../../scripts/check-i18n-keys.js'
 
 // A key used in the code but missing from en.json shows up as its raw name,
-// e.g. a "Notice" dialog reading "matchSetup.allowPopups" in the desktop app.
+// e.g. a "Notice" dialog reading "matchSetup.allowPopups" in the desktop app;
+// one missing from another language shows English in the middle of it.
 describe('translation keys used in the code', () => {
   it('all exist in en.json', () => {
     const missing = Object.fromEntries(findMissingKeys())
     expect(missing).toEqual({})
+  }, 30000) // reads every source file: more than the 5 s default on a busy machine
+
+  it('all exist in every language the app ships', () => {
+    expect(LOCALES).toEqual(['en', 'de', 'de-CH', 'fr', 'it'])
+    const byLocale = findMissingKeysByLocale()
+    const missing = Object.fromEntries(Object.entries(byLocale).map(([lng, m]) => [lng, [...m.keys()].sort()]))
+    expect(missing).toEqual({})
+  }, 30000)
+
+  it('reports the missing keys per locale, a template parent only when the object is missing', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-i18n-'))
+    try {
+      fs.mkdirSync(path.join(root, 'src/i18n/locales'), { recursive: true })
+      const write = (lng, messages) => fs.writeFileSync(path.join(root, 'src/i18n/locales', `${lng}.json`), JSON.stringify(messages))
+      write('en', { a: { b: 'x' }, c: { role: { referee: 'R' } } })
+      write('de', { a: { b: 'y' }, c: { role: {} } })   // parent there: no child is checked
+      write('fr', { a: {}, c: {} })
+      const file = path.join(root, 'src/x.jsx')
+      fs.writeFileSync(file, "t('a.b')\nt(`c.role.${r}`)\n")
+      const byLocale = findMissingKeysByLocale({ locales: ['en', 'de', 'fr'], files: [file], root })
+      expect(Object.keys(byLocale)).toEqual(['fr'])
+      expect(Object.fromEntries(byLocale.fr)).toEqual({ 'a.b': ['src/x.jsx:1'], 'c.role.*': ['src/x.jsx:2'] })
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('reads literal keys from t() calls', () => {

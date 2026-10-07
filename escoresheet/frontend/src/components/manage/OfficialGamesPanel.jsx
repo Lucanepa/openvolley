@@ -37,7 +37,7 @@ export default function OfficialGamesPanel() {
           <Input type="date" value={to} onChange={e => e.target.value && setTo(e.target.value)} />
         </Field>
         <SearchInput size="md" value={q} onChange={e => { setQ(e.target.value); if (!e.target.value) setQuery('') }} placeholder={t('manage.games.search')} aria-label={t('manage.games.search')} className="min-[420px]:col-span-2 sm:col-span-1" />
-        <Button type="submit" variant="secondary" className="hidden sm:inline-flex">{t('manage.games.search')}</Button>
+        <Button type="submit" variant="secondary" className="hidden sm:inline-flex">{t('manage.games.searchButton')}</Button>
       </form>
       {error && <Notice className="mb-3">{errorText(error)}</Notice>}
       {loading && !data ? (

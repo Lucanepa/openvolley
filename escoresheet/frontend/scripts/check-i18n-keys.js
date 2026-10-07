@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 /**
- * Finds translation keys used in the code but missing from en.json.
+ * Finds translation keys used in the code but missing from a locale: en.json
+ * and every other language the app ships (LOCALES).
  *
  * Scans src/ and scoresheet_pdf/ for keys passed to t():
  * - literal keys: t('a.b'), t("a.b"), i18n.t('a.b'), and both arms of a
  *   ternary, t(cond ? 'a.b' : 'c.d'). A key counts as present when en.json
  *   has it, or its plural forms (key_one / key_other ...);
  * - template literals, t(`tabletStatus.role.${role}`): the static part up to
- *   the last dot ("tabletStatus.role") must be an object in en.json. Which
+ *   the last dot ("tabletStatus.role") must be an object in the locale. Which
  *   children exist cannot be checked statically, but a missing parent means
  *   none of them do (every language falls back to the inline default).
  * Variables and keys handed in through props (labelKey=...) stay invisible.
  *
- * A missing key renders as its raw name ("matchSetup.allowPopups" in a
- * Notice dialog), or as the inline default where one is given; either way
- * the other languages never see a translation.
+ * A key missing from en.json renders as its raw name ("matchSetup.allowPopups"
+ * in a Notice dialog), or as the inline default where one is given. A key
+ * missing from another language falls back to English (i18n fallbackLng), so
+ * a German or French screen shows English text in the middle.
  *
  * Usage:
- *   node scripts/check-i18n-keys.js          # exit 1 and list the missing keys
- *   node scripts/check-i18n-keys.js --json   # the same, as JSON
+ *   node scripts/check-i18n-keys.js          # exit 1 and list the missing keys, per locale
+ *   node scripts/check-i18n-keys.js --json   # the same, as JSON ({ locale: { key: [places] } })
  *
  * Also run by vitest (src/i18n/__tests__/missingKeys.test.js).
  */
@@ -30,6 +32,8 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const FRONTEND_DIR = path.join(__dirname, '..')
 export const SCAN_DIRS = ['src', 'scoresheet_pdf']
+// Every language the app ships (src/i18n/locales/<lng>.json)
+export const LOCALES = ['en', 'de', 'de-CH', 'fr', 'it']
 const EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx'])
 const SKIP_DIRS = new Set(['node_modules', '__tests__', 'dist'])
 
@@ -190,7 +194,7 @@ export function extractUses(source) {
 
 const lookup = (obj, key) => key.split('.').reduce((o, part) => (o && typeof o === 'object' ? o[part] : undefined), obj)
 
-/** Whether en.json has `prefix` as an object (the parent of t(`prefix.${x}`)) */
+/** Whether the locale has `prefix` as an object (the parent of t(`prefix.${x}`)) */
 export function hasPrefix(messages, prefix) {
   const node = lookup(messages, prefix)
   return !!node && typeof node === 'object'
@@ -205,36 +209,63 @@ export function loadLocale(lng = 'en', root = FRONTEND_DIR) {
   return JSON.parse(fs.readFileSync(path.join(root, 'src/i18n/locales', `${lng}.json`), 'utf8'))
 }
 
-/**
- * Map of missing key -> [file:line, ...] (paths relative to the frontend).
- * A template prefix whose parent object is missing is listed as "prefix.*".
- */
-export function findMissingKeys({ messages = loadLocale('en'), files = listSourceFiles(), root = FRONTEND_DIR } = {}) {
+/** The t() uses of each source file, read once: [{ file, keys, prefixes }] */
+function collectUses(files, root) {
+  return files.map((file) => {
+    const { keys, prefixes } = extractUses(fs.readFileSync(file, 'utf8'))
+    return { file: path.relative(root, file), keys, prefixes }
+  })
+}
+
+function missingFrom(messages, uses) {
   const missing = new Map()
   const add = (name, where) => {
     if (!missing.has(name)) missing.set(name, [])
     missing.get(name).push(where)
   }
-  for (const file of files) {
-    const source = fs.readFileSync(file, 'utf8')
-    const { keys, prefixes } = extractUses(source)
-    const where = (line) => `${path.relative(root, file)}:${line}`
-    for (const { key, line } of keys) if (!hasKey(messages, key)) add(key, where(line))
-    for (const { prefix, line } of prefixes) if (!hasPrefix(messages, prefix)) add(`${prefix}.*`, where(line))
+  for (const { file, keys, prefixes } of uses) {
+    for (const { key, line } of keys) if (!hasKey(messages, key)) add(key, `${file}:${line}`)
+    for (const { prefix, line } of prefixes) if (!hasPrefix(messages, prefix)) add(`${prefix}.*`, `${file}:${line}`)
   }
   return missing
 }
 
+/**
+ * Map of missing key -> [file:line, ...] (paths relative to the frontend).
+ * A template prefix whose parent object is missing is listed as "prefix.*".
+ */
+export function findMissingKeys({ messages = loadLocale('en'), files = listSourceFiles(), root = FRONTEND_DIR } = {}) {
+  return missingFrom(messages, collectUses(files, root))
+}
+
+/**
+ * The missing keys of every locale: { lng: Map(key -> [file:line, ...]) },
+ * locales without a missing key left out. The source files are read once.
+ */
+export function findMissingKeysByLocale({ locales = LOCALES, files = listSourceFiles(), root = FRONTEND_DIR } = {}) {
+  const uses = collectUses(files, root)
+  const out = {}
+  for (const lng of locales) {
+    const missing = missingFrom(loadLocale(lng, root), uses)
+    if (missing.size) out[lng] = missing
+  }
+  return out
+}
+
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 if (isMain) {
-  const missing = findMissingKeys()
+  const byLocale = findMissingKeysByLocale()
+  const failing = Object.keys(byLocale)
   if (process.argv.includes('--json')) {
-    console.log(JSON.stringify(Object.fromEntries(missing), null, 2))
-  } else if (missing.size) {
-    console.error(`${missing.size} translation key(s) used in the code are missing from en.json:`)
-    for (const [key, places] of [...missing].sort()) console.error(`  ${key}  (${places.join(', ')})`)
+    console.log(JSON.stringify(Object.fromEntries(failing.map(lng => [lng, Object.fromEntries(byLocale[lng])])), null, 2))
+  } else if (failing.length) {
+    for (const lng of failing) {
+      const missing = byLocale[lng]
+      console.error(`${missing.size} translation key(s) used in the code are missing from ${lng}.json:`)
+      for (const [key, places] of [...missing].sort()) console.error(`  ${key}  (${places.join(', ')})`)
+    }
   } else {
-    console.log('All t() keys (and template-key parents) exist in en.json.')
+    console.log(`All t() keys (and template-key parents) exist in ${LOCALES.map(l => `${l}.json`).join(', ')}.`)
   }
-  process.exit(missing.size ? 1 : 0)
+  process.exit(failing.length ? 1 : 0)
 }

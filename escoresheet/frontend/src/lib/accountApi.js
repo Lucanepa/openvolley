@@ -122,6 +122,8 @@ export function errorKeyOf(error) {
     case 'OV_INVITE_USED_UP': return 'access.errors.inviteUsedUp'
     case 'OV_TOO_MANY_ATTEMPTS': return 'access.errors.tooManyAttempts'
     case 'OV_SELF_DEMOTE': return 'manage.accounts.selfDemote'
+    // redeem-invite of an account whose address is not confirmed yet
+    case 'OV_EMAIL_UNCONFIRMED': return 'access.errors.emailUnconfirmed'
     case 'OV_DUPLICATE': return 'savedTeams.duplicateTeam'
     case 'OV_FORBIDDEN': return 'manage.errors.forbidden'
     default:

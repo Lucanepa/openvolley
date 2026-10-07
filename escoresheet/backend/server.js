@@ -252,8 +252,9 @@ function getDataLayer() {
     import('./lib/accounts.js'),
     import('./lib/savedTeams.js'),
     import('./lib/manageApi.js'),
-    import('./lib/officialGame.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og]) => {
+    import('./lib/officialGame.js'),
+    import('./lib/mailer.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -274,8 +275,17 @@ function getDataLayer() {
     })
     // One pg Pool for everything (auth shares pgQuery's pool). delete-account
     // removes the account's files too (README "Deleting an account").
+    // Account emails (reset / confirmation links; lib/mailer.js). Without
+    // SMTP_HOST or SMTP_PASS: reset answers 503, sign-up confirms at once.
+    const mailer = ml.mailerFromEnv(process.env)
+    if (mailer.enabled) {
+      console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}`)
+    } else {
+      console.log(`[Mail] account emails off (${mailer.reason}): password reset answers 503, sign-up confirms accounts at once`)
+    }
     const auth = au.createAuth({
       pool: db.pool,
+      mailer,
       contactEmail: CONTACT_EMAIL,
       onAccountDeleted: async (userId) => {
         const r = await storage.deleteUserData(userId)
@@ -594,7 +604,13 @@ function matchDataMessage(type, matchId, entry, scoreboardTs, access = 'full') {
 // RESEND_API_KEY
 // Option 2: SMTP (may be blocked by some cloud providers)
 // SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
-if (process.env.RESEND_API_KEY || process.env.SMTP_HOST) {
+// The SMTP settings are the account-email mailbox (lib/mailer.js). These two
+// legacy routes (/api/contact, /api/match/send-info) mail addresses that an
+// anonymous request supplies, so they use it only with SMTP_LEGACY_ROUTES=1:
+// otherwise configuring password-reset mail would turn them into an open
+// relay of the noreply mailbox.
+const LEGACY_SMTP = !!process.env.SMTP_HOST && process.env.SMTP_LEGACY_ROUTES === '1'
+if (process.env.RESEND_API_KEY || LEGACY_SMTP) {
   console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
   console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
   console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
@@ -630,7 +646,7 @@ async function sendViaResend(to, subject, text) {
     clearTimeout(timeout)
   }
 }
-const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587'),
   secure: process.env.SMTP_PORT === '465',
@@ -1348,7 +1364,8 @@ const CLOUD_CONNECT_SRC = [
 // --- Health ------------------------------------------------------------------
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
-//               free space (floor), last backup age, socket pools. 503 when the
+//               free space (floor), last backup age, socket pools, account-email
+//               counters (mail). 503 when the
 //               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
 //               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
@@ -1418,6 +1435,11 @@ async function computeCloudHealth() {
   }
   Object.assign(body, await readLastBackup(), relayStats())
   body.backup = backupState(body.lastBackupAgeMin)
+  // Account emails (lib/mailer.js): budgets used / dropped this hour, failed
+  // sends. Informational: a used-up budget does not make the server unhealthy.
+  if (layer?.auth?.mailer?.stats) {
+    try { body.mail = layer.auth.mailer.stats() } catch { body.mail = { enabled: null } }
+  }
   if (realtimeHub) body.realtime = realtimeHub.stats()
   const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
     (body.backup === 'ok' || body.backup === 'unchecked')
@@ -2130,7 +2152,7 @@ eScoresheet Developer
             // Continue anyway - the form data is logged
           }
         } else {
-          console.log('[Contact] Email not configured (SMTP_HOST not set). Form data logged only.')
+          console.log('[Contact] Email not configured (SMTP_HOST with SMTP_LEGACY_ROUTES=1 not set). Form data logged only.')
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -4354,6 +4376,7 @@ if (DB_MODE) {
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
+      layer.auth.sweepExpiredTokens().catch((err) => console.warn('[Auth] email-link sweep failed:', err.message))
     }, 60 * 60 * 1000).unref()
     // backup/backups/** older than 30 days and stale temp files: 5 min after start, then daily
     // While the host backup is stale or missing, keep every backup/ file (the
