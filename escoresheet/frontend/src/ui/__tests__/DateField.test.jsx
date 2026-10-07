@@ -72,6 +72,47 @@ describe('DateField: typing', () => {
     expect(screen.getByTestId('value')).toHaveTextContent('2026-12-15');
   });
 
+  it('a parent that ignores the empty value (official games filters) still lets a new date be typed', () => {
+    // OfficialGamesPanel: onChange={v => v && setFrom(v)}. Clearing the field
+    // or typing half a date reports '', the parent keeps its old value, and the
+    // old text must not come back under the user's fingers.
+    function IgnoresEmpty() {
+      const [v, setV] = useState('2026-10-06');
+      return (
+        <>
+          <DateField aria-label="Match date" value={v} onChange={(x) => x && setV(x)} />
+          <output data-testid="value">{v}</output>
+        </>
+      );
+    }
+    render(<IgnoresEmpty />);
+    expect(input()).toHaveValue('06.10.2026');
+    fireEvent.change(input(), { target: { value: '' } });
+    expect(input()).toHaveValue('');
+    fireEvent.change(input(), { target: { value: '0109' } });
+    expect(input()).toHaveValue('01.09');
+    expect(screen.getByTestId('value')).toHaveTextContent('2026-10-06');
+    fireEvent.change(input(), { target: { value: '01092026' } });
+    expect(input()).toHaveValue('01.09.2026');
+    expect(screen.getByTestId('value')).toHaveTextContent('2026-09-01');
+  });
+
+  it('a value changed from outside still replaces the text', () => {
+    function Outside() {
+      const [v, setV] = useState('2026-10-06');
+      return (
+        <>
+          <DateField aria-label="Match date" value={v} onChange={setV} />
+          <button type="button" onClick={() => setV('2027-01-02')}>load</button>
+        </>
+      );
+    }
+    render(<Outside />);
+    fireEvent.change(input(), { target: { value: '15.1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'load' }));
+    expect(input()).toHaveValue('02.01.2027');
+  });
+
   it('takes an ISO date whole (autofill, paste) and tidies D.M.YYYY on blur', () => {
     render(<Controlled />);
     fireEvent.change(input(), { target: { value: '2026-08-01' } });
@@ -138,7 +179,7 @@ describe('DateField: the calendar popover', () => {
     expect(screen.getByLabelText('Year')).toHaveValue('2026');
   });
 
-  it('Escape closes it, focus goes back to the field, and the screen behind never sees the key', async () => {
+  it('Escape closes it, focus goes back to the calendar button that opened it, and the screen behind never sees the key', async () => {
     const behind = vi.fn();
     document.addEventListener('keydown', behind);
     render(<Controlled initial="2026-10-07" />);
@@ -147,7 +188,7 @@ describe('DateField: the calendar popover', () => {
     expect(dialog()).toBeNull();
     expect(behind).not.toHaveBeenCalled();
     await flush();
-    expect(input()).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Open calendar' })).toHaveFocus();
     expect(screen.getByTestId('value')).toHaveTextContent('2026-10-07');
     document.removeEventListener('keydown', behind);
   });
@@ -203,6 +244,19 @@ describe('DateField: the calendar popover', () => {
     expect(dialog()).toBeNull();
     expect(screen.getByTestId('value')).toHaveTextContent('2026-10-23');
     expect(input()).toHaveValue('23.10.2026');
+    // Not the text field: on a tablet that would open the on-screen keyboard.
+    await flush();
+    expect(screen.getByRole('button', { name: 'Open calendar' })).toHaveFocus();
+    expect(input()).not.toHaveFocus();
+  });
+
+  it('opened with Alt+ArrowDown from the field, it gives the focus back to the field', async () => {
+    render(<Controlled initial="2026-10-07" />);
+    input().focus();
+    fireEvent.keyDown(input(), { key: 'ArrowDown', altKey: true });
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowRight' });
+    fireEvent.keyDown(document.activeElement, { key: 'Enter' });
+    expect(screen.getByTestId('value')).toHaveTextContent('2026-10-08');
     await flush();
     expect(input()).toHaveFocus();
   });
@@ -254,6 +308,19 @@ describe('DateField: the calendar popover', () => {
     fireEvent.keyDown(document.activeElement, { key: 'Enter' });
     expect(dialog()).toBeNull();
     expect(screen.getByTestId('value')).toHaveTextContent('2025-11-11');
+  });
+
+  it('keyboard: the arrow keys day shows a ring of its own (WebKitGTK has no :focus-visible there), a tap hides it', () => {
+    render(<Controlled initial="2026-10-07" />);
+    openCalendar();
+    expect(document.querySelector('[data-cursor]')).toBeNull();
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowRight' });
+    const day = document.querySelector('[data-iso="2026-10-08"]');
+    expect(day).toHaveAttribute('data-cursor', 'true');
+    expect(day.className).toMatch(/(^|\s)ring-2(\s|$)/);
+    expect(document.querySelectorAll('[data-cursor]')).toHaveLength(1);
+    fireEvent.pointerDown(day);
+    expect(document.querySelector('[data-cursor]')).toBeNull();
   });
 
   it('Alt+ArrowDown in the field opens the calendar', () => {
@@ -321,7 +388,7 @@ describe('TimeField', () => {
     expect(screen.getByTestId('value')).toHaveTextContent('18:30');
     expect(dialog()).toBeNull();
     await flush();
-    expect(input()).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Choose time' })).toHaveFocus();
 
     fireEvent.click(screen.getByRole('button', { name: 'Choose time' }));
     fireEvent.keyDown(dialog(), { key: 'Escape' });
@@ -334,6 +401,19 @@ describe('TimeField', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose time' }));
     tap(dialog().parentElement);
     expect(dialog()).toBeNull();
+  });
+
+  it('keyboard: the arrow keys entry gets a :focus ring (not only :focus-visible), a tap drops it', () => {
+    render(<Controlled Comp={TimeField} initial="20:45" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose time' }));
+    const hours = within(screen.getByRole('group', { name: 'Hours' }));
+    expect(hours.getByRole('button', { name: '20' })).toHaveFocus();
+    expect(hours.getByRole('button', { name: '20' }).className).not.toMatch(/(^|\s)focus:ring-2/);
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
+    expect(hours.getByRole('button', { name: '21' })).toHaveFocus();
+    expect(hours.getByRole('button', { name: '21' }).className).toMatch(/(^|\s)focus:ring-2(\s|$)/);
+    fireEvent.pointerDown(hours.getByRole('button', { name: '21' }));
+    expect(hours.getByRole('button', { name: '21' }).className).not.toMatch(/(^|\s)focus:ring-2/);
   });
 
   it('min / max disable the times outside', () => {
@@ -360,6 +440,34 @@ describe('DateTimeField', () => {
     expect(screen.getByTestId('value')).toHaveTextContent('2026-10-07T18:15');
     fireEvent.change(date, { target: { value: '08.10.2026' } });
     expect(screen.getByTestId('value')).toHaveTextContent('2026-10-08T18:15');
+  });
+
+  it('a parent that maps empty to null (ManualAdjustments) keeps the half-typed text', () => {
+    // updateMatchInfo('scheduledAt', v ? new Date(v).toISOString() : null), shown back
+    // through a local formatter: '' comes back as '', the typed date stays.
+    function Scheduled() {
+      const [at, setAt] = useState(new Date(2026, 9, 7, 20, 45).toISOString());
+      const local = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+      };
+      return (
+        <>
+          <DateTimeField aria-label="Match date" value={local(at)} onChange={(v) => setAt(v ? new Date(v).toISOString() : null)} />
+          <output data-testid="value">{String(at)}</output>
+        </>
+      );
+    }
+    render(<Scheduled />);
+    const date = screen.getByLabelText('Match date – Date');
+    fireEvent.change(date, { target: { value: '12.1' } });
+    expect(screen.getByTestId('value')).toHaveTextContent('null');
+    expect(date).toHaveValue('12.1');
+    fireEvent.change(date, { target: { value: '12.11.2026' } });
+    expect(screen.getByTestId('value')).toHaveTextContent(new Date(2026, 10, 12, 20, 45).toISOString());
+    expect(screen.getByLabelText('Match date – Time')).toHaveValue('20:45');
   });
 
   it('uncontrolled with onCommit: saves once the focus leaves the whole field', async () => {

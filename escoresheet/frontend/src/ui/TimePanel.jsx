@@ -10,7 +10,7 @@
 // An hour keeps the minute (or takes :00) and moves on to the minutes; a
 // minute completes the time and closes. Keys: ↑ ↓ in a list, ← → between the
 // lists, Home / End, Enter / Space picks, Escape closes (PickerPopover).
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from './cn.js';
 import { FOCUS_RING, FOCUS_RING_INSET } from './Button.jsx';
@@ -39,6 +39,10 @@ export function TimePanel({ value, onPick, onClear, onDone, step = 5, min, max, 
   const minutes = minuteOptions(step, minute ?? undefined);
   const hoursRef = useRef(null);
   const minutesRef = useRef(null);
+  // After an arrow key the focused entry shows a ring through :focus, not only
+  // :focus-visible: WebKitGTK (the Linux desktop app) does not match
+  // :focus-visible on an entry focused from a key handler (Calendar.jsx too).
+  const [keyCursor, setKeyCursor] = useState(false);
 
   // Open on the chosen hour (or the hour now) and scroll both lists to it.
   useEffect(() => {
@@ -76,11 +80,13 @@ export function TimePanel({ value, onPick, onClear, onDone, step = 5, min, max, 
     else if (e.key === 'End') next = buttons[buttons.length - 1];
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       const target = other.current?.querySelector('[aria-pressed="true"]:not([disabled])') || other.current?.querySelector('button:not([disabled])');
+      setKeyCursor(true);
       target?.focus();
       e.preventDefault();
       return;
     } else return;
     e.preventDefault();
+    setKeyCursor(true);
     next?.focus();
     next?.scrollIntoView?.({ block: 'nearest' });
   };
@@ -89,11 +95,12 @@ export function TimePanel({ value, onPick, onClear, onDone, step = 5, min, max, 
   const cell = (on) => cn(
     'block w-full rounded-lg py-2 text-center text-sm tabular-nums transition-colors disabled:cursor-not-allowed disabled:text-stone-300 disabled:hover:bg-transparent',
     FOCUS_RING_INSET,
+    keyCursor && 'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-red-400',
     on ? 'bg-slate-900 font-semibold text-white hover:bg-slate-800' : 'text-stone-800 hover:bg-stone-100',
   );
 
   return (
-    <div className="w-[17rem] max-w-full select-none">
+    <div className="w-[17rem] max-w-full select-none" onPointerDown={() => setKeyCursor(false)}>
       <div className="grid grid-cols-2 gap-2">
         <div>
           <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{t('picker.hours', 'Hours')}</p>
