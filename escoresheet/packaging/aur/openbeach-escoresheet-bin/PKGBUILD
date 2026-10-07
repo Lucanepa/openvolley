@@ -1,0 +1,88 @@
+# Maintainer: Luca Canepa
+#
+# Repackages the .deb that GitHub Actions builds and releases
+# (.github/workflows/desktop.yml, tag beach-desktop-v$pkgver). Source and packaging
+# notes: https://github.com/Lucanepa/openvolley/tree/main/escoresheet/packaging/aur
+# A new release: escoresheet/packaging/aur/bump.sh openbeach <version>
+
+pkgname=openbeach-escoresheet-bin
+_pkgname=openbeach-escoresheet
+pkgver=2.0.0
+pkgrel=1
+pkgdesc='Open source beach volleyball eScoresheet: offline scoretable with a LAN server for referee and livescore tablets and court displays'
+arch=('x86_64')
+url='https://beach.openvolley.app'
+license=('GPL-3.0-or-later')
+depends=(
+  'cairo'
+  'dbus'
+  'gdk-pixbuf2'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libayatana-appindicator' # the tray; loaded at run time, so namcap cannot see it
+  'libgcc'
+  'libsoup3'
+  'webkit2gtk-4.1'
+)
+optdepends=(
+  'networkmanager: the tablet Wi-Fi (hotspot) and Bluetooth network the app can start'
+  'bluez: the Bluetooth network for tablets (with NetworkManager)'
+  'dnsmasq: addresses for the tablets on the hotspot (NetworkManager shared mode)'
+  'xdg-utils: open links, the PDF and the backup folder'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source=("LICENSE-$pkgver::https://raw.githubusercontent.com/Lucanepa/openvolley/beach-desktop-v$pkgver/escoresheet/LICENSE")
+source_x86_64=("$_pkgname-$pkgver-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
+noextract=("$_pkgname-$pkgver-amd64.deb")
+sha256sums=('4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec')
+sha256sums_x86_64=('cd4d9557c4417179733852d732568416f887cf4d86ad204728ecb11e7e0559ec')
+
+# The Tauri bundler stamps the bundle type into the binary
+# ("__TAURI_BUNDLE_TYPE_VAR_DEB"). The app's updater (src-tauri/src/updater.rs)
+# reads it: a deb updates through APT or tells the scorer to add the APT repo.
+# Under pacman neither is right, so this sets it back to "unknown" (UNK, what
+# the compiler wrote before the bundler): the app then does not look for
+# updates and says "This build does not update itself"; pacman updates it.
+# Only the stamped value changes, not the "...DEB" string bundle_type()
+# compares with (that one is directly followed by "...RPM").
+_unstamp_bundle_type() {
+  local bin=$1 marker=__TAURI_BUNDLE_TYPE_VAR_ off next
+  local -a hits=()
+  while IFS=: read -r off _; do
+    next=$(dd if="$bin" bs=1 skip=$((off + 27)) count=27 status=none)
+    [[ $next == "${marker}RPM" ]] || hits+=("$off")
+  done < <(LC_ALL=C grep -abo "${marker}DEB" "$bin")
+  if (( ${#hits[@]} != 1 )); then
+    echo "expected one bundle-type stamp in $bin, found ${#hits[@]}" >&2
+    return 1
+  fi
+  printf '%sUNK' "$marker" | dd of="$bin" bs=1 seek="${hits[0]}" conv=notrunc status=none
+}
+
+prepare() {
+  rm -rf deb
+  mkdir deb
+  bsdtar -xOf "$_pkgname-$pkgver-amd64.deb" 'data.tar.*' | bsdtar -xf - -C deb
+  _unstamp_bundle_type "deb/usr/bin/$_pkgname"
+}
+
+package() {
+  install -Dm755 "deb/usr/bin/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+  install -Dm644 "deb/usr/share/applications/$_pkgname.desktop" \
+    "$pkgdir/usr/share/applications/$_pkgname.desktop"
+  local size
+  for size in 32x32 128x128; do
+    install -Dm644 "deb/usr/share/icons/hicolor/$size/apps/$_pkgname.png" \
+      "$pkgdir/usr/share/icons/hicolor/$size/apps/$_pkgname.png"
+  done
+  # the bundler names the 256 px icon's folder 256x256@2
+  install -Dm644 "deb/usr/share/icons/hicolor/256x256@2/apps/$_pkgname.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/$_pkgname.png"
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  # Not taken from the .deb: /usr/libexec/$_pkgname/apt-upgrade and its polkit
+  # action (the APT updater's root helper; pacman updates this package).
+}
