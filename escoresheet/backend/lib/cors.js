@@ -35,7 +35,11 @@ export const ALLOWED_ORIGINS = Object.freeze([
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000'
+  'http://127.0.0.1:3000',
+  // OpenBeach's desktop window: the same Tauri shell on its own port
+  // (src-tauri/src/flavour.rs, so both apps run on one laptop)
+  'http://localhost:5174',
+  'http://127.0.0.1:5174'
 ])
 
 const OPENVOLLEY_SUBDOMAIN = /^https:\/\/[a-z0-9-]+\.openvolley\.app$/

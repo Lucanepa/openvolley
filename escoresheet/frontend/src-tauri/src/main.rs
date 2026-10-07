@@ -3,6 +3,7 @@
 
 mod backup;
 mod firewall;
+mod flavour;
 mod lifecycle;
 mod netifs;
 mod netshare;
@@ -12,8 +13,9 @@ mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-const DEFAULT_HTTP_PORT: u16 = 5173;
-const DEFAULT_WS_PORT: u16 = 8080;
+// OpenVolley 5173 / 8080, OpenBeach 5174 / 8081 (flavour.rs)
+const DEFAULT_HTTP_PORT: u16 = flavour::CURRENT.http_port;
+const DEFAULT_WS_PORT: u16 = flavour::CURRENT.ws_port;
 
 fn http_port() -> u16 {
     std::env::var("OPENVOLLEY_HTTP_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_HTTP_PORT)
@@ -33,7 +35,8 @@ fn main() {
         return;
     }
 
-    // The cloud backend's CORS trusts the desktop window on port 5173 only:
+    // The cloud backend's CORS trusts the desktop window on its default port
+    // only (5173; OpenBeach 5174):
     // on another port the app runs the venue as usual and says "Cloud sync
     // unavailable on port N" (isCloudBlockedOnThisPort in backendConfig.js).
     if http != DEFAULT_HTTP_PORT {
@@ -74,7 +77,7 @@ fn main() {
             // Wi-Fi a crashed run left on (Windows), then exit, before the
             // ports are bound or a window opens.
             if std::env::args().any(|a| a == lifecycle::QUIT_ARG) {
-                eprintln!("[app] --quit: OpenVolley is not running");
+                eprintln!("[app] --quit: {} is not running", flavour::CURRENT.name);
                 netshare::recover_now();
                 std::process::exit(0);
             }
@@ -134,7 +137,7 @@ fn main() {
                 lifecycle::MAIN,
                 WebviewUrl::External(format!("http://localhost:{http}/").parse().unwrap()),
             )
-            .title("OpenVolley eScoresheet")
+            .title(flavour::CURRENT.window_title)
             .inner_size(1400.0, 900.0)
             .min_inner_size(1200.0, 700.0)
             // Light only (volleyui): a dark OS theme must not darken the
@@ -526,7 +529,9 @@ mod ipc_acl_tests {
             .deserialize::<serde_json::Value>()
             .unwrap();
         assert_eq!(status["kind"], "unsupported", "a test build has no bundle type: got {status}");
-        assert_eq!(status["current"], env!("CARGO_PKG_VERSION"));
+        // the app's version (tauri config "version": OpenVolley's package.json,
+        // OpenBeach's own), not the crate's
+        assert_eq!(status["current"], app.package_info().version.to_string());
         assert_eq!(status["autoCheck"], true);
         get_ipc_response(&window, request("update_check_now", local, serde_json::json!({ "reason": "manual" })))
             .expect("update_check_now from the scoretable page");

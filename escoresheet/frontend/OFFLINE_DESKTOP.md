@@ -103,6 +103,54 @@ Windows installers are produced by CI (`.github/workflows/desktop.yml`, a
 `windows-latest` runner) — WebView2/NSIS can't be cross-built from Linux. Push a
 `desktop-v*` tag or run the workflow manually to get Windows + Linux artifacts.
 
+### OpenBeach: the same shell as a second app
+
+The Tauri shell also builds **OpenBeach**, the beach volleyball eScoresheet
+(Lucanepa/openbeach), as its own app: a flavour, not a copy
+(`src-tauri/src/flavour.rs`). Everything below the UI is shared (relay, backups,
+tablet networks, tray, updater, installer hooks); only the names differ:
+
+| | OpenVolley eScoresheet | OpenBeach |
+|---|---|---|
+| identifier | `com.openvolley.escoresheet` | `com.openvolley.beach` |
+| window title / Windows productName | OpenVolley eScoresheet / Openvolley eScoresheet | OpenBeach |
+| `.deb` package, command | `openvolley-escoresheet` | `openbeach-escoresheet` |
+| relay ports (HTTP / WebSocket) | 5173 / 8080 | 5174 / 8081 |
+| frontend | `../dist` (this app) | `openbeach/escoresheet/frontend/dist` |
+| firewall rule | OpenVolley eScoresheet (tablets on the local network) | OpenBeach (tablets on the local network) |
+| backups, tablet Wi-Fi name | `OpenVolley/backups`, `OpenVolley-XXXX` | `OpenBeach/backups`, `OpenBeach-XXXX` |
+| updates | `get.openvolley.app/desktop/latest.json`, then GitHub "Latest" | `get.openvolley.app/desktop/beach/latest.json`, then the `beach-desktop-latest` prerelease |
+| release tags | `desktop-v*` | `beach-desktop-v*` |
+
+So both apps install and run side by side on one laptop. The openbeach checkout
+lives at the repo root as `openbeach/` (git-ignored; CI checks it out there, locally
+clone it or symlink it):
+
+```bash
+git clone https://github.com/Lucanepa/openbeach openbeach      # or: ln -s ~/repos/openbeach openbeach
+(cd openbeach/escoresheet/frontend && npm ci)
+cd escoresheet/frontend
+npx tauri build --config src-tauri/tauri.beach.conf.json --config src-tauri/tauri.beach.linux.conf.json   # Linux
+npx tauri build --config src-tauri/tauri.beach.conf.json                                                  # Windows
+```
+
+`tauri.beach.conf.json` (identifier, names, icons from openbeach's
+`public_beach/openbeach_no_bg.png` in `src-tauri/icons/beach/`, version from
+openbeach's `package.json`, updater endpoints) and `tauri.beach.linux.conf.json`
+(package name, desktop entry `openbeach-escoresheet.desktop`, its own update helper
+and polkit action in `src-tauri/linux/beach/`, none of OpenVolley's package
+relations) are merged over OpenVolley's configs. `build.rs` reads the merged
+identifier and compiles the beach names in; the relay embeds the frontend from
+`OV_DIST` (default: the config's `frontendDist`). Without the Tauri CLI:
+`OV_FLAVOUR=beach cargo test` (build.rs merges the beach configs itself).
+`src/__tests__/desktopFlavours.test.js` and the Rust tests in `flavour.rs` pin
+OpenVolley's identity and check OpenBeach shares none of it. Point openbeach's
+own build at other paths with `--config '{"build":{"frontendDist":"…"}}'` (and
+`OV_DIST`). The shell's close-to-tray, quit and update logic waits for the
+page: until openbeach's scoretable page reports itself (`app_page_state`, as
+OpenVolley's does, see "Closing, the tray and quitting"), closing the window asks
+natively "Quit OpenBeach?" and the updater never starts checking.
+
 ### Windows install (per machine, firewall rule)
 
 The NSIS installer installs **for all users** (`bundle.windows.nsis.installMode`
