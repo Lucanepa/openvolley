@@ -856,6 +856,7 @@
       "hide": "Wärchzüügliischte uusblände",
       "show": "Wärchzüügliischte iiblände"
     },
+    "confirmFailed": "Das isch nöd gspeicheret worde. Bitte s Matchblatt prüefe und nomal probiere.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 vo 2 i dem Satz für {{team}}.",

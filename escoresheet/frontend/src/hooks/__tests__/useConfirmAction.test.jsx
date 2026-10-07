@@ -5,13 +5,16 @@
 // that behaves like Dexie's live query: the screen re-renders the moment the
 // write commits, while the confirm handler is still awaiting the rest of its
 // work (snapshot capture, sync queue).
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { render, screen, fireEvent, act, renderHook } from '@testing-library/react'
-import { useConfirmAction } from '../useConfirmAction'
+import { useConfirmAction, GHOST_CLICK_MS, resetGhostClickGuard } from '../useConfirmAction'
 import { classifyTimeoutRequest } from '../../domain/timeouts'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+// each test starts without the previous test's ghost-click guard
+afterEach(() => resetGhostClickGuard())
 
 function liveStore(initial = []) {
   let events = initial
@@ -109,6 +112,45 @@ describe('useConfirmAction', () => {
     await act(async () => {
       await expect(result.current(() => Promise.reject(new Error('db')))).rejects.toThrow('db')
     })
+    const action = vi.fn()
+    await act(async () => { await result.current(action) })
+    expect(action).toHaveBeenCalledTimes(1)
+  })
+
+  it('swallows the second tap of a double tap, which would land under the closed dialog', async () => {
+    const under = vi.fn()
+    function Screen() {
+      const run = useConfirmAction()
+      const [open, setOpen] = useState(true)
+      return (
+        <div>
+          <button onClick={under}>court player</button>
+          {open && <button onClick={() => run(async () => { setOpen(false); await sleep(5) })}>Yes</button>}
+        </div>
+      )
+    }
+    render(<Screen />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('Yes'))
+      // the dialog is gone; the trailing tap hits what was under it
+      fireEvent.click(screen.getByText('court player'))
+      await sleep(20)
+    })
+    expect(screen.queryByText('Yes')).toBeNull()
+    expect(under).not.toHaveBeenCalled()
+    await act(async () => { await sleep(GHOST_CLICK_MS + 50) })
+    fireEvent.click(screen.getByText('court player'))
+    expect(under).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a failed write through onError (the dialog is already closed)', async () => {
+    const onError = vi.fn()
+    const { result } = renderHook(() => useConfirmAction(onError))
+    let ran
+    await act(async () => { ran = await result.current(() => Promise.reject(new Error('db'))) })
+    expect(ran).toBe(false)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][0].message).toBe('db')
     const action = vi.fn()
     await act(async () => { await result.current(action) })
     expect(action).toHaveBeenCalledTimes(1)

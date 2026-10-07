@@ -857,6 +857,7 @@
       "hide": "Hide toolbar",
       "show": "Show toolbar"
     },
+    "confirmFailed": "That was not saved. Check the scoresheet and try again.",
     "timeoutRequest": {
       "title": "Time-out — {{team}}",
       "first": "Time-out 1 of 2 in this set for {{team}}.",

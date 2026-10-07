@@ -49,7 +49,7 @@ describe('Scoreboard confirmation dialogs: snapshot, close first, one run', () =
     expect(closeAt).toBeLessThan(firstAwait)
     // the guard hook is declared right before the handler
     const runner = body.match(/=> (run\w+)\(async/)[1]
-    expect(sb).toContain(`const ${runner} = useConfirmAction()`)
+    expect(sb).toContain(`const ${runner} = useConfirmAction(onConfirmFailed)`)
   })
 
   it('the replay branch of the decision change closes before its first await too', () => {
@@ -112,7 +112,7 @@ describe('time-out and team-sanction texts', () => {
   const LOCALES = { en, de, 'de-CH': deCH, fr, it: it_ }
   const KEYS = [
     'timeoutRequest.title', 'timeoutRequest.first', 'timeoutRequest.second', 'timeoutRequest.consecutive',
-    'timeoutRequest.confirmConsecutive', 'timeoutRequest.notRecorded',
+    'timeoutRequest.confirmConsecutive', 'timeoutRequest.notRecorded', 'confirmFailed',
     'teamSanctionConfirm.thirdTimeout', 'teamSanctionConfirm.applyImproperRequest',
     'teamSanctionConfirm.applyDelayWarning', 'teamSanctionConfirm.applyDelayPenalty',
     'teamSanctionConfirm.repeatedImproperRequest', 'teamSanctionConfirm.repeatedDelay',
