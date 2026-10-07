@@ -35,6 +35,9 @@
 --                       auth.app_sessions  SELECT, INSERT, UPDATE, DELETE
 --                       auth.app_tokens    SELECT, INSERT, UPDATE, DELETE
 --                                          (db/010; skipped when absent)
+--                       auth.approval_pins SELECT, INSERT, UPDATE, DELETE
+--                                          (db/011, lib/approvals.js; skipped
+--                                          when absent)
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -205,5 +208,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_sessions TO ov_app;
 -- without 010 there is no such table (lib/auth.js then answers 503).
 SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_tokens TO ov_app'
  WHERE to_regclass('auth.app_tokens') IS NOT NULL \gexec
+-- db/011: personal approval PINs (lib/approvals.js). Optional like app_tokens:
+-- without the table the approval endpoints answer 503.
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.approval_pins TO ov_app'
+ WHERE to_regclass('auth.approval_pins') IS NOT NULL \gexec
 
 COMMIT;
