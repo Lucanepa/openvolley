@@ -1513,14 +1513,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               {finishedSets.map((set, idx) => {
                 const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                 return (
-                  // Fixed-width centred cells with tabular digits: 7 and 25 line up
+                  // Fixed em-width centred cells (em, not ch: ch grows with the bold winner digit and is narrower than tabular digits), so 7 and 25 centre on one line
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
                     <span style={{ width: '2em', fontSize: vmin(1.3), color: 'var(--muted)', textAlign: 'center' }}>{romanNumerals[idx]}</span>
-                    <span style={{ width: '2ch', textAlign: 'center', fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)' }}>
+                    <span style={{ width: '1.5em', flexShrink: 0, textAlign: 'center', fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)' }}>
                       {set.homePoints}
                     </span>
                     <span>:</span>
-                    <span style={{ width: '2ch', textAlign: 'center', fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
+                    <span style={{ width: '1.5em', flexShrink: 0, textAlign: 'center', fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
                       {set.awayPoints}
                     </span>
                   </div>
