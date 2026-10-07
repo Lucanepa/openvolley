@@ -18,6 +18,7 @@ import { installActivityHooks } from './hooks'
 import { setActivitySink, emitActivity } from './bus'
 import { appVersion, platformName, currentAccountId } from '../identity'
 import { AUTH_TOKEN_CHANGE_EVENT } from '../../lib/apiClient'
+import { scheduleActivityUpload, ensureActivityFlushJob } from './upload'
 
 export { emitActivity, flushActivityNow } from './bus'
 export { SYNC } from './writer'
@@ -52,6 +53,8 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
   const writer = createActivityWriter({
     db,
     onWritten: (rows) => {
+      // Upload (with a session; rows of test matches never leave the device)
+      if (rows.some(r => r.synced === SYNC.PENDING)) scheduleActivityUpload(db)
       for (const fn of afterWrite) {
         try { fn(rows) } catch (e) { console.warn('[Activity] after-write listener failed:', e?.message) }
       }
@@ -117,6 +120,8 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
       if (account) writer.record('auth.sign_out', {}, { accountId: account })
       if (next) writer.record('auth.sign_in', {}, { accountId: next })
       account = next
+      // What waited for a session goes now
+      if (next) writer.flush().then(() => ensureActivityFlushJob(db, { accountId: next }))
     }
     win.addEventListener(AUTH_TOKEN_CHANGE_EVENT, onAuth)
     const onStorage = (e) => { if (e?.key === 'api_auth_token') onAuth() }
@@ -126,6 +131,10 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
       win.removeEventListener('storage', onStorage)
     })
   }
+
+  // Rows left from the last run (quit before the upload)
+  const kick = setTimeout(() => { ensureActivityFlushJob(db) }, 15000)
+  cleanups.push(() => clearTimeout(kick))
 
   // Retention
   writer.prune()
