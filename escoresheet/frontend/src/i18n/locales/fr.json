@@ -562,7 +562,6 @@
       "confirmUndo": "Confirmer l'annulation",
       "confirmReplay": "Rejouer l'échange ?",
       "confirmReplayBody": "Aucun point n'est marqué et la même équipe sert à nouveau.",
-      "confirmTimeout": "Délai de confirmation",
       "decisionChange": "Changement de décision",
       "exceptionalSubstitution": "Remplacement exceptionnel",
       "exceptionalSubPlayerCantPlay": "Remplacement exceptionnel - le joueur ne peut plus participer",
@@ -579,7 +578,6 @@
       "scoresheetAlreadyOpen": "eScoresheet déjà ouverte",
       "remarksRecording": "Enregistrement des remarques",
       "sanctionsAndResults": "Sanctions et résultats",
-      "confirmSecondTimeout": "Confirmer la demande de {{ordinal}} temps mort ?",
       "liberoOut": "Libéro SORT",
       "liberoIn": "Libéro ENTRE",
       "playerReturns": "Retour du joueur",
@@ -627,14 +625,11 @@
     "confirm": {
       "yesStartRally": "Oui, démarrer l'échange",
       "yesAwardPoint": "Oui, attribuer le point",
-      "yesTimeout": "Oui, délai d'attente",
       "apply": "Appliquer",
       "rallyStartedQuickly": "Échange démarré très rapidement",
       "areYouSureRallyStarted": "Êtes-vous sûr que l'échange a réellement commencé ?",
       "pointAwardedQuickly": "Point attribué très rapidement",
-      "areYouSureAwardPoint": "Êtes-vous sûr que le point doit être attribué à {{team}} ?",
-      "timeoutAlreadyTaken": "Cette équipe a déjà utilisé un temps mort dans ce set.",
-      "areYouSureAnotherTimeout": "Êtes-vous sûr de vouloir appeler un autre délai d'attente pour {{team}} ?"
+      "areYouSureAwardPoint": "Êtes-vous sûr que le point doit être attribué à {{team}} ?"
     },
     "menu": {
       "scoresheet": "eScoresheet",
@@ -859,6 +854,23 @@
     "toolbar": {
       "hide": "Masquer la barre d'outils",
       "show": "Afficher la barre d'outils"
+    },
+    "timeoutRequest": {
+      "title": "Temps mort — {{team}}",
+      "first": "Temps mort 1 sur 2 de ce set pour {{team}}.",
+      "second": "Deuxième temps mort de ce set pour {{team}} (1 sur 2 déjà utilisé).",
+      "consecutive": "{{team}} a déjà pris un temps mort pendant cette interruption (aucun échange depuis). Enregistrer son deuxième temps mort ?",
+      "confirmConsecutive": "Oui, deuxième temps mort",
+      "notRecorded": "Le temps mort n'a pas été enregistré. Réessayez."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} a utilisé ses deux temps morts de ce set. Une troisième demande est une demande irrégulière.",
+      "applyImproperRequest": "Enregistrer une demande irrégulière pour {{team}} ?",
+      "applyDelayWarning": "Enregistrer un avertissement pour retard pour {{team}} ?",
+      "applyDelayPenalty": "Enregistrer une pénalité pour retard pour {{team}} ?",
+      "repeatedImproperRequest": "L'équipe a déjà une demande irrégulière : celle-ci compte comme un retard.",
+      "repeatedDelay": "L'équipe a déjà un avertissement pour retard : ce retard est une pénalité.",
+      "pointToOpponent": "Point et service pour {{opponent}}."
     }
   },
   "settings": {
