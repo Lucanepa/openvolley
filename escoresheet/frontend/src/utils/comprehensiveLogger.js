@@ -368,6 +368,26 @@ function persistToLocalStorageSync() {
 // (eventCapture redacted by field name only). Such an entry is dropped, here
 // and from the emergency copies, never exported.
 const SECRET_LABEL = /password|passwort|secret|token|pin|credential/i
+// A PIN on screen (Show PINs, the match popover, the connect dialog) is six
+// digits, possibly grouped ("771 234"): a click on it must not put it in the
+// log (eventCapture). Runs of 6+ digits go (a 6-digit game number too: the
+// entry carries the game number anyway).
+const DIGIT_RUN = /\d(?:[\s\u00a0-]?\d){5,}/g
+
+/** Visible text of a clicked element for the log, without PIN-like digit runs. */
+export function redactScreenText(text) {
+  if (text == null) return null
+  return String(text).replace(DIGIT_RUN, '[digits]')
+}
+
+// Entries stored before the click text was redacted: scrubbed on export
+function scrubExportEntry(entry) {
+  const t = entry?.target
+  if (!t || typeof t !== 'object') return entry
+  const href = typeof t.href === 'string' ? t.href.split(/[?#]/)[0] : t.href
+  return { ...entry, target: { ...t, textContent: redactScreenText(t.textContent ?? null), ariaLabel: redactScreenText(t.ariaLabel ?? null), href } }
+}
+
 export function isSecretEntry(entry) {
   const t = entry?.target
   if (!t) return false
@@ -522,10 +542,10 @@ export async function getLogsForMatch({ matchId: mId = null, gameN = null, from 
     const seen = new Set()
     const out = all.filter(e => (seen.has(e.id) ? false : (seen.add(e.id), true)))
     out.sort((a, b) => a.ts - b.ts)
-    return out.filter(e => !isSecretEntry(e))
+    return out.filter(e => !isSecretEntry(e)).map(scrubExportEntry)
   } catch (err) {
     console.error('[ComprehensiveLogger] Error getting the logs of a match:', err)
-    return logBuffer.filter(belongs)
+    return logBuffer.filter(belongs).filter(e => !isSecretEntry(e)).map(scrubExportEntry)
   }
 }
 
