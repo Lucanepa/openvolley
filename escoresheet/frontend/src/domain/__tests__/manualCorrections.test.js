@@ -238,6 +238,21 @@ describe('sanctions', () => {
     expect(plan.notes.map(n => n.text)).toContain("Volley Bern's point at B 10:11 A becomes the circled penalty point.")
     const row = plan.add[0]
     expect(row.payload).toEqual({ team: 'home', type: 'penalty', playerType: 'bench', playerNumber: 8 })
+    // 11:9 -> 11:10: the next rally went to the opponent, nothing to check
+    expect(plan.notes.some(n => n.key === 'corrections.note.penaltyNotNext')).toBe(false)
+  })
+
+  it('warns when the rally after the chosen score went to the sanctioned team', () => {
+    const { events } = fixture()
+    const tl = scoreTimeline(events, 1)
+    // find a score whose next point went to home (the sanctioned team)
+    const pts = events.filter(e => e.type === 'point' && e.setIndex === 1).sort(compareBySeq)
+    const i = pts.findIndex((p, k) => k > 0 && p.payload.team === 'home' && pts.slice(k).some(x => x.payload.team === 'away'))
+    const s = scoreBeforeEvent(events, pts[i])
+    const plan = planAddSanction(events, { setIndex: 1, team: 'home', type: 'penalty', target: { playerType: 'player', playerNumber: 3 }, at: idxOf(tl, s.home, s.away) }, review)
+    expect(plan.error).toBeUndefined()
+    const n = plan.notes.find(x => x.key === 'corrections.note.penaltyNotNext')
+    expect(n.text).toBe(`The rally after A ${s.home}:${s.away} B was won by VC Smash, not by the opponent: check that the sanction was given at this score.`)
   })
 
   it('refuses a penalty when the opponent has no later point in the set', () => {

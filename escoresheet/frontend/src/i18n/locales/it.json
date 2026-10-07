@@ -3226,6 +3226,7 @@
       "circledPoint": "Il punto di {{team}} sul {{score}} diventa il punto di penalizzazione cerchiato.",
       "pointNow": "Il punto per {{team}} viene aggiunto dopo la sanzione.",
       "pointStays": "Il punto resta un punto normale (non più cerchiato).",
+      "penaltyNotNext": "Lo scambio dopo il {{score}} è stato vinto da {{team}}, non dall’avversario: verifica che la sanzione sia stata data a questo punteggio.",
       "irBox": "La lettera della squadra {{letter}} viene barrata (X) nella casella richiesta impropria; nessun punteggio.",
       "expulsionReplacement": "Registra la sostituzione con «+ Aggiungi sostituzione» (eccezionale se nessuna sostituzione regolare era possibile).",
       "laterRotations": "Le rotazioni successive di questo set non vengono ricalcolate.",

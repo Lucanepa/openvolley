@@ -83,6 +83,7 @@ export const NOTE_DEFAULTS = {
   circledPoint: '{{team}}\'s point at {{score}} becomes the circled penalty point.',
   pointNow: 'The point for {{team}} is added after the sanction.',
   pointStays: 'The point stays as a normal rally point (no longer circled).',
+  penaltyNotNext: 'The rally after {{score}} was won by {{team}}, not by the opponent: check that the sanction was given at this score.',
   irBox: 'Team {{letter}}\'s letter is crossed (X) in the improper-request box; no score is written.',
   expulsionReplacement: 'Record the replacement with "+ Add substitution" (exceptional if no legal substitution was possible).',
   laterRotations: 'Later rotations of this set are not recalculated.',
@@ -557,6 +558,12 @@ export function planAddSanction(events, { setIndex, team, type, target = {}, at,
       const p = nextPointOf(events, setIndex, opp, ins.seq)
       if (!p) return fail('noLaterOpponentPoint', { team: oppLabel, set })
       plan.notes.push(note('circledPoint', { team: oppLabel, score: formatScore(pointScoreAfter(events, p), opp, ctx) }, t))
+      // A penalty gives the point at once: if the rally right after this
+      // score went to the sanctioned team, the score chosen is probably wrong
+      const firstAfter = setEvents(events, setIndex).find(e => e.type === 'point' && baseOf(e) >= ins.seq)
+      if (firstAfter && firstAfter.id !== p.id) {
+        plan.notes.push(note('penaltyNotNext', { score: formatScore(entryScore(entry), team, ctx), team: teamLabel(team, ctx)?.name || '?' }, t))
+      }
     }
   }
   if (type === 'improper_request') plan.notes.push(note('irBox', { letter: teamLetter(team, ctx.match) }, t))

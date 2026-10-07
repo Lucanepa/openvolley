@@ -3220,6 +3220,7 @@
       "circledPoint": "Le point de {{team}} à {{score}} devient le point de pénalité entouré.",
       "pointNow": "Le point pour {{team}} est ajouté après la sanction.",
       "pointStays": "Le point reste un point normal (il n'est plus entouré).",
+      "penaltyNotNext": "L’échange après {{score}} a été gagné par {{team}}, pas par l’adversaire : vérifiez que la sanction a été donnée à ce score.",
       "irBox": "La lettre de l'équipe {{letter}} est barrée (X) dans la case demande irrégulière ; aucun score n'est écrit.",
       "expulsionReplacement": "Saisissez le remplacement avec « + Ajouter un remplacement » (exceptionnel si aucun remplacement régulier n’était possible).",
       "laterRotations": "Les rotations ultérieures de ce set ne sont pas recalculées.",

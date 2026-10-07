@@ -3227,6 +3227,7 @@
       "circledPoint": "{{team}}'s point at {{score}} becomes the circled penalty point.",
       "pointNow": "The point for {{team}} is added after the sanction.",
       "pointStays": "The point stays as a normal rally point (no longer circled).",
+      "penaltyNotNext": "The rally after {{score}} was won by {{team}}, not by the opponent: check that the sanction was given at this score.",
       "irBox": "Team {{letter}}'s letter is crossed (X) in the improper-request box; no score is written.",
       "expulsionReplacement": "Record the replacement with \"+ Add substitution\" (exceptional if no legal substitution was possible).",
       "laterRotations": "Later rotations of this set are not recalculated.",

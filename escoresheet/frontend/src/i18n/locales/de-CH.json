@@ -3221,6 +3221,7 @@
       "circledPoint": "De Punkt vo {{team}} bi {{score}} wird als Strafpunkt iikreist.",
       "pointNow": "De Punkt für {{team}} chunnt nach de Sanktion dezue.",
       "pointStays": "De Punkt blibt als normale Punkt (nüme iikreist).",
+      "penaltyNotNext": "De Ballwächsel nach {{score}} het {{team}} gwunne, nöd de Gegner: Prüef, öb d Sanktion bi dem Spielstand usgsproche worde isch.",
       "irBox": "De Buechstabe vo Team {{letter}} wird im Feld «Nicht ordnungsgemässer Antrag» dureggstriche (X); kein Spielstand.",
       "expulsionReplacement": "Erfass de Ersatz mit «+ Spielerwächsel hinzuefüege» (ausserordentlich, wenn kein reguläre Wächsel möglich gsi isch).",
       "laterRotations": "Späteri Rotatione vo dem Satz werdet nöd neu berächnet.",
