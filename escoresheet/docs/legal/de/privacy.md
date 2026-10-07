@@ -105,6 +105,30 @@ Die Desktop-App verwendet dafür ihr eigenes Relay im lokalen Netz.
   Löschung Ihres Kontos gespeichert.
 - **Spielberichte** als Datei (PDF und Daten), siehe Abschnitt 7.
 
+**Aktivitätsprotokoll.** Für die Nachvollziehbarkeit des Spielberichts und
+zur Fehlersuche führt die App ein Aktivitätsprotokoll jedes Spiels: Punkte und
+andere Ereignisse, Rückgängig und Korrekturen (was wann und warum geändert
+wurde), Sätze, Unterschriften und Genehmigungen (nur dass sie erfolgt sind,
+nie das Unterschriftsbild oder eine PIN), Bemerkungen (nur ihre Länge),
+Ergebnisse der Übertragung und App-Fehler. Jeder Eintrag enthält eine
+zufällige Kennung des Geräts (von der App erzeugt, nicht mit der Hardware
+verknüpft), die App-Version, die Plattform und, wenn Sie angemeldet sind, Ihr
+Konto. Es enthält nicht mehr Personendaten als der Spielbericht selbst
+(Spielernummern, Namen von Offiziellen bei einer Korrektur). Wenn Sie
+angemeldet sind, wird es auf meinen Server übertragen; dort können es die
+Schreiberinnen und Schreiber des Spiels und die Administratoren lesen. Wurde
+ein rückgängig gemachter Punkt bereits übertragen, behält der Server ihn als
+rückgängig gemacht markiert, statt ihn zu löschen, damit der Spielverlauf
+nachvollziehbar bleibt. Die Desktop- und die Android-App schreiben das
+Aktivitätsprotokoll zusätzlich als Tagesdateien neben die Sicherungsdateien
+(`OpenVolley/logs`, höchstens 30 Tage und 50 MB). **Was Sie anklicken oder
+tippen, bleibt auf Ihrem Gerät:** dieses lokale Protokoll wird nie
+übertragen und zeichnet nie Passwörter oder PINs auf. Auf dem Gerät wird das
+Aktivitätsprotokoll bis 180 Tage aufbewahrt, das Klickprotokoll 30 Tage. Auf
+dem Server: 24 Monate für Einträge eines Spiels (oder bis das Spiel gelöscht
+wird), 90 Tage für Einträge ohne Spiel. Auf Anfrage lösche ich es früher
+(Abschnitt 19).
+
 **Desktop-App.** Die Desktop-App speichert zusätzlich automatische
 Sicherungsdateien der Spiele in Ihrem Benutzerordner (Linux:
 `~/.local/share/OpenVolley/backups`, Windows: `%APPDATA%\OpenVolley\backups`).
@@ -416,6 +440,9 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Änderungsprotokoll | So lange wie für die Nachvollziehbarkeit nötig; Löschung auf Anfrage geprüft |
 | Hochgeladene Sicherungskopien | 30 Tage |
 | Hochgeladene App-Protokolle | Bis Sie Ihr Konto löschen |
+| Aktivitätsprotokoll eines Spiels (Server) | 24 Monate oder bis das Spiel gelöscht wird; auf Anfrage früher |
+| Aktivitätsprotokoll ohne Spiel (Server) | 90 Tage |
+| Rückgängig gemachte und korrigierte Ereignisse eines Spiels | Mit dem Spiel, als Teil des Spielberichts |
 | Serverprotokolle | Überschrieben nach Grösse (Tage bis wenige Wochen) |
 | Live-Daten (Server und Hallen-Modus) | Nur im Arbeitsspeicher; auf dem Server 24 Stunden nach der letzten Aktivität verworfen |
 | Datensicherungen | Bis etwa 6 Monate (Abschnitt 18) |

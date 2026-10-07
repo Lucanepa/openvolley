@@ -101,6 +101,26 @@ It also uploads:
   delete your account.
 - **Scoresheets** as files (PDF and data), see section 7.
 
+**Activity log.** For the integrity of the scoresheet and for
+troubleshooting, the app keeps an activity log of each match: points and
+other events, undo and corrections (what was changed, when and why), sets,
+signatures and approvals (only that they happened, never the signature image
+or a PIN), remarks (only their length), upload results and app errors. Each
+entry carries a random identifier of the device (created by the app, not
+linked to the hardware), the app version, the platform and, when signed in,
+your account. It contains no more personal data than the scoresheet itself
+(player numbers, officials' names in a correction). When you are signed in it
+is uploaded to my server, where the scorers of the match and administrators
+can read it. When an undone point had already been uploaded, the server keeps
+it marked as undone instead of deleting it, so the course of the match stays
+traceable. The desktop and Android apps also write the activity log as daily
+files next to the backup files (`OpenVolley/logs`, at most 30 days and
+50 MB). **What you click or type stays on your device:** that local log is
+never uploaded, and it never records passwords or PINs. On the device the
+activity log is kept up to 180 days, the click log 30 days. On the server:
+24 months for entries of a match (or until the match is deleted), 90 days for
+entries without a match. I delete it earlier on request (section 19).
+
 **Desktop app.** The desktop app also keeps automatic backup files of matches
 in your user folder (Linux: `~/.local/share/OpenVolley/backups`, Windows:
 `%APPDATA%\OpenVolley\backups`). They contain names and dates of birth, but no
@@ -392,6 +412,9 @@ copy of these safeguards.
 | Change log | As long as needed for accountability; deletion on request is considered |
 | Uploaded backup copies | 30 days |
 | Uploaded app logs | Until you delete your account |
+| Activity log of a match (server) | 24 months, or until the match is deleted; earlier on request |
+| Activity log without a match (server) | 90 days |
+| Undone and corrected events of a match | With the match, as part of the match record |
 | Server logs | Overwritten by size (days to a few weeks) |
 | Live data (server and venue mode) | In memory only; on the server discarded 24 hours after the last activity |
 | Backups | Up to about 6 months (section 18) |
