@@ -42,8 +42,14 @@ function rustFlavour(name) {
   const block = src.match(new RegExp(`pub const ${name}: Flavour = Flavour \\{([\\s\\S]*?)\\n\\};`))
   expect(block, `${name} in flavour.rs`).toBeTruthy()
   const fields = {}
-  for (const m of block[1].matchAll(/^\s*(\w+): (?:"([^"]*)"|(\d+)|&\[([^\]]*)\]),/gm)) {
-    fields[m[1]] = m[2] ?? (m[3] !== undefined ? Number(m[3]) : [...m[4].matchAll(/"([^"]*)"/g)].map((x) => x[1]))
+  const strings = (text) => [...text.matchAll(/"([^"]*)"/g)].map((x) => x[1])
+  for (const m of block[1].matchAll(/^\s*(\w+): (?:"([^"]*)"|(\d+)|&\[([^\]]*)\]|\(([^)]*)\)),/gm)) {
+    if (m[2] !== undefined) fields[m[1]] = m[2]
+    else if (m[3] !== undefined) fields[m[1]] = Number(m[3])
+    else if (m[5] !== undefined) fields[m[1]] = strings(m[5])
+    // an array of tuples: [["referee", "referee/index.html"], ...]
+    else if (m[4].includes('(')) fields[m[1]] = [...m[4].matchAll(/\(([^)]*)\)/g)].map((t) => strings(t[1]))
+    else fields[m[1]] = strings(m[4])
   }
   return fields
 }
@@ -118,7 +124,15 @@ describe('OpenVolley desktop identity (unchanged)', () => {
       tray_id: 'openvolley',
       staging_endpoint: 'https://get.openvolley.app/desktop/staging.json',
       apt_helper: '/usr/libexec/openvolley-escoresheet/apt-upgrade',
-      index_pages: ['index.html']
+      index_pages: ['index.html'],
+      role_pages: [
+        ['referee', 'referee/index.html'],
+        ['bench', 'bench/index.html'],
+        ['livescore', 'livescore/index.html'],
+        ['scoresheet', 'scoresheet/index.html'],
+        ['upload_roster', 'upload_roster/index.html']
+      ],
+      foreign_installers: ['beach-desktop-v', 'openbeach']
     })
     expect(nsisRule(false)).toBe('OpenVolley eScoresheet (tablets on the local network)')
     // without OV_FLAVOUR / a beach config, the build is OpenVolley
@@ -161,6 +175,21 @@ describe('OpenBeach desktop flavour', () => {
     expect(u.pubkey).toBe(PUBKEY)
     expect(u.requireSignedVersion).toBe(true)
     expect(beach.staging_endpoint).toBe('https://get.openvolley.app/desktop/beach/staging.json')
+    // one key for both apps: each refuses the other's installers (updater.rs foreign_update)
+    const ov = rustFlavour('OPENVOLLEY')
+    expect(beach.foreign_installers).toEqual(['desktop-v', 'openvolley'])
+    expect(ov.foreign_installers).toEqual(['beach-desktop-v', 'openbeach'])
+    expect(beach.package.startsWith(ov.foreign_installers[1])).toBe(true)
+    expect(ov.package.startsWith(beach.foreign_installers[1])).toBe(true)
+  })
+
+  it('the relay serves openbeach\'s flat *_beach.html pages for /referee and /livescore', () => {
+    expect(beach.role_pages).toEqual([
+      ['referee', 'referee_beach.html'],
+      ['livescore', 'livescore_beach.html'],
+      ['scoreboard', 'scoreboard_beach.html'],
+      ['scoresheet', 'scoresheet_beach.html']
+    ])
   })
 
   it('deb: none of OpenVolley\'s package relations or files, its own helper and entry', () => {

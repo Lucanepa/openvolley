@@ -1269,18 +1269,27 @@ async fn server_connections(
 /// page navigation cannot send X-Instance-ID). Same names as lanRelayCore.cjs.
 const OTHER_COURT_COOKIE: &str = "ov_other_court";
 
-const MAIN_INSTANCE_PAGE: &str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+/// The "already running" page: links to the role pages this app has
+/// (OpenBeach has no bench page).
+fn main_instance_page(f: &crate::flavour::Flavour) -> String {
+    let links: String = [("referee", "Referee App"), ("bench", "Bench App"), ("livescore", "Livescore App")]
+        .iter()
+        .filter(|(role, _)| f.role_pages.iter().any(|(r, _)| r == role))
+        .map(|(role, label)| format!("<li><a href=\"/{role}\">{label}</a></li>"))
+        .collect();
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Main Instance Already Running</title>\
-<style>body{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}h1{color:#ef4444}p{color:#666}ul{list-style:none;padding:0}li{margin:8px 0}</style>\
+<style>body{{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}}h1{{color:#ef4444}}p{{color:#666}}ul{{list-style:none;padding:0}}li{{margin:8px 0}}</style>\
 </head><body><h1>Main Scoresheet Already Running</h1>\
 <p>Another scoretable is active on this server.</p>\
 <p>You can still open:</p>\
-<ul><li><a href=\"/referee\">Referee App</a></li>\
-<li><a href=\"/bench\">Bench App</a></li>\
-<li><a href=\"/livescore\">Livescore App</a></li></ul>\
+<ul>{links}</ul>\
 <p>Scoring a match on another court?</p>\
 <ul><li><a href=\"/?court=other\">Open the scoresheet for another court on this device</a></li></ul>\
-</body></html>";
+</body></html>"
+    )
+}
 
 /// Does the query string carry `court=other`?
 fn is_other_court_query(query: &str) -> bool {
@@ -1333,7 +1342,7 @@ async fn static_handler(
                 return (
                     StatusCode::FORBIDDEN,
                     [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store")],
-                    MAIN_INSTANCE_PAGE,
+                    main_instance_page(crate::flavour::CURRENT),
                 )
                     .into_response();
             }
@@ -1344,40 +1353,56 @@ async fn static_handler(
 }
 
 fn serve_asset(req_path: &str) -> Response {
-    let p = req_path.trim_start_matches('/');
-    if p.is_empty() {
-        return serve_index().unwrap_or_else(|| (StatusCode::NOT_FOUND, "Not Found").into_response());
+    let exists = |p: &str| Assets::get(p).is_some();
+    match resolve_asset(req_path, crate::flavour::CURRENT, &exists).and_then(|p| try_file(&p)) {
+        Some(r) => r,
+        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
     }
-    let p = p.to_string();
-
-    if let Some(r) = try_file(&p) {
-        return r;
-    }
-    if p.ends_with('/') {
-        if let Some(r) = try_file(&format!("{}index.html", p)) {
-            return r;
-        }
-    } else if !p.contains('.') {
-        if let Some(r) = try_file(&format!("{}.html", p)) {
-            return r;
-        }
-        if let Some(r) = try_file(&format!("{}/index.html", p)) {
-            return r;
-        }
-    } else if let Some(stem) = p.strip_suffix(".html") {
-        // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
-        if let Some(r) = try_file(&format!("{}/index.html", stem)) {
-            return r;
-        }
-    }
-    // SPA fallback
-    serve_index().unwrap_or_else(|| (StatusCode::NOT_FOUND, "Not Found").into_response())
 }
 
-/// The app's main page: index.html, or openbeach's index_beach.html
-/// (flavour.rs index_pages).
-fn serve_index() -> Option<Response> {
-    crate::flavour::CURRENT.index_pages.iter().find_map(|p| try_file(p))
+/// The pages the relay hands out by name (server_status urls, the QR codes,
+/// the "already running" page) in either app. One of them that the running
+/// app does not have is a 404: a tablet must never get the scoretable for it.
+const ROLE_PATHS: &[&str] = &["referee", "bench", "livescore", "scoreboard", "scoresheet", "upload_roster"];
+
+/// Which embedded file answers `req_path` (None: 404). The file itself;
+/// a role page (/referee, /referee/, /referee.html) from the flavour's
+/// role_pages; folder pages (x/ -> x/index.html, x -> x.html | x/index.html,
+/// legacy x.html -> x/index.html); else the single-page fallback (index).
+fn resolve_asset(req_path: &str, f: &crate::flavour::Flavour, exists: &dyn Fn(&str) -> bool) -> Option<String> {
+    let index = || f.index_pages.iter().find(|p| exists(p)).map(|p| p.to_string());
+    let p = req_path.trim_start_matches('/');
+    if p.is_empty() {
+        return index();
+    }
+    if exists(p) {
+        return Some(p.to_string());
+    }
+    let role = p.strip_suffix('/').or_else(|| p.strip_suffix(".html")).unwrap_or(p);
+    if ROLE_PATHS.contains(&role) {
+        let own = f.role_pages.iter().find(|(r, _)| *r == role).map(|(_, file)| *file);
+        if let Some(file) = own.filter(|file| exists(file)) {
+            return Some(file.to_string());
+        }
+    }
+    let candidates: Vec<String> = if p.ends_with('/') {
+        vec![format!("{p}index.html")]
+    } else if !p.contains('.') {
+        vec![format!("{p}.html"), format!("{p}/index.html")]
+    } else if let Some(stem) = p.strip_suffix(".html") {
+        // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
+        vec![format!("{stem}/index.html")]
+    } else {
+        vec![]
+    };
+    if let Some(found) = candidates.into_iter().find(|c| exists(c)) {
+        return Some(found);
+    }
+    if ROLE_PATHS.contains(&role) {
+        return None;
+    }
+    // SPA fallback
+    index()
 }
 
 fn try_file(path: &str) -> Option<Response> {
@@ -2750,6 +2775,84 @@ mod tests {
         assert_eq!(page(other, "/").await.status(), StatusCode::FORBIDDEN);
         assert_ne!(page(HeaderMap::new(), "/referee").await.status(), StatusCode::FORBIDDEN);
         assert!(is_other_court_query("x=1&court=other") && !is_other_court_query("court=others"));
+    }
+
+    /// The links the relay hands to tablets (/referee, /livescore) open the
+    /// role pages of the app it runs: openbeach builds flat *_beach.html
+    /// files, so /referee missed both folder lookups and fell back to the
+    /// scoretable. A role page the app lacks is a 404, never the scoretable.
+    #[test]
+    fn role_paths_open_the_role_pages_never_the_scoretable() {
+        use crate::flavour::{BEACH, OPENVOLLEY};
+        const BEACH_DIST: &[&str] = &[
+            "index.html", "referee_beach.html", "livescore_beach.html", "scoreboard_beach.html",
+            "scoresheet_beach.html", "assets/main-x.js",
+        ];
+        let has = |files: &'static [&'static str]| move |p: &str| files.contains(&p);
+        let beach = has(BEACH_DIST);
+        let r = |path: &str| resolve_asset(path, &BEACH, &beach);
+        for path in ["/referee", "/referee/", "/referee.html", "/referee_beach.html"] {
+            assert_eq!(r(path).as_deref(), Some("referee_beach.html"), "{path}");
+        }
+        assert_eq!(r("/livescore").as_deref(), Some("livescore_beach.html"));
+        assert_eq!(r("/scoreboard").as_deref(), Some("scoreboard_beach.html"));
+        assert_eq!(r("/scoresheet/").as_deref(), Some("scoresheet_beach.html"));
+        assert_eq!(r("/bench"), None, "openbeach has no bench page");
+        assert_eq!(r("/upload_roster"), None);
+        assert_eq!(r("/").as_deref(), Some("index.html"));
+        assert_eq!(r("/assets/main-x.js").as_deref(), Some("assets/main-x.js"));
+        assert_eq!(r("/some/app/route").as_deref(), Some("index.html"), "SPA fallback for other paths");
+        // openbeach's scoretable may also be index_beach.html
+        let only_beach_index = has(&["index_beach.html", "referee_beach.html"]);
+        assert_eq!(resolve_asset("/", &BEACH, &only_beach_index).as_deref(), Some("index_beach.html"));
+        assert_eq!(resolve_asset("/livescore", &BEACH, &only_beach_index), None);
+
+        // OpenVolley: its folder pages, as before
+        const OV_DIST: &[&str] = &[
+            "index.html", "referee/index.html", "bench/index.html", "livescore/index.html",
+            "scoresheet/index.html", "upload_roster/index.html",
+        ];
+        let ov = has(OV_DIST);
+        let o = |path: &str| resolve_asset(path, &OPENVOLLEY, &ov);
+        for path in ["/referee", "/referee/", "/referee.html"] {
+            assert_eq!(o(path).as_deref(), Some("referee/index.html"), "{path}");
+        }
+        assert_eq!(o("/bench").as_deref(), Some("bench/index.html"));
+        assert_eq!(o("/scoresheet/").as_deref(), Some("scoresheet/index.html"));
+        assert_eq!(o("/upload_roster").as_deref(), Some("upload_roster/index.html"));
+        assert_eq!(o("/scoreboard"), None);
+        assert_eq!(o("/").as_deref(), Some("index.html"));
+        assert_eq!(o("/match/7").as_deref(), Some("index.html"));
+        // a build without the page (dev, partial dist): 404, not the scoretable
+        let bare = has(&["index.html"]);
+        assert_eq!(resolve_asset("/referee", &OPENVOLLEY, &bare), None);
+    }
+
+    /// The same through the handler, on the embedded build of this app.
+    #[tokio::test]
+    async fn the_referee_link_never_serves_the_scoretable() {
+        let state = new_state(0, 0);
+        let tablet: SocketAddr = "192.168.1.50:40000".parse().unwrap();
+        let body = |uri: &'static str| {
+            let state = state.clone();
+            async move {
+                let r = static_handler(ConnectInfo(tablet), State(state), HeaderMap::new(), uri.parse::<Uri>().unwrap()).await;
+                let status = r.status();
+                (status, axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap())
+            }
+        };
+        let (index_status, index) = body("/").await;
+        for uri in ["/referee", "/livescore"] {
+            let (status, page) = body(uri).await;
+            if index_status == StatusCode::OK {
+                assert_ne!(page, index, "{uri} served the scoretable");
+            }
+            let own = crate::flavour::CURRENT.role_pages.iter().find(|(r, _)| format!("/{r}") == uri).map(|(_, f)| *f).unwrap();
+            assert_eq!(status == StatusCode::OK, Assets::get(own).is_some(), "{uri}: {own}");
+        }
+        let html = main_instance_page(crate::flavour::CURRENT);
+        assert!(html.contains("href=\"/referee\"") && html.contains("href=\"/livescore\""));
+        assert_eq!(html.contains("href=\"/bench\""), crate::flavour::CURRENT.key == "openvolley");
     }
 
     #[test]
