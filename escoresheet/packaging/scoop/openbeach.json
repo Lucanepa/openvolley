@@ -8,7 +8,7 @@
     "description": "Open Source Beach Volleyball eScoresheet: an offline scoretable with a built-in LAN server for the referee and livescore tablets and the court displays.",
     "homepage": "https://beach.openvolley.app",
     "license": {
-        "identifier": "GPL-3.0-only",
+        "identifier": "GPL-3.0-or-later",
         "url": "https://github.com/Lucanepa/openbeach/blob/main/escoresheet/LICENSE"
     },
     "notes": [

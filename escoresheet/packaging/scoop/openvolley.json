@@ -8,7 +8,7 @@
     "description": "Open Source Volleyball eScoresheet: an offline scoretable with a built-in LAN server for the referee, bench and livescore tablets.",
     "homepage": "https://openvolley.app",
     "license": {
-        "identifier": "GPL-3.0-only",
+        "identifier": "GPL-3.0-or-later",
         "url": "https://github.com/Lucanepa/openvolley/blob/main/escoresheet/LICENSE"
     },
     "notes": [

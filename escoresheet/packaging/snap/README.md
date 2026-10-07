@@ -244,9 +244,8 @@ the snapcraft.yaml. Commit, build, upload.
    profiles bound to the app's D-Bus connection). Until granted, users run the `snap connect`
    lines (the store description says so).
 6. Store listing: the icon from `snap/gui/icon.png`, screenshots, category
-   (Utilities / Sports), license. The yaml says `GPL-3.0-only`, like the
-   winget and Scoop manifests, while the AUR and Flatpak packages say
-   `GPL-3.0-or-later`: decide which one is right and make them all match.
+   (Utilities / Sports), license `GPL-3.0-or-later` (as in the yaml and
+   every other package's metadata).
 7. Optional: build in CI later (`snapcore/action-build` +
    `snapcore/action-publish` with a `SNAPCRAFT_STORE_CREDENTIALS` secret from
    `snapcraft export-login`). That puts a store credential in GitHub, which

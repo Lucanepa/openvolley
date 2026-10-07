@@ -11,7 +11,7 @@ PrivacyUrl: https://openvolley.app/en/privacy
 Author: Luca Canepa
 PackageName: 'OpenVolley eScoresheet'
 PackageUrl: https://openvolley.app
-License: GPL-3.0-only
+License: GPL-3.0-or-later
 LicenseUrl: https://github.com/Lucanepa/openvolley/blob/main/escoresheet/LICENSE
 ShortDescription: 'Open Source Volleyball eScoresheet'
 Description: 'Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in LAN server, so the referee, bench and livescore tablets connect over the same Wi-Fi: no internet, no accounts. The computer can open its own Wi-Fi for the tablets.'
